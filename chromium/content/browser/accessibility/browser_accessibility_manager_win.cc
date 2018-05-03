@@ -56,8 +56,8 @@ ui::AXTreeUpdate
     BrowserAccessibilityManagerWin::GetEmptyDocument() {
   ui::AXNodeData empty_document;
   empty_document.id = 0;
-  empty_document.role = ui::AX_ROLE_ROOT_WEB_AREA;
-  empty_document.AddBoolAttribute(ui::AX_ATTR_BUSY, true);
+  empty_document.role = ax::mojom::Role::kRootWebArea;
+  empty_document.AddBoolAttribute(ax::mojom::BoolAttribute::kBusy, true);
 
   ui::AXTreeUpdate update;
   update.root_id = empty_document.id;
@@ -105,14 +105,14 @@ void BrowserAccessibilityManagerWin::FireFocusEvent(
 }
 
 void BrowserAccessibilityManagerWin::FireBlinkEvent(
-    ui::AXEvent event_type,
+    ax::mojom::Event event_type,
     BrowserAccessibility* node) {
   BrowserAccessibilityManager::FireBlinkEvent(event_type, node);
   switch (event_type) {
-    case ui::AX_EVENT_LOCATION_CHANGED:
+    case ax::mojom::Event::kLocationChanged:
       FireWinAccessibilityEvent(IA2_EVENT_VISIBLE_DATA_CHANGED, node);
       break;
-    case ui::AX_EVENT_SCROLLED_TO_ANCHOR:
+    case ax::mojom::Event::kScrolledToAnchor:
       FireWinAccessibilityEvent(EVENT_SYSTEM_SCROLLINGSTART, node);
       break;
     default:
@@ -181,6 +181,7 @@ void BrowserAccessibilityManagerWin::FireGeneratedEvent(
     case Event::MENU_ITEM_SELECTED:
     case Event::NAME_CHANGED:
     case Event::OTHER_ATTRIBUTE_CHANGED:
+    case Event::RELATED_NODE_CHANGED:
     case Event::ROLE_CHANGED:
     case Event::ROW_COUNT_CHANGED:
     case Event::SELECTED_CHANGED:
@@ -213,7 +214,7 @@ void BrowserAccessibilityManagerWin::FireWinAccessibilityEvent(
 
   // Inline text boxes are an internal implementation detail, we don't
   // expose them to Windows.
-  if (node->GetRole() == ui::AX_ROLE_INLINE_TEXT_BOX)
+  if (node->GetRole() == ax::mojom::Role::kInlineTextBox)
     return;
 
   // Pass the negation of this node's unique id in the |child_id|

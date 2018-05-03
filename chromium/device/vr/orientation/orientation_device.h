@@ -10,10 +10,10 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/threading/simple_thread.h"
+#include "device/vr/public/mojom/vr_service.mojom.h"
 #include "device/vr/vr_device_base.h"
-#include "device/vr/vr_service.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/device/public/interfaces/sensor_provider.mojom.h"
+#include "services/device/public/mojom/sensor_provider.mojom.h"
 #include "ui/gfx/geometry/quaternion.h"
 
 namespace device {
@@ -43,7 +43,8 @@ class DEVICE_VR_EXPORT VROrientationDevice : public VRDeviceBase,
   void SensorReadingChanged() override {}
 
   // Sensor event reaction functions.
-  void SensorReady(device::mojom::SensorInitParamsPtr params);
+  void SensorReady(device::mojom::SensorCreationResult result,
+                   device::mojom::SensorInitParamsPtr params);
   void HandleSensorError();
   void OnSensorAddConfiguration(bool success);
 

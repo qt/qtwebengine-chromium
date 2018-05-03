@@ -73,6 +73,9 @@ source_set("audio") {
     "audio_debug_recording_helper.h",
     "audio_debug_recording_manager.cc",
     "audio_debug_recording_manager.h",
+    "audio_debug_recording_session.h",
+    "audio_debug_recording_session_impl.cc",
+    "audio_debug_recording_session_impl.h",
     "audio_device_description.cc",
     "audio_device_description.h",
     "audio_device_name.cc",
@@ -89,6 +92,8 @@ source_set("audio") {
     "audio_input_device.h",
     "audio_input_ipc.cc",
     "audio_input_ipc.h",
+    "audio_input_sync_writer.cc",
+    "audio_input_sync_writer.h",
     "audio_io.h",
     "audio_manager.cc",
     "audio_manager.h",
@@ -115,7 +120,8 @@ source_set("audio") {
     "audio_power_monitor.cc",
     "audio_power_monitor.h",
     "audio_source_diverter.h",
-    "audio_system.cc",
+    "audio_sync_reader.cc",
+    "audio_sync_reader.h",
     "audio_system.h",
     "audio_system_helper.cc",
     "audio_system_helper.h",
@@ -331,12 +337,16 @@ static_library("test_support") {
   visibility = [ "//media:test_support" ]
   testonly = true
   sources = [
+    "audio_debug_recording_test.cc",
+    "audio_debug_recording_test.h",
     "audio_device_info_accessor_for_tests.cc",
     "audio_device_info_accessor_for_tests.h",
     "audio_system_test_util.cc",
     "audio_system_test_util.h",
     "audio_unittest_util.cc",
     "audio_unittest_util.h",
+    "mock_audio_debug_recording_manager.cc",
+    "mock_audio_debug_recording_manager.h",
     "mock_audio_manager.cc",
     "mock_audio_manager.h",
     "mock_audio_source_callback.cc",
@@ -352,6 +362,7 @@ static_library("test_support") {
   ]
   deps = [
     "//base",
+    "//base/test:test_support",
 
     # Do not add any other //media deps except this; it will automatically pull
     # a dep on //media which is required to ensure test_support targets all use
@@ -369,8 +380,10 @@ source_set("unit_tests") {
     "audio_debug_file_writer_unittest.cc",
     "audio_debug_recording_helper_unittest.cc",
     "audio_debug_recording_manager_unittest.cc",
+    "audio_debug_recording_session_impl_unittest.cc",
     "audio_input_controller_unittest.cc",
     "audio_input_device_unittest.cc",
+    "audio_input_sync_writer_unittest.cc",
     "audio_input_unittest.cc",
     "audio_manager_unittest.cc",
     "audio_output_controller_unittest.cc",
@@ -378,6 +391,7 @@ source_set("unit_tests") {
     "audio_output_proxy_unittest.cc",
     "audio_output_unittest.cc",
     "audio_power_monitor_unittest.cc",
+    "audio_sync_reader_unittest.cc",
     "audio_system_impl_unittest.cc",
     "power_observer_helper_unittest.cc",
     "simple_sources_unittest.cc",

@@ -42,11 +42,7 @@ ContentAutofillDriver::ContentAutofillDriver(
   // AutofillManager isn't used if provider is valid, Autofill provider is
   // currently used by Android WebView only.
   if (provider) {
-    autofill_handler_ = std::make_unique<AutofillHandlerProxy>(this, provider);
-    GetAutofillAgent()->SetUserGestureRequired(false);
-    GetAutofillAgent()->SetSecureContextRequired(true);
-    GetAutofillAgent()->SetFocusRequiresScroll(false);
-    GetAutofillAgent()->SetQueryPasswordSuggestion(true);
+    SetAutofillProvider(provider);
   } else {
     autofill_handler_ = std::make_unique<AutofillManager>(
         this, client, app_locale, enable_download_manager);
@@ -167,9 +163,9 @@ gfx::RectF ContentAutofillDriver::TransformBoundingBoxToViewportCoordinates(
   if (!view)
     return bounding_box;
 
-  gfx::Point orig_point(bounding_box.x(), bounding_box.y());
-  gfx::Point transformed_point =
-      view->TransformPointToRootCoordSpace(orig_point);
+  gfx::PointF orig_point(bounding_box.x(), bounding_box.y());
+  gfx::PointF transformed_point =
+      view->TransformPointToRootCoordSpaceF(orig_point);
   return gfx::RectF(transformed_point.x(), transformed_point.y(),
                     bounding_box.width(), bounding_box.height());
 }
@@ -302,6 +298,19 @@ void ContentAutofillDriver::RemoveHandler(
   if (!view)
     return;
   view->GetRenderWidgetHost()->RemoveKeyPressEventCallback(handler);
+}
+
+void ContentAutofillDriver::SetAutofillProvider(AutofillProvider* provider) {
+  autofill_handler_ = std::make_unique<AutofillHandlerProxy>(this, provider);
+  GetAutofillAgent()->SetUserGestureRequired(false);
+  GetAutofillAgent()->SetSecureContextRequired(true);
+  GetAutofillAgent()->SetFocusRequiresScroll(false);
+  GetAutofillAgent()->SetQueryPasswordSuggestion(true);
+}
+
+void ContentAutofillDriver::SetAutofillProviderForTesting(
+    AutofillProvider* provider) {
+  SetAutofillProvider(provider);
 }
 
 }  // namespace autofill

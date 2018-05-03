@@ -80,19 +80,10 @@ void TreeScope::ResetTreeScope() {
   selection_ = nullptr;
 }
 
-TreeScope* TreeScope::OlderShadowRootOrParentTreeScope() const {
-  if (RootNode().IsShadowRoot()) {
-    if (ShadowRoot* older_shadow_root =
-            ToShadowRoot(RootNode()).OlderShadowRoot())
-      return older_shadow_root;
-  }
-  return ParentTreeScope();
-}
-
 bool TreeScope::IsInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(
     const TreeScope& scope) const {
   for (const TreeScope* current = &scope; current;
-       current = current->OlderShadowRootOrParentTreeScope()) {
+       current = current->ParentTreeScope()) {
     if (current == this)
       return true;
   }
@@ -251,16 +242,28 @@ Element* TreeScope::HitTestPoint(double x,
                                  const HitTestRequest& request) const {
   HitTestResult result =
       HitTestInDocument(&RootNode().GetDocument(), x, y, request);
-  Node* node = result.InnerNode();
+  if (request.AllowsChildFrameContent()) {
+    return HitTestPointInternal(result.InnerNode(),
+                                HitTestPointType::kInternal);
+  }
+  return HitTestPointInternal(result.InnerNode(),
+                              HitTestPointType::kWebExposed);
+}
+
+Element* TreeScope::HitTestPointInternal(Node* node,
+                                         HitTestPointType type) const {
   if (!node || node->IsDocumentNode())
     return nullptr;
+  Element* element;
   if (node->IsPseudoElement() || node->IsTextNode())
-    node = node->ParentOrShadowHostNode();
-  DCHECK(!node || node->IsElementNode() || node->IsShadowRoot());
-  node = AncestorInThisScope(node);
-  if (!node || !node->IsElementNode())
+    element = node->ParentOrShadowHostElement();
+  else
+    element = ToElement(node);
+  if (!element)
     return nullptr;
-  return ToElement(node);
+  if (type == HitTestPointType::kWebExposed)
+    return Retarget(*element);
+  return element;
 }
 
 HeapVector<Member<Element>> TreeScope::ElementsFromHitTestResult(
@@ -270,13 +273,11 @@ HeapVector<Member<Element>> TreeScope::ElementsFromHitTestResult(
   Node* last_node = nullptr;
   for (const auto rect_based_node : result.ListBasedTestResult()) {
     Node* node = rect_based_node.Get();
-    if (!node || !node->IsElementNode() || node->IsDocumentNode())
+    // In some cases the hit test doesn't return slot elements, so we can only
+    // get it through its child and can't skip it.
+    if (!node->IsElementNode() && !IsHTMLSlotElement(node->parentNode()))
       continue;
-
-    if (node->IsPseudoElement() || node->IsTextNode())
-      node = node->ParentOrShadowHostNode();
-    node = AncestorInThisScope(node);
-
+    node = HitTestPointInternal(node, HitTestPointType::kWebExposed);
     // Prune duplicate entries. A pseduo ::before content above its parent
     // node should only result in a single entry.
     if (node == last_node)
@@ -318,6 +319,22 @@ SVGTreeScopeResources& TreeScope::EnsureSVGTreeScopedResources() {
   if (!svg_tree_scoped_resources_)
     svg_tree_scoped_resources_ = new SVGTreeScopeResources(this);
   return *svg_tree_scoped_resources_;
+}
+
+bool TreeScope::HasMoreStyleSheets() const {
+  return more_style_sheets_ && more_style_sheets_->length() > 0;
+}
+
+StyleSheetList& TreeScope::MoreStyleSheets() {
+  if (!more_style_sheets_)
+    SetMoreStyleSheets(StyleSheetList::Create(this));
+  return *more_style_sheets_;
+}
+
+void TreeScope::SetMoreStyleSheets(StyleSheetList* more_style_sheets) {
+  GetDocument().GetStyleEngine().MoreStyleSheetsWillChange(
+      *this, more_style_sheets_, more_style_sheets);
+  more_style_sheets_ = more_style_sheets;
 }
 
 DOMSelection* TreeScope::GetSelection() const {
@@ -366,7 +383,43 @@ void TreeScope::AdoptIfNeeded(Node& node) {
     adopter.Execute();
 }
 
+// This method corresponds to the Retarget algorithm specified in
+// https://dom.spec.whatwg.org/#retarget
+// This retargets |target| against the root of |this|.
+// The steps are different with the spec for performance reasons,
+// but the results should be the same.
 Element* TreeScope::Retarget(const Element& target) const {
+  const TreeScope& target_scope = target.GetTreeScope();
+  if (!target_scope.RootNode().IsShadowRoot())
+    return const_cast<Element*>(&target);
+
+  HeapVector<Member<const TreeScope>> target_ancestor_scopes;
+  HeapVector<Member<const TreeScope>> context_ancestor_scopes;
+  for (const TreeScope* tree_scope = &target_scope; tree_scope;
+       tree_scope = tree_scope->ParentTreeScope())
+    target_ancestor_scopes.push_back(tree_scope);
+  for (const TreeScope* tree_scope = this; tree_scope;
+       tree_scope = tree_scope->ParentTreeScope())
+    context_ancestor_scopes.push_back(tree_scope);
+
+  auto target_ancestor_riterator = target_ancestor_scopes.rbegin();
+  auto context_ancestor_riterator = context_ancestor_scopes.rbegin();
+  while (context_ancestor_riterator != context_ancestor_scopes.rend() &&
+         target_ancestor_riterator != target_ancestor_scopes.rend() &&
+         *context_ancestor_riterator == *target_ancestor_riterator) {
+    ++context_ancestor_riterator;
+    ++target_ancestor_riterator;
+  }
+
+  if (target_ancestor_riterator == target_ancestor_scopes.rend())
+    return const_cast<Element*>(&target);
+  Node& first_different_scope_root =
+      (*target_ancestor_riterator).Get()->RootNode();
+  return &ToShadowRoot(first_different_scope_root).host();
+}
+
+Element* TreeScope::AdjustedFocusedElementInternal(
+    const Element& target) const {
   for (const Element* ancestor = &target; ancestor;
        ancestor = ancestor->OwnerShadowHost()) {
     if (this == ancestor->GetTreeScope())
@@ -385,7 +438,7 @@ Element* TreeScope::AdjustedFocusedElement() const {
     return nullptr;
 
   if (RootNode().IsInV1ShadowTree()) {
-    if (Element* retargeted = Retarget(*element)) {
+    if (Element* retargeted = AdjustedFocusedElementInternal(*element)) {
       return (this == &retargeted->GetTreeScope()) ? retargeted : nullptr;
     }
     return nullptr;
@@ -449,14 +502,6 @@ unsigned short TreeScope::ComparePosition(const TreeScope& other_scope) const {
       if (shadow_host1 != shadow_host2)
         return shadow_host1->compareDocumentPosition(
             shadow_host2, Node::kTreatShadowTreesAsDisconnected);
-
-      for (const ShadowRoot* child =
-               ToShadowRoot(child2->RootNode()).OlderShadowRoot();
-           child; child = child->OlderShadowRoot()) {
-        if (child == child1)
-          return Node::kDocumentPositionFollowing;
-      }
-
       return Node::kDocumentPositionPreceding;
     }
   }
@@ -515,8 +560,7 @@ Element* TreeScope::GetElementByAccessKey(const String& key) const {
     if (DeprecatedEqualIgnoringCase(element.FastGetAttribute(accesskeyAttr),
                                     key))
       result = &element;
-    for (ShadowRoot* shadow_root = element.YoungestShadowRoot(); shadow_root;
-         shadow_root = shadow_root->OlderShadowRoot()) {
+    if (ShadowRoot* shadow_root = element.GetShadowRoot()) {
       if (Element* shadow_result = shadow_root->GetElementByAccessKey(key))
         result = shadow_result;
     }
@@ -527,8 +571,7 @@ Element* TreeScope::GetElementByAccessKey(const String& key) const {
 void TreeScope::SetNeedsStyleRecalcForViewportUnits() {
   for (Element* element = ElementTraversal::FirstWithin(RootNode()); element;
        element = ElementTraversal::NextIncludingPseudo(*element)) {
-    for (ShadowRoot* root = element->YoungestShadowRoot(); root;
-         root = root->OlderShadowRoot())
+    if (ShadowRoot* root = element->GetShadowRoot())
       root->SetNeedsStyleRecalcForViewportUnits();
     const ComputedStyle* style = element->GetComputedStyle();
     if (style && style->HasViewportUnits())
@@ -549,6 +592,7 @@ void TreeScope::Trace(blink::Visitor* visitor) {
   visitor->Trace(scoped_style_resolver_);
   visitor->Trace(radio_button_group_scope_);
   visitor->Trace(svg_tree_scoped_resources_);
+  visitor->Trace(more_style_sheets_);
 }
 
 }  // namespace blink

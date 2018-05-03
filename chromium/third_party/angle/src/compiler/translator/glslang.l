@@ -26,9 +26,9 @@ WHICH GENERATES THE GLSL ES LEXER (glslang_lex.cpp).
 
 // Ignore errors in auto-generated code.
 #if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wswitch-enum"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wswitch-enum"
 #elif defined(_MSC_VER)
 #pragma warning(disable: 4005)
 #pragma warning(disable: 4065)
@@ -37,6 +37,9 @@ WHICH GENERATES THE GLSL ES LEXER (glslang_lex.cpp).
 #pragma warning(disable: 4505)
 #pragma warning(disable: 4701)
 #pragma warning(disable: 4702)
+#endif
+#if defined(__clang__)
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #endif
 }
 
@@ -268,17 +271,17 @@ O           [0-7]
 "isampler2DMSArray" |
 "usampler2DMSArray" { 
     if (context->getShaderVersion() < 300) {
-		yylval->lex.string = NewPoolTString(yytext); 
-	    return check_type(yyscanner); 
-	}
-	return reserved_word(yyscanner);
+        yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
+        return check_type(yyscanner);
+    }
+    return reserved_word(yyscanner);
 }
 
     /* Reserved keywords in GLSL ES 1.00 that are not reserved in GLSL ES 3.00 */
 "packed"  {
     if (context->getShaderVersion() >= 300)
     {
-        yylval->lex.string = NewPoolTString(yytext);
+        yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
         return check_type(yyscanner);
     }
 
@@ -337,7 +340,7 @@ O           [0-7]
 "using"        { return reserved_word(yyscanner); }
 
 {L}({L}|{D})*       {
-   yylval->lex.string = NewPoolTString(yytext); 
+   yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
    return check_type(yyscanner);
 }
 
@@ -406,7 +409,7 @@ O           [0-7]
 
 <FIELDS>{L}({L}|{D})* {
     BEGIN(INITIAL);
-    yylval->lex.string = NewPoolTString(yytext);
+    yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
     return FIELD_SELECTION;
 }
 <FIELDS>[ \t\v\f\r] {}
@@ -441,7 +444,8 @@ int check_type(yyscan_t yyscanner) {
     struct yyguts_t* yyg = (struct yyguts_t*) yyscanner;
 
     int token = IDENTIFIER;
-    TSymbol* symbol = yyextra->symbolTable.find(yytext, yyextra->getShaderVersion());
+    // Note that the ImmutableString used here isn't static or pool allocated - but it's fine since yytext is valid for the duration of its use.
+    const TSymbol* symbol = yyextra->symbolTable.find(ImmutableString(yytext, yyleng), yyextra->getShaderVersion());
     if (symbol && symbol->isStruct())
     {
         token = TYPE_NAME;
@@ -488,7 +492,7 @@ int ES2_ident_ES3_reserved_ES3_1_keyword(TParseContext *context, int token)
 
     if (context->getShaderVersion() < 300)
     {
-        yylval->lex.string = NewPoolTString(yytext);
+        yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
         return check_type(yyscanner);
     }
     else if (context->getShaderVersion() == 300)
@@ -507,7 +511,7 @@ int ES2_ident_ES3_keyword(TParseContext *context, int token)
     // not a reserved word in GLSL ES 1.00, so could be used as an identifier/type name
     if (context->getShaderVersion() < 300)
     {
-        yylval->lex.string = NewPoolTString(yytext);
+        yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
         return check_type(yyscanner);
     }
 
@@ -523,7 +527,7 @@ int ES2_ident_ES3_keyword_multiview_keyword(TParseContext *context, int token)
     // except when multiview extension is enabled
     if (context->getShaderVersion() < 300 && !context->isExtensionEnabled(TExtension::OVR_multiview))
     {
-        yylval->lex.string = NewPoolTString(yytext);
+        yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
         return check_type(yyscanner);
     }
 
@@ -550,7 +554,7 @@ int ES2_and_ES3_ident_ES3_1_keyword(TParseContext *context, int token)
     // not a reserved word in GLSL ES 1.00 and GLSL ES 3.00, so could be used as an identifier/type name
     if (context->getShaderVersion() < 310)
     {
-        yylval->lex.string = NewPoolTString(yytext);
+        yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
         return check_type(yyscanner);
     }
 
@@ -568,7 +572,7 @@ int ES3_extension_keyword_else_ident(TParseContext *context, TExtension extensio
         return token;
     }
 
-    yylval->lex.string = NewPoolTString(yytext);
+    yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
     return check_type(yyscanner);
 }
 
@@ -641,11 +645,11 @@ int yuvcscstandardext_constant(TParseContext *context)
     // a reserved word in GLSL ES 3.00 with enabled extension, otherwise could be used as an identifier/type name
     if (context->getShaderVersion() >= 300 && context->isExtensionEnabled(TExtension::EXT_YUV_target))
     {
-        yylval->lex.string = NewPoolTString(yytext);
+        yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
         return YUVCSCSTANDARDEXTCONSTANT;
     }
 
-    yylval->lex.string = NewPoolTString(yytext);
+    yylval->lex.string = AllocatePoolCharArray(yytext, yyleng);
     return check_type(yyscanner);
 }
 

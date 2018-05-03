@@ -27,10 +27,6 @@ char kTSanDefaultSuppressions[] =
 "race:vp8cx_remove_encoder_threads\n"
 "race:third_party/libvpx/source/libvpx/vp9/common/vp9_scan.h\n"
 
-// Race in pulse initialization.
-// https://code.google.com/p/webrtc/issues/detail?id=5152
-"race:webrtc::AudioDeviceLinuxPulse::Init\n"
-
 // rtc_unittests
 // https://code.google.com/p/webrtc/issues/detail?id=3911 for details.
 "race:rtc::MessageQueueManager::Clear\n"
@@ -63,10 +59,6 @@ char kTSanDefaultSuppressions[] =
 // TODO(pbos): Trace events are racy due to lack of proper POD atomics.
 // https://code.google.com/p/webrtc/issues/detail?id=2497
 "race:*trace_event_unique_catstatic*\n"
-
-// https://code.google.com/p/webrtc/issues/detail?id=4719
-"race:webrtc::voe::TransmitMixer::PrepareDemux\n"
-"race:webrtc::voe::TransmitMixer::EnableStereoChannelSwapping\n"
 
 // Race between InitCpuFlags and TestCpuFlag in libyuv.
 // https://code.google.com/p/libyuv/issues/detail?id=508

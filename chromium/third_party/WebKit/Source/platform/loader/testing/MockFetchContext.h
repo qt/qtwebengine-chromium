@@ -10,8 +10,8 @@
 #include "platform/loader/fetch/FetchContext.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/ResourceTimingInfo.h"
+#include "platform/scheduler/test/fake_task_runner.h"
 #include "platform/scheduler/test/fake_web_frame_scheduler.h"
-#include "platform/scheduler/test/fake_web_task_runner.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURLLoaderFactory.h"
@@ -22,7 +22,6 @@ namespace blink {
 
 class KURL;
 class ResourceRequest;
-class WebTaskRunner;
 struct ResourceLoaderOptions;
 
 // Mocked FetchContext for testing.
@@ -32,8 +31,10 @@ class MockFetchContext : public FetchContext {
     kShouldLoadNewResource,
     kShouldNotLoadNewResource,
   };
-  static MockFetchContext* Create(LoadPolicy load_policy) {
-    return new MockFetchContext(load_policy);
+  static MockFetchContext* Create(LoadPolicy load_policy,
+                                  scoped_refptr<base::SingleThreadTaskRunner>
+                                      loading_task_runner = nullptr) {
+    return new MockFetchContext(load_policy, std::move(loading_task_runner));
   }
 
   ~MockFetchContext() override = default;
@@ -87,7 +88,8 @@ class MockFetchContext : public FetchContext {
 
   std::unique_ptr<WebURLLoader> CreateURLLoader(
       const ResourceRequest& request,
-      scoped_refptr<WebTaskRunner> task_runner) override {
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+      const ResourceLoaderOptions&) override {
     if (!url_loader_factory_) {
       url_loader_factory_ =
           Platform::Current()->CreateDefaultURLLoaderFactory();
@@ -105,33 +107,38 @@ class MockFetchContext : public FetchContext {
     return frame_scheduler_.get();
   }
 
-  scoped_refptr<WebTaskRunner> GetLoadingTaskRunner() override {
+  scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner() override {
     return frame_scheduler_->GetTaskRunner(TaskType::kInternalTest);
   }
 
  private:
   class MockFrameScheduler final : public scheduler::FakeWebFrameScheduler {
    public:
-    MockFrameScheduler(scoped_refptr<WebTaskRunner> runner)
+    MockFrameScheduler(scoped_refptr<base::SingleThreadTaskRunner> runner)
         : runner_(std::move(runner)) {}
-    scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType) override {
+    scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
+        TaskType) override {
       return runner_;
     }
 
    private:
-    scoped_refptr<WebTaskRunner> runner_;
+    scoped_refptr<base::SingleThreadTaskRunner> runner_;
   };
 
-  MockFetchContext(LoadPolicy load_policy)
+  MockFetchContext(
+      LoadPolicy load_policy,
+      scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner)
       : load_policy_(load_policy),
-        runner_(base::MakeRefCounted<scheduler::FakeWebTaskRunner>()),
+        runner_(loading_task_runner
+                    ? std::move(loading_task_runner)
+                    : base::MakeRefCounted<scheduler::FakeTaskRunner>()),
         security_origin_(SecurityOrigin::CreateUnique()),
         frame_scheduler_(new MockFrameScheduler(runner_)),
         complete_(false),
         transfer_size_(-1) {}
 
   enum LoadPolicy load_policy_;
-  scoped_refptr<WebTaskRunner> runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> runner_;
   scoped_refptr<const SecurityOrigin> security_origin_;
   std::unique_ptr<WebFrameScheduler> frame_scheduler_;
   std::unique_ptr<WebURLLoaderFactory> url_loader_factory_;

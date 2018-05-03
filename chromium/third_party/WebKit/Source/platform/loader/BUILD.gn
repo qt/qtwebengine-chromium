@@ -20,6 +20,8 @@ blink_platform_sources("loader") {
     "SubresourceIntegrity.h",
     "cors/CORS.cpp",
     "cors/CORS.h",
+    "cors/CORSErrorString.cpp",
+    "cors/CORSErrorString.h",
     "fetch/AccessControlStatus.h",
     "fetch/BufferingDataPipeWriter.cpp",
     "fetch/BufferingDataPipeWriter.h",
@@ -83,8 +85,9 @@ blink_platform_sources("loader") {
 
   deps = [
     ":make_platform_loader_generated_fetch_initiator_type_names",
-    "//components/link_header_util:link_header_util",
-    "//services/network/public/cpp:cpp",
+    "//components/link_header_util",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom:mojom_blink",
   ]
 }
 

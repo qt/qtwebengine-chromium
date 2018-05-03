@@ -5,14 +5,9 @@
     "service_manager:connector": {
       "provides": {
         "browser": [
-          "chrome::mojom::ResourceUsageReporter",
           "chrome::mojom::SearchBouncer",
-          "spellcheck::mojom::SpellChecker",
           "profiling::mojom::ProfilingClient"
         ]
-      },
-      "requires": {
-        "chrome": [ "renderer" ]
       }
     },
     "navigation:frame": {
@@ -25,8 +20,11 @@
           "chrome::mojom::ChromeRenderFrame",
           "chrome::mojom::ContentSettingsRenderer",
           "chrome::mojom::PrerenderDispatcher",
+          "chrome::mojom::SandboxStatusExtension",
           "dom_distiller::mojom::DistillerPageNotifierService",
           "extensions::mojom::AppWindow",
+          "safe_browsing::mojom::ThreatReporter",
+          "safe_browsing::mojom::PhishingDetector",
           "spellcheck::mojom::SpellCheckPanel"
         ]
       }

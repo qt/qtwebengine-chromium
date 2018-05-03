@@ -74,7 +74,19 @@ static_library("app") {
   }
 
   if (is_win) {
-    deps += [ "//third_party/crashpad/crashpad/handler" ]
+    sources += [
+      "dump_hung_process_with_ptype.cc",
+      "dump_hung_process_with_ptype.h",
+      "minidump_with_crashpad_info.cc",
+      "minidump_with_crashpad_info.h",
+    ]
+
+    deps += [
+      "//third_party/crashpad/crashpad/client",
+      "//third_party/crashpad/crashpad/handler",
+      "//third_party/crashpad/crashpad/minidump",
+      "//third_party/crashpad/crashpad/util",
+    ]
   }
 
   if (is_android) {
@@ -93,6 +105,8 @@ if (is_win) {
       "fallback_crash_handler_win.h",
       "fallback_crash_handling_win.cc",
       "fallback_crash_handling_win.h",
+      "minidump_with_crashpad_info.cc",
+      "minidump_with_crashpad_info.h",
       "run_as_crashpad_handler_win.cc",
       "run_as_crashpad_handler_win.h",
     ]
@@ -103,6 +117,7 @@ if (is_win) {
       "//third_party/crashpad/crashpad/client",
       "//third_party/crashpad/crashpad/handler",
       "//third_party/crashpad/crashpad/minidump",
+      "//third_party/crashpad/crashpad/util",
     ]
   }
 

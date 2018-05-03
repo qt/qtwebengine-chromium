@@ -24,6 +24,7 @@
 #include "core/page/scrolling/SnapCoordinator.h"
 #include "core/paint/PaintLayer.h"
 #include "platform/Histogram.h"
+#include "platform/scroll/ScrollCustomization.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -148,10 +149,10 @@ void ScrollManager::RecomputeScrollChain(const Node& start_node,
 
 bool ScrollManager::CanScroll(const ScrollState& scroll_state,
                               const Element& current_element) {
-  const double delta_x = scroll_state.isBeginning() ? scroll_state.deltaXHint()
-                                                    : scroll_state.deltaX();
-  const double delta_y = scroll_state.isBeginning() ? scroll_state.deltaYHint()
-                                                    : scroll_state.deltaY();
+  double delta_x = scroll_state.isBeginning() ? scroll_state.deltaXHint()
+                                              : scroll_state.deltaX();
+  double delta_y = scroll_state.isBeginning() ? scroll_state.deltaYHint()
+                                              : scroll_state.deltaY();
   if (!delta_x && !delta_y)
     return true;
 
@@ -173,6 +174,11 @@ bool ScrollManager::CanScroll(const ScrollState& scroll_state,
 
   if (!scrollable_area)
     return false;
+
+  if (!scrollable_area->UserInputScrollable(kHorizontalScrollbar))
+    delta_x = 0;
+  if (!scrollable_area->UserInputScrollable(kVerticalScrollbar))
+    delta_y = 0;
 
   ScrollOffset current_offset = scrollable_area->GetScrollOffset();
   ScrollOffset target_offset = current_offset + ScrollOffset(delta_x, delta_y);
@@ -251,6 +257,7 @@ void ScrollManager::CustomizedScroll(ScrollState& scroll_state) {
     frame_->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
 
   DCHECK(!current_scroll_chain_.empty());
+
   scroll_state.SetScrollChain(current_scroll_chain_);
 
   scroll_state.distributeToScrollChainDescendant();
@@ -365,6 +372,8 @@ WebInputEventResult ScrollManager::HandleGestureScrollBegin(
     // of simply returning WebInputEventResult::kNotHandled.
     return child_result;
   }
+
+  NotifyScrollPhaseBeginForCustomizedScroll(*scroll_state);
 
   CustomizedScroll(*scroll_state);
 
@@ -519,6 +528,7 @@ WebInputEventResult ScrollManager::HandleGestureScrollEnd(
         ScrollState::Create(std::move(scroll_state_data));
     CustomizedScroll(*scroll_state);
     SnapAtGestureScrollEnd();
+    NotifyScrollPhaseEndForCustomizedScroll();
   }
 
   ClearGestureScrollState();
@@ -538,14 +548,16 @@ WebInputEventResult ScrollManager::PassScrollGestureEvent(
       !layout_object->IsLayoutEmbeddedContent())
     return WebInputEventResult::kNotHandled;
 
-  LocalFrameView* frame_view =
+  FrameView* frame_view =
       ToLayoutEmbeddedContent(layout_object)->ChildFrameView();
 
-  if (!frame_view)
+  if (!frame_view || !frame_view->IsLocalFrameView())
     return WebInputEventResult::kNotHandled;
 
-  return frame_view->GetFrame().GetEventHandler().HandleGestureScrollEvent(
-      gesture_event);
+  return ToLocalFrameView(frame_view)
+      ->GetFrame()
+      .GetEventHandler()
+      .HandleGestureScrollEvent(gesture_event);
 }
 
 bool ScrollManager::IsViewportScrollingElement(const Element& element) const {
@@ -745,6 +757,26 @@ WebGestureEvent ScrollManager::SynthesizeGestureScrollBegin(
   scroll_begin.data.scroll_begin.delta_hint_units =
       update_event.data.scroll_update.delta_units;
   return scroll_begin;
+}
+
+void ScrollManager::NotifyScrollPhaseBeginForCustomizedScroll(
+    const ScrollState& scroll_state) {
+  ScrollCustomization::ScrollDirection direction =
+      ScrollCustomization::GetScrollDirectionFromDeltas(
+          scroll_state.deltaXHint(), scroll_state.deltaYHint());
+  for (auto id : current_scroll_chain_) {
+    Node* node = DOMNodeIds::NodeForId(id);
+    if (node && node->IsElementNode())
+      ToElement(node)->WillBeginCustomizedScrollPhase(direction);
+  }
+}
+
+void ScrollManager::NotifyScrollPhaseEndForCustomizedScroll() {
+  for (auto id : current_scroll_chain_) {
+    Node* node = DOMNodeIds::NodeForId(id);
+    if (node && node->IsElementNode())
+      ToElement(node)->DidEndCustomizedScrollPhase();
+  }
 }
 
 }  // namespace blink

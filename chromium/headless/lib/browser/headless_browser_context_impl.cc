@@ -481,6 +481,26 @@ HeadlessBrowserContext::Builder::SetIncognitoMode(bool incognito_mode) {
 }
 
 HeadlessBrowserContext::Builder&
+HeadlessBrowserContext::Builder::SetSitePerProcess(bool site_per_process) {
+  options_->site_per_process_ = site_per_process;
+  return *this;
+}
+
+HeadlessBrowserContext::Builder&
+HeadlessBrowserContext::Builder::SetBlockNewWebContents(
+    bool block_new_web_contents) {
+  options_->block_new_web_contents_ = block_new_web_contents;
+  return *this;
+}
+
+HeadlessBrowserContext::Builder&
+HeadlessBrowserContext::Builder::SetInitialVirtualTime(
+    base::Time initial_virtual_time) {
+  options_->initial_virtual_time_ = initial_virtual_time;
+  return *this;
+}
+
+HeadlessBrowserContext::Builder&
 HeadlessBrowserContext::Builder::SetAllowCookies(bool allow_cookies) {
   options_->allow_cookies_ = allow_cookies;
   return *this;

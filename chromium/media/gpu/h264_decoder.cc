@@ -20,13 +20,13 @@ H264Decoder::H264Accelerator::H264Accelerator() = default;
 
 H264Decoder::H264Accelerator::~H264Accelerator() = default;
 
-H264Decoder::H264Decoder(H264Accelerator* accelerator)
+H264Decoder::H264Decoder(std::unique_ptr<H264Accelerator> accelerator)
     : state_(kNeedStreamMetadata),
       max_frame_num_(0),
       max_pic_num_(0),
       max_long_term_frame_idx_(0),
       max_num_reorder_frames_(0),
-      accelerator_(accelerator) {
+      accelerator_(std::move(accelerator)) {
   DCHECK(accelerator_);
   Reset();
 }
@@ -1342,7 +1342,7 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
         if (state_ != kDecoding)
           break;
 
-      // else fallthrough
+        FALLTHROUGH;
       case H264NALU::kIDRSlice: {
         // TODO(posciak): the IDR may require an SPS that we don't have
         // available. For now we'd fail if that happens, but ideally we'd like

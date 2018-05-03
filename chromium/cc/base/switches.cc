@@ -46,13 +46,16 @@ const char kSlowDownRasterScaleFactor[] = "slow-down-raster-scale-factor";
 // Compress tile textures for GPUs supporting it.
 const char kEnableTileCompression[] = "enable-tile-compression";
 
+// Checks damage early and aborts the frame if no damage, so that clients like
+// Android WebView don't invalidate unnecessarily.
+const char kCheckDamageEarly[] = "check-damage-early";
+
 // Enables the GPU benchmarking extension
 const char kEnableGpuBenchmarking[] = "enable-gpu-benchmarking";
 
-// Effectively disables pipelining of compositor frame production stages by
-// waiting for each stage to finish before completing a frame.
-const char kRunAllCompositorStagesBeforeDraw[] =
-    "run-all-compositor-stages-before-draw";
+// Always asks the display compositor to send back presentation times.
+const char kAlwaysRequestPresentationTime[] =
+    "always-request-presentation-time";
 
 // Renders a border around compositor layers to help debug and study
 // layer compositing.

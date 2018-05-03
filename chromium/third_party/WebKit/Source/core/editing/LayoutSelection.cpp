@@ -278,9 +278,7 @@ static void SetSelectionStateIfNeeded(LayoutObject* layout_object,
   DCHECK_NE(state, SelectionState::kNone) << layout_object;
   if (layout_object->GetSelectionState() == state)
     return;
-  // TODO(yoichio): Once we make LayoutObject::SetSelectionState() tribial, use
-  // it directly.
-  layout_object->LayoutObject::SetSelectionState(state);
+  layout_object->SetSelectionState(state);
 
   // Set containing block SelectionState kContain for CSS ::selection style.
   // See LayoutObject::InvalidatePaintForSelection().
@@ -366,9 +364,7 @@ static OldSelectedLayoutObjects ResetOldSelectedLayoutObjects(
       continue;
     if (old_state != SelectionState::kContain)
       old_selected_objects.insert(layout_object, old_state);
-    // TODO(yoichio): Once we make LayoutObject::SetSelectionState() trivial,
-    // use it directly.
-    layout_object->LayoutObject::SetSelectionState(SelectionState::kNone);
+    layout_object->SetSelectionState(SelectionState::kNone);
 
     // Reset containing block SelectionState for CSS ::selection style.
     // See LayoutObject::InvalidatePaintForSelection().
@@ -377,7 +373,7 @@ static OldSelectedLayoutObjects ResetOldSelectedLayoutObjects(
          containing_block = containing_block->ContainingBlock()) {
       if (containing_block_set.Contains(containing_block))
         break;
-      containing_block->LayoutObject::SetSelectionState(SelectionState::kNone);
+      containing_block->SetSelectionState(SelectionState::kNone);
       containing_block_set.insert(containing_block);
     }
   }
@@ -662,7 +658,7 @@ static unsigned ClampOffset(unsigned offset,
 }
 
 std::pair<unsigned, unsigned> LayoutSelection::SelectionStartEndForNG(
-    const NGPhysicalTextFragment& text_fragment) {
+    const NGPhysicalTextFragment& text_fragment) const {
   // FrameSelection holds selection offsets in layout block flow at
   // LayoutSelection::Commit() if selection starts/ends within Text that
   // each LayoutObject::SelectionState indicates.
@@ -756,7 +752,7 @@ CalcSelectionRangeAndSetSelectionState(const FrameSelection& frame_selection) {
                                       start_layout_object, start_offset,
                                       end_layout_object, end_offset);
 
-  if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled())
+  if (!RuntimeEnabledFeatures::LayoutNGEnabled())
     return new_range;
   return ComputeNewPaintRange(new_range, start_layout_object, start_offset,
                               end_layout_object, end_offset);
@@ -805,13 +801,12 @@ void LayoutSelection::Commit() {
        paint_range_.EndLayoutObject()->GetSelectionState() !=
            SelectionState::kStartAndEnd)) {
     if (paint_range_.StartLayoutObject() == paint_range_.EndLayoutObject()) {
-      paint_range_.StartLayoutObject()->LayoutObject::SetSelectionState(
+      paint_range_.StartLayoutObject()->SetSelectionState(
           SelectionState::kStartAndEnd);
     } else {
-      paint_range_.StartLayoutObject()->LayoutObject::SetSelectionState(
+      paint_range_.StartLayoutObject()->SetSelectionState(
           SelectionState::kStart);
-      paint_range_.EndLayoutObject()->LayoutObject::SetSelectionState(
-          SelectionState::kEnd);
+      paint_range_.EndLayoutObject()->SetSelectionState(SelectionState::kEnd);
     }
   }
   // TODO(yoichio): If start == end, they should be kStartAndEnd.
@@ -838,10 +833,10 @@ static LayoutRect SelectionRectForLayoutObject(const LayoutObject* object) {
   if (!object->CanUpdateSelectionOnRootLineBoxes())
     return LayoutRect();
 
-  return object->SelectionRectInViewCoordinates();
+  return object->AbsoluteSelectionRect();
 }
 
-IntRect LayoutSelection::SelectionBounds() {
+IntRect LayoutSelection::AbsoluteSelectionBounds() {
   Commit();
   if (paint_range_.IsNull())
     return IntRect();

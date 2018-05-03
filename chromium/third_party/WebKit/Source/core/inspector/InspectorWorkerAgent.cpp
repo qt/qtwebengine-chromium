@@ -94,10 +94,6 @@ Response InspectorWorkerAgent::setAutoAttach(bool auto_attach,
   return Response::OK();
 }
 
-Response InspectorWorkerAgent::setAttachToFrames(bool attach) {
-  return Response::OK();
-}
-
 bool InspectorWorkerAgent::AutoAttachEnabled() {
   return state_->booleanProperty(WorkerAgentState::kAutoAttach, false);
 }
@@ -131,15 +127,6 @@ Response InspectorWorkerAgent::sendMessageToTarget(const String& message,
   return Response::Error("Session id must be specified");
 }
 
-void InspectorWorkerAgent::SetTracingSessionId(
-    const String& tracing_session_id) {
-  tracing_session_id_ = tracing_session_id;
-  if (tracing_session_id.IsEmpty())
-    return;
-  for (auto& id_proxy : connected_proxies_)
-    id_proxy.value->WriteTimelineStartedEvent(tracing_session_id);
-}
-
 void InspectorWorkerAgent::ShouldWaitForDebuggerOnWorkerStart(bool* result) {
   if (AutoAttachEnabled() &&
       state_->booleanProperty(WorkerAgentState::kWaitForDebuggerOnStart, false))
@@ -150,8 +137,6 @@ void InspectorWorkerAgent::DidStartWorker(WorkerInspectorProxy* proxy,
                                           bool waiting_for_debugger) {
   DCHECK(GetFrontend() && AutoAttachEnabled());
   ConnectToProxy(proxy, waiting_for_debugger);
-  if (!tracing_session_id_.IsEmpty())
-    proxy->WriteTimelineStartedEvent(tracing_session_id_);
 }
 
 void InspectorWorkerAgent::WorkerTerminated(WorkerInspectorProxy* proxy) {
@@ -230,8 +215,7 @@ void InspectorWorkerAgent::ConnectToProxy(WorkerInspectorProxy* proxy,
   session_id_to_connection_.Set(session_id, connection);
   connection_to_session_id_.Set(connection, session_id);
 
-  proxy->ConnectToInspector(connection,
-                            inspected_frames_->GetDevToolsFrameToken(), this);
+  proxy->ConnectToInspector(connection, this);
   DCHECK(GetFrontend());
   AttachedSessionIds()->setBoolean(session_id, true);
   GetFrontend()->attachedToTarget(session_id,

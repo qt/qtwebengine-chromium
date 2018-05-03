@@ -7,6 +7,7 @@
 #include "fxjs/xfa/cjx_node.h"
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/fxcrt/cfx_memorystream.h"
@@ -65,20 +66,18 @@ const XFA_ExecEventParaInfo gs_eventParaInfos[] = {
 };
 
 const XFA_ExecEventParaInfo* GetEventParaInfoByName(
-    const WideStringView& wsEventName) {
+    WideStringView wsEventName) {
+  if (wsEventName.IsEmpty())
+    return nullptr;
+
   uint32_t uHash = FX_HashCode_GetW(wsEventName, false);
-  int32_t iStart = 0;
-  int32_t iEnd = (sizeof(gs_eventParaInfos) / sizeof(gs_eventParaInfos[0])) - 1;
-  do {
-    int32_t iMid = (iStart + iEnd) / 2;
-    const XFA_ExecEventParaInfo* eventParaInfo = &gs_eventParaInfos[iMid];
-    if (uHash == eventParaInfo->m_uHash)
-      return eventParaInfo;
-    if (uHash < eventParaInfo->m_uHash)
-      iEnd = iMid - 1;
-    else
-      iStart = iMid + 1;
-  } while (iStart <= iEnd);
+  auto* result = std::lower_bound(
+      std::begin(gs_eventParaInfos), std::end(gs_eventParaInfos), uHash,
+      [](const XFA_ExecEventParaInfo& iter, const uint16_t& hash) {
+        return iter.m_uHash < hash;
+      });
+  if (result != std::end(gs_eventParaInfos) && result->m_uHash == uHash)
+    return result;
   return nullptr;
 }
 
@@ -111,7 +110,7 @@ const CXFA_Node* CJX_Node::GetXFANode() const {
   return static_cast<const CXFA_Node*>(GetXFAObject());
 }
 
-CJS_Return CJX_Node::applyXSL(CJS_V8* runtime,
+CJS_Return CJX_Node::applyXSL(CFX_V8* runtime,
                               const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -121,7 +120,7 @@ CJS_Return CJX_Node::applyXSL(CJS_V8* runtime,
 }
 
 CJS_Return CJX_Node::assignNode(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.empty() || params.size() > 3)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -130,7 +129,7 @@ CJS_Return CJX_Node::assignNode(
   return CJS_Return(true);
 }
 
-CJS_Return CJX_Node::clone(CJS_V8* runtime,
+CJS_Return CJX_Node::clone(CFX_V8* runtime,
                            const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -144,7 +143,7 @@ CJS_Return CJX_Node::clone(CJS_V8* runtime,
 }
 
 CJS_Return CJX_Node::getAttribute(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -155,7 +154,7 @@ CJS_Return CJX_Node::getAttribute(
 }
 
 CJS_Return CJX_Node::getElement(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.empty() || params.size() > 2)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -176,7 +175,7 @@ CJS_Return CJX_Node::getElement(
 }
 
 CJS_Return CJX_Node::isPropertySpecified(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.empty() || params.size() > 3)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -199,7 +198,7 @@ CJS_Return CJX_Node::isPropertySpecified(
   return CJS_Return(runtime->NewBoolean(bHas));
 }
 
-CJS_Return CJX_Node::loadXML(CJS_V8* runtime,
+CJS_Return CJX_Node::loadXML(CFX_V8* runtime,
                              const std::vector<v8::Local<v8::Value>>& params) {
   if (params.empty() || params.size() > 3)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -248,20 +247,19 @@ CJS_Return CJX_Node::loadXML(CJS_V8* runtime,
   }
 
   if (bIgnoreRoot) {
-    CFX_XMLNode* pXMLChild = pXMLNode->GetNodeItem(CFX_XMLNode::FirstChild);
+    CFX_XMLNode* pXMLChild = pXMLNode->GetFirstChild();
     while (pXMLChild) {
-      CFX_XMLNode* pXMLSibling =
-          pXMLChild->GetNodeItem(CFX_XMLNode::NextSibling);
+      CFX_XMLNode* pXMLSibling = pXMLChild->GetNextSibling();
       pXMLNode->RemoveChildNode(pXMLChild);
-      pFakeXMLRoot->InsertChildNode(pXMLChild);
+      pFakeXMLRoot->AppendChild(pXMLChild);
       pXMLChild = pXMLSibling;
     }
   } else {
-    CFX_XMLNode* pXMLParent = pXMLNode->GetNodeItem(CFX_XMLNode::Parent);
+    CFX_XMLNode* pXMLParent = pXMLNode->GetParent();
     if (pXMLParent)
       pXMLParent->RemoveChildNode(pXMLNode);
 
-    pFakeXMLRoot->InsertChildNode(pXMLNode);
+    pFakeXMLRoot->AppendChild(pXMLNode);
   }
 
   pParser->ConstructXFANode(pFakeRoot, pFakeXMLRoot.get());
@@ -277,7 +275,7 @@ CJS_Return CJX_Node::loadXML(CJS_V8* runtime,
       CXFA_Node* pItem = pNewChild->GetNextSibling();
       pFakeRoot->RemoveChild(pNewChild, true);
       GetXFANode()->InsertChild(index++, pNewChild);
-      pNewChild->SetFlag(XFA_NodeFlag_Initialized, true);
+      pNewChild->SetFlagAndNotify(XFA_NodeFlag_Initialized);
       pNewChild = pItem;
     }
 
@@ -291,9 +289,9 @@ CJS_Return CJX_Node::loadXML(CJS_V8* runtime,
     if (GetXFANode()->GetPacketType() == XFA_PacketType::Form &&
         GetXFANode()->GetElementType() == XFA_Element::ExData) {
       CFX_XMLNode* pTempXMLNode = GetXFANode()->GetXMLMappingNode();
-      GetXFANode()->SetXMLMappingNode(pFakeXMLRoot.release());
-      GetXFANode()->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
-      if (pTempXMLNode && !pTempXMLNode->GetNodeItem(CFX_XMLNode::Parent))
+      GetXFANode()->SetXMLMappingNode(std::move(pFakeXMLRoot));
+
+      if (pTempXMLNode && !pTempXMLNode->GetParent())
         pFakeXMLRoot.reset(pTempXMLNode);
       else
         pFakeXMLRoot = nullptr;
@@ -305,28 +303,27 @@ CJS_Return CJX_Node::loadXML(CJS_V8* runtime,
       CXFA_Node* pItem = pChild->GetNextSibling();
       pFakeRoot->RemoveChild(pChild, true);
       GetXFANode()->InsertChild(pChild, nullptr);
-      pChild->SetFlag(XFA_NodeFlag_Initialized, true);
+      pChild->SetFlagAndNotify(XFA_NodeFlag_Initialized);
       pChild = pItem;
     }
   }
 
   if (pFakeXMLRoot) {
-    pFakeRoot->SetXMLMappingNode(pFakeXMLRoot.release());
-    pFakeRoot->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
+    pFakeRoot->SetXMLMappingNode(std::move(pFakeXMLRoot));
   }
-  pFakeRoot->SetFlag(XFA_NodeFlag_HasRemovedChildren, false);
+  pFakeRoot->SetFlag(XFA_NodeFlag_HasRemovedChildren);
 
   return CJS_Return(true);
 }
 
 CJS_Return CJX_Node::saveFilteredXML(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   // TODO(weili): Check whether we need to implement this, pdfium:501.
   return CJS_Return(true);
 }
 
-CJS_Return CJX_Node::saveXML(CJS_V8* runtime,
+CJS_Return CJX_Node::saveXML(CFX_V8* runtime,
                              const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() > 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -361,14 +358,14 @@ CJS_Return CJX_Node::saveXML(CJS_V8* runtime,
   if (GetXFANode()->GetPacketType() == XFA_PacketType::Form)
     XFA_DataExporter_RegenerateFormFile(GetXFANode(), pStream, nullptr, true);
   else
-    pElement->SaveXMLNode(pStream);
+    pElement->Save(pStream);
 
   return CJS_Return(runtime->NewString(
       ByteStringView(pMemoryStream->GetBuffer(), pMemoryStream->GetSize())));
 }
 
 CJS_Return CJX_Node::setAttribute(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 2)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -380,7 +377,7 @@ CJS_Return CJX_Node::setAttribute(
 }
 
 CJS_Return CJX_Node::setElement(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1 && params.size() != 2)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -503,25 +500,20 @@ int32_t CJX_Node::execSingleEventByName(const WideStringView& wsEventName,
       return pNotify->ExecEventByDeepFirst(
           GetXFANode(), eventParaInfo->m_eventType, false, false);
     case EventAppliesToo::kSignature: {
-      CXFA_WidgetAcc* pWidgetAcc = GetXFANode()->GetWidgetAcc();
-      if (!pWidgetAcc)
+      if (!GetXFANode()->IsWidgetReady())
         return XFA_EVENTERROR_NotExist;
-
-      CXFA_Node* pUINode = pWidgetAcc->GetUIChild();
-      if (pUINode->GetElementType() != XFA_Element::Signature)
+      if (GetXFANode()->GetUIChildNode()->GetElementType() !=
+          XFA_Element::Signature) {
         return XFA_EVENTERROR_NotExist;
-
+      }
       return pNotify->ExecEventByDeepFirst(
           GetXFANode(), eventParaInfo->m_eventType, false, false);
     }
     case EventAppliesToo::kChoiceList: {
-      CXFA_WidgetAcc* pWidgetAcc = GetXFANode()->GetWidgetAcc();
-      if (!pWidgetAcc)
+      if (!GetXFANode()->IsWidgetReady())
         return XFA_EVENTERROR_NotExist;
-
-      CXFA_Node* pUINode = pWidgetAcc->GetUIChild();
-      if (pUINode->GetElementType() != XFA_Element::ChoiceList ||
-          pWidgetAcc->IsListBox()) {
+      if (GetXFANode()->GetUIChildNode()->GetElementType() !=
+          XFA_Element::ChoiceList) {
         return XFA_EVENTERROR_NotExist;
       }
       return pNotify->ExecEventByDeepFirst(

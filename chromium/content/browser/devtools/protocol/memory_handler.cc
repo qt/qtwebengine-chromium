@@ -5,6 +5,7 @@
 #include "content/browser/devtools/protocol/memory_handler.h"
 
 #include "base/memory/memory_pressure_listener.h"
+#include "base/sampling_heap_profiler/sampling_heap_profiler.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/common/content_features.h"
 
@@ -19,6 +20,29 @@ MemoryHandler::~MemoryHandler() {}
 
 void MemoryHandler::Wire(UberDispatcher* dispatcher) {
   Memory::Dispatcher::wire(dispatcher, this);
+}
+
+Response MemoryHandler::GetBrowserSamplingProfile(
+    std::unique_ptr<Memory::SamplingProfile>* out_profile) {
+  std::unique_ptr<Array<Memory::SamplingProfileNode>> samples =
+      Array<Memory::SamplingProfileNode>::create();
+  std::vector<base::SamplingHeapProfiler::Sample> raw_samples =
+      base::SamplingHeapProfiler::GetInstance()->GetSamples(0);
+
+  for (auto& sample : raw_samples) {
+    std::unique_ptr<Array<String>> stack = Array<String>::create();
+    for (auto* frame : sample.stack)
+      stack->addItem(base::StringPrintf("%p", frame));
+    samples->addItem(Memory::SamplingProfileNode::Create()
+                         .SetSize(sample.size)
+                         .SetTotal(sample.total)
+                         .SetStack(std::move(stack))
+                         .Build());
+  }
+
+  *out_profile =
+      Memory::SamplingProfile::Create().SetSamples(std::move(samples)).Build();
+  return Response::OK();
 }
 
 Response MemoryHandler::SetPressureNotificationsSuppressed(

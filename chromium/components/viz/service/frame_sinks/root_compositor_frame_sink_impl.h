@@ -11,8 +11,6 @@
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/service/display/display_client.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
-#include "components/viz/service/hit_test/hit_test_aggregator.h"
-#include "components/viz/service/hit_test/hit_test_aggregator_delegate.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "services/viz/privileged/interfaces/compositing/display_private.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
@@ -28,8 +26,7 @@ class SyntheticBeginFrameSource;
 // for the mojom::CompositorFrameSink interface and owns the Display.
 class RootCompositorFrameSinkImpl : public mojom::CompositorFrameSink,
                                     public mojom::DisplayPrivate,
-                                    public DisplayClient,
-                                    public HitTestAggregatorDelegate {
+                                    public DisplayClient {
  public:
   RootCompositorFrameSinkImpl(
       FrameSinkManagerImpl* frame_sink_manager,
@@ -54,6 +51,8 @@ class RootCompositorFrameSinkImpl : public mojom::CompositorFrameSink,
                             const gfx::ColorSpace& device_color_space) override;
   void SetOutputIsSecure(bool secure) override;
   void SetAuthoritativeVSyncInterval(base::TimeDelta interval) override;
+  void SetDisplayVSyncParameters(base::TimeTicks timebase,
+                                 base::TimeDelta interval) override;
 
   // mojom::CompositorFrameSink:
   void SetNeedsBeginFrame(bool needs_begin_frame) override;
@@ -63,15 +62,9 @@ class RootCompositorFrameSinkImpl : public mojom::CompositorFrameSink,
                              mojom::HitTestRegionListPtr hit_test_region_list,
                              uint64_t submit_time) override;
   void DidNotProduceFrame(const BeginFrameAck& begin_frame_ack) override;
-
-  // HitTestAggregatorDelegate:
-  void OnAggregatedHitTestRegionListUpdated(
-      mojo::ScopedSharedBufferHandle active_handle,
-      uint32_t active_handle_size,
-      mojo::ScopedSharedBufferHandle idle_handle,
-      uint32_t idle_handle_size) override;
-  void SwitchActiveAggregatedHitTestRegionList(
-      uint8_t active_handle_index) override;
+  void DidAllocateSharedBitmap(mojo::ScopedSharedBufferHandle buffer,
+                               const SharedBitmapId& id) override;
+  void DidDeleteSharedBitmap(const SharedBitmapId& id) override;
 
  private:
   // DisplayClient:
@@ -104,8 +97,6 @@ class RootCompositorFrameSinkImpl : public mojom::CompositorFrameSink,
   std::unique_ptr<ExternalBeginFrameControllerImpl>
       external_begin_frame_controller_;
   std::unique_ptr<Display> display_;
-
-  HitTestAggregator hit_test_aggregator_;
 
   DISALLOW_COPY_AND_ASSIGN(RootCompositorFrameSinkImpl);
 };

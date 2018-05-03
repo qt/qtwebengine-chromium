@@ -120,6 +120,7 @@ class CORE_EXPORT WebViewImpl final
   void BeginFrame(double last_frame_time_monotonic) override;
 
   void UpdateLifecycle(LifecycleUpdate requested_update) override;
+  void UpdateAllLifecyclePhasesAndCompositeForTesting() override;
   void Paint(WebCanvas*, const WebRect&) override;
 #if defined(OS_ANDROID)
   void PaintIgnoringCompositing(WebCanvas*, const WebRect&) override;
@@ -241,7 +242,7 @@ class CORE_EXPORT WebViewImpl final
 
   // WebViewScheduler::WebViewSchedulerDelegate implementation:
   void RequestBeginMainFrameNotExpected(bool new_state) override;
-  void SetPageStopped(bool stopped) override;
+  void SetPageFrozen(bool frozen) override;
 
   void DidUpdateFullscreenSize();
 
@@ -471,8 +472,6 @@ class CORE_EXPORT WebViewImpl final
   }
 
  private:
-  WebInputEventResult HandleInputEventInternal(
-      const WebCoalescedInputEvent&) override;
   void SetPageScaleFactorAndLocation(float, const FloatPoint&);
   void PropagateZoomFactorToLocalFrameRoots(Frame*, float);
 
@@ -495,7 +494,6 @@ class CORE_EXPORT WebViewImpl final
 
   // TODO(lfg): Remove once WebViewFrameWidget is deleted.
   void ScheduleAnimationForWidget();
-  bool GetCompositionCharacterBounds(WebVector<WebRect>&) override;
 
   void UpdateBaseBackgroundColor();
 
@@ -520,7 +518,6 @@ class CORE_EXPORT WebViewImpl final
   void UpdateLayerTreeViewport();
   void UpdateLayerTreeBackgroundColor();
   void UpdateDeviceEmulationTransform();
-  void UpdateLayerTreeDeviceScaleFactor();
 
   // Helper function: Widens the width of |source| by the specified margins
   // while keeping it smaller than page width.
@@ -678,7 +675,7 @@ class CORE_EXPORT WebViewImpl final
 
   WebPageImportanceSignals page_importance_signals_;
 
-  const std::unique_ptr<WebViewScheduler> scheduler_;
+  std::unique_ptr<WebViewScheduler> scheduler_;
 
   // TODO(lfg): This is used in order to disable compositor visibility while
   // the page is still visible. This is needed until the WebView and WebWidget

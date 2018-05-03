@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//extensions/features/features.gni")
 
 assert(enable_extensions)
@@ -35,7 +36,7 @@ source_set("browser_context_keyed_service_factories") {
   ]
 }
 
-source_set("browser_sources") {
+jumbo_source_set("browser_sources") {
   visibility = [ "./*" ]
 
   sources = [
@@ -78,6 +79,9 @@ source_set("browser_sources") {
     "content_hash_tree.h",
     "content_verifier.cc",
     "content_verifier.h",
+    "content_verifier/content_hash.cc",
+    "content_verifier/content_hash.h",
+    "content_verifier/content_verifier_key.h",
     "content_verifier_delegate.h",
     "content_verifier_io_data.cc",
     "content_verifier_io_data.h",
@@ -111,6 +115,10 @@ source_set("browser_sources") {
     "events/lazy_event_dispatcher.h",
     "extension_api_frame_id_map.cc",
     "extension_api_frame_id_map.h",
+    "extension_creator.cc",
+    "extension_creator.h",
+    "extension_creator_filter.cc",
+    "extension_creator_filter.h",
     "extension_dialog_auto_confirm.cc",
     "extension_dialog_auto_confirm.h",
     "extension_error.cc",
@@ -161,7 +169,6 @@ source_set("browser_sources") {
     "extension_registry_observer.h",
     "extension_request_limiting_throttle.cc",
     "extension_request_limiting_throttle.h",
-    "extension_scoped_prefs.h",
     "extension_service_worker_message_filter.cc",
     "extension_service_worker_message_filter.h",
     "extension_system.cc",
@@ -249,11 +256,15 @@ source_set("browser_sources") {
     "image_loader.h",
     "image_loader_factory.cc",
     "image_loader_factory.h",
+    "image_sanitizer.cc",
+    "image_sanitizer.h",
     "info_map.cc",
     "info_map.h",
     "install_flag.h",
     "io_thread_extension_message_filter.cc",
     "io_thread_extension_message_filter.h",
+    "json_file_sanitizer.cc",
+    "json_file_sanitizer.h",
     "lazy_background_task_queue.cc",
     "lazy_background_task_queue.h",
     "lazy_background_task_queue_factory.cc",
@@ -338,6 +349,8 @@ source_set("browser_sources") {
     "warning_set.h",
     "web_ui_user_script_loader.cc",
     "web_ui_user_script_loader.h",
+    "zipfile_installer.cc",
+    "zipfile_installer.h",
   ]
 
   deps = [
@@ -345,6 +358,7 @@ source_set("browser_sources") {
     "//components/cast_certificate",
     "//components/cast_channel",
     "//components/crx_file",
+    "//components/crx_file:crx_creator",
     "//components/guest_view/browser",
     "//components/keyed_service/content",
     "//components/keyed_service/core",
@@ -370,7 +384,7 @@ source_set("browser_sources") {
     "//extensions/strings",
     "//google_apis",
     "//ppapi/features",
-    "//services/device/public/interfaces",
+    "//services/device/public/mojom",
     "//services/preferences/public/cpp",
     "//services/service_manager/public/cpp",
     "//ui/display",
@@ -447,7 +461,7 @@ source_set("browser_tests") {
     "//extensions/shell:browser_tests",
     "//net:test_support",
     "//services/device/public/cpp/hid",
-    "//services/device/public/interfaces",
+    "//services/device/public/mojom",
     "//services/service_manager/public/cpp",
   ]
 
@@ -468,11 +482,15 @@ source_set("browser_tests") {
   }
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
   sources = [
     "preload_check_test_util.cc",
     "preload_check_test_util.h",
+    "value_store/test_value_store_factory.cc",
+    "value_store/test_value_store_factory.h",
+    "value_store/testing_value_store.cc",
+    "value_store/testing_value_store.h",
   ]
 
   deps = [
@@ -532,6 +550,7 @@ source_set("unit_tests") {
     "event_listener_map_unittest.cc",
     "event_router_unittest.cc",
     "extension_api_frame_id_map_unittest.cc",
+    "extension_creator_filter_unittest.cc",
     "extension_icon_image_unittest.cc",
     "extension_pref_value_map_unittest.cc",
     "extension_registrar_unittest.cc",
@@ -543,7 +562,9 @@ source_set("unit_tests") {
     "file_highlighter_unittest.cc",
     "file_reader_unittest.cc",
     "image_loader_unittest.cc",
+    "image_sanitizer_unittest.cc",
     "info_map_unittest.cc",
+    "json_file_sanitizer_unittest.cc",
     "lazy_background_task_queue_unittest.cc",
     "load_monitoring_extension_host_queue_unittest.cc",
     "management_policy_unittest.cc",
@@ -598,10 +619,11 @@ source_set("unit_tests") {
     "//extensions/common",
     "//extensions/common/api",
     "//extensions/features",
+    "//extensions/strings",
     "//ipc:test_support",
     "//net:test_support",
     "//services/data_decoder/public/cpp:test_support",
-    "//services/device/public/interfaces",
+    "//services/device/public/mojom",
     "//storage/browser:test_support",
     "//third_party/leveldatabase",
     "//third_party/zlib/google:zip",

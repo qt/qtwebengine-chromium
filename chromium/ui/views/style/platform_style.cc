@@ -33,6 +33,12 @@ const SkColor kStyleButtonShadowColor = SK_ColorWHITE;
 
 }  // namespace
 
+#if defined(OS_WIN) || defined(OS_CHROMEOS)
+const bool PlatformStyle::kIsOkButtonLeading = true;
+#else
+const bool PlatformStyle::kIsOkButtonLeading = false;
+#endif
+
 #if !defined(OS_MACOSX)
 
 const int PlatformStyle::kMinLabelButtonWidth = 70;
@@ -48,6 +54,7 @@ const bool PlatformStyle::kReturnClicksFocusedControl = true;
 const bool PlatformStyle::kTreeViewSelectionPaintsEntireRow = false;
 const bool PlatformStyle::kUseRipples = true;
 const bool PlatformStyle::kTextfieldScrollsToStartOnFocusChange = false;
+const bool PlatformStyle::kTextfieldUsesDragCursorWhenDraggable = true;
 
 // static
 std::unique_ptr<ScrollBar> PlatformStyle::CreateScrollBar(bool is_horizontal) {

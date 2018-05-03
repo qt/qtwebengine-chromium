@@ -35,8 +35,11 @@
 #include "core/css/properties/CSSProperty.h"
 #include "core/css/properties/Longhand.h"
 #include "core/css/resolver/StyleResolver.h"
+#include "core/dom/Document.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/TextAutosizer.h"
+#include "core/layout/custom/LayoutWorklet.h"
 #include "core/style/AppliedTextDecoration.h"
 #include "core/style/BorderEdge.h"
 #include "core/style/ComputedStyleConstants.h"
@@ -191,6 +194,17 @@ StyleRecalcChange ComputedStyle::StylePropagationDiff(
       old_style->HasTextCombine() != new_style->HasTextCombine())
     return kReattach;
 
+  // We need to perform a reattach if a "display: layout(foo)" has changed to a
+  // "display: layout(bar)". This is because one custom layout could be
+  // registered and the other may not, affecting the box-tree construction.
+  if (old_style->DisplayLayoutCustomName() !=
+      new_style->DisplayLayoutCustomName()) {
+    return kReattach;
+  }
+
+  if (old_style->ForceLegacyLayout() != new_style->ForceLegacyLayout())
+    return kReattach;
+
   bool independent_equal = old_style->IndependentInheritedEqual(*new_style);
   bool non_independent_equal =
       old_style->NonIndependentInheritedEqual(*new_style);
@@ -221,7 +235,8 @@ void ComputedStyle::PropagateIndependentInheritedProperties(
 StyleSelfAlignmentData ResolvedSelfAlignment(
     const StyleSelfAlignmentData& value,
     ItemPosition normal_value_behavior) {
-  if (value.GetPosition() == ItemPosition::kNormal ||
+  if (value.GetPosition() == ItemPosition::kLegacy ||
+      value.GetPosition() == ItemPosition::kNormal ||
       value.GetPosition() == ItemPosition::kAuto)
     return {normal_value_behavior, OverflowAlignment::kDefault};
   return value;
@@ -493,6 +508,7 @@ static bool DependenceOnContentHeightHasChanged(const ComputedStyle& a,
 }
 
 StyleDifference ComputedStyle::VisualInvalidationDiff(
+    const Document& document,
     const ComputedStyle& other) const {
   // Note, we use .Get() on each DataRef below because DataRef::operator== will
   // do a deep compare, which is duplicate work when we're going to compare each
@@ -508,7 +524,7 @@ StyleDifference ComputedStyle::VisualInvalidationDiff(
     diff.SetNeedsPaintInvalidationObject();
   }
 
-  if (!diff.NeedsFullLayout() && DiffNeedsFullLayout(other))
+  if (!diff.NeedsFullLayout() && DiffNeedsFullLayout(document, other))
     diff.SetNeedsFullLayout();
 
   if (!diff.NeedsFullLayout() && !MarginEqual(other)) {
@@ -623,8 +639,71 @@ bool ComputedStyle::DiffNeedsFullLayoutAndPaintInvalidation(
   return false;
 }
 
-bool ComputedStyle::DiffNeedsFullLayout(const ComputedStyle& other) const {
-  return ComputedStyleBase::DiffNeedsFullLayout(*this, other);
+bool ComputedStyle::DiffNeedsFullLayout(const Document& document,
+                                        const ComputedStyle& other) const {
+  if (ComputedStyleBase::DiffNeedsFullLayout(*this, other))
+    return true;
+
+  if (IsDisplayLayoutCustomBox()) {
+    if (DiffNeedsFullLayoutForLayoutCustom(document, other))
+      return true;
+  }
+
+  if (DisplayLayoutCustomParentName()) {
+    if (DiffNeedsFullLayoutForLayoutCustomChild(document, other))
+      return true;
+  }
+
+  return false;
+}
+
+bool ComputedStyle::DiffNeedsFullLayoutForLayoutCustom(
+    const Document& document,
+    const ComputedStyle& other) const {
+  DCHECK(IsDisplayLayoutCustomBox());
+
+  LayoutWorklet* worklet = LayoutWorklet::From(*document.domWindow());
+  const AtomicString& name = DisplayLayoutCustomName();
+
+  if (!worklet->GetDocumentDefinitionMap()->Contains(name))
+    return false;
+
+  const DocumentLayoutDefinition* definition =
+      worklet->GetDocumentDefinitionMap()->at(name);
+  if (definition == kInvalidDocumentLayoutDefinition)
+    return false;
+
+  if (!PropertiesEqual(definition->NativeInvalidationProperties(), other))
+    return true;
+
+  if (!CustomPropertiesEqual(definition->CustomInvalidationProperties(), other))
+    return true;
+
+  return false;
+}
+
+bool ComputedStyle::DiffNeedsFullLayoutForLayoutCustomChild(
+    const Document& document,
+    const ComputedStyle& other) const {
+  LayoutWorklet* worklet = LayoutWorklet::From(*document.domWindow());
+  const AtomicString& name = DisplayLayoutCustomParentName();
+
+  if (!worklet->GetDocumentDefinitionMap()->Contains(name))
+    return false;
+
+  const DocumentLayoutDefinition* definition =
+      worklet->GetDocumentDefinitionMap()->at(name);
+  if (definition == kInvalidDocumentLayoutDefinition)
+    return false;
+
+  if (!PropertiesEqual(definition->ChildNativeInvalidationProperties(), other))
+    return true;
+
+  if (!CustomPropertiesEqual(definition->ChildCustomInvalidationProperties(),
+                             other))
+    return true;
+
+  return false;
 }
 
 bool ComputedStyle::DiffNeedsPaintInvalidationSubtree(
@@ -664,27 +743,45 @@ bool ComputedStyle::DiffNeedsPaintInvalidationObjectForPaintImage(
       !value->CustomInvalidationProperties())
     return true;
 
-  for (CSSPropertyID property_id : *value->NativeInvalidationProperties()) {
+  if (!PropertiesEqual(*value->NativeInvalidationProperties(), other))
+    return true;
+
+  if (!CustomPropertiesEqual(*value->CustomInvalidationProperties(), other))
+    return true;
+
+  return false;
+}
+
+bool ComputedStyle::PropertiesEqual(const Vector<CSSPropertyID>& properties,
+                                    const ComputedStyle& other) const {
+  for (CSSPropertyID property_id : properties) {
     // TODO(ikilpatrick): remove IsInterpolableProperty check once
     // CSSPropertyEquality::PropertiesEqual correctly handles all properties.
     const CSSProperty& property = CSSProperty::Get(property_id);
     if (!property.IsInterpolable() ||
         !CSSPropertyEquality::PropertiesEqual(PropertyHandle(property), *this,
                                               other))
-      return true;
+      return false;
   }
 
-  if (InheritedVariables() || NonInheritedVariables() ||
-      other.InheritedVariables() || other.NonInheritedVariables()) {
-    for (const AtomicString& property_name :
-         *value->CustomInvalidationProperties()) {
-      if (!DataEquivalent(GetVariable(property_name),
-                          other.GetVariable(property_name)))
-        return true;
-    }
+  return true;
+}
+
+bool ComputedStyle::CustomPropertiesEqual(
+    const Vector<AtomicString>& properties,
+    const ComputedStyle& other) const {
+  // Short-circuit if neither of the styles have custom properties.
+  if (!InheritedVariables() && !NonInheritedVariables() &&
+      !other.InheritedVariables() && !other.NonInheritedVariables())
+    return true;
+
+  for (const AtomicString& property_name : properties) {
+    if (!DataEquivalent(GetVariable(property_name),
+                        other.GetVariable(property_name)))
+      return false;
   }
 
-  return false;
+  return true;
 }
 
 // This doesn't include conditions needing layout or overflow recomputation
@@ -730,6 +827,17 @@ void ComputedStyle::UpdatePropertySpecificDifferences(
   if (has_clip != other_has_clip ||
       (has_clip && Clip() != other.Clip()))
     diff.SetCSSClipChanged();
+
+  if (HasCurrentTransformAnimation() != other.HasCurrentTransformAnimation() ||
+      HasCurrentOpacityAnimation() != other.HasCurrentOpacityAnimation() ||
+      HasCurrentFilterAnimation() != other.HasCurrentFilterAnimation() ||
+      HasCurrentBackdropFilterAnimation() !=
+          other.HasCurrentBackdropFilterAnimation() ||
+      HasInlineTransform() != other.HasInlineTransform() ||
+      BackfaceVisibility() != other.BackfaceVisibility() ||
+      HasWillChangeCompositingHint() != other.HasWillChangeCompositingHint()) {
+    diff.SetCompositingReasonsChanged();
+  }
 }
 
 void ComputedStyle::AddPaintImage(StyleImage* image) {
@@ -1053,26 +1161,6 @@ bool ComputedStyle::TextShadowDataEquivalent(const ComputedStyle& other) const {
   return DataEquivalent(TextShadow(), other.TextShadow());
 }
 
-static FloatRoundedRect::Radii CalcRadiiFor(const LengthSize& top_left,
-                                            const LengthSize& top_right,
-                                            const LengthSize& bottom_left,
-                                            const LengthSize& bottom_right,
-                                            LayoutSize size) {
-  return FloatRoundedRect::Radii(
-      FloatSize(
-          FloatValueForLength(top_left.Width(), size.Width().ToFloat()),
-          FloatValueForLength(top_left.Height(), size.Height().ToFloat())),
-      FloatSize(
-          FloatValueForLength(top_right.Width(), size.Width().ToFloat()),
-          FloatValueForLength(top_right.Height(), size.Height().ToFloat())),
-      FloatSize(
-          FloatValueForLength(bottom_left.Width(), size.Width().ToFloat()),
-          FloatValueForLength(bottom_left.Height(), size.Height().ToFloat())),
-      FloatSize(
-          FloatValueForLength(bottom_right.Width(), size.Width().ToFloat()),
-          FloatValueForLength(bottom_right.Height(), size.Height().ToFloat())));
-}
-
 StyleImage* ComputedStyle::ListStyleImage() const {
   return ListStyleImageInternal();
 }
@@ -1087,6 +1175,17 @@ void ComputedStyle::SetColor(const Color& v) {
   SetColorInternal(v);
 }
 
+static FloatRoundedRect::Radii CalcRadiiFor(const LengthSize& top_left,
+                                            const LengthSize& top_right,
+                                            const LengthSize& bottom_left,
+                                            const LengthSize& bottom_right,
+                                            FloatSize size) {
+  return FloatRoundedRect::Radii(FloatSizeForLengthSize(top_left, size),
+                                 FloatSizeForLengthSize(top_right, size),
+                                 FloatSizeForLengthSize(bottom_left, size),
+                                 FloatSizeForLengthSize(bottom_right, size));
+}
+
 FloatRoundedRect ComputedStyle::GetRoundedBorderFor(
     const LayoutRect& border_rect,
     bool include_logical_left_edge,
@@ -1095,7 +1194,7 @@ FloatRoundedRect ComputedStyle::GetRoundedBorderFor(
   if (HasBorderRadius()) {
     FloatRoundedRect::Radii radii = CalcRadiiFor(
         BorderTopLeftRadius(), BorderTopRightRadius(), BorderBottomLeftRadius(),
-        BorderBottomRightRadius(), border_rect.Size());
+        BorderBottomRightRadius(), FloatSize(border_rect.Size()));
     rounded_rect.IncludeLogicalEdges(radii, IsHorizontalWritingMode(),
                                      include_logical_left_edge,
                                      include_logical_right_edge);
@@ -1384,12 +1483,14 @@ LineLogicalSide ComputedStyle::GetTextEmphasisLineLogicalSide() const {
 }
 
 CSSAnimationData& ComputedStyle::AccessAnimations() {
+  DCHECK(!AnimationPropertiesLocked());
   if (!AnimationsInternal())
     SetAnimationsInternal(CSSAnimationData::Create());
   return *AnimationsInternal();
 }
 
 CSSTransitionData& ComputedStyle::AccessTransitions() {
+  DCHECK(!AnimationPropertiesLocked());
   if (!TransitionsInternal())
     SetTransitionsInternal(CSSTransitionData::Create());
   return *TransitionsInternal();
@@ -1786,7 +1887,7 @@ void ComputedStyle::RestoreParentTextDecorations(
 }
 
 void ComputedStyle::ClearMultiCol() {
-  SetColumnGapInternal(ComputedStyleInitialValues::InitialColumnGap());
+  SetColumnGap(ComputedStyleInitialValues::InitialColumnGap());
   SetColumnWidthInternal(ComputedStyleInitialValues::InitialColumnWidth());
   SetColumnRuleStyle(ComputedStyleInitialValues::InitialColumnRuleStyle());
   SetColumnRuleWidthInternal(
@@ -1803,8 +1904,6 @@ void ComputedStyle::ClearMultiCol() {
   SetHasAutoColumnWidthInternal(
       ComputedStyleInitialValues::InitialHasAutoColumnWidth());
   ResetColumnFill();
-  SetHasNormalColumnGapInternal(
-      ComputedStyleInitialValues::InitialHasNormalColumnGap());
   ResetColumnSpan();
 }
 
@@ -1971,6 +2070,22 @@ bool ComputedStyle::BorderObscuresBackground() const {
   }
 
   return true;
+}
+
+LayoutRectOutsets ComputedStyle::BoxDecorationOutsets() const {
+  DCHECK(HasVisualOverflowingEffect());
+  LayoutRectOutsets outsets;
+
+  if (const ShadowList* box_shadow = BoxShadow())
+    outsets = LayoutRectOutsets(box_shadow->RectOutsetsIncludingOriginal());
+
+  if (HasBorderImageOutsets())
+    outsets.Unite(BorderImageOutsets());
+
+  if (HasMaskBoxImageOutsets())
+    outsets.Unite(MaskBoxImageOutsets());
+
+  return outsets;
 }
 
 void ComputedStyle::GetBorderEdgeInfo(BorderEdge edges[],

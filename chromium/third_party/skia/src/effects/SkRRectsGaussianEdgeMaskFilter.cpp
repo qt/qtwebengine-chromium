@@ -5,9 +5,10 @@
  * found in the LICENSE file.
  */
 
+#include "SkMaskFilterBase.h"
 #include "SkRRectsGaussianEdgeMaskFilter.h"
 #include "SkReadBuffer.h"
-#include "SkRRect.h"
+#include "SkRRectPriv.h"
 #include "SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
@@ -19,7 +20,7 @@
   * The round rects must have the same radii at each corner and the x&y radii
   * must also be equal.
   */
-class SkRRectsGaussianEdgeMaskFilterImpl : public SkMaskFilter {
+class SkRRectsGaussianEdgeMaskFilterImpl : public SkMaskFilterBase {
 public:
     SkRRectsGaussianEdgeMaskFilterImpl(const SkRRect& first, const SkRRect& second,
                                        SkScalar radius)
@@ -32,15 +33,16 @@ public:
     bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
                     SkIPoint* margin) const override;
 
-#if SK_SUPPORT_GPU
-    bool asFragmentProcessor(GrFragmentProcessor**) const override;
-#endif
-
     SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkRRectsGaussianEdgeMaskFilterImpl)
 
 protected:
     void flatten(SkWriteBuffer&) const override;
+
+#if SK_SUPPORT_GPU
+    std::unique_ptr<GrFragmentProcessor> onAsFragmentProcessor(const GrFPArgs& args) const override;
+    bool onHasFragmentProcessor() const override { return true; }
+#endif
 
 private:
     SkRRect  fFirst;
@@ -64,7 +66,7 @@ static SkScalar compute_rrect_normalized_dist(const SkRRect& rr, const SkPoint& 
     SkScalar halfH = 0.5f * rr.rect().height();
     SkScalar invRad = 1.0f/rad;
 
-    const SkVector& radii = rr.getSimpleRadii();
+    const SkVector& radii = SkRRectPriv::GetSimpleRadii(rr);
     SkASSERT(SkScalarNearlyEqual(radii.fX, radii.fY));
 
     switch (rr.getType()) {
@@ -426,8 +428,10 @@ private:
                 // This is a bit of overkill since fX should equal fY for both round rects but it
                 // makes the shader code simpler.
                 pdman.set4f(fRadiiUni,
-                            first.getSimpleRadii().fX,  first.getSimpleRadii().fY,
-                            second.getSimpleRadii().fX, second.getSimpleRadii().fY);
+                            SkRRectPriv::GetSimpleRadii(first).fX,
+                            SkRRectPriv::GetSimpleRadii(first).fY,
+                            SkRRectPriv::GetSimpleRadii(second).fX,
+                            SkRRectPriv::GetSimpleRadii(second).fY);
             }
 
             pdman.set1f(fRadiusUni, edgeFP.radius());
@@ -478,12 +482,12 @@ private:
     }
 
     static Mode ComputeMode(const SkRRect& rr) {
-        if (rr.isCircle()) {
+        if (SkRRectPriv::IsCircle(rr)) {
             return kCircle_Mode;
         } else if (rr.isRect()) {
             return kRect_Mode;
         } else {
-            SkASSERT(rr.isSimpleCircular());
+            SkASSERT(SkRRectPriv::IsSimpleCircular(rr));
             return kSimpleCircular_Mode;
         }
     }
@@ -509,12 +513,10 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////
-bool SkRRectsGaussianEdgeMaskFilterImpl::asFragmentProcessor(GrFragmentProcessor** fp) const {
-    if (fp) {
-        *fp = RRectsGaussianEdgeFP::Make(fFirst, fSecond, fRadius).release();
-    }
 
-    return true;
+std::unique_ptr<GrFragmentProcessor>
+SkRRectsGaussianEdgeMaskFilterImpl::onAsFragmentProcessor(const GrFPArgs& args) const {
+    return RRectsGaussianEdgeFP::Make(fFirst, fSecond, fRadius);
 }
 
 #endif
@@ -548,15 +550,15 @@ sk_sp<SkFlattenable> SkRRectsGaussianEdgeMaskFilterImpl::CreateProc(SkReadBuffer
 void SkRRectsGaussianEdgeMaskFilterImpl::flatten(SkWriteBuffer& buf) const {
     INHERITED::flatten(buf);
 
-    SkASSERT(fFirst.isRect() || fFirst.isCircle() || fFirst.isSimpleCircular());
+    SkASSERT(SkRRectPriv::EqualRadii(fFirst));
     buf.writeRect(fFirst.rect());
-    const SkVector& radii1 = fFirst.getSimpleRadii();
+    const SkVector radii1 = SkRRectPriv::GetSimpleRadii(fFirst);
     buf.writeScalar(radii1.fX);
     buf.writeScalar(radii1.fY);
 
-    SkASSERT(fSecond.isRect() || fSecond.isCircle() || fSecond.isSimpleCircular());
+    SkASSERT(SkRRectPriv::EqualRadii(fSecond));
     buf.writeRect(fSecond.rect());
-    const SkVector& radii2 = fSecond.getSimpleRadii();
+    const SkVector radii2 = SkRRectPriv::GetSimpleRadii(fSecond);
     buf.writeScalar(radii2.fX);
     buf.writeScalar(radii2.fY);
 
@@ -568,8 +570,7 @@ void SkRRectsGaussianEdgeMaskFilterImpl::flatten(SkWriteBuffer& buf) const {
 sk_sp<SkMaskFilter> SkRRectsGaussianEdgeMaskFilter::Make(const SkRRect& first,
                                                          const SkRRect& second,
                                                          SkScalar radius) {
-    if ((!first.isRect()  && !first.isCircle()  && !first.isSimpleCircular()) ||
-        (!second.isRect() && !second.isCircle() && !second.isSimpleCircular())) {
+    if (!SkRRectPriv::EqualRadii(first) || !SkRRectPriv::EqualRadii(second)) {
         // we only deal with the shapes where the x & y radii are equal
         // and the same for all four corners
         return nullptr;

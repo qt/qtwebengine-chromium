@@ -24,6 +24,14 @@ const int64_t kMinBufferPreload = 2 << 20;  // 2 Mb
 // Maxmimum preload buffer.
 const int64_t kMaxBufferPreload = 50 << 20;  // 50 Mb
 
+// If preload_ == METADATA, preloading size will be
+// shifted down this many bits. This shift turns
+// one Mb into one 32k block.
+// This seems to be the smallest amount of preload we can do without
+// ending up repeatedly closing and re-opening the connection
+// due to read calls after OnBufferingHaveEnough have been called.
+const int64_t kMetadataShift = 6;
+
 // Preload this much extra, then stop preloading until we fall below the
 // kTargetSecondsBufferedAhead.
 const int64_t kPreloadHighExtra = 1 << 20;  // 1 Mb
@@ -168,6 +176,7 @@ void MultibufferDataSource::CreateResourceLoader(int64_t first_byte_position,
   SetReader(new MultiBufferReader(
       url_data_->multibuffer(), first_byte_position, last_byte_position,
       base::Bind(&MultibufferDataSource::ProgressCallback, weak_ptr_)));
+  reader_->SetIsClientAudioElement(is_client_audio_element_);
   UpdateBufferSizes();
 }
 
@@ -191,7 +200,6 @@ void MultibufferDataSource::Initialize(const InitializeCB& init_cb) {
   init_cb_ = init_cb;
 
   CreateResourceLoader(0, kPositionNotSpecified);
-  reader_->SetIsClientAudioElement(is_client_audio_element_);
 
   // We're not allowed to call Wait() if data is already available.
   if (reader_->Available()) {
@@ -278,12 +286,20 @@ bool MultibufferDataSource::HasSingleOrigin() {
 bool MultibufferDataSource::DidPassCORSAccessCheck() const {
   if (url_data_->cors_mode() == UrlData::CORS_UNSPECIFIED)
     return false;
-  // If init_cb is set, we initialization is not finished yet.
+
+  // If init_cb is set, we know initialization is not finished yet.
   if (!init_cb_.is_null())
     return false;
   if (failed_)
     return false;
   return true;
+}
+
+bool MultibufferDataSource::DidGetOpaqueResponseViaServiceWorker() const {
+  return url_data_->has_opaque_data();
+
+  // TODO(falken): Do we need to do something about |init_cb_| like
+  // in DidPassCORSAccessCheck()?
 }
 
 void MultibufferDataSource::MediaPlaybackRateChanged(double playback_rate) {
@@ -744,10 +760,10 @@ void MultibufferDataSource::UpdateBufferSizes() {
   reader_->SetPinRange(pin_backward, pin_forward);
 
   if (preload_ == METADATA) {
-    reader_->SetPreload(0, 0);
-  } else {
-    reader_->SetPreload(preload_high, preload);
+    preload_high >>= kMetadataShift;
+    preload >>= kMetadataShift;
   }
+  reader_->SetPreload(preload_high, preload);
 }
 
 }  // namespace media

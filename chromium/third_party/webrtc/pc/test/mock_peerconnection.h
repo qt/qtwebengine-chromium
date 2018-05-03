@@ -60,7 +60,7 @@ class MockPeerConnection
   MOCK_CONST_METHOD0(GetReceivers,
                      std::vector<rtc::scoped_refptr<RtpReceiverInterface>>());
   MOCK_CONST_METHOD0(sctp_data_channels,
-                     const std::vector<rtc::scoped_refptr<DataChannel>>&());
+                     std::vector<rtc::scoped_refptr<DataChannel>>());
   MOCK_CONST_METHOD0(voice_channel, cricket::VoiceChannel*());
   MOCK_CONST_METHOD0(video_channel, cricket::VideoChannel*());
   // Libjingle uses "local" for a outgoing track, and "remote" for a incoming
@@ -68,8 +68,6 @@ class MockPeerConnection
   MOCK_METHOD2(GetLocalTrackIdBySsrc, bool(uint32_t, std::string*));
   MOCK_METHOD2(GetRemoteTrackIdBySsrc, bool(uint32_t, std::string*));
   MOCK_METHOD0(GetCallStats, Call::Stats());
-  MOCK_METHOD1(GetSessionStats,
-               std::unique_ptr<SessionStats>(const ChannelNamePairs&));
   MOCK_METHOD2(GetLocalCertificate,
                bool(const std::string& transport_name,
                     rtc::scoped_refptr<rtc::RTCCertificate>* certificate));

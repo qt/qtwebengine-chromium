@@ -52,6 +52,31 @@ class Framebuffer;
 
 extern const char * const g_fakepath;
 
+enum class LinkMismatchError
+{
+    // Shared
+    NO_MISMATCH,
+    TYPE_MISMATCH,
+    ARRAY_SIZE_MISMATCH,
+    PRECISION_MISMATCH,
+    STRUCT_NAME_MISMATCH,
+    FIELD_NUMBER_MISMATCH,
+    FIELD_NAME_MISMATCH,
+
+    // Varying specific
+    INTERPOLATION_TYPE_MISMATCH,
+    INVARIANCE_MISMATCH,
+
+    // Uniform specific
+    BINDING_MISMATCH,
+    LOCATION_MISMATCH,
+    OFFSET_MISMATCH,
+
+    // Interface block specific
+    LAYOUT_QUALIFIER_MISMATCH,
+    MATRIX_PACKING_MISMATCH
+};
+
 class InfoLog : angle::NonCopyable
 {
   public:
@@ -132,6 +157,14 @@ class InfoLog : angle::NonCopyable
 
     std::unique_ptr<std::stringstream> mLazyStream;
 };
+
+void LogLinkMismatch(InfoLog &infoLog,
+                     const std::string &variableName,
+                     const char *variableType,
+                     LinkMismatchError linkError,
+                     const std::string &mismatchedStructOrBlockFieldName,
+                     GLenum shaderType1,
+                     GLenum shaderType2);
 
 // Struct used for correlating uniforms/elements of uniform arrays to handles
 struct VariableLocation
@@ -393,6 +426,12 @@ class ProgramState final : angle::NonCopyable
 
     // ANGLE_multiview.
     int mNumViews;
+
+    // GL_EXT_geometry_shader.
+    GLenum mGeometryShaderInputPrimitiveType;
+    GLenum mGeometryShaderOutputPrimitiveType;
+    int mGeometryShaderInvocations;
+    int mGeometryShaderMaxVertices;
 };
 
 class ProgramBindings final : angle::NonCopyable
@@ -462,6 +501,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     bool hasLinkedVertexShader() const { return mState.mLinkedShaderStages[SHADER_VERTEX]; }
     bool hasLinkedFragmentShader() const { return mState.mLinkedShaderStages[SHADER_FRAGMENT]; }
     bool hasLinkedComputeShader() const { return mState.mLinkedShaderStages[SHADER_COMPUTE]; }
+    bool hasLinkedGeometryShader() const { return mState.mLinkedShaderStages[SHADER_GEOMETRY]; }
 
     Error loadBinary(const Context *context,
                      GLenum binaryFormat,
@@ -566,7 +606,8 @@ class Program final : angle::NonCopyable, public LabeledObject
     GLuint getActiveUniformBlockCount() const;
     GLuint getActiveAtomicCounterBufferCount() const;
     GLuint getActiveShaderStorageBlockCount() const;
-    GLint getActiveUniformBlockMaxLength() const;
+    GLint getActiveUniformBlockMaxNameLength() const;
+    GLint getActiveShaderStorageBlockMaxNameLength() const;
 
     GLuint getUniformBlockIndex(const std::string &name) const;
     GLuint getShaderStorageBlockIndex(const std::string &name) const;
@@ -586,11 +627,11 @@ class Program final : angle::NonCopyable, public LabeledObject
     GLuint getTransformFeedbackVaryingResourceIndex(const GLchar *name) const;
     const TransformFeedbackVarying &getTransformFeedbackVaryingResource(GLuint index) const;
 
-    static bool LinkValidateInterfaceBlockFields(InfoLog &infoLog,
-                                                 const std::string &uniformName,
-                                                 const sh::InterfaceBlockField &vertexUniform,
-                                                 const sh::InterfaceBlockField &fragmentUniform,
-                                                 bool webglCompatibility);
+    static LinkMismatchError LinkValidateInterfaceBlockFields(
+        const sh::InterfaceBlockField &blockField1,
+        const sh::InterfaceBlockField &blockField2,
+        bool webglCompatibility,
+        std::string *mismatchedBlockFieldName);
 
     void addRef();
     void release(const Context *context);
@@ -621,11 +662,12 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     const ProgramState &getState() const { return mState; }
 
-    static bool LinkValidateVariablesBase(InfoLog &infoLog,
-                                          const std::string &variableName,
-                                          const sh::ShaderVariable &vertexVariable,
-                                          const sh::ShaderVariable &fragmentVariable,
-                                          bool validatePrecision);
+    static LinkMismatchError LinkValidateVariablesBase(
+        const sh::ShaderVariable &variable1,
+        const sh::ShaderVariable &variable2,
+        bool validatePrecision,
+        bool validateArraySize,
+        std::string *mismatchedStructOrBlockMemberName);
 
     GLuint getInputResourceIndex(const GLchar *name) const;
     GLuint getOutputResourceIndex(const GLchar *name) const;
@@ -661,7 +703,9 @@ class Program final : angle::NonCopyable, public LabeledObject
         const std::vector<sh::InterfaceBlock> &vertexInterfaceBlocks,
         const std::vector<sh::InterfaceBlock> &fragmentInterfaceBlocks,
         InfoLog &infoLog,
-        bool webglCompatibility);
+        bool webglCompatibility,
+        sh::BlockType blockType,
+        GLuint maxCombinedInterfaceBlocks);
     bool linkInterfaceBlocks(const Context *context, InfoLog &infoLog);
     bool linkVaryings(const Context *context, InfoLog &infoLog) const;
 
@@ -673,16 +717,26 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     void updateLinkedShaderStages();
 
-    static bool AreMatchingInterfaceBlocks(InfoLog &infoLog,
-                                           const sh::InterfaceBlock &vertexInterfaceBlock,
-                                           const sh::InterfaceBlock &fragmentInterfaceBlock,
-                                           bool webglCompatibility);
+    static LinkMismatchError AreMatchingInterfaceBlocks(const sh::InterfaceBlock &interfaceBlock1,
+                                                        const sh::InterfaceBlock &interfaceBlock2,
+                                                        bool webglCompatibility,
+                                                        std::string *mismatchedBlockFieldName);
 
-    static bool LinkValidateVaryings(InfoLog &infoLog,
-                                     const std::string &varyingName,
-                                     const sh::Varying &vertexVarying,
-                                     const sh::Varying &fragmentVarying,
-                                     int shaderVersion);
+    static LinkMismatchError LinkValidateVaryings(const sh::Varying &outputVarying,
+                                                  const sh::Varying &inputVarying,
+                                                  int shaderVersion,
+                                                  bool validateGeometryShaderInputVarying,
+                                                  std::string *mismatchedStructFieldName);
+
+    bool linkValidateShaderInterfaceMatching(const Context *context,
+                                             Shader *generatingShader,
+                                             Shader *consumingShader,
+                                             InfoLog &infoLog) const;
+
+    // Check for aliased path rendering input bindings (if any).
+    // If more than one binding refer statically to the same location the link must fail.
+    bool linkValidateFragmentInputBindings(const Context *context, InfoLog &infoLog) const;
+
     bool linkValidateBuiltInVaryings(const Context *context, InfoLog &infoLog) const;
     bool linkValidateTransformFeedback(const gl::Context *context,
                                        InfoLog &infoLog,
@@ -726,6 +780,9 @@ class Program final : angle::NonCopyable, public LabeledObject
                          GLsizei bufSize,
                          GLsizei *length,
                          GLchar *name) const;
+
+    template <typename T>
+    GLint getActiveInterfaceBlockMaxNameLength(const std::vector<T> &resources) const;
 
     ProgramState mState;
     rx::ProgramImpl *mProgram;

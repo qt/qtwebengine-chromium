@@ -36,6 +36,7 @@
 #include "core/html/forms/FileChooser.h"
 #include "core/html/forms/HTMLFormElement.h"
 #include "core/loader/DocumentLoader.h"
+#include "platform/scheduler/child/worker_scheduler_proxy.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebApplicationCacheHost.h"
@@ -63,12 +64,16 @@ class EmptyFrameScheduler : public WebFrameScheduler {
  public:
   EmptyFrameScheduler() { DCHECK(IsMainThread()); }
 
-  scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType type) override {
-    return Platform::Current()->MainThread()->GetWebTaskRunner();
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
+      TaskType type) override {
+    return Platform::Current()->MainThread()->GetTaskRunner();
   }
 
-  void AddThrottlingObserver(ObserverType, Observer*) override {}
-  void RemoveThrottlingObserver(ObserverType, Observer*) override {}
+  std::unique_ptr<ThrottlingObserverHandle> AddThrottlingObserver(
+      ObserverType,
+      Observer*) override {
+    return nullptr;
+  }
   void SetFrameVisible(bool) override {}
   bool IsFrameVisible() const override { return false; }
   void SetPageVisible(bool) override {}
@@ -80,7 +85,8 @@ class EmptyFrameScheduler : public WebFrameScheduler {
     return WebFrameScheduler::FrameType::kSubframe;
   }
   WebViewScheduler* GetWebViewScheduler() const override { return nullptr; }
-  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser() {
+  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
+      WebScopedVirtualTimePauser::VirtualTaskDuration) {
     return WebScopedVirtualTimePauser();
   }
   void DidStartProvisionalLoad(bool is_main_frame) override {}

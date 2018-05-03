@@ -16,8 +16,8 @@
 //
 // Name                 Index   Mask Register SysValue  Format   Used
 // -------------------- ----- ------ -------- -------- ------- ------
-// SV_POSITION              0   xyzw        0      POS   float
-// TEXCOORD                 0   xy          1     NONE   float   xy
+// SV_POSITION              0   xyzw        0      POS   float       
+// TEXCOORD                 0   xy          1     NONE   float   xy  
 //
 //
 // Output signature:
@@ -31,7 +31,7 @@
 //
 // Target Sampler Source Sampler  Source Resource
 // -------------- --------------- ----------------
-// s0             s0              t0
+// s0             s0              t0               
 //
 //
 // Level9 shader bytecode:
@@ -54,7 +54,7 @@ dcl_temps 1
 sample r0.xyzw, v1.xyxx, t0.xyzw, s0
 mov o0.w, r0.w
 mov o0.xyz, l(0,0,0,0)
-ret
+ret 
 // Approximately 4 instruction slots used
 #endif
 

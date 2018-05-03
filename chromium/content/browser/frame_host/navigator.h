@@ -8,6 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
+#include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/navigator_delegate.h"
 #include "content/common/content_export.h"
 #include "content/common/navigation_params.mojom.h"
@@ -31,7 +32,6 @@ namespace content {
 
 class FrameNavigationEntry;
 class FrameTreeNode;
-class NavigationRequest;
 class RenderFrameHostImpl;
 struct CommonNavigationParams;
 
@@ -81,7 +81,8 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   virtual void DidNavigate(
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
-      std::unique_ptr<NavigationHandleImpl> navigation_handle) {}
+      std::unique_ptr<NavigationHandleImpl> navigation_handle,
+      bool was_within_same_document) {}
 
   // Called by the NavigationController to cause the Navigator to navigate
   // to the current pending entry. The NavigationController should be called
@@ -94,10 +95,12 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // TODO(nasko): Remove this method from the interface, since Navigator and
   // NavigationController know about each other. This will be possible once
   // initialization of Navigator and NavigationController is properly done.
-  virtual bool NavigateToPendingEntry(FrameTreeNode* frame_tree_node,
-                                      const FrameNavigationEntry& frame_entry,
-                                      ReloadType reload_type,
-                                      bool is_same_document_history_load);
+  virtual bool NavigateToPendingEntry(
+      FrameTreeNode* frame_tree_node,
+      const FrameNavigationEntry& frame_entry,
+      ReloadType reload_type,
+      bool is_same_document_history_load,
+      std::unique_ptr<NavigationUIData> navigation_ui_data);
 
   // Called on a newly created subframe during a history navigation. The browser
   // process looks up the corresponding FrameNavigationEntry for the new frame
@@ -159,6 +162,11 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   virtual void OnBeginNavigation(FrameTreeNode* frame_tree_node,
                                  const CommonNavigationParams& common_params,
                                  mojom::BeginNavigationParamsPtr begin_params);
+
+  // Used to restart a navigation that was thought to be same-document in
+  // cross-document mode.
+  virtual void RestartNavigationAsCrossDocument(
+      std::unique_ptr<NavigationRequest> navigation_request) {}
 
   // Used to abort an ongoing renderer-initiated navigation.
   virtual void OnAbortNavigation(FrameTreeNode* frame_tree_node) {}

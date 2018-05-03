@@ -10,8 +10,8 @@
 #include "cc/animation/animation_curve.h"
 #include "cc/animation/scroll_offset_animations.h"
 #include "platform/PlatformExport.h"
+#include "platform/animation/CompositorAnimationClient.h"
 #include "platform/animation/CompositorAnimationDelegate.h"
-#include "platform/animation/CompositorAnimationPlayerClient.h"
 #include "platform/graphics/CompositorElementId.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
@@ -22,8 +22,8 @@ namespace blink {
 
 class ScrollableArea;
 class CompositorAnimation;
-class CompositorAnimationPlayer;
 class CompositorAnimationTimeline;
+class CompositorKeyframeModel;
 
 // ScrollAnimatorCompositorCoordinator is the common base class of user scroll
 // animators and programmatic scroll animators, and holds logic related to
@@ -33,7 +33,7 @@ class CompositorAnimationTimeline;
 
 class PLATFORM_EXPORT ScrollAnimatorCompositorCoordinator
     : public GarbageCollectedFinalized<ScrollAnimatorCompositorCoordinator>,
-      private CompositorAnimationPlayerClient,
+      private CompositorAnimationClient,
       CompositorAnimationDelegate {
   WTF_MAKE_NONCOPYABLE(ScrollAnimatorCompositorCoordinator);
   USING_PRE_FINALIZER(ScrollAnimatorCompositorCoordinator, Dispose);
@@ -125,7 +125,7 @@ class PLATFORM_EXPORT ScrollAnimatorCompositorCoordinator
   }
 
   void ResetAnimationIds();
-  bool AddAnimation(std::unique_ptr<CompositorAnimation>);
+  bool AddAnimation(std::unique_ptr<CompositorKeyframeModel>);
   void RemoveAnimation();
   virtual void AbortAnimation();
 
@@ -145,8 +145,8 @@ class PLATFORM_EXPORT ScrollAnimatorCompositorCoordinator
   ScrollOffset BlinkOffsetFromCompositorOffset(FloatPoint);
 
   void CompositorAnimationFinished(int group_id);
-  // Returns true if the compositor player was attached to a new layer.
-  bool ReattachCompositorPlayerIfNeeded(CompositorAnimationTimeline*);
+  // Returns true if the compositor animation was attached to a new layer.
+  bool ReattachCompositorAnimationIfNeeded(CompositorAnimationTimeline*);
 
   // CompositorAnimationDelegate implementation.
   void NotifyAnimationStarted(double monotonic_time, int group) override;
@@ -156,8 +156,8 @@ class PLATFORM_EXPORT ScrollAnimatorCompositorCoordinator
                                double animation_start_time,
                                std::unique_ptr<cc::AnimationCurve>) override {}
 
-  // CompositorAnimationPlayerClient implementation.
-  CompositorAnimationPlayer* CompositorPlayer() const override;
+  // CompositorAnimationClient implementation.
+  CompositorAnimation* GetCompositorAnimation() const override;
 
   friend class Internals;
   // TODO(ymalik): Tests are added as friends to access m_RunState. Use the
@@ -168,7 +168,7 @@ class PLATFORM_EXPORT ScrollAnimatorCompositorCoordinator
   FRIEND_TEST_ALL_PREFIXES(ScrollAnimatorTest, CancellingCompositorAnimation);
   FRIEND_TEST_ALL_PREFIXES(ScrollAnimatorTest, ImplOnlyAnimationUpdatesCleared);
 
-  std::unique_ptr<CompositorAnimationPlayer> compositor_player_;
+  std::unique_ptr<CompositorAnimation> compositor_animation_;
   // The element id to which the compositor animation is attached when
   // the animation is present.
   CompositorElementId element_id_;

@@ -21,7 +21,7 @@
 #include "content/common/shared_worker/shared_worker_factory.mojom.h"
 #include "content/common/shared_worker/shared_worker_host.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom.h"
 #include "third_party/WebKit/public/web/devtools_agent.mojom.h"
 
 class GURL;
@@ -66,9 +66,6 @@ class SharedWorkerHost : public mojom::SharedWorkerHost,
                  int process_id,
                  int frame_id,
                  const blink::MessagePortChannel& port);
-
-  // Returns true if any clients live in a different process from this worker.
-  bool ServesExternalClient();
 
   void BindDevToolsAgent(blink::mojom::DevToolsAgentAssociatedRequest request);
 

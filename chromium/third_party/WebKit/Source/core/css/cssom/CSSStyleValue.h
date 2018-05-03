@@ -6,11 +6,11 @@
 #define CSSStyleValue_h
 
 #include "base/macros.h"
-#include "bindings/core/v8/Nullable.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
 #include "platform/bindings/ScriptWrappable.h"
+#include "platform/wtf/Optional.h"
 #include "platform/wtf/text/WTFString.h"
 
 namespace blink {
@@ -28,56 +28,60 @@ class CORE_EXPORT CSSStyleValue : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
+  // This enum ordering is significant for CSSStyleValue::IsNumericValue.
   enum StyleValueType {
     kUnknownType,
-    kAngleType,
-    kFlexType,
-    kFrequencyType,
-    kInvertType,
-    kKeywordType,
-    kLengthType,
-    kMaxType,
-    kMinType,
-    kNegateType,
-    kNumberType,
-    kPercentType,
-    kPositionType,
-    kProductType,
-    kResolutionType,
-    kSumType,
-    kTimeType,
-    kTransformType,
+    kShorthandType,
     kUnparsedType,
+    kKeywordType,
+    // Start of CSSNumericValue subclasses
+    kUnitType,
+    kSumType,
+    kProductType,
+    kNegateType,
+    kInvertType,
+    kMinType,
+    kMaxType,
+    // End of CSSNumericValue subclasses
+    kTransformType,
+    kPositionType,
     kURLImageType,
-    kInvalidType,
   };
 
   static CSSStyleValue* parse(const ExecutionContext*,
                               const String& property_name,
                               const String& value,
                               ExceptionState&);
-  static Nullable<CSSStyleValueVector> parseAll(const ExecutionContext*,
-                                                const String& property_name,
-                                                const String& value,
-                                                ExceptionState&);
+  static CSSStyleValueVector parseAll(const ExecutionContext*,
+                                      const String& property_name,
+                                      const String& value,
+                                      ExceptionState&);
 
   virtual ~CSSStyleValue() = default;
 
   virtual StyleValueType GetType() const = 0;
-  virtual bool ContainsPercent() const { return false; }
+  bool IsNumericValue() const {
+    return GetType() >= kUnitType && GetType() <= kMaxType;
+  }
 
   virtual const CSSValue* ToCSSValue() const = 0;
+  // FIXME: We should make this a method on CSSProperty instead.
   virtual const CSSValue* ToCSSValueWithProperty(CSSPropertyID) const {
     return ToCSSValue();
   }
   virtual String toString() const;
 
- protected:
-  static String StyleValueTypeToString(StyleValueType);
+  // TODO(801935): Actually use this for serialization in subclasses.
+  // Currently only used by CSSUnsupportedStyleValue because it's
+  // immutable, so we have to worry about the serialization changing.
+  const String& CSSText() const { return css_text_; }
+  void SetCSSText(const String& css_text) { css_text_ = css_text; }
 
+ protected:
   CSSStyleValue() = default;
 
  private:
+  String css_text_;
   DISALLOW_COPY_AND_ASSIGN(CSSStyleValue);
 };
 

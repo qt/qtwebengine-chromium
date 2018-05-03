@@ -115,12 +115,14 @@ TransportController::TransportController(
     rtc::Thread* network_thread,
     PortAllocator* port_allocator,
     bool redetermine_role_on_ice_restart,
-    const rtc::CryptoOptions& crypto_options)
+    const rtc::CryptoOptions& crypto_options,
+    webrtc::RtcEventLog* event_log)
     : signaling_thread_(signaling_thread),
       network_thread_(network_thread),
       port_allocator_(port_allocator),
       redetermine_role_on_ice_restart_(redetermine_role_on_ice_restart),
-      crypto_options_(crypto_options) {}
+      crypto_options_(crypto_options),
+      event_log_(event_log) {}
 
 TransportController::~TransportController() {
   // Channel destructors may try to send packets, so this needs to happen on
@@ -189,15 +191,22 @@ bool TransportController::GetLocalCertificate(
                                this, transport_name, certificate));
 }
 
-std::unique_ptr<rtc::SSLCertificate>
-TransportController::GetRemoteSSLCertificate(
+std::unique_ptr<rtc::SSLCertChain> TransportController::GetRemoteSSLCertChain(
     const std::string& transport_name) const {
-  if (network_thread_->IsCurrent()) {
-    return GetRemoteSSLCertificate_n(transport_name);
+  if (!network_thread_->IsCurrent()) {
+    return network_thread_->Invoke<std::unique_ptr<rtc::SSLCertChain>>(
+        RTC_FROM_HERE, [&] { return GetRemoteSSLCertChain(transport_name); });
   }
-  return network_thread_->Invoke<std::unique_ptr<rtc::SSLCertificate>>(
-      RTC_FROM_HERE, rtc::Bind(&TransportController::GetRemoteSSLCertificate_n,
-                               this, transport_name));
+
+  // Get the certificate from the RTP channel's DTLS handshake. Should be
+  // identical to the RTCP channel's, since they were given the same remote
+  // fingerprint.
+  const RefCountedChannel* ch =
+      GetChannel_n(transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
+  if (!ch) {
+    return nullptr;
+  }
+  return ch->dtls()->GetRemoteSSLCertChain();
 }
 
 bool TransportController::SetLocalTransportDescription(
@@ -526,7 +535,8 @@ DtlsTransportInternal* TransportController::get_channel_for_testing(
 IceTransportInternal* TransportController::CreateIceTransportChannel_n(
     const std::string& transport_name,
     int component) {
-  return new P2PTransportChannel(transport_name, component, port_allocator_);
+  return new P2PTransportChannel(transport_name, component, port_allocator_,
+                                 event_log_);
 }
 
 DtlsTransportInternal* TransportController::CreateDtlsTransportChannel_n(
@@ -742,21 +752,6 @@ bool TransportController::GetLocalCertificate_n(
     return false;
   }
   return t->GetLocalCertificate(certificate);
-}
-
-std::unique_ptr<rtc::SSLCertificate>
-TransportController::GetRemoteSSLCertificate_n(
-    const std::string& transport_name) const {
-  RTC_DCHECK(network_thread_->IsCurrent());
-
-  // Get the certificate from the RTP channel's DTLS handshake. Should be
-  // identical to the RTCP channel's, since they were given the same remote
-  // fingerprint.
-  const RefCountedChannel* ch = GetChannel_n(transport_name, 1);
-  if (!ch) {
-    return nullptr;
-  }
-  return ch->dtls()->GetRemoteSSLCertificate();
 }
 
 bool TransportController::SetLocalTransportDescription_n(

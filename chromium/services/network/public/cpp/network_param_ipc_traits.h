@@ -7,17 +7,21 @@
 
 #include <string>
 
+#include "base/component_export.h"
 #include "base/pickle.h"
 #include "ipc/ipc_param_traits.h"
 #include "ipc/param_traits_macros.h"
+#include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/request_priority.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/ct_policy_status.h"
 #include "net/cert/signed_certificate_timestamp.h"
 #include "net/cert/signed_certificate_timestamp_and_status.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/http_request_headers.h"
 #include "net/nqe/effective_connection_type.h"
+#include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_info.h"
 #include "net/url_request/redirect_info.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -25,22 +29,17 @@
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/resource_response_info.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
-#include "services/network/public/interfaces/cors.mojom-shared.h"
-#include "services/network/public/interfaces/fetch_api.mojom-shared.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-shared.h"
+#include "services/network/public/mojom/cors.mojom-shared.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 #include "url/ipc/url_param_traits.h"
 #include "url/origin.h"
 
 #ifndef INTERNAL_SERVICES_NETWORK_PUBLIC_CPP_NETWORK_PARAM_IPC_TRAITS_H_
 #define INTERNAL_SERVICES_NETWORK_PUBLIC_CPP_NETWORK_PARAM_IPC_TRAITS_H_
 
-// services/network/public/cpp is currently packaged as a static library,
-// so there's no need for export defines; it's linked directly into whatever
-// other components need it.
-// This redefinition is present for the IPC macros below, including in the
-// included header files.
 #undef IPC_MESSAGE_EXPORT
-#define IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT COMPONENT_EXPORT(NETWORK_CPP_BASE)
 
 namespace network {
 struct HttpRawRequestResponseInfo;
@@ -49,7 +48,28 @@ struct HttpRawRequestResponseInfo;
 namespace IPC {
 
 template <>
-struct ParamTraits<net::CertVerifyResult> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
+    ParamTraits<scoped_refptr<net::AuthChallengeInfo>> {
+  typedef scoped_refptr<net::AuthChallengeInfo> param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::AuthCredentials> {
+  typedef net::AuthCredentials param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::CertVerifyResult> {
   typedef net::CertVerifyResult param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -59,7 +79,7 @@ struct ParamTraits<net::CertVerifyResult> {
 };
 
 template <>
-struct ParamTraits<net::HashValue> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::HashValue> {
   typedef net::HashValue param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -69,7 +89,7 @@ struct ParamTraits<net::HashValue> {
 };
 
 template <>
-struct ParamTraits<net::HostPortPair> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::HostPortPair> {
   typedef net::HostPortPair param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -79,7 +99,7 @@ struct ParamTraits<net::HostPortPair> {
 };
 
 template <>
-struct ParamTraits<net::HttpRequestHeaders> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::HttpRequestHeaders> {
   typedef net::HttpRequestHeaders param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -89,7 +109,7 @@ struct ParamTraits<net::HttpRequestHeaders> {
 };
 
 template <>
-struct ParamTraits<net::OCSPVerifyResult> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::OCSPVerifyResult> {
   typedef net::OCSPVerifyResult param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -99,7 +119,18 @@ struct ParamTraits<net::OCSPVerifyResult> {
 };
 
 template <>
-struct ParamTraits<net::SSLInfo> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
+    ParamTraits<scoped_refptr<net::SSLCertRequestInfo>> {
+  typedef scoped_refptr<net::SSLCertRequestInfo> param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::SSLInfo> {
   typedef net::SSLInfo param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -109,7 +140,8 @@ struct ParamTraits<net::SSLInfo> {
 };
 
 template <>
-struct ParamTraits<scoped_refptr<net::ct::SignedCertificateTimestamp>> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
+    ParamTraits<scoped_refptr<net::ct::SignedCertificateTimestamp>> {
   typedef scoped_refptr<net::ct::SignedCertificateTimestamp> param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -119,7 +151,8 @@ struct ParamTraits<scoped_refptr<net::ct::SignedCertificateTimestamp>> {
 };
 
 template <>
-struct ParamTraits<scoped_refptr<network::HttpRawRequestResponseInfo>> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
+    ParamTraits<scoped_refptr<network::HttpRawRequestResponseInfo>> {
   typedef scoped_refptr<network::HttpRawRequestResponseInfo> param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -129,7 +162,8 @@ struct ParamTraits<scoped_refptr<network::HttpRawRequestResponseInfo>> {
 };
 
 template <>
-struct ParamTraits<scoped_refptr<net::HttpResponseHeaders>> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
+    ParamTraits<scoped_refptr<net::HttpResponseHeaders>> {
   typedef scoped_refptr<net::HttpResponseHeaders> param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -139,7 +173,8 @@ struct ParamTraits<scoped_refptr<net::HttpResponseHeaders>> {
 };
 
 template <>
-struct ParamTraits<scoped_refptr<net::X509Certificate>> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
+    ParamTraits<scoped_refptr<net::X509Certificate>> {
   typedef scoped_refptr<net::X509Certificate> param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -149,7 +184,7 @@ struct ParamTraits<scoped_refptr<net::X509Certificate>> {
 };
 
 template <>
-struct ParamTraits<net::LoadTimingInfo> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<net::LoadTimingInfo> {
   typedef net::LoadTimingInfo param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -159,7 +194,7 @@ struct ParamTraits<net::LoadTimingInfo> {
 };
 
 template <>
-struct ParamTraits<network::DataElement> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<network::DataElement> {
   typedef network::DataElement param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -169,7 +204,8 @@ struct ParamTraits<network::DataElement> {
 };
 
 template <>
-struct ParamTraits<scoped_refptr<network::ResourceRequestBody>> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
+    ParamTraits<scoped_refptr<network::ResourceRequestBody>> {
   typedef scoped_refptr<network::ResourceRequestBody> param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -179,7 +215,7 @@ struct ParamTraits<scoped_refptr<network::ResourceRequestBody>> {
 };
 
 template <>
-struct ParamTraits<url::Origin> {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ParamTraits<url::Origin> {
   typedef url::Origin param_type;
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
@@ -202,6 +238,10 @@ IPC_ENUM_TRAITS_MAX_VALUE(net::OCSPRevocationStatus,
 
 IPC_ENUM_TRAITS_MAX_VALUE(net::ct::SCTVerifyStatus, net::ct::SCT_STATUS_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(net::RequestPriority, net::MAXIMUM_PRIORITY)
+
+IPC_ENUM_TRAITS_MAX_VALUE(net::SSLClientCertType,
+                          net::SSLClientCertType::CLIENT_CERT_INVALID_TYPE)
+
 IPC_ENUM_TRAITS_MAX_VALUE(net::SSLInfo::HandshakeType,
                           net::SSLInfo::HANDSHAKE_FULL)
 IPC_ENUM_TRAITS_MAX_VALUE(net::TokenBindingParam, net::TB_PARAM_ECDSAP256)
@@ -284,7 +324,7 @@ IPC_STRUCT_TRAITS_BEGIN(network::ResourceRequest)
   IPC_STRUCT_TRAITS_MEMBER(should_reset_appcache)
   IPC_STRUCT_TRAITS_MEMBER(service_worker_provider_id)
   IPC_STRUCT_TRAITS_MEMBER(originated_from_service_worker)
-  IPC_STRUCT_TRAITS_MEMBER(service_worker_mode)
+  IPC_STRUCT_TRAITS_MEMBER(skip_service_worker)
   IPC_STRUCT_TRAITS_MEMBER(fetch_request_mode)
   IPC_STRUCT_TRAITS_MEMBER(fetch_credentials_mode)
   IPC_STRUCT_TRAITS_MEMBER(fetch_redirect_mode)
@@ -309,7 +349,6 @@ IPC_STRUCT_TRAITS_BEGIN(network::ResourceRequest)
   IPC_STRUCT_TRAITS_MEMBER(previews_state)
   IPC_STRUCT_TRAITS_MEMBER(resource_body_stream_url)
   IPC_STRUCT_TRAITS_MEMBER(initiated_in_secure_context)
-  IPC_STRUCT_TRAITS_MEMBER(download_to_network_cache_only)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(network::ResourceResponseInfo)
@@ -318,8 +357,8 @@ IPC_STRUCT_TRAITS_BEGIN(network::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(headers)
   IPC_STRUCT_TRAITS_MEMBER(mime_type)
   IPC_STRUCT_TRAITS_MEMBER(charset)
+  IPC_STRUCT_TRAITS_MEMBER(ct_policy_compliance)
   IPC_STRUCT_TRAITS_MEMBER(is_legacy_symantec_cert)
-  IPC_STRUCT_TRAITS_MEMBER(cert_validity_start)
   IPC_STRUCT_TRAITS_MEMBER(content_length)
   IPC_STRUCT_TRAITS_MEMBER(encoded_data_length)
   IPC_STRUCT_TRAITS_MEMBER(encoded_body_length)

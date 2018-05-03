@@ -598,7 +598,7 @@ static void* OpenFunc(const char* uri) {
     FetchParameters params(ResourceRequest(url), options);
     Resource* resource =
         RawResource::FetchSynchronously(params, document->Fetcher());
-    if (resource && !resource->ErrorOccurred()) {
+    if (!resource->ErrorOccurred()) {
       data = resource->ResourceBuffer();
       final_url = resource->GetResponse().Url();
     }
@@ -951,26 +951,36 @@ void XMLDocumentParser::StartElementNs(const AtomicString& local_name,
   bool is_first_element = !saw_first_element_;
   saw_first_element_ = true;
 
-  QualifiedName q_name(prefix, local_name, adjusted_uri);
-  Element* new_element =
-      current_node_->GetDocument().createElement(q_name, kCreatedByParser);
-  if (!new_element) {
-    StopParsing();
-    return;
-  }
-
   Vector<Attribute> prefixed_attributes;
   DummyExceptionStateForTesting exception_state;
   HandleNamespaceAttributes(prefixed_attributes, libxml_namespaces,
                             nb_namespaces, exception_state);
   if (exception_state.HadException()) {
-    SetAttributes(new_element, prefixed_attributes, GetParserContentPolicy());
     StopParsing();
     return;
   }
 
   HandleElementAttributes(prefixed_attributes, libxml_attributes, nb_attributes,
                           prefix_to_namespace_map_, exception_state);
+  AtomicString is;
+  for (const auto& attr : prefixed_attributes) {
+    if (attr.GetName() == isAttr) {
+      is = attr.Value();
+      break;
+    }
+  }
+
+  QualifiedName q_name(prefix, local_name, adjusted_uri);
+  Element* new_element = current_node_->GetDocument().CreateElement(
+      q_name,
+      parsing_fragment_ ? CreateElementFlags::ByFragmentParser()
+                        : CreateElementFlags::ByParser(),
+      is);
+  if (!new_element) {
+    StopParsing();
+    return;
+  }
+
   SetAttributes(new_element, prefixed_attributes, GetParserContentPolicy());
   if (exception_state.HadException()) {
     StopParsing();
@@ -1346,13 +1356,46 @@ static xmlEntityPtr GetXHTMLEntity(const xmlChar* name) {
   if (!number_of_code_units)
     return nullptr;
 
-  DCHECK_LE(number_of_code_units, 4u);
-  size_t entity_length_in_utf8 = ConvertUTF16EntityToUTF8(
-      utf16_decoded_entity, number_of_code_units,
-      reinterpret_cast<char*>(g_shared_xhtml_entity_result),
-      WTF_ARRAY_LENGTH(g_shared_xhtml_entity_result));
-  if (!entity_length_in_utf8)
-    return nullptr;
+  constexpr size_t kSharedXhtmlEntityResultLength =
+      arraysize(g_shared_xhtml_entity_result);
+  size_t entity_length_in_utf8;
+  // Unlike HTML parser, XML parser parses the content of named
+  // entities. So we need to escape '&' and '<'.
+  if (number_of_code_units == 1 && utf16_decoded_entity[0] == '&') {
+    g_shared_xhtml_entity_result[0] = '&';
+    g_shared_xhtml_entity_result[1] = '#';
+    g_shared_xhtml_entity_result[2] = '3';
+    g_shared_xhtml_entity_result[3] = '8';
+    g_shared_xhtml_entity_result[4] = ';';
+    entity_length_in_utf8 = 5;
+  } else if (number_of_code_units == 1 && utf16_decoded_entity[0] == '<') {
+    g_shared_xhtml_entity_result[0] = '&';
+    g_shared_xhtml_entity_result[1] = '#';
+    g_shared_xhtml_entity_result[2] = '6';
+    g_shared_xhtml_entity_result[3] = '0';
+    g_shared_xhtml_entity_result[4] = ';';
+    entity_length_in_utf8 = 5;
+  } else if (number_of_code_units == 2 && utf16_decoded_entity[0] == '<' &&
+             utf16_decoded_entity[1] == 0x20D2) {
+    g_shared_xhtml_entity_result[0] = '&';
+    g_shared_xhtml_entity_result[1] = '#';
+    g_shared_xhtml_entity_result[2] = '6';
+    g_shared_xhtml_entity_result[3] = '0';
+    g_shared_xhtml_entity_result[4] = ';';
+    g_shared_xhtml_entity_result[5] = 0xE2;
+    g_shared_xhtml_entity_result[6] = 0x83;
+    g_shared_xhtml_entity_result[7] = 0x92;
+    entity_length_in_utf8 = 8;
+  } else {
+    DCHECK_LE(number_of_code_units, 4u);
+    entity_length_in_utf8 = ConvertUTF16EntityToUTF8(
+        utf16_decoded_entity, number_of_code_units,
+        reinterpret_cast<char*>(g_shared_xhtml_entity_result),
+        kSharedXhtmlEntityResultLength);
+    if (entity_length_in_utf8 == 0)
+      return nullptr;
+  }
+  DCHECK_LE(entity_length_in_utf8, kSharedXhtmlEntityResultLength);
 
   xmlEntityPtr entity = SharedXHTMLEntity();
   entity->length = entity_length_in_utf8;
@@ -1405,6 +1448,7 @@ static void ExternalSubsetHandler(void* closure,
                                   const xmlChar*,
                                   const xmlChar* external_id,
                                   const xmlChar*) {
+  // https://html.spec.whatwg.org/multipage/xhtml.html#parsing-xhtml-documents:named-character-references
   String ext_id = ToString(external_id);
   if (ext_id == "-//W3C//DTD XHTML 1.0 Transitional//EN" ||
       ext_id == "-//W3C//DTD XHTML 1.1//EN" ||
@@ -1413,6 +1457,7 @@ static void ExternalSubsetHandler(void* closure,
       ext_id == "-//W3C//DTD XHTML Basic 1.0//EN" ||
       ext_id == "-//W3C//DTD XHTML 1.1 plus MathML 2.0//EN" ||
       ext_id == "-//W3C//DTD XHTML 1.1 plus MathML 2.0 plus SVG 1.1//EN" ||
+      ext_id == "-//W3C//DTD MathML 2.0//EN" ||
       ext_id == "-//WAPFORUM//DTD XHTML Mobile 1.0//EN" ||
       ext_id == "-//WAPFORUM//DTD XHTML Mobile 1.1//EN" ||
       ext_id == "-//WAPFORUM//DTD XHTML Mobile 1.2//EN") {

@@ -76,10 +76,11 @@ class PdfAccessibilityTree
       int char_index);
   gfx::Vector2dF ToVector2dF(const PP_Point& p);
   gfx::RectF ToRectF(const PP_Rect& r);
-  ui::AXNodeData* CreateNode(ui::AXRole role);
+  ui::AXNodeData* CreateNode(ax::mojom::Role role);
   float GetDeviceScaleFactor() const;
   content::RenderAccessibility* GetRenderAccessibility();
   gfx::Transform* MakeTransformFromViewInfo();
+  void AddWordStartsAndEnds(ui::AXNodeData* inline_text_box);
 
   ui::AXTree tree_;
   content::RendererPpapiHost* host_;

@@ -206,9 +206,9 @@ NetworkTrafficAnnotationTag BranchedCompleteNetworkTrafficAnnotation(
 //   }
 // }
 
-// Do not use this unless net-serialization is required.
+// Please do not use this unless uninitialized annotations are required.
 // Mojo interfaces for this class and the next one are defined in
-// '/services/network/public/interfaces'.
+// '/services/network/public/mojom'.
 struct MutableNetworkTrafficAnnotationTag {
   MutableNetworkTrafficAnnotationTag()
       : unique_id_hash_code(TRAFFIC_ANNOTATION_UNINITIALIZED) {}
@@ -223,9 +223,15 @@ struct MutableNetworkTrafficAnnotationTag {
   }
 
   explicit operator NetworkTrafficAnnotationTag() const {
-    CHECK_NE(unique_id_hash_code, TRAFFIC_ANNOTATION_UNINITIALIZED);
+    DCHECK(is_valid());
     return NetworkTrafficAnnotationTag({unique_id_hash_code});
   }
+
+  bool is_valid() const {
+    return unique_id_hash_code != TRAFFIC_ANNOTATION_UNINITIALIZED;
+  }
+
+  void reset() { unique_id_hash_code = TRAFFIC_ANNOTATION_UNINITIALIZED; }
 };
 
 struct MutablePartialNetworkTrafficAnnotationTag {
@@ -243,8 +249,19 @@ struct MutablePartialNetworkTrafficAnnotationTag {
   int32_t completing_id_hash_code;
 
   explicit operator PartialNetworkTrafficAnnotationTag() const {
+    DCHECK(is_valid());
     return PartialNetworkTrafficAnnotationTag(
         {unique_id_hash_code, completing_id_hash_code});
+  }
+
+  bool is_valid() const {
+    return unique_id_hash_code != TRAFFIC_ANNOTATION_UNINITIALIZED &&
+           completing_id_hash_code != TRAFFIC_ANNOTATION_UNINITIALIZED;
+  }
+
+  void reset() {
+    unique_id_hash_code = TRAFFIC_ANNOTATION_UNINITIALIZED;
+    completing_id_hash_code = TRAFFIC_ANNOTATION_UNINITIALIZED;
   }
 #else
   MutablePartialNetworkTrafficAnnotationTag()
@@ -256,9 +273,14 @@ struct MutablePartialNetworkTrafficAnnotationTag {
   int32_t unique_id_hash_code;
 
   explicit operator PartialNetworkTrafficAnnotationTag() const {
-    CHECK_NE(unique_id_hash_code, TRAFFIC_ANNOTATION_UNINITIALIZED);
     return PartialNetworkTrafficAnnotationTag({unique_id_hash_code});
   }
+
+  bool is_valid() const {
+    return unique_id_hash_code != TRAFFIC_ANNOTATION_UNINITIALIZED;
+  }
+
+  void reset() { unique_id_hash_code = TRAFFIC_ANNOTATION_UNINITIALIZED; }
 #endif  // !defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)
 };
 

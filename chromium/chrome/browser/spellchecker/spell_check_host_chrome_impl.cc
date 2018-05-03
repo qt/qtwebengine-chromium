@@ -18,7 +18,7 @@
 
 SpellCheckHostChromeImpl::SpellCheckHostChromeImpl(
     const service_manager::Identity& renderer_identity)
-    : renderer_identity_(renderer_identity) {}
+    : renderer_identity_(renderer_identity), weak_factory_(this) {}
 
 SpellCheckHostChromeImpl::~SpellCheckHostChromeImpl() = default;
 
@@ -27,7 +27,7 @@ void SpellCheckHostChromeImpl::Create(
     spellcheck::mojom::SpellCheckHostRequest request,
     const service_manager::BindSourceInfo& source_info) {
   mojo::MakeStrongBinding(
-      base::MakeUnique<SpellCheckHostChromeImpl>(source_info.identity),
+      std::make_unique<SpellCheckHostChromeImpl>(source_info.identity),
       std::move(request));
 }
 
@@ -61,6 +61,7 @@ void SpellCheckHostChromeImpl::NotifyChecked(const base::string16& word,
     spellcheck->GetMetrics()->RecordCheckedWordStats(word, misspelled);
 }
 
+#if !BUILDFLAG(USE_BROWSER_SPELLCHECKER)
 void SpellCheckHostChromeImpl::CallSpellingService(
     const base::string16& text,
     CallSpellingServiceCallback callback) {
@@ -72,7 +73,6 @@ void SpellCheckHostChromeImpl::CallSpellingService(
     return;
   }
 
-#if !BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   // Checks the user profile and sends a JSON-RPC request to the Spelling
   // service if a user enables the "Ask Google for suggestions" option. When
   // a response is received (including an error) from the remote Spelling
@@ -83,13 +83,9 @@ void SpellCheckHostChromeImpl::CallSpellingService(
   client_.RequestTextCheck(
       context, SpellingServiceClient::SPELLCHECK, text,
       base::BindOnce(&SpellCheckHostChromeImpl::CallSpellingServiceDone,
-                     base::Unretained(this), base::Passed(&callback)));
-#else
-  std::move(callback).Run(false, std::vector<SpellCheckResult>());
-#endif
+                     weak_factory_.GetWeakPtr(), std::move(callback)));
 }
 
-#if !BUILDFLAG(USE_BROWSER_SPELLCHECKER)
 void SpellCheckHostChromeImpl::CallSpellingServiceDone(
     CallSpellingServiceCallback callback,
     bool success,

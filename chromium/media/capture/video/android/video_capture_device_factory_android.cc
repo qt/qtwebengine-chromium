@@ -116,9 +116,9 @@ void VideoCaptureDeviceFactoryAndroid::GetSupportedFormats(
         pixel_format = PIXEL_FORMAT_I420;
         break;
       default:
-        // TODO(mcasas): break here and let the enumeration continue with
-        // UNKNOWN pixel format because the platform doesn't know until capture,
-        // but some unrelated tests timeout https://crbug.com/644910.
+        // TODO(crbug.com/792260): break here and let the enumeration continue
+        // with UNKNOWN pixel format because the platform doesn't know until
+        // capture, but some unrelated tests timeout https://crbug.com/644910.
         continue;
     }
     VideoCaptureFormat capture_format(
@@ -127,7 +127,7 @@ void VideoCaptureDeviceFactoryAndroid::GetSupportedFormats(
         Java_VideoCaptureFactory_getCaptureFormatFramerate(env, format),
         pixel_format);
     capture_formats->push_back(capture_format);
-    DVLOG(1) << device.display_name << " "
+    DVLOG(1) << device.display_name() << " "
              << VideoCaptureFormat::ToString(capture_format);
   }
 }
@@ -145,7 +145,8 @@ bool VideoCaptureDeviceFactoryAndroid::IsLegacyOrDeprecatedDevice(
 VideoCaptureDeviceFactory*
 VideoCaptureDeviceFactory::CreateVideoCaptureDeviceFactory(
     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager) {
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    MojoJpegDecodeAcceleratorFactoryCB jda_factory) {
   return new VideoCaptureDeviceFactoryAndroid();
 }
 

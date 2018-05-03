@@ -4,8 +4,6 @@
 
 #include "chrome/common/chrome_switches.h"
 
-#include "base/base_switches.h"
-#include "base/command_line.h"
 #include "build/build_config.h"
 #include "ppapi/features/features.h"
 #include "printing/features/features.h"
@@ -128,14 +126,14 @@ const char kCloudPrintSetupProxy[]          = "cloud-print-setup-proxy";
 // interstitial error pages (e.g. certificate errors).
 const char kCommittedInterstitials[] = "committed-interstitials";
 
-// Comma-separated list of BrowserThreads that cause browser process to crash
-// if the given browser thread is not responsive. UI,IO,DB,FILE,CACHE are the
-// list of BrowserThreads that are supported.
+// Comma-separated list of BrowserThreads that cause browser process to crash if
+// the given browser thread is not responsive. UI/IO are the BrowserThreads that
+// are supported.
 //
 // For example:
-//    --crash-on-hang-threads=UI:3:18,IO:3:18 --> Crash the browser if UI or IO
-//      is not responsive for 18 seconds and the number of browser threads that
-//      are responding is less than or equal to 3.
+//    --crash-on-hang-threads=UI:18,IO:18 --> Crash the browser if UI or IO is
+//    not responsive for 18 seconds while the other browser thread is
+//    responsive.
 const char kCrashOnHangThreads[]            = "crash-on-hang-threads";
 
 // Some platforms like ChromeOS default to empty desktop.
@@ -422,6 +420,9 @@ const char kForceFirstRunDialog[] = "force-first-run-dialog";
 // Forces Chrome to use localNTP instead of server (GWS) NTP.
 const char kForceLocalNtp[]                 = "force-local-ntp";
 
+// Forces Chrome to use a stacked tab strip layout.
+const char kForceStackedTabStripLayout[]    = "force-stacked-tab-strip-layout";
+
 // Specifies which page will be displayed in newly-opened tabs. We need this
 // for testing purposes so that the UI tests don't depend on what comes up for
 // http://google.com.
@@ -476,9 +477,12 @@ const char kMemlogModeGpu[] = "gpu";
 const char kMemlogModeManual[] = "manual";
 const char kMemlogModeMinimal[] = "minimal";
 const char kMemlogModeRendererSampling[] = "renderer-sampling";
+const char kMemlogSampling[] = "memlog-sampling";
+const char kMemlogSamplingRate[] = "memlog-sampling-rate";
 const char kMemlogStackMode[] = "memlog-stack-mode";
 const char kMemlogStackModeMixed[] = "mixed";
 const char kMemlogStackModeNative[] = "native";
+const char kMemlogStackModeNativeWithThreadNames[] = "native-with-thread-names";
 const char kMemlogStackModePseudo[] = "pseudo";
 
 // Allows setting a different destination ID for connection-monitoring GCM
@@ -606,7 +610,7 @@ const char kProxyAutoDetect[]               = "proxy-auto-detect";
 // Specifies a list of hosts for whom we bypass proxy settings and use direct
 // connections. Ignored if --proxy-auto-detect or --no-proxy-server are also
 // specified. This is a comma-separated list of bypass rules. See:
-// "net/proxy/proxy_bypass_rules.h" for the format of these rules.
+// "net/proxy_resolution/proxy_bypass_rules.h" for the format of these rules.
 const char kProxyBypassList[]               = "proxy-bypass-list";
 
 // Uses the pac script at the given URL
@@ -806,9 +810,6 @@ const char kDisableLoggingRedirect[] = "disable-logging-redirect";
 // installed through policy.
 const char kDisableLoginScreenApps[] = "disable-login-screen-apps";
 
-// Enables out-of-process ash and mus (ui service). See //ash/README.md
-const char kMash[] = "mash";
-
 // Provides the name of the mojo service running in a mash utility process.
 // NOTE: Used by the Chrome OS crash_reporter to identify mash processes. If you
 // change or remove the flag please update platform2/crash_reporter.
@@ -864,9 +865,6 @@ const char kDisableHostedAppsInWindows[] = "disable-hosted-apps-in-windows";
 const char kDisableMacViewsNativeAppWindows[] =
     "disable-mac-views-native-app-windows";
 
-// Disables Translate experimental new UX which replaces the infobar.
-const char kDisableTranslateNewUX[] = "disable-translate-new-ux";
-
 // Enable user metrics from within the installer.
 const char kEnableUserMetrics[] = "enable-user-metrics";
 
@@ -890,9 +888,6 @@ const char kEnableHostedAppsInWindows[] = "enable-hosted-apps-in-windows";
 // Enables use of toolkit-views based native app windows.
 const char kEnableMacViewsNativeAppWindows[] =
     "enable-mac-views-native-app-windows";
-
-// Enables Translate experimental new UX which replaces the infobar.
-const char kEnableTranslateNewUX[] = "enable-translate-new-ux";
 
 // Shows a notification when quitting Chrome with hosted apps running. Default
 // behavior is to also quit all hosted apps.
@@ -935,6 +930,10 @@ const char kHideIcons[]                     = "hide-icons";
 // Whether or not the browser should warn if the profile is on a network share.
 // This flag is only relevant for Windows currently.
 const char kNoNetworkProfileWarning[]       = "no-network-profile-warning";
+
+// Used for launching Chrome when a toast displayed in the Windows Action Center
+// has been activated. Should contain the launch ID encoded by Chrome.
+const char kNotificationLaunchId[] = "notification-launch-id";
 
 // /prefetch:# arguments for the browser process launched in background mode and
 // for the watcher process. Use profiles 5, 6 and 7 as documented on
@@ -995,22 +994,6 @@ const char kEnableNewAppMenuIcon[] = "enable-new-app-menu-icon";
 // Uses the system default printer as the initially selected destination in
 // print preview, instead of the most recently used destination.
 const char kUseSystemDefaultPrinter[] = "use-system-default-printer";
-#endif
-
-bool ExtensionsDisabled(const base::CommandLine& command_line) {
-  return command_line.HasSwitch(switches::kDisableExtensions) ||
-         command_line.HasSwitch(switches::kDisableExtensionsExcept);
-}
-
-bool ExtensionsDisabled() {
-  return ExtensionsDisabled(*base::CommandLine::ForCurrentProcess());
-}
-
-#if defined(OS_CHROMEOS)
-bool PowerOverlayEnabled() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      ::switches::kEnablePowerOverlay);
-}
 #endif
 
 // -----------------------------------------------------------------------------

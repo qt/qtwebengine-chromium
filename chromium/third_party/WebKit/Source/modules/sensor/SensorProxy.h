@@ -15,8 +15,8 @@
 #include "platform/wtf/Vector.h"
 #include "services/device/public/cpp/generic_sensor/sensor_reading.h"
 #include "services/device/public/cpp/generic_sensor/sensor_reading_shared_buffer_reader.h"
-#include "services/device/public/interfaces/sensor.mojom-blink.h"
-#include "services/device/public/interfaces/sensor_provider.mojom-blink.h"
+#include "services/device/public/mojom/sensor.mojom-blink.h"
+#include "services/device/public/mojom/sensor_provider.mojom-blink.h"
 
 namespace blink {
 
@@ -69,9 +69,9 @@ class SensorProxy final : public GarbageCollectedFinalized<SensorProxy>,
 
   device::mojom::blink::SensorType type() const { return type_; }
 
-  // Note: the returned value is reset after updateSensorReading() call.
-  const device::SensorReading& reading() const { return reading_; }
-
+  // Note: do not use the stored references to the returned value
+  // outside the current call chain.
+  const device::SensorReading& GetReading(bool remapped = false) const;
   const device::mojom::blink::SensorConfiguration* DefaultConfig() const;
 
   const std::pair<double, double>& FrequencyLimits() const {
@@ -99,10 +99,13 @@ class SensorProxy final : public GarbageCollectedFinalized<SensorProxy>,
   void FocusedFrameChanged() override;
 
   // Generic handler for a fatal error.
-  void HandleSensorError();
+  void HandleSensorError(
+      device::mojom::blink::SensorCreationResult =
+          device::mojom::blink::SensorCreationResult::ERROR_NOT_AVAILABLE);
 
   // mojo call callbacks.
-  void OnSensorCreated(device::mojom::blink::SensorInitParamsPtr);
+  void OnSensorCreated(device::mojom::blink::SensorCreationResult,
+                       device::mojom::blink::SensorInitParamsPtr);
 
   void OnPollingTimer(TimerBase*);
 
@@ -119,6 +122,7 @@ class SensorProxy final : public GarbageCollectedFinalized<SensorProxy>,
 
   void RemoveActiveFrequency(double frequency);
   void AddActiveFrequency(double frequency);
+  uint16_t GetScreenOrientationAngle() const;
 
   device::mojom::blink::SensorType type_;
   device::mojom::blink::ReportingMode mode_;
@@ -138,6 +142,7 @@ class SensorProxy final : public GarbageCollectedFinalized<SensorProxy>,
       shared_buffer_reader_;
   bool suspended_;
   device::SensorReading reading_;
+  mutable device::SensorReading remapped_reading_;
   std::pair<double, double> frequency_limits_;
 
   WTF::Vector<double> active_frequencies_;

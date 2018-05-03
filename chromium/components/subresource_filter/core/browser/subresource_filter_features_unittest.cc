@@ -14,6 +14,7 @@
 #include "base/macros.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "components/subresource_filter/core/browser/subresource_filter_features_test_support.h"
 #include "components/variations/variations_associated_data.h"
@@ -66,6 +67,14 @@ void ExpectAndRetrieveExactlyOneEnabledConfig(Configuration* actual_config) {
   *actual_config = config_list->configs_by_decreasing_priority().front();
 }
 
+void ExpectAndRetrieveExactlyOneExtraEnabledConfig(
+    Configuration* actual_config) {
+  DCHECK(actual_config);
+  const auto config_list = GetEnabledConfigurations();
+  ASSERT_EQ(3u, config_list->configs_by_decreasing_priority().size());
+  *actual_config = config_list->configs_by_decreasing_priority().back();
+}
+
 void ExpectPresetCanBeEnabledByName(Configuration preset, const char* name) {
   ScopedExperimentalStateToggle scoped_experimental_state(
       base::FeatureList::OVERRIDE_ENABLE_FEATURE,
@@ -73,18 +82,25 @@ void ExpectPresetCanBeEnabledByName(Configuration preset, const char* name) {
 
   const auto config_list = GetEnabledConfigurations();
   EXPECT_THAT(config_list->configs_by_decreasing_priority(),
-              ::testing::ElementsAre(preset, Configuration()));
+              ::testing::ElementsAre(
+                  Configuration::MakePresetForLiveRunOnPhishingSites(),
+                  Configuration::MakePresetForLiveRunForBetterAds(), preset,
+                  Configuration()));
 }
 
-void ExpectPresetIsEquivalentToVariationParams(
+void ExpectParamsGeneratePreset(
     Configuration preset,
     std::map<std::string, std::string> variation_params) {
   ScopedExperimentalStateToggle scoped_experimental_state(
       base::FeatureList::OVERRIDE_ENABLE_FEATURE, variation_params);
 
   Configuration experimental_configuration;
-  ExpectAndRetrieveExactlyOneEnabledConfig(&experimental_configuration);
-  EXPECT_EQ(preset, experimental_configuration);
+  const auto config_list = GetEnabledConfigurations();
+  bool matched_preset = false;
+  for (auto it : config_list->configs_by_decreasing_priority()) {
+    matched_preset |= preset == it;
+  }
+  EXPECT_TRUE(matched_preset);
 }
 
 }  // namespace
@@ -114,13 +130,17 @@ TEST(SubresourceFilterFeaturesTest, ActivationLevel) {
                  << test_case.activation_level_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kActivationLevelParameterName, test_case.activation_level_param},
          {kActivationScopeParameterName, kActivationScopeNoSites}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(test_case.expected_activation_level,
               actual_configuration.activation_options.activation_level);
     EXPECT_EQ(ActivationScope::NO_SITES,
@@ -154,12 +174,16 @@ TEST(SubresourceFilterFeaturesTest, ActivationScope) {
 
     ScopedExperimentalStateToggle scoped_experimental_state(
         test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kActivationLevelParameterName, kActivationLevelDisabled},
          {kActivationScopeParameterName, test_case.activation_scope_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(ActivationLevel::DISABLED,
               actual_configuration.activation_options.activation_level);
     EXPECT_EQ(test_case.expected_activation_scope,
@@ -212,13 +236,17 @@ TEST(SubresourceFilterFeaturesTest, ActivationLevelAndScope) {
                  << test_case.activation_scope_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kActivationLevelParameterName, test_case.activation_level_param},
          {kActivationScopeParameterName, test_case.activation_scope_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(test_case.expected_activation_level,
               actual_configuration.activation_options.activation_level);
     EXPECT_EQ(test_case.expected_activation_scope,
@@ -269,14 +297,18 @@ TEST(SubresourceFilterFeaturesTest, ActivationList) {
                  << test_case.activation_list_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kActivationLevelParameterName, kActivationLevelDisabled},
          {kActivationScopeParameterName, kActivationScopeNoSites},
          {kActivationListsParameterName, test_case.activation_list_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(test_case.expected_activation_list,
               actual_configuration.activation_conditions.activation_list);
   }
@@ -309,13 +341,17 @@ TEST(SubresourceFilterFeaturesTest, ActivationPriority) {
                  << test_case.activation_priority_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kActivationPriorityParameterName,
           test_case.activation_priority_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(test_case.expected_priority,
               actual_configuration.activation_conditions.priority);
   }
@@ -346,13 +382,17 @@ TEST(SubresourceFilterFeaturesTest, PerfMeasurementRate) {
                  << test_case.perf_measurement_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kPerformanceMeasurementRateParameterName,
           test_case.perf_measurement_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(
         test_case.expected_perf_measurement_rate,
         actual_configuration.activation_options.performance_measurement_rate);
@@ -381,13 +421,17 @@ TEST(SubresourceFilterFeaturesTest, SuppressNotifications) {
                  << test_case.suppress_notifications_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kSuppressNotificationsParameterName,
           test_case.suppress_notifications_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(
         test_case.expected_suppress_notifications_value,
         actual_configuration.activation_options.should_suppress_notifications);
@@ -416,13 +460,17 @@ TEST(SubresourceFilterFeaturesTest, WhitelistSiteOnReload) {
                  << test_case.whitelist_site_on_reload_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kWhitelistSiteOnReloadParameterName,
           test_case.whitelist_site_on_reload_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(test_case.expected_whitelist_site_on_reload_value,
               actual_configuration.activation_options
                   .should_whitelist_site_on_reload);
@@ -444,12 +492,16 @@ TEST(SubresourceFilterFeaturesTest, RulesetFlavor) {
                  << test_case.ruleset_flavor_param << "\"");
 
     ScopedExperimentalStateToggle scoped_experimental_state(
-        test_case.feature_enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                                  : base::FeatureList::OVERRIDE_USE_DEFAULT,
+        test_case.feature_enabled ? base::FeatureList::OVERRIDE_USE_DEFAULT
+                                  : base::FeatureList::OVERRIDE_DISABLE_FEATURE,
         {{kRulesetFlavorParameterName, test_case.ruleset_flavor_param}});
 
     Configuration actual_configuration;
-    ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    if (test_case.feature_enabled) {
+      ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
+    } else {
+      ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+    }
     EXPECT_EQ(std::string(test_case.expected_ruleset_flavor_value),
               actual_configuration.general_settings.ruleset_flavor);
   }
@@ -515,22 +567,13 @@ TEST(SubresourceFilterFeaturesTest,
       std::map<std::string, std::string>());
 
   const auto config_list = GetEnabledConfigurations();
-  EXPECT_THAT(config_list->configs_by_decreasing_priority(),
-              ::testing::ElementsAre(Configuration()));
+  EXPECT_THAT(
+      config_list->configs_by_decreasing_priority(),
+      ::testing::ElementsAre(
+          Configuration::MakePresetForLiveRunOnPhishingSites(),
+          Configuration::MakePresetForLiveRunForBetterAds(), Configuration()));
   EXPECT_EQ(std::string(),
             config_list->lexicographically_greatest_ruleset_flavor());
-}
-
-TEST(SubresourceFilterFeaturesTest, PresetForLiveRunOnPhishingSites) {
-  ExpectPresetCanBeEnabledByName(
-      Configuration::MakePresetForLiveRunOnPhishingSites(),
-      kPresetLiveRunOnPhishingSites);
-  ExpectPresetIsEquivalentToVariationParams(
-      Configuration::MakePresetForLiveRunOnPhishingSites(),
-      {{kActivationLevelParameterName, kActivationLevelEnabled},
-       {kActivationScopeParameterName, kActivationScopeActivationList},
-       {kActivationListsParameterName, kActivationListPhishingInterstitial},
-       {kActivationPriorityParameterName, "1000"}});
 }
 
 TEST(SubresourceFilterFeaturesTest,
@@ -538,7 +581,7 @@ TEST(SubresourceFilterFeaturesTest,
   ExpectPresetCanBeEnabledByName(
       Configuration::MakePresetForPerformanceTestingDryRunOnAllSites(),
       kPresetPerformanceTestingDryRunOnAllSites);
-  ExpectPresetIsEquivalentToVariationParams(
+  ExpectParamsGeneratePreset(
       Configuration::MakePresetForPerformanceTestingDryRunOnAllSites(),
       {{kActivationLevelParameterName, kActivationLevelDryRun},
        {kActivationScopeParameterName, kActivationScopeAllSites},
@@ -547,16 +590,8 @@ TEST(SubresourceFilterFeaturesTest,
 }
 
 TEST(SubresourceFilterFeaturesTest, PresetForLiveRunOnBetterAdsSites) {
-  ExpectPresetCanBeEnabledByName(
-      Configuration::MakePresetForLiveRunForBetterAds(),
-      kPresetLiveRunForBetterAds);
   const Configuration config =
       Configuration::MakePresetForLiveRunForBetterAds();
-  ExpectPresetIsEquivalentToVariationParams(
-      config, {{kActivationLevelParameterName, kActivationLevelEnabled},
-               {kActivationScopeParameterName, kActivationScopeActivationList},
-               {kActivationListsParameterName, kActivationListBetterAds},
-               {kActivationPriorityParameterName, "800"}});
   EXPECT_EQ(ActivationList::BETTER_ADS,
             config.activation_conditions.activation_list);
   EXPECT_EQ(ActivationScope::ACTIVATION_LIST,
@@ -573,12 +608,14 @@ TEST(SubresourceFilterFeaturesTest, PresetForLiveRunOnBetterAdsSites) {
 TEST(SubresourceFilterFeaturesTest, ConfigurationPriorities) {
   const std::vector<Configuration> expected_order_by_decreasing_priority = {
       Configuration::MakePresetForLiveRunOnPhishingSites(),
+      Configuration::MakePresetForLiveRunForBetterAds(),
       Configuration::MakePresetForPerformanceTestingDryRunOnAllSites(),
       Configuration() /* default constructor */
   };
 
   std::vector<Configuration> shuffled_order = {
       expected_order_by_decreasing_priority[2],
+      expected_order_by_decreasing_priority[3],
       expected_order_by_decreasing_priority[0],
       expected_order_by_decreasing_priority[1]};
   subresource_filter::testing::ScopedSubresourceFilterConfigurator
@@ -591,13 +628,16 @@ TEST(SubresourceFilterFeaturesTest, ConfigurationPriorities) {
 TEST(SubresourceFilterFeaturesTest, EnableDisableMultiplePresets) {
   const std::string kPhishing(kPresetLiveRunOnPhishingSites);
   const std::string kPerfTest(kPresetPerformanceTestingDryRunOnAllSites);
+  const std::string kBAS(kPresetLiveRunForBetterAds);
 
   // The default config comes from the empty experimental configuration.
-  const std::vector<Configuration> kDefaultConfig = {Configuration()};
-  const std::vector<Configuration> kPhishingAndDefaultConfigs = {
-      Configuration::MakePresetForLiveRunOnPhishingSites(), Configuration()};
+  const std::vector<Configuration> kEmptyConfig = {Configuration()};
+  const std::vector<Configuration> kDefaultConfig = {
+      Configuration::MakePresetForLiveRunOnPhishingSites(),
+      Configuration::MakePresetForLiveRunForBetterAds(), Configuration()};
   const std::vector<Configuration> kAllConfigs = {
       Configuration::MakePresetForLiveRunOnPhishingSites(),
+      Configuration::MakePresetForLiveRunForBetterAds(),
       Configuration::MakePresetForPerformanceTestingDryRunOnAllSites(),
       Configuration()};
 
@@ -608,13 +648,12 @@ TEST(SubresourceFilterFeaturesTest, EnableDisableMultiplePresets) {
   } kTestCases[] = {
       {"", "", kDefaultConfig},
       {"garbage1", "garbage2", kDefaultConfig},
-      {"", kPhishing + "," + kPerfTest, kDefaultConfig},
-      {kPhishing, kPerfTest, kPhishingAndDefaultConfigs},
-      {kPhishing + "," + kPerfTest, "garbage", kAllConfigs},
-      {kPerfTest + "," + kPhishing, base::ToUpperASCII(kPerfTest),
-       kPhishingAndDefaultConfigs},
-      {kPerfTest + "," + kPhishing,
-       ",,garbage, ," + kPerfTest + "," + kPhishing, kDefaultConfig},
+      {"", kPhishing + "," + kPerfTest + "," + kBAS, kEmptyConfig},
+      {kPhishing, kPerfTest, kDefaultConfig},
+      {kPerfTest, "garbage", kAllConfigs},
+      {kPerfTest, base::ToUpperASCII(kPerfTest), kDefaultConfig},
+      {kPerfTest + "," + kPhishing + "," + kBAS,
+       ",,garbage, ," + kPerfTest + "," + kPhishing + "," + kBAS, kEmptyConfig},
       {base::ToUpperASCII(kPhishing) + "," + base::ToUpperASCII(kPerfTest), "",
        kAllConfigs},
       {",, ," + kPerfTest + ",," + kPhishing, "", kAllConfigs},
@@ -643,11 +682,12 @@ TEST(SubresourceFilterFeaturesTest,
      EnableMultiplePresetsAndExperimentalConfig) {
   const std::string kPhishing(kPresetLiveRunOnPhishingSites);
   const std::string kPerfTest(kPresetPerformanceTestingDryRunOnAllSites);
+  const std::string kBAS(kPresetLiveRunForBetterAds);
   const std::string kTestRulesetFlavor("foobar");
 
   ScopedExperimentalStateToggle scoped_experimental_state(
       base::FeatureList::OVERRIDE_ENABLE_FEATURE,
-      {{kEnablePresetsParameterName, kPhishing + "," + kPerfTest},
+      {{kEnablePresetsParameterName, kPhishing + "," + kPerfTest + "," + kBAS},
        {kActivationLevelParameterName, kActivationLevelDryRun},
        {kActivationScopeParameterName, kActivationScopeActivationList},
        {kActivationListsParameterName, kActivationListSubresourceFilter},
@@ -665,6 +705,7 @@ TEST(SubresourceFilterFeaturesTest,
       config_list->configs_by_decreasing_priority(),
       ::testing::ElementsAre(
           Configuration::MakePresetForLiveRunOnPhishingSites(),
+          Configuration::MakePresetForLiveRunForBetterAds(),
           experimental_config,
           Configuration::MakePresetForPerformanceTestingDryRunOnAllSites()));
   EXPECT_EQ(kTestRulesetFlavor,
@@ -679,13 +720,31 @@ TEST(SubresourceFilterFeaturesTest, ForcedActivation_NotConfigurable) {
        {"forced_activation", "true"}});
 
   Configuration actual_configuration;
-  ExpectAndRetrieveExactlyOneEnabledConfig(&actual_configuration);
+  ExpectAndRetrieveExactlyOneExtraEnabledConfig(&actual_configuration);
   EXPECT_EQ(ActivationLevel::ENABLED,
             actual_configuration.activation_options.activation_level);
   EXPECT_EQ(ActivationScope::NO_SITES,
             actual_configuration.activation_conditions.activation_scope);
 
   EXPECT_FALSE(actual_configuration.activation_conditions.forced_activation);
+}
+
+TEST(SubresourceFilterFeaturesTest, AdTagging_EnablesDryRun) {
+  const Configuration dryrun =
+      Configuration::MakePresetForPerformanceTestingDryRunOnAllSites();
+  base::test::ScopedFeatureList scoped_feature;
+  scoped_feature.InitAndEnableFeature(kAdTagging);
+  EXPECT_TRUE(base::ContainsValue(
+      GetEnabledConfigurations()->configs_by_decreasing_priority(), dryrun));
+}
+
+TEST(SubresourceFilterFeaturesTest, AdTaggingDisabled_DisablesDryRun) {
+  const Configuration dryrun =
+      Configuration::MakePresetForPerformanceTestingDryRunOnAllSites();
+  base::test::ScopedFeatureList scoped_feature;
+  scoped_feature.InitAndDisableFeature(kAdTagging);
+  EXPECT_FALSE(base::ContainsValue(
+      GetEnabledConfigurations()->configs_by_decreasing_priority(), dryrun));
 }
 
 }  // namespace subresource_filter

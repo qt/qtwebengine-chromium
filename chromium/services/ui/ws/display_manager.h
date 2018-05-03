@@ -13,8 +13,6 @@
 #include "services/ui/display/screen_manager_delegate.h"
 #include "services/ui/public/interfaces/window_manager_constants.mojom.h"
 #include "services/ui/ws/ids.h"
-#include "services/ui/ws/user_id.h"
-#include "services/ui/ws/user_id_tracker_observer.h"
 #include "ui/display/display.h"
 
 namespace display {
@@ -28,17 +26,15 @@ class CursorLocationManager;
 class Display;
 class ServerWindow;
 class UserDisplayManager;
-class UserIdTracker;
 class WindowManagerDisplayRoot;
 class WindowServer;
 
 // DisplayManager manages the set of Displays. DisplayManager distinguishes
 // between displays that do not yet have an accelerated widget (pending), vs
 // those that do.
-class DisplayManager : public UserIdTrackerObserver,
-                       public display::ScreenManagerDelegate {
+class DisplayManager : public display::ScreenManagerDelegate {
  public:
-  DisplayManager(WindowServer* window_server, UserIdTracker* user_id_tracker);
+  explicit DisplayManager(WindowServer* window_server);
   ~DisplayManager() override;
 
   // Called once WindowServer::display_creation_config() has been determined.
@@ -60,12 +56,13 @@ class DisplayManager : public UserIdTrackerObserver,
       int64_t internal_display_id,
       const std::vector<display::Display>& mirrors);
 
-  // Returns the UserDisplayManager for |user_id|. DisplayManager owns the
-  // return value.
-  UserDisplayManager* GetUserDisplayManager(const UserId& user_id);
+  // Returns the UserDisplayManager. DisplayManager owns the return value.
+  UserDisplayManager* GetUserDisplayManager();
 
-  // Returns the CursorLocationManager for |user_id|.
-  CursorLocationManager* GetCursorLocationManager(const UserId& user_id);
+  // Returns the CursorLocationManager.
+  CursorLocationManager* cursor_location_manager() {
+    return cursor_location_manager_.get();
+  }
 
   // Adds/removes a Display. DisplayManager owns the Displays.
   // TODO(sky): make add take a scoped_ptr.
@@ -89,7 +86,11 @@ class DisplayManager : public UserIdTrackerObserver,
 
   // Returns the display with the specified display id, or null if there is no
   // display with that id.
-  Display* GetDisplayById(int64_t display_id);
+  const Display* GetDisplayById(int64_t display_id) const;
+  Display* GetDisplayById(int64_t display_id) {
+    return const_cast<Display*>(
+        const_cast<const DisplayManager*>(this)->GetDisplayById(display_id));
+  }
 
   const WindowManagerDisplayRoot* GetWindowManagerDisplayRoot(
       const ServerWindow* window) const;
@@ -104,9 +105,11 @@ class DisplayManager : public UserIdTrackerObserver,
     return !displays_.empty() || !pending_displays_.empty();
   }
 
+  bool InUnifiedDisplayMode() const;
+
   // Returns the id for the next root window (both for the root of a Display
   // as well as the root of WindowManagers).
-  WindowId GetAndAdvanceNextRootId();
+  ClientWindowId GetAndAdvanceNextRootId();
 
   // Called when the AcceleratedWidget is available for |display|.
   void OnDisplayAcceleratedWidgetAvailable(Display* display);
@@ -118,10 +121,6 @@ class DisplayManager : public UserIdTrackerObserver,
   int64_t GetInternalDisplayId() const;
 
  private:
-  // UserIdTrackerObserver:
-  void OnActiveUserIdChanged(const UserId& previously_active_id,
-                             const UserId& active_id) override;
-
   void CreateDisplay(const display::Display& display,
                      const display::ViewportMetrics& metrics);
 
@@ -136,7 +135,6 @@ class DisplayManager : public UserIdTrackerObserver,
   void OnPrimaryDisplayChanged(int64_t primary_display_id) override;
 
   WindowServer* window_server_;
-  UserIdTracker* user_id_tracker_;
 
   // For rewriting ChromeOS function keys.
   std::unique_ptr<ui::EventRewriter> event_rewriter_;
@@ -146,13 +144,13 @@ class DisplayManager : public UserIdTrackerObserver,
   std::set<Display*> pending_displays_;
   std::set<Display*> displays_;
 
-  std::map<UserId, std::unique_ptr<UserDisplayManager>> user_display_managers_;
+  std::unique_ptr<UserDisplayManager> user_display_manager_;
 
-  std::map<UserId, std::unique_ptr<CursorLocationManager>>
-      cursor_location_managers_;
+  std::unique_ptr<CursorLocationManager> cursor_location_manager_;
 
   // ID to use for next root node.
-  ClientSpecificId next_root_id_;
+  // TODO(sky): figure out why this starts at 2.
+  ClientSpecificId next_root_id_ = 2;
 
   bool got_initial_config_from_window_manager_ = false;
 
@@ -161,7 +159,7 @@ class DisplayManager : public UserIdTrackerObserver,
   // not mirrored in Display::SetInternalId() as mus may be running in the
   // same process as the window-manager, so that if this did set the value in
   // Display there could be race conditions.
-  int64_t internal_display_id_;
+  int64_t internal_display_id_ = display::kInvalidDisplayId;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayManager);
 };

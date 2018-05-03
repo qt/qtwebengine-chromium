@@ -10,6 +10,7 @@
 #include "components/viz/service/display/display.h"
 #include "components/viz/service/display_embedder/external_begin_frame_controller_impl.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+#include "components/viz/service/hit_test/hit_test_aggregator.h"
 
 namespace viz {
 
@@ -37,8 +38,7 @@ RootCompositorFrameSinkImpl::RootCompositorFrameSinkImpl(
       synthetic_begin_frame_source_(std::move(synthetic_begin_frame_source)),
       external_begin_frame_controller_(
           std::move(external_begin_frame_controller)),
-      display_(std::move(display)),
-      hit_test_aggregator_(frame_sink_manager->hit_test_manager(), this) {
+      display_(std::move(display)) {
   DCHECK(begin_frame_source());
   DCHECK(display_);
 
@@ -50,6 +50,7 @@ RootCompositorFrameSinkImpl::RootCompositorFrameSinkImpl(
   frame_sink_manager->RegisterBeginFrameSource(begin_frame_source(),
                                                frame_sink_id);
   display_->Initialize(this, frame_sink_manager->surface_manager());
+  support_->SetUpHitTest();
 }
 
 RootCompositorFrameSinkImpl::~RootCompositorFrameSinkImpl() {
@@ -84,6 +85,13 @@ void RootCompositorFrameSinkImpl::SetAuthoritativeVSyncInterval(
     synthetic_begin_frame_source_->SetAuthoritativeVSyncInterval(interval);
 }
 
+void RootCompositorFrameSinkImpl::SetDisplayVSyncParameters(
+    base::TimeTicks timebase,
+    base::TimeDelta interval) {
+  if (synthetic_begin_frame_source_)
+    synthetic_begin_frame_source_->OnUpdateVSyncParameters(timebase, interval);
+}
+
 void RootCompositorFrameSinkImpl::SetNeedsBeginFrame(bool needs_begin_frame) {
   support_->SetNeedsBeginFrame(needs_begin_frame);
 }
@@ -98,17 +106,23 @@ void RootCompositorFrameSinkImpl::SubmitCompositorFrame(
     mojom::HitTestRegionListPtr hit_test_region_list,
     uint64_t submit_time) {
   // Update display when size or local surface id changes.
-  if (support_->local_surface_id() != local_surface_id) {
+  if (support_->last_activated_local_surface_id() != local_surface_id) {
     display_->Resize(frame.size_in_pixels());
     display_->SetLocalSurfaceId(local_surface_id, frame.device_scale_factor());
   }
 
-  if (!support_->SubmitCompositorFrame(local_surface_id, std::move(frame),
-                                       std::move(hit_test_region_list))) {
-    DLOG(ERROR) << "SubmitCompositorFrame failed for " << local_surface_id;
-    compositor_frame_sink_binding_.Close();
-    OnClientConnectionLost();
-  }
+  const auto result = support_->MaybeSubmitCompositorFrame(
+      local_surface_id, std::move(frame), std::move(hit_test_region_list));
+  if (result == CompositorFrameSinkSupport::ACCEPTED)
+    return;
+
+  const char* reason =
+      CompositorFrameSinkSupport::GetSubmitResultAsString(result);
+  DLOG(ERROR) << "SubmitCompositorFrame failed for " << local_surface_id
+              << " because " << reason;
+  compositor_frame_sink_binding_.CloseWithReason(static_cast<uint32_t>(result),
+                                                 reason);
+  OnClientConnectionLost();
 }
 
 void RootCompositorFrameSinkImpl::DidNotProduceFrame(
@@ -116,20 +130,20 @@ void RootCompositorFrameSinkImpl::DidNotProduceFrame(
   support_->DidNotProduceFrame(begin_frame_ack);
 }
 
-void RootCompositorFrameSinkImpl::OnAggregatedHitTestRegionListUpdated(
-    mojo::ScopedSharedBufferHandle active_handle,
-    uint32_t active_handle_size,
-    mojo::ScopedSharedBufferHandle idle_handle,
-    uint32_t idle_handle_size) {
-  support_->frame_sink_manager()->OnAggregatedHitTestRegionListUpdated(
-      support_->frame_sink_id(), std::move(active_handle), active_handle_size,
-      std::move(idle_handle), idle_handle_size);
+void RootCompositorFrameSinkImpl::DidAllocateSharedBitmap(
+    mojo::ScopedSharedBufferHandle buffer,
+    const SharedBitmapId& id) {
+  if (!support_->DidAllocateSharedBitmap(std::move(buffer), id)) {
+    DLOG(ERROR) << "DidAllocateSharedBitmap failed for duplicate "
+                << "SharedBitmapId";
+    compositor_frame_sink_binding_.Close();
+    OnClientConnectionLost();
+  }
 }
 
-void RootCompositorFrameSinkImpl::SwitchActiveAggregatedHitTestRegionList(
-    uint8_t active_handle_index) {
-  support_->frame_sink_manager()->SwitchActiveAggregatedHitTestRegionList(
-      support_->frame_sink_id(), active_handle_index);
+void RootCompositorFrameSinkImpl::DidDeleteSharedBitmap(
+    const SharedBitmapId& id) {
+  support_->DidDeleteSharedBitmap(id);
 }
 
 void RootCompositorFrameSinkImpl::DisplayOutputSurfaceLost() {
@@ -140,7 +154,8 @@ void RootCompositorFrameSinkImpl::DisplayOutputSurfaceLost() {
 void RootCompositorFrameSinkImpl::DisplayWillDrawAndSwap(
     bool will_draw_and_swap,
     const RenderPassList& render_pass) {
-  hit_test_aggregator_.Aggregate(display_->CurrentSurfaceId());
+  DCHECK(support_->GetHitTestAggregator());
+  support_->GetHitTestAggregator()->Aggregate(display_->CurrentSurfaceId());
 }
 
 void RootCompositorFrameSinkImpl::DisplayDidReceiveCALayerParams(

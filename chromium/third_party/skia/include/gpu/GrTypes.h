@@ -313,10 +313,6 @@ enum GrPixelConfig {
      * Premultiplied and sRGB. Byte order is b,g,r,a.
      */
     kSBGRA_8888_GrPixelConfig,
-    /**
-     * 8 bit signed integers per-channel. Byte order is b,g,r,a.
-     */
-    kRGBA_8888_sint_GrPixelConfig,
 
     /**
      * Byte order is r, g, b, a.  This color format is 32 bits per channel
@@ -402,13 +398,12 @@ struct GrMipLevel {
  */
 struct GrSurfaceDesc {
     GrSurfaceDesc()
-        : fFlags(kNone_GrSurfaceFlags)
-        , fOrigin(kTopLeft_GrSurfaceOrigin)
-        , fWidth(0)
-        , fHeight(0)
-        , fConfig(kUnknown_GrPixelConfig)
-        , fSampleCnt(0) {
-    }
+            : fFlags(kNone_GrSurfaceFlags)
+            , fOrigin(kTopLeft_GrSurfaceOrigin)
+            , fWidth(0)
+            , fHeight(0)
+            , fConfig(kUnknown_GrPixelConfig)
+            , fSampleCnt(1) {}
 
     GrSurfaceFlags         fFlags;  //!< bitfield of TextureFlags
     GrSurfaceOrigin        fOrigin; //!< origin of the texture
@@ -422,11 +417,11 @@ struct GrSurfaceDesc {
     GrPixelConfig          fConfig;
 
     /**
-     * The number of samples per pixel or 0 to disable full scene AA. This only
+     * The number of samples per pixel. Zero is treated equivalently to 1. This only
      * applies if the kRenderTarget_GrSurfaceFlag is set. The actual number
      * of samples may not exactly match the request. The request will be rounded
-     * up to the next supported sample count, or down if it is larger than the
-     * max supported count.
+     * up to the next supported sample count. A value larger than the largest
+     * supported sample count will fail.
      */
     int                    fSampleCnt;
 };

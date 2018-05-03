@@ -46,7 +46,6 @@ from webkitpy.tool.commands.command import HelpPrintingOptionParser
 from webkitpy.tool.commands.copy_existing_baselines import CopyExistingBaselines
 from webkitpy.tool.commands.flaky_tests import FlakyTests
 from webkitpy.tool.commands.help_command import HelpCommand
-from webkitpy.tool.commands.layout_tests_server import LayoutTestsServer
 from webkitpy.tool.commands.optimize_baselines import OptimizeBaselines
 from webkitpy.tool.commands.pretty_diff import PrettyDiff
 from webkitpy.tool.commands.queries import CrashLog
@@ -55,7 +54,6 @@ from webkitpy.tool.commands.queries import PrintExpectations
 from webkitpy.tool.commands.rebaseline import Rebaseline
 from webkitpy.tool.commands.rebaseline import RebaselineExpectations
 from webkitpy.tool.commands.rebaseline_cl import RebaselineCL
-from webkitpy.tool.commands.rebaseline_server import RebaselineServer
 from webkitpy.tool.commands.rebaseline_test import RebaselineTest
 
 
@@ -83,7 +81,6 @@ class WebKitPatch(Host):
             CopyExistingBaselines(),
             CrashLog(),
             FlakyTests(),
-            LayoutTestsServer(),
             OptimizeBaselines(),
             PrettyDiff(),
             PrintBaselines(),
@@ -91,7 +88,6 @@ class WebKitPatch(Host):
             Rebaseline(),
             RebaselineCL(),
             RebaselineExpectations(),
-            RebaselineServer(),
             RebaselineTest(),
         ]
         self.help_command = HelpCommand(tool=self)

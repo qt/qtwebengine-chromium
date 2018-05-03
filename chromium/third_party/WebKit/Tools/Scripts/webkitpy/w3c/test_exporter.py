@@ -48,8 +48,13 @@ class TestExporter(object):
             self.host.executive.error_output_limit = None
 
         credentials = read_credentials(self.host, options.credentials_json)
-        if not (credentials['GH_USER'] and credentials['GH_TOKEN']):
-            _log.error('Must provide both user and token for GitHub.')
+        if not (credentials.get('GH_USER') and credentials.get('GH_TOKEN')):
+            _log.error('You must provide your GitHub credentials for this '
+                       'script to work.')
+            _log.error('See https://chromium.googlesource.com/chromium/src'
+                       '/+/master/docs/testing/web_platform_tests.md'
+                       '#GitHub-credentials for instructions on how to set '
+                       'your credentials up.')
             return False
 
         self.wpt_github = self.wpt_github or WPTGitHub(self.host, credentials['GH_USER'], credentials['GH_TOKEN'])
@@ -57,21 +62,27 @@ class TestExporter(object):
         self.local_wpt = self.local_wpt or LocalWPT(self.host, credentials['GH_TOKEN'])
         self.local_wpt.fetch()
 
+        _log.info('Searching for exportable in-flight CLs.')
         # The Gerrit search API is slow and easy to fail, so we wrap it in a try
         # statement to continue exporting landed commits when it fails.
         try:
             open_gerrit_cls = self.gerrit.query_exportable_open_cls()
         except GerritError as e:
+            _log.info('In-flight CLs cannot be exported due to the following error:')
             _log.error(str(e))
             gerrit_error = True
         else:
             self.process_gerrit_cls(open_gerrit_cls)
             gerrit_error = False
 
+        _log.info('Searching for exportable Chromium commits.')
         exportable_commits, git_errors = self.get_exportable_commits()
-        for error in git_errors:
-            _log.error(error)
         self.process_chromium_commits(exportable_commits)
+        if git_errors:
+            _log.info('Attention: The following errors have prevented some commits from being '
+                      'exported:')
+            for error in git_errors:
+                _log.error(error)
 
         return not (gerrit_error or git_errors)
 

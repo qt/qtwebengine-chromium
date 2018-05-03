@@ -21,6 +21,12 @@ const char kOpenFileMethod[] = "OpenFile";
 const char kCloseFileMethod[] = "CloseFile";
 const char kReadFileMethod[] = "ReadFile";
 const char kDeleteEntryMethod[] = "DeleteEntry";
+const char kCreateFileMethod[] = "CreateFile";
+const char kTruncateMethod[] = "Truncate";
+const char kWriteFileMethod[] = "WriteFile";
+const char kCreateDirectoryMethod[] = "CreateDirectory";
+const char kMoveEntryMethod[] = "MoveEntry";
+const char kCopyEntryMethod[] = "CopyEntry";
 
 }  // namespace smbprovider
 

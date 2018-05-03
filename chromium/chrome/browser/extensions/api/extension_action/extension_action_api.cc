@@ -96,31 +96,31 @@ static base::LazyInstance<BrowserContextKeyedAPIFactory<ExtensionActionAPI>>::
 ExtensionActionAPI::ExtensionActionAPI(content::BrowserContext* context)
     : browser_context_(context),
       extension_prefs_(nullptr) {
-  ExtensionFunctionRegistry* registry =
+  ExtensionFunctionRegistry& registry =
       ExtensionFunctionRegistry::GetInstance();
 
   // Browser Actions
-  registry->RegisterFunction<BrowserActionSetIconFunction>();
-  registry->RegisterFunction<BrowserActionSetTitleFunction>();
-  registry->RegisterFunction<BrowserActionSetBadgeTextFunction>();
-  registry->RegisterFunction<BrowserActionSetBadgeBackgroundColorFunction>();
-  registry->RegisterFunction<BrowserActionSetPopupFunction>();
-  registry->RegisterFunction<BrowserActionGetTitleFunction>();
-  registry->RegisterFunction<BrowserActionGetBadgeTextFunction>();
-  registry->RegisterFunction<BrowserActionGetBadgeBackgroundColorFunction>();
-  registry->RegisterFunction<BrowserActionGetPopupFunction>();
-  registry->RegisterFunction<BrowserActionEnableFunction>();
-  registry->RegisterFunction<BrowserActionDisableFunction>();
-  registry->RegisterFunction<BrowserActionOpenPopupFunction>();
+  registry.RegisterFunction<BrowserActionSetIconFunction>();
+  registry.RegisterFunction<BrowserActionSetTitleFunction>();
+  registry.RegisterFunction<BrowserActionSetBadgeTextFunction>();
+  registry.RegisterFunction<BrowserActionSetBadgeBackgroundColorFunction>();
+  registry.RegisterFunction<BrowserActionSetPopupFunction>();
+  registry.RegisterFunction<BrowserActionGetTitleFunction>();
+  registry.RegisterFunction<BrowserActionGetBadgeTextFunction>();
+  registry.RegisterFunction<BrowserActionGetBadgeBackgroundColorFunction>();
+  registry.RegisterFunction<BrowserActionGetPopupFunction>();
+  registry.RegisterFunction<BrowserActionEnableFunction>();
+  registry.RegisterFunction<BrowserActionDisableFunction>();
+  registry.RegisterFunction<BrowserActionOpenPopupFunction>();
 
   // Page Actions
-  registry->RegisterFunction<PageActionShowFunction>();
-  registry->RegisterFunction<PageActionHideFunction>();
-  registry->RegisterFunction<PageActionSetIconFunction>();
-  registry->RegisterFunction<PageActionSetTitleFunction>();
-  registry->RegisterFunction<PageActionSetPopupFunction>();
-  registry->RegisterFunction<PageActionGetTitleFunction>();
-  registry->RegisterFunction<PageActionGetPopupFunction>();
+  registry.RegisterFunction<PageActionShowFunction>();
+  registry.RegisterFunction<PageActionHideFunction>();
+  registry.RegisterFunction<PageActionSetIconFunction>();
+  registry.RegisterFunction<PageActionSetTitleFunction>();
+  registry.RegisterFunction<PageActionSetPopupFunction>();
+  registry.RegisterFunction<PageActionGetTitleFunction>();
+  registry.RegisterFunction<PageActionGetPopupFunction>();
 }
 
 ExtensionActionAPI::~ExtensionActionAPI() {
@@ -226,8 +226,9 @@ void ExtensionActionAPI::DispatchExtensionActionClicked(
 
   if (event_name) {
     std::unique_ptr<base::ListValue> args(new base::ListValue());
-    args->Append(
-        ExtensionTabUtil::CreateTabObject(web_contents, extension)->ToValue());
+    args->Append(ExtensionTabUtil::CreateTabObject(
+                     web_contents, ExtensionTabUtil::kScrubTab, extension)
+                     ->ToValue());
 
     DispatchEventToExtension(web_contents->GetBrowserContext(),
                              extension_action.extension_id(), histogram_value,

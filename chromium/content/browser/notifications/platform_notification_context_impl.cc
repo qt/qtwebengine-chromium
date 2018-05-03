@@ -18,8 +18,6 @@
 #include "content/public/browser/notification_database_data.h"
 #include "content/public/browser/platform_notification_service.h"
 
-using base::DoNothing;
-
 namespace content {
 namespace {
 
@@ -60,7 +58,7 @@ void PlatformNotificationContextImpl::Initialize() {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::BindOnce(&PlatformNotificationContextImpl::InitializeOnIO, this,
-                       base::Passed(&displayed_notifications), false));
+                       std::move(displayed_notifications), false));
     return;
   }
 
@@ -77,7 +75,7 @@ void PlatformNotificationContextImpl::DidGetNotificationsOnUI(
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::BindOnce(&PlatformNotificationContextImpl::InitializeOnIO, this,
-                     base::Passed(&displayed_notifications),
+                     std::move(displayed_notifications),
                      supports_synchronization));
 }
 
@@ -132,7 +130,7 @@ void PlatformNotificationContextImpl::CreateService(
       base::BindOnce(&PlatformNotificationContextImpl::CreateServiceOnIO, this,
                      render_process_id, origin,
                      browser_context_->GetResourceContext(),
-                     base::Passed(&request)));
+                     std::move(request)));
 }
 
 void PlatformNotificationContextImpl::CreateServiceOnIO(
@@ -212,7 +210,7 @@ void PlatformNotificationContextImpl::
           &PlatformNotificationContextImpl::
               SynchronizeDisplayedNotificationsForServiceWorkerRegistrationOnIO,
           this, origin, service_worker_registration_id, callback,
-          base::Passed(&notification_ids), supports_synchronization));
+          std::move(notification_ids), supports_synchronization));
 }
 
 void PlatformNotificationContextImpl::
@@ -440,7 +438,7 @@ void PlatformNotificationContextImpl::OnRegistrationDeleted(
       base::Bind(&PlatformNotificationContextImpl::
                      DoDeleteNotificationsForServiceWorkerRegistration,
                  this, pattern.GetOrigin(), registration_id),
-      base::Bind(&DoNothing));
+      base::DoNothing());
 }
 
 void PlatformNotificationContextImpl::
@@ -472,7 +470,7 @@ void PlatformNotificationContextImpl::OnStorageWiped() {
       base::Bind(
           base::IgnoreResult(&PlatformNotificationContextImpl::DestroyDatabase),
           this),
-      base::Bind(&DoNothing));
+      base::DoNothing());
 }
 
 void PlatformNotificationContextImpl::LazyInitialize(

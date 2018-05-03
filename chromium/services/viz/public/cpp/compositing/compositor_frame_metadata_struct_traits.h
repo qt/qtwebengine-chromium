@@ -51,11 +51,6 @@ struct StructTraits<viz::mojom::CompositorFrameMetadataDataView,
     return metadata.max_page_scale_factor;
   }
 
-  static bool root_overflow_x_hidden(
-      const viz::CompositorFrameMetadata& metadata) {
-    return metadata.root_overflow_x_hidden;
-  }
-
   static bool root_overflow_y_hidden(
       const viz::CompositorFrameMetadata& metadata) {
     return metadata.root_overflow_y_hidden;
@@ -115,9 +110,9 @@ struct StructTraits<viz::mojom::CompositorFrameMetadataDataView,
     return metadata.activation_dependencies;
   }
 
-  static const base::Optional<uint32_t>& deadline_in_frames(
+  static const viz::FrameDeadline& deadline(
       const viz::CompositorFrameMetadata& metadata) {
-    return metadata.deadline_in_frames;
+    return metadata.deadline;
   }
 
   static uint32_t content_source_id(

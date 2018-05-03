@@ -5,11 +5,11 @@
 #include "components/security_state/core/security_state.h"
 
 #include <stdint.h>
+#include <memory>
 #include <utility>
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/memory/ptr_util.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/security_state/core/features.h"
@@ -28,7 +28,6 @@ namespace {
 
 const char kHttpsUrl[] = "https://foo.test/";
 const char kHttpUrl[] = "http://foo.test/";
-const char kHttpsSoUrl[] = "https-so://foo.test/";
 const char kLocalhostUrl[] = "http://localhost";
 const char kFileOrigin[] = "file://example_file";
 const char kWssUrl[] = "wss://foo.test/";
@@ -113,7 +112,7 @@ class TestSecurityStateHelper {
   void SetUrl(const GURL& url) { url_ = url; }
 
   std::unique_ptr<VisibleSecurityState> GetVisibleSecurityState() const {
-    auto state = base::MakeUnique<VisibleSecurityState>();
+    auto state = std::make_unique<VisibleSecurityState>();
     state->connection_info_initialized = true;
     state->url = url_;
     state->certificate = cert_;
@@ -610,8 +609,6 @@ TEST(SecurityStateTest, FieldEdit) {
 TEST(SecurityStateTest, CryptographicSchemeUrl) {
   // HTTPS is a cryptographic scheme.
   EXPECT_TRUE(IsSchemeCryptographic(GURL(kHttpsUrl)));
-  // HTTPS-SO is a cryptographic scheme.
-  EXPECT_TRUE(IsSchemeCryptographic(GURL(kHttpsSoUrl)));
   // WSS is a cryptographic scheme.
   EXPECT_TRUE(IsSchemeCryptographic(GURL(kWssUrl)));
   // HTTP is not a cryptographic scheme.

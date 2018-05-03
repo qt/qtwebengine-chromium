@@ -6,6 +6,7 @@
 
 #include "../cros_gralloc_driver.h"
 
+#include <cassert>
 #include <hardware/gralloc.h>
 #include <memory.h>
 
@@ -32,50 +33,62 @@ enum {
 };
 // clang-format on
 
-static int64_t gralloc0_convert_flags(int flags)
+static uint64_t gralloc0_convert_usage(int usage)
 {
-	uint64_t usage = BO_USE_NONE;
+	uint64_t use_flags = BO_USE_NONE;
 
-	if (flags & GRALLOC_USAGE_CURSOR)
-		usage |= BO_USE_NONE;
-	if ((flags & GRALLOC_USAGE_SW_READ_MASK) == GRALLOC_USAGE_SW_READ_RARELY)
-		usage |= BO_USE_SW_READ_RARELY;
-	if ((flags & GRALLOC_USAGE_SW_READ_MASK) == GRALLOC_USAGE_SW_READ_OFTEN)
-		usage |= BO_USE_SW_READ_OFTEN;
-	if ((flags & GRALLOC_USAGE_SW_WRITE_MASK) == GRALLOC_USAGE_SW_WRITE_RARELY)
-		usage |= BO_USE_SW_WRITE_RARELY;
-	if ((flags & GRALLOC_USAGE_SW_WRITE_MASK) == GRALLOC_USAGE_SW_WRITE_OFTEN)
-		usage |= BO_USE_SW_WRITE_OFTEN;
-	if (flags & GRALLOC_USAGE_HW_TEXTURE)
-		usage |= BO_USE_TEXTURE;
-	if (flags & GRALLOC_USAGE_HW_RENDER)
-		usage |= BO_USE_RENDERING;
-	if (flags & GRALLOC_USAGE_HW_2D)
-		usage |= BO_USE_RENDERING;
-	if (flags & GRALLOC_USAGE_HW_COMPOSER)
+	if (usage & GRALLOC_USAGE_CURSOR)
+		use_flags |= BO_USE_NONE;
+	if ((usage & GRALLOC_USAGE_SW_READ_MASK) == GRALLOC_USAGE_SW_READ_RARELY)
+		use_flags |= BO_USE_SW_READ_RARELY;
+	if ((usage & GRALLOC_USAGE_SW_READ_MASK) == GRALLOC_USAGE_SW_READ_OFTEN)
+		use_flags |= BO_USE_SW_READ_OFTEN;
+	if ((usage & GRALLOC_USAGE_SW_WRITE_MASK) == GRALLOC_USAGE_SW_WRITE_RARELY)
+		use_flags |= BO_USE_SW_WRITE_RARELY;
+	if ((usage & GRALLOC_USAGE_SW_WRITE_MASK) == GRALLOC_USAGE_SW_WRITE_OFTEN)
+		use_flags |= BO_USE_SW_WRITE_OFTEN;
+	if (usage & GRALLOC_USAGE_HW_TEXTURE)
+		use_flags |= BO_USE_TEXTURE;
+	if (usage & GRALLOC_USAGE_HW_RENDER)
+		use_flags |= BO_USE_RENDERING;
+	if (usage & GRALLOC_USAGE_HW_2D)
+		use_flags |= BO_USE_RENDERING;
+	if (usage & GRALLOC_USAGE_HW_COMPOSER)
 		/* HWC wants to use display hardware, but can defer to OpenGL. */
-		usage |= BO_USE_SCANOUT | BO_USE_TEXTURE;
-	if (flags & GRALLOC_USAGE_HW_FB)
-		usage |= BO_USE_NONE;
-	if (flags & GRALLOC_USAGE_EXTERNAL_DISP)
+		use_flags |= BO_USE_SCANOUT | BO_USE_TEXTURE;
+	if (usage & GRALLOC_USAGE_HW_FB)
+		use_flags |= BO_USE_NONE;
+	if (usage & GRALLOC_USAGE_EXTERNAL_DISP)
 		/*
 		 * This flag potentially covers external display for the normal drivers (i915,
 		 * rockchip) and usb monitors (evdi/udl). It's complicated so ignore it.
 		 * */
-		usage |= BO_USE_NONE;
-	if (flags & GRALLOC_USAGE_PROTECTED)
-		usage |= BO_USE_PROTECTED;
-	if (flags & GRALLOC_USAGE_HW_VIDEO_ENCODER)
+		use_flags |= BO_USE_NONE;
+	if (usage & GRALLOC_USAGE_PROTECTED)
+		use_flags |= BO_USE_PROTECTED;
+	if (usage & GRALLOC_USAGE_HW_VIDEO_ENCODER)
 		/*HACK: See b/30054495 */
-		usage |= BO_USE_SW_READ_OFTEN;
-	if (flags & GRALLOC_USAGE_HW_CAMERA_WRITE)
-		usage |= BO_USE_CAMERA_WRITE;
-	if (flags & GRALLOC_USAGE_HW_CAMERA_READ)
-		usage |= BO_USE_CAMERA_READ;
-	if (flags & GRALLOC_USAGE_RENDERSCRIPT)
-		usage |= BO_USE_RENDERSCRIPT;
+		use_flags |= BO_USE_SW_READ_OFTEN;
+	if (usage & GRALLOC_USAGE_HW_CAMERA_WRITE)
+		use_flags |= BO_USE_CAMERA_WRITE;
+	if (usage & GRALLOC_USAGE_HW_CAMERA_READ)
+		use_flags |= BO_USE_CAMERA_READ;
+	if (usage & GRALLOC_USAGE_RENDERSCRIPT)
+		use_flags |= BO_USE_RENDERSCRIPT;
 
-	return usage;
+	return use_flags;
+}
+
+static uint32_t gralloc0_convert_map_usage(int map_usage)
+{
+	uint32_t map_flags = BO_MAP_NONE;
+
+	if (map_usage & GRALLOC_USAGE_SW_READ_MASK)
+		map_flags |= BO_MAP_READ;
+	if (map_usage & GRALLOC_USAGE_SW_WRITE_MASK)
+		map_flags |= BO_MAP_WRITE;
+
+	return map_flags;
 }
 
 static int gralloc0_alloc(alloc_device_t *dev, int w, int h, int format, int usage,
@@ -91,19 +104,19 @@ static int gralloc0_alloc(alloc_device_t *dev, int w, int h, int format, int usa
 	descriptor.droid_format = format;
 	descriptor.producer_usage = descriptor.consumer_usage = usage;
 	descriptor.drm_format = cros_gralloc_convert_format(format);
-	descriptor.drv_usage = gralloc0_convert_flags(usage);
+	descriptor.use_flags = gralloc0_convert_usage(usage);
 
 	supported = mod->driver->is_supported(&descriptor);
 	if (!supported && (usage & GRALLOC_USAGE_HW_COMPOSER)) {
-		descriptor.drv_usage &= ~BO_USE_SCANOUT;
+		descriptor.use_flags &= ~BO_USE_SCANOUT;
 		supported = mod->driver->is_supported(&descriptor);
 	}
 
 	if (!supported) {
-		cros_gralloc_error("Unsupported combination -- HAL format: %u, HAL flags: %u, "
-				   "drv_format: %4.4s, drv_flags: %llu",
+		cros_gralloc_error("Unsupported combination -- HAL format: %u, HAL usage: %u, "
+				   "drv_format: %4.4s, use_flags: %llu",
 				   format, usage, reinterpret_cast<char *>(&descriptor.drm_format),
-				   static_cast<unsigned long long>(descriptor.drv_usage));
+				   static_cast<unsigned long long>(descriptor.use_flags));
 		return -EINVAL;
 	}
 
@@ -282,9 +295,13 @@ static int gralloc0_lock_async(struct gralloc_module_t const *module, buffer_han
 			       int usage, int l, int t, int w, int h, void **vaddr, int fence_fd)
 {
 	int32_t ret;
-	uint64_t flags;
+	uint32_t map_flags;
 	uint8_t *addr[DRV_MAX_PLANES];
 	auto mod = (struct gralloc0_module *)module;
+	struct rectangle rect = { .x = static_cast<uint32_t>(l),
+				  .y = static_cast<uint32_t>(t),
+				  .width = static_cast<uint32_t>(w),
+				  .height = static_cast<uint32_t>(h) };
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
@@ -297,8 +314,13 @@ static int gralloc0_lock_async(struct gralloc_module_t const *module, buffer_han
 		return -EINVAL;
 	}
 
-	flags = gralloc0_convert_flags(usage);
-	ret = mod->driver->lock(handle, fence_fd, flags, addr);
+	assert(l >= 0);
+	assert(t >= 0);
+	assert(w >= 0);
+	assert(h >= 0);
+
+	map_flags = gralloc0_convert_map_usage(usage);
+	ret = mod->driver->lock(handle, fence_fd, &rect, map_flags, addr);
 	*vaddr = addr[0];
 	return ret;
 }
@@ -314,10 +336,14 @@ static int gralloc0_lock_async_ycbcr(struct gralloc_module_t const *module, buff
 				     int usage, int l, int t, int w, int h,
 				     struct android_ycbcr *ycbcr, int fence_fd)
 {
-	uint64_t flags;
 	int32_t ret;
+	uint32_t map_flags;
 	uint8_t *addr[DRV_MAX_PLANES] = { nullptr, nullptr, nullptr, nullptr };
 	auto mod = (struct gralloc0_module *)module;
+	struct rectangle rect = { .x = static_cast<uint32_t>(l),
+				  .y = static_cast<uint32_t>(t),
+				  .width = static_cast<uint32_t>(w),
+				  .height = static_cast<uint32_t>(h) };
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
@@ -332,8 +358,13 @@ static int gralloc0_lock_async_ycbcr(struct gralloc_module_t const *module, buff
 		return -EINVAL;
 	}
 
-	flags = gralloc0_convert_flags(usage);
-	ret = mod->driver->lock(handle, fence_fd, flags, addr);
+	assert(l >= 0);
+	assert(t >= 0);
+	assert(w >= 0);
+	assert(h >= 0);
+
+	map_flags = gralloc0_convert_map_usage(usage);
+	ret = mod->driver->lock(handle, fence_fd, &rect, map_flags, addr);
 	if (ret)
 		return ret;
 

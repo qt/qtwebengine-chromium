@@ -4,6 +4,7 @@
 
 #include "components/viz/service/hit_test/hit_test_aggregator.h"
 
+#include "base/metrics/histogram_macros.h"
 #include "components/viz/common/hit_test/aggregated_hit_test_region.h"
 #include "components/viz/service/hit_test/hit_test_aggregator_delegate.h"
 #include "third_party/skia/include/core/SkMatrix44.h"
@@ -31,9 +32,11 @@ void PrepareTransformForReadOnlySharedMemory(gfx::Transform* transform) {
 }  // namespace
 
 HitTestAggregator::HitTestAggregator(const HitTestManager* hit_test_manager,
-                                     HitTestAggregatorDelegate* delegate)
+                                     HitTestAggregatorDelegate* delegate,
+                                     const FrameSinkId& frame_sink_id)
     : hit_test_manager_(hit_test_manager),
       delegate_(delegate),
+      root_frame_sink_id_(frame_sink_id),
       weak_ptr_factory_(this) {
   AllocateHitTestRegionArray();
 }
@@ -52,11 +55,13 @@ void HitTestAggregator::GrowRegionList() {
 void HitTestAggregator::Swap() {
   SwapHandles();
   if (!handle_replaced_) {
-    delegate_->SwitchActiveAggregatedHitTestRegionList(active_handle_index_);
+    delegate_->SwitchActiveAggregatedHitTestRegionList(root_frame_sink_id_,
+                                                       active_handle_index_);
     return;
   }
 
   delegate_->OnAggregatedHitTestRegionListUpdated(
+      root_frame_sink_id_,
       read_handle_->Clone(mojo::SharedBufferHandle::AccessMode::READ_ONLY),
       read_size_,
       write_handle_->Clone(mojo::SharedBufferHandle::AccessMode::READ_ONLY),
@@ -74,7 +79,9 @@ void HitTestAggregator::AllocateHitTestRegionArray() {
 void HitTestAggregator::ResizeHitTestRegionArray(uint32_t size) {
   size_t num_bytes = size * sizeof(AggregatedHitTestRegion);
   write_handle_ = mojo::SharedBufferHandle::Create(num_bytes);
+  DCHECK(write_handle_.is_valid());
   auto new_buffer_ = write_handle_->Map(num_bytes);
+  DCHECK(new_buffer_);
   handle_replaced_ = true;
 
   AggregatedHitTestRegion* region = (AggregatedHitTestRegion*)new_buffer_.get();
@@ -97,6 +104,8 @@ void HitTestAggregator::SwapHandles() {
 }
 
 void HitTestAggregator::AppendRoot(const SurfaceId& surface_id) {
+  SCOPED_UMA_HISTOGRAM_TIMER("Event.VizHitTest.AggregateTime");
+
   const mojom::HitTestRegionList* hit_test_region_list =
       hit_test_manager_->GetActiveHitTestRegionList(surface_id);
   if (!hit_test_region_list)
@@ -111,6 +120,7 @@ void HitTestAggregator::AppendRoot(const SurfaceId& surface_id) {
 
   DCHECK_GE(region_index, 1u);
   int32_t child_count = region_index - 1;
+  UMA_HISTOGRAM_COUNTS_1000("Event.VizHitTest.HitTestRegions", region_index);
   SetRegionAt(0, surface_id.frame_sink_id(), hit_test_region_list->flags,
               hit_test_region_list->bounds, hit_test_region_list->transform,
               child_count);

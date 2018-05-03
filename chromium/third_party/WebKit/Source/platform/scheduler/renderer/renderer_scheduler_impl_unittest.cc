@@ -13,12 +13,13 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/test/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "build/build_config.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/scheduler/base/real_time_domain.h"
+#include "platform/scheduler/child/features.h"
 #include "platform/scheduler/renderer/auto_advancing_virtual_time_domain.h"
 #include "platform/scheduler/renderer/budget_pool.h"
 #include "platform/scheduler/renderer/web_frame_scheduler_impl.h"
@@ -26,7 +27,7 @@
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/page/launching_process_state.h"
+#include "third_party/WebKit/public/common/page/launching_process_state.h"
 
 namespace blink {
 namespace scheduler {
@@ -40,7 +41,7 @@ class FakeInputEvent : public blink::WebInputEvent {
       : WebInputEvent(sizeof(FakeInputEvent),
                       event_type,
                       modifiers,
-                      WebInputEvent::kTimeStampForTesting) {}
+                      WebInputEvent::GetStaticTimeStampForTests()) {}
 };
 
 void AppendToVectorTestTask(std::vector<std::string>* vector,
@@ -209,9 +210,10 @@ class RendererSchedulerImplForTest : public RendererSchedulerImpl {
   using RendererSchedulerImpl::OnIdlePeriodStarted;
   using RendererSchedulerImpl::EstimateLongestJankFreeTaskDuration;
 
-  explicit RendererSchedulerImplForTest(
-      std::unique_ptr<TaskQueueManager> manager)
-      : RendererSchedulerImpl(std::move(manager)), update_policy_count_(0) {}
+  RendererSchedulerImplForTest(std::unique_ptr<TaskQueueManager> manager,
+                               base::Optional<base::Time> initial_virtual_time)
+      : RendererSchedulerImpl(std::move(manager), initial_virtual_time),
+        update_policy_count_(0) {}
 
   void UpdatePolicyLocked(UpdateType update_type) override {
     update_policy_count_++;
@@ -246,6 +248,10 @@ class RendererSchedulerImplForTest : public RendererSchedulerImpl {
     return any_thread().waiting_for_meaningful_paint;
   }
 
+  VirtualTimePolicy virtual_time_policy() const {
+    return main_thread_only().virtual_time_policy;
+  }
+
   int update_policy_count_;
   std::vector<std::string> use_cases_;
 };
@@ -263,6 +269,7 @@ class RendererSchedulerImplTest : public ::testing::Test {
   RendererSchedulerImplTest()
       : fake_task_(TaskQueue::PostedTask(base::Bind([] {}), FROM_HERE),
                    base::TimeTicks()) {
+    feature_list_.InitAndEnableFeature(kHighPriorityInput);
     clock_.Advance(base::TimeDelta::FromMicroseconds(5000));
   }
 
@@ -284,7 +291,8 @@ class RendererSchedulerImplTest : public ::testing::Test {
         CreateTaskQueueManagerForTest(
             message_loop_.get(),
             message_loop_ ? message_loop_->task_runner() : mock_task_runner_,
-            &clock_)));
+            &clock_),
+        base::nullopt));
   }
 
   void Initialize(std::unique_ptr<RendererSchedulerImplForTest> scheduler) {
@@ -297,11 +305,14 @@ class RendererSchedulerImplTest : public ::testing::Test {
     }
     default_task_runner_ = scheduler_->DefaultTaskQueue();
     compositor_task_runner_ = scheduler_->CompositorTaskQueue();
-    loading_task_runner_ = scheduler_->LoadingTaskQueue();
+    input_task_runner_ = scheduler_->InputTaskQueue();
+    loading_task_runner_ = scheduler_->NewLoadingTaskQueue(
+        MainThreadTaskQueue::QueueType::kFrameLoading);
     loading_control_task_runner_ = scheduler_->NewLoadingTaskQueue(
-        MainThreadTaskQueue::QueueType::kFrameLoading_kControl);
+        MainThreadTaskQueue::QueueType::kFrameLoadingControl);
     idle_task_runner_ = scheduler_->IdleTaskRunner();
-    timer_task_runner_ = scheduler_->TimerTaskQueue();
+    timer_task_runner_ = scheduler_->NewTimerTaskQueue(
+        MainThreadTaskQueue::QueueType::kFrameThrottleable);
     v8_task_runner_ = scheduler_->V8TaskQueue();
     fake_queue_ = scheduler_->NewLoadingTaskQueue(
         MainThreadTaskQueue::QueueType::kFrameLoading);
@@ -324,10 +335,11 @@ class RendererSchedulerImplTest : public ::testing::Test {
   void RunUntilIdle() {
     // Only one of mock_task_runner_ or message_loop_ should be set.
     DCHECK(!mock_task_runner_.get() || !message_loop_.get());
-    if (mock_task_runner_.get())
+    if (mock_task_runner_.get()) {
       mock_task_runner_->RunUntilIdle();
-    else
+    } else {
       base::RunLoop().RunUntilIdle();
+    }
   }
 
   void DoMainFrame() {
@@ -605,6 +617,7 @@ class RendererSchedulerImplTest : public ::testing::Test {
   // task identifier specifies the task type:
   // - 'D': Default task
   // - 'C': Compositor task
+  // - 'P': Input task
   // - 'L': Loading task
   // - 'M': Loading Control task
   // - 'I': Idle task
@@ -623,6 +636,10 @@ class RendererSchedulerImplTest : public ::testing::Test {
           break;
         case 'C':
           compositor_task_runner_->PostTask(
+              FROM_HERE, base::Bind(&AppendToVectorTestTask, run_order, task));
+          break;
+        case 'P':
+          input_task_runner_->PostTask(
               FROM_HERE, base::Bind(&AppendToVectorTestTask, run_order, task));
           break;
         case 'L':
@@ -709,11 +726,7 @@ class RendererSchedulerImplTest : public ::testing::Test {
     return scheduler->ThrottleableTaskQueue();
   }
 
-  static scoped_refptr<TaskQueue> LoadingTaskQueue(
-      WebFrameSchedulerImpl* scheduler) {
-    return scheduler->LoadingTaskQueue();
-  }
-
+  base::test::ScopedFeatureList feature_list_;
   base::SimpleTestTickClock clock_;
   TaskQueue::Task fake_task_;
   scoped_refptr<MainThreadTaskQueue> fake_queue_;
@@ -724,10 +737,11 @@ class RendererSchedulerImplTest : public ::testing::Test {
   std::unique_ptr<RendererSchedulerImplForTest> scheduler_;
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
-  scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> input_task_runner_;
+  scoped_refptr<TaskQueue> loading_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> loading_control_task_runner_;
   scoped_refptr<SingleThreadIdleTaskRunner> idle_task_runner_;
-  scoped_refptr<base::SingleThreadTaskRunner> timer_task_runner_;
+  scoped_refptr<TaskQueue> timer_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> v8_task_runner_;
   bool simulate_timer_task_ran_;
   bool simulate_compositor_task_ran_;
@@ -748,10 +762,11 @@ TEST_F(RendererSchedulerImplTest, TestPostDefaultTask) {
 
 TEST_F(RendererSchedulerImplTest, TestPostDefaultAndCompositor) {
   std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "D1 C1");
+  PostTestTasks(&run_order, "D1 C1 P1");
   RunUntilIdle();
   EXPECT_THAT(run_order, ::testing::Contains("D1"));
   EXPECT_THAT(run_order, ::testing::Contains("C1"));
+  EXPECT_THAT(run_order, ::testing::Contains("P1"));
 }
 
 TEST_F(RendererSchedulerImplTest, TestRentrantTask) {
@@ -886,12 +901,14 @@ TEST_F(RendererSchedulerImplTest, TestDelayedEndIdlePeriodCanceled) {
 
 TEST_F(RendererSchedulerImplTest, TestDefaultPolicy) {
   std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "L1 I1 D1 C1 D2 C2");
+  PostTestTasks(&run_order, "L1 I1 D1 P1 C1 D2 P2 C2");
 
   EnableIdleTasks();
   RunUntilIdle();
+  // High-priority input is enabled and input tasks are processed first.
   EXPECT_THAT(run_order,
-              ::testing::ElementsAre(std::string("L1"), std::string("D1"),
+              ::testing::ElementsAre(std::string("P1"), std::string("P2"),
+                                     std::string("L1"), std::string("D1"),
                                      std::string("C1"), std::string("D2"),
                                      std::string("C2"), std::string("I1")));
   EXPECT_EQ(RendererSchedulerImpl::UseCase::kNone, CurrentUseCase());
@@ -901,14 +918,16 @@ TEST_F(RendererSchedulerImplTest, TestDefaultPolicyWithSlowCompositor) {
   RunSlowCompositorTask();
 
   std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "L1 I1 D1 C1 D2 C2");
+  PostTestTasks(&run_order, "L1 I1 D1 C1 P1 D2 C2");
 
   EnableIdleTasks();
   RunUntilIdle();
+  // Even with slow compositor input tasks are handled first.
   EXPECT_THAT(run_order,
-              ::testing::ElementsAre(std::string("L1"), std::string("D1"),
-                                     std::string("C1"), std::string("D2"),
-                                     std::string("C2"), std::string("I1")));
+              ::testing::ElementsAre(std::string("P1"), std::string("L1"),
+                                     std::string("D1"), std::string("C1"),
+                                     std::string("D2"), std::string("C2"),
+                                     std::string("I1")));
   EXPECT_EQ(RendererSchedulerImpl::UseCase::kNone, CurrentUseCase());
 }
 
@@ -1862,7 +1881,8 @@ class RendererSchedulerImplWithMockSchedulerTest
     mock_task_runner_ =
         base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, false);
     mock_scheduler_ = new RendererSchedulerImplForTest(
-        CreateTaskQueueManagerForTest(nullptr, mock_task_runner_, &clock_));
+        CreateTaskQueueManagerForTest(nullptr, mock_task_runner_, &clock_),
+        base::nullopt);
     Initialize(base::WrapUnique(mock_scheduler_));
   }
 
@@ -3222,121 +3242,6 @@ class WebViewSchedulerImplForTest : public WebViewSchedulerImpl {
   DISALLOW_COPY_AND_ASSIGN(WebViewSchedulerImplForTest);
 };
 
-TEST_F(RendererSchedulerImplTest, BlockedTimerNotification) {
-  // Make sure we see one (and just one) console warning about an expensive
-  // timer being deferred.
-  WebViewSchedulerImplForTest web_view_scheduler(scheduler_.get());
-
-  scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
-  DoMainFrame();
-  SimulateExpensiveTasks(timer_task_runner_);
-  SimulateCompositorGestureStart(TouchEventPolicy::kSendTouchStart);
-  ForceTouchStartToBeExpectedSoon();
-
-  std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "T1 T2");
-  RunUntilIdle();
-
-  EXPECT_EQ(0u, run_order.size());
-  EXPECT_EQ(1u, web_view_scheduler.Interventions().size());
-  EXPECT_NE(std::string::npos,
-            web_view_scheduler.Interventions()[0].find("crbug.com/574343"));
-}
-
-TEST_F(RendererSchedulerImplTest, BlockedTimerNotification_TimersStopped) {
-  // Make sure we don't report warnings about blocked tasks when timers are
-  // being blocked for other reasons.
-  WebViewSchedulerImplForTest web_view_scheduler(scheduler_.get());
-
-  scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
-  auto pause_handle = scheduler_->PauseRenderer();
-  DoMainFrame();
-  SimulateExpensiveTasks(timer_task_runner_);
-  SimulateCompositorGestureStart(TouchEventPolicy::kSendTouchStart);
-  ForceTouchStartToBeExpectedSoon();
-
-  std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "T1 T2");
-  RunUntilIdle();
-
-  EXPECT_EQ(0u, run_order.size());
-  EXPECT_EQ(0u, web_view_scheduler.Interventions().size());
-}
-
-TEST_F(RendererSchedulerImplTest, BlockedTimerNotification_TOUCHSTART) {
-  // Make sure we don't report warnings about blocked tasks during TOUCHSTART.
-  WebViewSchedulerImplForTest web_view_scheduler(scheduler_.get());
-
-  scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
-  DoMainFrame();
-  SimulateExpensiveTasks(timer_task_runner_);
-  SimulateCompositorGestureStart(TouchEventPolicy::kSendTouchStart);
-  scheduler_->DidHandleInputEventOnCompositorThread(
-      FakeInputEvent(blink::WebInputEvent::kTouchStart),
-      RendererScheduler::InputEventState::EVENT_CONSUMED_BY_COMPOSITOR);
-  EXPECT_EQ(UseCase::kTouchstart, ForceUpdatePolicyAndGetCurrentUseCase());
-
-  std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "T1 T2");
-  RunUntilIdle();
-
-  EXPECT_EQ(0u, run_order.size());
-  EXPECT_EQ(0u, web_view_scheduler.Interventions().size());
-}
-
-TEST_F(RendererSchedulerImplTest,
-       BlockedTimerNotification_SYNCHRONIZED_GESTURE) {
-  // Make sure we only report warnings during a high blocking threshold.
-  WebViewSchedulerImplForTest web_view_scheduler(scheduler_.get());
-
-  scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
-  DoMainFrame();
-  SimulateExpensiveTasks(timer_task_runner_);
-  SimulateCompositorGestureStart(TouchEventPolicy::kDontSendTouchStart);
-
-  viz::BeginFrameArgs begin_frame_args = viz::BeginFrameArgs::Create(
-      BEGINFRAME_FROM_HERE, 0, next_begin_frame_number_++, clock_.NowTicks(),
-      base::TimeTicks(), base::TimeDelta::FromMilliseconds(16),
-      viz::BeginFrameArgs::NORMAL);
-  begin_frame_args.on_critical_path = true;
-  scheduler_->WillBeginFrame(begin_frame_args);
-
-  EXPECT_EQ(UseCase::kSynchronizedGesture,
-            ForceUpdatePolicyAndGetCurrentUseCase());
-
-  std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "T1 T2");
-  RunUntilIdle();
-
-  EXPECT_EQ(0u, run_order.size());
-  EXPECT_EQ(0u, web_view_scheduler.Interventions().size());
-}
-
-TEST_F(RendererSchedulerImplTest, BlockedTimerNotification_WHEEL) {
-  // Make sure we report warnings about blocked tasks for wheel events. Simulate
-  // a potentially blocking wheel gesture that turns into a compositor scroll.
-  WebViewSchedulerImplForTest web_view_scheduler(scheduler_.get());
-
-  scheduler_->SetHasVisibleRenderWidgetWithTouchHandler(true);
-  DoMainFrame();
-  SimulateExpensiveTasks(timer_task_runner_);
-  scheduler_->DidHandleInputEventOnCompositorThread(
-      FakeInputEvent(blink::WebInputEvent::kMouseWheel),
-      RendererScheduler::InputEventState::EVENT_FORWARDED_TO_MAIN_THREAD);
-  SimulateCompositorGestureStart(TouchEventPolicy::kDontSendTouchStart);
-
-  EXPECT_EQ(UseCase::kCompositorGesture,
-            ForceUpdatePolicyAndGetCurrentUseCase());
-  ForceTouchStartToBeExpectedSoon();
-
-  std::vector<std::string> run_order;
-  PostTestTasks(&run_order, "T1 T2");
-  RunUntilIdle();
-
-  EXPECT_EQ(0u, run_order.size());
-  EXPECT_EQ(1u, web_view_scheduler.Interventions().size());
-}
-
 namespace {
 void SlowCountingTask(size_t* count,
                       base::SimpleTestTickClock* clock,
@@ -3360,9 +3265,9 @@ TEST_F(RendererSchedulerImplTest,
   size_t count = 0;
   // With the compositor task taking 10ms, there is not enough time to run this
   // 7ms timer task in the 16ms frame.
-  scheduler_->TimerTaskQueue()->PostTask(
-      FROM_HERE, base::Bind(SlowCountingTask, &count, &clock_, 7,
-                            scheduler_->TimerTaskQueue()));
+  timer_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(SlowCountingTask, &count, &clock_, 7, timer_task_runner_));
 
   for (int i = 0; i < 1000; i++) {
     viz::BeginFrameArgs begin_frame_args = viz::BeginFrameArgs::Create(
@@ -3392,7 +3297,7 @@ TEST_F(RendererSchedulerImplTest,
     bool expect_queue_throttled = (i > 0);
     EXPECT_EQ(expect_queue_throttled,
               scheduler_->task_queue_throttler()->IsThrottled(
-                  scheduler_->TimerTaskQueue().get()))
+                  timer_task_runner_.get()))
         << "i = " << i;
 
     if (expect_queue_throttled) {
@@ -3423,9 +3328,9 @@ TEST_F(RendererSchedulerImplTest,
   size_t count = 0;
   // With the compositor task taking 10ms, there is not enough time to run this
   // 7ms timer task in the 16ms frame.
-  scheduler_->TimerTaskQueue()->PostTask(
-      FROM_HERE, base::Bind(SlowCountingTask, &count, &clock_, 7,
-                            scheduler_->TimerTaskQueue()));
+  timer_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(SlowCountingTask, &count, &clock_, 7, timer_task_runner_));
 
   std::unique_ptr<RendererScheduler::RendererPauseHandle> paused;
   for (int i = 0; i < 1000; i++) {
@@ -3457,8 +3362,7 @@ TEST_F(RendererSchedulerImplTest,
         (i == 0) || (clock_.NowTicks() > first_throttled_run_time);
     if (paused)
       expect_queue_enabled = false;
-    EXPECT_EQ(expect_queue_enabled,
-              scheduler_->TimerTaskQueue()->IsQueueEnabled())
+    EXPECT_EQ(expect_queue_enabled, timer_task_runner_->IsQueueEnabled())
         << "i = " << i;
 
     // After we've run any expensive tasks suspend the queue.  The throttling
@@ -3481,9 +3385,9 @@ TEST_F(RendererSchedulerImplTest,
   size_t count = 0;
   // With the compositor task taking 10ms, there is enough time to run this 6ms
   // timer task in the 16ms frame.
-  scheduler_->TimerTaskQueue()->PostTask(
-      FROM_HERE, base::Bind(SlowCountingTask, &count, &clock_, 6,
-                            scheduler_->TimerTaskQueue()));
+  timer_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(SlowCountingTask, &count, &clock_, 6, timer_task_runner_));
 
   for (int i = 0; i < 1000; i++) {
     viz::BeginFrameArgs begin_frame_args = viz::BeginFrameArgs::Create(
@@ -3507,7 +3411,7 @@ TEST_F(RendererSchedulerImplTest,
         base::Bind(&RendererSchedulerImplTest::SimulatedCompositorTaskPending,
                    base::Unretained(this)));
     EXPECT_EQ(UseCase::kSynchronizedGesture, CurrentUseCase()) << "i = " << i;
-    EXPECT_TRUE(scheduler_->TimerTaskQueue()->IsQueueEnabled()) << "i = " << i;
+    EXPECT_TRUE(timer_task_runner_->IsQueueEnabled()) << "i = " << i;
   }
 
   // Task is not throttled.
@@ -3538,7 +3442,7 @@ TEST_F(RendererSchedulerImplTest,
 
   EXPECT_TRUE(TimerTasksSeemExpensive());
   EXPECT_TRUE(TouchStartExpectedSoon());
-  EXPECT_FALSE(scheduler_->TimerTaskQueue()->IsQueueEnabled());
+  EXPECT_FALSE(timer_task_runner_->IsQueueEnabled());
 }
 
 TEST_F(RendererSchedulerImplTest, DenyLongIdleDuringTouchStart) {
@@ -3791,9 +3695,9 @@ TEST_F(RendererSchedulerImplTest, UnthrottledTaskRunner) {
 
   size_t timer_count = 0;
   size_t unthrottled_count = 0;
-  scheduler_->TimerTaskQueue()->PostTask(
+  timer_task_runner_->PostTask(
       FROM_HERE, base::Bind(SlowCountingTask, &timer_count, &clock_, 7,
-                            scheduler_->TimerTaskQueue()));
+                            timer_task_runner_));
   unthrottled_task_runner->PostTask(
       FROM_HERE, base::Bind(SlowCountingTask, &unthrottled_count, &clock_, 7,
                             unthrottled_task_runner));
@@ -3828,13 +3732,15 @@ TEST_F(RendererSchedulerImplTest, UnthrottledTaskRunner) {
 }
 
 TEST_F(RendererSchedulerImplTest, EnableVirtualTime) {
-  scheduler_->EnableVirtualTime();
-
+  EXPECT_FALSE(scheduler_->IsVirtualTimeEnabled());
+  scheduler_->EnableVirtualTime(
+      RendererSchedulerImpl::BaseTimeOverridePolicy::DO_NOT_OVERRIDE);
+  EXPECT_TRUE(scheduler_->IsVirtualTimeEnabled());
   scoped_refptr<MainThreadTaskQueue> loading_tq =
       scheduler_->NewLoadingTaskQueue(
           MainThreadTaskQueue::QueueType::kFrameLoading);
   scoped_refptr<TaskQueue> loading_control_tq = scheduler_->NewLoadingTaskQueue(
-      MainThreadTaskQueue::QueueType::kFrameLoading_kControl);
+      MainThreadTaskQueue::QueueType::kFrameLoadingControl);
   scoped_refptr<MainThreadTaskQueue> timer_tq = scheduler_->NewTimerTaskQueue(
       MainThreadTaskQueue::QueueType::kFrameThrottleable);
   scoped_refptr<MainThreadTaskQueue> unthrottled_tq =
@@ -3845,9 +3751,9 @@ TEST_F(RendererSchedulerImplTest, EnableVirtualTime) {
             scheduler_->GetVirtualTimeDomain());
   EXPECT_EQ(scheduler_->CompositorTaskQueue()->GetTimeDomain(),
             scheduler_->GetVirtualTimeDomain());
-  EXPECT_EQ(scheduler_->LoadingTaskQueue()->GetTimeDomain(),
+  EXPECT_EQ(loading_task_runner_->GetTimeDomain(),
             scheduler_->GetVirtualTimeDomain());
-  EXPECT_EQ(scheduler_->TimerTaskQueue()->GetTimeDomain(),
+  EXPECT_EQ(timer_task_runner_->GetTimeDomain(),
             scheduler_->GetVirtualTimeDomain());
   EXPECT_EQ(scheduler_->VirtualTimeControlTaskQueue()->GetTimeDomain(),
             scheduler_->GetVirtualTimeDomain());
@@ -3904,13 +3810,15 @@ TEST_F(RendererSchedulerImplTest, EnableVirtualTimeAfterThrottling) {
   web_frame_scheduler->SetFrameVisible(false);
   EXPECT_TRUE(scheduler_->task_queue_throttler()->IsThrottled(timer_tq));
 
-  scheduler_->EnableVirtualTime();
+  scheduler_->EnableVirtualTime(
+      RendererSchedulerImpl::BaseTimeOverridePolicy::DO_NOT_OVERRIDE);
   EXPECT_EQ(timer_tq->GetTimeDomain(), scheduler_->GetVirtualTimeDomain());
   EXPECT_FALSE(scheduler_->task_queue_throttler()->IsThrottled(timer_tq));
 }
 
 TEST_F(RendererSchedulerImplTest, DisableVirtualTimeForTesting) {
-  scheduler_->EnableVirtualTime();
+  scheduler_->EnableVirtualTime(
+      RendererSchedulerImpl::BaseTimeOverridePolicy::DO_NOT_OVERRIDE);
 
   scoped_refptr<MainThreadTaskQueue> timer_tq = scheduler_->NewTimerTaskQueue(
       MainThreadTaskQueue::QueueType::kFrameThrottleable);
@@ -3923,15 +3831,53 @@ TEST_F(RendererSchedulerImplTest, DisableVirtualTimeForTesting) {
             scheduler_->real_time_domain());
   EXPECT_EQ(scheduler_->CompositorTaskQueue()->GetTimeDomain(),
             scheduler_->real_time_domain());
-  EXPECT_EQ(scheduler_->LoadingTaskQueue()->GetTimeDomain(),
+  EXPECT_EQ(loading_task_runner_->GetTimeDomain(),
             scheduler_->real_time_domain());
-  EXPECT_EQ(scheduler_->TimerTaskQueue()->GetTimeDomain(),
+  EXPECT_EQ(timer_task_runner_->GetTimeDomain(),
             scheduler_->real_time_domain());
   EXPECT_EQ(scheduler_->ControlTaskQueue()->GetTimeDomain(),
             scheduler_->real_time_domain());
   EXPECT_EQ(scheduler_->V8TaskQueue()->GetTimeDomain(),
             scheduler_->real_time_domain());
   EXPECT_FALSE(scheduler_->VirtualTimeControlTaskQueue());
+}
+
+TEST_F(RendererSchedulerImplTest, VirtualTimePauser) {
+  scheduler_->EnableVirtualTime(
+      RendererSchedulerImpl::BaseTimeOverridePolicy::DO_NOT_OVERRIDE);
+  scheduler_->SetVirtualTimePolicy(
+      WebViewSchedulerImpl::VirtualTimePolicy::kDeterministicLoading);
+
+  WebScopedVirtualTimePauser pauser =
+      scheduler_->CreateWebScopedVirtualTimePauser(
+          WebScopedVirtualTimePauser::VirtualTaskDuration::kInstant);
+
+  base::TimeTicks before = scheduler_->GetVirtualTimeDomain()->Now();
+  EXPECT_TRUE(scheduler_->VirtualTimeAllowedToAdvance());
+  pauser.PauseVirtualTime(true);
+  EXPECT_FALSE(scheduler_->VirtualTimeAllowedToAdvance());
+
+  pauser.PauseVirtualTime(false);
+  EXPECT_TRUE(scheduler_->VirtualTimeAllowedToAdvance());
+  base::TimeTicks after = scheduler_->GetVirtualTimeDomain()->Now();
+  EXPECT_EQ(after, before);
+}
+
+TEST_F(RendererSchedulerImplTest, VirtualTimePauserNonInstantTask) {
+  scheduler_->EnableVirtualTime(
+      RendererSchedulerImpl::BaseTimeOverridePolicy::DO_NOT_OVERRIDE);
+  scheduler_->SetVirtualTimePolicy(
+      WebViewSchedulerImpl::VirtualTimePolicy::kDeterministicLoading);
+
+  WebScopedVirtualTimePauser pauser =
+      scheduler_->CreateWebScopedVirtualTimePauser(
+          WebScopedVirtualTimePauser::VirtualTaskDuration::kNonInstant);
+
+  base::TimeTicks before = scheduler_->GetVirtualTimeDomain()->Now();
+  pauser.PauseVirtualTime(true);
+  pauser.PauseVirtualTime(false);
+  base::TimeTicks after = scheduler_->GetVirtualTimeDomain()->Now();
+  EXPECT_GT(after, before);
 }
 
 TEST_F(RendererSchedulerImplTest, Tracing) {
@@ -3954,14 +3900,12 @@ TEST_F(RendererSchedulerImplTest, Tracing) {
   CPUTimeBudgetPool* time_budget_pool =
       scheduler_->task_queue_throttler()->CreateCPUTimeBudgetPool("test");
 
-  time_budget_pool->AddQueue(base::TimeTicks(),
-                             scheduler_->TimerTaskQueue().get());
+  time_budget_pool->AddQueue(base::TimeTicks(), timer_task_runner_.get());
 
-  scheduler_->TimerTaskQueue()->PostTask(FROM_HERE, base::Bind(NullTask));
+  timer_task_runner_->PostTask(FROM_HERE, base::BindOnce(NullTask));
 
-  LoadingTaskQueue(web_frame_scheduler.get())
-      ->PostDelayedTask(FROM_HERE, base::Bind(NullTask),
-                        TimeDelta::FromMilliseconds(10));
+  loading_task_runner_->PostDelayedTask(FROM_HERE, base::BindOnce(NullTask),
+                                        base::TimeDelta::FromMilliseconds(10));
 
   std::unique_ptr<base::trace_event::ConvertableToTraceFormat> value =
       scheduler_->AsValue(base::TimeTicks());
@@ -4214,6 +4158,30 @@ TEST_F(RendererSchedulerImplTest, PauseTimersForAndroidWebView) {
   EXPECT_THAT(run_order, ::testing::ElementsAre(std::string("T1")));
 }
 #endif  // defined(OS_ANDROID)
+
+class RendererSchedulerImplWithInitalVirtualTimeTest
+    : public RendererSchedulerImplTest {
+ public:
+  void SetUp() override {
+    if (!message_loop_) {
+      mock_task_runner_ =
+          base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, false);
+    }
+    Initialize(std::make_unique<RendererSchedulerImplForTest>(
+        CreateTaskQueueManagerForTest(
+            message_loop_.get(),
+            message_loop_ ? message_loop_->task_runner() : mock_task_runner_,
+            &clock_),
+        base::Time::FromJsTime(1000000.0)));
+  }
+};
+
+TEST_F(RendererSchedulerImplWithInitalVirtualTimeTest, VirtualTimeOverride) {
+  EXPECT_TRUE(scheduler_->IsVirtualTimeEnabled());
+  EXPECT_EQ(WebViewSchedulerImpl::VirtualTimePolicy::kPause,
+            scheduler_->virtual_time_policy());
+  EXPECT_EQ(base::Time::Now(), base::Time::FromJsTime(1000000.0));
+}
 
 }  // namespace renderer_scheduler_impl_unittest
 }  // namespace scheduler

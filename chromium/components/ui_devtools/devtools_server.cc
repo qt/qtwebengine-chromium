@@ -4,11 +4,12 @@
 
 #include "components/ui_devtools/devtools_server.h"
 
+#include <memory>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/format_macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -43,6 +44,27 @@ int GetUiDevToolsPort() {
     port = kDefaultPort;
   return port;
 }
+
+constexpr net::NetworkTrafficAnnotationTag kUIDevtoolsServer =
+    net::DefineNetworkTrafficAnnotation("ui_devtools_server", R"(
+      semantics {
+        sender: "UI Devtools Server"
+        description:
+          "Backend for UI DevTools, to inspect Aura/Views UI."
+        trigger:
+          "Run with '--enable-ui-devtools' switch."
+        data: "Debugging data, including any data on the open pages."
+        destination: OTHER
+        destination_other: "The data can be sent to any destination."
+      }
+      policy {
+        cookies_allowed: NO
+        setting:
+          "This request cannot be disabled in settings. However it will never "
+          "be made if user does not run with '--enable-ui-devtools' switch."
+        policy_exception_justification:
+          "Not implemented, only used in Devtools and is behind a switch."
+      })");
 
 }  // namespace
 
@@ -108,9 +130,9 @@ void UiDevToolsServer::AttachClient(std::unique_ptr<UiDevToolsClient> client) {
 void UiDevToolsServer::SendOverWebSocket(int connection_id,
                                          const String& message) {
   io_thread_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&net::HttpServer::SendOverWebSocket,
-                 base::Unretained(server_.get()), connection_id, message));
+      FROM_HERE, base::Bind(&net::HttpServer::SendOverWebSocket,
+                            base::Unretained(server_.get()), connection_id,
+                            message, kUIDevtoolsServer));
 }
 
 void UiDevToolsServer::Start(const std::string& address_string, uint16_t port) {
@@ -128,7 +150,7 @@ void UiDevToolsServer::StartServer(const std::string& address_string,
   if (socket->ListenWithAddressAndPort(address_string, port, kBacklog) !=
       net::OK)
     return;
-  server_ = base::MakeUnique<net::HttpServer>(std::move(socket), this);
+  server_ = std::make_unique<net::HttpServer>(std::move(socket), this);
 }
 
 // HttpServer::Delegate Implementation
@@ -157,9 +179,9 @@ void UiDevToolsServer::OnWebSocketRequest(
   client->set_connection_id(connection_id);
   connections_[connection_id] = client;
   io_thread_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&net::HttpServer::AcceptWebSocket,
-                 base::Unretained(server_.get()), connection_id, info));
+      FROM_HERE, base::Bind(&net::HttpServer::AcceptWebSocket,
+                            base::Unretained(server_.get()), connection_id,
+                            info, kUIDevtoolsServer));
 }
 
 void UiDevToolsServer::OnWebSocketMessage(int connection_id,

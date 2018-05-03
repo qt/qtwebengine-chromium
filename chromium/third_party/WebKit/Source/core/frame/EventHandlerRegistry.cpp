@@ -27,6 +27,18 @@ WebEventListenerProperties GetWebEventListenerProperties(bool has_blocking,
   return WebEventListenerProperties::kNothing;
 }
 
+LocalFrame* GetLocalFrameForTarget(EventTarget* target) {
+  LocalFrame* frame = nullptr;
+  if (Node* node = target->ToNode()) {
+    frame = node->GetDocument().GetFrame();
+  } else if (LocalDOMWindow* dom_window = target->ToLocalDOMWindow()) {
+    frame = dom_window->GetFrame();
+  } else {
+    NOTREACHED() << "Unexpected target type for event handler.";
+  }
+  return frame;
+}
+
 }  // namespace
 
 EventHandlerRegistry::EventHandlerRegistry(Page& page) : page_(&page) {}
@@ -115,19 +127,21 @@ bool EventHandlerRegistry::UpdateEventHandlerInternal(
     ChangeOperation op,
     EventHandlerClass handler_class,
     EventTarget* target) {
-  bool had_handlers = targets_[handler_class].size();
+  unsigned old_num_handlers = targets_[handler_class].size();
   bool target_set_changed =
       UpdateEventHandlerTargets(op, handler_class, target);
-  bool has_handlers = targets_[handler_class].size();
+  unsigned new_num_handlers = targets_[handler_class].size();
 
-  bool handlers_changed = had_handlers != has_handlers;
+  bool handlers_changed = old_num_handlers != new_num_handlers;
 
   if (op != kRemoveAll) {
     if (handlers_changed)
-      NotifyHasHandlersChanged(target, handler_class, has_handlers);
+      NotifyHasHandlersChanged(target, handler_class, new_num_handlers > 0);
 
-    if (target_set_changed)
-      NotifyDidAddOrRemoveEventHandlerTarget(handler_class);
+    if (target_set_changed) {
+      NotifyDidAddOrRemoveEventHandlerTarget(GetLocalFrameForTarget(target),
+                                             handler_class);
+    }
   }
   return handlers_changed;
 }
@@ -210,11 +224,13 @@ void EventHandlerRegistry::DidRemoveAllEventHandlers(EventTarget& target) {
   for (size_t i = 0; i < kEventHandlerClassCount; ++i) {
     EventHandlerClass handler_class = static_cast<EventHandlerClass>(i);
     if (handlers_changed[i]) {
-      bool has_handlers = targets_[handler_class].size();
+      bool has_handlers = targets_[handler_class].Contains(&target);
       NotifyHasHandlersChanged(&target, handler_class, has_handlers);
     }
-    if (target_set_changed[i])
-      NotifyDidAddOrRemoveEventHandlerTarget(handler_class);
+    if (target_set_changed[i]) {
+      NotifyDidAddOrRemoveEventHandlerTarget(GetLocalFrameForTarget(&target),
+                                             handler_class);
+    }
   }
 }
 
@@ -222,14 +238,7 @@ void EventHandlerRegistry::NotifyHasHandlersChanged(
     EventTarget* target,
     EventHandlerClass handler_class,
     bool has_active_handlers) {
-  LocalFrame* frame = nullptr;
-  if (Node* node = target->ToNode()) {
-    frame = node->GetDocument().GetFrame();
-  } else if (LocalDOMWindow* dom_window = target->ToLocalDOMWindow()) {
-    frame = dom_window->GetFrame();
-  } else {
-    NOTREACHED() << "Unexpected target type for event handler.";
-  }
+  LocalFrame* frame = GetLocalFrameForTarget(target);
 
   switch (handler_class) {
     case kScrollEvent:
@@ -246,7 +255,7 @@ void EventHandlerRegistry::NotifyHasHandlersChanged(
     case kTouchStartOrMoveEventBlockingLowLatency:
       page_->GetChromeClient().SetNeedsLowLatencyInput(frame,
                                                        has_active_handlers);
-    // Fall through.
+      FALLTHROUGH;
     case kTouchAction:
     case kTouchStartOrMoveEventBlocking:
     case kTouchStartOrMoveEventPassive:
@@ -279,6 +288,7 @@ void EventHandlerRegistry::NotifyHasHandlersChanged(
 }
 
 void EventHandlerRegistry::NotifyDidAddOrRemoveEventHandlerTarget(
+    LocalFrame* frame,
     EventHandlerClass handler_class) {
   ScrollingCoordinator* scrolling_coordinator =
       page_->GetScrollingCoordinator();
@@ -286,7 +296,8 @@ void EventHandlerRegistry::NotifyDidAddOrRemoveEventHandlerTarget(
       (handler_class == kTouchAction ||
        handler_class == kTouchStartOrMoveEventBlocking ||
        handler_class == kTouchStartOrMoveEventBlockingLowLatency)) {
-    scrolling_coordinator->TouchEventTargetRectsDidChange();
+    scrolling_coordinator->TouchEventTargetRectsDidChange(
+        &frame->LocalFrameRoot());
   }
 }
 

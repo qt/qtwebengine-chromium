@@ -15,7 +15,7 @@
 #include "GrTextureMaker.h"
 #include "SkDraw.h"
 #include "SkGr.h"
-#include "SkMaskFilter.h"
+#include "SkMaskFilterBase.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
 #include "effects/GrTextureDomain.h"
@@ -248,6 +248,9 @@ void SkGpuDevice::drawTextureProducerImpl(GrTextureProducer* producer,
     // FP. In the future this should be an opaque optimization enabled by the combination of
     // GrDrawOp/GP and FP.
     const SkMaskFilter* mf = paint.getMaskFilter();
+    if (mf && as_MFB(mf)->hasFragmentProcessor()) {
+        mf = nullptr;
+    }
     // The shader expects proper local coords, so we can't replace local coords with texture coords
     // if the shader will be used. If we have a mask filter we will change the underlying geometry
     // that is rendered.
@@ -255,7 +258,8 @@ void SkGpuDevice::drawTextureProducerImpl(GrTextureProducer* producer,
 
     bool doBicubic;
     GrSamplerState::Filter fm = GrSkFilterQualityToGrFilterMode(
-            paint.getFilterQuality(), viewMatrix, srcToDstMatrix, &doBicubic);
+            paint.getFilterQuality(), viewMatrix, srcToDstMatrix,
+            fContext->contextPriv().sharpenMipmappedTextures(), &doBicubic);
     const GrSamplerState::Filter* filterMode = doBicubic ? nullptr : &fm;
 
     GrTextureProducer::FilterConstraint constraintMode;
@@ -323,14 +327,14 @@ void SkGpuDevice::drawTextureProducerImpl(GrTextureProducer* producer,
         viewMatrix.mapRectScaleTranslate(&devClippedDstRect, clippedDstRect);
 
         SkStrokeRec rec(SkStrokeRec::kFill_InitStyle);
-        if (mf->directFilterRRectMaskGPU(fContext.get(),
-                                         fRenderTargetContext.get(),
-                                         std::move(grPaint),
-                                         this->clip(),
-                                         viewMatrix,
-                                         rec,
-                                         SkRRect::MakeRect(clippedDstRect),
-                                         SkRRect::MakeRect(devClippedDstRect))) {
+        if (as_MFB(mf)->directFilterRRectMaskGPU(fContext.get(),
+                                                 fRenderTargetContext.get(),
+                                                 std::move(grPaint),
+                                                 this->clip(),
+                                                 viewMatrix,
+                                                 rec,
+                                                 SkRRect::MakeRect(clippedDstRect),
+                                                 SkRRect::MakeRect(devClippedDstRect))) {
             return;
         }
     }

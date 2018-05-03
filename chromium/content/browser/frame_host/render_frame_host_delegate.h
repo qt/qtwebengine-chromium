@@ -12,6 +12,7 @@
 
 #include "base/i18n/rtl.h"
 #include "build/build_config.h"
+#include "components/viz/common/surfaces/surface_id.h"
 #include "content/browser/webui/web_ui_impl.h"
 #include "content/common/content_export.h"
 #include "content/common/frame_message_enums.h"
@@ -22,8 +23,8 @@
 #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/http/http_response_headers.h"
-#include "services/device/public/interfaces/geolocation_context.mojom.h"
-#include "services/device/public/interfaces/wake_lock.mojom.h"
+#include "services/device/public/mojom/geolocation_context.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
 #include "ui/base/window_open_disposition.h"
 
 #if defined(OS_WIN)
@@ -32,7 +33,7 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/scoped_java_ref.h"
-#include "services/device/public/interfaces/nfc.mojom.h"
+#include "services/device/public/mojom/nfc.mojom.h"
 #endif
 
 class GURL;
@@ -117,7 +118,6 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void RunJavaScriptDialog(RenderFrameHost* render_frame_host,
                                    const base::string16& message,
                                    const base::string16& default_prompt,
-                                   const GURL& frame_url,
                                    JavaScriptDialogType type,
                                    IPC::Message* reply_msg) {}
 
@@ -247,6 +247,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // possibly changing focus in distinct but related inner/outer WebContents.
   virtual void SetFocusedFrame(FrameTreeNode* node, SiteInstance* source) {}
 
+  // The frame called |window.focus()|.
+  virtual void DidCallFocus() {}
+
   // Searches the WebContents for a focused frame, potentially in an inner
   // WebContents. If this WebContents has no focused frame, returns |nullptr|.
   // If there is no inner WebContents at the focused tree node, returns its
@@ -346,6 +349,15 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
                                           ResourceType resource_type,
                                           const std::string& ip,
                                           net::CertStatus cert_status) {}
+
+  // Request to print a frame that is in a different process than its parent.
+  virtual void PrintCrossProcessSubframe(const gfx::Rect& rect,
+                                         int document_cookie,
+                                         RenderFrameHost* render_frame_host) {}
+
+  // Updates the Picture-in-Picture controller with the relevant viz::SurfaceId
+  // of the video to be in Picture-in-Picture mode.
+  virtual void UpdatePictureInPictureSurfaceId(viz::SurfaceId surface_id) {}
 
  protected:
   virtual ~RenderFrameHostDelegate() {}

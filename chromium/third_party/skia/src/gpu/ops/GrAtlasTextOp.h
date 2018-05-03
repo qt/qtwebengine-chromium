@@ -92,16 +92,7 @@ public:
 
     const char* name() const override { return "AtlasTextOp"; }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
-        fProcessors.visitProxies(func);
-
-        const sk_sp<GrTextureProxy>* proxies = fFontCache->getProxies(this->maskFormat());
-        for (int i = 0; i < kMaxTextures; ++i) {
-            if (proxies[i]) {
-                func(proxies[i].get());
-            }
-        }
-    }
+    void visitProxies(const VisitProxyFunc& func) const override;
 
     SkString dumpInfo() const override;
 
@@ -182,8 +173,6 @@ private:
     int numGlyphs() const { return fNumGlyphs; }
 
     bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override;
-
-    static constexpr auto kMaxTextures = 4;
 
     sk_sp<GrGeometryProcessor> setupDfProcessor() const;
 

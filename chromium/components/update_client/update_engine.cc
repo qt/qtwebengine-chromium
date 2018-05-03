@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/guid.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
@@ -25,7 +26,7 @@
 namespace update_client {
 
 UpdateContext::UpdateContext(
-    const scoped_refptr<Configurator>& config,
+    scoped_refptr<Configurator> config,
     bool is_foreground,
     const std::vector<std::string>& ids,
     UpdateClient::CrxDataCallback crx_data_callback,
@@ -39,7 +40,8 @@ UpdateContext::UpdateContext(
       crx_data_callback(std::move(crx_data_callback)),
       notify_observers_callback(notify_observers_callback),
       callback(std::move(callback)),
-      crx_downloader_factory(crx_downloader_factory) {
+      crx_downloader_factory(crx_downloader_factory),
+      session_id(base::GenerateGUID()) {
   for (const auto& id : ids)
     components.insert(
         std::make_pair(id, std::make_unique<Component>(*this, id)));
@@ -48,10 +50,10 @@ UpdateContext::UpdateContext(
 UpdateContext::~UpdateContext() {}
 
 UpdateEngine::UpdateEngine(
-    const scoped_refptr<Configurator>& config,
+    scoped_refptr<Configurator> config,
     UpdateChecker::Factory update_checker_factory,
     CrxDownloader::Factory crx_downloader_factory,
-    PingManager* ping_manager,
+    scoped_refptr<PingManager> ping_manager,
     const NotifyObserversCallback& notify_observers_callback)
     : config_(config),
       update_checker_factory_(update_checker_factory),
@@ -71,6 +73,13 @@ void UpdateEngine::Update(bool is_foreground,
                           UpdateClient::CrxDataCallback crx_data_callback,
                           Callback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (ids.empty()) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE,
+        base::BindOnce(std::move(callback), Error::INVALID_ARGUMENT));
+    return;
+  }
 
   if (IsThrottled(is_foreground)) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -157,8 +166,9 @@ void UpdateEngine::DoUpdateCheck(const UpdateContextIterator it) {
       update_checker_factory_(config_, metadata_.get());
 
   update_context->update_checker->CheckForUpdates(
-      update_context->ids, update_context->components,
-      config_->ExtraRequestParams(), update_context->enabled_component_updates,
+      update_context->session_id, update_context->ids,
+      update_context->components, config_->ExtraRequestParams(),
+      update_context->enabled_component_updates, update_context->is_foreground,
       base::BindOnce(&UpdateEngine::UpdateCheckDone, base::Unretained(this),
                      it));
 }
@@ -288,7 +298,8 @@ void UpdateEngine::HandleComponentComplete(const UpdateContextIterator it) {
     update_context->next_update_delay = component->GetUpdateDuration();
 
     if (!component->events().empty()) {
-      ping_manager_->SendPing(*component);
+      ping_manager_->SendPing(*component,
+                              base::BindOnce([](int, const std::string&) {}));
     }
 
     queue.pop();

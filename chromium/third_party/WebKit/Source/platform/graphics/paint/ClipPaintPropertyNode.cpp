@@ -5,7 +5,6 @@
 #include "platform/graphics/paint/ClipPaintPropertyNode.h"
 
 #include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/paint/PropertyTreeState.h"
 
 namespace blink {
 
@@ -28,20 +27,14 @@ std::unique_ptr<JSONObject> ClipPaintPropertyNode::ToJSON() const {
     json->SetString("rectExcludingOverlayScrollbars",
                     clip_rect_excluding_overlay_scrollbars_.ToString());
   }
+  if (clip_path_) {
+    json->SetBoolean("hasClipPath", true);
+  }
   if (direct_compositing_reasons_ != CompositingReason::kNone) {
     json->SetString("directCompositingReasons",
                     CompositingReason::ToString(direct_compositing_reasons_));
   }
   return json;
 }
-
-#if DCHECK_IS_ON()
-
-String ClipPaintPropertyNode::ToTreeString() const {
-  return blink::PropertyTreeStatePrinter<blink::ClipPaintPropertyNode>()
-      .PathAsString(this);
-}
-
-#endif
 
 }  // namespace blink

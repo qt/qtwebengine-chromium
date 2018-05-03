@@ -56,6 +56,7 @@ rtc_static_library("video") {
   deps = [
     "..:webrtc_common",
     "../:typedefs",
+    "../api:fec_controller_api",
     "../api:libjingle_peerconnection_api",
     "../api:optional",
     "../api:transport_api",
@@ -69,7 +70,9 @@ rtc_static_library("video") {
     "../modules/rtp_rtcp:rtp_rtcp_format",
     "../modules/video_coding:video_codec_interface",
     "../rtc_base:checks",
+    "../rtc_base:stringutils",
     "../rtc_base/experiments:alr_experiment",
+    "../rtc_base/system:fallthrough",
     "../system_wrappers:field_trial_api",
     "../system_wrappers:metrics_api",
 
@@ -79,14 +82,12 @@ rtc_static_library("video") {
     "../logging:rtc_event_log_api",
     "../modules:module_api",
     "../modules/bitrate_controller",
-    "../modules/congestion_controller",
     "../modules/pacing",
     "../modules/remote_bitrate_estimator",
     "../modules/rtp_rtcp",
     "../modules/utility",
     "../modules/video_coding",
     "../modules/video_coding:video_coding_utility",
-    "../modules/video_coding:webrtc_vp8_helpers",
     "../modules/video_processing",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_numerics",
@@ -94,7 +95,6 @@ rtc_static_library("video") {
     "../rtc_base:sequenced_task_checker",
     "../rtc_base:weak_ptr",
     "../system_wrappers",
-    "../voice_engine",
   ]
 
   if (!build_with_mozilla) {
@@ -112,6 +112,7 @@ if (rtc_include_tests) {
     ]
     deps = [
       "../logging:rtc_event_log_api",
+      "../logging:rtc_event_log_impl_output",
       "../media:rtc_audio_video",
       "../media:rtc_internal_video_codecs",
       "../modules/audio_mixer:audio_mixer_impl",
@@ -130,7 +131,6 @@ if (rtc_include_tests) {
       "../test:test_support_test_artifacts",
       "../test:video_test_common",
       "../test:video_test_support",
-      "../voice_engine",
     ]
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
@@ -170,6 +170,7 @@ if (rtc_include_tests) {
     deps = [
       ":video_quality_test",
       "../rtc_base:rtc_base_approved",
+      "../system_wrappers:field_trial_default",
       "../system_wrappers:metrics_default",
       "../system_wrappers:runtime_enabled_features_default",
       "../test:field_trial",
@@ -178,7 +179,6 @@ if (rtc_include_tests) {
       "../test:test_common",
       "../test:test_renderer",
       "../test:test_support",
-      "//testing/gmock",
       "//testing/gtest",
     ]
     if (!build_with_chromium && is_clang) {
@@ -196,6 +196,7 @@ if (rtc_include_tests) {
     deps = [
       ":video_quality_test",
       "../rtc_base:rtc_base_approved",
+      "../system_wrappers:field_trial_default",
       "../system_wrappers:metrics_default",
       "../system_wrappers:runtime_enabled_features_default",
       "../test:field_trial",
@@ -220,6 +221,7 @@ if (rtc_include_tests) {
     deps = [
       ":video_quality_test",
       "../rtc_base:rtc_base_approved",
+      "../system_wrappers:field_trial_default",
       "../system_wrappers:metrics_default",
       "../system_wrappers:runtime_enabled_features_default",
       "../test:field_trial",
@@ -228,7 +230,6 @@ if (rtc_include_tests) {
       "../test:test_common",
       "../test:test_renderer",
       "../test:test_support",
-      "//testing/gmock",
       "//testing/gtest",
     ]
     if (!build_with_chromium && is_clang) {
@@ -279,7 +280,24 @@ if (rtc_include_tests) {
     sources = [
       "call_stats_unittest.cc",
       "encoder_rtcp_feedback_unittest.cc",
-      "end_to_end_tests.cc",
+      "end_to_end_tests/bandwidth_tests.cc",
+      "end_to_end_tests/call_operation_tests.cc",
+      "end_to_end_tests/codec_tests.cc",
+      "end_to_end_tests/config_tests.cc",
+      "end_to_end_tests/extended_reports_tests.cc",
+      "end_to_end_tests/fec_tests.cc",
+      "end_to_end_tests/histogram_tests.cc",
+      "end_to_end_tests/log_tests.cc",
+      "end_to_end_tests/multi_stream_tester.cc",
+      "end_to_end_tests/multi_stream_tester.h",
+      "end_to_end_tests/multi_stream_tests.cc",
+      "end_to_end_tests/network_state_tests.cc",
+      "end_to_end_tests/probing_tests.cc",
+      "end_to_end_tests/retransmission_tests.cc",
+      "end_to_end_tests/rtp_rtcp_tests.cc",
+      "end_to_end_tests/ssrc_tests.cc",
+      "end_to_end_tests/stats_tests.cc",
+      "end_to_end_tests/transport_feedback_tests.cc",
       "overuse_frame_detector_unittest.cc",
       "payload_router_unittest.cc",
       "picture_id_tests.cc",
@@ -323,7 +341,7 @@ if (rtc_include_tests) {
       "../modules/video_coding:video_codec_interface",
       "../modules/video_coding:video_coding_utility",
       "../modules/video_coding:webrtc_h264",
-      "../modules/video_coding:webrtc_vp8",
+      "../modules/video_coding:webrtc_multiplex",
       "../modules/video_coding:webrtc_vp8_helpers",
       "../modules/video_coding:webrtc_vp9",
       "../rtc_base:checks",
@@ -343,7 +361,6 @@ if (rtc_include_tests) {
       "../test:test_common",
       "../test:test_support",
       "../test:video_test_common",
-      "//testing/gmock",
       "//testing/gtest",
     ]
     if (!build_with_chromium && is_clang) {

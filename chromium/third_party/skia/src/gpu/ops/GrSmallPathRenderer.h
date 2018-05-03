@@ -33,8 +33,12 @@ public:
     // the list of active OnFlushBackkbackObjects in an freeGpuResources call (i.e., we accept the
     // default retainOnFreeGpuResources implementation).
 
-    void preFlush(GrOnFlushResourceProvider*, const uint32_t*, int,
-                  SkTArray<sk_sp<GrRenderTargetContext>>*) override {}
+    void preFlush(GrOnFlushResourceProvider* onFlushResourceProvider, const uint32_t*, int,
+                  SkTArray<sk_sp<GrRenderTargetContext>>*) override {
+        if (fAtlas) {
+            fAtlas->instantiate(onFlushResourceProvider);
+        }
+    }
 
     void postFlush(GrDeferredUploadToken startTokenForNextFlush,
                    const uint32_t* opListIDs, int numOpListIDs) override {
@@ -92,8 +96,10 @@ private:
                 SkScalar tx = ctm.get(SkMatrix::kMTransX);
                 SkScalar ty = ctm.get(SkMatrix::kMTransY);
                 // Allow 8 bits each in x and y of subpixel positioning.
-                SkFixed fracX = SkScalarToFixed(SkScalarFraction(tx)) & 0x0000FF00;
-                SkFixed fracY = SkScalarToFixed(SkScalarFraction(ty)) & 0x0000FF00;
+                tx -= SkScalarFloorToScalar(tx);
+                ty -= SkScalarFloorToScalar(ty);
+                SkFixed fracX = SkScalarToFixed(tx) & 0x0000FF00;
+                SkFixed fracY = SkScalarToFixed(ty) & 0x0000FF00;
                 int shapeKeySize = shape.unstyledKeySize();
                 fKey.reset(5 + shapeKeySize);
                 fKey[0] = SkFloat2Bits(sx);

@@ -27,7 +27,7 @@
 #include "chrome/common/pref_names.h"
 #include "components/browsing_data/core/history_notice_utils.h"
 #include "components/browsing_data/core/pref_names.h"
-#include "components/feature_engagement/features.h"
+#include "components/feature_engagement/buildflags.h"
 #include "components/prefs/pref_member.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/signin_manager.h"
@@ -50,24 +50,21 @@ namespace {
 const int kMaxTimesHistoryNoticeShown = 1;
 
 // TODO(msramek): Get the list of deletion preferences from the JS side.
-const char* kCounterPrefs[] = {
+const char* kCounterPrefsAdvanced[] = {
     browsing_data::prefs::kDeleteBrowsingHistory,
     browsing_data::prefs::kDeleteCache,
+    browsing_data::prefs::kDeleteCookies,
     browsing_data::prefs::kDeleteDownloadHistory,
     browsing_data::prefs::kDeleteFormData,
     browsing_data::prefs::kDeleteHostedAppsData,
     browsing_data::prefs::kDeleteMediaLicenses,
     browsing_data::prefs::kDeletePasswords,
+    browsing_data::prefs::kDeleteSiteSettings,
 };
 
-// Additional counters for the tabbed ui.
+// Additional counters for the basic tab of CBD.
 const char* kCounterPrefsBasic[] = {
     browsing_data::prefs::kDeleteCacheBasic,
-};
-
-const char* kCounterPrefsAdvanced[] = {
-    browsing_data::prefs::kDeleteCookies,
-    browsing_data::prefs::kDeleteSiteSettings,
 };
 
 const char kRegisterableDomainField[] = "registerableDomain";
@@ -87,13 +84,8 @@ ClearBrowsingDataHandler::ClearBrowsingDataHandler(content::WebUI* webui)
     : profile_(Profile::FromWebUI(webui)),
       sync_service_(ProfileSyncServiceFactory::GetForProfile(profile_)),
       sync_service_observer_(this),
-      show_history_footer_(false),
       show_history_deletion_dialog_(false),
-      weak_ptr_factory_(this) {
-  if (base::FeatureList::IsEnabled(features::kTabsInCbd)) {
-    browsing_data::MigratePreferencesToBasic(profile_->GetPrefs());
-  }
-}
+      weak_ptr_factory_(this) {}
 
 ClearBrowsingDataHandler::~ClearBrowsingDataHandler() {
 }
@@ -120,32 +112,25 @@ void ClearBrowsingDataHandler::OnJavascriptAllowed() {
     sync_service_observer_.Add(sync_service_);
 
   DCHECK(counters_.empty());
-  for (const std::string& pref : kCounterPrefs) {
+  for (const std::string& pref : kCounterPrefsBasic) {
+    AddCounter(BrowsingDataCounterFactory::GetForProfileAndPref(profile_, pref),
+               browsing_data::ClearBrowsingDataTab::BASIC);
+  }
+  for (const std::string& pref : kCounterPrefsAdvanced) {
     AddCounter(BrowsingDataCounterFactory::GetForProfileAndPref(profile_, pref),
                browsing_data::ClearBrowsingDataTab::ADVANCED);
   }
-  if (base::FeatureList::IsEnabled(features::kTabsInCbd)) {
-    for (const std::string& pref : kCounterPrefsBasic) {
-      AddCounter(
-          BrowsingDataCounterFactory::GetForProfileAndPref(profile_, pref),
-          browsing_data::ClearBrowsingDataTab::BASIC);
-    }
-    for (const std::string& pref : kCounterPrefsAdvanced) {
-      AddCounter(
-          BrowsingDataCounterFactory::GetForProfileAndPref(profile_, pref),
-          browsing_data::ClearBrowsingDataTab::ADVANCED);
-    }
-    PrefService* prefs = profile_->GetPrefs();
-    period_ = std::make_unique<IntegerPrefMember>();
-    period_->Init(browsing_data::prefs::kDeleteTimePeriod, prefs,
-                  base::Bind(&ClearBrowsingDataHandler::HandleTimePeriodChanged,
-                             base::Unretained(this)));
-    periodBasic_ = std::make_unique<IntegerPrefMember>();
-    periodBasic_->Init(
-        browsing_data::prefs::kDeleteTimePeriodBasic, prefs,
-        base::Bind(&ClearBrowsingDataHandler::HandleTimePeriodChanged,
-                   base::Unretained(this)));
-  }
+  PrefService* prefs = profile_->GetPrefs();
+  period_ = std::make_unique<IntegerPrefMember>();
+  period_->Init(
+      browsing_data::prefs::kDeleteTimePeriod, prefs,
+      base::BindRepeating(&ClearBrowsingDataHandler::HandleTimePeriodChanged,
+                          base::Unretained(this)));
+  periodBasic_ = std::make_unique<IntegerPrefMember>();
+  periodBasic_->Init(
+      browsing_data::prefs::kDeleteTimePeriodBasic, prefs,
+      base::BindRepeating(&ClearBrowsingDataHandler::HandleTimePeriodChanged,
+                          base::Unretained(this)));
 }
 
 void ClearBrowsingDataHandler::OnJavascriptDisallowed() {
@@ -239,8 +224,10 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
       case BrowsingDataType::BOOKMARKS:
         // Only implemented on Android.
         NOTREACHED();
+        break;
       case BrowsingDataType::NUM_TYPES:
         NOTREACHED();
+        break;
     }
   }
 
@@ -455,25 +442,15 @@ void ClearBrowsingDataHandler::OnStateChanged(syncer::SyncService* sync) {
 
 void ClearBrowsingDataHandler::UpdateSyncState() {
   auto* signin_manager = SigninManagerFactory::GetForProfile(profile_);
-  // TODO(dullweber): Remove "show_history_footer" attribute when the new UI
-  // is launched as it doesn't have this footer anymore. Instead the
-  // myactivity.google.com link is shown when a user is signed in or syncing.
   CallJavascriptFunction(
       "cr.webUIListenerCallback", base::Value("update-sync-state"),
       base::Value(signin_manager && signin_manager->IsAuthenticated()),
       base::Value(sync_service_ && sync_service_->IsSyncActive() &&
                   sync_service_->GetActiveDataTypes().Has(
-                      syncer::HISTORY_DELETE_DIRECTIVES)),
-      base::Value(show_history_footer_));
+                      syncer::HISTORY_DELETE_DIRECTIVES)));
 }
 
 void ClearBrowsingDataHandler::RefreshHistoryNotice() {
-  browsing_data::ShouldShowNoticeAboutOtherFormsOfBrowsingHistory(
-      sync_service_,
-      WebHistoryServiceFactory::GetForProfile(profile_),
-      base::Bind(&ClearBrowsingDataHandler::UpdateHistoryNotice,
-                 weak_ptr_factory_.GetWeakPtr()));
-
   // If the dialog with history notice has been shown less than
   // |kMaxTimesHistoryNoticeShown| times, we might have to show it when the
   // user deletes history. Find out if the conditions are met.
@@ -488,15 +465,6 @@ void ClearBrowsingDataHandler::RefreshHistoryNotice() {
         base::Bind(&ClearBrowsingDataHandler::UpdateHistoryDeletionDialog,
                    weak_ptr_factory_.GetWeakPtr()));
   }
-}
-
-void ClearBrowsingDataHandler::UpdateHistoryNotice(bool show) {
-  show_history_footer_ = show;
-  UpdateSyncState();
-
-  UMA_HISTOGRAM_BOOLEAN(
-      "History.ClearBrowsingData.HistoryNoticeShownInFooterWhenUpdated",
-      show_history_footer_);
 }
 
 void ClearBrowsingDataHandler::UpdateHistoryDeletionDialog(bool show) {

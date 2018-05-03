@@ -34,6 +34,10 @@ constexpr int kMaxFramesBuffered = 600;
 // Max number of decoded frame info that will be saved.
 constexpr int kMaxFramesHistory = 50;
 
+// The time it's allowed for a frame to be late to its rendering prediction and
+// still be rendered.
+constexpr int kMaxAllowedFrameDalayMs = 5;
+
 constexpr int64_t kLogNonDecodedIntervalMs = 5000;
 }  // namespace
 
@@ -60,7 +64,7 @@ FrameBuffer::~FrameBuffer() {}
 
 FrameBuffer::ReturnReason FrameBuffer::NextFrame(
     int64_t max_wait_time_ms,
-    std::unique_ptr<FrameObject>* frame_out,
+    std::unique_ptr<EncodedFrame>* frame_out,
     bool keyframe_required) {
   TRACE_EVENT0("webrtc", "FrameBuffer::NextFrame");
   int64_t latest_return_time_ms =
@@ -106,7 +110,7 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
           continue;
         }
 
-        FrameObject* frame = frame_it->second.frame.get();
+        EncodedFrame* frame = frame_it->second.frame.get();
 
         if (keyframe_required && !frame->is_keyframe())
           continue;
@@ -119,7 +123,9 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
         // This will cause the frame buffer to prefer high framerate rather
         // than high resolution in the case of the decoder not decoding fast
         // enough and the stream has multiple spatial and temporal layers.
-        if (wait_ms == 0)
+        // For multiple temporal layers it may cause non-base layer frames to be
+        // skipped if they are late.
+        if (wait_ms < -kMaxAllowedFrameDalayMs)
           continue;
 
         break;
@@ -134,7 +140,7 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
     rtc::CritScope lock(&crit_);
     now_ms = clock_->TimeInMilliseconds();
     if (next_frame_it_ != frames_.end()) {
-      std::unique_ptr<FrameObject> frame =
+      std::unique_ptr<EncodedFrame> frame =
           std::move(next_frame_it_->second.frame);
 
       if (!frame->delayed_by_retransmission()) {
@@ -208,7 +214,8 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
   return kTimeout;
 }
 
-bool FrameBuffer::HasBadRenderTiming(const FrameObject& frame, int64_t now_ms) {
+bool FrameBuffer::HasBadRenderTiming(const EncodedFrame& frame,
+                                     int64_t now_ms) {
   // Assume that render timing errors are due to changes in the video stream.
   int64_t render_time_ms = frame.RenderTimeMs();
   const int64_t kMaxVideoDelayMs = 10000;
@@ -255,7 +262,7 @@ void FrameBuffer::UpdateRtt(int64_t rtt_ms) {
   jitter_estimator_->UpdateRtt(rtt_ms);
 }
 
-bool FrameBuffer::ValidReferences(const FrameObject& frame) const {
+bool FrameBuffer::ValidReferences(const EncodedFrame& frame) const {
   if (frame.picture_id < 0)
     return false;
 
@@ -275,7 +282,7 @@ bool FrameBuffer::ValidReferences(const FrameObject& frame) const {
   return true;
 }
 
-void FrameBuffer::UpdatePlayoutDelays(const FrameObject& frame) {
+void FrameBuffer::UpdatePlayoutDelays(const EncodedFrame& frame) {
   TRACE_EVENT0("webrtc", "FrameBuffer::UpdatePlayoutDelays");
   PlayoutDelay playout_delay = frame.EncodedImage().playout_delay_;
   if (playout_delay.min_ms >= 0)
@@ -285,7 +292,7 @@ void FrameBuffer::UpdatePlayoutDelays(const FrameObject& frame) {
     timing_->set_max_playout_delay(playout_delay.max_ms);
 }
 
-int64_t FrameBuffer::InsertFrame(std::unique_ptr<FrameObject> frame) {
+int64_t FrameBuffer::InsertFrame(std::unique_ptr<EncodedFrame> frame) {
   TRACE_EVENT0("webrtc", "FrameBuffer::InsertFrame");
   RTC_DCHECK(frame);
   if (stats_callback_)
@@ -459,7 +466,7 @@ void FrameBuffer::AdvanceLastDecodedFrame(FrameMap::iterator decoded) {
   }
 }
 
-bool FrameBuffer::UpdateFrameInfoWithIncomingFrame(const FrameObject& frame,
+bool FrameBuffer::UpdateFrameInfoWithIncomingFrame(const EncodedFrame& frame,
                                                    FrameMap::iterator info) {
   TRACE_EVENT0("webrtc", "FrameBuffer::UpdateFrameInfoWithIncomingFrame");
   FrameKey key(frame.picture_id, frame.spatial_layer);

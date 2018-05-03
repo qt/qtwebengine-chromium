@@ -99,10 +99,7 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
       scoped_refptr<viz::ContextProvider> context_provider,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
 
-  // WindowPort:
-  // Returns either the FrameSinkId set by window server or its server_id with
-  // the client id part 0.
-  viz::FrameSinkId GetFrameSinkId() const override;
+  viz::FrameSinkId GenerateFrameSinkIdFromServerId() const;
 
  private:
   friend class WindowPortMusTest;
@@ -157,7 +154,7 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
   // Contains data needed to identify a change from the server.
   struct ServerChangeData {
     // Applies to ADD, ADD_TRANSIENT, REMOVE, REMOVE_TRANSIENT, and REORDER.
-    Id child_id;
+    ui::Id child_id;
     // Applies to BOUNDS. This should be in dip.
     gfx::Rect bounds_in_dip;
     // Applies to VISIBLE.
@@ -275,11 +272,8 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
                          int64_t old_value,
                          std::unique_ptr<ui::PropertyData> data) override;
   std::unique_ptr<cc::LayerTreeFrameSink> CreateLayerTreeFrameSink() override;
-  viz::SurfaceId GetSurfaceId() const override;
   void AllocateLocalSurfaceId() override;
   const viz::LocalSurfaceId& GetLocalSurfaceId() override;
-  void OnWindowAddedToRootWindow() override;
-  void OnWillRemoveWindowFromRootWindow() override;
   void OnEventTargetingPolicyChanged() override;
   bool ShouldRestackTransientChildren() override;
 
@@ -314,7 +308,6 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
   // for a local aura::Window, we need keep a weak ptr of it, so we can update
   // the local surface id when necessary.
   base::WeakPtr<cc::LayerTreeFrameSink> local_layer_tree_frame_sink_;
-  bool is_frame_sink_id_added_to_compositor_ = false;
 
   base::WeakPtrFactory<WindowPortMus> weak_ptr_factory_;
 

@@ -47,17 +47,22 @@
 #include "core/editing/SelectionTemplate.h"
 #include "core/editing/SetSelectionOptions.h"
 #include "core/editing/VisiblePosition.h"
+#include "core/editing/commands/ApplyStyleCommand.h"
 #include "core/editing/commands/CreateLinkCommand.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/editing/commands/EditorCommandNames.h"
 #include "core/editing/commands/FormatBlockCommand.h"
 #include "core/editing/commands/IndentOutdentCommand.h"
 #include "core/editing/commands/InsertListCommand.h"
+#include "core/editing/commands/RemoveFormatCommand.h"
 #include "core/editing/commands/ReplaceSelectionCommand.h"
 #include "core/editing/commands/TypingCommand.h"
 #include "core/editing/commands/UnlinkCommand.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/serializers/Serialization.h"
 #include "core/editing/spellcheck/SpellChecker.h"
+#include "core/events/ClipboardEvent.h"
+#include "core/events/TextEvent.h"
 #include "core/frame/ContentSettingsClient.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
@@ -73,6 +78,7 @@
 #include "core/page/Page.h"
 #include "platform/Histogram.h"
 #include "platform/KillRing.h"
+#include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/scroll/Scrollbar.h"
 #include "platform/wtf/StringExtras.h"
 #include "platform/wtf/text/AtomicString.h"
@@ -274,6 +280,35 @@ static LocalFrame* TargetFrame(LocalFrame& frame, Event* event) {
   return node->GetDocument().GetFrame();
 }
 
+static void ApplyStyle(LocalFrame& frame,
+                       CSSPropertyValueSet* style,
+                       InputEvent::InputType input_type) {
+  const VisibleSelection& selection =
+      frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
+  if (selection.IsNone())
+    return;
+  if (selection.IsCaret()) {
+    frame.GetEditor().ComputeAndSetTypingStyle(style, input_type);
+    return;
+  }
+  DCHECK(selection.IsRange()) << selection;
+  if (!style)
+    return;
+  DCHECK(frame.GetDocument());
+  ApplyStyleCommand::Create(*frame.GetDocument(), EditingStyle::Create(style),
+                            input_type)
+      ->Apply();
+}
+
+static void ApplyStyleToSelection(LocalFrame& frame,
+                                  CSSPropertyValueSet* style,
+                                  InputEvent::InputType input_type) {
+  if (!style || style->IsEmpty() || !frame.GetEditor().CanEditRichly())
+    return;
+
+  ApplyStyle(frame, style, input_type);
+}
+
 static bool ApplyCommandToFrame(LocalFrame& frame,
                                 EditorCommandSource source,
                                 InputEvent::InputType input_type,
@@ -282,10 +317,10 @@ static bool ApplyCommandToFrame(LocalFrame& frame,
   // good reason for that?
   switch (source) {
     case kCommandFromMenuOrKeyBinding:
-      frame.GetEditor().ApplyStyleToSelection(style, input_type);
+      ApplyStyleToSelection(frame, style, input_type);
       return true;
     case kCommandFromDOM:
-      frame.GetEditor().ApplyStyle(style, input_type);
+      ApplyStyle(frame, style, input_type);
       return true;
   }
   NOTREACHED();
@@ -318,8 +353,8 @@ static bool ExecuteApplyStyle(LocalFrame& frame,
 
 // FIXME: executeToggleStyleInList does not handle complicated cases such as
 // <b><u>hello</u>world</b> properly. This function must use
-// Editor::selectionHasStyle to determine the current style but we cannot fix
-// this until https://bugs.webkit.org/show_bug.cgi?id=27818 is resolved.
+// EditingStyle::SelectionHasStyle to determine the current style but we cannot
+// fix this until https://bugs.webkit.org/show_bug.cgi?id=27818 is resolved.
 static bool ExecuteToggleStyleInList(LocalFrame& frame,
                                      EditorCommandSource source,
                                      InputEvent::InputType input_type,
@@ -355,6 +390,22 @@ static bool ExecuteToggleStyleInList(LocalFrame& frame,
   return ApplyCommandToFrame(frame, source, input_type, new_mutable_style);
 }
 
+static bool SelectionStartHasStyle(LocalFrame& frame,
+                                   CSSPropertyID property_id,
+                                   const String& value) {
+  const SecureContextMode secure_context_mode =
+      frame.GetDocument()->GetSecureContextMode();
+
+  EditingStyle* const style_to_check =
+      EditingStyle::Create(property_id, value, secure_context_mode);
+  EditingStyle* const style_at_start =
+      EditingStyleUtilities::CreateStyleAtSelectionStart(
+          frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated(),
+          property_id == CSSPropertyBackgroundColor, style_to_check->Style());
+  return style_to_check->TriStateOfStyle(style_at_start, secure_context_mode) !=
+         EditingTriState::kFalse;
+}
+
 static bool ExecuteToggleStyle(LocalFrame& frame,
                                EditorCommandSource source,
                                InputEvent::InputType input_type,
@@ -366,12 +417,13 @@ static bool ExecuteToggleStyle(LocalFrame& frame,
   // other: present throughout the selection
 
   bool style_is_present;
-  if (frame.GetEditor().Behavior().ShouldToggleStyleBasedOnStartOfSelection())
+  if (frame.GetEditor().Behavior().ShouldToggleStyleBasedOnStartOfSelection()) {
+    style_is_present = SelectionStartHasStyle(frame, property_id, on_value);
+  } else {
     style_is_present =
-        frame.GetEditor().SelectionStartHasStyle(property_id, on_value);
-  else
-    style_is_present = frame.GetEditor().SelectionHasStyle(
-                           property_id, on_value) == EditingTriState::kTrue;
+        EditingStyle::SelectionHasStyle(frame, property_id, on_value) ==
+        EditingTriState::kTrue;
+  }
 
   EditingStyle* style =
       EditingStyle::Create(property_id, style_is_present ? off_value : on_value,
@@ -478,11 +530,25 @@ static EditingTriState StateStyle(LocalFrame& frame,
                                   const char* desired_value) {
   frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
   if (frame.GetEditor().Behavior().ShouldToggleStyleBasedOnStartOfSelection()) {
-    return frame.GetEditor().SelectionStartHasStyle(property_id, desired_value)
+    return SelectionStartHasStyle(frame, property_id, desired_value)
                ? EditingTriState::kTrue
                : EditingTriState::kFalse;
   }
-  return frame.GetEditor().SelectionHasStyle(property_id, desired_value);
+  return EditingStyle::SelectionHasStyle(frame, property_id, desired_value);
+}
+
+static String SelectionStartCSSPropertyValue(LocalFrame& frame,
+                                             CSSPropertyID property_id) {
+  EditingStyle* const selection_style =
+      EditingStyleUtilities::CreateStyleAtSelectionStart(
+          frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated(),
+          property_id == CSSPropertyBackgroundColor);
+  if (!selection_style || !selection_style->Style())
+    return String();
+
+  if (property_id == CSSPropertyFontSize)
+    return String::Number(selection_style->LegacyFontSize(frame.GetDocument()));
+  return selection_style->Style()->GetPropertyValue(property_id);
 }
 
 static String ValueStyle(LocalFrame& frame, CSSPropertyID property_id) {
@@ -491,7 +557,7 @@ static String ValueStyle(LocalFrame& frame, CSSPropertyID property_id) {
   // FIXME: Rather than retrieving the style at the start of the current
   // selection, we should retrieve the style present throughout the selection
   // for non-Mac platforms.
-  return frame.GetEditor().SelectionStartCSSPropertyValue(property_id);
+  return SelectionStartCSSPropertyValue(frame, property_id);
 }
 
 static bool IsUnicodeBidiNestedOrMultipleEmbeddings(CSSValueID value_id) {
@@ -684,6 +750,58 @@ static bool CanWriteClipboard(LocalFrame& frame, EditorCommandSource source) {
   return frame.GetContentSettingsClient()->AllowWriteToClipboard(default_value);
 }
 
+// Returns true if Editor should continue with default processing.
+static bool DispatchClipboardEvent(LocalFrame& frame,
+                                   const AtomicString& event_type,
+                                   DataTransferAccessPolicy policy,
+                                   EditorCommandSource source,
+                                   PasteMode paste_mode) {
+  Element* const target =
+      frame.GetEditor().FindEventTargetForClipboardEvent(source);
+  if (!target)
+    return true;
+
+  DataTransfer* const data_transfer =
+      DataTransfer::Create(DataTransfer::kCopyAndPaste, policy,
+                           policy == kDataTransferWritable
+                               ? DataObject::Create()
+                               : DataObject::CreateFromPasteboard(paste_mode));
+
+  Event* const evt = ClipboardEvent::Create(event_type, data_transfer);
+  target->DispatchEvent(evt);
+  const bool no_default_processing = evt->defaultPrevented();
+  if (no_default_processing && policy == kDataTransferWritable) {
+    Pasteboard::GeneralPasteboard()->WriteDataObject(
+        data_transfer->GetDataObject());
+  }
+
+  // Invalidate clipboard here for security.
+  data_transfer->SetAccessPolicy(kDataTransferNumb);
+  return !no_default_processing;
+}
+
+static bool DispatchCopyOrCutEvent(LocalFrame& frame,
+                                   EditorCommandSource source,
+                                   const AtomicString& event_type) {
+  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+  if (IsInPasswordField(
+          frame.Selection().ComputeVisibleSelectionInDOMTree().Start()))
+    return true;
+
+  return DispatchClipboardEvent(frame, event_type, kDataTransferWritable,
+                                source, kAllMimeTypes);
+}
+
+static void WriteSelectionToPasteboard(LocalFrame& frame) {
+  const KURL& url = frame.GetDocument()->Url();
+  const String html = frame.Selection().SelectedHTMLForClipboard();
+  const String plain_text = frame.SelectedTextForClipboard();
+  Pasteboard::GeneralPasteboard()->WriteHTML(
+      html, url, plain_text, frame.GetEditor().CanSmartCopyOrDelete());
+}
+
 static bool ExecuteCopy(LocalFrame& frame,
                         Event*,
                         EditorCommandSource source,
@@ -695,7 +813,40 @@ static bool ExecuteCopy(LocalFrame& frame,
   // |canExecute()|. See also "Cut", and "Paste" command.
   if (!CanWriteClipboard(frame, source))
     return false;
-  frame.GetEditor().Copy(source);
+  if (!DispatchCopyOrCutEvent(frame, source, EventTypeNames::copy))
+    return true;
+  if (!frame.GetEditor().CanCopy())
+    return true;
+
+  // Since copy is a read-only operation it succeeds anytime a selection
+  // is *visible*. In contrast to cut or paste, the selection does not
+  // need to be focused - being visible is enough.
+  if (source == kCommandFromMenuOrKeyBinding && frame.Selection().IsHidden())
+    return true;
+
+  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  // A 'copy' event handler might have dirtied the layout so we need to update
+  // before we obtain the selection.
+  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+
+  if (EnclosingTextControl(
+          frame.Selection().ComputeVisibleSelectionInDOMTree().Start())) {
+    Pasteboard::GeneralPasteboard()->WritePlainText(
+        frame.SelectedTextForClipboard(),
+        frame.GetEditor().CanSmartCopyOrDelete()
+            ? Pasteboard::kCanSmartReplace
+            : Pasteboard::kCannotSmartReplace);
+    return true;
+  }
+  const Document* const document = frame.GetDocument();
+  if (HTMLImageElement* image_element =
+          ImageElementFromImageDocument(document)) {
+    WriteImageNodeToPasteboard(Pasteboard::GeneralPasteboard(), *image_element,
+                               document->title());
+    return true;
+  }
+  WriteSelectionToPasteboard(frame);
   return true;
 }
 
@@ -709,6 +860,19 @@ static bool ExecuteCreateLink(LocalFrame& frame,
   return CreateLinkCommand::Create(*frame.GetDocument(), value)->Apply();
 }
 
+static bool CanDeleteRange(const EphemeralRange& range) {
+  if (range.IsCollapsed())
+    return false;
+
+  const Node* const start_container =
+      range.StartPosition().ComputeContainerNode();
+  const Node* const end_container = range.EndPosition().ComputeContainerNode();
+  if (!start_container || !end_container)
+    return false;
+
+  return HasEditableStyle(*start_container) && HasEditableStyle(*end_container);
+}
+
 static bool ExecuteCut(LocalFrame& frame,
                        Event*,
                        EditorCommandSource source,
@@ -720,7 +884,49 @@ static bool ExecuteCut(LocalFrame& frame,
   // |canExecute()|. See also "Copy", and "Paste" command.
   if (!CanWriteClipboard(frame, source))
     return false;
-  frame.GetEditor().Cut(source);
+  if (!DispatchCopyOrCutEvent(frame, source, EventTypeNames::cut))
+    return true;
+  if (!frame.GetEditor().CanCut())
+    return true;
+
+  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  // A 'cut' event handler might have dirtied the layout so we need to update
+  // before we obtain the selection.
+  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+
+  if (source == kCommandFromMenuOrKeyBinding &&
+      !frame.Selection().SelectionHasFocus())
+    return true;
+
+  if (!CanDeleteRange(frame.GetEditor().SelectedRange()))
+    return true;
+  if (EnclosingTextControl(
+          frame.Selection().ComputeVisibleSelectionInDOMTree().Start())) {
+    const String plain_text = frame.SelectedTextForClipboard();
+    Pasteboard::GeneralPasteboard()->WritePlainText(
+        plain_text, frame.GetEditor().CanSmartCopyOrDelete()
+                        ? Pasteboard::kCanSmartReplace
+                        : Pasteboard::kCannotSmartReplace);
+  } else {
+    WriteSelectionToPasteboard(frame);
+  }
+
+  if (source == kCommandFromMenuOrKeyBinding) {
+    if (DispatchBeforeInputDataTransfer(
+            frame.GetEditor().FindEventTargetForClipboardEvent(source),
+            InputEvent::InputType::kDeleteByCut,
+            nullptr) != DispatchEventResult::kNotCanceled)
+      return true;
+    // 'beforeinput' event handler may destroy target frame.
+    if (frame.GetDocument()->GetFrame() != frame)
+      return true;
+  }
+  frame.GetEditor().DeleteSelectionWithSmartDelete(
+      frame.GetEditor().CanSmartCopyOrDelete() ? DeleteMode::kSmart
+                                               : DeleteMode::kSimple,
+      InputEvent::InputType::kDeleteByCut);
+
   return true;
 }
 
@@ -738,6 +944,28 @@ static bool ExecuteDefaultParagraphSeparator(LocalFrame& frame,
   return true;
 }
 
+static void PerformDelete(LocalFrame& frame) {
+  if (!frame.GetEditor().CanDelete())
+    return;
+
+  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  // |SelectedRange| requires clean layout for visible selection normalization.
+  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+
+  frame.GetEditor().AddToKillRing(frame.GetEditor().SelectedRange());
+  // TODO(chongz): |Editor::performDelete()| has no direction.
+  // https://github.com/w3c/editing/issues/130
+  frame.GetEditor().DeleteSelectionWithSmartDelete(
+      frame.GetEditor().CanSmartCopyOrDelete() ? DeleteMode::kSmart
+                                               : DeleteMode::kSimple,
+      InputEvent::InputType::kDeleteContentBackward);
+
+  // clear the "start new kill ring sequence" setting, because it was set to
+  // true when the selection was updated by deleting the range
+  frame.GetEditor().SetStartNewKillRingSequence(false);
+}
+
 static bool ExecuteDelete(LocalFrame& frame,
                           Event*,
                           EditorCommandSource source,
@@ -745,7 +973,7 @@ static bool ExecuteDelete(LocalFrame& frame,
   switch (source) {
     case kCommandFromMenuOrKeyBinding: {
       // Doesn't modify the text if the current selection isn't a range.
-      frame.GetEditor().PerformDelete();
+      PerformDelete(frame);
       return true;
     }
     case kCommandFromDOM:
@@ -765,12 +993,73 @@ static bool ExecuteDelete(LocalFrame& frame,
   return false;
 }
 
+static bool DeleteWithDirection(LocalFrame& frame,
+                                DeleteDirection direction,
+                                TextGranularity granularity,
+                                bool kill_ring,
+                                bool is_typing_action) {
+  Editor& editor = frame.GetEditor();
+  if (!editor.CanEdit())
+    return false;
+
+  EditingState editing_state;
+  if (frame.Selection()
+          .ComputeVisibleSelectionInDOMTreeDeprecated()
+          .IsRange()) {
+    if (is_typing_action) {
+      DCHECK(frame.GetDocument());
+      TypingCommand::DeleteKeyPressed(
+          *frame.GetDocument(),
+          editor.CanSmartCopyOrDelete() ? TypingCommand::kSmartDelete : 0,
+          granularity);
+      editor.RevealSelectionAfterEditingOperation();
+    } else {
+      if (kill_ring)
+        editor.AddToKillRing(editor.SelectedRange());
+      editor.DeleteSelectionWithSmartDelete(
+          editor.CanSmartCopyOrDelete() ? DeleteMode::kSmart
+                                        : DeleteMode::kSimple,
+          DeletionInputTypeFromTextGranularity(direction, granularity));
+      // Implicitly calls revealSelectionAfterEditingOperation().
+    }
+  } else {
+    TypingCommand::Options options = 0;
+    if (editor.CanSmartCopyOrDelete())
+      options |= TypingCommand::kSmartDelete;
+    if (kill_ring)
+      options |= TypingCommand::kKillRing;
+    switch (direction) {
+      case DeleteDirection::kForward:
+        DCHECK(frame.GetDocument());
+        TypingCommand::ForwardDeleteKeyPressed(
+            *frame.GetDocument(), &editing_state, options, granularity);
+        if (editing_state.IsAborted())
+          return false;
+        break;
+      case DeleteDirection::kBackward:
+        DCHECK(frame.GetDocument());
+        TypingCommand::DeleteKeyPressed(*frame.GetDocument(), options,
+                                        granularity);
+        break;
+    }
+    editor.RevealSelectionAfterEditingOperation();
+  }
+
+  // FIXME: We should to move this down into deleteKeyPressed.
+  // clear the "start new kill ring sequence" setting, because it was set to
+  // true when the selection was updated by deleting the range
+  if (kill_ring)
+    editor.SetStartNewKillRingSequence(false);
+
+  return true;
+}
+
 static bool ExecuteDeleteBackward(LocalFrame& frame,
                                   Event*,
                                   EditorCommandSource,
                                   const String&) {
-  frame.GetEditor().DeleteWithDirection(
-      DeleteDirection::kBackward, TextGranularity::kCharacter, false, true);
+  DeleteWithDirection(frame, DeleteDirection::kBackward,
+                      TextGranularity::kCharacter, false, true);
   return true;
 }
 
@@ -781,8 +1070,8 @@ static bool ExecuteDeleteBackwardByDecomposingPreviousCharacter(
     const String&) {
   DLOG(ERROR) << "DeleteBackwardByDecomposingPreviousCharacter is not "
                  "implemented, doing DeleteBackward instead";
-  frame.GetEditor().DeleteWithDirection(
-      DeleteDirection::kBackward, TextGranularity::kCharacter, false, true);
+  DeleteWithDirection(frame, DeleteDirection::kBackward,
+                      TextGranularity::kCharacter, false, true);
   return true;
 }
 
@@ -790,8 +1079,8 @@ static bool ExecuteDeleteForward(LocalFrame& frame,
                                  Event*,
                                  EditorCommandSource,
                                  const String&) {
-  frame.GetEditor().DeleteWithDirection(
-      DeleteDirection::kForward, TextGranularity::kCharacter, false, true);
+  DeleteWithDirection(frame, DeleteDirection::kForward,
+                      TextGranularity::kCharacter, false, true);
   return true;
 }
 
@@ -799,8 +1088,8 @@ static bool ExecuteDeleteToBeginningOfLine(LocalFrame& frame,
                                            Event*,
                                            EditorCommandSource,
                                            const String&) {
-  frame.GetEditor().DeleteWithDirection(
-      DeleteDirection::kBackward, TextGranularity::kLineBoundary, true, false);
+  DeleteWithDirection(frame, DeleteDirection::kBackward,
+                      TextGranularity::kLineBoundary, true, false);
   return true;
 }
 
@@ -808,9 +1097,8 @@ static bool ExecuteDeleteToBeginningOfParagraph(LocalFrame& frame,
                                                 Event*,
                                                 EditorCommandSource,
                                                 const String&) {
-  frame.GetEditor().DeleteWithDirection(DeleteDirection::kBackward,
-                                        TextGranularity::kParagraphBoundary,
-                                        true, false);
+  DeleteWithDirection(frame, DeleteDirection::kBackward,
+                      TextGranularity::kParagraphBoundary, true, false);
   return true;
 }
 
@@ -821,8 +1109,8 @@ static bool ExecuteDeleteToEndOfLine(LocalFrame& frame,
   // Despite its name, this command should delete the newline at the end of a
   // paragraph if you are at the end of a paragraph (like
   // DeleteToEndOfParagraph).
-  frame.GetEditor().DeleteWithDirection(
-      DeleteDirection::kForward, TextGranularity::kLineBoundary, true, false);
+  DeleteWithDirection(frame, DeleteDirection::kForward,
+                      TextGranularity::kLineBoundary, true, false);
   return true;
 }
 
@@ -832,9 +1120,8 @@ static bool ExecuteDeleteToEndOfParagraph(LocalFrame& frame,
                                           const String&) {
   // Despite its name, this command should delete the newline at the end of
   // a paragraph if you are at the end of a paragraph.
-  frame.GetEditor().DeleteWithDirection(DeleteDirection::kForward,
-                                        TextGranularity::kParagraphBoundary,
-                                        true, false);
+  DeleteWithDirection(frame, DeleteDirection::kForward,
+                      TextGranularity::kParagraphBoundary, true, false);
   return true;
 }
 
@@ -852,7 +1139,7 @@ static bool ExecuteDeleteToMark(LocalFrame& frame,
             .Build(),
         SetSelectionOptions::Builder().SetShouldCloseTyping(true).Build());
   }
-  frame.GetEditor().PerformDelete();
+  PerformDelete(frame);
 
   // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
   // needs to be audited.  See http://crbug.com/590369 for more details.
@@ -865,8 +1152,8 @@ static bool ExecuteDeleteWordBackward(LocalFrame& frame,
                                       Event*,
                                       EditorCommandSource,
                                       const String&) {
-  frame.GetEditor().DeleteWithDirection(DeleteDirection::kBackward,
-                                        TextGranularity::kWord, true, false);
+  DeleteWithDirection(frame, DeleteDirection::kBackward, TextGranularity::kWord,
+                      true, false);
   return true;
 }
 
@@ -874,8 +1161,8 @@ static bool ExecuteDeleteWordForward(LocalFrame& frame,
                                      Event*,
                                      EditorCommandSource,
                                      const String&) {
-  frame.GetEditor().DeleteWithDirection(DeleteDirection::kForward,
-                                        TextGranularity::kWord, true, false);
+  DeleteWithDirection(frame, DeleteDirection::kForward, TextGranularity::kWord,
+                      true, false);
   return true;
 }
 
@@ -949,8 +1236,8 @@ static bool ExecuteForwardDelete(LocalFrame& frame,
   EditingState editing_state;
   switch (source) {
     case kCommandFromMenuOrKeyBinding:
-      frame.GetEditor().DeleteWithDirection(
-          DeleteDirection::kForward, TextGranularity::kCharacter, false, true);
+      DeleteWithDirection(frame, DeleteDirection::kForward,
+                          TextGranularity::kCharacter, false, true);
       return true;
     case kCommandFromDOM:
       // Doesn't scroll to make the selection visible, or modify the kill ring.
@@ -1157,8 +1444,7 @@ static bool ExecuteMakeTextWritingDirectionLeftToRight(LocalFrame& frame,
       MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(CSSPropertyUnicodeBidi, CSSValueIsolate);
   style->SetProperty(CSSPropertyDirection, CSSValueLtr);
-  frame.GetEditor().ApplyStyle(
-      style, InputEvent::InputType::kFormatSetBlockTextDirection);
+  ApplyStyle(frame, style, InputEvent::InputType::kFormatSetBlockTextDirection);
   return true;
 }
 
@@ -1169,8 +1455,7 @@ static bool ExecuteMakeTextWritingDirectionNatural(LocalFrame& frame,
   MutableCSSPropertyValueSet* style =
       MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(CSSPropertyUnicodeBidi, CSSValueNormal);
-  frame.GetEditor().ApplyStyle(
-      style, InputEvent::InputType::kFormatSetBlockTextDirection);
+  ApplyStyle(frame, style, InputEvent::InputType::kFormatSetBlockTextDirection);
   return true;
 }
 
@@ -1182,8 +1467,7 @@ static bool ExecuteMakeTextWritingDirectionRightToLeft(LocalFrame& frame,
       MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(CSSPropertyUnicodeBidi, CSSValueIsolate);
   style->SetProperty(CSSPropertyDirection, CSSValueRtl);
-  frame.GetEditor().ApplyStyle(
-      style, InputEvent::InputType::kFormatSetBlockTextDirection);
+  ApplyStyle(frame, style, InputEvent::InputType::kFormatSetBlockTextDirection);
   return true;
 }
 
@@ -1737,6 +2021,134 @@ static bool CanReadClipboard(LocalFrame& frame, EditorCommandSource source) {
       default_value);
 }
 
+static bool CanSmartReplaceWithPasteboard(LocalFrame& frame,
+                                          Pasteboard* pasteboard) {
+  return frame.GetEditor().SmartInsertDeleteEnabled() &&
+         pasteboard->CanSmartReplace();
+}
+
+static void PasteAsPlainTextWithPasteboard(LocalFrame& frame,
+                                           Pasteboard* pasteboard,
+                                           EditorCommandSource source) {
+  Element* const target =
+      frame.GetEditor().FindEventTargetForClipboardEvent(source);
+  if (!target)
+    return;
+  target->DispatchEvent(TextEvent::CreateForPlainTextPaste(
+      frame.DomWindow(), pasteboard->PlainText(),
+      CanSmartReplaceWithPasteboard(frame, pasteboard)));
+}
+
+static bool DispatchPasteEvent(LocalFrame& frame,
+                               PasteMode paste_mode,
+                               EditorCommandSource source) {
+  return DispatchClipboardEvent(frame, EventTypeNames::paste,
+                                kDataTransferReadable, source, paste_mode);
+}
+
+static void PasteAsFragment(LocalFrame& frame,
+                            DocumentFragment* pasting_fragment,
+                            bool smart_replace,
+                            bool match_style,
+                            EditorCommandSource source) {
+  Element* const target =
+      frame.GetEditor().FindEventTargetForClipboardEvent(source);
+  if (!target)
+    return;
+  target->DispatchEvent(TextEvent::CreateForFragmentPaste(
+      frame.DomWindow(), pasting_fragment, smart_replace, match_style));
+}
+
+static void PasteWithPasteboard(LocalFrame& frame,
+                                Pasteboard* pasteboard,
+                                EditorCommandSource source) {
+  DocumentFragment* fragment = nullptr;
+  bool chose_plain_text = false;
+
+  if (pasteboard->IsHTMLAvailable()) {
+    unsigned fragment_start = 0;
+    unsigned fragment_end = 0;
+    KURL url;
+    const String markup =
+        pasteboard->ReadHTML(url, fragment_start, fragment_end);
+    if (!markup.IsEmpty()) {
+      DCHECK(frame.GetDocument());
+      fragment = CreateFragmentFromMarkupWithContext(
+          *frame.GetDocument(), markup, fragment_start, fragment_end, url,
+          kDisallowScriptingAndPluginContent);
+    }
+  }
+
+  if (!fragment) {
+    const String text = pasteboard->PlainText();
+    if (!text.IsEmpty()) {
+      chose_plain_text = true;
+
+      // TODO(editing-dev): Use of UpdateStyleAndLayoutIgnorePendingStylesheets
+      // needs to be audited.  See http://crbug.com/590369 for more details.
+      // |SelectedRange| requires clean layout for visible selection
+      // normalization.
+      frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+
+      fragment =
+          CreateFragmentFromText(frame.GetEditor().SelectedRange(), text);
+    }
+  }
+
+  if (!fragment)
+    return;
+
+  PasteAsFragment(frame, fragment,
+                  CanSmartReplaceWithPasteboard(frame, pasteboard),
+                  chose_plain_text, source);
+}
+
+static void Paste(LocalFrame& frame, EditorCommandSource source) {
+  DCHECK(frame.GetDocument());
+  if (!DispatchPasteEvent(frame, kAllMimeTypes, source))
+    return;
+  if (!frame.GetEditor().CanPaste())
+    return;
+
+  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  // A 'paste' event handler might have dirtied the layout so we need to update
+  // before we obtain the selection.
+  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+
+  if (source == kCommandFromMenuOrKeyBinding &&
+      !frame.Selection().SelectionHasFocus())
+    return;
+
+  ResourceFetcher* const loader = frame.GetDocument()->Fetcher();
+  ResourceCacheValidationSuppressor validation_suppressor(loader);
+
+  const PasteMode paste_mode =
+      frame.GetEditor().CanEditRichly() ? kAllMimeTypes : kPlainTextOnly;
+
+  if (source == kCommandFromMenuOrKeyBinding) {
+    DataTransfer* data_transfer =
+        DataTransfer::Create(DataTransfer::kCopyAndPaste, kDataTransferReadable,
+                             DataObject::CreateFromPasteboard(paste_mode));
+
+    if (DispatchBeforeInputDataTransfer(
+            frame.GetEditor().FindEventTargetForClipboardEvent(source),
+            InputEvent::InputType::kInsertFromPaste,
+            data_transfer) != DispatchEventResult::kNotCanceled)
+      return;
+    // 'beforeinput' event handler may destroy target frame.
+    if (frame.GetDocument()->GetFrame() != frame)
+      return;
+  }
+
+  if (paste_mode == kAllMimeTypes) {
+    PasteWithPasteboard(frame, Pasteboard::GeneralPasteboard(), source);
+    return;
+  }
+  PasteAsPlainTextWithPasteboard(frame, Pasteboard::GeneralPasteboard(),
+                                 source);
+}
+
 static bool ExecutePaste(LocalFrame& frame,
                          Event*,
                          EditorCommandSource source,
@@ -1748,7 +2160,7 @@ static bool ExecutePaste(LocalFrame& frame,
   // |canExecute()|. See also "Copy", and "Cut" command.
   if (!CanReadClipboard(frame, source))
     return false;
-  frame.GetEditor().Paste(source);
+  Paste(frame, source);
   return true;
 }
 
@@ -1769,7 +2181,7 @@ static bool ExecutePasteGlobalSelection(LocalFrame& frame,
 
   bool old_selection_mode = Pasteboard::GeneralPasteboard()->IsSelectionMode();
   Pasteboard::GeneralPasteboard()->SetSelectionMode(true);
-  frame.GetEditor().Paste(source);
+  Paste(frame, source);
   Pasteboard::GeneralPasteboard()->SetSelectionMode(old_selection_mode);
   return true;
 }
@@ -1778,7 +2190,23 @@ static bool ExecutePasteAndMatchStyle(LocalFrame& frame,
                                       Event*,
                                       EditorCommandSource source,
                                       const String&) {
-  frame.GetEditor().PasteAsPlainText(source);
+  if (!DispatchPasteEvent(frame, kPlainTextOnly, source))
+    return false;
+  if (!frame.GetEditor().CanPaste())
+    return false;
+
+  // TODO(editing-dev): The use of UpdateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  // A 'paste' event handler might have dirtied the layout so we need to update
+  // before we obtain the selection.
+  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+
+  if (source == kCommandFromMenuOrKeyBinding &&
+      !frame.Selection().SelectionHasFocus())
+    return false;
+
+  PasteAsPlainTextWithPasteboard(frame, Pasteboard::GeneralPasteboard(),
+                                 source);
   return true;
 }
 
@@ -1804,7 +2232,9 @@ static bool ExecuteRemoveFormat(LocalFrame& frame,
                                 Event*,
                                 EditorCommandSource,
                                 const String&) {
-  frame.GetEditor().RemoveFormattingAndStyle();
+  DCHECK(frame.GetDocument());
+  RemoveFormatCommand::Create(*frame.GetDocument())->Apply();
+
   return true;
 }
 
@@ -2232,10 +2662,17 @@ static bool EnableCaretInEditableText(LocalFrame& frame,
   return selection.IsCaret() && selection.IsContentEditable();
 }
 
+// WinIE uses onbeforecut and onbeforepaste to enables the cut and paste menu
+// items. They also send onbeforecopy, apparently for symmetry, but it doesn't
+// affect the menu items. We need to use onbeforecopy as a real menu enabler
+// because we allow elements that are not normally selectable to implement
+// copy/paste (like divs, or a document body).
+
 static bool EnabledCopy(LocalFrame& frame, Event*, EditorCommandSource source) {
   if (!CanWriteClipboard(frame, source))
     return false;
-  return frame.GetEditor().CanDHTMLCopy(source) || frame.GetEditor().CanCopy();
+  return !DispatchCopyOrCutEvent(frame, source, EventTypeNames::beforecopy) ||
+         frame.GetEditor().CanCopy();
 }
 
 static bool EnabledCut(LocalFrame& frame, Event*, EditorCommandSource source) {
@@ -2244,7 +2681,8 @@ static bool EnabledCut(LocalFrame& frame, Event*, EditorCommandSource source) {
   if (source == kCommandFromMenuOrKeyBinding &&
       !frame.Selection().SelectionHasFocus())
     return false;
-  return frame.GetEditor().CanDHTMLCut(source) || frame.GetEditor().CanCut();
+  return !DispatchCopyOrCutEvent(frame, source, EventTypeNames::beforecut) ||
+         frame.GetEditor().CanCut();
 }
 
 static bool EnabledInEditableText(LocalFrame& frame,
@@ -3033,10 +3471,10 @@ bool Editor::ExecuteCommand(const String& command_name) {
   // support.
   DCHECK(GetFrame().GetDocument()->IsActive());
   if (command_name == "DeleteToEndOfParagraph") {
-    if (!DeleteWithDirection(DeleteDirection::kForward,
+    if (!DeleteWithDirection(GetFrame(), DeleteDirection::kForward,
                              TextGranularity::kParagraphBoundary, true,
                              false)) {
-      DeleteWithDirection(DeleteDirection::kForward,
+      DeleteWithDirection(GetFrame(), DeleteDirection::kForward,
                           TextGranularity::kCharacter, true, false);
     }
     return true;

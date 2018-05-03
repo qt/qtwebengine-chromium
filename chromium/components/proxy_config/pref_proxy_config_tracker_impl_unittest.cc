@@ -15,8 +15,8 @@
 #include "components/prefs/testing_pref_service.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
-#include "net/proxy/proxy_info.h"
-#include "net/proxy/proxy_list.h"
+#include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_list.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -126,7 +126,7 @@ TEST_F(PrefProxyConfigTrackerImplTest, DynamicPrefOverrides) {
   EXPECT_EQ(net::ProxyConfigService::CONFIG_VALID,
             proxy_config_service_->GetLatestProxyConfig(&actual_config));
   EXPECT_FALSE(actual_config.auto_detect());
-  EXPECT_EQ(net::ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY,
+  EXPECT_EQ(net::ProxyConfig::ProxyRules::Type::PROXY_LIST,
             actual_config.proxy_rules().type);
   EXPECT_EQ(actual_config.proxy_rules().single_proxies.Get(),
             net::ProxyServer::FromURI("http://example.com:3128",
@@ -141,10 +141,9 @@ TEST_F(PrefProxyConfigTrackerImplTest, DynamicPrefOverrides) {
   EXPECT_TRUE(actual_config.auto_detect());
 }
 
-// Compares proxy configurations, but allows different identifiers.
+// Compares proxy configurations, but allows different sources.
 MATCHER_P(ProxyConfigMatches, config, "") {
   net::ProxyConfig reference(config);
-  reference.set_id(arg.id());
   return reference.Equals(arg);
 }
 

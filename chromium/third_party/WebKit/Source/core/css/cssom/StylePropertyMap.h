@@ -7,8 +7,8 @@
 
 #include "base/macros.h"
 #include "bindings/core/v8/css_style_value_or_string.h"
-#include "bindings/core/v8/v8_update_function.h"
 #include "core/css/cssom/StylePropertyMapReadOnly.h"
+#include "core/dom/ExecutionContext.h"
 
 namespace blink {
 
@@ -28,13 +28,17 @@ class CORE_EXPORT StylePropertyMap : public StylePropertyMapReadOnly {
               const HeapVector<CSSStyleValueOrString>& values,
               ExceptionState&);
   void remove(const String& property_name, ExceptionState&);
-  void update(const String&, V8UpdateFunction*, ExceptionState&);
+  void clear();
 
  protected:
   virtual void SetProperty(CSSPropertyID, const CSSValue&) = 0;
+  virtual bool SetShorthandProperty(CSSPropertyID,
+                                    const String&,
+                                    SecureContextMode) = 0;
   virtual void SetCustomProperty(const AtomicString&, const CSSValue&) = 0;
   virtual void RemoveProperty(CSSPropertyID) = 0;
   virtual void RemoveCustomProperty(const AtomicString&) = 0;
+  virtual void RemoveAllProperties() = 0;
 
   StylePropertyMap() = default;
 

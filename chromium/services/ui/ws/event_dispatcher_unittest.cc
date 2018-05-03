@@ -13,7 +13,9 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
+#include "components/viz/common/features.h"
 #include "components/viz/host/hit_test/hit_test_query.h"
 #include "services/ui/common/accelerator_util.h"
 #include "services/ui/common/switches.h"
@@ -311,10 +313,10 @@ class EventDispatcherTest : public testing::TestWithParam<bool>,
   // Deletes everything created during SetUp()
   void ClearSetup();
   std::unique_ptr<ServerWindow> CreateChildWindowWithParent(
-      const WindowId& id,
+      const viz::FrameSinkId& id,
       ServerWindow* parent);
   // Creates a window which is a child of |root_window_|.
-  std::unique_ptr<ServerWindow> CreateChildWindow(const WindowId& id);
+  std::unique_ptr<ServerWindow> CreateChildWindow(const viz::FrameSinkId& id);
   bool IsMouseButtonDown() const;
   bool IsWindowPointerTarget(const ServerWindow* window) const;
   int NumberPointerTargetsForWindow(ServerWindow* window) const;
@@ -393,7 +395,7 @@ void EventDispatcherTest::ClearSetup() {
 }
 
 std::unique_ptr<ServerWindow> EventDispatcherTest::CreateChildWindowWithParent(
-    const WindowId& id,
+    const viz::FrameSinkId& id,
     ServerWindow* parent) {
   std::unique_ptr<ServerWindow> child(
       new ServerWindow(window_delegate_.get(), id));
@@ -403,7 +405,7 @@ std::unique_ptr<ServerWindow> EventDispatcherTest::CreateChildWindowWithParent(
 }
 
 std::unique_ptr<ServerWindow> EventDispatcherTest::CreateChildWindow(
-    const WindowId& id) {
+    const viz::FrameSinkId& id) {
   return CreateChildWindowWithParent(id, root_window_.get());
 }
 
@@ -446,8 +448,8 @@ void EventDispatcherTest::SetUp() {
 
   window_delegate_ =
       std::make_unique<TestServerWindowDelegate>(viz_host_proxy());
-  root_window_ =
-      std::make_unique<ServerWindow>(window_delegate_.get(), WindowId(1, 2));
+  root_window_ = std::make_unique<ServerWindow>(window_delegate_.get(),
+                                                viz::FrameSinkId(1, 2));
   root_window_->set_is_activation_parent(true);
   window_delegate_->set_root_window(root_window_.get());
   root_window_->SetVisible(true);
@@ -490,7 +492,7 @@ class EventDispatcherVizTargeterTest
     runloop.RunUntilIdle();
   }
 
-  std::unique_ptr<ServerWindow> CreateChildWindow(const WindowId& id) {
+  std::unique_ptr<ServerWindow> CreateChildWindow(const viz::FrameSinkId& id) {
     std::unique_ptr<ServerWindow> child(
         new ServerWindow(window_delegate_.get(), id));
     root_window_->Add(child.get());
@@ -510,6 +512,7 @@ class EventDispatcherVizTargeterTest
     event_dispatcher_->SetCaptureWindow(nullptr, kInvalidClientId);
   }
 
+  base::test::ScopedFeatureList feature_list_;
   WindowServerTestHelper ws_test_helper_;
 
   std::unique_ptr<TestServerWindowDelegate> window_delegate_;
@@ -522,8 +525,7 @@ class EventDispatcherVizTargeterTest
 };
 
 void EventDispatcherVizTargeterTest::SetUp() {
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kUseVizHitTest);
+  feature_list_.InitAndEnableFeature(features::kEnableVizHitTestDrawQuad);
   if (is_event_processing_async()) {
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kUseAsyncEventTargeting);
@@ -532,8 +534,8 @@ void EventDispatcherVizTargeterTest::SetUp() {
 
   window_delegate_ =
       std::make_unique<TestServerWindowDelegate>(viz_host_proxy());
-  root_window_ =
-      std::make_unique<ServerWindow>(window_delegate_.get(), WindowId(1, 2));
+  root_window_ = std::make_unique<ServerWindow>(window_delegate_.get(),
+                                                viz::FrameSinkId(1, 2));
   root_window_->set_is_activation_parent(true);
   window_delegate_->set_root_window(root_window_.get());
   root_window_->SetVisible(true);
@@ -558,7 +560,8 @@ void EventDispatcherVizTargeterTest::SetUp() {
 }
 
 TEST_P(EventDispatcherTest, ProcessEvent) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -702,7 +705,8 @@ TEST_P(EventDispatcherTest, PostTargetAccelerator) {
   EXPECT_FALSE(details);
 
   // Set focused window for EventDispatcher dispatches key events.
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   event_dispatcher_delegate->SetFocusedWindowFromEventDispatcher(child.get());
 
   // With a focused window the event should be dispatched.
@@ -747,7 +751,8 @@ TEST_P(EventDispatcherTest, ProcessPost) {
   }
 
   // Set focused window for EventDispatcher dispatches key events.
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   event_dispatcher_delegate->SetFocusedWindowFromEventDispatcher(child.get());
 
   // Dispatch for ANY, which should trigger PRE and not call
@@ -771,7 +776,8 @@ TEST_P(EventDispatcherTest, ProcessPost) {
 
 TEST_P(EventDispatcherTest, Capture) {
   ServerWindow* root = root_window();
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -817,7 +823,8 @@ TEST_P(EventDispatcherTest, Capture) {
 }
 
 TEST_P(EventDispatcherTest, CaptureMultipleMouseButtons) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -863,7 +870,8 @@ TEST_P(EventDispatcherTest, CaptureMultipleMouseButtons) {
 }
 
 TEST_P(EventDispatcherTest, ClientAreaGoesToOwner) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -936,7 +944,8 @@ TEST_P(EventDispatcherTest, ClientAreaGoesToOwner) {
 }
 
 TEST_P(EventDispatcherTest, AdditionalClientArea) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -963,7 +972,8 @@ TEST_P(EventDispatcherTest, AdditionalClientArea) {
 }
 
 TEST_P(EventDispatcherTest, HitTestMask) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1004,7 +1014,8 @@ TEST_P(EventDispatcherTest, HitTestMask) {
 }
 
 TEST_P(EventDispatcherTest, DontFocusOnSecondDown) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1027,8 +1038,10 @@ TEST_P(EventDispatcherTest, DontFocusOnSecondDown) {
 }
 
 TEST_P(EventDispatcherTest, TwoPointersActive) {
-  std::unique_ptr<ServerWindow> child1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> child2 = CreateChildWindow(WindowId(1, 4));
+  std::unique_ptr<ServerWindow> child1 =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> child2 =
+      CreateChildWindow(viz::FrameSinkId(1, 4));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child1->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1099,7 +1112,8 @@ TEST_P(EventDispatcherTest, TwoPointersActive) {
 }
 
 TEST_P(EventDispatcherTest, DestroyWindowWhileGettingEvents) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1133,7 +1147,8 @@ TEST_P(EventDispatcherTest, DestroyWindowWhileGettingEvents) {
 
 TEST_P(EventDispatcherTest, MouseInExtendedHitTestRegion) {
   ServerWindow* root = root_window();
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1185,8 +1200,10 @@ TEST_P(EventDispatcherTest, MouseInExtendedHitTestRegion) {
 }
 
 TEST_P(EventDispatcherTest, WheelWhileDown) {
-  std::unique_ptr<ServerWindow> child1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> child2 = CreateChildWindow(WindowId(1, 4));
+  std::unique_ptr<ServerWindow> child1 =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> child2 =
+      CreateChildWindow(viz::FrameSinkId(1, 4));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child1->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1216,7 +1233,8 @@ TEST_P(EventDispatcherTest, WheelWhileDown) {
 // appropriate target window.
 TEST_P(EventDispatcherTest, SetExplicitCapture) {
   ServerWindow* root = root_window();
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1318,7 +1336,8 @@ TEST_P(EventDispatcherTest, SetExplicitCapture) {
 // capture.
 TEST_P(EventDispatcherTest, ExplicitCaptureOverridesImplicitCapture) {
   ServerWindow* root = root_window();
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1449,8 +1468,10 @@ TEST_P(EventDispatcherTest, CaptureUpdatesActivePointerTargets) {
 // Tests that when explicit capture is changed, that the previous window with
 // capture is no longer being observed.
 TEST_P(EventDispatcherTest, UpdatingCaptureStopsObservingPreviousCapture) {
-  std::unique_ptr<ServerWindow> child1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> child2 = CreateChildWindow(WindowId(1, 4));
+  std::unique_ptr<ServerWindow> child1 =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> child2 =
+      CreateChildWindow(viz::FrameSinkId(1, 4));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child1->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1472,7 +1493,8 @@ TEST_P(EventDispatcherTest, UpdatingCaptureStopsObservingPreviousCapture) {
 // Tests that destroying a window with explicit capture clears the capture
 // state.
 TEST_P(EventDispatcherTest, DestroyingCaptureWindowRemovesExplicitCapture) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
 
   EventDispatcher* dispatcher = event_dispatcher();
@@ -1514,7 +1536,8 @@ TEST_P(EventDispatcherTest, CaptureInNonClientAreaOverridesActualPoint) {
 }
 
 TEST_P(EventDispatcherTest, ProcessPointerEvents) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1564,7 +1587,8 @@ TEST_P(EventDispatcherTest, ProcessPointerEvents) {
 }
 
 TEST_P(EventDispatcherTest, ResetClearsPointerDown) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -1603,8 +1627,8 @@ TEST_P(EventDispatcherTest, ResetClearsCapture) {
 
 // Tests that events on a parent of a modal window are blocked.
 TEST_P(EventDispatcherTest, ModalWindowEventOnModalParent) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 5));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1656,8 +1680,8 @@ TEST_P(EventDispatcherTest, ModalWindowEventOnModalParent) {
 
 // Tests that events on a modal child target the modal child itself.
 TEST_P(EventDispatcherTest, ModalWindowEventOnModalChild) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 5));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1690,9 +1714,9 @@ TEST_P(EventDispatcherTest, ModalWindowEventOnModalChild) {
 // Tests that events on an unrelated window are not affected by the modal
 // window.
 TEST_P(EventDispatcherTest, ModalWindowEventOnUnrelatedWindow) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 5));
-  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(WindowId(1, 6));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 5));
+  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(viz::FrameSinkId(1, 6));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1725,10 +1749,10 @@ TEST_P(EventDispatcherTest, ModalWindowEventOnUnrelatedWindow) {
 
 // Tests that events on a descendant of a modal parent target the modal child.
 TEST_P(EventDispatcherTest, ModalWindowEventOnDescendantOfModalParent) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
   std::unique_ptr<ServerWindow> w11 =
-      CreateChildWindowWithParent(WindowId(1, 4), w1.get());
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 5));
+      CreateChildWindowWithParent(viz::FrameSinkId(1, 4), w1.get());
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1756,10 +1780,10 @@ TEST_P(EventDispatcherTest,
        ModalWindowEventOnDescendantOfModalParentWithFallback) {
   test_event_dispatcher_delegate()->EnableFallbackToRoot();
 
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
   std::unique_ptr<ServerWindow> w11 =
-      CreateChildWindowWithParent(WindowId(1, 4), w1.get());
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 5));
+      CreateChildWindowWithParent(viz::FrameSinkId(1, 4), w1.get());
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1792,7 +1816,7 @@ TEST_P(EventDispatcherTest,
 
 // Tests that events on a system modal window target the modal window itself.
 TEST_P(EventDispatcherTest, ModalWindowEventOnSystemModal) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1821,7 +1845,7 @@ TEST_P(EventDispatcherTest, ModalWindowEventOnSystemModal) {
 
 // Tests that events outside of system modal window target the modal window.
 TEST_P(EventDispatcherTest, ModalWindowEventOutsideSystemModal) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1846,7 +1870,7 @@ TEST_P(EventDispatcherTest, ModalWindowEventOutsideSystemModal) {
 TEST_P(EventDispatcherTest, ModalWindowEventOutsideSystemModalWithFallback) {
   test_event_dispatcher_delegate()->EnableFallbackToRoot();
 
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1876,13 +1900,13 @@ TEST_P(EventDispatcherTest, ModalWindowEventOutsideSystemModalWithFallback) {
 
 // Tests events on a sub-window of system modal window target the window itself.
 TEST_P(EventDispatcherTest, ModalWindowEventSubWindowSystemModal) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
   w1->SetModalType(MODAL_TYPE_SYSTEM);
   event_dispatcher()->AddSystemModalWindow(w1.get());
 
   std::unique_ptr<ServerWindow> w2 =
-      CreateChildWindowWithParent(WindowId(1, 4), w1.get());
-  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(WindowId(1, 5));
+      CreateChildWindowWithParent(viz::FrameSinkId(1, 4), w1.get());
+  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1927,10 +1951,10 @@ TEST_P(EventDispatcherTest, ModalWindowEventSubWindowSystemModal) {
 
 // Tests that setting capture to a descendant of a modal parent fails.
 TEST_P(EventDispatcherTest, ModalWindowSetCaptureDescendantOfModalParent) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
   std::unique_ptr<ServerWindow> w11 =
-      CreateChildWindowWithParent(WindowId(1, 4), w1.get());
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 5));
+      CreateChildWindowWithParent(viz::FrameSinkId(1, 4), w1.get());
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1946,9 +1970,9 @@ TEST_P(EventDispatcherTest, ModalWindowSetCaptureDescendantOfModalParent) {
 
 // Tests that setting capture to a window unrelated to a modal parent works.
 TEST_P(EventDispatcherTest, ModalWindowSetCaptureUnrelatedWindow) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 4));
-  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(WindowId(1, 5));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 4));
+  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1964,8 +1988,8 @@ TEST_P(EventDispatcherTest, ModalWindowSetCaptureUnrelatedWindow) {
 
 // Tests that setting capture fails when there is a system modal window.
 TEST_P(EventDispatcherTest, ModalWindowSystemSetCapture) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 4));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 4));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   w1->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -1980,9 +2004,9 @@ TEST_P(EventDispatcherTest, ModalWindowSystemSetCapture) {
 
 // Tests having multiple system modal windows.
 TEST_P(EventDispatcherTest, ModalWindowMultipleSystemModals) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 4));
-  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(WindowId(1, 5));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 4));
+  std::unique_ptr<ServerWindow> w3 = CreateChildWindow(viz::FrameSinkId(1, 5));
 
   w2->SetVisible(false);
 
@@ -2025,11 +2049,11 @@ TEST_P(EventDispatcherTest, ModalWindowMultipleSystemModals) {
 }
 
 TEST_P(EventDispatcherTest, CaptureNotResetOnParentChange) {
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
   w1->set_event_targeting_policy(mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
   std::unique_ptr<ServerWindow> w11 =
-      CreateChildWindowWithParent(WindowId(1, 4), w1.get());
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 5));
+      CreateChildWindowWithParent(viz::FrameSinkId(1, 4), w1.get());
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 5));
   w2->set_event_targeting_policy(mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
@@ -2060,7 +2084,8 @@ TEST_P(EventDispatcherTest, CaptureNotResetOnParentChange) {
 }
 
 TEST_P(EventDispatcherTest, ChangeCaptureFromClientToNonclient) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   event_dispatcher()->SetCaptureWindow(child.get(), kNonclientAreaId);
   EXPECT_EQ(kNonclientAreaId,
             event_dispatcher()->capture_window_client_id());
@@ -2078,7 +2103,8 @@ TEST_P(EventDispatcherTest, MoveMouseFromNoTargetToValidTarget) {
   ServerWindow* root = root_window();
   root->set_event_targeting_policy(
       mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -2106,7 +2132,8 @@ TEST_P(EventDispatcherTest, NoTargetToTargetWithMouseDown) {
   ServerWindow* root = root_window();
   root->set_event_targeting_policy(
       mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -2141,8 +2168,8 @@ TEST_P(EventDispatcherTest, DontSendExitToSameClientWhenCaptureChanges) {
   ServerWindow* root = root_window();
   root->set_event_targeting_policy(
       mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
-  std::unique_ptr<ServerWindow> c1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> c2 = CreateChildWindow(WindowId(1, 4));
+  std::unique_ptr<ServerWindow> c1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> c2 = CreateChildWindow(viz::FrameSinkId(1, 4));
 
   root->SetBounds(gfx::Rect(0, 0, 100, 100));
   c1->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -2175,7 +2202,7 @@ TEST_P(EventDispatcherTest, DontSendExitToSameClientWhenCaptureChanges) {
 TEST_P(EventDispatcherTest, MousePointerClearedOnDestroy) {
   root_window()->set_event_targeting_policy(
       mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
-  std::unique_ptr<ServerWindow> c1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> c1 = CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   c1->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -2192,7 +2219,8 @@ TEST_P(EventDispatcherTest, MousePointerClearedOnDestroy) {
 }
 
 TEST_P(EventDispatcherTest, LocationHonorsTransform) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   gfx::Transform transform;
   transform.Scale(SkIntToMScalar(2), SkIntToMScalar(2));
@@ -2244,7 +2272,8 @@ TEST_P(EventDispatcherTest, KeyDoesntHideCursorWithNoList) {
             event_dispatcher_delegate->last_cursor_visibility());
 
   // Set focused window for EventDispatcher dispatches key events.
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   event_dispatcher_delegate->SetFocusedWindowFromEventDispatcher(child.get());
 
   ui::KeyEvent key(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE);
@@ -2264,7 +2293,8 @@ TEST_P(EventDispatcherTest, KeyDoesntHideCursorOnMatch) {
   // Set focused window for EventDispatcher dispatches key events.
   TestEventDispatcherDelegate* event_dispatcher_delegate =
       test_event_dispatcher_delegate();
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   event_dispatcher_delegate->SetFocusedWindowFromEventDispatcher(child.get());
 
   ui::KeyEvent key(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE);
@@ -2284,7 +2314,8 @@ TEST_P(EventDispatcherTest, KeyHidesCursorOnNoMatch) {
   // Set focused window for EventDispatcher dispatches key events.
   TestEventDispatcherDelegate* event_dispatcher_delegate =
       test_event_dispatcher_delegate();
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   event_dispatcher_delegate->SetFocusedWindowFromEventDispatcher(child.get());
 
   ui::KeyEvent key(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE);
@@ -2297,9 +2328,9 @@ TEST_P(EventDispatcherTest, KeyHidesCursorOnNoMatch) {
 
 TEST_P(EventDispatcherTest, ChildModal) {
   std::unique_ptr<ServerWindow> modal_parent =
-      CreateChildWindow(WindowId(1, 3));
+      CreateChildWindow(viz::FrameSinkId(1, 3));
   std::unique_ptr<ServerWindow> child_modal_window =
-      CreateChildWindow(WindowId(1, 4));
+      CreateChildWindow(viz::FrameSinkId(1, 4));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   modal_parent->SetBounds(gfx::Rect(10, 10, 30, 30));
@@ -2323,12 +2354,12 @@ TEST_P(EventDispatcherTest, ChildModal) {
 
 TEST_P(EventDispatcherTest, DontCancelWhenMovedToSeparateDisplay) {
   TestServerWindowDelegate window_delegate2(viz_host_proxy());
-  ServerWindow root2(&window_delegate2, WindowId(1, 100));
+  ServerWindow root2(&window_delegate2, viz::FrameSinkId(1, 100));
   root2.set_is_activation_parent(true);
   window_delegate2.set_root_window(&root2);
   root2.SetVisible(true);
 
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
   event_dispatcher()->SetCaptureWindow(w1.get(), kClientAreaId);
   ASSERT_EQ(w1.get(), event_dispatcher()->capture_window());
   test_event_dispatcher_delegate()->set_root(&root2);
@@ -2344,8 +2375,8 @@ TEST_P(EventDispatcherTest, MouseCursorSourceWindowChangesWithSystemModal) {
   event_dispatcher()->modal_window_controller()->SetBlockingContainers(
       {blocking_containers});
 
-  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(WindowId(1, 3));
-  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(WindowId(1, 4));
+  std::unique_ptr<ServerWindow> w1 = CreateChildWindow(viz::FrameSinkId(1, 3));
+  std::unique_ptr<ServerWindow> w2 = CreateChildWindow(viz::FrameSinkId(1, 4));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   root_window()->set_is_activation_parent(true);
@@ -2374,7 +2405,8 @@ TEST_P(EventDispatcherTest, DontQueryWhileMouseIsDown) {
   if (!is_event_processing_async())
     return;
 
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));
@@ -2396,7 +2428,8 @@ TEST_P(EventDispatcherTest, DontQueryWhileMouseIsDown) {
 }
 
 TEST_P(EventDispatcherVizTargeterTest, ProcessEvent) {
-  std::unique_ptr<ServerWindow> child = CreateChildWindow(WindowId(1, 3));
+  std::unique_ptr<ServerWindow> child =
+      CreateChildWindow(viz::FrameSinkId(1, 3));
 
   root_window()->SetBounds(gfx::Rect(0, 0, 100, 100));
   child->SetBounds(gfx::Rect(10, 10, 20, 20));

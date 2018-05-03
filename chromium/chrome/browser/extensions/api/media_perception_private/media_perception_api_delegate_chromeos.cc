@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/api/media_perception_private/media_perception_api_delegate_chromeos.h"
 
+#include "base/bind.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/component_updater/cros_component_installer.h"
 
 namespace media_perception = extensions::api::media_perception_private;
@@ -30,6 +32,13 @@ std::string GetComponentNameForComponentType(
   return "";
 }
 
+void OnLoadComponent(
+    MediaPerceptionAPIDelegate::LoadCrOSComponentCallback load_callback,
+    component_updater::CrOSComponentManager::Error error,
+    const base::FilePath& mount_point) {
+  std::move(load_callback).Run(mount_point);
+}
+
 }  // namespace
 
 MediaPerceptionAPIDelegateChromeOS::MediaPerceptionAPIDelegateChromeOS() =
@@ -43,7 +52,7 @@ void MediaPerceptionAPIDelegateChromeOS::LoadCrOSComponent(
   g_browser_process->platform_part()->cros_component_manager()->Load(
       GetComponentNameForComponentType(type),
       component_updater::CrOSComponentManager::MountPolicy::kMount,
-      std::move(load_callback));
+      base::BindOnce(OnLoadComponent, std::move(load_callback)));
 }
 
 }  // namespace extensions

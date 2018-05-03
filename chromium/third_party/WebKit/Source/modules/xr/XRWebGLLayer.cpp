@@ -11,6 +11,8 @@
 #include "modules/webgl/WebGLFramebuffer.h"
 #include "modules/webgl/WebGLRenderingContext.h"
 #include "modules/xr/XRDevice.h"
+#include "modules/xr/XRFrameProvider.h"
+#include "modules/xr/XRPresentationContext.h"
 #include "modules/xr/XRSession.h"
 #include "modules/xr/XRView.h"
 #include "modules/xr/XRViewport.h"
@@ -60,6 +62,13 @@ XRWebGLLayer* XRWebGLLayer::Create(
     return nullptr;
   }
 
+  if (!webgl_context->IsXRDeviceCompatible(session->device())) {
+    exception_state.ThrowDOMException(
+        kInvalidStateError,
+        "The session's device is not the compatible device for this context.");
+    return nullptr;
+  }
+
   bool want_antialiasing = initializer.antialias();
   bool want_depth_buffer = initializer.depth();
   bool want_stencil_buffer = initializer.stencil();
@@ -85,10 +94,11 @@ XRWebGLLayer* XRWebGLLayer::Create(
   // Create an opaque WebGL Framebuffer
   WebGLFramebuffer* framebuffer = WebGLFramebuffer::CreateOpaque(webgl_context);
 
-  XRWebGLDrawingBuffer* drawing_buffer = XRWebGLDrawingBuffer::Create(
-      webgl_context->GetDrawingBuffer(), framebuffer->Object(), desired_size,
-      want_alpha_channel, want_depth_buffer, want_stencil_buffer,
-      want_antialiasing, want_multiview);
+  scoped_refptr<XRWebGLDrawingBuffer> drawing_buffer =
+      XRWebGLDrawingBuffer::Create(
+          webgl_context->GetDrawingBuffer(), framebuffer->Object(),
+          desired_size, want_alpha_channel, want_depth_buffer,
+          want_stencil_buffer, want_antialiasing, want_multiview);
 
   if (!drawing_buffer) {
     exception_state.ThrowDOMException(kOperationError,
@@ -96,13 +106,13 @@ XRWebGLLayer* XRWebGLLayer::Create(
     return nullptr;
   }
 
-  return new XRWebGLLayer(session, webgl_context, drawing_buffer, framebuffer,
-                          framebuffer_scale);
+  return new XRWebGLLayer(session, webgl_context, std::move(drawing_buffer),
+                          framebuffer, framebuffer_scale);
 }
 
 XRWebGLLayer::XRWebGLLayer(XRSession* session,
                            WebGLRenderingContextBase* webgl_context,
-                           XRWebGLDrawingBuffer* drawing_buffer,
+                           scoped_refptr<XRWebGLDrawingBuffer> drawing_buffer,
                            WebGLFramebuffer* framebuffer,
                            double framebuffer_scale)
     : XRLayer(session, kXRWebGLLayerType),
@@ -170,6 +180,8 @@ void XRWebGLLayer::UpdateViewports() {
         new XRViewport(framebuffer_width * 0.5 * viewport_scale_, 0,
                        framebuffer_width * 0.5 * viewport_scale_,
                        framebuffer_height * viewport_scale_);
+
+    session()->device()->frameProvider()->UpdateWebGLLayerViewports(this);
   } else {
     left_viewport_ = new XRViewport(0, 0, framebuffer_width * viewport_scale_,
                                     framebuffer_height * viewport_scale_);
@@ -178,10 +190,23 @@ void XRWebGLLayer::UpdateViewports() {
 
 void XRWebGLLayer::OnFrameStart() {
   framebuffer_->MarkOpaqueBufferComplete(true);
+  framebuffer_->SetContentsChanged(false);
 }
 
 void XRWebGLLayer::OnFrameEnd() {
   framebuffer_->MarkOpaqueBufferComplete(false);
+  // Exit early if the framebuffer contents have not changed.
+  if (!framebuffer_->HaveContentsChanged())
+    return;
+
+  // Submit the frame to the XR compositor.
+  if (session()->exclusive()) {
+    session()->device()->frameProvider()->SubmitWebGLLayer(this);
+  } else if (session()->outputContext()) {
+    ImageBitmap* image_bitmap =
+        ImageBitmap::Create(TransferToStaticBitmapImage(nullptr));
+    session()->outputContext()->SetImage(image_bitmap);
+  }
 }
 
 void XRWebGLLayer::OnResize() {
@@ -193,8 +218,9 @@ void XRWebGLLayer::OnResize() {
   viewports_dirty_ = true;
 }
 
-scoped_refptr<StaticBitmapImage> XRWebGLLayer::TransferToStaticBitmapImage() {
-  return drawing_buffer_->TransferToStaticBitmapImage();
+scoped_refptr<StaticBitmapImage> XRWebGLLayer::TransferToStaticBitmapImage(
+    std::unique_ptr<viz::SingleReleaseCallback>* out_release_callback) {
+  return drawing_buffer_->TransferToStaticBitmapImage(out_release_callback);
 }
 
 void XRWebGLLayer::Trace(blink::Visitor* visitor) {

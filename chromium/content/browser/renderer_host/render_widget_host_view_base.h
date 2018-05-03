@@ -58,10 +58,6 @@ namespace cc {
 struct BeginFrameAck;
 }  // namespace cc
 
-namespace media {
-class VideoFrame;
-}
-
 namespace blink {
 class WebMouseEvent;
 class WebMouseWheelEvent;
@@ -94,6 +90,9 @@ struct TextInputState;
 class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                                 public IPC::Listener {
  public:
+  using CreateCompositorFrameSinkCallback =
+      base::OnceCallback<void(const viz::FrameSinkId&)>;
+
   ~RenderWidgetHostViewBase() override;
 
   float current_device_scale_factor() const {
@@ -115,20 +114,14 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   gfx::Size GetVisibleViewportSize() const override;
   void SetInsets(const gfx::Insets& insets) override;
   bool IsSurfaceAvailableForCopy() const override;
-  void CopyFromSurface(const gfx::Rect& src_rect,
-                       const gfx::Size& output_size,
-                       const ReadbackRequestCallback& callback,
-                       const SkColorType color_type) override;
-  void CopyFromSurfaceToVideoFrame(
+  void CopyFromSurface(
       const gfx::Rect& src_rect,
-      scoped_refptr<media::VideoFrame> target,
-      const base::Callback<void(const gfx::Rect&, bool)>& callback) override;
-  void BeginFrameSubscription(
-      std::unique_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
-  void EndFrameSubscription() override;
+      const gfx::Size& output_size,
+      base::OnceCallback<void(const SkBitmap&)> callback) override;
   void FocusedNodeTouched(const gfx::Point& location_dips_screen,
                           bool editable) override;
-  void GetScreenInfo(ScreenInfo* screen_info) override;
+  void GetScreenInfo(ScreenInfo* screen_info) const override;
+  float GetDeviceScaleFactor() const final;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
 
@@ -187,7 +180,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual gfx::Size GetRequestedRendererSize() const;
 
   // The size of the view's backing surface in non-DPI-adjusted pixels.
-  virtual gfx::Size GetPhysicalBackingSize() const;
+  virtual gfx::Size GetCompositorViewportPixelSize() const;
 
   // Whether or not Blink's viewport size should be shrunk by the height of the
   // URL-bar.
@@ -244,6 +237,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Informs that the focused DOM node has changed.
   virtual void FocusedNodeChanged(bool is_editable_node,
                                   const gfx::Rect& node_bounds_in_screen) {}
+
+  // This method is called by RenderWidgetHostImpl when the renderer has
+  // requested a CompositorFrameSink. The callback takes a FrameSinkId and
+  // fullfills the request. The default implementation will immediately run the
+  // callback with GetFrameSinkId().
+  virtual void CreateCompositorFrameSink(
+      CreateCompositorFrameSinkCallback callback);
 
   // This method is called by RenderWidgetHostImpl when a new
   // RendererCompositorFrameSink is created in the renderer. The view is
@@ -369,6 +369,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // frames.
   virtual viz::SurfaceId GetCurrentSurfaceId() const = 0;
 
+  // Returns true if this view's size have been initialized.
+  virtual bool HasSize() const;
+
   //----------------------------------------------------------------------------
   // The following methods are related to IME.
   // TODO(ekaramad): Most of the IME methods should not stay virtual after IME
@@ -435,20 +438,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // the page has changed.
   virtual void SetTooltipText(const base::string16& tooltip_text) = 0;
 
-  // Return true if the view has an accelerated surface that contains the last
-  // presented frame for the view. If |desired_size| is non-empty, true is
-  // returned only if the accelerated surface size matches.
-  virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) = 0;
+  // Returns the offset of the view from the origin of the browser compositor's
+  // surface. This is in DIP.
+  virtual gfx::Vector2d GetOffsetFromRootSurface() = 0;
 
-  // Compute the orientation type of the display assuming it is a mobile device.
-  static ScreenOrientationValues GetOrientationTypeForMobile(
-      const display::Display& display);
-
-  // Compute the orientation type of the display assuming it is a desktop.
-  static ScreenOrientationValues GetOrientationTypeForDesktop(
-      const display::Display& display);
-
-  // Gets the bounds of the window, in screen coordinates.
+  // Gets the bounds of the top-level window, in screen coordinates.
   virtual gfx::Rect GetBoundsInRootWindow() = 0;
 
   // Called by the RenderWidgetHost when an ambiguous gesture is detected to
@@ -506,6 +500,17 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       ui::mojom::WindowTreeClientPtr renderer_window_tree_client);
   void OnChildFrameDestroyed(int routing_id);
 #endif
+
+#if defined(OS_MACOSX)
+  // Use only for resize on macOS. Returns true if there is not currently a
+  // frame of the view's size being displayed.
+  virtual bool ShouldContinueToPauseForFrame();
+#endif
+
+  virtual void DidNavigate() {}
+
+  // Called when the RenderWidgetHostImpl has be initialized.
+  virtual void OnRenderWidgetInit() {}
 
  protected:
   // Interface class only, do not construct.

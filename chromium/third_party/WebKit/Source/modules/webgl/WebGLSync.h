@@ -5,6 +5,7 @@
 #ifndef WebGLSync_h
 #define WebGLSync_h
 
+#include "base/single_thread_task_runner.h"
 #include "modules/webgl/WebGLSharedObject.h"
 #include "platform/WebTaskRunner.h"
 
@@ -51,7 +52,7 @@ class WebGLSync : public WebGLSharedObject {
   GLsync object_;
   GLenum object_type_;
 
-  scoped_refptr<WebTaskRunner> task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   TaskHandle task_handle_;
 };
 

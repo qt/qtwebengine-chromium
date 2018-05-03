@@ -5,10 +5,12 @@
 #include "core/css/cssom/StylePropertyMap.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/StylePropertyShorthand.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/cssom/CSSOMTypes.h"
 #include "core/css/cssom/CSSStyleValue.h"
 #include "core/css/cssom/StyleValueFactory.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/properties/CSSProperty.h"
 
@@ -32,11 +34,19 @@ CSSValueList* CssValueListForPropertyID(CSSPropertyID property_id) {
   }
 }
 
-const CSSValue* StyleValueToCSSValue(const CSSProperty& property,
-                                     const CSSStyleValue& style_value) {
+const CSSValue* StyleValueToCSSValue(
+    const CSSProperty& property,
+    const CSSStyleValue& style_value,
+    const ExecutionContext& execution_context) {
   const CSSPropertyID property_id = property.PropertyID();
   if (!CSSOMTypes::PropertyCanTake(property_id, style_value))
     return nullptr;
+
+  if (style_value.GetType() == CSSStyleValue::kUnknownType) {
+    return CSSParser::ParseSingleValue(
+        property.PropertyID(), style_value.toString(),
+        CSSParserContext::Create(execution_context));
+  }
   return style_value.ToCSSValueWithProperty(property_id);
 }
 
@@ -50,7 +60,8 @@ const CSSValue* CoerceStyleValueOrString(
     if (!value.GetAsCSSStyleValue())
       return nullptr;
 
-    return StyleValueToCSSValue(property, *value.GetAsCSSStyleValue());
+    return StyleValueToCSSValue(property, *value.GetAsCSSStyleValue(),
+                                execution_context);
   } else {
     DCHECK(value.IsString());
     const auto values = StyleValueFactory::FromString(
@@ -59,7 +70,7 @@ const CSSValue* CoerceStyleValueOrString(
     if (values.size() != 1U)
       return nullptr;
 
-    return StyleValueToCSSValue(property, *values[0]);
+    return StyleValueToCSSValue(property, *values[0], execution_context);
   }
 }
 
@@ -79,8 +90,8 @@ const CSSValue* CoerceStyleValuesOrStrings(
       if (!value.GetAsCSSStyleValue())
         return nullptr;
 
-      css_values.push_back(
-          StyleValueToCSSValue(property, *value.GetAsCSSStyleValue()));
+      css_values.push_back(StyleValueToCSSValue(
+          property, *value.GetAsCSSStyleValue(), execution_context));
     } else {
       DCHECK(value.IsString());
       if (!parser_context)
@@ -93,7 +104,8 @@ const CSSValue* CoerceStyleValuesOrStrings(
 
       for (const auto& subvalue : subvalues) {
         DCHECK(subvalue);
-        css_values.push_back(StyleValueToCSSValue(property, *subvalue));
+        css_values.push_back(
+            StyleValueToCSSValue(property, *subvalue, execution_context));
       }
     }
   }
@@ -102,7 +114,7 @@ const CSSValue* CoerceStyleValuesOrStrings(
   for (const auto& css_value : css_values) {
     if (!css_value)
       return nullptr;
-    if (css_value->IsCSSWideKeyword())
+    if (css_value->IsCSSWideKeyword() || css_value->IsVariableReferenceValue())
       return css_values.size() == 1U ? css_value : nullptr;
 
     result->Append(*css_value);
@@ -118,13 +130,35 @@ void StylePropertyMap::set(const ExecutionContext* execution_context,
                            const HeapVector<CSSStyleValueOrString>& values,
                            ExceptionState& exception_state) {
   const CSSPropertyID property_id = cssPropertyID(property_name);
-
   if (property_id == CSSPropertyInvalid) {
     exception_state.ThrowTypeError("Invalid propertyName: " + property_name);
     return;
   }
 
+  DCHECK(isValidCSSPropertyID(property_id));
   const CSSProperty& property = CSSProperty::Get(property_id);
+  if (property.IsShorthand()) {
+    if (values.size() != 1) {
+      exception_state.ThrowTypeError("Invalid type for property");
+      return;
+    }
+
+    String css_text;
+    if (values[0].IsCSSStyleValue()) {
+      CSSStyleValue* style_value = values[0].GetAsCSSStyleValue();
+      if (style_value && CSSOMTypes::PropertyCanTake(property_id, *style_value))
+        css_text = style_value->toString();
+    } else {
+      css_text = values[0].GetAsString();
+    }
+
+    if (css_text.IsEmpty() ||
+        !SetShorthandProperty(property.PropertyID(), css_text,
+                              execution_context->GetSecureContextMode()))
+      exception_state.ThrowTypeError("Invalid type for property");
+
+    return;
+  }
 
   const CSSValue* result = nullptr;
   if (property.IsRepeated())
@@ -179,12 +213,11 @@ void StylePropertyMap::append(const ExecutionContext* execution_context,
 
   const CSSValue* result =
       CoerceStyleValuesOrStrings(property, values, *execution_context);
-  if (!result) {
+  if (!result || !result->IsValueList()) {
     exception_state.ThrowTypeError("Invalid type for property");
     return;
   }
 
-  DCHECK(result->IsValueList());
   for (const auto& value : *ToCSSValueList(result)) {
     current_value->Append(*value);
   }
@@ -207,34 +240,8 @@ void StylePropertyMap::remove(const String& property_name,
   }
 }
 
-void StylePropertyMap::update(const String& property_name,
-                              V8UpdateFunction* update_function,
-                              ExceptionState& exception_state) {
-  CSSStyleValue* old_value = get(property_name, exception_state);
-  if (exception_state.HadException()) {
-    exception_state.ThrowTypeError("Invalid propertyName: " + property_name);
-    return;
-  }
-
-  const CSSPropertyID property_id = cssPropertyID(property_name);
-
-  const auto& new_value = update_function->Invoke(this, old_value);
-  if (new_value.IsNothing() || !new_value.ToChecked()) {
-    exception_state.ThrowTypeError("Invalid type for property");
-    return;
-  }
-
-  const CSSValue* result = StyleValueToCSSValue(CSSProperty::Get(property_id),
-                                                *new_value.ToChecked());
-  if (!result) {
-    exception_state.ThrowTypeError("Invalid type for property");
-    return;
-  }
-
-  if (property_id == CSSPropertyVariable)
-    SetCustomProperty(AtomicString(property_name), *result);
-  else
-    SetProperty(property_id, *result);
+void StylePropertyMap::clear() {
+  RemoveAllProperties();
 }
 
 }  // namespace blink

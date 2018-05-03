@@ -25,8 +25,8 @@
 #include "extensions/test/result_catcher.h"
 #include "net/base/net_errors.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-#include "ui/message_center/notification.h"
-#include "ui/message_center/notification_delegate.h"
+#include "ui/message_center/public/cpp/notification.h"
+#include "ui/message_center/public/cpp/notification_delegate.h"
 
 using chromeos::DBusThreadManager;
 using chromeos::NetworkPortalDetector;
@@ -82,8 +82,7 @@ class NetworkingConfigTest
     content::RunAllPendingInMessageLoop();
 
     network_portal_detector_ = new NetworkPortalDetectorImpl(
-        g_browser_process->system_request_context(),
-        true /* create_notification_controller */);
+        test_loader_factory(), true /* create_notification_controller */);
     chromeos::network_portal_detector::InitializeForTesting(
         network_portal_detector_);
     network_portal_detector_->Enable(false /* start_detection */);

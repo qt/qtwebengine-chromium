@@ -6,6 +6,7 @@
 
 #include "base/test/fuzzed_data_provider.h"
 
+#include "net/base/completion_once_callback.h"
 #include "net/base/test_completion_callback.h"
 #include "net/cert/do_nothing_ct_verifier.h"
 #include "net/cert/mock_cert_verifier.h"
@@ -20,10 +21,12 @@
 #include "net/quic/test_tools/mock_random.h"
 #include "net/socket/fuzzed_datagram_client_socket.h"
 #include "net/socket/fuzzed_socket_factory.h"
+#include "net/socket/socket_tag.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/gtest_util.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 
 namespace net {
 
@@ -100,6 +103,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   bool estimate_initial_rtt = data_provider.ConsumeBool();
   bool headers_include_h2_stream_dependency = data_provider.ConsumeBool();
   bool enable_token_binding = data_provider.ConsumeBool();
+  bool enable_socket_recv_optimization = data_provider.ConsumeBool();
 
   env->crypto_client_stream_factory.AddProofVerifyDetails(&env->verify_details);
 
@@ -138,16 +142,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           kMaxMigrationsToNonDefaultNetworkOnPathDegrading,
           allow_server_migration, race_cert_verification, estimate_initial_rtt,
           headers_include_h2_stream_dependency, env->connection_options,
-          env->client_connection_options, enable_token_binding);
+          env->client_connection_options, enable_token_binding,
+          enable_socket_recv_optimization);
 
   QuicStreamRequest request(factory.get());
   TestCompletionCallback callback;
   NetErrorDetails net_error_details;
   request.Request(env->host_port_pair,
                   data_provider.PickValueInArray(kSupportedTransportVersions),
-                  PRIVACY_MODE_DISABLED, DEFAULT_PRIORITY, kCertVerifyFlags,
-                  GURL(kUrl), env->net_log, &net_error_details,
-                  callback.callback());
+                  PRIVACY_MODE_DISABLED, DEFAULT_PRIORITY, SocketTag(),
+                  kCertVerifyFlags, GURL(kUrl), env->net_log,
+                  &net_error_details, callback.callback());
 
   callback.WaitForResult();
   std::unique_ptr<QuicChromiumClientSession::Handle> session =
@@ -159,8 +164,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   HttpRequestInfo request_info;
   request_info.method = kMethod;
   request_info.url = GURL(kUrl);
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
   stream->InitializeStream(&request_info, true, DEFAULT_PRIORITY, env->net_log,
-                           CompletionCallback());
+                           CompletionOnceCallback());
 
   HttpResponseInfo response;
   HttpRequestHeaders request_headers;

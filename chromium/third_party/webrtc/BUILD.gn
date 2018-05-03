@@ -63,7 +63,6 @@ if (!build_with_chromium) {
         "video:screenshare_loopback",
         "video:sv_loopback",
         "video:video_loopback",
-        "voice_engine:voice_engine_unittests",
       ]
       if (is_android) {
         deps += [
@@ -108,7 +107,6 @@ config("common_inherited_config") {
     defines += [
       # TODO(kjellander): Cleanup unused ones and move defines closer to
       # the source when webrtc:4256 is completed.
-      "FEATURE_ENABLE_VOICEMAIL",
       "GTEST_RELATIVE_PATH",
       "WEBRTC_CHROMIUM_BUILD",
     ]
@@ -169,17 +167,6 @@ config("common_inherited_config") {
   if (is_ubsan) {
     cflags += [ "-fsanitize=float-cast-overflow" ]
   }
-
-  # TODO(GYP): Support these in GN.
-  # if (is_bsd) {
-  #   defines += [ "BSD" ]
-  # }
-  # if (is_openbsd) {
-  #   defines += [ "OPENBSD" ]
-  # }
-  # if (is_freebsd) {
-  #   defines += [ "FREEBSD" ]
-  # }
 }
 
 config("common_config") {
@@ -191,10 +178,6 @@ config("common_config") {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
   } else {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=0" ]
-  }
-
-  if (rtc_restrict_logging) {
-    defines += [ "WEBRTC_RESTRICT_LOGGING" ]
   }
 
   if (rtc_include_internal_audio_device) {
@@ -213,6 +196,10 @@ config("common_config") {
     defines += [ "ENABLE_EXTERNAL_AUTH" ]
   }
 
+  if (rtc_use_builtin_sw_codecs) {
+    defines += [ "USE_BUILTIN_SW_CODECS" ]
+  }
+
   if (build_with_chromium) {
     defines += [
       # NOTICE: Since common_inherited_config is used in public_configs for our
@@ -222,7 +209,6 @@ config("common_config") {
       "HAVE_WEBRTC_VIDEO",
       "HAVE_WEBRTC_VOICE",
       "LOGGING_INSIDE_WEBRTC",
-      "USE_WEBRTC_DEV_BRANCH",
     ]
   } else {
     if (is_posix) {
@@ -342,7 +328,6 @@ if (!build_with_chromium) {
       "sdk",
       "system_wrappers:system_wrappers_default",
       "video",
-      "voice_engine",
     ]
 
     if (build_with_mozilla) {
@@ -444,7 +429,14 @@ if (rtc_include_tests) {
     }
 
     if (is_android) {
-      deps += [ "//testing/android/native_test:native_test_support" ]
+      # Do not use Chromium's launcher. native_unittests defines its own JNI_OnLoad.
+      use_default_launcher = false
+
+      deps += [
+        "sdk/android:native_unittests",
+        "sdk/android:native_unittests_java",
+        "//testing/android/native_test:native_test_support",
+      ]
       shard_timeout = 900
     }
 

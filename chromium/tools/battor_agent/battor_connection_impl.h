@@ -16,7 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/tick_clock.h"
-#include "services/device/public/interfaces/serial.mojom.h"
+#include "services/device/public/mojom/serial.mojom.h"
 #include "tools/battor_agent/battor_connection.h"
 #include "tools/battor_agent/battor_error.h"
 #include "tools/battor_agent/battor_protocol_types.h"
@@ -50,6 +50,12 @@ class BattOrConnectionImpl
   void CancelReadMessage() override;
   void LogSerial(const std::string& str) override;
 
+  // Flushes the serial connection to the BattOr, reading and throwing away
+  // bytes from the serial connection until the connection is quiet for a
+  // sufficiently long time. This also discards any trailing bytes from past
+  // successful reads.
+  void Flush() override;
+
  protected:
   // Overridden by the test to use a fake serial connection.
   virtual scoped_refptr<device::SerialIoHandler> CreateIoHandler();
@@ -74,12 +80,6 @@ class BattOrConnectionImpl
   void EndReadBytesForMessage(bool success,
                               BattOrMessageType type,
                               std::unique_ptr<std::vector<char>> data);
-
-  // Flushes the serial connection to the BattOr, reading and throwing away
-  // bytes from the serial connection until the connection is quiet for a
-  // sufficiently long time. This also discards any trailing bytes from past
-  // successful reads.
-  void Flush();
 
   void BeginReadBytesForFlush();
   void OnBytesReadForFlush(int bytes_read,

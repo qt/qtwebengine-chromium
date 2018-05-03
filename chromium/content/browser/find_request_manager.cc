@@ -33,10 +33,10 @@ std::vector<FrameTreeNode*> GetChildren(FrameTreeNode* node) {
   for (size_t i = 0; i != node->child_count(); ++i)
     children[i] = node->child_at(i);
 
-  if (auto* inner_contents = WebContentsImpl::FromOuterFrameTreeNode(node)) {
-    children.push_back(inner_contents->GetMainFrame()->frame_tree_node());
+  if (auto* contents = WebContentsImpl::FromOuterFrameTreeNode(node)) {
+    children.push_back(contents->GetMainFrame()->frame_tree_node());
   } else {
-    auto* contents = WebContentsImpl::FromFrameTreeNode(node);
+    contents = WebContentsImpl::FromFrameTreeNode(node);
     if (node->IsMainFrame() && contents->GetBrowserPluginEmbedder()) {
       for (auto* inner_contents : contents->GetInnerWebContents()) {
         children.push_back(inner_contents->GetMainFrame()->frame_tree_node());
@@ -776,11 +776,11 @@ void FindRequestManager::RemoveFindMatchRectsPendingReply(
                             true /* forward */,
                             true /* matches_only */,
                             false /* wrap */)) {
-        auto it = match_rects_.frame_rects.find(frame);
-        if (it == match_rects_.frame_rects.end())
+        auto frame_it = match_rects_.frame_rects.find(frame);
+        if (frame_it == match_rects_.frame_rects.end())
           continue;
 
-        std::vector<gfx::RectF>& frame_rects = it->second.rects;
+        std::vector<gfx::RectF>& frame_rects = frame_it->second.rects;
         aggregate_rects.insert(
             aggregate_rects.end(), frame_rects.begin(), frame_rects.end());
       }

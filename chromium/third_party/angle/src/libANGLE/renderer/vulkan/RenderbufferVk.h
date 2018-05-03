@@ -11,15 +11,19 @@
 #define LIBANGLE_RENDERER_VULKAN_RENDERBUFFERVK_H_
 
 #include "libANGLE/renderer/RenderbufferImpl.h"
+#include "libANGLE/renderer/vulkan/RenderTargetVk.h"
+#include "libANGLE/renderer/vulkan/vk_utils.h"
 
 namespace rx
 {
 
-class RenderbufferVk : public RenderbufferImpl
+class RenderbufferVk : public RenderbufferImpl, public ResourceVk
 {
   public:
-    RenderbufferVk();
+    RenderbufferVk(const gl::RenderbufferState &state);
     ~RenderbufferVk() override;
+
+    gl::Error onDestroy(const gl::Context *context) override;
 
     gl::Error setStorage(const gl::Context *context,
                          GLenum internalformat,
@@ -39,6 +43,13 @@ class RenderbufferVk : public RenderbufferImpl
 
     gl::Error initializeContents(const gl::Context *context,
                                  const gl::ImageIndex &imageIndex) override;
+
+  private:
+    vk::Image mImage;
+    vk::DeviceMemory mDeviceMemory;
+    vk::ImageView mImageView;
+    size_t mRequiredSize;
+    RenderTargetVk mRenderTarget;
 };
 
 }  // namespace rx

@@ -38,7 +38,7 @@ class CORE_EXPORT LayoutSVGRoot final : public LayoutReplaced {
   bool IsEmbeddedThroughSVGImage() const;
   bool IsEmbeddedThroughFrameContainingSVGDocument() const;
 
-  void IntrinsicDimensionsChanged() const;
+  void IntrinsicSizingInfoChanged() const;
   void ComputeIntrinsicSizingInfo(IntrinsicSizingInfo&) const override;
 
   // If you have a LayoutSVGRoot, use firstChild or lastChild instead.
@@ -94,6 +94,8 @@ class CORE_EXPORT LayoutSVGRoot final : public LayoutReplaced {
 
   const char* GetName() const override { return "LayoutSVGRoot"; }
 
+  bool PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const final;
+
  private:
   const LayoutObjectChildList* Children() const { return &children_; }
   LayoutObjectChildList* Children() { return &children_; }
@@ -140,11 +142,6 @@ class CORE_EXPORT LayoutSVGRoot final : public LayoutReplaced {
 
   LayoutRect LocalVisualRectIgnoringVisibility() const override;
 
-  bool PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const final {
-    // The rule is the same as LayoutBox's instead of LayoutReplaced's.
-    return LayoutBox::PaintedOutputOfObjectHasNoEffectRegardlessOfSize();
-  }
-
   void MapLocalToAncestor(
       const LayoutBoxModelObject* ancestor,
       TransformState&,
@@ -163,7 +160,7 @@ class CORE_EXPORT LayoutSVGRoot final : public LayoutReplaced {
   void UpdateCachedBoundaries();
   SVGTransformChange BuildLocalToBorderBoxTransform();
 
-  PositionWithAffinity PositionForPoint(const LayoutPoint&) final;
+  PositionWithAffinity PositionForPoint(const LayoutPoint&) const final;
 
   LayoutObjectChildList children_;
   IntSize container_size_;

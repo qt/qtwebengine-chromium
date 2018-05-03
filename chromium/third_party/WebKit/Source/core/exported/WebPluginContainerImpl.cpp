@@ -144,11 +144,28 @@ void WebPluginContainerImpl::SetFrameRect(const IntRect& frame_rect) {
   ReportGeometry();
 }
 
+IntRect WebPluginContainerImpl::FrameRect() const {
+  IntPoint location(frame_rect_.Location());
+
+  // As an optimization, we don't include the root layer's scroll offset in the
+  // frame rect.  As a result, we don't need to recalculate the frame rect every
+  // time the root layer scrolls, but we need to add it in here.
+  LayoutEmbeddedContent* owner = element_->GetLayoutEmbeddedContent();
+  if (owner) {
+    LayoutView* owner_layout_view = owner->View();
+    DCHECK(owner_layout_view);
+    if (owner_layout_view->HasOverflowClip())
+      location.Move(-owner_layout_view->ScrolledContentOffset());
+  }
+
+  return IntRect(location, frame_rect_.Size());
+}
+
 void WebPluginContainerImpl::Paint(GraphicsContext& context,
                                    const GlobalPaintFlags,
                                    const CullRect& cull_rect) const {
   // Don't paint anything if the plugin doesn't intersect.
-  if (!cull_rect.IntersectsCullRect(frame_rect_))
+  if (!cull_rect.IntersectsCullRect(FrameRect()))
     return;
 
   if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() && web_layer_) {
@@ -156,7 +173,7 @@ void WebPluginContainerImpl::Paint(GraphicsContext& context,
     // inserted rather than invoking WebPlugin::paint.
     RecordForeignLayer(context, *element_->GetLayoutObject(),
                        DisplayItem::kForeignLayerPlugin, web_layer_,
-                       frame_rect_.Location(), frame_rect_.Size());
+                       FrameRect().Location(), frame_rect_.Size());
     return;
   }
 
@@ -541,7 +558,8 @@ bool WebPluginContainerImpl::IsRectTopmost(const WebRect& rect) {
   if (!frame)
     return false;
 
-  LayoutRect document_rect(frame_rect_.X() + rect.x, frame_rect_.Y() + rect.y,
+  IntPoint location = FrameRect().Location();
+  LayoutRect document_rect(location.X() + rect.x, location.Y() + rect.y,
                            rect.width, rect.height);
   // hitTestResultAtPoint() takes a padding rectangle.
   // FIXME: We'll be off by 1 when the width or height is even.
@@ -802,9 +820,9 @@ void WebPluginContainerImpl::HandleDragEvent(MouseEvent* event) {
   WebDragOperationsMask drag_operation_mask =
       static_cast<WebDragOperationsMask>(data_transfer->SourceOperation());
   WebFloatPoint drag_screen_location(event->screenX(), event->screenY());
-  WebFloatPoint drag_location(
-      event->AbsoluteLocation().X() - frame_rect_.Location().X(),
-      event->AbsoluteLocation().Y() - frame_rect_.Location().Y());
+  IntPoint location(FrameRect().Location());
+  WebFloatPoint drag_location(event->AbsoluteLocation().X() - location.X(),
+                              event->AbsoluteLocation().Y() - location.Y());
 
   web_plugin_->HandleDragStatusUpdate(drag_status, drag_data,
                                       drag_operation_mask, drag_location,
@@ -912,11 +930,9 @@ WebTouchEvent WebPluginContainerImpl::TransformTouchEvent(
     // Translate the root frame position to content coordinates.
     absolute_location = parent.RootFrameToContents(absolute_location);
 
-    IntPoint local_point =
-        RoundedIntPoint(element_->GetLayoutObject()->AbsoluteToLocal(
-            absolute_location, kUseTransforms));
-    transformed_event.touches[i].SetPositionInWidget(local_point.X(),
-                                                     local_point.Y());
+    FloatPoint local_point = element_->GetLayoutObject()->AbsoluteToLocal(
+        absolute_location, kUseTransforms);
+    transformed_event.touches[i].SetPositionInWidget(local_point);
   }
   return transformed_event;
 }
@@ -1028,27 +1044,31 @@ void WebPluginContainerImpl::ComputeClipRectsForPlugin(
 
   LayoutBox* box = ToLayoutBox(owner_element->GetLayoutObject());
 
-  // Note: FrameRect() for this plugin is equal to contentBoxRect, mapped to the
-  // containing view space, and rounded off.
-  // See LayoutEmbeddedContent.cpp::updateGeometryInternal. To remove the lossy
-  // effect of rounding off, use contentBoxRect directly.
+  // Note: FrameRect() for this plugin is equal to contentBoxRect, mapped to
+  // the containing view space, and rounded off.  See
+  // LayoutEmbeddedContent::UpdateGeometry. To remove the lossy effect of
+  // rounding off, use contentBoxRect directly.
   LayoutRect unclipped_absolute_rect(box->ContentBoxRect());
   box->MapToVisualRectInAncestorSpace(root_view, unclipped_absolute_rect);
+  unclipped_absolute_rect =
+      box->View()->GetFrameView()->DocumentToAbsolute(unclipped_absolute_rect);
 
   // The frameRect is already in absolute space of the local frame to the
-  // plugin.
-  window_rect = frame_rect_;
-  // Map up to the root frame.
+  // plugin so map it up to the root frame.
+  window_rect = FrameRect();
   LayoutRect layout_window_rect =
       LayoutRect(element_->GetDocument()
                      .View()
                      ->GetLayoutView()
-                     ->LocalToAbsoluteQuad(FloatQuad(FloatRect(frame_rect_)),
+                     ->LocalToAbsoluteQuad(FloatQuad(FloatRect(window_rect)),
                                            kTraverseDocumentBoundaries)
                      .BoundingBox());
+
   // Finally, adjust for scrolling of the root frame, which the above does not
-  // take into account.
-  layout_window_rect.MoveBy(-root_view->ViewRect().Location());
+  // take into account (until root-layer-scrolling ships at which point we can
+  // remove the AbsoluteToRootFrame).
+  layout_window_rect =
+      root_view->GetFrameView()->AbsoluteToRootFrame(layout_window_rect);
   window_rect = PixelSnappedIntRect(layout_window_rect);
 
   LayoutRect layout_clipped_local_rect = unclipped_absolute_rect;

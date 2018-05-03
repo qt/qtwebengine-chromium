@@ -14,7 +14,7 @@
 #include "platform/scheduler/renderer/main_thread_task_queue.h"
 #include "platform/scheduler/util/task_duration_metric_reporter.h"
 #include "platform/scheduler/util/thread_load_tracker.h"
-#include "platform/scheduler/util/thread_type.h"
+#include "public/platform/WebThreadType.h"
 
 namespace blink {
 namespace scheduler {
@@ -66,6 +66,8 @@ class PLATFORM_EXPORT RendererMetricsHelper : public MetricsHelper {
   void RecordMainThreadTaskLoad(base::TimeTicks time, double load);
   void RecordForegroundMainThreadTaskLoad(base::TimeTicks time, double load);
   void RecordBackgroundMainThreadTaskLoad(base::TimeTicks time, double load);
+
+  void ResetForTest(base::TimeTicks now);
 
  private:
   RendererSchedulerImpl* renderer_scheduler_;  // NOT OWNED

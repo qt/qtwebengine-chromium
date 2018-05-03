@@ -19,6 +19,8 @@
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "storage/browser/test/mock_storage_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 using blink::mojom::QuotaStatusCode;
 using blink::mojom::StorageType;
@@ -80,17 +82,18 @@ class UsageMockQuotaManager : public QuotaManager {
   }
 
   void InvokeCallback() {
-    delayed_callback_.Run(callback_status_, callback_usage_, callback_quota_);
+    std::move(delayed_callback_)
+        .Run(callback_status_, callback_usage_, callback_quota_);
   }
 
-  void GetUsageAndQuotaForWebApps(
-      const GURL& origin,
-      StorageType type,
-      const UsageAndQuotaCallback& callback) override {
+  void GetUsageAndQuotaForWebApps(const GURL& origin,
+                                  StorageType type,
+                                  UsageAndQuotaCallback callback) override {
     if (initialized_)
-      callback.Run(callback_status_, callback_usage_, callback_quota_);
+      std::move(callback).Run(callback_status_, callback_usage_,
+                              callback_quota_);
     else
-      delayed_callback_ = callback;
+      delayed_callback_ = std::move(callback);
   }
 
  protected:
@@ -668,9 +671,8 @@ TEST_F(StorageMonitorIntegrationTest, NotifyUsageEvent) {
   quota_manager_->AddStorageObserver(&mock_observer, params);
 
   // Fire a usage change.
-  client_->AddOriginAndNotify(GURL(kDefaultOrigin),
-                              kTestStorageType,
-                              kTestUsage);
+  client_->AddOriginAndNotify(url::Origin::Create(GURL(kDefaultOrigin)),
+                              kTestStorageType, kTestUsage);
   scoped_task_environment_.RunUntilIdle();
 
   // Verify that the observer receives it.

@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <string>
 
 #include "base/macros.h"
 #include "net/base/iovec.h"
@@ -33,6 +32,7 @@
 #include "net/quic/platform/api/quic_export.h"
 #include "net/quic/platform/api/quic_mem_slice_span.h"
 #include "net/quic/platform/api/quic_reference_counted.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
 namespace net {
@@ -91,13 +91,16 @@ class QUIC_EXPORT_PRIVATE QuicStream {
   // Called by the subclass or the sequencer to close the entire connection from
   // this end.
   virtual void CloseConnectionWithDetails(QuicErrorCode error,
-                                          const std::string& details);
+                                          const QuicString& details);
 
   // Returns true if this stream is still waiting for acks of sent data.
   // This will return false if all data has been acked, or if the stream
   // is no longer interested in data being acked (which happens when
   // a stream is reset because of an error).
   bool IsWaitingForAcks() const;
+
+  // Number of bytes available to read.
+  size_t ReadableBytes() const;
 
   QuicStreamId id() const { return id_; }
 
@@ -203,8 +206,9 @@ class QUIC_EXPORT_PRIVATE QuicStream {
                        QuicDataWriter* writer);
 
   // Called when data [offset, offset + data_length) is acked. |fin_acked|
-  // indicates whether the fin is acked.
-  virtual void OnStreamFrameAcked(QuicStreamOffset offset,
+  // indicates whether the fin is acked. Returns true if any new stream data
+  // (including fin) gets acked.
+  virtual bool OnStreamFrameAcked(QuicStreamOffset offset,
                                   QuicByteCount data_length,
                                   bool fin_acked,
                                   QuicTime::Delta ack_delay_time);
@@ -220,6 +224,12 @@ class QUIC_EXPORT_PRIVATE QuicStream {
   void OnStreamFrameLost(QuicStreamOffset offset,
                          QuicByteCount data_length,
                          bool fin_lost);
+
+  // Called to retransmit outstanding portion in data [offset, offset +
+  // data_length) and |fin|. Returns true if all data gets retransmitted.
+  virtual bool RetransmitStreamData(QuicStreamOffset offset,
+                                    QuicByteCount data_length,
+                                    bool fin);
 
   // Same as WritevData except data is provided in reference counted memory so
   // that data copy is avoided.

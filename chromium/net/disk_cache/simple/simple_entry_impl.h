@@ -158,6 +158,19 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
     STATE_FAILURE,
   };
 
+  enum DoomState {
+    // No attempt to doom the entry has been made.
+    DOOM_NONE,
+
+    // We have moved ourselves to |entries_pending_doom_| and have queued an
+    // operation to actually update the disk, but haven't completed it yet.
+    DOOM_QUEUED,
+
+    // The disk has been updated. This corresponds to the state where we
+    // are in neither |entries_pending_doom_| nor |active_entries_|.
+    DOOM_COMPLETED,
+  };
+
   // Used in histograms, please only add entries at the end.
   enum CheckCrcResult {
     CRC_CHECK_NEVER_READ_TO_END = 0,
@@ -185,10 +198,11 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   // count.
   void ReturnEntryToCaller(Entry** out_entry);
 
-  // An error occured, and the SimpleSynchronousEntry should have Doomed
-  // us at this point. We need to remove |this| from the Backend and the
-  // index.
-  void MarkAsDoomed();
+  // Remove |this| from the Backend and the index, either because
+  // SimpleSynchronousEntry has detected an error or because we are about to
+  // be dooming it ourselves and want it to be tracked in
+  // |entries_pending_doom_| instead.
+  void MarkAsDoomed(DoomState doom_state);
 
   // Runs the next operation in the queue, if any and if there is no other
   // operation running at the moment.
@@ -257,26 +271,26 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   // |completion_callback| after updating state and dooming on errors.
   void EntryOperationComplete(const CompletionCallback& completion_callback,
                               const SimpleEntryStat& entry_stat,
-                              std::unique_ptr<int> result);
+                              int result);
 
   // Called after an asynchronous read. Updates |crc32s_| if possible.
   void ReadOperationComplete(
       int stream_index,
       int offset,
       const CompletionCallback& completion_callback,
-      std::unique_ptr<SimpleSynchronousEntry::CRCRequest> crc_request,
       std::unique_ptr<SimpleEntryStat> entry_stat,
-      std::unique_ptr<int> result);
+      std::unique_ptr<SimpleSynchronousEntry::ReadResult> read_result);
 
   // Called after an asynchronous write completes.
   // |buf| parameter brings back a reference to net::IOBuffer to the original
   // thread, so that we can reduce cross thread malloc/free pair.
   // See http://crbug.com/708644 for details.
-  void WriteOperationComplete(int stream_index,
-                              const CompletionCallback& completion_callback,
-                              std::unique_ptr<SimpleEntryStat> entry_stat,
-                              std::unique_ptr<int> result,
-                              net::IOBuffer* buf);
+  void WriteOperationComplete(
+      int stream_index,
+      const CompletionCallback& completion_callback,
+      std::unique_ptr<SimpleEntryStat> entry_stat,
+      std::unique_ptr<SimpleSynchronousEntry::WriteResult> result,
+      net::IOBuffer* buf);
 
   void ReadSparseOperationComplete(
       const CompletionCallback& completion_callback,
@@ -297,11 +311,9 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
                              State state_to_restore,
                              int result);
 
-  // Reports reads result potentially refining status based on |crc_result|.
-  // |crc_result| is permitted to be null.
   void RecordReadResultConsideringChecksum(
-      int result,
-      std::unique_ptr<SimpleSynchronousEntry::CRCRequest> crc_result) const;
+      const std::unique_ptr<SimpleSynchronousEntry::ReadResult>& read_result)
+      const;
 
   // Called after completion of an operation, to either incoproprate file info
   // received from I/O done on the worker pool, or to simply bump the
@@ -331,13 +343,6 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   int SetStream0Data(net::IOBuffer* buf,
                      int offset, int buf_len,
                      bool truncate);
-
-  // Updates |crc32s_| and |crc32s_end_offset_| for a write of the data in
-  // |buffer| on |stream_index|, starting at |offset| and of length |length|.
-  void AdvanceCrc(net::IOBuffer* buffer,
-                  int offset,
-                  int length,
-                  int stream_index);
 
   // We want all async I/O on entries to complete before recycling the dir.
   scoped_refptr<BackendCleanupTracker> cleanup_tracker_;
@@ -371,7 +376,7 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   // notify the backend when this entry not used by any callers.
   int open_count_;
 
-  bool doomed_;
+  DoomState doom_state_;
 
   enum {
     CREATE_NORMAL,

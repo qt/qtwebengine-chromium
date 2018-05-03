@@ -8,15 +8,64 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/task_scheduler/task_scheduler.h"
+#include "base/threading/thread.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
+#include "net/cert/cert_net_fetcher.h"
 #include "net/cert/cert_verify_proc.h"
 #include "net/cert/cert_verify_proc_builtin.h"
+#include "net/cert/crl_set.h"
+#include "net/cert_net/cert_net_fetcher_impl.h"
 #include "net/tools/cert_verify_tool/cert_verify_tool_util.h"
 #include "net/tools/cert_verify_tool/verify_using_cert_verify_proc.h"
 #include "net/tools/cert_verify_tool/verify_using_path_builder.h"
+#include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_builder.h"
+#include "net/url_request/url_request_context_getter.h"
+
+#if defined(OS_LINUX)
+#include "net/proxy_resolution/proxy_config.h"
+#include "net/proxy_resolution/proxy_config_service_fixed.h"
+#endif
+
+#if defined(USE_NSS_CERTS)
+#include "net/cert_net/nss_ocsp.h"
+#endif
 
 namespace {
+
+std::string GetUserAgent() {
+  return "cert_verify_tool/0.1";
+}
+
+void SetUpOnNetworkThread(std::unique_ptr<net::URLRequestContext>* context,
+                          base::WaitableEvent* initialization_complete_event) {
+  net::URLRequestContextBuilder url_request_context_builder;
+  url_request_context_builder.set_user_agent(GetUserAgent());
+#if defined(OS_LINUX)
+  // On Linux, use a fixed ProxyConfigService, since the default one
+  // depends on glib.
+  //
+  // TODO(akalin): Remove this once http://crbug.com/146421 is fixed.
+  url_request_context_builder.set_proxy_config_service(
+      std::make_unique<net::ProxyConfigServiceFixed>(net::ProxyConfig()));
+#endif
+  *context = url_request_context_builder.Build();
+
+#if defined(USE_NSS_CERTS)
+  net::SetURLRequestContextForNSSHttpIO(context->get());
+#endif
+  net::SetGlobalCertNetFetcher(net::CreateCertNetFetcher(context->get()));
+  initialization_complete_event->Signal();
+}
+
+void ShutdownOnNetworkThread(std::unique_ptr<net::URLRequestContext>* context) {
+  net::ShutdownGlobalCertNetFetcher();
+  context->reset();
+}
 
 // Base class to abstract running a particular implementation of certificate
 // verification.
@@ -35,6 +84,7 @@ class CertVerifyImpl {
                           const std::vector<CertInput>& intermediate_der_certs,
                           const std::vector<CertInput>& root_der_certs,
                           base::Time verify_time,
+                          net::CRLSet* crl_set,
                           const base::FilePath& dump_prefix_path) = 0;
 };
 
@@ -52,6 +102,7 @@ class CertVerifyImplUsingProc : public CertVerifyImpl {
                   const std::vector<CertInput>& intermediate_der_certs,
                   const std::vector<CertInput>& root_der_certs,
                   base::Time verify_time,
+                  net::CRLSet* crl_set,
                   const base::FilePath& dump_prefix_path) override {
     if (!verify_time.is_null()) {
       std::cerr << "WARNING: --time is not supported by " << GetName()
@@ -66,7 +117,7 @@ class CertVerifyImplUsingProc : public CertVerifyImpl {
 
     return VerifyUsingCertVerifyProc(proc_.get(), target_der_cert, hostname,
                                      intermediate_der_certs, root_der_certs,
-                                     dump_prefix_path);
+                                     crl_set, dump_prefix_path);
   }
 
  private:
@@ -84,6 +135,7 @@ class CertVerifyImplUsingPathBuilder : public CertVerifyImpl {
                   const std::vector<CertInput>& intermediate_der_certs,
                   const std::vector<CertInput>& root_der_certs,
                   base::Time verify_time,
+                  net::CRLSet* crl_set,
                   const base::FilePath& dump_prefix_path) override {
     if (!hostname.empty()) {
       std::cerr << "WARNING: --hostname is not verified with CertPathBuilder\n";
@@ -129,6 +181,11 @@ const char kUsage[] =
     "        Tue, 15 Nov 1994 12:45:26 GMT\n"
     "        Nov 15 12:45:26 1994 GMT\n"
     "\n"
+    " --crlset=<crlset path>\n"
+    "      <crlset path> is a file containing a serialized CRLSet to use\n"
+    "      during revocation checking. For example:\n"
+    "        <chrome data dir>/CertificateRevocation/<number>/crl-set\n"
+    "\n"
     " --dump=<file prefix>\n"
     "      Dumps the verified chain to PEM files starting with\n"
     "      <file prefix>.\n"
@@ -153,13 +210,13 @@ void PrintUsage(const char* argv0) {
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit_manager;
-  base::TaskScheduler::CreateAndStartWithDefaultParams("cert_verify_tool");
-  base::ScopedClosureRunner cleanup(
-      base::BindOnce([] { base::TaskScheduler::GetInstance()->Shutdown(); }));
   if (!base::CommandLine::Init(argc, argv)) {
     std::cerr << "ERROR in CommandLine::Init\n";
     return 1;
   }
+  base::TaskScheduler::CreateAndStartWithDefaultParams("cert_verify_tool");
+  base::ScopedClosureRunner cleanup(
+      base::BindOnce([] { base::TaskScheduler::GetInstance()->Shutdown(); }));
   base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
@@ -187,6 +244,18 @@ int main(int argc, char** argv) {
       command_line.GetSwitchValuePath("intermediates");
   base::FilePath target_path = base::FilePath(args[0]);
 
+  base::FilePath crlset_path = command_line.GetSwitchValuePath("crlset");
+  scoped_refptr<net::CRLSet> crl_set;
+  if (!crlset_path.empty()) {
+    std::string crl_set_bytes;
+    if (!ReadFromFile(crlset_path, &crl_set_bytes))
+      return 1;
+    if (!net::CRLSet::Parse(crl_set_bytes, &crl_set)) {
+      std::cerr << "Error parsing CRLSet\n";
+      return 1;
+    }
+  }
+
   base::FilePath dump_prefix_path = command_line.GetSwitchValuePath("dump");
 
   std::vector<CertInput> root_der_certs;
@@ -209,6 +278,22 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Create a network thread to be used for AIA fetches, and wait for a
+  // CertNetFetcher to be constructed on that thread.
+  base::Thread::Options options(base::MessageLoop::TYPE_IO, 0);
+  base::Thread thread("network_thread");
+  CHECK(thread.StartWithOptions(options));
+  // Owned by this thread, but initialized, used, and shutdown on the network
+  // thread.
+  std::unique_ptr<net::URLRequestContext> context;
+  base::WaitableEvent initialization_complete_event(
+      base::WaitableEvent::ResetPolicy::MANUAL,
+      base::WaitableEvent::InitialState::NOT_SIGNALED);
+  thread.task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(&SetUpOnNetworkThread, &context,
+                                &initialization_complete_event));
+  initialization_complete_event.Wait();
+
   // Sequentially run each of the certificate verifier implementations.
   std::vector<std::unique_ptr<CertVerifyImpl>> impls;
 
@@ -227,10 +312,17 @@ int main(int argc, char** argv) {
 
     std::cout << impls[i]->GetName() << ":\n";
     if (!impls[i]->VerifyCert(target_der_cert, hostname, intermediate_der_certs,
-                              root_der_certs, verify_time, dump_prefix_path)) {
+                              root_der_certs, verify_time, crl_set.get(),
+                              dump_prefix_path)) {
       all_impls_success = false;
     }
   }
+
+  // Clean up on the network thread and stop it (which waits for the clean up
+  // task to run).
+  thread.task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(&ShutdownOnNetworkThread, &context));
+  thread.Stop();
 
   return all_impls_success ? 0 : 1;
 }

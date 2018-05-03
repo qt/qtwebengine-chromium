@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "components/viz/host/host_frame_sink_manager.h"
-#include "services/service_manager/public/interfaces/connector.mojom.h"
+#include "services/service_manager/public/mojom/connector.mojom.h"
 #include "services/ui/common/accelerator_util.h"
 #include "services/ui/ws/accelerator.h"
 #include "services/ui/ws/cursor_location_manager.h"
@@ -23,7 +23,6 @@
 #include "services/ui/ws/server_window.h"
 #include "services/ui/ws/server_window_tracker.h"
 #include "services/ui/ws/user_display_manager.h"
-#include "services/ui/ws/user_id_tracker.h"
 #include "services/ui/ws/window_manager_display_root.h"
 #include "services/ui/ws/window_server.h"
 #include "services/ui/ws/window_tree.h"
@@ -74,8 +73,10 @@ std::unique_ptr<ui::Event> CoalesceEvents(std::unique_ptr<ui::Event> first,
 const ServerWindow* GetEmbedRoot(const ServerWindow* window) {
   DCHECK(window);
   const ServerWindow* embed_root = window->parent();
-  while (embed_root && embed_root->id().client_id == window->id().client_id)
+  while (embed_root &&
+         embed_root->owning_tree_id() == window->owning_tree_id()) {
     embed_root = embed_root->parent();
+  }
   return embed_root;
 }
 
@@ -189,7 +190,7 @@ void WindowManagerState::SetFrameDecorationValues(
   got_frame_decoration_values_ = true;
   frame_decoration_values_ = values.Clone();
   UserDisplayManager* user_display_manager =
-      display_manager()->GetUserDisplayManager(user_id());
+      display_manager()->GetUserDisplayManager();
   user_display_manager->OnFrameDecorationValuesChanged();
   if (window_server()->display_creation_config() ==
           DisplayCreationConfig::MANUAL &&
@@ -200,7 +201,6 @@ void WindowManagerState::SetFrameDecorationValues(
 
 bool WindowManagerState::SetCapture(ServerWindow* window,
                                     ClientSpecificId client_id) {
-  DCHECK(IsActive());
   if (capture_window() == window &&
       client_id == event_dispatcher_.capture_window_client_id()) {
     return true;
@@ -298,10 +298,6 @@ void WindowManagerState::DeleteWindowManagerDisplayRoot(
   }
 }
 
-const UserId& WindowManagerState::user_id() const {
-  return window_tree_->user_id();
-}
-
 void WindowManagerState::OnWillDestroyTree(WindowTree* tree) {
   event_dispatcher_.OnWillDestroyDragTargetConnection(tree);
 
@@ -315,42 +311,6 @@ void WindowManagerState::OnWillDestroyTree(WindowTree* tree) {
   OnEventAck(in_flight_event_dispatch_details_->tree,
              tree == window_tree_ ? mojom::EventResult::HANDLED
                                   : mojom::EventResult::UNHANDLED);
-}
-
-ServerWindow* WindowManagerState::GetOrphanedRootWithId(const WindowId& id) {
-  for (auto& display_root_ptr : orphaned_window_manager_display_roots_) {
-    if (display_root_ptr->root()->id() == id)
-      return display_root_ptr->root();
-  }
-  return nullptr;
-}
-
-bool WindowManagerState::IsActive() const {
-  return window_server()->user_id_tracker()->active_id() == user_id();
-}
-
-void WindowManagerState::Activate(const gfx::Point& mouse_location_on_display,
-                                  int64_t display_id) {
-  SetAllRootWindowsVisible(true);
-  event_dispatcher_.Reset();
-
-  // Fake a mouse event to update cursor and ensure mouse location in client
-  // is up to date.
-  PointerEvent move_event(ET_POINTER_MOVED, mouse_location_on_display,
-                          mouse_location_on_display, EF_NONE, EF_NONE,
-                          PointerDetails(EventPointerType::POINTER_TYPE_MOUSE,
-                                         MouseEvent::kMousePointerId),
-                          base::TimeTicks::Now());
-  ProcessEvent(&move_event, display_id);
-}
-
-void WindowManagerState::Deactivate() {
-  SetAllRootWindowsVisible(false);
-  event_dispatcher_.Reset();
-  // The tree is no longer active, so no point in dispatching any further
-  // events.
-  base::queue<std::unique_ptr<QueuedEvent>> event_queue;
-  event_queue.swap(event_queue_);
 }
 
 void WindowManagerState::ProcessEvent(ui::Event* event, int64_t display_id) {
@@ -399,8 +359,8 @@ void WindowManagerState::OnAcceleratorAck(
   } else {
     // We're not going to process the event any further, notify event observers.
     // We don't do this first to ensure we don't send an event twice to clients.
-    window_server()->SendToPointerWatchers(*details->event, user_id(), nullptr,
-                                           nullptr, details->display_id);
+    window_server()->SendToPointerWatchers(*details->event, nullptr, nullptr,
+                                           details->display_id);
     ProcessNextAvailableEvent();
   }
 }
@@ -442,11 +402,6 @@ void WindowManagerState::OnDisplayDestroying(Display* display) {
       return;
     }
   }
-}
-
-void WindowManagerState::SetAllRootWindowsVisible(bool value) {
-  for (auto& display_root_ptr : window_manager_display_roots_)
-    display_root_ptr->root()->SetVisible(value);
 }
 
 ServerWindow* WindowManagerState::GetWindowManagerRootForDisplayRoot(
@@ -531,7 +486,7 @@ void WindowManagerState::DispatchInputEventToWindowImpl(
   in_flight_event_dispatch_details_->post_target_accelerator = accelerator;
 
   // Ignore |tree| because it will receive the event via normal dispatch.
-  window_server()->SendToPointerWatchers(event, user_id(), target, tree,
+  window_server()->SendToPointerWatchers(event, target, tree,
                                          event_location.display_id);
 
   tree->DispatchInputEvent(
@@ -568,7 +523,7 @@ void WindowManagerState::HandleDebugAccelerator(DebugAcceleratorType type,
   // Error so it will be collected in system logs.
   for (Display* display : display_manager()->displays()) {
     WindowManagerDisplayRoot* display_root =
-        display->GetWindowManagerDisplayRootForUser(user_id());
+        display->window_manager_display_root();
     if (display_root) {
       LOG(ERROR) << "ServerWindow hierarchy:\n"
                  << display_root->root()->GetDebugWindowHierarchy();
@@ -576,7 +531,8 @@ void WindowManagerState::HandleDebugAccelerator(DebugAcceleratorType type,
   }
   ServerWindow* focused_window = GetFocusedWindowForEventDispatcher(display_id);
   LOG(ERROR) << "Focused window: "
-             << (focused_window ? focused_window->id().ToString() : "(null)");
+             << (focused_window ? focused_window->frame_sink_id().ToString()
+                                : "(null)");
 #endif
 }
 
@@ -606,8 +562,7 @@ bool WindowManagerState::ConvertPointToScreen(int64_t display_id,
   if (!display)
     return false;
 
-  WindowManagerDisplayRoot* root =
-      display->GetWindowManagerDisplayRootForUser(user_id());
+  WindowManagerDisplayRoot* root = display->window_manager_display_root();
   if (!root)
     return false;
 
@@ -615,7 +570,7 @@ bool WindowManagerState::ConvertPointToScreen(int64_t display_id,
   gfx::Transform transform;
   transform.Scale(originated_display.device_scale_factor(),
                   originated_display.device_scale_factor());
-  transform *= display->GetWindowManagerDisplayRootForUser(user_id())
+  transform *= display->window_manager_display_root()
                    ->GetClientVisibleRoot()
                    ->transform();
   gfx::Transform invert;
@@ -691,7 +646,6 @@ void WindowManagerState::OnAccelerator(uint32_t accelerator_id,
                                        int64_t display_id,
                                        const ui::Event& event,
                                        AcceleratorPhase phase) {
-  DCHECK(IsActive());
   const bool needs_ack = phase == AcceleratorPhase::PRE;
   WindowTree::AcceleratorCallback ack_callback;
   if (needs_ack) {
@@ -707,7 +661,6 @@ void WindowManagerState::OnAccelerator(uint32_t accelerator_id,
 
 void WindowManagerState::SetFocusedWindowFromEventDispatcher(
     ServerWindow* new_focused_window) {
-  DCHECK(IsActive());
   window_server()->SetFocusedWindow(new_focused_window);
 }
 
@@ -729,7 +682,12 @@ ServerWindow* WindowManagerState::GetFocusedWindowForEventDispatcher(
 
 void WindowManagerState::SetNativeCapture(ServerWindow* window) {
   DCHECK(window);
-  DCHECK(IsActive());
+
+  // Classic ash expects no native grab when in unified display.
+  // See http://crbug.com/773348 for details.
+  if (display_manager()->InUnifiedDisplayMode())
+    return;
+
   WindowManagerDisplayRoot* display_root =
       display_manager()->GetWindowManagerDisplayRoot(window);
   DCHECK(display_root);
@@ -738,6 +696,11 @@ void WindowManagerState::SetNativeCapture(ServerWindow* window) {
 }
 
 void WindowManagerState::ReleaseNativeCapture() {
+  // Classic ash expects no native grab when in unified display.
+  // See http://crbug.com/773348 for details.
+  if (display_manager()->InUnifiedDisplayMode())
+    return;
+
   // Tests trigger calling this without a corresponding SetNativeCapture().
   // TODO(sky): maybe abstract this away so that DCHECK can be added?
   if (!platform_display_with_capture_)
@@ -764,7 +727,7 @@ void WindowManagerState::OnMouseCursorLocationChanged(
   if (ConvertPointToScreen(display_id, &point_in_screen)) {
     window_server()
         ->display_manager()
-        ->GetCursorLocationManager(user_id())
+        ->cursor_location_manager()
         ->OnMouseCursorLocationChanged(point_in_screen);
   }
   // If the display the |point_in_display| is on has been deleted, keep the old
@@ -795,7 +758,6 @@ void WindowManagerState::DispatchInputEventToWindow(
     const EventLocation& event_location,
     const ui::Event& event,
     Accelerator* accelerator) {
-  DCHECK(IsActive());
   // TODO(sky): this needs to see if another wms has capture and if so forward
   // to it.
   if (in_flight_event_dispatch_details_) {
@@ -852,7 +814,7 @@ ClientSpecificId WindowManagerState::GetEventTargetClientId(
   WindowTree* tree = window_server()->GetTreeWithRoot(window);
   if (!tree) {
     // Window is not an embed root, event goes to owner of the window.
-    tree = window_server()->GetTreeWithId(window->id().client_id);
+    tree = window_server()->GetTreeWithId(window->owning_tree_id());
   }
   DCHECK(tree);
 
@@ -861,7 +823,7 @@ ClientSpecificId WindowManagerState::GetEventTargetClientId(
       tree->HasRoot(window) ? window : GetEmbedRoot(window);
   while (tree && tree->embedder_intercepts_events()) {
     DCHECK(tree->HasRoot(embed_root));
-    tree = window_server()->GetTreeWithId(embed_root->id().client_id);
+    tree = window_server()->GetTreeWithId(embed_root->owning_tree_id());
     embed_root = GetEmbedRoot(embed_root);
   }
   DCHECK(tree);
@@ -873,8 +835,7 @@ ServerWindow* WindowManagerState::GetRootWindowForDisplay(int64_t display_id) {
   if (!display)
     return nullptr;
 
-  return display->GetWindowManagerDisplayRootForUser(user_id())
-      ->GetClientVisibleRoot();
+  return display->window_manager_display_root()->GetClientVisibleRoot();
 }
 
 ServerWindow* WindowManagerState::GetRootWindowForEventDispatch(
@@ -901,7 +862,7 @@ bool WindowManagerState::IsWindowInDisplayRoot(const ServerWindow* window) {
 
 void WindowManagerState::OnEventTargetNotFound(const ui::Event& event,
                                                int64_t display_id) {
-  window_server()->SendToPointerWatchers(event, user_id(), nullptr, /* window */
+  window_server()->SendToPointerWatchers(event, nullptr, /* window */
                                          nullptr /* ignore_tree */, display_id);
   if (event.IsMousePointerEvent())
     UpdateNativeCursorFromDispatcher();

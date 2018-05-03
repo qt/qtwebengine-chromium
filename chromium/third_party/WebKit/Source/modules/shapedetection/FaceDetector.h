@@ -10,7 +10,7 @@
 #include "modules/ModulesExport.h"
 #include "modules/canvas/canvas2d/CanvasRenderingContext2D.h"
 #include "modules/shapedetection/ShapeDetector.h"
-#include "services/shape_detection/public/interfaces/facedetection.mojom-blink.h"
+#include "services/shape_detection/public/mojom/facedetection.mojom-blink.h"
 
 namespace blink {
 
@@ -29,8 +29,7 @@ class MODULES_EXPORT FaceDetector final : public ShapeDetector {
   FaceDetector(ExecutionContext*, const FaceDetectorOptions&);
   ~FaceDetector() override = default;
 
-  ScriptPromise DoDetect(ScriptPromiseResolver*,
-                         skia::mojom::blink::BitmapPtr) override;
+  ScriptPromise DoDetect(ScriptPromiseResolver*, SkBitmap) override;
   void OnDetectFaces(
       ScriptPromiseResolver*,
       Vector<shape_detection::mojom::blink::FaceDetectionResultPtr>);

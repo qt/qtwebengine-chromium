@@ -41,6 +41,7 @@
 #include "ppapi/cpp/var_array.h"
 #include "ppapi/cpp/var_dictionary.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/geometry/point_f.h"
 
 namespace chrome_pdf {
 
@@ -329,12 +330,12 @@ pp::Var ModalDialog(const pp::Instance* instance,
                     const std::string& type,
                     const std::string& message,
                     const std::string& default_answer) {
-  const PPB_Instance_Private* interface =
+  const PPB_Instance_Private* ppb_interface =
       reinterpret_cast<const PPB_Instance_Private*>(
           pp::Module::Get()->GetBrowserInterface(
               PPB_INSTANCE_PRIVATE_INTERFACE));
-  pp::VarPrivate window(pp::PASS_REF,
-                        interface->GetWindowObject(instance->pp_instance()));
+  pp::VarPrivate window(
+      pp::PASS_REF, ppb_interface->GetWindowObject(instance->pp_instance()));
   if (default_answer.empty())
     return window.Call(type, message);
   return window.Call(type, message, default_answer);
@@ -670,27 +671,29 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     PostMessage(reply);
   } else if (type == kJSGetNamedDestinationType &&
              dict.Get(pp::Var(kJSGetNamedDestination)).is_string()) {
-    int page_number = engine_->GetNamedDestinationPage(
-        dict.Get(pp::Var(kJSGetNamedDestination)).AsString());
+    base::Optional<PDFEngine::NamedDestination> named_destination =
+        engine_->GetNamedDestination(
+            dict.Get(pp::Var(kJSGetNamedDestination)).AsString());
     pp::VarDictionary reply;
     reply.Set(pp::Var(kType), pp::Var(kJSGetNamedDestinationReplyType));
-    if (page_number >= 0)
-      reply.Set(pp::Var(kJSNamedDestinationPageNumber), page_number);
+    reply.Set(
+        pp::Var(kJSNamedDestinationPageNumber),
+        named_destination ? static_cast<int>(named_destination->page) : -1);
     PostMessage(reply);
   } else if (type == kJSTransformPagePointType &&
              dict.Get(pp::Var(kJSPageNumber)).is_int() &&
              dict.Get(pp::Var(kJSPageX)).is_int() &&
              dict.Get(pp::Var(kJSPageY)).is_int() &&
              dict.Get(pp::Var(kJSId)).is_int()) {
-    std::pair<int, int> xy =
-        engine_->TransformPagePoint(dict.Get(pp::Var(kJSPageNumber)).AsInt(),
-                                    {dict.Get(pp::Var(kJSPageX)).AsInt(),
-                                     dict.Get(pp::Var(kJSPageY)).AsInt()});
+    gfx::PointF page_xy(dict.Get(pp::Var(kJSPageX)).AsInt(),
+                        dict.Get(pp::Var(kJSPageY)).AsInt());
+    gfx::PointF device_xy = engine_->TransformPagePoint(
+        dict.Get(pp::Var(kJSPageNumber)).AsInt(), page_xy);
 
     pp::VarDictionary reply;
     reply.Set(pp::Var(kType), pp::Var(kJSTransformPagePointReplyType));
-    reply.Set(pp::Var(kJSPositionX), xy.first);
-    reply.Set(pp::Var(kJSPositionY), xy.second);
+    reply.Set(pp::Var(kJSPositionX), device_xy.x());
+    reply.Set(pp::Var(kJSPositionY), device_xy.y());
     reply.Set(pp::Var(kJSId), dict.Get(pp::Var(kJSId)).AsInt());
     PostMessage(reply);
   } else {

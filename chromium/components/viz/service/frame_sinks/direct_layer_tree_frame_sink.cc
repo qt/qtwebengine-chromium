@@ -9,6 +9,8 @@
 #include "base/bind.h"
 #include "cc/trees/layer_tree_frame_sink_client.h"
 #include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/common/quads/draw_quad.h"
+#include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/service/display/display.h"
@@ -28,7 +30,8 @@ DirectLayerTreeFrameSink::DirectLayerTreeFrameSink(
     scoped_refptr<RasterContextProvider> worker_context_provider,
     scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-    SharedBitmapManager* shared_bitmap_manager)
+    SharedBitmapManager* shared_bitmap_manager,
+    bool use_viz_hit_test)
     : LayerTreeFrameSink(std::move(context_provider),
                          std::move(worker_context_provider),
                          std::move(compositor_task_runner),
@@ -38,29 +41,14 @@ DirectLayerTreeFrameSink::DirectLayerTreeFrameSink(
       support_manager_(support_manager),
       frame_sink_manager_(frame_sink_manager),
       display_(display),
-      display_client_(display_client) {
+      display_client_(display_client),
+      use_viz_hit_test_(use_viz_hit_test),
+      weak_factory_(this) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   capabilities_.must_always_swap = true;
   // Display and DirectLayerTreeFrameSink share a GL context, so sync
   // points aren't needed when passing resources between them.
   capabilities_.delegated_sync_points_required = false;
-}
-
-DirectLayerTreeFrameSink::DirectLayerTreeFrameSink(
-    const FrameSinkId& frame_sink_id,
-    CompositorFrameSinkSupportManager* support_manager,
-    FrameSinkManagerImpl* frame_sink_manager,
-    Display* display,
-    mojom::DisplayClient* display_client,
-    scoped_refptr<VulkanContextProvider> vulkan_context_provider)
-    : LayerTreeFrameSink(std::move(vulkan_context_provider)),
-      frame_sink_id_(frame_sink_id),
-      support_manager_(support_manager),
-      frame_sink_manager_(frame_sink_manager),
-      display_(display),
-      display_client_(display_client) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  capabilities_.must_always_swap = true;
 }
 
 DirectLayerTreeFrameSink::~DirectLayerTreeFrameSink() {
@@ -78,6 +66,8 @@ bool DirectLayerTreeFrameSink::BindToClient(
   support_ = support_manager_->CreateCompositorFrameSinkSupport(
       this, frame_sink_id_, is_root,
       capabilities_.delegated_sync_points_required);
+  if (use_viz_hit_test_)
+    support_->SetUpHitTest();
   begin_frame_source_ = std::make_unique<ExternalBeginFrameSource>(this);
   client_->SetBeginFrameSource(begin_frame_source_.get());
 
@@ -112,15 +102,26 @@ void DirectLayerTreeFrameSink::SubmitCompositorFrame(CompositorFrame frame) {
     display_->SetLocalSurfaceId(local_surface_id_, device_scale_factor_);
   }
 
-  bool result =
-      support_->SubmitCompositorFrame(local_surface_id_, std::move(frame));
-  DCHECK(result);
+  auto hit_test_region_list = CreateHitTestData(frame);
+  support_->SubmitCompositorFrame(local_surface_id_, std::move(frame),
+                                  std::move(hit_test_region_list));
 }
 
 void DirectLayerTreeFrameSink::DidNotProduceFrame(const BeginFrameAck& ack) {
   DCHECK(!ack.has_damage);
   DCHECK_LE(BeginFrameArgs::kStartingFrameNumber, ack.sequence_number);
   support_->DidNotProduceFrame(ack);
+}
+
+void DirectLayerTreeFrameSink::DidAllocateSharedBitmap(
+    mojo::ScopedSharedBufferHandle buffer,
+    const SharedBitmapId& id) {
+  bool ok = support_->DidAllocateSharedBitmap(std::move(buffer), id);
+  DCHECK(ok);
+}
+
+void DirectLayerTreeFrameSink::DidDeleteSharedBitmap(const SharedBitmapId& id) {
+  support_->DidDeleteSharedBitmap(id);
 }
 
 void DirectLayerTreeFrameSink::DisplayOutputSurfaceLost() {
@@ -131,7 +132,8 @@ void DirectLayerTreeFrameSink::DisplayOutputSurfaceLost() {
 void DirectLayerTreeFrameSink::DisplayWillDrawAndSwap(
     bool will_draw_and_swap,
     const RenderPassList& render_passes) {
-  // This notification is not relevant to our client outside of tests.
+  if (support_->GetHitTestAggregator())
+    support_->GetHitTestAggregator()->Aggregate(display_->CurrentSurfaceId());
 }
 
 void DirectLayerTreeFrameSink::DisplayDidDrawAndSwap() {
@@ -150,6 +152,17 @@ void DirectLayerTreeFrameSink::DisplayDidReceiveCALayerParams(
 }
 
 void DirectLayerTreeFrameSink::DidReceiveCompositorFrameAck(
+    const std::vector<ReturnedResource>& resources) {
+  // Submitting a CompositorFrame can synchronously draw and dispatch a frame
+  // ack. PostTask to ensure the client is notified on a new stack frame.
+  compositor_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &DirectLayerTreeFrameSink::DidReceiveCompositorFrameAckInternal,
+          weak_factory_.GetWeakPtr(), resources));
+}
+
+void DirectLayerTreeFrameSink::DidReceiveCompositorFrameAckInternal(
     const std::vector<ReturnedResource>& resources) {
   client_->ReclaimResources(resources);
   client_->DidReceiveCompositorFrameAck();
@@ -187,6 +200,41 @@ void DirectLayerTreeFrameSink::OnNeedsBeginFrames(bool needs_begin_frame) {
 
 void DirectLayerTreeFrameSink::OnContextLost() {
   // The display will be listening for OnContextLost(). Do nothing here.
+}
+
+mojom::HitTestRegionListPtr DirectLayerTreeFrameSink::CreateHitTestData(
+    const CompositorFrame& frame) const {
+  auto hit_test_region_list = mojom::HitTestRegionList::New();
+  hit_test_region_list->flags =
+      mojom::kHitTestMouse | mojom::kHitTestTouch | mojom::kHitTestMine;
+  hit_test_region_list->bounds.set_size(frame.size_in_pixels());
+
+  for (const auto& render_pass : frame.render_pass_list) {
+    for (const DrawQuad* quad : render_pass->quad_list) {
+      if (quad->material == DrawQuad::SURFACE_CONTENT) {
+        // Skip the quad if the transform is not invertible (i.e. it will not
+        // be able to receive events).
+        gfx::Transform target_to_quad_transform;
+        if (!quad->shared_quad_state->quad_to_target_transform.GetInverse(
+                &target_to_quad_transform)) {
+          continue;
+        }
+
+        const SurfaceDrawQuad* surface_quad =
+            SurfaceDrawQuad::MaterialCast(quad);
+        auto hit_test_region = mojom::HitTestRegion::New();
+        const SurfaceId& surface_id = surface_quad->primary_surface_id;
+        hit_test_region->frame_sink_id = surface_id.frame_sink_id();
+        hit_test_region->local_surface_id = surface_id.local_surface_id();
+        hit_test_region->flags = mojom::kHitTestMouse | mojom::kHitTestTouch |
+                                 mojom::kHitTestChildSurface;
+        hit_test_region->rect = surface_quad->rect;
+        hit_test_region->transform = target_to_quad_transform;
+        hit_test_region_list->regions.push_back(std::move(hit_test_region));
+      }
+    }
+  }
+  return hit_test_region_list;
 }
 
 }  // namespace viz

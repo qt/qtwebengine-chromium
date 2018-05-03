@@ -26,7 +26,7 @@ public:
      *  Create an SkAnimatedImage from the SkAndroidCodec.
      *
      *  Returns null on failure to allocate pixels. On success, this will
-     *  decode the first frame. It will not animate until start() is called.
+     *  decode the first frame.
      *
      *  @param scaledSize Size to draw the image, possibly requiring scaling.
      *  @param cropRect Rectangle to crop to after scaling.
@@ -43,38 +43,59 @@ public:
     ~SkAnimatedImage() override;
 
     /**
-     *  Start or resume the animation. update() must be called to advance the
-     *  time.
-     */
-    void start();
-
-    /**
-     *  Stop the animation. update() has no effect while the animation is
-     *  stopped.
-     */
-    void stop();
-
-    /**
      *  Reset the animation to the beginning.
      */
     void reset();
 
     /**
-     *  Whether the animation is active.
+     *  Whether the animation completed.
      *
-     *  If true, update() can be called to animate.
+     *  Returns true after all repetitions are complete, or an error stops the
+     *  animation. Gets reset to false if the animation is restarted.
      */
-    bool isRunning() const { return fRunning && !fFinished; }
+    bool isFinished() const { return fFinished; }
 
     /**
-     *  Update the current time. If the image is animating, this may decode
-     *  a new frame.
-     *
-     *  @return the time to show the next frame.
-     *      Returns numeric_limits<double>::max() if there is no max frame to
-     *      show, and -1.0 if the animation is not running.
+     * Returned by decodeNextFrame and currentFrameDuration if the animation
+     * is not running.
      */
-    double update(double msecs);
+    static constexpr int kFinished = -1;
+
+    /**
+     *  Decode the next frame.
+     *
+     *  If the animation is on the last frame or has hit an error, returns
+     *  kFinished.
+     */
+    int decodeNextFrame();
+
+    /**
+     *  How long to display the current frame.
+     *
+     *  Useful for the first frame, for which decodeNextFrame is called
+     *  internally.
+     */
+    int currentFrameDuration() {
+        return fCurrentFrameDuration;
+    }
+
+    /**
+     *  Change the repetition count.
+     *
+     *  By default, the image will repeat the number of times indicated in the
+     *  encoded data.
+     *
+     *  Use SkCodec::kRepetitionCountInfinite for infinite, and 0 to show all
+     *  frames once and then stop.
+     */
+    void setRepetitionCount(int count);
+
+    /**
+     *  Return the currently set repetition count.
+     */
+    int getRepetitionCount() const {
+        return fRepetitionCount;
+    }
 
 protected:
     SkRect onGetBounds() override;
@@ -95,18 +116,23 @@ private:
     const SkImageInfo               fDecodeInfo;
     const SkIRect                   fCropRect;
     const sk_sp<SkPicture>          fPostProcess;
+    const int                       fFrameCount;
     const bool                      fSimple;     // no crop, scale, or postprocess
     SkMatrix                        fMatrix;     // used only if !fSimple
 
     bool                            fFinished;
-    bool                            fRunning;
-    double                          fNowMS;
-    double                          fRemainingMS;
+    int                             fCurrentFrameDuration;
     Frame                           fActiveFrame;
     Frame                           fRestoreFrame;
+    int                             fRepetitionCount;
+    int                             fRepetitionsCompleted;
 
     SkAnimatedImage(std::unique_ptr<SkAndroidCodec>, SkISize scaledSize,
             SkImageInfo decodeInfo, SkIRect cropRect, sk_sp<SkPicture> postProcess);
+    SkAnimatedImage(std::unique_ptr<SkAndroidCodec>);
+
+    int computeNextFrame(int current, bool* animationEnded);
+    double finish();
 
     typedef SkDrawable INHERITED;
 };

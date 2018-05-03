@@ -72,7 +72,7 @@ RuleData::RuleData(StyleRule* rule,
       is_last_in_array_(false),
       position_(position),
       specificity_(Selector().Specificity()),
-      link_match_type_(Selector().ComputeLinkMatchType()),
+      link_match_type_(Selector().ComputeLinkMatchType(CSSSelector::kMatchAll)),
       has_document_security_origin_(add_rule_flags &
                                     kRuleHasDocumentSecurityOrigin),
       property_whitelist_(
@@ -134,6 +134,7 @@ static void ExtractSelectorValues(const CSSSelector* selector,
         default:
           break;
       }
+      break;
     default:
       break;
   }
@@ -222,6 +223,11 @@ bool RuleSet::FindBestRuleSetAndAdd(const CSSSelector& component,
 void RuleSet::AddRule(StyleRule* rule,
                       unsigned selector_index,
                       AddRuleFlags add_rule_flags) {
+  // The selector index field in RuleData is only 13 bits so we can't support
+  // selectors at index 8192 or beyond.
+  // See https://crbug.com/804179
+  if (selector_index >= 8192)
+    return;
   RuleData rule_data(rule, selector_index, rule_count_++, add_rule_flags);
   if (features_.CollectFeaturesFromRuleData(rule_data) ==
       RuleFeatureSet::kSelectorNeverMatches)
@@ -319,7 +325,9 @@ void RuleSet::AddRulesFromSheet(StyleSheetContents* sheet,
 }
 
 void RuleSet::AddStyleRule(StyleRule* rule, AddRuleFlags add_rule_flags) {
-  for (size_t selector_index = 0; selector_index != kNotFound;
+  for (size_t selector_index =
+           rule->SelectorList().SelectorIndex(*rule->SelectorList().First());
+       selector_index != kNotFound;
        selector_index =
            rule->SelectorList().IndexOfNextSelectorAfter(selector_index))
     AddRule(rule, selector_index, add_rule_flags);

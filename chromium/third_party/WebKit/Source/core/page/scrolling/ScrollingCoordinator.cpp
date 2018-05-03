@@ -41,6 +41,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
+#include "core/page/scrolling/ScrollingCoordinatorContext.h"
 #include "core/paint/compositing/CompositedLayerMapping.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "platform/animation/CompositorAnimationHost.h"
@@ -89,12 +90,7 @@ ScrollingCoordinator* ScrollingCoordinator::Create(Page* page) {
   return new ScrollingCoordinator(page);
 }
 
-ScrollingCoordinator::ScrollingCoordinator(Page* page)
-    : page_(page),
-      touch_event_target_rects_are_dirty_(false),
-      should_scroll_on_main_thread_dirty_(false),
-      was_frame_scrollable_(false),
-      last_main_thread_scrolling_reasons_(0) {}
+ScrollingCoordinator::ScrollingCoordinator(Page* page) : page_(page) {}
 
 ScrollingCoordinator::~ScrollingCoordinator() {
   DCHECK(!page_);
@@ -120,24 +116,28 @@ void ScrollingCoordinator::SetShouldHandleScrollGestureOnMainThreadRegion(
 }
 
 void ScrollingCoordinator::NotifyGeometryChanged(LocalFrameView* frame_view) {
-  frame_view->SetScrollGestureRegionIsDirty(true);
-  touch_event_target_rects_are_dirty_ = true;
-  should_scroll_on_main_thread_dirty_ = true;
+  frame_view->GetScrollingContext()->SetScrollGestureRegionIsDirty(true);
+  frame_view->GetScrollingContext()->SetTouchEventTargetRectsAreDirty(true);
+  frame_view->GetScrollingContext()->SetShouldScrollOnMainThreadIsDirty(true);
 }
 
-void ScrollingCoordinator::NotifyTransformChanged(const LayoutBox& box) {
-  DCHECK(page_);
-  if (!page_->MainFrame()->IsLocalFrame() ||
-      !page_->DeprecatedLocalMainFrame()->View())
+void ScrollingCoordinator::NotifyTransformChanged(LocalFrame* frame,
+                                                  const LayoutBox& box) {
+  DCHECK(frame);
+  if (!frame->View())
     return;
 
-  if (page_->DeprecatedLocalMainFrame()->View()->NeedsLayout())
+  if (frame->View()->NeedsLayout())
     return;
 
   for (PaintLayer* layer = box.EnclosingLayer(); layer;
        layer = layer->Parent()) {
-    if (layers_with_touch_rects_.Contains(layer)) {
-      touch_event_target_rects_are_dirty_ = true;
+    if (frame->View()
+            ->GetScrollingContext()
+            ->GetLayersWithTouchRects()
+            ->Contains(layer)) {
+      frame->View()->GetScrollingContext()->SetTouchEventTargetRectsAreDirty(
+          true);
       return;
     }
   }
@@ -171,16 +171,10 @@ void ScrollingCoordinator::UpdateAfterCompositingChangeIfNeeded(
   LocalFrame* frame = &frame_view->GetFrame();
   DCHECK(frame->IsLocalRoot());
 
-  if (!(frame_view->ScrollGestureRegionIsDirty() ||
-        touch_event_target_rects_are_dirty_ ||
-        should_scroll_on_main_thread_dirty_ || FrameScrollerIsDirty())) {
-    return;
-  }
-
   TRACE_EVENT0("input",
                "ScrollingCoordinator::updateAfterCompositingChangeIfNeeded");
 
-  if (frame_view->ScrollGestureRegionIsDirty()) {
+  if (frame_view->GetScrollingContext()->ScrollGestureRegionIsDirty()) {
     // Compute the region of the page where we can't handle scroll gestures and
     // mousewheel events
     // on the impl thread. This currently includes:
@@ -194,33 +188,33 @@ void ScrollingCoordinator::UpdateAfterCompositingChangeIfNeeded(
         ComputeShouldHandleScrollGestureOnMainThreadRegion(frame);
     SetShouldHandleScrollGestureOnMainThreadRegion(
         should_handle_scroll_gesture_on_main_thread_region, frame_view);
-    frame_view->SetScrollGestureRegionIsDirty(false);
+    frame_view->GetScrollingContext()->SetScrollGestureRegionIsDirty(false);
   }
 
-  // TODO(wjmaclean): Make the stuff below this point work for OOPIFs too.
-  // https://crbug.com/680606
-  if (frame != frame_view->GetPage()->MainFrame())
+  if (!(frame_view->GetScrollingContext()->TouchEventTargetRectsAreDirty() ||
+        frame_view->GetScrollingContext()->ShouldScrollOnMainThreadIsDirty() ||
+        FrameScrollerIsDirty(frame_view))) {
     return;
-
-  if (touch_event_target_rects_are_dirty_) {
-    UpdateTouchEventTargetRectsIfNeeded();
-    touch_event_target_rects_are_dirty_ = false;
   }
 
-  bool frame_is_scrollable =
-      frame_view && frame_view->LayoutViewportScrollableArea()->IsScrollable();
-  if (should_scroll_on_main_thread_dirty_ ||
-      was_frame_scrollable_ != frame_is_scrollable) {
+  if (frame_view->GetScrollingContext()->TouchEventTargetRectsAreDirty()) {
+    UpdateTouchEventTargetRectsIfNeeded(frame);
+    frame_view->GetScrollingContext()->SetTouchEventTargetRectsAreDirty(false);
+  }
+
+  if (frame_view->GetScrollingContext()->ShouldScrollOnMainThreadIsDirty() ||
+      frame_view->FrameIsScrollableDidChange()) {
     SetShouldUpdateScrollLayerPositionOnMainThread(
-        frame_view->GetMainThreadScrollingReasons());
+        frame, frame_view->GetMainThreadScrollingReasons());
 
     // Need to update scroll on main thread reasons for subframe because
     // subframe (e.g. iframe with background-attachment:fixed) should
     // scroll on main thread while the main frame scrolls on impl.
     frame_view->UpdateSubFrameScrollOnMainReason(*frame, 0);
-    should_scroll_on_main_thread_dirty_ = false;
+    frame_view->GetScrollingContext()->SetShouldScrollOnMainThreadIsDirty(
+        false);
   }
-  was_frame_scrollable_ = frame_is_scrollable;
+  frame_view->ClearFrameIsScrollableDidChange();
 
   if (frame_view && !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
     if (WebLayer* scroll_layer = toWebLayer(frame_view->LayerForScrolling())) {
@@ -490,6 +484,9 @@ bool ScrollingCoordinator::ScrollableAreaScrollLayerDidChange(
         PixelSnappedIntRect(
             LayoutRect(LayoutPoint(subpixel_accumulation), contents_size))
             .Size();
+    // The scrolling contents layer must be at least as large as the clip.
+    scroll_contents_size =
+        scroll_contents_size.ExpandedTo(container_layer->Bounds());
     web_layer->SetBounds(scroll_contents_size);
     // VisualViewport scrolling may involve pinch zoom and gets routed through
     // WebViewImpl explicitly rather than via ScrollingCoordinator::DidScroll
@@ -710,7 +707,8 @@ static void ProjectRectsToGraphicsLayerSpace(
       layer_child_frame_map);
 }
 
-void ScrollingCoordinator::UpdateTouchEventTargetRectsIfNeeded() {
+void ScrollingCoordinator::UpdateTouchEventTargetRectsIfNeeded(
+    LocalFrame* frame) {
   TRACE_EVENT0("input",
                "ScrollingCoordinator::updateTouchEventTargetRectsIfNeeded");
 
@@ -719,8 +717,8 @@ void ScrollingCoordinator::UpdateTouchEventTargetRectsIfNeeded() {
     return;
 
   LayerHitTestRects touch_event_target_rects;
-  ComputeTouchEventTargetRects(touch_event_target_rects);
-  SetTouchEventTargetRects(touch_event_target_rects);
+  ComputeTouchEventTargetRects(frame, touch_event_target_rects);
+  SetTouchEventTargetRects(frame, touch_event_target_rects);
 }
 
 void ScrollingCoordinator::UpdateUserInputScrollable(
@@ -735,7 +733,7 @@ void ScrollingCoordinator::UpdateUserInputScrollable(
   }
 }
 
-void ScrollingCoordinator::Reset() {
+void ScrollingCoordinator::Reset(LocalFrame* frame) {
   for (const auto& scrollbar : horizontal_scrollbars_)
     GraphicsLayer::UnregisterContentsLayer(scrollbar.value->Layer());
   for (const auto& scrollbar : vertical_scrollbars_)
@@ -743,18 +741,18 @@ void ScrollingCoordinator::Reset() {
 
   horizontal_scrollbars_.clear();
   vertical_scrollbars_.clear();
-  layers_with_touch_rects_.clear();
-  was_frame_scrollable_ = false;
+  frame->View()->GetScrollingContext()->GetLayersWithTouchRects()->clear();
+  frame->View()->ClearFrameIsScrollableDidChange();
 
-  last_main_thread_scrolling_reasons_ = 0;
   if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
-    SetShouldUpdateScrollLayerPositionOnMainThread(0);
+    SetShouldUpdateScrollLayerPositionOnMainThread(frame, 0);
 }
 
 // Note that in principle this could be called more often than
 // computeTouchEventTargetRects, for example during a non-composited scroll
 // (although that's not yet implemented - crbug.com/261307).
 void ScrollingCoordinator::SetTouchEventTargetRects(
+    LocalFrame* frame,
     LayerHitTestRects& layer_rects) {
   TRACE_EVENT0("input", "ScrollingCoordinator::setTouchEventTargetRects");
 
@@ -763,7 +761,8 @@ void ScrollingCoordinator::SetTouchEventTargetRects(
   // on GraphicsLayer instead of Layer, but we have no good hook into the
   // lifetime of a GraphicsLayer.
   GraphicsLayerHitTestRects graphics_layer_rects;
-  for (const PaintLayer* layer : layers_with_touch_rects_) {
+  for (const PaintLayer* layer :
+       *frame->View()->GetScrollingContext()->GetLayersWithTouchRects()) {
     if (layer->GetLayoutObject().GetFrameView() &&
         layer->GetLayoutObject().GetFrameView()->ShouldThrottleRendering()) {
       continue;
@@ -782,7 +781,7 @@ void ScrollingCoordinator::SetTouchEventTargetRects(
     }
   }
 
-  layers_with_touch_rects_.clear();
+  frame->View()->GetScrollingContext()->GetLayersWithTouchRects()->clear();
   for (const auto& layer_rect : layer_rects) {
     if (!layer_rect.value.IsEmpty()) {
       DCHECK(layer_rect.key->IsRootLayer() || layer_rect.key->Parent());
@@ -791,12 +790,12 @@ void ScrollingCoordinator::SetTouchEventTargetRects(
               ->EnclosingLayerForPaintInvalidationCrossingFrameBoundaries();
       if (!composited_layer)
         continue;
-      layers_with_touch_rects_.insert(composited_layer);
+      frame->View()->GetScrollingContext()->GetLayersWithTouchRects()->insert(
+          composited_layer);
     }
   }
 
-  ProjectRectsToGraphicsLayerSpace(page_->DeprecatedLocalMainFrame(),
-                                   layer_rects, graphics_layer_rects);
+  ProjectRectsToGraphicsLayerSpace(frame, layer_rects, graphics_layer_rects);
 
   for (const auto& layer_rect : graphics_layer_rects) {
     const GraphicsLayer* graphics_layer = layer_rect.key;
@@ -809,25 +808,31 @@ void ScrollingCoordinator::SetTouchEventTargetRects(
   }
 }
 
-void ScrollingCoordinator::TouchEventTargetRectsDidChange() {
-  DCHECK(page_);
-  if (!page_->MainFrame()->IsLocalFrame() ||
-      !page_->DeprecatedLocalMainFrame()->View())
+void ScrollingCoordinator::TouchEventTargetRectsDidChange(LocalFrame* frame) {
+  if (!frame)
+    return;
+
+  // If frame is not a local root, then the call to StaleInCompositingMode()
+  // below may unexpectedly fail.
+  DCHECK(frame->IsLocalRoot());
+  LocalFrameView* frame_view = frame->View();
+  if (!frame_view)
     return;
 
   // Wait until after layout to update.
-  if (page_->DeprecatedLocalMainFrame()->View()->NeedsLayout())
+  if (frame_view->NeedsLayout())
     return;
 
   // FIXME: scheduleAnimation() is just a method of forcing the compositor to
   // realize that it needs to commit here. We should expose a cleaner API for
   // this.
-  auto* layout_view = page_->DeprecatedLocalMainFrame()->ContentLayoutObject();
+  auto* layout_view = frame->ContentLayoutObject();
   if (layout_view && layout_view->Compositor() &&
-      layout_view->Compositor()->StaleInCompositingMode())
-    page_->DeprecatedLocalMainFrame()->View()->ScheduleAnimation();
+      layout_view->Compositor()->StaleInCompositingMode()) {
+    frame_view->ScheduleAnimation();
+  }
 
-  touch_event_target_rects_are_dirty_ = true;
+  frame_view->GetScrollingContext()->SetTouchEventTargetRectsAreDirty(true);
 }
 
 void ScrollingCoordinator::UpdateScrollParentForGraphicsLayer(
@@ -853,34 +858,31 @@ void ScrollingCoordinator::UpdateClipParentForGraphicsLayer(
 }
 
 void ScrollingCoordinator::WillDestroyLayer(PaintLayer* layer) {
-  layers_with_touch_rects_.erase(layer);
+  layer->GetLayoutObject()
+      .GetFrame()
+      ->View()
+      ->GetScrollingContext()
+      ->GetLayersWithTouchRects()
+      ->erase(layer);
 }
 
 void ScrollingCoordinator::SetShouldUpdateScrollLayerPositionOnMainThread(
+    LocalFrame* frame,
     MainThreadScrollingReasons main_thread_scrolling_reasons) {
-  if (!page_->MainFrame()->IsLocalFrame() ||
-      !page_->DeprecatedLocalMainFrame()->View())
-    return;
-
   GraphicsLayer* visual_viewport_layer =
-      page_->GetVisualViewport().ScrollLayer();
+      frame->GetPage()->GetVisualViewport().ScrollLayer();
   WebLayer* visual_viewport_scroll_layer = toWebLayer(visual_viewport_layer);
-  GraphicsLayer* layer = page_->DeprecatedLocalMainFrame()
-                             ->View()
-                             ->LayoutViewportScrollableArea()
-                             ->LayerForScrolling();
+  GraphicsLayer* layer =
+      frame->View()->LayoutViewportScrollableArea()->LayerForScrolling();
   if (WebLayer* scroll_layer = toWebLayer(layer)) {
-    last_main_thread_scrolling_reasons_ = main_thread_scrolling_reasons;
     if (main_thread_scrolling_reasons) {
       ScrollableArea* scrollable_area = layer->GetScrollableArea();
       if (scrollable_area) {
         if (ScrollAnimatorBase* scroll_animator =
                 scrollable_area->ExistingScrollAnimator()) {
           DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
-                 page_->DeprecatedLocalMainFrame()
-                         ->GetDocument()
-                         ->Lifecycle()
-                         .GetState() >= DocumentLifecycle::kCompositingClean);
+                 frame->GetDocument()->Lifecycle().GetState() >=
+                     DocumentLifecycle::kCompositingClean);
           scroll_animator->TakeOverCompositorAnimation();
         }
       }
@@ -891,10 +893,8 @@ void ScrollingCoordinator::SetShouldUpdateScrollLayerPositionOnMainThread(
                 visual_viewport_layer->GetScrollableArea()
                     ->ExistingScrollAnimator()) {
           DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
-                 page_->DeprecatedLocalMainFrame()
-                         ->GetDocument()
-                         ->Lifecycle()
-                         .GetState() >= DocumentLifecycle::kCompositingClean);
+                 frame->GetDocument()->Lifecycle().GetState() >=
+                     DocumentLifecycle::kCompositingClean);
           scroll_animator->TakeOverCompositorAnimation();
         }
         visual_viewport_scroll_layer->AddMainThreadScrollingReasons(
@@ -926,8 +926,8 @@ void ScrollingCoordinator::LayerTreeViewInitialized(
         std::make_unique<CompositorAnimationHost>(
             layer_tree_view.CompositorAnimationHost());
     if (view && view->GetFrame().LocalFrameRoot() != page_->MainFrame()) {
-      view->SetAnimationHost(std::move(host));
-      view->SetAnimationTimeline(std::move(timeline));
+      view->GetScrollingContext()->SetAnimationHost(std::move(host));
+      view->GetScrollingContext()->SetAnimationTimeline(std::move(timeline));
       view->GetCompositorAnimationHost()->AddTimeline(
           *view->GetCompositorAnimationTimeline());
     } else {
@@ -945,8 +945,8 @@ void ScrollingCoordinator::WillCloseLayerTreeView(
   if (view && view->GetFrame().LocalFrameRoot() != page_->MainFrame()) {
     view->GetCompositorAnimationHost()->RemoveTimeline(
         *view->GetCompositorAnimationTimeline());
-    view->SetAnimationTimeline(nullptr);
-    view->SetAnimationHost(nullptr);
+    view->GetScrollingContext()->SetAnimationTimeline(nullptr);
+    view->GetScrollingContext()->SetAnimationHost(nullptr);
   } else if (programmatic_scroll_animator_timeline_) {
     animation_host_->RemoveTimeline(
         *programmatic_scroll_animator_timeline_.get());
@@ -1152,10 +1152,11 @@ static void AccumulateDocumentTouchEventTargetRects(
 }
 
 void ScrollingCoordinator::ComputeTouchEventTargetRects(
+    LocalFrame* frame,
     LayerHitTestRects& rects) {
   TRACE_EVENT0("input", "ScrollingCoordinator::computeTouchEventTargetRects");
 
-  Document* document = page_->DeprecatedLocalMainFrame()->GetDocument();
+  Document* document = frame->GetDocument();
   if (!document || !document->View() || !document->GetFrame())
     return;
 
@@ -1174,23 +1175,23 @@ void ScrollingCoordinator::
     FrameViewHasBackgroundAttachmentFixedObjectsDidChange(
         LocalFrameView* frame_view) {
   DCHECK(IsMainThread());
-  DCHECK(page_);
+  DCHECK(frame_view);
 
   if (!CoordinatesScrollingForFrameView(frame_view))
     return;
 
-  should_scroll_on_main_thread_dirty_ = true;
+  frame_view->GetScrollingContext()->SetShouldScrollOnMainThreadIsDirty(true);
 }
 
 void ScrollingCoordinator::FrameViewFixedObjectsDidChange(
     LocalFrameView* frame_view) {
   DCHECK(IsMainThread());
-  DCHECK(page_);
+  DCHECK(frame_view);
 
   if (!CoordinatesScrollingForFrameView(frame_view))
     return;
 
-  should_scroll_on_main_thread_dirty_ = true;
+  frame_view->GetScrollingContext()->SetShouldScrollOnMainThreadIsDirty(true);
 }
 
 bool ScrollingCoordinator::IsForRootLayer(
@@ -1227,13 +1228,10 @@ void ScrollingCoordinator::FrameViewRootLayerDidChange(
   NotifyGeometryChanged(frame_view);
 }
 
-bool ScrollingCoordinator::FrameScrollerIsDirty() const {
-  LocalFrameView* frame_view = page_->MainFrame()->IsLocalFrame()
-                                   ? page_->DeprecatedLocalMainFrame()->View()
-                                   : nullptr;
-  bool frame_is_scrollable =
-      frame_view && frame_view->LayoutViewportScrollableArea()->IsScrollable();
-  if (frame_is_scrollable != was_frame_scrollable_)
+bool ScrollingCoordinator::FrameScrollerIsDirty(
+    LocalFrameView* frame_view) const {
+  DCHECK(frame_view);
+  if (frame_view->FrameIsScrollableDidChange())
     return true;
 
   if (WebLayer* scroll_layer =

@@ -11,9 +11,13 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
+#include "base/version.h"
+#include "extensions/browser/content_verifier/content_verifier_key.h"
+#include "extensions/common/extension_id.h"
 
 namespace base {
 class FilePath;
@@ -51,7 +55,11 @@ class ContentVerifyJob : public base::RefCountedThreadSafe<ContentVerifyJob> {
   using FailureCallback = base::OnceCallback<void(FailureReason)>;
 
   // The |failure_callback| will be called at most once if there was a failure.
-  ContentVerifyJob(ContentHashReader* hash_reader,
+  ContentVerifyJob(const ExtensionId& extension_id,
+                   const base::Version& extension_version,
+                   const base::FilePath& extension_root,
+                   const base::FilePath& relative_path,
+                   const ContentVerifierKey& content_verifier_key,
                    FailureCallback failure_callback);
 
   // This begins the process of getting expected hashes, so it should be called
@@ -69,37 +77,31 @@ class ContentVerifyJob : public base::RefCountedThreadSafe<ContentVerifyJob> {
   // Call once when finished adding bytes via BytesRead.
   void DoneReading();
 
-  class TestDelegate {
-   public:
-    virtual ~TestDelegate() {}
-
-    // These methods will be called inside BytesRead/DoneReading respectively.
-    // If either return something other than NONE, then the failure callback
-    // will be dispatched with that reason.
-    virtual FailureReason BytesRead(const std::string& extension_id,
-                                    int count,
-                                    const char* data) = 0;
-    virtual FailureReason DoneReading(const std::string& extension_id) = 0;
-  };
-
   class TestObserver {
    public:
-    virtual void JobStarted(const std::string& extension_id,
+    virtual void JobStarted(const ExtensionId& extension_id,
                             const base::FilePath& relative_path) = 0;
 
-    virtual void JobFinished(const std::string& extension_id,
+    virtual void JobFinished(const ExtensionId& extension_id,
                              const base::FilePath& relative_path,
                              FailureReason failure_reason) = 0;
+
+    virtual void OnHashesReady(const ExtensionId& extension_id,
+                               const base::FilePath& relative_path,
+                               bool success) = 0;
   };
 
-  // Note: having interleaved delegates is not supported.
-  static void SetDelegateForTests(TestDelegate* delegate);
+  static void SetIgnoreVerificationForTests(bool value);
 
+  // Note: having interleaved observer is not supported.
   static void SetObserverForTests(TestObserver* observer);
 
  private:
   virtual ~ContentVerifyJob();
   friend class base::RefCountedThreadSafe<ContentVerifyJob>;
+
+  // Same as BytesRead, but is run without acquiring lock.
+  void BytesReadImpl(int count, const char* data);
 
   // Called each time we're done adding bytes for the current block, and are
   // ready to finish the hash operation for those bytes and make sure it
@@ -111,7 +113,7 @@ class ContentVerifyJob : public base::RefCountedThreadSafe<ContentVerifyJob> {
   void DispatchFailureCallback(FailureReason reason);
 
   // Called when our ContentHashReader has finished initializing.
-  void OnHashesReady(bool success);
+  void OnHashesReady(std::unique_ptr<const ContentHashReader> hash_reader);
 
   // Indicates whether the caller has told us they are done calling BytesRead.
   bool done_reading_;
@@ -135,7 +137,16 @@ class ContentVerifyJob : public base::RefCountedThreadSafe<ContentVerifyJob> {
   // The number of bytes we've already input into |current_hash_|.
   int current_hash_byte_count_;
 
-  scoped_refptr<ContentHashReader> hash_reader_;
+  // Valid and set after |hashes_ready_| is set to true.
+  std::unique_ptr<const ContentHashReader> hash_reader_;
+
+  // Resource info for this verify job.
+  const ExtensionId extension_id_;
+  const base::Version extension_version_;
+  const base::FilePath extension_root_;
+  const base::FilePath relative_path_;
+
+  const ContentVerifierKey content_verifier_key_;
 
   base::TimeDelta time_spent_;
 

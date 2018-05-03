@@ -9,17 +9,20 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
-#include "base/containers/unique_ptr_comparator.h"
+#include "base/containers/unique_ptr_adapters.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
+#include "components/viz/common/constants.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/service/frame_sinks/primary_begin_frame_source.h"
 #include "components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_manager.h"
 #include "components/viz/service/frame_sinks/video_detector.h"
+#include "components/viz/service/hit_test/hit_test_aggregator_delegate.h"
 #include "components/viz/service/hit_test/hit_test_manager.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "components/viz/service/surfaces/surface_observer.h"
@@ -41,11 +44,11 @@ class DisplayProvider;
 class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
     : public SurfaceObserver,
       public FrameSinkVideoCapturerManager,
-      public mojom::FrameSinkManager {
+      public mojom::FrameSinkManager,
+      public HitTestAggregatorDelegate {
  public:
-  FrameSinkManagerImpl(SurfaceManager::LifetimeType lifetime_type =
-                           SurfaceManager::LifetimeType::REFERENCES,
-                       uint32_t number_of_frames_to_activation_deadline = 4u,
+  FrameSinkManagerImpl(base::Optional<uint32_t> activation_deadline_in_frames =
+                           kDefaultActivationDeadlineInFrames,
                        DisplayProvider* display_provider = nullptr);
   ~FrameSinkManagerImpl() override;
 
@@ -62,6 +65,9 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   // mojom::FrameSinkManager implementation:
   void RegisterFrameSinkId(const FrameSinkId& frame_sink_id) override;
   void InvalidateFrameSinkId(const FrameSinkId& frame_sink_id) override;
+  void EnableSynchronizationReporting(
+      const FrameSinkId& frame_sink_id,
+      const std::string& reporting_label) override;
   void SetFrameSinkDebugLabel(const FrameSinkId& frame_sink_id,
                               const std::string& debug_label) override;
   void CreateRootCompositorFrameSink(
@@ -70,6 +76,9 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
       const FrameSinkId& frame_sink_id,
       mojom::CompositorFrameSinkRequest request,
       mojom::CompositorFrameSinkClientPtr client) override;
+  void DestroyCompositorFrameSink(
+      const FrameSinkId& frame_sink_id,
+      DestroyCompositorFrameSinkCallback callback) override;
   void RegisterFrameSinkHierarchy(
       const FrameSinkId& parent_frame_sink_id,
       const FrameSinkId& child_frame_sink_id) override;
@@ -83,6 +92,30 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
       mojom::VideoDetectorObserverPtr observer) override;
   void CreateVideoCapturer(
       mojom::FrameSinkVideoCapturerRequest request) override;
+  void EvictSurfaces(const std::vector<SurfaceId>& surface_ids) override;
+
+  // SurfaceObserver implementation.
+  void OnSurfaceCreated(const SurfaceId& surface_id) override;
+  void OnFirstSurfaceActivation(const SurfaceInfo& surface_info) override;
+  void OnSurfaceActivated(const SurfaceId& surface_id,
+                          base::Optional<base::TimeDelta> duration) override;
+  bool OnSurfaceDamaged(const SurfaceId& surface_id,
+                        const BeginFrameAck& ack) override;
+  void OnSurfaceDiscarded(const SurfaceId& surface_id) override;
+  void OnSurfaceDestroyed(const SurfaceId& surface_id) override;
+  void OnSurfaceDamageExpected(const SurfaceId& surface_id,
+                               const BeginFrameArgs& args) override;
+
+  // HitTestAggregatorDelegate implementation:
+  void OnAggregatedHitTestRegionListUpdated(
+      const FrameSinkId& frame_sink_id,
+      mojo::ScopedSharedBufferHandle active_handle,
+      uint32_t active_handle_size,
+      mojo::ScopedSharedBufferHandle idle_handle,
+      uint32_t idle_handle_size) override;
+  void SwitchActiveAggregatedHitTestRegionList(
+      const FrameSinkId& frame_sink_id,
+      uint8_t active_handle_index) override;
 
   // CompositorFrameSinkSupport, hierarchy, and BeginFrameSource can be
   // registered and unregistered in any order with respect to each other.
@@ -113,42 +146,12 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
 
   const HitTestManager* hit_test_manager() { return &hit_test_manager_; }
 
-  // SurfaceObserver implementation.
-  void OnSurfaceCreated(const SurfaceId& surface_id) override;
-  void OnFirstSurfaceActivation(const SurfaceInfo& surface_info) override;
-  void OnSurfaceActivated(const SurfaceId& surface_id) override;
-  bool OnSurfaceDamaged(const SurfaceId& surface_id,
-                        const BeginFrameAck& ack) override;
-  void OnSurfaceDiscarded(const SurfaceId& surface_id) override;
-  void OnSurfaceDestroyed(const SurfaceId& surface_id) override;
-  void OnSurfaceDamageExpected(const SurfaceId& surface_id,
-                               const BeginFrameArgs& args) override;
-
   void OnClientConnectionLost(const FrameSinkId& frame_sink_id);
-
-  void OnAggregatedHitTestRegionListUpdated(
-      const FrameSinkId& frame_sink_id,
-      mojo::ScopedSharedBufferHandle active_handle,
-      uint32_t active_handle_size,
-      mojo::ScopedSharedBufferHandle idle_handle,
-      uint32_t idle_handle_size);
-  void SwitchActiveAggregatedHitTestRegionList(const FrameSinkId& frame_sink_id,
-                                               uint8_t active_handle_index);
-
-  // It is necessary to pass |frame_sink_id| by value because the id
-  // is owned by the GpuCompositorFrameSink in the map. When the sink is
-  // removed from the map, |frame_sink_id| would also be destroyed if it were a
-  // reference. But the map can continue to iterate and try to use it. Passing
-  // by value avoids this.
-  void DestroyCompositorFrameSink(FrameSinkId frame_sink_id);
 
   void SubmitHitTestRegionList(
       const SurfaceId& surface_id,
       uint64_t frame_index,
       mojom::HitTestRegionListPtr hit_test_region_list);
-
-  // This method is virtual so the implementation can be modified in unit tests.
-  virtual uint64_t GetActiveFrameIndex(const SurfaceId& surface_id);
 
   // Instantiates |video_detector_| for tests where we simulate the passage of
   // time.
@@ -180,23 +183,6 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
     DISALLOW_COPY_AND_ASSIGN(FrameSinkSourceMapping);
   };
 
-  struct SinkAndSupport {
-    SinkAndSupport();
-    SinkAndSupport(SinkAndSupport&& other);
-    ~SinkAndSupport();
-    SinkAndSupport& operator=(SinkAndSupport&& other);
-
-    // CompositorFrameSinks owned here. This will be null if a
-    // CompositorFrameSinkSupport is owned externally.
-    std::unique_ptr<mojom::CompositorFrameSink> sink;
-
-    // This can be owned by |sink| or owned externally.
-    CompositorFrameSinkSupport* support = nullptr;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(SinkAndSupport);
-  };
-
   void RecursivelyAttachBeginFrameSource(const FrameSinkId& frame_sink_id,
                                          BeginFrameSource* source);
   void RecursivelyDetachBeginFrameSource(const FrameSinkId& frame_sink_id,
@@ -223,8 +209,17 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   // Contains FrameSinkId hierarchy and BeginFrameSource mapping.
   base::flat_map<FrameSinkId, FrameSinkSourceMapping> frame_sink_source_map_;
 
-  // Contains (and maybe owns) the CompositorFrameSinkSupport.
-  base::flat_map<FrameSinkId, SinkAndSupport> compositor_frame_sinks_;
+  // CompositorFrameSinkSupports get added to this map on creation and removed
+  // on destruction.
+  base::flat_map<FrameSinkId, CompositorFrameSinkSupport*> support_map_;
+
+  // [Root]CompositorFrameSinkImpls are owned in this map.
+  base::flat_map<FrameSinkId, std::unique_ptr<mojom::CompositorFrameSink>>
+      sink_map_;
+
+  // The set of FrameSinkIds that the client wants synchronization event
+  // notifications for.
+  base::flat_map<FrameSinkId, std::string> synchronization_event_labels_;
 
   PrimaryBeginFrameSource primary_source_;
 

@@ -25,6 +25,22 @@ Polymer({
       notify: true,
     },
 
+    // <if expr="not chromeos">
+    /**
+     * This flag is used to conditionally show a set of new sign-in UIs to the
+     * profiles that have been migrated to be consistent with the web sign-ins.
+     * TODO(scottchen): In the future when all profiles are completely migrated,
+     * this should be removed, and UIs hidden behind it should become default.
+     * @private
+     */
+    diceEnabled_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.getBoolean('diceEnabled');
+      },
+    },
+    // </if>
+
     /**
      * The current sync status, supplied by SyncBrowserProxy.
      * @type {?settings.SyncStatus}
@@ -33,33 +49,33 @@ Polymer({
 
     /**
      * The currently selected profile icon URL. May be a data URL.
+     * @private
      */
     profileIconUrl_: String,
 
     /**
      * The current profile name.
+     * @private
      */
     profileName_: String,
-
-    /**
-     * True if the current profile manages supervised users.
-     */
-    profileManagesSupervisedUsers_: Boolean,
 
     /**
      * The profile deletion warning. The message indicates the number of
      * profile stats that will be deleted if a non-zero count for the profile
      * stats is returned from the browser.
+     * @private
      */
     deleteProfileWarning_: String,
 
     /**
      * True if the profile deletion warning is visible.
+     * @private
      */
     deleteProfileWarningVisible_: Boolean,
 
     /**
      * True if the checkbox to delete the profile has been checked.
+     * @private
      */
     deleteProfile_: Boolean,
 
@@ -134,12 +150,6 @@ Polymer({
     this.addWebUIListener(
         'profile-info-changed', this.handleProfileInfo_.bind(this));
 
-    profileInfoProxy.getProfileManagesSupervisedUsers().then(
-        this.handleProfileManagesSupervisedUsers_.bind(this));
-    this.addWebUIListener(
-        'profile-manages-supervised-users-changed',
-        this.handleProfileManagesSupervisedUsers_.bind(this));
-
     this.addWebUIListener(
         'profile-stats-count-ready', this.handleProfileStatsCount_.bind(this));
 
@@ -209,15 +219,6 @@ Polymer({
   },
 
   /**
-   * Handler for when the profile starts or stops managing supervised users.
-   * @private
-   * @param {boolean} managesSupervisedUsers
-   */
-  handleProfileManagesSupervisedUsers_: function(managesSupervisedUsers) {
-    this.profileManagesSupervisedUsers_ = managesSupervisedUsers;
-  },
-
-  /**
    * Handler for when the profile stats count is pushed from the browser.
    * @param {number} count
    * @private
@@ -251,7 +252,7 @@ Polymer({
   },
 
   /** @private */
-  onPictureTap_: function() {
+  onProfileTap_: function() {
     // <if expr="chromeos">
     settings.navigateTo(settings.routes.CHANGE_PICTURE);
     // </if>
@@ -259,13 +260,6 @@ Polymer({
     settings.navigateTo(settings.routes.MANAGE_PROFILE);
     // </if>
   },
-
-  // <if expr="not chromeos">
-  /** @private */
-  onProfileNameTap_: function() {
-    settings.navigateTo(settings.routes.MANAGE_PROFILE);
-  },
-  // </if>
 
   /** @private */
   onSigninTap_: function() {
@@ -275,7 +269,16 @@ Polymer({
   /** @private */
   onDisconnectClosed_: function() {
     this.showDisconnectDialog_ = false;
+    // <if expr="not chromeos">
+    if (!this.diceEnabled_) {
+      // If DICE-enabled, this button won't exist here.
+      cr.ui.focusWithoutInk(assert(this.$$('#disconnectButton')));
+    }
+    // </if>
+
+    // <if expr="chromeos">
     cr.ui.focusWithoutInk(assert(this.$$('#disconnectButton')));
+    // </if>
 
     if (settings.getCurrentRoute() == settings.routes.SIGN_OUT)
       settings.navigateToPreviousRoute();
@@ -390,6 +393,15 @@ Polymer({
   onImportDataDialogClosed_: function() {
     settings.navigateToPreviousRoute();
     cr.ui.focusWithoutInk(assert(this.$.importDataDialogTrigger));
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  shouldShowSyncAccountControl_: function() {
+    return !!this.diceEnabled_ && !!this.syncStatus.syncSystemEnabled &&
+        !!this.syncStatus.signinAllowed;
   },
   // </if>
 

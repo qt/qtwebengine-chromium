@@ -10,7 +10,7 @@
 #include "platform/network/http_names.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/KURL.h"
-#include "third_party/WebKit/common/client_hints/client_hints.h"
+#include "third_party/WebKit/public/common/client_hints/client_hints.h"
 
 namespace blink {
 
@@ -52,9 +52,17 @@ void ClientHintsPreferences::UpdateFrom(
 
 void ClientHintsPreferences::UpdateFromAcceptClientHintsHeader(
     const String& header_value,
+    const KURL& url,
     Context* context) {
   if (header_value.IsEmpty())
     return;
+
+  // If the persistent client hint feature is enabled, then client hints
+  // should be allowed only on secure URLs.
+  if (blink::RuntimeEnabledFeatures::ClientHintsPersistentEnabled() &&
+      !IsClientHintsAllowed(url)) {
+    return;
+  }
 
   WebEnabledClientHints new_enabled_types;
 
@@ -101,6 +109,8 @@ void ClientHintsPreferences::UpdatePersistentHintsFromHeaders(
   }
 
   const KURL url = response.Url();
+  if (!IsClientHintsAllowed(url))
+    return;
 
   bool conversion_ok = false;
   int64_t persist_duration_seconds =
@@ -113,6 +123,13 @@ void ClientHintsPreferences::UpdatePersistentHintsFromHeaders(
     context->CountPersistentClientHintHeaders();
 
   ParseAcceptChHeader(accept_ch_header_value, enabled_hints);
+}
+
+// static
+bool ClientHintsPreferences::IsClientHintsAllowed(const KURL& url) {
+  return (url.ProtocolIs("http") || url.ProtocolIs("https")) &&
+         (SecurityOrigin::IsSecure(url) ||
+          SecurityOrigin::Create(url)->IsLocalhost());
 }
 
 }  // namespace blink

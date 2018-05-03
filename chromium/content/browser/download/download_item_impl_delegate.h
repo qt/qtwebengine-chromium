@@ -10,11 +10,10 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
+#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/download_danger_type.h"
-#include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
-#include "content/public/browser/download_url_parameters.h"
 
 namespace content {
 class DownloadItemImpl;
@@ -73,7 +72,7 @@ class CONTENT_EXPORT DownloadItemImplDelegate {
 
   // Called when an interrupted download is resumed.
   virtual void ResumeInterruptedDownload(
-      std::unique_ptr<content::DownloadUrlParameters> params,
+      std::unique_ptr<download::DownloadUrlParameters> params,
       uint32_t id);
 
   // For contextual issues like language and prefs.
@@ -93,7 +92,7 @@ class CONTENT_EXPORT DownloadItemImplDelegate {
   virtual void ShowDownloadInShell(DownloadItemImpl* download);
 
   // Handle any delegate portions of a state change operation on the
-  // DownloadItem.
+  // download::DownloadItem.
   virtual void DownloadRemoved(DownloadItemImpl* download);
 
   // Assert consistent state for delgate object at various transitions.

@@ -5,12 +5,13 @@
 #ifndef AcceleratedStaticBitmapImage_h
 #define AcceleratedStaticBitmapImage_h
 
+#include <memory>
+
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "platform/graphics/StaticBitmapImage.h"
 #include "platform/graphics/TextureHolder.h"
-
-#include <memory>
 
 class GrContext;
 
@@ -25,7 +26,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   // SkImage with a texture backing.
   static scoped_refptr<AcceleratedStaticBitmapImage> CreateFromSkImage(
       sk_sp<SkImage>,
-      base::WeakPtr<WebGraphicsContext3DProviderWrapper>&&);
+      base::WeakPtr<WebGraphicsContext3DProviderWrapper>);
   // Can specify the GrContext that created the texture backing. Ideally all
   // callers would use this option. The |mailbox| is a name for the texture
   // backing, allowing other contexts to use the same backing.
@@ -85,13 +86,11 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   }
   void UpdateSyncToken(gpu::SyncToken) final;
 
-  // Call this immediately after creation in cases where the source SkImage
-  // was a snapshot of an SkSurface that may be rendered to after
-  void RetainOriginalSkImageForCopyOnWrite();
-
   PaintImage PaintImageForCurrentFrame() override;
 
   void Abandon() final;
+
+  TextureHolder* TextureHolderForTesting() { return texture_holder_.get(); }
 
  private:
   AcceleratedStaticBitmapImage(
@@ -107,15 +106,17 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   void CreateImageFromMailboxIfNeeded();
   void CheckThread();
   void WaitSyncTokenIfNeeded();
+  void RetainOriginalSkImage();
 
   std::unique_ptr<TextureHolder> texture_holder_;
 
   base::ThreadChecker thread_checker_;
   bool detach_thread_at_next_check_ = false;
+  PaintImage::ContentId paint_image_content_id_;
 
   // For RetainOriginalSkImageForCopyOnWrite()
   sk_sp<SkImage> original_skia_image_;
-  scoped_refptr<WebTaskRunner> original_skia_image_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> original_skia_image_task_runner_;
   PlatformThreadId original_skia_image_thread_id_;
   base::WeakPtr<WebGraphicsContext3DProviderWrapper>
       original_skia_image_context_provider_wrapper_;

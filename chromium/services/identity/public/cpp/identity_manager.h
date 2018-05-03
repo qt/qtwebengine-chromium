@@ -11,12 +11,37 @@
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "services/identity/public/cpp/primary_account_access_token_fetcher.h"
 
+#if !defined(OS_CHROMEOS)
+#include "components/signin/core/browser/signin_manager.h"
+#endif
+
+// Necessary to declare this class as a friend.
+namespace chromeos {
+class ChromeSessionManager;
+}
+
+// Necessary to declare this class as a friend.
+class ProfileSyncServiceHarness;
+
+// Necessary to declare functions in identity_test_utils.h as friends.
+class FakeSigninManagerBase;
+class FakeSigninManager;
+
+#if defined(OS_CHROMEOS)
+using SigninManagerForTest = FakeSigninManagerBase;
+#else
+using SigninManagerForTest = FakeSigninManager;
+#endif  // OS_CHROMEOS
+
 namespace identity {
 
 // Primary client-side interface to the Identity Service, encapsulating a
 // connection to a remote implementation of mojom::IdentityManager. See
 // ./README.md for detailed documentation.
 class IdentityManager : public SigninManagerBase::Observer,
+#if !defined(OS_CHROMEOS)
+                        public SigninManager::DiagnosticsClient,
+#endif
                         public OAuth2TokenService::DiagnosticsObserver {
  public:
   class Observer {
@@ -86,23 +111,45 @@ class IdentityManager : public SigninManagerBase::Observer,
   void AddDiagnosticsObserver(DiagnosticsObserver* observer);
   void RemoveDiagnosticsObserver(DiagnosticsObserver* observer);
 
+ private:
+  // These clients need to call SetPrimaryAccountSynchronouslyForTests().
+  friend void MakePrimaryAccountAvailable(
+      SigninManagerForTest* signin_manager,
+      ProfileOAuth2TokenService* token_service,
+      IdentityManager* identity_manager,
+      const std::string& email);
+  friend ProfileSyncServiceHarness;
+
+  // This client needs to call SetPrimaryAccountSynchronously().
+  friend chromeos::ChromeSessionManager;
+
   // Sets the primary account info synchronously with both the IdentityManager
-  // and its backing SigninManager/ProfileOAuth2TokenService instances. For use
-  // only by tests. Even in testing contexts, use IdentityTestEnvironment if
-  // possible (and IdentityTestEnvironment::MakePrimaryAccountAvailable()). This
-  // method should be used directly only if the production code is using
-  // IdentityManager, but it is not yet feasible to convert the test code to use
-  // IdentityTestEnvironment. Any such usage should only be temporary, i.e.,
-  // should be followed as quickly as possible by conversion of the test to
-  // use IdentityTestEnvironment.
+  // and its backing SigninManager/ProfileOAuth2TokenService instances.
+  // Prefer using the methods in identity_test_{environment, utils}.h to using
+  // this method directly.
   void SetPrimaryAccountSynchronouslyForTests(std::string gaia_id,
                                               std::string email_address,
                                               std::string refresh_token);
 
- private:
+  // Sets the primary account info synchronously with both the IdentityManager
+  // and its backing SigninManager instance. If |refresh_token| is not empty,
+  // sets the refresh token with the backing ProfileOAuth2TokenService
+  // instance. This method should not be used directly; it exists only to serve
+  // one legacy use case at this point.
+  // TODO(https://crbug.com/814787): Eliminate the need for this method.
+  void SetPrimaryAccountSynchronously(std::string gaia_id,
+                                      std::string email_address,
+                                      std::string refresh_token);
+
   // SigninManagerBase::Observer:
   void GoogleSigninSucceeded(const AccountInfo& account_info) override;
   void GoogleSignedOut(const AccountInfo& account_info) override;
+
+#if !defined(OS_CHROMEOS)
+  // SigninManagerBase::DiagnosticsClient:
+  void WillFireGoogleSigninSucceeded(const AccountInfo& account_info) override;
+  void WillFireGoogleSignedOut(const AccountInfo& account_info) override;
+#endif
 
   // OAuth2TokenService::DiagnosticsObserver:
   void OnAccessTokenRequested(

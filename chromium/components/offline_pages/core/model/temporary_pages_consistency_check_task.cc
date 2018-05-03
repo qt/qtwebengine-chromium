@@ -14,6 +14,7 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/trace_event/trace_event.h"
 #include "components/offline_pages/core/client_policy_controller.h"
 #include "components/offline_pages/core/offline_page_metadata_store_sql.h"
 #include "components/offline_pages/core/offline_page_types.h"
@@ -117,14 +118,14 @@ SyncOperationResult CheckConsistencySync(
     // faster matching later.
     temp_page_info_paths.insert(page_info.file_path);
   }
-  // Try to delete the pages by offline ids collected above.
-  // If there's any database related errors, the function will return false,
-  // and the database operations will be rolled back since the transaction will
-  // not be committed.
-  if (!DeletePagesByOfflineIds(offline_ids_to_delete, db))
-    return SyncOperationResult::DB_OPERATION_ERROR;
 
   if (offline_ids_to_delete.size() > 0) {
+    // Try to delete the pages by offline ids collected above. If there's any
+    // database related errors, the function will return false, and the database
+    // operations will be rolled back since the transaction will not be
+    // committed.
+    if (!DeletePagesByOfflineIds(offline_ids_to_delete, db))
+      return SyncOperationResult::DB_OPERATION_ERROR;
     UMA_HISTOGRAM_COUNTS(
         "OfflinePages.ConsistencyCheck.Temporary.PagesMissingArchiveFileCount",
         static_cast<int32_t>(offline_ids_to_delete.size()));
@@ -143,13 +144,12 @@ SyncOperationResult CheckConsistencySync(
   }
 
   if (files_to_delete.size() > 0) {
+    if (!DeleteFiles(files_to_delete))
+      return SyncOperationResult::FILE_OPERATION_ERROR;
     UMA_HISTOGRAM_COUNTS(
         "OfflinePages.ConsistencyCheck.Temporary.PagesMissingDbEntryCount",
         static_cast<int32_t>(files_to_delete.size()));
   }
-
-  if (!DeleteFiles(files_to_delete))
-    return SyncOperationResult::FILE_OPERATION_ERROR;
 
   return SyncOperationResult::SUCCESS;
 }
@@ -171,6 +171,8 @@ TemporaryPagesConsistencyCheckTask::TemporaryPagesConsistencyCheckTask(
 TemporaryPagesConsistencyCheckTask::~TemporaryPagesConsistencyCheckTask() {}
 
 void TemporaryPagesConsistencyCheckTask::Run() {
+  TRACE_EVENT_ASYNC_BEGIN0("offline_pages",
+                           "TemporaryPagesConsistencyCheckTask running", this);
   std::vector<std::string> temp_namespaces =
       policy_controller_->GetNamespacesRemovedOnCacheReset();
   store_->Execute(
@@ -185,6 +187,9 @@ void TemporaryPagesConsistencyCheckTask::OnCheckConsistencyDone(
   UMA_HISTOGRAM_ENUMERATION("OfflinePages.ConsistencyCheck.Temporary.Result",
                             result, SyncOperationResult::RESULT_COUNT);
   TaskComplete();
+  TRACE_EVENT_ASYNC_END1("offline_pages",
+                         "TemporaryPagesConsistencyCheckTask running", this,
+                         "result", static_cast<int>(result));
 }
 
 }  // namespace offline_pages

@@ -14,6 +14,7 @@
 
 #include "ops/GrDrawOp.h"
 
+class GrOnFlushResourceProvider;
 class GrRectanizer;
 
 struct GrDrawOpAtlasConfig {
@@ -222,6 +223,8 @@ public:
         return id & 0xff;
     }
 
+    void instantiate(GrOnFlushResourceProvider*);
+
 private:
     uint32_t maxPages() const {
         return AllowMultitexturing::kYes == fAllowMultitexturing ? kMaxMultitexturePages : 1;
@@ -366,7 +369,7 @@ private:
     int                   fTextureHeight;
     int                   fPlotWidth;
     int                   fPlotHeight;
-    SkDEBUGCODE(uint32_t  fNumPlots;)
+    unsigned int          fNumPlots;
 
     uint64_t              fAtlasGeneration;
     // nextTokenToFlush() value at the end of the previous flush

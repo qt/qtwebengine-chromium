@@ -12,7 +12,6 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "content/common/weak_wrapper_shared_url_loader_factory.h"
-#include "content/public/common/service_worker_modes.h"
 #include "content/public/renderer/request_peer.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/loader/resource_dispatcher.h"
@@ -20,7 +19,7 @@
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "url/gurl.h"
@@ -113,8 +112,7 @@ class URLResponseBodyConsumerTest : public ::testing::Test {
     std::vector<network::mojom::URLLoaderClientPtr> clients_;
   };
 
-  URLResponseBodyConsumerTest()
-      : dispatcher_(new ResourceDispatcher(message_loop_.task_runner())) {}
+  URLResponseBodyConsumerTest() : dispatcher_(new ResourceDispatcher()) {}
 
   ~URLResponseBodyConsumerTest() override {
     dispatcher_.reset();
@@ -157,7 +155,8 @@ class URLResponseBodyConsumerTest : public ::testing::Test {
         std::make_unique<TestRequestPeer>(context, message_loop_.task_runner()),
         base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(&factory_),
         std::vector<std::unique_ptr<URLLoaderThrottle>>(),
-        network::mojom::URLLoaderClientEndpointsPtr());
+        network::mojom::URLLoaderClientEndpointsPtr(),
+        nullptr /* continue_navigation_function */);
   }
 
   void Run(TestRequestPeer::Context* context) {

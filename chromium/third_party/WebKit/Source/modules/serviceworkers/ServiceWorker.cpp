@@ -31,17 +31,19 @@
 #include "modules/serviceworkers/ServiceWorker.h"
 
 #include <memory>
+#include "bindings/core/v8/CallbackPromiseAdapter.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/events/Event.h"
+#include "core/messaging/BlinkTransferableMessage.h"
 #include "core/messaging/MessagePort.h"
 #include "modules/EventTargetModules.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 #include "platform/bindings/ScriptState.h"
 #include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebString.h"
-#include "third_party/WebKit/common/service_worker/service_worker_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_state.mojom-blink.h"
 
 namespace blink {
 
@@ -62,11 +64,13 @@ void ServiceWorker::postMessage(ScriptState* script_state,
     return;
   }
 
-  // Disentangle the port in preparation for sending it to the remote context.
-  auto channels = MessagePort::DisentanglePorts(
+  BlinkTransferableMessage msg;
+  msg.message = message;
+  msg.ports = MessagePort::DisentanglePorts(
       ExecutionContext::From(script_state), ports, exception_state);
   if (exception_state.HadException())
     return;
+
   if (handle_->ServiceWorker()->GetState() ==
       mojom::blink::ServiceWorkerState::kRedundant) {
     exception_state.ThrowDOMException(kInvalidStateError,
@@ -74,15 +78,17 @@ void ServiceWorker::postMessage(ScriptState* script_state,
     return;
   }
 
-  WebString message_string = message->ToWireString();
-  handle_->ServiceWorker()->PostMessageToWorker(
-      client->Provider(), message_string,
-      WebSecurityOrigin(GetExecutionContext()->GetSecurityOrigin()),
-      std::move(channels));
+  handle_->ServiceWorker()->PostMessageToServiceWorker(
+      ToTransferableMessage(std::move(msg)),
+      WebSecurityOrigin(GetExecutionContext()->GetSecurityOrigin()));
 }
 
-void ServiceWorker::InternalsTerminate() {
-  handle_->ServiceWorker()->Terminate();
+ScriptPromise ServiceWorker::InternalsTerminate(ScriptState* script_state) {
+  ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
+  ScriptPromise promise = resolver->Promise();
+  handle_->ServiceWorker()->TerminateForTesting(
+      std::make_unique<CallbackPromiseAdapter<void, void>>(resolver));
+  return promise;
 }
 
 void ServiceWorker::DispatchStateChangeEvent() {

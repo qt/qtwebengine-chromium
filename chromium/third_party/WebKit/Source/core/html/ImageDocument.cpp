@@ -150,7 +150,7 @@ void ImageDocumentParser::Finish() {
     DocumentLoader* loader = GetDocument()->Loader();
     cached_image->SetResponse(loader->GetResponse());
     cached_image->Finish(
-        loader->GetTiming().ResponseEnd(),
+        TimeTicksInSeconds(loader->GetTiming().ResponseEnd()),
         GetDocument()->GetTaskRunner(TaskType::kUnspecedLoading).get());
 
     // Report the natural image size in the page title, regardless of zoom
@@ -242,7 +242,11 @@ void ImageDocument::CreateDocumentStructure() {
     HTMLSlotElement* slot = HTMLSlotElement::CreateUserAgentDefaultSlot(*this);
     div_element_->AppendChild(slot);
 
-    ShadowRoot& shadow_root = body->EnsureUserAgentShadowRootV1();
+    // Adding a UA shadow root here is because the container <div> should be
+    // hidden so that only the <img> element should be visible in <body>,
+    // according to the spec:
+    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#read-media
+    ShadowRoot& shadow_root = body->EnsureUserAgentShadowRoot();
     shadow_root.AppendChild(div_element_);
   } else {
     body->setAttribute(styleAttr, "margin: 0px;");

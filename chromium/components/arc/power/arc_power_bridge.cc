@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "ash/shell.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -16,9 +17,9 @@
 #include "components/arc/arc_browser_context_keyed_service_factory_base.h"
 #include "components/arc/arc_service_manager.h"
 #include "content/public/common/service_manager_connection.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/wake_lock.mojom.h"
-#include "services/device/public/interfaces/wake_lock_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
+#include "services/device/public/mojom/wake_lock_provider.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 
 namespace arc {
@@ -175,9 +176,9 @@ void ArcPowerBridge::SuspendImminent(
   if (!power_instance)
     return;
 
-  power_instance->Suspend(
-      chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
-        GetSuspendReadinessCallback());
+  power_instance->Suspend(chromeos::DBusThreadManager::Get()
+                              ->GetPowerManagerClient()
+                              ->GetSuspendReadinessCallback(FROM_HERE));
 }
 
 void ArcPowerBridge::SuspendDone(const base::TimeDelta& sleep_duration) {

@@ -22,11 +22,10 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/content_features.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
-#include "content/public/test/controllable_http_response.h"
+#include "content/public/test/test_frame_navigation_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -34,10 +33,12 @@
 #include "content/test/frame_host_test_interface.mojom.h"
 #include "content/test/test_content_browser_client.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
+#include "services/network/public/cpp/features.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
 
 namespace content {
 
@@ -212,7 +213,7 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
   // JavaScriptDialogManager
 
   void RunJavaScriptDialog(WebContents* web_contents,
-                           const GURL& alerting_frame_url,
+                           RenderFrameHost* render_frame_host,
                            JavaScriptDialogType dialog_type,
                            const base::string16& message_text,
                            const base::string16& default_prompt_text,
@@ -501,6 +502,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
 
 // After a navigation, the StreamHandle must be released.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest, StreamHandleReleased) {
+  if (IsNavigationMojoResponseEnabled() ||
+      base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    // This test is specific to the delivery of the main resource in a blob url.
+    // This mechanism is not sued when NavigationMojoResponse or NetworkService
+    // are enabled.
+    return;
+  }
   EXPECT_TRUE(NavigateToURL(shell(), GetTestUrl("", "title1.html")));
   WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
   RenderFrameHostImpl* main_frame =
@@ -530,8 +538,7 @@ class DropStreamHandleConsumedFilter : public BrowserMessageFilter {
 IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
                        StreamHandleReleasedOnRendererCrash) {
   // Disable this test when the |stream_handle_| is not used.
-  if (!IsBrowserSideNavigationEnabled() ||
-      base::FeatureList::IsEnabled(features::kNetworkService) ||
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService) ||
       IsNavigationMojoResponseEnabled()) {
     return;
   }
@@ -719,7 +726,8 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
 IN_PROC_BROWSER_TEST_F(
     ContentBrowserTest,
     AbortedRendererInitiatedNavigationDoNotCancelPendingXHR) {
-  ControllableHttpResponse xhr_response(embedded_test_server(), "/xhr_request");
+  net::test_server::ControllableHttpResponse xhr_response(
+      embedded_test_server(), "/xhr_request");
   EXPECT_TRUE(embedded_test_server()->Start());
 
   GURL main_url(embedded_test_server()->GetURL("/title1.html"));
@@ -771,8 +779,8 @@ IN_PROC_BROWSER_TEST_F(
 // See https://crbug.com/766149.
 IN_PROC_BROWSER_TEST_F(ContentBrowserTest,
                        BrowserInitiatedJavascriptUrlDoNotPreventLoading) {
-  ControllableHttpResponse main_document_response(embedded_test_server(),
-                                                  "/main_document");
+  net::test_server::ControllableHttpResponse main_document_response(
+      embedded_test_server(), "/main_document");
   EXPECT_TRUE(embedded_test_server()->Start());
 
   GURL main_document_url(embedded_test_server()->GetURL("/main_document"));
@@ -831,7 +839,8 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest,
 IN_PROC_BROWSER_TEST_F(
     ContentBrowserTest,
     SameDocumentBrowserInitiatedNavigationWhileDocumentIsLoading) {
-  ControllableHttpResponse response(embedded_test_server(), "/main_document");
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      "/main_document");
   EXPECT_TRUE(embedded_test_server()->Start());
 
   // 1) Load a new document. It reaches the ReadyToCommit stage and then is slow
@@ -1219,6 +1228,75 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
     EXPECT_TRUE(child->has_committed_real_load());
     EXPECT_EQ(subframe_url, child->current_url());
   }
+}
+
+// Regression test for https://crbug.com/821022.
+//
+// Test the edge case of the above, namely, where the following commits take
+// place in a subframe embedded into a document at `http://foo.com/`:
+//
+//  1) the initial empty document (`about:blank`)
+//  2) `about:blank#ref`
+//  3) `http://foo.com`
+//
+// Here, (2) should classify as a same-document navigation, and (3) should be
+// considered the first real load. Because the first real load is same-origin
+// with the initial empty document, the latter's `window` global object
+// asssociated with the initial empty document is re-used for document
+// corresponding to the first real committed load.
+IN_PROC_BROWSER_TEST_F(
+    RenderFrameHostImplBrowserTest,
+    InterfaceProviderRequestNotPresentForFirstRealLoadAfterAboutBlankWithRef) {
+  const GURL kMainFrameURL(embedded_test_server()->GetURL("/title1.html"));
+  const GURL kSubframeURLTwo("about:blank#ref");
+  const GURL kSubframeURLThree(embedded_test_server()->GetURL("/title2.html"));
+  const auto kNavigateToOneThenTwoScript = base::StringPrintf(
+      "var f = document.createElement(\"iframe\");"
+      "f.src=\"%s\"; "
+      "document.body.append(f);",
+      kSubframeURLTwo.spec().c_str());
+  const auto kNavigateToThreeScript =
+      base::StringPrintf("f.src=\"%s\";", kSubframeURLThree.spec().c_str());
+
+  ASSERT_TRUE(NavigateToURL(shell(), kMainFrameURL));
+
+  // Trigger navigation (1) by creating a new subframe, and then trigger
+  // navigation (2) by setting it's `src` attribute before adding it to the DOM.
+  //
+  // We must set 'src` before adding the iframe element to the DOM, otherwise it
+  // will load `about:blank` as the first real load instead of
+  // |kSubframeURLTwo|. See: https://crbug.com/778318.
+  //
+  // Note that the child frame will first cycle through loading the initial
+  // empty document regardless of when/how/if the `src` attribute is set.
+
+  ASSERT_TRUE(ExecuteScript(shell(), kNavigateToOneThenTwoScript));
+  WaitForLoadStop(shell()->web_contents());
+
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+  ASSERT_EQ(1u, root->child_count());
+  FrameTreeNode* child = root->child_at(0u);
+
+  EXPECT_FALSE(child->has_committed_real_load());
+  EXPECT_EQ(kSubframeURLTwo, child->current_url());
+  EXPECT_EQ(url::Origin::Create(kMainFrameURL), child->current_origin());
+
+  // Set the `src` attribute again to trigger navigation (3).
+
+  TestFrameNavigationObserver commit_observer(child->current_frame_host());
+  ScopedFakeInterfaceProviderRequestInjector injector(shell()->web_contents());
+  injector.set_fake_request_for_next_commit(nullptr);
+
+  ASSERT_TRUE(ExecuteScript(shell(), kNavigateToThreeScript));
+  commit_observer.WaitForCommit();
+
+  EXPECT_FALSE(injector.original_request_of_last_commit().is_pending());
+
+  EXPECT_TRUE(child->has_committed_real_load());
+  EXPECT_EQ(kSubframeURLThree, child->current_url());
+  EXPECT_EQ(url::Origin::Create(kMainFrameURL), child->current_origin());
 }
 
 }  // namespace content

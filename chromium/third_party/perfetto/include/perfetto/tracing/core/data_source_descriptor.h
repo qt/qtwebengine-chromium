@@ -32,7 +32,6 @@
 #include <string>
 #include <type_traits>
 #include <vector>
-#include "perfetto/base/build_config.h"
 
 // Forward declarations for protobuf types.
 namespace perfetto {
@@ -49,8 +48,8 @@ class DataSourceDescriptor {
   ~DataSourceDescriptor();
   DataSourceDescriptor(DataSourceDescriptor&&) noexcept;
   DataSourceDescriptor& operator=(DataSourceDescriptor&&);
-  DataSourceDescriptor(const DataSourceDescriptor&) = delete;
-  DataSourceDescriptor& operator=(const DataSourceDescriptor&) = delete;
+  DataSourceDescriptor(const DataSourceDescriptor&);
+  DataSourceDescriptor& operator=(const DataSourceDescriptor&);
 
   // Conversion methods from/to the corresponding protobuf types.
   void FromProto(const perfetto::protos::DataSourceDescriptor&);

@@ -40,6 +40,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/ptr_util.h"
 #include "sdk/android/generated_peerconnection_jni/jni/PeerConnection_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 #include "sdk/android/src/jni/pc/datachannel.h"
 #include "sdk/android/src/jni/pc/icecandidate.h"
@@ -120,6 +121,8 @@ void JavaToNativeRTCConfiguration(
       Java_RTCConfiguration_getContinualGatheringPolicy(jni, j_rtc_config);
   ScopedJavaLocalRef<jobject> j_turn_customizer =
       Java_RTCConfiguration_getTurnCustomizer(jni, j_rtc_config);
+  ScopedJavaLocalRef<jobject> j_network_preference =
+      Java_RTCConfiguration_getNetworkPreference(jni, j_rtc_config);
 
   rtc_config->type = JavaToNativeIceTransportsType(jni, j_ice_transports_type);
   rtc_config->bundle_policy = JavaToNativeBundlePolicy(jni, j_bundle_policy);
@@ -153,6 +156,11 @@ void JavaToNativeRTCConfiguration(
       Java_RTCConfiguration_getIceCheckMinInterval(jni, j_rtc_config);
   rtc_config->ice_check_min_interval =
       JavaToNativeOptionalInt(jni, j_ice_check_min_interval);
+  ScopedJavaLocalRef<jobject> j_stun_candidate_keepalive_interval =
+      Java_RTCConfiguration_getStunCandidateKeepaliveInterval(jni,
+                                                              j_rtc_config);
+  rtc_config->stun_candidate_keepalive_interval =
+      JavaToNativeOptionalInt(jni, j_stun_candidate_keepalive_interval);
   rtc_config->disable_ipv6_on_wifi =
       Java_RTCConfiguration_getDisableIPv6OnWifi(jni, j_rtc_config);
   rtc_config->max_ipv6_networks =
@@ -171,7 +179,7 @@ void JavaToNativeRTCConfiguration(
       Java_RTCConfiguration_getDisableIpv6(jni, j_rtc_config);
   rtc_config->media_config.enable_dscp =
       Java_RTCConfiguration_getEnableDscp(jni, j_rtc_config);
-  rtc_config->media_config.video.enable_cpu_overuse_detection =
+  rtc_config->media_config.video.enable_cpu_adaptation =
       Java_RTCConfiguration_getEnableCpuOveruseDetection(jni, j_rtc_config);
   rtc_config->enable_rtp_data_channel =
       Java_RTCConfiguration_getEnableRtpDataChannel(jni, j_rtc_config);
@@ -183,6 +191,8 @@ void JavaToNativeRTCConfiguration(
       jni, Java_RTCConfiguration_getCombinedAudioVideoBwe(jni, j_rtc_config));
   rtc_config->enable_dtls_srtp = JavaToNativeOptionalBool(
       jni, Java_RTCConfiguration_getEnableDtlsSrtp(jni, j_rtc_config));
+  rtc_config->network_preference =
+      JavaToNativeNetworkPreference(jni, j_network_preference);
 }
 
 rtc::KeyType GetRtcConfigKeyType(JNIEnv* env,

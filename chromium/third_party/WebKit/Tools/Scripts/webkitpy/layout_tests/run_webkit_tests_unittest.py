@@ -31,7 +31,6 @@
 import json
 import re
 import StringIO
-import sys
 import unittest
 
 from webkitpy.common import exit_codes
@@ -423,6 +422,18 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         # Now check that we don't run anything.
         self.assertEqual(get_tests_run(['--skipped=always', 'passes/skipped/skip.html']), [])
 
+    def test_gtest_also_run_disabled_tests(self):
+        self.assertEqual(
+            sorted(get_tests_run(['--gtest_also_run_disabled_tests', 'passes'])),
+            sorted(get_tests_run(['--skipped=ignore', 'passes']))
+        )
+
+    def test_gtest_also_run_disabled_tests_overrides_skipped(self):
+        self.assertEqual(
+            sorted(get_tests_run(['--gtest_also_run_disabled_tests', '--skipped=always', 'passes'])),
+            sorted(get_tests_run(['--skipped=ignore', 'passes']))
+        )
+
     def test_iterations(self):
         tests_to_run = ['passes/image.html', 'passes/text.html']
         tests_run = get_tests_run(['--iterations', '2', '--order', 'natural'] + tests_to_run)
@@ -494,6 +505,11 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         host.filesystem.write_text_file(filename, 'LayoutTests/passes/text.html')
         tests_run = get_tests_run(['--test-list=%s' % filename], host=host)
         self.assertEqual(['passes/text.html'], tests_run)
+
+    def test_gtest_filter(self):
+        host = MockHost()
+        tests_run = get_tests_run(['--gtest_filter=passes/text.html:passes/image.html', 'passes/error.html'], host=host)
+        self.assertEqual(sorted(tests_run), ['passes/error.html', 'passes/image.html', 'passes/text.html'])
 
     def test_sharding_even(self):
         # Test that we actually select the right part
@@ -571,11 +587,25 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         tests_run = get_tests_run(['--no-smoke', '--order', 'natural'], host=host, port_obj=port_obj)
         self.assertNotEqual(['passes/text.html'], tests_run)
 
+    def test_smoke_test_default_retry(self):
+        host = MockHost()
+        smoke_test_filename = test.LAYOUT_TEST_DIR + '/SmokeTests'
+        host.filesystem.write_text_file(
+            smoke_test_filename, 'failures/unexpected/text-image-checksum.html\n')
+
+        # Retry smoke tests by default.
+        _, err, __ = logging_run(['--smoke'], host=host, tests_included=True)
+        self.assertIn('Retrying', err.getvalue())
+
+        # Do not retry if additional tests are given.
+        _, err, __ = logging_run(['--smoke', 'passes/image.html'], host=host, tests_included=True)
+        self.assertNotIn('Retrying', err.getvalue())
+
     def test_missing_and_unexpected_results(self):
         # Test that we update expectations in place. If the expectation
         # is missing, update the expected generic location.
         host = MockHost()
-        details, _, _ = logging_run(['--no-show-results', '--retry-failures',
+        details, _, _ = logging_run(['--no-show-results',
                                      'failures/unexpected/missing_text.html',
                                      'failures/unexpected/text-image-checksum.html'],
                                     tests_included=True, host=host)
@@ -597,7 +627,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         # initial failure for simplicity and consistency w/ the flakiness
         # dashboard, even if the second failure is worse.
 
-        details, _, _ = logging_run(['--retry-failures', 'failures/unexpected/text_then_crash.html'], tests_included=True)
+        details, _, _ = logging_run(['--num-retries=3', 'failures/unexpected/text_then_crash.html'], tests_included=True)
         self.assertEqual(details.exit_code, 1)
         self.assertEqual(details.summarized_failing_results['tests']['failures']['unexpected']['text_then_crash.html']['actual'],
                          'TEXT CRASH CRASH CRASH')
@@ -605,7 +635,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         # If we get a test that fails two different ways -- but the second one is expected --
         # we should treat it as a flaky result and report the initial unexpected failure type
         # to the dashboard. However, the test should be considered passing.
-        details, _, _ = logging_run(['--retry-failures', 'failures/expected/crash_then_text.html'], tests_included=True)
+        details, _, _ = logging_run(['--num-retries=3', 'failures/expected/crash_then_text.html'], tests_included=True)
         self.assertEqual(details.exit_code, 0)
         self.assertEqual(details.summarized_failing_results['tests']['failures']['expected']['crash_then_text.html']['actual'],
                          'CRASH TEXT')
@@ -614,7 +644,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         host = MockHost()
 
         # Both tests have failing checksum. We include only the first in pixel tests so only that should fail.
-        args = ['--retry-failures', '--pixel-test-directory', 'failures/unexpected/pixeldir',
+        args = ['--pixel-test-directory', 'failures/unexpected/pixeldir',
                 'failures/unexpected/pixeldir/image_in_pixeldir.html',
                 'failures/unexpected/image_not_in_pixeldir.html']
         details, _, _ = logging_run(extra_args=args, host=host, tests_included=True)
@@ -727,22 +757,29 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         self.assertEqual(user.opened_urls, [abspath_to_uri(host.platform, '/tmp/cwd/foo/results.html')])
 
     def test_retrying_default_value(self):
+        # Do not retry when the test list is explicit.
         host = MockHost()
-        details, err, _ = logging_run(
-            ['--debug-rwt-logging', 'failures/unexpected/text-image-checksum.html'], tests_included=True, host=host)
+        details, err, _ = logging_run(['failures/unexpected/text-image-checksum.html'], tests_included=True, host=host)
         self.assertEqual(details.exit_code, 1)
         self.assertNotIn('Retrying', err.getvalue())
 
+        # Retry 3 times by default when the test list is not explicit.
         host = MockHost()
-        details, err, _ = logging_run(['--debug-rwt-logging', 'failures/unexpected'], tests_included=True, host=host)
+        details, err, _ = logging_run(['failures/unexpected'], tests_included=True, host=host)
         self.assertEqual(details.exit_code, test.UNEXPECTED_NON_VIRTUAL_FAILURES)
         self.assertIn('Retrying', err.getvalue())
+        self.assertTrue(
+            host.filesystem.exists('/tmp/layout-test-results/retry_1/failures/unexpected/text-image-checksum-actual.txt'))
+        self.assertTrue(
+            host.filesystem.exists('/tmp/layout-test-results/retry_2/failures/unexpected/text-image-checksum-actual.txt'))
+        self.assertTrue(
+            host.filesystem.exists('/tmp/layout-test-results/retry_3/failures/unexpected/text-image-checksum-actual.txt'))
 
     def test_retrying_default_value_test_list(self):
         host = MockHost()
         filename = '/tmp/foo.txt'
         host.filesystem.write_text_file(filename, 'failures/unexpected/text-image-checksum.html\nfailures/unexpected/crash.html')
-        details, err, _ = logging_run(['--debug-rwt-logging', '--test-list=%s' % filename, '--order', 'natural'],
+        details, err, _ = logging_run(['--test-list=%s' % filename, '--order', 'natural'],
                                       tests_included=True, host=host)
         self.assertEqual(details.exit_code, 2)
         self.assertNotIn('Retrying', err.getvalue())
@@ -750,13 +787,13 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         host = MockHost()
         filename = '/tmp/foo.txt'
         host.filesystem.write_text_file(filename, 'failures')
-        details, err, _ = logging_run(['--debug-rwt-logging', '--test-list=%s' % filename], tests_included=True, host=host)
+        details, err, _ = logging_run(['--test-list=%s' % filename], tests_included=True, host=host)
         self.assertEqual(details.exit_code, test.UNEXPECTED_NON_VIRTUAL_FAILURES)
         self.assertIn('Retrying', err.getvalue())
 
     def test_retrying_and_flaky_tests(self):
         host = MockHost()
-        details, err, _ = logging_run(['--debug-rwt-logging', '--retry-failures', 'failures/flaky'], tests_included=True, host=host)
+        details, err, _ = logging_run(['--num-retries=3', 'failures/flaky'], tests_included=True, host=host)
         self.assertEqual(details.exit_code, 0)
         self.assertIn('Retrying', err.getvalue())
         self.assertTrue(host.filesystem.exists('/tmp/layout-test-results/failures/flaky/text-actual.txt'))
@@ -764,35 +801,21 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         self.assertFalse(host.filesystem.exists('/tmp/layout-test-results/retry_2/failures/flaky/text-actual.txt'))
         self.assertFalse(host.filesystem.exists('/tmp/layout-test-results/retry_3/failures/flaky/text-actual.txt'))
 
-        # Now we test that --clobber-old-results does remove the old entries and the old retries,
-        # and that we don't retry again.
-        host = MockHost()
-        details, err, _ = logging_run(['--no-retry-failures', '--clobber-old-results',
-                                       'failures/flaky'], tests_included=True, host=host)
-        self.assertEqual(details.exit_code, 1)
-        self.assertTrue('Clobbering old results' in err.getvalue())
-        self.assertIn('flaky/text.html', err.getvalue())
-        self.assertTrue(host.filesystem.exists('/tmp/layout-test-results/failures/flaky/text-actual.txt'))
-        self.assertFalse(host.filesystem.exists('retry_1'))
-        self.assertFalse(host.filesystem.exists('retry_2'))
-        self.assertFalse(host.filesystem.exists('retry_3'))
-        self.assertEqual(len(host.user.opened_urls), 1)
-
     def test_retrying_crashed_tests(self):
         host = MockHost()
-        details, err, _ = logging_run(['--retry-failures', 'failures/unexpected/crash.html'], tests_included=True, host=host)
+        details, err, _ = logging_run(['--num-retries=3', 'failures/unexpected/crash.html'], tests_included=True, host=host)
         self.assertEqual(details.exit_code, 1)
         self.assertIn('Retrying', err.getvalue())
 
     def test_retrying_leak_tests(self):
         host = MockHost()
-        details, err, _ = logging_run(['--retry-failures', 'failures/unexpected/leak.html'], tests_included=True, host=host)
+        details, err, _ = logging_run(['--num-retries=3', 'failures/unexpected/leak.html'], tests_included=True, host=host)
         self.assertEqual(details.exit_code, 1)
         self.assertIn('Retrying', err.getvalue())
 
     def test_retrying_force_pixel_tests(self):
         host = MockHost()
-        details, err, _ = logging_run(['--no-pixel-tests', '--retry-failures',
+        details, err, _ = logging_run(['--no-pixel-tests', '--num-retries=3',
                                        'failures/unexpected/text-image-checksum.html'], tests_included=True, host=host)
         self.assertEqual(details.exit_code, 1)
         self.assertIn('Retrying', err.getvalue())
@@ -822,8 +845,8 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
 
     def test_retrying_uses_retry_directories(self):
         host = MockHost()
-        details, _, _ = logging_run(['--debug-rwt-logging', '--retry-failures',
-                                     'failures/unexpected/text-image-checksum.html'], tests_included=True, host=host)
+        details, _, _ = logging_run(['--num-retries=3', 'failures/unexpected/text-image-checksum.html'],
+                                    tests_included=True, host=host)
         self.assertEqual(details.exit_code, 1)
         self.assertTrue(host.filesystem.exists('/tmp/layout-test-results/failures/unexpected/text-image-checksum-actual.txt'))
         self.assertTrue(
@@ -832,6 +855,30 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
             host.filesystem.exists('/tmp/layout-test-results/retry_2/failures/unexpected/text-image-checksum-actual.txt'))
         self.assertTrue(
             host.filesystem.exists('/tmp/layout-test-results/retry_3/failures/unexpected/text-image-checksum-actual.txt'))
+
+    def test_retrying_alias_flag(self):
+        host = MockHost()
+        _, err, __ = logging_run(['--test-launcher-retry-limit=3', 'failures/unexpected/crash.html'],
+                                 tests_included=True, host=host)
+        self.assertIn('Retrying', err.getvalue())
+
+    def test_clobber_old_results(self):
+        host = MockHost()
+        details, _, _ = logging_run(['--num-retries=3', 'failures/unexpected/text-image-checksum.html'],
+                                    tests_included=True, host=host)
+        # See tests above for what files exist at this point.
+
+        # Now we test that --clobber-old-results does remove the old retries.
+        details, err, _ = logging_run(['--no-retry-failures', '--clobber-old-results',
+                                       'failures/unexpected/text-image-checksum.html'],
+                                      tests_included=True, host=host)
+        self.assertEqual(details.exit_code, 1)
+        self.assertTrue('Clobbering old results' in err.getvalue())
+        self.assertIn('failures/unexpected/text-image-checksum.html', err.getvalue())
+        self.assertTrue(host.filesystem.exists('/tmp/layout-test-results/failures/unexpected/text-image-checksum-actual.txt'))
+        self.assertFalse(host.filesystem.exists('/tmp/layout-test-results/retry_1'))
+        self.assertFalse(host.filesystem.exists('/tmp/layout-test-results/retry_2'))
+        self.assertFalse(host.filesystem.exists('/tmp/layout-test-results/retry_3'))
 
     def test_run_order__inline(self):
         # These next tests test that we run the tests in ascending alphabetical

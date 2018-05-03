@@ -630,7 +630,6 @@ Polymer({
       this.showTetherDialog_();
       return;
     }
-
     this.fire('network-connect', {networkProperties: this.networkProperties});
   },
 

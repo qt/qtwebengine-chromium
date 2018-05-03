@@ -18,6 +18,7 @@
 #include "net/quic/platform/api/quic_flags.h"
 #include "net/quic/platform/api/quic_ptr_util.h"
 #include "net/quic/platform/api/quic_socket_address.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/fake_proof_source.h"
@@ -36,9 +37,8 @@
 #include "net/tools/quic/quic_simple_server_stream.h"
 #include "net/tools/quic/test_tools/mock_quic_session_visitor.h"
 
-using std::string;
-using testing::StrictMock;
 using testing::_;
+using testing::StrictMock;
 
 namespace net {
 namespace test {
@@ -138,17 +138,19 @@ class QuicServerSessionBaseTest : public QuicTestWithParam<ParsedQuicVersion> {
     config_.SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
 
+    ParsedQuicVersionVector supported_versions = SupportedVersions(GetParam());
     connection_ = new StrictMock<MockQuicConnection>(
-        &helper_, &alarm_factory_, Perspective::IS_SERVER,
-        SupportedVersions(GetParam()));
-    session_.reset(new TestServerSession(
+        &helper_, &alarm_factory_, Perspective::IS_SERVER, supported_versions);
+    session_ = QuicMakeUnique<TestServerSession>(
         config_, connection_, &owner_, &stream_helper_, &crypto_config_,
-        &compressed_certs_cache_, &response_cache_));
+        &compressed_certs_cache_, &response_cache_);
     MockClock clock;
     handshake_message_.reset(crypto_config_.AddDefaultConfig(
         QuicRandom::GetInstance(), &clock,
         QuicCryptoServerConfig::ConfigOptions()));
     session_->Initialize();
+    QuicSessionPeer::GetMutableCryptoStream(session_.get())
+        ->OnSuccessfulVersionNegotiation(supported_versions.front());
     visitor_ = QuicConnectionPeer::GetVisitor(connection_);
   }
 
@@ -205,8 +207,14 @@ TEST_P(QuicServerSessionBaseTest, CloseStreamDueToReset) {
   QuicRstStreamFrame rst1(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                           QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
-                                          QUIC_RST_ACKNOWLEDGEMENT, 0));
+  if (session_->use_control_frame_manager()) {
+    EXPECT_CALL(*connection_, SendControlFrame(_));
+    EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
+                                            QUIC_RST_ACKNOWLEDGEMENT));
+  } else {
+    EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
+                                            QUIC_RST_ACKNOWLEDGEMENT, 0));
+  }
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
 
@@ -223,8 +231,14 @@ TEST_P(QuicServerSessionBaseTest, NeverOpenStreamDueToReset) {
   QuicRstStreamFrame rst1(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                           QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
-                                          QUIC_RST_ACKNOWLEDGEMENT, 0));
+  if (session_->use_control_frame_manager()) {
+    EXPECT_CALL(*connection_, SendControlFrame(_));
+    EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
+                                            QUIC_RST_ACKNOWLEDGEMENT));
+  } else {
+    EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
+                                            QUIC_RST_ACKNOWLEDGEMENT, 0));
+  }
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
 
@@ -252,8 +266,14 @@ TEST_P(QuicServerSessionBaseTest, AcceptClosedStream) {
   QuicRstStreamFrame rst(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                          QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
-                                          QUIC_RST_ACKNOWLEDGEMENT, 0));
+  if (session_->use_control_frame_manager()) {
+    EXPECT_CALL(*connection_, SendControlFrame(_));
+    EXPECT_CALL(*connection_, OnStreamReset(GetNthClientInitiatedId(0),
+                                            QUIC_RST_ACKNOWLEDGEMENT));
+  } else {
+    EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
+                                            QUIC_RST_ACKNOWLEDGEMENT, 0));
+  }
   visitor_->OnRstStream(rst);
 
   // If we were tracking, we'd probably want to reject this because it's data
@@ -302,7 +322,12 @@ TEST_P(QuicServerSessionBaseTest, MaxOpenStreams) {
   // Now violate the server's internal stream limit.
   stream_id += QuicSpdySessionPeer::NextStreamId(*session_);
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
-  EXPECT_CALL(*connection_, SendRstStream(stream_id, QUIC_REFUSED_STREAM, 0));
+  if (session_->use_control_frame_manager()) {
+    EXPECT_CALL(*connection_, SendControlFrame(_));
+    EXPECT_CALL(*connection_, OnStreamReset(stream_id, QUIC_REFUSED_STREAM));
+  } else {
+    EXPECT_CALL(*connection_, SendRstStream(stream_id, QUIC_REFUSED_STREAM, 0));
+  }
   // Even if the connection remains open, the stream creation should fail.
   EXPECT_FALSE(QuicServerSessionBasePeer::GetOrCreateDynamicStream(
       session_.get(), stream_id));
@@ -396,7 +421,7 @@ TEST_P(QuicServerSessionBaseTest, BandwidthEstimates) {
   int32_t bandwidth_estimate_kbytes_per_second = 123;
   int32_t max_bandwidth_estimate_kbytes_per_second = 134;
   int32_t max_bandwidth_estimate_timestamp = 1122334455;
-  const string serving_region = "not a real region";
+  const QuicString serving_region = "not a real region";
   session_->set_serving_region(serving_region);
 
   MockQuicCryptoServerStream* crypto_stream =
@@ -412,9 +437,8 @@ TEST_P(QuicServerSessionBaseTest, BandwidthEstimates) {
   // Seed an rtt measurement equal to the initial default rtt.
   RttStats* rtt_stats =
       const_cast<RttStats*>(sent_packet_manager->GetRttStats());
-  rtt_stats->UpdateRtt(
-      QuicTime::Delta::FromMicroseconds(rtt_stats->initial_rtt_us()),
-      QuicTime::Delta::Zero(), QuicTime::Zero());
+  rtt_stats->UpdateRtt(rtt_stats->initial_rtt(), QuicTime::Delta::Zero(),
+                       QuicTime::Zero());
   QuicSustainedBandwidthRecorderPeer::SetBandwidthEstimate(
       &bandwidth_recorder, bandwidth_estimate_kbytes_per_second);
   QuicSustainedBandwidthRecorderPeer::SetMaxBandwidthEstimate(
@@ -491,7 +515,7 @@ TEST_P(QuicServerSessionBaseTest, BandwidthResumptionExperiment) {
   copt.push_back(kBWRE);
   QuicConfigPeer::SetReceivedConnectionOptions(session_->config(), copt);
 
-  const string kTestServingRegion = "a serving region";
+  const QuicString kTestServingRegion = "a serving region";
   session_->set_serving_region(kTestServingRegion);
 
   // Set the time to be one hour + one second from the 0 baseline.
@@ -588,9 +612,9 @@ TEST_P(StreamMemberLifetimeTest, Basic) {
   std::vector<ParsedQuicVersion> packet_version_list = {version};
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
       1, true, false, 1,
-      string(chlo.GetSerialized(Perspective::IS_CLIENT)
-                 .AsStringPiece()
-                 .as_string()),
+      QuicString(chlo.GetSerialized(Perspective::IS_CLIENT)
+                     .AsStringPiece()
+                     .as_string()),
       PACKET_8BYTE_CONNECTION_ID, PACKET_6BYTE_PACKET_NUMBER,
       &packet_version_list));
 

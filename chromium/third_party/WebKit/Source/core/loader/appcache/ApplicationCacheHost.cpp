@@ -56,7 +56,7 @@
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebVector.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-blink.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
 
 namespace blink {
 
@@ -141,9 +141,8 @@ void ApplicationCacheHost::SelectCacheWithManifest(const KURL& manifest_url) {
 
   LocalFrame* frame = document_loader_->GetFrame();
   Document* document = frame->GetDocument();
-  if (document->IsSandboxed(kSandboxOrigin) ||
-      document->GetSecurityOrigin()->HasSuborigin()) {
-    // Prevent sandboxes and suborigins from establishing application caches.
+  if (document->IsSandboxed(kSandboxOrigin)) {
+    // Prevent sandboxes from establishing application caches.
     SelectCacheWithoutManifest();
     return;
   }

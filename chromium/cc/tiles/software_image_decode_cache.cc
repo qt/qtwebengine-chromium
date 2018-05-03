@@ -124,12 +124,15 @@ void RecordLockExistingCachedImageHistogram(TilePriority::PriorityBin bin,
     case TilePriority::NOW:
       UMA_HISTOGRAM_BOOLEAN("Renderer4.LockExistingCachedImage.Software.NOW",
                             success);
+      break;
     case TilePriority::SOON:
       UMA_HISTOGRAM_BOOLEAN("Renderer4.LockExistingCachedImage.Software.SOON",
                             success);
+      break;
     case TilePriority::EVENTUALLY:
       UMA_HISTOGRAM_BOOLEAN(
           "Renderer4.LockExistingCachedImage.Software.EVENTUALLY", success);
+      break;
   }
 }
 
@@ -201,6 +204,12 @@ SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
   // If the target size is empty, we can skip this image during draw (and thus
   // we don't need to decode it or ref it).
   if (key.target_size().IsEmpty())
+    return TaskResult(false);
+
+  // For non-lazy images a decode isn't necessary.
+  // TODO(khushalsagar): If these images require color conversion, we should
+  // still cache that result.
+  if (!image.paint_image().IsLazyGenerated())
     return TaskResult(false);
 
   base::AutoLock lock(lock_);
@@ -466,6 +475,14 @@ void SoftwareImageDecodeCache::DecodeImageIfNecessary(
 
 DecodedDrawImage SoftwareImageDecodeCache::GetDecodedImageForDraw(
     const DrawImage& draw_image) {
+  // Non-lazy generated images can be used for raster directly.
+  if (!draw_image.paint_image().GetSkImage()->isLazyGenerated()) {
+    return DecodedDrawImage(draw_image.paint_image().GetSkImage(),
+                            SkSize::Make(0, 0), SkSize::Make(1.f, 1.f),
+                            draw_image.filter_quality(),
+                            true /* is_budgeted */);
+  }
+
   base::AutoLock hold(lock_);
   return GetDecodedImageForDrawInternal(
       CacheKey::FromDrawImage(draw_image, color_type_),
@@ -492,15 +509,24 @@ DecodedDrawImage SoftwareImageDecodeCache::GetDecodedImageForDrawInternal(
   cache_entry->mark_used();
 
   DecodeImageIfNecessary(key, paint_image, cache_entry);
+  auto decoded_image = cache_entry->image();
+  if (!decoded_image)
+    return DecodedDrawImage();
+
   auto decoded_draw_image =
-      DecodedDrawImage(cache_entry->image(), cache_entry->src_rect_offset(),
-                       GetScaleAdjustment(key), GetDecodedFilterQuality(key));
+      DecodedDrawImage(std::move(decoded_image), cache_entry->src_rect_offset(),
+                       GetScaleAdjustment(key), GetDecodedFilterQuality(key),
+                       cache_entry->is_budgeted);
   return decoded_draw_image;
 }
 
 void SoftwareImageDecodeCache::DrawWithImageFinished(
     const DrawImage& image,
     const DecodedDrawImage& decoded_image) {
+  // We don't cache any data for non-lazy images.
+  if (!image.paint_image().IsLazyGenerated())
+    return;
+
   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
                "SoftwareImageDecodeCache::DrawWithImageFinished", "key",
                CacheKey::FromDrawImage(image, color_type_).ToString());

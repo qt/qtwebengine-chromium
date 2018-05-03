@@ -25,13 +25,13 @@
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
+#include "content/browser/service_worker/payment_handler_support.h"
 #include "content/browser/service_worker/service_worker_client_utils.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_installed_scripts_sender.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_type_converters.h"
-#include "content/browser/storage_partition_impl.h"
 #include "content/common/origin_trials/trial_policy_impl.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
@@ -40,17 +40,16 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/page_navigator.h"
-#include "content/public/browser/render_process_host.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/result_codes.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
-#include "third_party/WebKit/common/origin_trials/trial_token_validator.h"
-#include "third_party/WebKit/common/service_worker/service_worker_error_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_installed_scripts_manager.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/common/origin_trials/trial_token_validator.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 
 namespace content {
@@ -115,16 +114,6 @@ void RunCallbackAfterStartWorker(base::WeakPtr<ServiceWorkerVersion> version,
     return;
   }
   std::move(callback).Run(status);
-}
-
-void KillEmbeddedWorkerProcess(int process_id) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  RenderProcessHost* render_process_host =
-      RenderProcessHost::FromID(process_id);
-  if (render_process_host->GetHandle() != base::kNullProcessHandle) {
-    bad_message::ReceivedBadMessage(render_process_host,
-                                    bad_message::SERVICE_WORKER_BAD_URL);
-  }
 }
 
 void ClearTick(base::TimeTicks* time) {
@@ -197,57 +186,59 @@ CompleteProviderHostPreparation(
   return info;
 }
 
-void DidNavigateInPaymentHandlerWindow(
+void OnOpenWindowFinished(
+    blink::mojom::ServiceWorkerHost::OpenNewTabCallback callback,
+    ServiceWorkerStatusCode status,
+    blink::mojom::ServiceWorkerClientInfoPtr client_info) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  const bool success = (status == SERVICE_WORKER_OK);
+  base::Optional<std::string> error_msg;
+  if (!success) {
+    DCHECK(!client_info);
+    error_msg.emplace("Something went wrong while trying to open the window.");
+  }
+  std::move(callback).Run(success, std::move(client_info), error_msg);
+}
+
+void DidShowPaymentHandlerWindow(
     const GURL& url,
     const base::WeakPtr<ServiceWorkerContextCore>& context,
-    const service_worker_client_utils::NavigationCallback& callback,
+    blink::mojom::ServiceWorkerHost::OpenPaymentHandlerWindowCallback callback,
     bool success,
     int render_process_id,
     int render_frame_id) {
   if (success) {
     service_worker_client_utils::DidNavigate(
-        context, url.GetOrigin(), callback, render_process_id, render_frame_id);
+        context, url.GetOrigin(),
+        base::BindOnce(&OnOpenWindowFinished, std::move(callback)),
+        render_process_id, render_frame_id);
   } else {
-    callback.Run(SERVICE_WORKER_ERROR_FAILED,
-                 blink::mojom::ServiceWorkerClientInfo());
+    OnOpenWindowFinished(std::move(callback), SERVICE_WORKER_ERROR_FAILED,
+                         nullptr /* client_info */);
   }
 }
 
-using PaymentHandlerOpenWindowCallback =
-    base::OnceCallback<void(bool, int, int)>;
-
-void RunPaymentHandlerOpenWindowCallbackOnIO(
-    PaymentHandlerOpenWindowCallback callback,
-    bool success,
-    int render_process_id,
-    int render_frame_id) {
-  std::move(callback).Run(success, render_process_id, render_frame_id);
+void DidGetClients(
+    blink::mojom::ServiceWorkerHost::GetClientsCallback callback,
+    std::unique_ptr<service_worker_client_utils::ServiceWorkerClientPtrs>
+        clients) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  std::move(callback).Run(std::move(*clients));
 }
 
-void OnOpenPaymentHandlerWindowOpenResponse(
-    PaymentHandlerOpenWindowCallback callback,
-    bool success,
-    int render_process_id,
-    int render_frame_id) {
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(&RunPaymentHandlerOpenWindowCallbackOnIO,
-                     std::move(callback), success, render_process_id,
-                     render_frame_id));
-}
-
-void ShowPaymentHandlerWindowOnUI(
-    ContentBrowserClient* browser,
-    const scoped_refptr<ServiceWorkerContextWrapper>& context_wrapper,
+void DidNavigateClient(
+    blink::mojom::ServiceWorkerHost::NavigateClientCallback callback,
     const GURL& url,
-    PaymentHandlerOpenWindowCallback callback,
-    base::OnceCallback<void(void)> fallback) {
-  if (!browser->ShowPaymentHandlerWindow(
-          context_wrapper->storage_partition()->browser_context(), url,
-          base::BindOnce(&OnOpenPaymentHandlerWindowOpenResponse,
-                         std::move(callback)))) {
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, std::move(fallback));
+    ServiceWorkerStatusCode status,
+    blink::mojom::ServiceWorkerClientInfoPtr client) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  const bool success = (status == SERVICE_WORKER_OK);
+  base::Optional<std::string> error_msg;
+  if (!success) {
+    DCHECK(!client);
+    error_msg.emplace("Cannot navigate to URL: " + url.spec());
   }
+  std::move(callback).Run(success, std::move(client), error_msg);
 }
 
 }  // namespace
@@ -414,14 +405,16 @@ void ServiceWorkerVersion::SetStatus(Status status) {
       case ACTIVATED:
         // Resolve skip waiting promises.
         ClearTick(&skip_waiting_time_);
-        for (int request_id : pending_skip_waiting_requests_) {
-          embedded_worker_->SendIpcMessage(
-              ServiceWorkerMsg_DidSkipWaiting(request_id));
+        for (SkipWaitingCallback& callback : pending_skip_waiting_requests_) {
+          std::move(callback).Run(true);
         }
         pending_skip_waiting_requests_.clear();
         break;
       case REDUNDANT:
-        // Clear any pending skip waiting requests since this version is dead.
+        // Fail any pending skip waiting requests since this version is dead.
+        for (SkipWaitingCallback& callback : pending_skip_waiting_requests_) {
+          std::move(callback).Run(false);
+        }
         pending_skip_waiting_requests_.clear();
         break;
     }
@@ -1045,17 +1038,8 @@ void ServiceWorkerVersion::OnReportConsoleMessage(int source_identifier,
 bool ServiceWorkerVersion::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ServiceWorkerVersion, message)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_GetClient, OnGetClient)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_OpenNewTab, OnOpenNewTab)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_OpenPaymentHandlerWindow,
-                        OnOpenPaymentHandlerWindow)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessageToClient,
                         OnPostMessageToClient)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_FocusClient,
-                        OnFocusClient)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_NavigateClient, OnNavigateClient)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_SkipWaiting,
-                        OnSkipWaiting)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -1125,24 +1109,167 @@ void ServiceWorkerVersion::GetClients(
     GetClientsCallback callback) {
   service_worker_client_utils::GetClients(
       weak_factory_.GetWeakPtr(), std::move(options),
-      base::Bind(&ServiceWorkerVersion::OnGetClientsFinished,
-                 weak_factory_.GetWeakPtr(),
-                 base::Passed(std::move(callback))));
+      base::BindOnce(&DidGetClients, std::move(callback)));
 }
 
-void ServiceWorkerVersion::OnGetClientsFinished(
-    GetClientsCallback callback,
-    std::unique_ptr<ServiceWorkerClientPtrs> clients) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+void ServiceWorkerVersion::GetClient(const std::string& client_uuid,
+                                     GetClientCallback callback) {
+  if (!context_) {
+    // The promise will be resolved to 'undefined'.
+    std::move(callback).Run(nullptr);
+    return;
+  }
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHostByClientID(client_uuid);
+  if (!provider_host ||
+      provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+    // The promise will be resolved to 'undefined'.
+    std::move(callback).Run(nullptr);
+    return;
+  }
+  service_worker_client_utils::GetClient(provider_host, std::move(callback));
+}
 
-  // When Clients.matchAll() is called on the script evaluation phase, the
-  // running status can be STARTING here.
-  if (running_status() != EmbeddedWorkerStatus::STARTING &&
-      running_status() != EmbeddedWorkerStatus::RUNNING) {
+void ServiceWorkerVersion::OpenNewTab(const GURL& url,
+                                      OpenNewTabCallback callback) {
+  OpenWindow(url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+             std::move(callback));
+}
+
+void ServiceWorkerVersion::OpenPaymentHandlerWindow(
+    const GURL& url,
+    OpenPaymentHandlerWindowCallback callback) {
+  // Just respond failure if we are shutting down.
+  if (!context_) {
+    std::move(callback).Run(
+        false /* success */, nullptr /* client */,
+        std::string("The service worker system is shutting down."));
     return;
   }
 
-  std::move(callback).Run(std::move(*clients));
+  PaymentHandlerSupport::ShowPaymentHandlerWindow(
+      url, context_.get(),
+      base::BindOnce(&DidShowPaymentHandlerWindow, url, context_),
+      base::BindOnce(&ServiceWorkerVersion::OpenWindow,
+                     weak_factory_.GetWeakPtr(), url,
+                     WindowOpenDisposition::NEW_POPUP),
+      std::move(callback));
+}
+
+void ServiceWorkerVersion::FocusClient(const std::string& client_uuid,
+                                       FocusClientCallback callback) {
+  if (!context_) {
+    std::move(callback).Run(nullptr /* client */);
+    return;
+  }
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHostByClientID(client_uuid);
+  if (!provider_host) {
+    // The client may already have been closed, just fail.
+    std::move(callback).Run(nullptr /* client */);
+    return;
+  }
+  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
+    // The client does not belong to the same origin as this ServiceWorker,
+    // possibly due to timing issue or bad message.
+    std::move(callback).Run(nullptr /* client */);
+    return;
+  }
+  if (provider_host->client_type() !=
+      blink::mojom::ServiceWorkerClientType::kWindow) {
+    // focus() should be called only for WindowClient.
+    mojo::ReportBadMessage("Received focus() request for a non-window client.");
+    binding_.Close();
+    return;
+  }
+
+  service_worker_client_utils::FocusWindowClient(provider_host,
+                                                 std::move(callback));
+}
+
+void ServiceWorkerVersion::NavigateClient(const std::string& client_uuid,
+                                          const GURL& url,
+                                          NavigateClientCallback callback) {
+  if (!context_) {
+    std::move(callback).Run(
+        false /* success */, nullptr /* client */,
+        std::string("The service worker system is shutting down."));
+    return;
+  }
+
+  if (!url.is_valid() || !base::IsValidGUID(client_uuid)) {
+    mojo::ReportBadMessage(
+        "Received unexpected invalid URL/UUID from renderer process.");
+    binding_.Close();
+    return;
+  }
+
+  // Reject requests for URLs that the process is not allowed to access. It's
+  // possible to receive such requests since the renderer-side checks are
+  // slightly different. For example, the view-source scheme will not be
+  // filtered out by Blink.
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
+          embedded_worker_->process_id(), url)) {
+    std::move(callback).Run(
+        false /* success */, nullptr /* client */,
+        "The service worker is not allowed to access URL: " + url.spec());
+    return;
+  }
+
+  ServiceWorkerProviderHost* provider_host =
+      context_->GetProviderHostByClientID(client_uuid);
+  if (!provider_host) {
+    std::move(callback).Run(false /* success */, nullptr /* client */,
+                            std::string("The client was not found."));
+    return;
+  }
+  if (provider_host->active_version() != this) {
+    std::move(callback).Run(
+        false /* success */, nullptr /* client */,
+        std::string(
+            "This service worker is not the client's active service worker."));
+    return;
+  }
+
+  service_worker_client_utils::NavigateClient(
+      url, script_url_, provider_host->process_id(), provider_host->frame_id(),
+      context_, base::BindOnce(&DidNavigateClient, std::move(callback), url));
+}
+
+void ServiceWorkerVersion::SkipWaiting(SkipWaitingCallback callback) {
+  skip_waiting_ = true;
+
+  // Per spec, resolve the skip waiting promise now if activation won't be
+  // triggered here. The ActivateWaitingVersionWhenReady() call below only
+  // triggers it if we're in INSTALLED state. So if we're not in INSTALLED
+  // state, resolve the promise now. Even if we're in INSTALLED state, there are
+  // still cases where ActivateWaitingVersionWhenReady() won't trigger the
+  // activation. In that case, it's a slight spec violation to not resolve now,
+  // but we'll eventually resolve the promise in SetStatus().
+  if (status_ != INSTALLED) {
+    std::move(callback).Run(true);
+    return;
+  }
+
+  if (!context_) {
+    std::move(callback).Run(false);
+    return;
+  }
+  ServiceWorkerRegistration* registration =
+      context_->GetLiveRegistration(registration_id_);
+  // TODO(leonhsl): Here we should be guaranteed a registration since
+  // ServiceWorkerGlobalScope#registration should be keeping the registration
+  // alive currently. So we need to confirm and remove this nullable check
+  // later.
+  if (!registration) {
+    std::move(callback).Run(false);
+    return;
+  }
+  if (skip_waiting_time_.is_null())
+    RestartTick(&skip_waiting_time_);
+  pending_skip_waiting_requests_.push_back(std::move(callback));
+  if (pending_skip_waiting_requests_.size() == 1)
+    registration->ActivateWaitingVersionWhenReady();
 }
 
 void ServiceWorkerVersion::OnSetCachedMetadataFinished(int64_t callback_id,
@@ -1164,44 +1291,43 @@ void ServiceWorkerVersion::OnClearCachedMetadataFinished(int64_t callback_id,
     listener.OnCachedMetadataUpdated(this, 0);
 }
 
-void ServiceWorkerVersion::OnGetClient(int request_id,
-                                       const std::string& client_uuid) {
-  if (!context_)
-    return;
-  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker", "ServiceWorkerVersion::OnGetClient",
-                           request_id, "client_uuid", client_uuid);
-  ServiceWorkerProviderHost* provider_host =
-      context_->GetProviderHostByClientID(client_uuid);
-  if (!provider_host ||
-      provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
-    // The promise will be resolved to 'undefined'.
-    OnGetClientFinished(request_id,
-                        blink::mojom::ServiceWorkerClientInfo::New());
-    return;
-  }
-  service_worker_client_utils::GetClient(
-      provider_host, base::BindOnce(&ServiceWorkerVersion::OnGetClientFinished,
-                                    weak_factory_.GetWeakPtr(), request_id));
-}
-
-void ServiceWorkerVersion::OnGetClientFinished(
-    int request_id,
-    blink::mojom::ServiceWorkerClientInfoPtr client_info) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  TRACE_EVENT_ASYNC_END1(
-      "ServiceWorker", "ServiceWorkerVersion::OnGetClient", request_id,
-      "client_type",
-      ServiceWorkerUtils::ClientTypeToString(client_info->client_type));
-
-  // When Clients.get() is called on the script evaluation phase, the running
-  // status can be STARTING here.
-  if (running_status() != EmbeddedWorkerStatus::STARTING &&
-      running_status() != EmbeddedWorkerStatus::RUNNING) {
+void ServiceWorkerVersion::OpenWindow(GURL url,
+                                      WindowOpenDisposition disposition,
+                                      OpenNewTabCallback callback) {
+  // Just respond failure if we are shutting down.
+  if (!context_) {
+    std::move(callback).Run(
+        false /* success */, nullptr /* client */,
+        std::string("The service worker system is shutting down."));
     return;
   }
 
-  embedded_worker_->SendIpcMessage(
-      ServiceWorkerMsg_DidGetClient(request_id, *client_info));
+  if (!url.is_valid()) {
+    mojo::ReportBadMessage(
+        "Received unexpected invalid URL from renderer process.");
+    binding_.Close();
+    return;
+  }
+
+  // The renderer treats all URLs in the about: scheme as being about:blank.
+  // Canonicalize about: URLs to about:blank.
+  if (url.SchemeIs(url::kAboutScheme))
+    url = GURL(url::kAboutBlankURL);
+
+  // Reject requests for URLs that the process is not allowed to access. It's
+  // possible to receive such requests since the renderer-side checks are
+  // slightly different. For example, the view-source scheme will not be
+  // filtered out by Blink.
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
+          embedded_worker_->process_id(), url)) {
+    std::move(callback).Run(false /* success */, nullptr /* client */,
+                            url.spec() + " cannot be opened.");
+    return;
+  }
+
+  service_worker_client_utils::OpenWindow(
+      url, script_url_, embedded_worker_->process_id(), context_, disposition,
+      base::BindOnce(&OnOpenWindowFinished, std::move(callback)));
 }
 
 void ServiceWorkerVersion::OnSimpleEventFinished(
@@ -1244,85 +1370,10 @@ bool ServiceWorkerVersion::IsInstalled(ServiceWorkerVersion::Status status) {
   return false;
 }
 
-void ServiceWorkerVersion::OnOpenNewTab(int request_id, const GURL& url) {
-  OnOpenWindow(request_id, url, WindowOpenDisposition::NEW_FOREGROUND_TAB);
-}
-
-void ServiceWorkerVersion::OnOpenPaymentHandlerWindow(int request_id,
-                                                      const GURL& url) {
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::BindOnce(
-          &ShowPaymentHandlerWindowOnUI, GetContentClient()->browser(),
-          base::WrapRefCounted(context_->wrapper()), url,
-          base::BindOnce(&DidNavigateInPaymentHandlerWindow, url, context_,
-                         base::Bind(&ServiceWorkerVersion::OnOpenWindowFinished,
-                                    weak_factory_.GetWeakPtr(), request_id)),
-          base::BindOnce(&ServiceWorkerVersion::OnOpenWindow,
-                         weak_factory_.GetWeakPtr(), request_id, url,
-                         WindowOpenDisposition::NEW_POPUP)));
-}
-
-void ServiceWorkerVersion::OnOpenWindow(int request_id,
-                                        GURL url,
-                                        WindowOpenDisposition disposition) {
-  // Just abort if we are shutting down.
-  if (!context_)
-    return;
-
-  if (!url.is_valid()) {
-    DVLOG(1) << "Received unexpected invalid URL from renderer process.";
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            base::BindOnce(&KillEmbeddedWorkerProcess,
-                                           embedded_worker_->process_id()));
-    return;
-  }
-
-  // The renderer treats all URLs in the about: scheme as being about:blank.
-  // Canonicalize about: URLs to about:blank.
-  if (url.SchemeIs(url::kAboutScheme))
-    url = GURL(url::kAboutBlankURL);
-
-  // Reject requests for URLs that the process is not allowed to access. It's
-  // possible to receive such requests since the renderer-side checks are
-  // slightly different. For example, the view-source scheme will not be
-  // filtered out by Blink.
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
-          embedded_worker_->process_id(), url)) {
-    embedded_worker_->SendIpcMessage(ServiceWorkerMsg_OpenWindowError(
-        request_id, url.spec() + " cannot be opened."));
-    return;
-  }
-
-  service_worker_client_utils::OpenWindow(
-      url, script_url_, embedded_worker_->process_id(), context_, disposition,
-      base::Bind(&ServiceWorkerVersion::OnOpenWindowFinished,
-                 weak_factory_.GetWeakPtr(), request_id));
-}
-
-void ServiceWorkerVersion::OnOpenWindowFinished(
-    int request_id,
-    ServiceWorkerStatusCode status,
-    const blink::mojom::ServiceWorkerClientInfo& client_info) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  if (running_status() != EmbeddedWorkerStatus::RUNNING)
-    return;
-
-  if (status != SERVICE_WORKER_OK) {
-    embedded_worker_->SendIpcMessage(ServiceWorkerMsg_OpenWindowError(
-        request_id, "Something went wrong while trying to open the window."));
-    return;
-  }
-
-  embedded_worker_->SendIpcMessage(
-      ServiceWorkerMsg_OpenWindowResponse(request_id, client_info));
-}
-
 void ServiceWorkerVersion::OnPostMessageToClient(
     const std::string& client_uuid,
-    const base::string16& message,
-    const std::vector<blink::MessagePortChannel>& sent_message_ports) {
+    const scoped_refptr<base::RefCountedData<blink::TransferableMessage>>&
+        message) {
   if (!context_)
     return;
   TRACE_EVENT1("ServiceWorker",
@@ -1339,140 +1390,7 @@ void ServiceWorkerVersion::OnPostMessageToClient(
     // possibly due to timing issue or bad message.
     return;
   }
-  provider_host->PostMessageToClient(this, message, sent_message_ports);
-}
-
-void ServiceWorkerVersion::OnFocusClient(int request_id,
-                                         const std::string& client_uuid) {
-  if (!context_)
-    return;
-  TRACE_EVENT2("ServiceWorker",
-               "ServiceWorkerVersion::OnFocusClient",
-               "Request id", request_id,
-               "Client id", client_uuid);
-  ServiceWorkerProviderHost* provider_host =
-      context_->GetProviderHostByClientID(client_uuid);
-  if (!provider_host) {
-    // The client may already have been closed, just ignore.
-    return;
-  }
-  if (provider_host->document_url().GetOrigin() != script_url_.GetOrigin()) {
-    // The client does not belong to the same origin as this ServiceWorker,
-    // possibly due to timing issue or bad message.
-    return;
-  }
-  if (provider_host->client_type() !=
-      blink::mojom::ServiceWorkerClientType::kWindow) {
-    // focus() should be called only for WindowClient. This may happen due to
-    // bad message.
-    return;
-  }
-
-  service_worker_client_utils::FocusWindowClient(
-      provider_host, base::Bind(&ServiceWorkerVersion::OnFocusClientFinished,
-                                weak_factory_.GetWeakPtr(), request_id));
-}
-
-void ServiceWorkerVersion::OnFocusClientFinished(
-    int request_id,
-    const blink::mojom::ServiceWorkerClientInfo& client_info) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  if (running_status() != EmbeddedWorkerStatus::RUNNING)
-    return;
-
-  embedded_worker_->SendIpcMessage(
-      ServiceWorkerMsg_FocusClientResponse(request_id, client_info));
-}
-
-void ServiceWorkerVersion::OnNavigateClient(int request_id,
-                                            const std::string& client_uuid,
-                                            const GURL& url) {
-  if (!context_)
-    return;
-
-  TRACE_EVENT2("ServiceWorker", "ServiceWorkerVersion::OnNavigateClient",
-               "Request id", request_id, "Client id", client_uuid);
-
-  if (!url.is_valid() || !base::IsValidGUID(client_uuid)) {
-    DVLOG(1) << "Received unexpected invalid URL/UUID from renderer process.";
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            base::BindOnce(&KillEmbeddedWorkerProcess,
-                                           embedded_worker_->process_id()));
-    return;
-  }
-
-  // Reject requests for URLs that the process is not allowed to access. It's
-  // possible to receive such requests since the renderer-side checks are
-  // slightly different. For example, the view-source scheme will not be
-  // filtered out by Blink.
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
-          embedded_worker_->process_id(), url)) {
-    embedded_worker_->SendIpcMessage(
-        ServiceWorkerMsg_NavigateClientError(request_id, url));
-    return;
-  }
-
-  ServiceWorkerProviderHost* provider_host =
-      context_->GetProviderHostByClientID(client_uuid);
-  if (!provider_host || provider_host->active_version() != this) {
-    embedded_worker_->SendIpcMessage(
-        ServiceWorkerMsg_NavigateClientError(request_id, url));
-    return;
-  }
-
-  service_worker_client_utils::NavigateClient(
-      url, script_url_, provider_host->process_id(), provider_host->frame_id(),
-      context_, base::Bind(&ServiceWorkerVersion::OnNavigateClientFinished,
-                           weak_factory_.GetWeakPtr(), request_id));
-}
-
-void ServiceWorkerVersion::OnNavigateClientFinished(
-    int request_id,
-    ServiceWorkerStatusCode status,
-    const blink::mojom::ServiceWorkerClientInfo& client_info) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  if (running_status() != EmbeddedWorkerStatus::RUNNING)
-    return;
-
-  if (status != SERVICE_WORKER_OK) {
-    embedded_worker_->SendIpcMessage(
-        ServiceWorkerMsg_NavigateClientError(request_id, GURL()));
-    return;
-  }
-
-  embedded_worker_->SendIpcMessage(
-      ServiceWorkerMsg_NavigateClientResponse(request_id, client_info));
-}
-
-void ServiceWorkerVersion::OnSkipWaiting(int request_id) {
-  skip_waiting_ = true;
-
-  // Per spec, resolve the skip waiting promise now if activation won't be
-  // triggered here. The ActivateWaitingVersionWhenReady() call below only
-  // triggers it if we're in INSTALLED state. So if we're not in INSTALLED
-  // state, resolve the promise now. Even if we're in INSTALLED state, there are
-  // still cases where ActivateWaitingVersionWhenReady() won't trigger the
-  // activation. In that case, it's a slight spec violation to not resolve now,
-  // but we'll eventually resolve the promise in SetStatus().
-  if (status_ != INSTALLED) {
-    embedded_worker_->SendIpcMessage(
-        ServiceWorkerMsg_DidSkipWaiting(request_id));
-    return;
-  }
-
-  if (!context_)
-    return;
-  ServiceWorkerRegistration* registration =
-      context_->GetLiveRegistration(registration_id_);
-  if (!registration)
-    return;
-  if (skip_waiting_time_.is_null())
-    RestartTick(&skip_waiting_time_);
-  pending_skip_waiting_requests_.push_back(request_id);
-  if (pending_skip_waiting_requests_.size() == 1)
-    registration->ActivateWaitingVersionWhenReady();
+  provider_host->PostMessageToClient(this, std::move(message->data));
 }
 
 void ServiceWorkerVersion::OnPongFromWorker() {
@@ -1583,8 +1501,7 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   params->is_installed = IsInstalled(status_);
   params->pause_after_download = pause_after_download_;
 
-  if (ServiceWorkerUtils::IsScriptStreamingEnabled() && IsInstalled(status()) &&
-      !pause_after_download_) {
+  if (IsInstalled(status()) && !pause_after_download_) {
     DCHECK(!installed_scripts_sender_);
     installed_scripts_sender_ =
         std::make_unique<ServiceWorkerInstalledScriptsSender>(this);

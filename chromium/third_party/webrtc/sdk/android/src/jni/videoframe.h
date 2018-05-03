@@ -23,6 +23,9 @@
 namespace webrtc {
 namespace jni {
 
+// TODO(sakal): Remove once clients have migrated.
+using ::webrtc::JavaParamRef;
+
 class SurfaceTextureHelper;
 
 // Open gl texture matrix, in column-major order. Operations are
@@ -81,7 +84,7 @@ class AndroidTextureBuffer : public AndroidVideoFrameBuffer {
       int height,
       const NativeHandleImpl& native_handle,
       const rtc::scoped_refptr<SurfaceTextureHelper>& surface_texture_helper);
-  ~AndroidTextureBuffer();
+  ~AndroidTextureBuffer() override;
 
   NativeHandleImpl native_handle_impl() const;
 
@@ -92,7 +95,7 @@ class AndroidTextureBuffer : public AndroidVideoFrameBuffer {
 
   rtc::scoped_refptr<I420BufferInterface> ToI420() override;
 
-  AndroidType android_type() override { return AndroidType::kTextureBuffer; }
+  AndroidType android_type() override;
 
   const int width_;
   const int height_;
@@ -140,7 +143,7 @@ class AndroidVideoBuffer : public AndroidVideoFrameBuffer {
 
   rtc::scoped_refptr<I420BufferInterface> ToI420() override;
 
-  AndroidType android_type() override { return AndroidType::kJavaBuffer; }
+  AndroidType android_type() override;
 
   const int width_;
   const int height_;
@@ -152,8 +155,11 @@ VideoFrame JavaToNativeFrame(JNIEnv* jni,
                              const JavaRef<jobject>& j_video_frame,
                              uint32_t timestamp_rtp);
 
-ScopedJavaLocalRef<jobject> NativeToJavaFrame(JNIEnv* jni,
-                                              const VideoFrame& frame);
+// NOTE: Returns a new video frame that has to be released by calling
+// ReleaseJavaVideoFrame.
+ScopedJavaLocalRef<jobject> NativeToJavaVideoFrame(JNIEnv* jni,
+                                                   const VideoFrame& frame);
+void ReleaseJavaVideoFrame(JNIEnv* jni, const JavaRef<jobject>& j_video_frame);
 
 int64_t GetJavaVideoFrameTimestampNs(JNIEnv* jni,
                                      const JavaRef<jobject>& j_video_frame);

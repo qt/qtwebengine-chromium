@@ -14,6 +14,7 @@
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "ui/gfx/geometry/size_f.h"
 
 namespace cc {
 class ImageProvider;
@@ -104,6 +105,9 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
 
   ~PaintShader() override;
 
+  void set_has_animated_images() { has_animated_images_ = true; }
+  bool has_animated_images() const { return has_animated_images_; }
+
   SkMatrix GetLocalMatrix() const {
     return local_matrix_ ? *local_matrix_ : SkMatrix::I();
   }
@@ -113,6 +117,9 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
     return image_;
   }
 
+  const gfx::SizeF* tile_scale() const {
+    return tile_scale_ ? &*tile_scale_ : nullptr;
+  }
   const sk_sp<PaintRecord>& paint_record() const { return record_; }
   bool GetRasterizationTileRect(const SkMatrix& ctm, SkRect* tile_rect) const;
 
@@ -143,8 +150,7 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
   explicit PaintShader(Type type);
 
   sk_sp<SkShader> GetSkShader() const;
-  void CreateSkShader(ImageProvider* = nullptr,
-                      const SkMatrix* raster_matrix = nullptr);
+  void CreateSkShader(ImageProvider* image_provider = nullptr);
 
   sk_sp<PaintShader> CreateDecodedPaintRecord(
       const SkMatrix& ctm,
@@ -181,6 +187,10 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
   PaintImage image_;
   sk_sp<PaintRecord> record_;
 
+  // For decoded PaintRecord shaders, specifies the scale at which the record
+  // will be rasterized.
+  base::Optional<gfx::SizeF> tile_scale_;
+
   std::vector<SkColor> colors_;
   std::vector<SkScalar> positions_;
 
@@ -188,6 +198,8 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
   // the PaintShader but we always construct it at creation time to ensure that
   // accesses to it are thread-safe.
   sk_sp<SkShader> cached_shader_;
+
+  bool has_animated_images_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(PaintShader);
 };

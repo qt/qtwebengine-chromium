@@ -50,12 +50,14 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) final;
   void BeginFrame(double last_frame_time_monotonic) override;
   void UpdateLifecycle(LifecycleUpdate requested_update) override;
+  void UpdateAllLifecyclePhasesAndCompositeForTesting() override;
   void Paint(WebCanvas*, const WebRect& view_port) override;
   void LayoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
   void CompositeAndReadbackAsync(
       WebCompositeAndReadbackAsyncCallback*) override;
   void ThemeChanged() override;
   WebInputEventResult HandleInputEvent(const WebCoalescedInputEvent&) override;
+  WebInputEventResult DispatchBufferedTouchEvents() override;
   void SetCursorVisibilityState(bool is_visible) override;
   void ApplyViewportDeltas(const WebFloatSize& visual_viewport_delta,
                            const WebFloatSize& layout_viewport_delta,
@@ -73,7 +75,6 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   void WillCloseLayerTreeView() override;
   WebColor BackgroundColor() const override;
   WebPagePopup* GetPagePopup() const override;
-  bool GetCompositionCharacterBounds(WebVector<WebRect>& bounds) override;
   void UpdateBrowserControlsState(WebBrowserControlsState constraints,
                                   WebBrowserControlsState current,
                                   bool animate) override;

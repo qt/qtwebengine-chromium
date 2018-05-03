@@ -44,8 +44,6 @@ SkPictureData::SkPictureData(const SkPictureRecord& record,
 
     fOpData = record.opData();
 
-    fContentInfo.set(record.fContentInfo);
-
     fPaints  = record.fPaints;
 
     fPaths.reset(record.fPaths.count());
@@ -117,6 +115,8 @@ void SkPictureData::init() {
     fVerticesCount = 0;
     fImageRefs = nullptr;
     fImageCount = 0;
+    fBitmapImageCount = 0;
+    fBitmapImageRefs = nullptr;
     fFactoryPlayback = nullptr;
 }
 
@@ -433,9 +433,7 @@ bool SkPictureData::parseStreamTag(SkStream* stream,
             while (!buffer.eof() && buffer.isValid()) {
                 tag = buffer.readUInt();
                 size = buffer.readUInt();
-                if (!this->parseBufferTag(buffer, tag, size)) {
-                    return false;
-                }
+                this->parseBufferTag(buffer, tag, size);
             }
             if (!buffer.isValid()) {
                 return false;
@@ -491,28 +489,30 @@ bool new_array_from_buffer(SkReadBuffer& buffer, uint32_t inCount,
         delete[] * array;
         *array = nullptr;
         *outCount = 0;
-        return false;
+        return buffer.validate(false);
     }
     return true;
 }
 
-bool SkPictureData::parseBufferTag(SkReadBuffer& buffer, uint32_t tag, uint32_t size) {
+void SkPictureData::parseBufferTag(SkReadBuffer& buffer, uint32_t tag, uint32_t size) {
     switch (tag) {
         case SK_PICT_PAINT_BUFFER_TAG: {
             if (!buffer.validate(SkTFitsIn<int>(size))) {
-                return false;
+                return;
             }
             const int count = SkToInt(size);
             fPaints.reset(count);
             for (int i = 0; i < count; ++i) {
-                buffer.readPaint(&fPaints[i]);
+                if (!buffer.readPaint(&fPaints[i])) {
+                    return;
+                }
             }
         } break;
         case SK_PICT_PATH_BUFFER_TAG:
             if (size > 0) {
                 const int count = buffer.readInt();
-                if (count < 0) {
-                    return false;
+                if (!buffer.validate(count >= 0)) {
+                    return;
                 }
                 fPaths.reset(count);
                 for (int i = 0; i < count; i++) {
@@ -520,49 +520,38 @@ bool SkPictureData::parseBufferTag(SkReadBuffer& buffer, uint32_t tag, uint32_t 
                 }
             } break;
         case SK_PICT_TEXTBLOB_BUFFER_TAG:
-            if (!new_array_from_buffer(buffer, size, &fTextBlobRefs, &fTextBlobCount,
-                                       SkTextBlob::MakeFromBuffer)) {
-                return false;
-            }
+            new_array_from_buffer(buffer, size, &fTextBlobRefs, &fTextBlobCount,
+                                  SkTextBlob::MakeFromBuffer);
             break;
         case SK_PICT_VERTICES_BUFFER_TAG:
-            if (!new_array_from_buffer(buffer, size, &fVerticesRefs, &fVerticesCount,
-                                       create_vertices_from_buffer)) {
-                return false;
-            }
+            new_array_from_buffer(buffer, size, &fVerticesRefs, &fVerticesCount,
+                                  create_vertices_from_buffer);
             break;
         case SK_PICT_IMAGE_BUFFER_TAG:
-            if (!new_array_from_buffer(buffer, size, &fImageRefs, &fImageCount,
-                                       create_image_from_buffer)) {
-                return false;
-            }
+            new_array_from_buffer(buffer, size, &fImageRefs, &fImageCount,
+                                  create_image_from_buffer);
             break;
         case SK_PICT_READER_TAG: {
             auto data(SkData::MakeUninitialized(size));
             if (!buffer.readByteArray(data->writable_data(), size) ||
                 !buffer.validate(nullptr == fOpData)) {
-                return false;
+                return;
             }
             SkASSERT(nullptr == fOpData);
             fOpData = std::move(data);
         } break;
         case SK_PICT_PICTURE_TAG:
-            if (!new_array_from_buffer(buffer, size, &fPictureRefs, &fPictureCount,
-                                       SkPicture::MakeFromBuffer)) {
-                return false;
-            }
+            new_array_from_buffer(buffer, size, &fPictureRefs, &fPictureCount,
+                                  SkPicture::MakeFromBuffer);
             break;
         case SK_PICT_DRAWABLE_TAG:
-            if (!new_array_from_buffer(buffer, size, (const SkDrawable***)&fDrawableRefs,
-                                       &fDrawableCount, create_drawable_from_buffer)) {
-                return false;
-            }
+            new_array_from_buffer(buffer, size, (const SkDrawable***)&fDrawableRefs,
+                                  &fDrawableCount, create_drawable_from_buffer);
             break;
         default:
-            // The tag was invalid.
-            return false;
+            buffer.validate(false); // The tag was invalid.
+            break;
     }
-    return true;    // success
 }
 
 SkPictureData* SkPictureData::CreateFromStream(SkStream* stream,
@@ -609,42 +598,19 @@ bool SkPictureData::parseStream(SkStream* stream,
 }
 
 bool SkPictureData::parseBuffer(SkReadBuffer& buffer) {
-    for (;;) {
+    while (buffer.isValid()) {
         uint32_t tag = buffer.readUInt();
         if (SK_PICT_EOF_TAG == tag) {
             break;
         }
+        this->parseBufferTag(buffer, tag, buffer.readUInt());
+    }
 
-        uint32_t size = buffer.readUInt();
-        if (!this->parseBufferTag(buffer, tag, size)) {
-            return false; // we're invalid
-        }
+    // Check that we encountered required tags
+    if (!buffer.validate(this->opData())) {
+        // If we didn't build any opData, we are invalid. Even an EmptyPicture allocates the
+        // SkData for the ops (though its length may be zero).
+        return false;
     }
     return true;
 }
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-#if SK_SUPPORT_GPU
-bool SkPictureData::suitableForGpuRasterization(GrContext* context, const char **reason,
-                                                int sampleCount) const {
-    return fContentInfo.suitableForGpuRasterization(context, reason, sampleCount);
-}
-
-bool SkPictureData::suitableForGpuRasterization(GrContext* context, const char **reason,
-                                                GrPixelConfig config, SkScalar dpi) const {
-
-    if (context != nullptr) {
-        return this->suitableForGpuRasterization(context, reason,
-                                                 context->getRecommendedSampleCount(config, dpi));
-    } else {
-        return this->suitableForGpuRasterization(nullptr, reason);
-    }
-}
-
-bool SkPictureData::suitableForLayerOptimization() const {
-    return fContentInfo.numLayers() > 0;
-}
-#endif
-///////////////////////////////////////////////////////////////////////////////

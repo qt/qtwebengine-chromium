@@ -12,6 +12,10 @@ blink_core_sources("dom") {
     "AXObjectCache.h",
     "AXObjectCacheBase.cpp",
     "AXObjectCacheBase.h",
+    "AbortController.cpp",
+    "AbortController.h",
+    "AbortSignal.cpp",
+    "AbortSignal.h",
     "AccessibleNode.cpp",
     "AccessibleNode.h",
     "AccessibleNodeList.cpp",
@@ -50,6 +54,7 @@ blink_core_sources("dom") {
     "ContextLifecycleNotifier.h",
     "ContextLifecycleObserver.cpp",
     "ContextLifecycleObserver.h",
+    "CreateElementFlags.h",
     "DOMException.cpp",
     "DOMException.h",
     "DOMHighResTimeStamp.h",
@@ -307,12 +312,12 @@ blink_core_sources("dom") {
   ]
 
   public_deps = [
-    "//third_party/WebKit/common:mojo_bindings_blink",
+    "//third_party/WebKit/public/mojom:mojom_blink",
   ]
 
   deps = [
     "//services/metrics/public/cpp:metrics_cpp",
     "//services/metrics/public/cpp:ukm_builders",
-    "//services/metrics/public/interfaces",
+    "//services/metrics/public/mojom",
   ]
 }

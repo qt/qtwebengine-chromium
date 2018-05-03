@@ -65,8 +65,9 @@ const int kTileMinimalAlignment = 4;
 
 // Large contents scale can cause overflow issues. Cap the ideal contents scale
 // by this constant, since scales larger than this are usually not correct or
-// their scale doesn't matter as long as it's large. See
-// Renderer4.IdealContentsScale UMA for distribution of existing contents
+// their scale doesn't matter as long as it's large. Content scales usually
+// closely match the default device-scale factor (so it's usually <= 5). See
+// Renderer4.IdealContentsScale UMA (deprecated) for distribution of content
 // scales.
 const float kMaxIdealContentsScale = 10000.f;
 
@@ -685,19 +686,22 @@ void PictureLayerImpl::UpdateViewportRectForTilePriorityInContentSpace() {
       visible_rect_in_content_space;
 #if defined(OS_ANDROID)
   // On android, if we're in a scrolling gesture, the pending tree does not
-  // reflect the fact that we may be hiding the top controls. Thus, it would
-  // believe that the viewport is smaller than it actually is which can cause
-  // activation flickering issues. So, if we're in this situation adjust the
-  // visible rect by the top controls height. This isn't ideal since we're not
-  // always in this case, but since we should be prioritizing the active tree
-  // anyway, it doesn't cause any serious issues. https://crbug.com/794456.
+  // reflect the fact that we may be hiding the top or bottom controls. Thus,
+  // it would believe that the viewport is smaller than it actually is which
+  // can cause activation flickering issues. So, if we're in this situation
+  // adjust the visible rect by the top/bottom controls height. This isn't
+  // ideal since we're not always in this case, but since we should be
+  // prioritizing the active tree anyway, it doesn't cause any serious issues.
+  // https://crbug.com/794456.
   if (layer_tree_impl()->IsPendingTree() &&
       layer_tree_impl()->IsActivelyScrolling()) {
+    float total_controls_height = layer_tree_impl()->top_controls_height() +
+                                  layer_tree_impl()->bottom_controls_height();
     viewport_rect_for_tile_priority_in_content_space_.Inset(
-        0,                                           // left
-        0,                                           // top,
-        0,                                           // right,
-        -layer_tree_impl()->top_controls_height());  // bottom
+        0,                        // left
+        0,                        // top,
+        0,                        // right,
+        -total_controls_height);  // bottom
   }
 #endif
 }
@@ -1523,8 +1527,6 @@ void PictureLayerImpl::UpdateIdealScales() {
                std::max(GetIdealContentsScale(), min_contents_scale));
   ideal_source_scale_ =
       ideal_contents_scale_ / ideal_page_scale_ / ideal_device_scale_;
-  UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.IdealContentsScale",
-                              ideal_contents_scale_, 1, 10000, 50);
 }
 
 void PictureLayerImpl::GetDebugBorderProperties(

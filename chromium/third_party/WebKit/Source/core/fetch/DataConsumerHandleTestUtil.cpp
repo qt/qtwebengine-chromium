@@ -28,7 +28,9 @@ class WaitingHandle final : public WebDataConsumerHandle {
       return kUnexpectedError;
     }
   };
-  std::unique_ptr<Reader> ObtainReader(Client*) override {
+  std::unique_ptr<Reader> ObtainReader(
+      Client*,
+      scoped_refptr<base::SingleThreadTaskRunner>) override {
     return std::make_unique<ReaderImpl>();
   }
 
@@ -38,9 +40,9 @@ class WaitingHandle final : public WebDataConsumerHandle {
 }  // namespace
 
 DataConsumerHandleTestUtil::Thread::Thread(
-    const char* name,
+    const WebThreadCreationParams& params,
     InitializationPolicy initialization_policy)
-    : thread_(WebThreadSupportingGC::Create(name)),
+    : thread_(WebThreadSupportingGC::Create(params)),
       initialization_policy_(initialization_policy),
       waitable_event_(std::make_unique<WaitableEvent>()) {
   thread_->PostTask(FROM_HERE, CrossThreadBind(&Thread::Initialize,
@@ -226,7 +228,7 @@ void DataConsumerHandleTestUtil::ReplayingHandle::Context::Notify() {
     return;
   DCHECK(reader_thread_);
   PostCrossThreadTask(
-      *reader_thread_->GetWebTaskRunner(), FROM_HERE,
+      *reader_thread_->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(&Context::NotifyInternal, WrapRefCounted(this)));
 }
 
@@ -250,7 +252,9 @@ DataConsumerHandleTestUtil::ReplayingHandle::~ReplayingHandle() {
 }
 
 std::unique_ptr<WebDataConsumerHandle::Reader>
-DataConsumerHandleTestUtil::ReplayingHandle::ObtainReader(Client* client) {
+DataConsumerHandleTestUtil::ReplayingHandle::ObtainReader(
+    Client* client,
+    scoped_refptr<base::SingleThreadTaskRunner>) {
   return std::make_unique<ReaderImpl>(context_, client);
 }
 

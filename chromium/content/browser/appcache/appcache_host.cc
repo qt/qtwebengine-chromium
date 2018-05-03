@@ -16,8 +16,10 @@
 #include "content/browser/appcache/appcache_subresource_url_factory.h"
 #include "content/public/common/content_features.h"
 #include "net/url_request/url_request.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -79,7 +81,8 @@ AppCacheHost::~AppCacheHost() {
     group_being_updated_->RemoveUpdateObserver(this);
   storage()->CancelDelegateCallbacks(this);
   if (service()->quota_manager_proxy() && !origin_in_use_.is_empty())
-    service()->quota_manager_proxy()->NotifyOriginNoLongerInUse(origin_in_use_);
+    service()->quota_manager_proxy()->NotifyOriginNoLongerInUse(
+        url::Origin::Create(origin_in_use_));
 }
 
 void AppCacheHost::AddObserver(Observer* observer) {
@@ -109,7 +112,8 @@ bool AppCacheHost::SelectCache(const GURL& document_url,
 
   origin_in_use_ = document_url.GetOrigin();
   if (service()->quota_manager_proxy() && !origin_in_use_.is_empty())
-    service()->quota_manager_proxy()->NotifyOriginInUse(origin_in_use_);
+    service()->quota_manager_proxy()->NotifyOriginInUse(
+        url::Origin::Create(origin_in_use_));
 
   if (main_resource_blocked_)
     frontend_->OnContentBlocked(host_id_,
@@ -527,7 +531,7 @@ base::WeakPtr<AppCacheHost> AppCacheHost::GetWeakPtr() {
 }
 
 void AppCacheHost::MaybePassSubresourceFactory() {
-  if (!base::FeatureList::IsEnabled(features::kNetworkService))
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
     return;
 
   // We already have a valid factory. This happens when the document was loaded

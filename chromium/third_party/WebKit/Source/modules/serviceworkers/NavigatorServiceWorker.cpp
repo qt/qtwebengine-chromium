@@ -28,7 +28,7 @@ NavigatorServiceWorker& NavigatorServiceWorker::From(Navigator& navigator) {
   NavigatorServiceWorker* supplement = ToNavigatorServiceWorker(navigator);
   if (!supplement) {
     supplement = new NavigatorServiceWorker(navigator);
-    ProvideTo(navigator, SupplementName(), supplement);
+    ProvideTo(navigator, supplement);
   }
   if (navigator.GetFrame() && navigator.GetFrame()
                                   ->GetSecurityContext()
@@ -44,13 +44,10 @@ NavigatorServiceWorker& NavigatorServiceWorker::From(Navigator& navigator) {
 
 NavigatorServiceWorker* NavigatorServiceWorker::ToNavigatorServiceWorker(
     Navigator& navigator) {
-  return static_cast<NavigatorServiceWorker*>(
-      Supplement<Navigator>::From(navigator, SupplementName()));
+  return Supplement<Navigator>::From<NavigatorServiceWorker>(navigator);
 }
 
-const char* NavigatorServiceWorker::SupplementName() {
-  return "NavigatorServiceWorker";
-}
+const char NavigatorServiceWorker::kSupplementName[] = "NavigatorServiceWorker";
 
 ServiceWorkerContainer* NavigatorServiceWorker::serviceWorker(
     ScriptState* script_state,
@@ -98,11 +95,6 @@ ServiceWorkerContainer* NavigatorServiceWorker::serviceWorker(
       error_message =
           "Service worker is disabled because the context is sandboxed and "
           "lacks the 'allow-same-origin' flag.";
-    } else if (frame->GetSecurityContext()
-                   ->GetSecurityOrigin()
-                   ->HasSuborigin()) {
-      error_message =
-          "Service worker is disabled because the context is in a suborigin.";
     } else {
       error_message =
           "Access to service workers is denied in this document origin.";

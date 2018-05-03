@@ -25,7 +25,9 @@
 #define HTMLLinkElement_h
 
 #include <memory>
+#include "base/single_thread_task_runner.h"
 #include "core/CoreExport.h"
+#include "core/dom/CreateElementFlags.h"
 #include "core/dom/DOMTokenList.h"
 #include "core/dom/IncrementLoadEventDelayCount.h"
 #include "core/html/HTMLElement.h"
@@ -35,13 +37,13 @@
 #include "core/html/RelList.h"
 #include "core/loader/LinkLoader.h"
 #include "core/loader/LinkLoaderClient.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/bindings/TraceWrapperMember.h"
 
 namespace blink {
 
 class KURL;
 class LinkImport;
+struct LinkLoadParameters;
 
 class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
                                           public LinkLoaderClient {
@@ -49,7 +51,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   USING_GARBAGE_COLLECTED_MIXIN(HTMLLinkElement);
 
  public:
-  static HTMLLinkElement* Create(Document&, bool created_by_parser);
+  static HTMLLinkElement* Create(Document&, const CreateElementFlags);
   ~HTMLLinkElement() override;
 
   KURL Href() const;
@@ -97,13 +99,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   bool ShouldLoadLink() override;
 
   // For LinkStyle
-  bool LoadLink(const String& type,
-                const String& as,
-                const String& media,
-                const String& nonce,
-                const String& integrity,
-                ReferrerPolicy,
-                const KURL&);
+  bool LoadLink(const LinkLoadParameters&);
   bool IsAlternate() const {
     return GetLinkStyle()->IsUnset() && rel_attribute_.IsAlternate();
   }
@@ -117,7 +113,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   void TraceWrappers(const ScriptWrappableVisitor*) const override;
 
  private:
-  HTMLLinkElement(Document&, bool created_by_parser);
+  HTMLLinkElement(Document&, const CreateElementFlags);
 
   LinkStyle* GetLinkStyle() const;
   LinkImport* GetLinkImport() const;
@@ -151,7 +147,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   void DidStopLinkPrerender() override;
   void DidSendLoadForLinkPrerender() override;
   void DidSendDOMContentLoadedForLinkPrerender() override;
-  scoped_refptr<WebTaskRunner> GetLoadingTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner() override;
 
   Member<LinkResource> link_;
   Member<LinkLoader> link_loader_;

@@ -16,7 +16,7 @@
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -43,6 +43,7 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(
     int64_t registration_id,
     base::WeakPtr<ServiceWorkerContextCore> context)
     : pattern_(options.scope),
+      update_via_cache_(options.update_via_cache),
       registration_id_(registration_id),
       is_deleted_(false),
       is_uninstalling_(false),
@@ -104,7 +105,7 @@ void ServiceWorkerRegistration::NotifyVersionAttributesChanged(
 ServiceWorkerRegistrationInfo ServiceWorkerRegistration::GetInfo() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return ServiceWorkerRegistrationInfo(
-      pattern(), registration_id_,
+      pattern(), update_via_cache(), registration_id_,
       is_deleted_ ? ServiceWorkerRegistrationInfo::IS_DELETED
                   : ServiceWorkerRegistrationInfo::IS_NOT_DELETED,
       GetVersionInfo(active_version_.get()),
@@ -375,7 +376,7 @@ void ServiceWorkerRegistration::ActivateWaitingVersion(bool delay) {
     // "1. Wait for exitingWorker to finish handling any in-progress requests."
     // This is already handled by IsReadyToActivate().
     // "2. Terminate exitingWorker."
-    exiting_version->StopWorker(base::BindOnce(&base::DoNothing));
+    exiting_version->StopWorker(base::DoNothing());
     // "3. Run the [[UpdateState]] algorithm passing exitingWorker and
     // "redundant" as the arguments."
     exiting_version->SetStatus(ServiceWorkerVersion::REDUNDANT);
@@ -531,8 +532,7 @@ void ServiceWorkerRegistration::OnActivateEventFinished(
   // "Run the Update State algorithm passing registration's active worker and
   // 'activated' as the arguments."
   activating_version->SetStatus(ServiceWorkerVersion::ACTIVATED);
-  context_->storage()->UpdateToActiveState(
-      this, base::BindOnce(&ServiceWorkerUtils::NoOpStatusCallback));
+  context_->storage()->UpdateToActiveState(this, base::DoNothing());
 }
 
 void ServiceWorkerRegistration::OnDeleteFinished(

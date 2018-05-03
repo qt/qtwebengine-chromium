@@ -25,7 +25,6 @@ class RasterInterface;
 }  // namespace gpu
 
 namespace cc {
-class TextureIdAllocator;
 
 // This class is not thread-safe and can only be called from the thread it was
 // created on (in practice, the impl thread).
@@ -121,9 +120,6 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
   // Note that render buffer support implies texture support.
   bool IsRenderBufferFormatSupported(viz::ResourceFormat format) const;
 
-  bool IsGpuMemoryBufferFormatSupported(viz::ResourceFormat format,
-                                        gfx::BufferUsage usage) const;
-
   bool use_sync_query() const { return settings_.use_sync_query; }
 
   int max_texture_size() const { return settings_.max_texture_size; }
@@ -144,6 +140,11 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
     return gpu_memory_buffer_manager_;
   }
 
+  bool IsLost(viz::ResourceId id);
+
+  void LoseResourceForTesting(viz::ResourceId id);
+  void EnableReadLockFencesForTesting(viz::ResourceId id);
+
   // The following lock classes are part of the ResourceProvider API and are
   // needed to read and write the resource contents. The user must ensure
   // that they only use GL locks on GL resources, etc, and this is enforced
@@ -161,7 +162,7 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
       return color_space_;
     }
 
-    GrPixelConfig PixelConfig() const;
+    SkColorType ColorType() const;
 
     void set_allocated() { allocated_ = true; }
 
@@ -341,7 +342,6 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
   viz::SharedBitmapManager* shared_bitmap_manager_;
   struct ImportedResource;
   base::flat_map<viz::ResourceId, ImportedResource> imported_resources_;
-  std::unique_ptr<TextureIdAllocator> texture_id_allocator_;
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
   viz::ResourceId next_id_;
 

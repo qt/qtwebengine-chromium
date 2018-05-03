@@ -11,54 +11,49 @@
 
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/sequence_checker.h"
 #include "base/time/clock.h"
 #include "content/browser/webrtc/webrtc_event_log_manager_common.h"
 
 namespace content {
 
-class WebRtcLocalEventLogManager {
+class WebRtcLocalEventLogManager final : public LogFileWriter {
  public:
   explicit WebRtcLocalEventLogManager(WebRtcLocalEventLogsObserver* observer);
-  ~WebRtcLocalEventLogManager();
+  ~WebRtcLocalEventLogManager() override;
 
-  bool PeerConnectionAdded(int render_process_id, int lid);
-  bool PeerConnectionRemoved(int render_process_id, int lid);
+  bool PeerConnectionAdded(const PeerConnectionKey& key);
+  bool PeerConnectionRemoved(const PeerConnectionKey& key);
 
-  bool EnableLogging(base::FilePath base_path, size_t max_file_size_bytes);
+  bool EnableLogging(const base::FilePath& base_path,
+                     size_t max_file_size_bytes);
   bool DisableLogging();
 
-  bool EventLogWrite(int render_process_id, int lid, const std::string& output);
+  bool EventLogWrite(const PeerConnectionKey& key, const std::string& message);
+
+  void RenderProcessHostExitedDestroyed(int render_process_id);
 
   // This function is public, but this entire class is a protected
   // implementation detail of WebRtcEventLogManager, which hides this
-  // function from everybody except its own unit-tests.
-  void InjectClockForTesting(base::Clock* clock);
+  // function from everybody except its own unit tests.
+  void SetClockForTesting(base::Clock* clock);
 
  private:
-  using PeerConnectionKey = WebRtcEventLogPeerConnectionKey;
+  // Create a local log file.
+  void StartLogFile(const PeerConnectionKey& key);
 
-  struct LogFile {
-    LogFile(base::File file, size_t max_file_size_bytes)
-        : file(std::move(file)),
-          max_file_size_bytes(max_file_size_bytes),
-          file_size_bytes(0) {}
-    base::File file;
-    const size_t max_file_size_bytes;
-    size_t file_size_bytes;
-  };
-
-  typedef std::map<PeerConnectionKey, LogFile> LogFilesMap;
-
-  // File handling.
-  void StartLogFile(int render_process_id, int lid);
-  void StopLogFile(int render_process_id, int lid);
-  LogFilesMap::iterator CloseLogFile(LogFilesMap::iterator it);
+  // LogFileWriter implementation. Closes a log file, flushing it to disk
+  // and relinquishing its handle.
+  LogFilesMap::iterator CloseLogFile(LogFilesMap::iterator it) override;
 
   // Derives the name of a local log file. The format is:
-  // [user_defined]_[date]_[time]_[pid]_[lid].log
+  // [user_defined]_[date]_[time]_[render_process_id]_[lid].log
   base::FilePath GetFilePath(const base::FilePath& base_path,
-                             int render_process_id,
-                             int lid);
+                             const PeerConnectionKey& key) const;
+
+  // This object is expected to be created and destroyed on the UI thread,
+  // but live on its owner's internal, IO-capable task queue.
+  SEQUENCE_CHECKER(io_task_sequence_checker_);
 
   // Observer which will be informed whenever a local log file is started or
   // stopped. Through this, the owning WebRtcEventLogManager can be informed,

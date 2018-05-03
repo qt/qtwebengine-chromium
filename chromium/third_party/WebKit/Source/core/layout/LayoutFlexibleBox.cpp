@@ -379,6 +379,9 @@ void LayoutFlexibleBox::UpdateBlockLayout(bool relayout_children) {
 
     LayoutFlexItems(relayout_children, layout_scope);
     if (PaintLayerScrollableArea::PreventRelayoutScope::RelayoutNeeded()) {
+      // Recompute the logical width, because children may have added or removed
+      // scrollbars.
+      UpdateLogicalWidthAndColumnWidth();
       PaintLayerScrollableArea::FreezeScrollbarsScope freeze_scrollbars_scope;
       PrepareOrderIteratorAndMargins();
       LayoutFlexItems(true, layout_scope);
@@ -1073,30 +1076,37 @@ MinMaxSize LayoutFlexibleBox::ComputeMinAndMaxSizesForChild(
     if (HasAspectRatio(child) && child.IntrinsicSize().Height() > 0)
       content_size =
           AdjustChildSizeForAspectRatioCrossAxisMinAndMax(child, content_size);
-    if (sizes.max_size != -1 && content_size > sizes.max_size)
-      content_size = sizes.max_size;
-
-    Length main_size = IsHorizontalFlow() ? child.StyleRef().Width()
-                                          : child.StyleRef().Height();
-    if (MainAxisLengthIsDefinite(child, main_size)) {
-      LayoutUnit resolved_main_size =
-          ComputeMainAxisExtentForChild(child, kMainOrPreferredSize, main_size);
-      DCHECK_GE(resolved_main_size, LayoutUnit());
-      LayoutUnit specified_size =
-          sizes.max_size != -1 ? std::min(resolved_main_size, sizes.max_size)
-                               : resolved_main_size;
-
-      sizes.min_size = std::min(specified_size, content_size);
-    } else if (UseChildAspectRatio(child)) {
-      Length cross_size_length = IsHorizontalFlow() ? child.StyleRef().Height()
-                                                    : child.StyleRef().Width();
-      LayoutUnit transferred_size =
-          ComputeMainSizeFromAspectRatioUsing(child, cross_size_length);
-      transferred_size = AdjustChildSizeForAspectRatioCrossAxisMinAndMax(
-          child, transferred_size);
-      sizes.min_size = std::min(transferred_size, content_size);
-    } else {
+    if (child.IsTable() && !IsColumnFlow()) {
+      // Avoid resolving minimum size to something narrower than the minimum
+      // preferred logical width of the table.
       sizes.min_size = content_size;
+    } else {
+      if (sizes.max_size != -1 && content_size > sizes.max_size)
+        content_size = sizes.max_size;
+
+      Length main_size = IsHorizontalFlow() ? child.StyleRef().Width()
+                                            : child.StyleRef().Height();
+      if (MainAxisLengthIsDefinite(child, main_size)) {
+        LayoutUnit resolved_main_size = ComputeMainAxisExtentForChild(
+            child, kMainOrPreferredSize, main_size);
+        DCHECK_GE(resolved_main_size, LayoutUnit());
+        LayoutUnit specified_size =
+            sizes.max_size != -1 ? std::min(resolved_main_size, sizes.max_size)
+                                 : resolved_main_size;
+
+        sizes.min_size = std::min(specified_size, content_size);
+      } else if (UseChildAspectRatio(child)) {
+        Length cross_size_length = IsHorizontalFlow()
+                                       ? child.StyleRef().Height()
+                                       : child.StyleRef().Width();
+        LayoutUnit transferred_size =
+            ComputeMainSizeFromAspectRatioUsing(child, cross_size_length);
+        transferred_size = AdjustChildSizeForAspectRatioCrossAxisMinAndMax(
+            child, transferred_size);
+        sizes.min_size = std::min(transferred_size, content_size);
+      } else {
+        sizes.min_size = content_size;
+      }
     }
   }
   DCHECK_GE(sizes.min_size, LayoutUnit());
@@ -1225,6 +1235,7 @@ static LayoutUnit AlignmentOffset(LayoutUnit available_free_space,
                                   LayoutUnit max_ascent,
                                   bool is_wrap_reverse) {
   switch (position) {
+    case ItemPosition::kLegacy:
     case ItemPosition::kAuto:
     case ItemPosition::kNormal:
       NOTREACHED();

@@ -192,16 +192,113 @@ the browser process to:
 > performs the appropriate sanitizations and recommend its usage directly here.
 
 
-### Do not define things that are not used
+### Do not define unused or unimplemented things
+
+Mojo interfaces often cross privilege boundaries. Having well-defined interfaces
+that don't contain stubbed out methods or unused parameters makes it easier to
+understand and evaluate the implications of crossing these boundaries. Some
+common guidelines to follow are below.
+
+
+#### Do use EnableIf to guard platform-specific constructs
 
 Platform-specific functionality should only be defined on the platforms where
-it is used.
+it is implemented. Use the Mojo `EnableIf` annotation to guard definitions that
+should only be visible in certain build configurations.
 
-> The work to make this possible is in progress: <https://crbug.com/676224>
+**_Good_**
+```c++
+// GN file:
+mojom("view_bindings") {
+  // ...
 
-For enums, avoid the pattern of defining a `LAST` or `MAX` value. The `LAST`
-value is typically used in conjunction with legacy IPC macros to validate enums;
-this is not needed with Mojo enums, which automatically validated.
+  enabled_features = []
+  if (is_android) {
+    enabled_features += [ "is_android" ];
+  }
+}
+
+// mojom definition:
+interface View {
+  // ...
+
+  [EnableIf=is_android]
+  UpdateBrowserControlsState(bool enable_hiding, bool enable_showing,
+                             bool animate);
+};
+
+// C++ implementation:
+class View : public mojom::View {
+ public:
+  // ...
+
+#if defined(OS_ANDROID)
+  void UpdateBrowserControlsState(bool enable_hiding, bool enable_showing,
+                                  bool animate);
+#endif
+};
+```
+
+**_Bad_**
+```c++
+// mojom definition:
+interface View {
+  // ...
+
+  UpdateBrowserControlsState(bool enable_hiding, bool enable_showing,
+                             bool animate);
+};
+
+// C++ implementation:
+class View : public mojom::View {
+ public:
+  // ...
+
+#if defined(OS_ANDROID)
+  void UpdateBrowserControlsState(bool enable_hiding, bool enable_showing,
+                                  bool animate) override;
+#else
+  void UpdateBrowserControlsState(bool enable_hiding, bool enable_showing,
+                                  bool animate) override {
+    NOTREACHED();
+  }
+#endif
+};
+```
+
+The `EnableIf` annotation can be applied to almost anything: imports,
+interfaces, methods, arguments, constants, structs, struct members, enums,
+enumerator values, et cetera.
+
+
+#### Do not define unimplemented methods
+
+Reviewing IPC requires reviewing a concrete implementation of the Mojo
+interface, to evaluate how the (possibly untrustworthy) inputs are used, what
+outputs are produced, et cetera. If a method is not yet implemented, do not
+define it in the interface.
+
+**_Bad_**
+```c++
+// mojom definition:
+interface Spaceship {
+  EnterHyperspace();
+  ExitHyperspace();
+};
+
+// C++ implementation:
+class SpaceshipPrototype : public mojom::Spaceship {
+  void EnterHyperspace() { /* TODO(dcheng): Implement. */ }
+  void ExitHyperspace() { /* TODO(dcheng): Implement. */ }
+};
+```
+
+
+#### Do not define unused enumerator values
+
+Avoid the pattern of defining a `LAST` or `MAX` value. The `LAST` value is
+typically used in conjunction with legacy IPC macros to validate enums; this is
+not needed with Mojo enums, which are automatically validated.
 
 The `MAX` value is typically used as an invalid sentinel value for UMA
 histograms: unfortunately, simply defining a `MAX` value in a Mojo enum will
@@ -345,7 +442,7 @@ for (size_t i = 0; i < request->element_size(); ++i) {
 ## C++ Best Practices
 
 
-### Use mojo::WrapCallbackWithDefaultInvokeIfNotRun And mojo::WrapCallbackWithDropHandler Sparingly
+### Use mojo::WrapCallbackWithDefaultInvokeIfNotRun And mojo::WrapCallbackWithDropHandler sparingly
 
 Mojo provides several convenience helpers to automatically invoke a callback if
 the callback has not already been invoked in some other way when the callback is
@@ -358,15 +455,30 @@ destroyed, e.g.:
   }  // |cb| is automatically invoked with an argument of -1.
 ```
 
-Unfortunately, the fact that this callback is guaranteed to always run is hidden
-from the type system and can propagate in surprising ways. Avoid using this
-construction unless there are no better alternatives. Uses of these helpers must
-be well-commented to describe why this behavior is required.
+This can be useful for detecting interface errors:
 
-Note that using this from the renderer is often unnecessary. Message pipes are
-often closed as part of a Document shutting down; since many Blink objects
-already inherit `blink::ContextLifecycleObserver`, it is usually more idiomatic
-to use this signal to perform any needed cleanup work.
+```c++
+  process->GetMemoryStatistics(
+      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+          base::Bind(&MemoryProfiler::OnReplyFromRenderer), <failure args>));
+  // If the remote process dies, &MemoryProfiler::OnReplyFromRenderer will be
+  // invoked with <failure args> when Mojo drops outstanding callbacks due to
+  // a connection error on |process|.
+```
+
+However, due to limitations of the current implementation, it's difficult to
+tell if a callback object has invoke-on-destroy behavior. In general:
+
+1.  Prefer error connection handlers where possible.
+1.  Only use the callback helpers for detecting interface errors. These
+    callbacks may be invoked during destruction and must carefully consider
+    receiver object lifetime. For more information, please see the
+    [Mojo documentation][mojo-doc-process-crashes].
+
+> Note that using the callback wrappers in the renderer is often unnecessary.
+> Message pipes are typically closed as part of a Document shutting down; since
+> many Blink objects already inherit `blink::ContextLifecycleObserver`, it is
+> usually more idiomatic to use this signal to perform any needed cleanup work.
 
 ### Use StructTraits
 
@@ -380,7 +492,7 @@ serialization and deserialization. 😄
 **_Good_**
 
 ```c++
-// In url_gurl_struct_traits.h:
+// In url_gurl_mojom_traits.h:
 template <>
 struct StructTraits<url::mojom::UrlDataView, GURL> {
   static base::StringPiece url(const GURL& r);
@@ -389,7 +501,7 @@ struct StructTraits<url::mojom::UrlDataView, GURL> {
   static bool Read(url::mojom::UrlDataView data, GURL* out);
 };
 
-// In url_gurl_struct_traits.cc:
+// In url_gurl_mojom_traits.cc:
 // Note that methods that aren't simple getters should be defined
 // out-of-line to avoid code bloat.
 base::StringPiece StructTraits<url::mojom::UrlDataView, GURL>::url(
@@ -606,3 +718,4 @@ safe, vulnerabilities could arise.
 
 [security-tips-for-ipc]: https://www.chromium.org/Home/chromium-security/education/security-tips-for-ipc
 [NfcTypeConverter.java]: https://chromium.googlesource.com/chromium/src/+/e97442ee6e8c4cf6bcf7f5623c6fb2cc8cce92ac/services/device/nfc/android/java/src/org/chromium/device/nfc/NfcTypeConverter.java
+[mojo-doc-process-crashes]: https://chromium.googlesource.com/chromium/src/+/master/mojo/public/cpp/bindings#Best-practices-for-dealing-with-process-crashes-and-callbacks

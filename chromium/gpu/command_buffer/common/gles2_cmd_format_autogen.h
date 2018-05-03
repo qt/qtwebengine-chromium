@@ -13340,6 +13340,76 @@ static_assert(offsetof(WaitSyncTokenCHROMIUM, release_count_0) == 16,
 static_assert(offsetof(WaitSyncTokenCHROMIUM, release_count_1) == 20,
               "offset of WaitSyncTokenCHROMIUM release_count_1 should be 20");
 
+struct UnpremultiplyAndDitherCopyCHROMIUM {
+  typedef UnpremultiplyAndDitherCopyCHROMIUM ValueType;
+  static const CommandId kCmdId = kUnpremultiplyAndDitherCopyCHROMIUM;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLuint _source_id,
+            GLuint _dest_id,
+            GLint _x,
+            GLint _y,
+            GLsizei _width,
+            GLsizei _height) {
+    SetHeader();
+    source_id = _source_id;
+    dest_id = _dest_id;
+    x = _x;
+    y = _y;
+    width = _width;
+    height = _height;
+  }
+
+  void* Set(void* cmd,
+            GLuint _source_id,
+            GLuint _dest_id,
+            GLint _x,
+            GLint _y,
+            GLsizei _width,
+            GLsizei _height) {
+    static_cast<ValueType*>(cmd)->Init(_source_id, _dest_id, _x, _y, _width,
+                                       _height);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t source_id;
+  uint32_t dest_id;
+  int32_t x;
+  int32_t y;
+  int32_t width;
+  int32_t height;
+};
+
+static_assert(sizeof(UnpremultiplyAndDitherCopyCHROMIUM) == 28,
+              "size of UnpremultiplyAndDitherCopyCHROMIUM should be 28");
+static_assert(
+    offsetof(UnpremultiplyAndDitherCopyCHROMIUM, header) == 0,
+    "offset of UnpremultiplyAndDitherCopyCHROMIUM header should be 0");
+static_assert(
+    offsetof(UnpremultiplyAndDitherCopyCHROMIUM, source_id) == 4,
+    "offset of UnpremultiplyAndDitherCopyCHROMIUM source_id should be 4");
+static_assert(
+    offsetof(UnpremultiplyAndDitherCopyCHROMIUM, dest_id) == 8,
+    "offset of UnpremultiplyAndDitherCopyCHROMIUM dest_id should be 8");
+static_assert(offsetof(UnpremultiplyAndDitherCopyCHROMIUM, x) == 12,
+              "offset of UnpremultiplyAndDitherCopyCHROMIUM x should be 12");
+static_assert(offsetof(UnpremultiplyAndDitherCopyCHROMIUM, y) == 16,
+              "offset of UnpremultiplyAndDitherCopyCHROMIUM y should be 16");
+static_assert(
+    offsetof(UnpremultiplyAndDitherCopyCHROMIUM, width) == 20,
+    "offset of UnpremultiplyAndDitherCopyCHROMIUM width should be 20");
+static_assert(
+    offsetof(UnpremultiplyAndDitherCopyCHROMIUM, height) == 24,
+    "offset of UnpremultiplyAndDitherCopyCHROMIUM height should be 24");
+
 struct DrawBuffersEXTImmediate {
   typedef DrawBuffersEXTImmediate ValueType;
   static const CommandId kCmdId = kDrawBuffersEXTImmediate;
@@ -16006,14 +16076,16 @@ struct BeginRasterCHROMIUM {
             GLuint _msaa_sample_count,
             GLboolean _can_use_lcd_text,
             GLboolean _use_distance_field_text,
-            GLint _pixel_config) {
+            GLint _color_type,
+            GLuint _color_space_transfer_cache_id) {
     SetHeader();
     texture_id = _texture_id;
     sk_color = _sk_color;
     msaa_sample_count = _msaa_sample_count;
     can_use_lcd_text = _can_use_lcd_text;
     use_distance_field_text = _use_distance_field_text;
-    pixel_config = _pixel_config;
+    color_type = _color_type;
+    color_space_transfer_cache_id = _color_space_transfer_cache_id;
   }
 
   void* Set(void* cmd,
@@ -16022,10 +16094,11 @@ struct BeginRasterCHROMIUM {
             GLuint _msaa_sample_count,
             GLboolean _can_use_lcd_text,
             GLboolean _use_distance_field_text,
-            GLint _pixel_config) {
-    static_cast<ValueType*>(cmd)->Init(_texture_id, _sk_color,
-                                       _msaa_sample_count, _can_use_lcd_text,
-                                       _use_distance_field_text, _pixel_config);
+            GLint _color_type,
+            GLuint _color_space_transfer_cache_id) {
+    static_cast<ValueType*>(cmd)->Init(
+        _texture_id, _sk_color, _msaa_sample_count, _can_use_lcd_text,
+        _use_distance_field_text, _color_type, _color_space_transfer_cache_id);
     return NextCmdAddress<ValueType>(cmd);
   }
 
@@ -16035,11 +16108,12 @@ struct BeginRasterCHROMIUM {
   uint32_t msaa_sample_count;
   uint32_t can_use_lcd_text;
   uint32_t use_distance_field_text;
-  int32_t pixel_config;
+  int32_t color_type;
+  uint32_t color_space_transfer_cache_id;
 };
 
-static_assert(sizeof(BeginRasterCHROMIUM) == 28,
-              "size of BeginRasterCHROMIUM should be 28");
+static_assert(sizeof(BeginRasterCHROMIUM) == 32,
+              "size of BeginRasterCHROMIUM should be 32");
 static_assert(offsetof(BeginRasterCHROMIUM, header) == 0,
               "offset of BeginRasterCHROMIUM header should be 0");
 static_assert(offsetof(BeginRasterCHROMIUM, texture_id) == 4,
@@ -16053,8 +16127,11 @@ static_assert(offsetof(BeginRasterCHROMIUM, can_use_lcd_text) == 16,
 static_assert(
     offsetof(BeginRasterCHROMIUM, use_distance_field_text) == 20,
     "offset of BeginRasterCHROMIUM use_distance_field_text should be 20");
-static_assert(offsetof(BeginRasterCHROMIUM, pixel_config) == 24,
-              "offset of BeginRasterCHROMIUM pixel_config should be 24");
+static_assert(offsetof(BeginRasterCHROMIUM, color_type) == 24,
+              "offset of BeginRasterCHROMIUM color_type should be 24");
+static_assert(
+    offsetof(BeginRasterCHROMIUM, color_space_transfer_cache_id) == 28,
+    "offset of BeginRasterCHROMIUM color_space_transfer_cache_id should be 28");
 
 struct RasterCHROMIUM {
   typedef RasterCHROMIUM ValueType;

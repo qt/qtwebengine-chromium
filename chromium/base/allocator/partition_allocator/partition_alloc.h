@@ -206,7 +206,8 @@ static const size_t kGenericMaxBucketed =
 static const size_t kGenericMinDirectMappedDownsize =
     kGenericMaxBucketed +
     1;  // Limit when downsizing a direct mapping using realloc().
-static const size_t kGenericMaxDirectMapped = 1UL << 31;  // 2 GiB
+static const size_t kGenericMaxDirectMapped =
+    (1UL << 31) + kPageAllocationGranularity;  // 2 GiB plus one more page.
 static const size_t kBitsPerSizeT = sizeof(void*) * CHAR_BIT;
 
 // Constants for the memory reclaim logic.
@@ -619,11 +620,11 @@ class BASE_EXPORT PartitionAllocHooks {
     // Chained allocation hooks are not supported. Registering a non-null
     // hook when a non-null hook is already registered indicates somebody is
     // trying to overwrite a hook.
-    DCHECK(!hook || !allocation_hook_) << "Overwriting allocation hook";
+    CHECK(!hook || !allocation_hook_) << "Overwriting allocation hook";
     allocation_hook_ = hook;
   }
   static void SetFreeHook(FreeHook* hook) {
-    DCHECK(!hook || !free_hook_) << "Overwriting free hook";
+    CHECK(!hook || !free_hook_) << "Overwriting free hook";
     free_hook_ = hook;
   }
 

@@ -277,7 +277,7 @@ class MediaStreamUIProxyFeaturePolicyTest
   // The header policy should only be set once on page load, so we refresh the
   // page to simulate that.
   void RefreshPageAndSetHeaderPolicy(RenderFrameHost* rfh,
-                                     blink::FeaturePolicyFeature feature,
+                                     blink::mojom::FeaturePolicyFeature feature,
                                      bool enabled) {
     NavigateAndCommit(rfh->GetLastCommittedURL());
     std::vector<url::Origin> whitelist;
@@ -295,7 +295,7 @@ class MediaStreamUIProxyFeaturePolicyTest
     quit_closure_ = run_loop.QuitClosure();
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(
+        base::BindOnce(
             &MediaStreamUIProxyFeaturePolicyTest::GetResultForRequestOnIOThread,
             base::Unretained(this), base::Passed(&request)));
     run_loop.Run();
@@ -337,7 +337,7 @@ class MediaStreamUIProxyFeaturePolicyTest
     proxy_ = MediaStreamUIProxy::CreateForTests(&delegate_);
     proxy_->RequestAccess(
         std::move(request),
-        base::Bind(
+        base::BindOnce(
             &MediaStreamUIProxyFeaturePolicyTest::FinishedGetResultOnIOThread,
             base::Unretained(this)));
   }
@@ -348,8 +348,8 @@ class MediaStreamUIProxyFeaturePolicyTest
     proxy_.reset();
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&MediaStreamUIProxyFeaturePolicyTest::FinishedGetResult,
-                   base::Unretained(this), devices, result));
+        base::BindOnce(&MediaStreamUIProxyFeaturePolicyTest::FinishedGetResult,
+                       base::Unretained(this), devices, result));
   }
 
   void FinishedGetResult(const MediaStreamDevices& devices,
@@ -387,7 +387,7 @@ TEST_F(MediaStreamUIProxyFeaturePolicyTest, FeaturePolicy) {
 
   // Mic disabled.
   RefreshPageAndSetHeaderPolicy(main_rfh(),
-                                blink::FeaturePolicyFeature::kMicrophone,
+                                blink::mojom::FeaturePolicyFeature::kMicrophone,
                                 /*enabled=*/false);
   GetResultForRequest(CreateRequest(main_rfh(), MEDIA_DEVICE_AUDIO_CAPTURE,
                                     MEDIA_DEVICE_VIDEO_CAPTURE),
@@ -398,7 +398,7 @@ TEST_F(MediaStreamUIProxyFeaturePolicyTest, FeaturePolicy) {
 
   // Camera disabled.
   RefreshPageAndSetHeaderPolicy(main_rfh(),
-                                blink::FeaturePolicyFeature::kCamera,
+                                blink::mojom::FeaturePolicyFeature::kCamera,
                                 /*enabled=*/false);
   GetResultForRequest(CreateRequest(main_rfh(), MEDIA_DEVICE_AUDIO_CAPTURE,
                                     MEDIA_DEVICE_VIDEO_CAPTURE),
@@ -409,7 +409,7 @@ TEST_F(MediaStreamUIProxyFeaturePolicyTest, FeaturePolicy) {
 
   // Camera disabled resulting in no devices being returned.
   RefreshPageAndSetHeaderPolicy(main_rfh(),
-                                blink::FeaturePolicyFeature::kCamera,
+                                blink::mojom::FeaturePolicyFeature::kCamera,
                                 /*enabled=*/false);
   GetResultForRequest(
       CreateRequest(main_rfh(), MEDIA_NO_SERVICE, MEDIA_DEVICE_VIDEO_CAPTURE),

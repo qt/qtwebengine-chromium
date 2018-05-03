@@ -19,9 +19,6 @@
 
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/h264/h264_common.h"
-#include "media/engine/webrtcvideodecoderfactory.h"
-#include "media/engine/webrtcvideoencoderfactory.h"
-#include "modules/video_coding/codecs/test/packet_manipulator.h"
 #include "modules/video_coding/codecs/test/stats.h"
 #include "modules/video_coding/codecs/test/test_config.h"
 #include "modules/video_coding/codecs/test/videoprocessor.h"
@@ -29,42 +26,30 @@
 #include "test/gtest.h"
 #include "test/testsupport/frame_reader.h"
 #include "test/testsupport/frame_writer.h"
-#include "test/testsupport/packet_reader.h"
 
 namespace webrtc {
 namespace test {
 
 // Rates for the encoder and the frame number when to change profile.
 struct RateProfile {
-  int target_kbps;
-  int input_fps;
-  int frame_index_rate_update;
+  size_t target_kbps;
+  size_t input_fps;
+  size_t frame_index_rate_update;
 };
 
-// Thresholds for the rate control metrics. The thresholds are defined for each
-// rate update sequence. |max_num_frames_to_hit_target| is defined as number of
-// frames, after a rate update is made to the encoder, for the encoder to reach
-// |kMaxBitrateMismatchPercent| of new target rate.
 struct RateControlThresholds {
-  int max_num_dropped_frames;
-  int max_key_framesize_mismatch_percent;
-  int max_delta_framesize_mismatch_percent;
-  int max_bitrate_mismatch_percent;
-  int max_num_frames_to_hit_target;
-  int num_spatial_resizes;
-  int num_key_frames;
+  double max_avg_bitrate_mismatch_percent;
+  double max_time_to_reach_target_bitrate_sec;
+  // TODO(ssilkin): Use absolute threshold for framerate.
+  double max_avg_framerate_mismatch_percent;
+  double max_avg_buffer_level_sec;
+  double max_max_key_frame_delay_sec;
+  double max_max_delta_frame_delay_sec;
+  size_t max_num_spatial_resizes;
+  size_t max_num_key_frames;
 };
 
-// Thresholds for the quality metrics.
 struct QualityThresholds {
-  QualityThresholds(double min_avg_psnr,
-                    double min_min_psnr,
-                    double min_avg_ssim,
-                    double min_min_ssim)
-      : min_avg_psnr(min_avg_psnr),
-        min_min_psnr(min_min_psnr),
-        min_avg_ssim(min_avg_ssim),
-        min_min_ssim(min_min_ssim) {}
   double min_avg_psnr;
   double min_min_psnr;
   double min_avg_ssim;
@@ -72,9 +57,7 @@ struct QualityThresholds {
 };
 
 struct BitstreamThresholds {
-  explicit BitstreamThresholds(size_t max_nalu_length)
-      : max_nalu_length(max_nalu_length) {}
-  size_t max_nalu_length;
+  size_t max_max_nalu_size_bytes;
 };
 
 // Should video files be saved persistently to disk for post-run visualization?
@@ -83,15 +66,10 @@ struct VisualizationParams {
   bool save_decoded_y4m;
 };
 
-// Integration test for video processor. Encodes+decodes a clip and
-// writes it to the output directory. After completion, quality metrics
-// (PSNR and SSIM) and rate control metrics are computed and compared to given
-// thresholds, to verify that the quality and encoder response is acceptable.
-// The rate control tests allow us to verify the behavior for changing bit rate,
-// changing frame rate, frame dropping/spatial resize, and temporal layers.
-// The thresholds for the rate control metrics are set to be fairly
-// conservative, so failure should only happen when some significant regression
-// or breakdown occurs.
+// Integration test for video processor. It does rate control and frame quality
+// analysis using frame statistics collected by video processor and logs the
+// results. If thresholds are specified it checks that corresponding metrics
+// are in desirable range.
 class VideoProcessorIntegrationTest : public testing::Test {
  protected:
   // Verifies that all H.264 keyframes contain SPS/PPS/IDR NALUs.
@@ -107,66 +85,20 @@ class VideoProcessorIntegrationTest : public testing::Test {
   void ProcessFramesAndMaybeVerify(
       const std::vector<RateProfile>& rate_profiles,
       const std::vector<RateControlThresholds>* rc_thresholds,
-      const QualityThresholds* quality_thresholds,
+      const std::vector<QualityThresholds>* quality_thresholds,
       const BitstreamThresholds* bs_thresholds,
       const VisualizationParams* visualization_params);
 
   // Config.
   TestConfig config_;
 
+  Stats stats_;
+
   // Can be used by all H.264 tests.
   const H264KeyframeChecker h264_keyframe_checker_;
 
  private:
   class CpuProcessTime;
-  static const int kMaxNumTemporalLayers = 3;
-
-  struct TestResults {
-    int KeyFrameSizeMismatchPercent() const {
-      if (num_key_frames == 0) {
-        return -1;
-      }
-      return 100 * sum_key_framesize_mismatch / num_key_frames;
-    }
-    int DeltaFrameSizeMismatchPercent(int i) const {
-      return 100 * sum_delta_framesize_mismatch_layer[i] / num_frames_layer[i];
-    }
-    int BitrateMismatchPercent(float target_kbps) const {
-      return 100 * std::fabs(kbps - target_kbps) / target_kbps;
-    }
-    int BitrateMismatchPercent(int i, float target_kbps_layer) const {
-      return 100 * std::fabs(kbps_layer[i] - target_kbps_layer) /
-          target_kbps_layer;
-    }
-    int num_frames = 0;
-    int num_frames_layer[kMaxNumTemporalLayers] = {0};
-    int num_key_frames = 0;
-    int num_frames_to_hit_target = 0;
-    float sum_framesize_kbits = 0.0f;
-    float sum_framesize_kbits_layer[kMaxNumTemporalLayers] = {0};
-    float kbps = 0.0f;
-    float kbps_layer[kMaxNumTemporalLayers] = {0};
-    float sum_key_framesize_mismatch = 0.0f;
-    float sum_delta_framesize_mismatch_layer[kMaxNumTemporalLayers] = {0};
-  };
-
-  struct TargetRates {
-    int kbps;
-    int fps;
-    float kbps_layer[kMaxNumTemporalLayers];
-    float fps_layer[kMaxNumTemporalLayers];
-    float framesize_kbits_layer[kMaxNumTemporalLayers];
-    float key_framesize_kbits_initial;
-    float key_framesize_kbits;
-  };
-
-  struct QualityMetrics {
-    int num_decoded_frames = 0;
-    double total_psnr = 0.0;
-    double total_ssim = 0.0;
-    double min_psnr = std::numeric_limits<double>::max();
-    double min_ssim = std::numeric_limits<double>::max();
-  };
 
   void CreateEncoderAndDecoder();
   void DestroyEncoderAndDecoder();
@@ -176,51 +108,33 @@ class VideoProcessorIntegrationTest : public testing::Test {
                            const VisualizationParams* visualization_params);
   void ReleaseAndCloseObjects(rtc::TaskQueue* task_queue);
 
-  // Rate control metrics.
-  void ResetRateControlMetrics(int rate_update_index,
-                               const std::vector<RateProfile>& rate_profiles);
-  void SetRatesPerTemporalLayer();
-  void UpdateRateControlMetrics(int frame_number);
-  void PrintRateControlMetrics(
-      int rate_update_index,
-      const std::vector<int>& num_dropped_frames,
-      const std::vector<int>& num_spatial_resizes) const;
-  void VerifyRateControlMetrics(
-      int rate_update_index,
+  void ProcessAllFrames(rtc::TaskQueue* task_queue,
+                        const std::vector<RateProfile>& rate_profiles);
+  void AnalyzeAllFrames(
+      const std::vector<RateProfile>& rate_profiles,
       const std::vector<RateControlThresholds>* rc_thresholds,
-      const std::vector<int>& num_dropped_frames,
-      const std::vector<int>& num_spatial_resizes) const;
+      const std::vector<QualityThresholds>* quality_thresholds,
+      const BitstreamThresholds* bs_thresholds);
 
-  void VerifyBitstream(int frame_number,
-                       const BitstreamThresholds& bs_thresholds);
+  void VerifyVideoStatistic(const VideoStatistics& video_stat,
+                            const RateControlThresholds* rc_thresholds,
+                            const QualityThresholds* quality_thresholds,
+                            const BitstreamThresholds* bs_thresholds,
+                            size_t target_bitrate_kbps,
+                            float input_framerate_fps);
 
-  void UpdateQualityMetrics(int frame_number);
-  void VerifyQualityMetrics(const QualityThresholds& quality_thresholds);
-
-  void PrintSettings() const;
+  void PrintSettings(rtc::TaskQueue* task_queue) const;
 
   // Codecs.
   std::unique_ptr<VideoEncoder> encoder_;
-  std::unique_ptr<VideoDecoder> decoder_;
+  std::vector<std::unique_ptr<VideoDecoder>> decoders_;
 
   // Helper objects.
-  std::unique_ptr<FrameReader> analysis_frame_reader_;
-  std::unique_ptr<FrameWriter> analysis_frame_writer_;
-  std::unique_ptr<IvfFileWriter> encoded_frame_writer_;
-  std::unique_ptr<FrameWriter> decoded_frame_writer_;
-  PacketReader packet_reader_;
-  std::unique_ptr<PacketManipulator> packet_manipulator_;
-  Stats stats_;
+  std::unique_ptr<FrameReader> source_frame_reader_;
+  std::vector<std::unique_ptr<IvfFileWriter>> encoded_frame_writers_;
+  std::vector<std::unique_ptr<FrameWriter>> decoded_frame_writers_;
   std::unique_ptr<VideoProcessor> processor_;
   std::unique_ptr<CpuProcessTime> cpu_process_time_;
-
-  // Quantities updated for every encoded frame.
-  TestResults actual_;
-
-  // Rates set for every encoder rate update.
-  TargetRates target_;
-
-  QualityMetrics quality_;
 };
 
 }  // namespace test

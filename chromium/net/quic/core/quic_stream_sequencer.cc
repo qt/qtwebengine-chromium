@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <limits>
-#include <string>
 #include <utility>
 
 #include "net/quic/core/quic_packets.h"
@@ -17,9 +16,9 @@
 #include "net/quic/platform/api/quic_clock.h"
 #include "net/quic/platform/api/quic_logging.h"
 #include "net/quic/platform/api/quic_str_cat.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
-using std::string;
 
 namespace net {
 
@@ -32,7 +31,8 @@ QuicStreamSequencer::QuicStreamSequencer(QuicStream* quic_stream,
       num_frames_received_(0),
       num_duplicate_frames_received_(0),
       clock_(clock),
-      ignore_read_data_(false) {}
+      ignore_read_data_(false),
+      level_triggered_(false) {}
 
 QuicStreamSequencer::~QuicStreamSequencer() {}
 
@@ -49,15 +49,15 @@ void QuicStreamSequencer::OnStreamFrame(const QuicStreamFrame& frame) {
   }
   const size_t previous_readable_bytes = buffered_frames_.ReadableBytes();
   size_t bytes_written;
-  string error_details;
+  QuicString error_details;
   QuicErrorCode result = buffered_frames_.OnStreamData(
       byte_offset, QuicStringPiece(frame.data_buffer, frame.data_length),
       clock_->ApproximateNow(), &bytes_written, &error_details);
   if (result != QUIC_NO_ERROR) {
-    string details = QuicStrCat(
+    QuicString details = QuicStrCat(
         "Stream ", stream_->id(), ": ", QuicErrorCodeToString(result), ": ",
-        error_details, "\nPeer Address: ",
-        stream_->PeerAddressOfLatestPacket().ToString());
+        error_details,
+        "\nPeer Address: ", stream_->PeerAddressOfLatestPacket().ToString());
     QUIC_LOG_FIRST_N(WARNING, 50) << QuicErrorCodeToString(result);
     QUIC_LOG_FIRST_N(WARNING, 50) << details;
     stream_->CloseConnectionWithDetails(result, details);
@@ -74,12 +74,17 @@ void QuicStreamSequencer::OnStreamFrame(const QuicStreamFrame& frame) {
     return;
   }
 
-  bool can_continue_read = byte_offset == buffered_frames_.BytesConsumed();
-  if (buffered_frames_.allow_overlapping_data()) {
-    can_continue_read =
-        previous_readable_bytes == 0 && buffered_frames_.ReadableBytes() > 0;
+  if (level_triggered_) {
+    if (buffered_frames_.ReadableBytes() > previous_readable_bytes) {
+      // Readable bytes has changed, let stream decide if to inform application
+      // or not.
+      stream_->OnDataAvailable();
+    }
+    return;
   }
-  if (can_continue_read) {
+  const bool stream_unblocked =
+      previous_readable_bytes == 0 && buffered_frames_.ReadableBytes() > 0;
+  if (stream_unblocked) {
     if (ignore_read_data_) {
       FlushBufferedFrames();
     } else {
@@ -138,12 +143,13 @@ bool QuicStreamSequencer::GetReadableRegion(iovec* iov,
 
 int QuicStreamSequencer::Readv(const struct iovec* iov, size_t iov_len) {
   DCHECK(!blocked_);
-  string error_details;
+  QuicString error_details;
   size_t bytes_read;
   QuicErrorCode read_error =
       buffered_frames_.Readv(iov, iov_len, &bytes_read, &error_details);
   if (read_error != QUIC_NO_ERROR) {
-    string details = QuicStrCat("Stream ", stream_->id(), ": ", error_details);
+    QuicString details =
+        QuicStrCat("Stream ", stream_->id(), ": ", error_details);
     stream_->CloseConnectionWithDetails(read_error, details);
     return static_cast<int>(bytes_read);
   }
@@ -154,6 +160,10 @@ int QuicStreamSequencer::Readv(const struct iovec* iov, size_t iov_len) {
 
 bool QuicStreamSequencer::HasBytesToRead() const {
   return buffered_frames_.HasBytesToRead();
+}
+
+size_t QuicStreamSequencer::ReadableBytes() const {
+  return buffered_frames_.ReadableBytes();
 }
 
 bool QuicStreamSequencer::IsClosed() const {
@@ -220,7 +230,7 @@ QuicStreamOffset QuicStreamSequencer::NumBytesConsumed() const {
   return buffered_frames_.BytesConsumed();
 }
 
-const string QuicStreamSequencer::DebugString() const {
+const QuicString QuicStreamSequencer::DebugString() const {
   // clang-format off
   return QuicStrCat("QuicStreamSequencer:",
                 "\n  bytes buffered: ", NumBytesBuffered(),

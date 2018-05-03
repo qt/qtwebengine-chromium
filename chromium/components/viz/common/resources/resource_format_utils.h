@@ -35,7 +35,11 @@ VIZ_RESOURCE_FORMAT_EXPORT bool DoesResourceFormatSupportAlpha(
     ResourceFormat format);
 VIZ_RESOURCE_FORMAT_EXPORT unsigned int TextureStorageFormat(
     ResourceFormat format);
-VIZ_RESOURCE_FORMAT_EXPORT GrPixelConfig ToGrPixelConfig(ResourceFormat format);
+
+// Returns whether the format can be used with GpuMemoryBuffer texture storage,
+// allocated through TexStorage2DImageCHROMIUM.
+VIZ_RESOURCE_FORMAT_EXPORT bool IsGpuMemoryBufferFormatSupported(
+    ResourceFormat format);
 
 }  // namespace viz
 

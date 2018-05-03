@@ -46,9 +46,9 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
-#include "services/service_manager/public/interfaces/service.mojom.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/ui/public/interfaces/gpu.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -86,7 +86,6 @@ class StoragePartition;
 class StoragePartitionImpl;
 
 #if BUILDFLAG(ENABLE_WEBRTC)
-class MediaStreamDispatcherHost;
 class P2PSocketDispatcherHost;
 #endif
 
@@ -715,9 +714,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   scoped_refptr<base::SequencedTaskRunner>
       audio_debug_recordings_file_task_runner_;
-
-  std::unique_ptr<MediaStreamDispatcherHost, BrowserThread::DeleteOnIOThread>
-      media_stream_dispatcher_host_;
 #endif
 
   // Forwards messages between WebRTCInternals in the browser process

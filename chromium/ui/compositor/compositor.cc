@@ -35,7 +35,9 @@
 #include "components/viz/common/resources/resource_format.h"
 #include "components/viz/common/resources/resource_settings.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
+#include "components/viz/common/switches.h"
 #include "components/viz/host/host_frame_sink_manager.h"
+#include "components/viz/host/renderer_settings_creation.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ui_base_switches.h"
@@ -77,10 +79,8 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
     auto* host_frame_sink_manager =
         context_factory_private_->GetHostFrameSinkManager();
     host_frame_sink_manager->RegisterFrameSinkId(frame_sink_id_, this);
-#if DCHECK_IS_ON()
     host_frame_sink_manager->SetFrameSinkDebugLabel(frame_sink_id_,
                                                     "Compositor");
-#endif
   }
   root_web_layer_ = cc::Layer::Create();
 
@@ -164,7 +164,6 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
 
   if (command_line->HasSwitch(switches::kUIEnableRGBA4444Textures))
     settings.preferred_tile_format = viz::RGBA_4444;
-  settings.resource_settings = context_factory_->GetResourceSettings();
 
 #if defined(OS_MACOSX)
   // Using CoreAnimation to composite requires using GpuMemoryBuffers, which
@@ -173,18 +172,20 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
       settings.use_zero_copy;
 #endif
 
-  settings.gpu_memory_policy.bytes_limit_when_visible = 512 * 1024 * 1024;
-  settings.gpu_memory_policy.priority_cutoff_when_visible =
+  settings.memory_policy.bytes_limit_when_visible = 512 * 1024 * 1024;
+  settings.memory_policy.priority_cutoff_when_visible =
       gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE;
 
   settings.disallow_non_exact_resource_reuse =
       command_line->HasSwitch(switches::kDisallowNonExactResourceReuse);
 
-  if (command_line->HasSwitch(
-          cc::switches::kRunAllCompositorStagesBeforeDraw)) {
+  if (command_line->HasSwitch(switches::kRunAllCompositorStagesBeforeDraw)) {
     settings.wait_for_all_pipeline_stages_before_draw = true;
     settings.enable_latency_recovery = false;
   }
+
+  settings.always_request_presentation_time =
+      command_line->HasSwitch(cc::switches::kAlwaysRequestPresentationTime);
 
   base::TimeTicks before_create = base::TimeTicks::Now();
 
@@ -205,7 +206,6 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
   animation_host_->AddAnimationTimeline(animation_timeline_.get());
 
   host_->SetRootLayer(root_web_layer_);
-  host_->SetFrameSinkId(frame_sink_id_);
   host_->SetVisible(true);
 
   if (command_line->HasSwitch(switches::kUISlowAnimations)) {
@@ -349,17 +349,18 @@ void Compositor::SetScaleAndSize(float scale,
                                  const gfx::Size& size_in_pixel,
                                  const viz::LocalSurfaceId& local_surface_id) {
   DCHECK_GT(scale, 0);
+  bool device_scale_factor_changed = device_scale_factor_ != scale;
+  device_scale_factor_ = scale;
+
   if (!size_in_pixel.IsEmpty()) {
     size_ = size_in_pixel;
-    host_->SetViewportSize(size_in_pixel, local_surface_id);
+    host_->SetViewportSizeAndScale(size_in_pixel, scale, local_surface_id);
     root_web_layer_->SetBounds(size_in_pixel);
     // TODO(fsamuel): Get rid of ContextFactoryPrivate.
     if (context_factory_private_)
       context_factory_private_->ResizeDisplay(this, size_in_pixel);
   }
-  if (device_scale_factor_ != scale) {
-    device_scale_factor_ = scale;
-    host_->SetDeviceScaleFactor(scale);
+  if (device_scale_factor_changed) {
     if (is_pixel_canvas())
       host_->SetRecordingScaleFactor(scale);
     if (root_layer_)

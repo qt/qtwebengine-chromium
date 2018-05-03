@@ -113,6 +113,7 @@ struct TextureState final : private angle::NonCopyable
     const SwizzleState &getSwizzleState() const { return mSwizzleState; }
     const SamplerState &getSamplerState() const { return mSamplerState; }
     GLenum getUsage() const { return mUsage; }
+    GLenum getDepthStencilTextureMode() const { return mDepthStencilTextureMode; }
 
   private:
     // Texture needs access to the ImageDesc functions.
@@ -348,7 +349,7 @@ class Texture final : public egl::ImageSibling,
     egl::Surface *getBoundSurface() const;
     egl::Stream *getBoundStream() const;
 
-    void signalDirty(InitState initState) const;
+    void signalDirty(const Context *context, InitState initState);
 
     bool isSamplerComplete(const Context *context, const Sampler *optionalSampler);
 
@@ -391,6 +392,7 @@ class Texture final : public egl::ImageSibling,
         DIRTY_BIT_SWIZZLE_ALPHA,
         DIRTY_BIT_BASE_LEVEL,
         DIRTY_BIT_MAX_LEVEL,
+        DIRTY_BIT_DEPTH_STENCIL_TEXTURE_MODE,
 
         // Misc
         DIRTY_BIT_LABEL,

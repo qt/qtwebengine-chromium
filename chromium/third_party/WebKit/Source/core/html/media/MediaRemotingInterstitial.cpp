@@ -29,10 +29,10 @@ MediaRemotingInterstitial::MediaRemotingInterstitial(
           this,
           &MediaRemotingInterstitial::ToggleInterstitialTimerFired),
       video_element_(&videoElement) {
-  SetShadowPseudoId(AtomicString("-internal-media-remoting-interstitial"));
+  SetShadowPseudoId(AtomicString("-internal-media-interstitial"));
   background_image_ = HTMLImageElement::Create(GetDocument());
   background_image_->SetShadowPseudoId(
-      AtomicString("-internal-media-remoting-background-image"));
+      AtomicString("-internal-media-interstitial-background-image"));
   background_image_->SetSrc(videoElement.getAttribute(HTMLNames::posterAttr));
   AppendChild(background_image_);
 
@@ -43,7 +43,7 @@ MediaRemotingInterstitial::MediaRemotingInterstitial(
 
   cast_text_message_ = HTMLDivElement::Create(GetDocument());
   cast_text_message_->SetShadowPseudoId(
-      AtomicString("-internal-media-remoting-cast-text-message"));
+      AtomicString("-internal-media-interstitial-message"));
   AppendChild(cast_text_message_);
 
   toast_message_ = HTMLDivElement::Create(GetDocument());

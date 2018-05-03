@@ -23,6 +23,8 @@ import("//ppapi/features/features.gni")
 import("//third_party/WebKit/public/public_features.gni")
 import("//third_party/widevine/cdm/widevine.gni")
 import("//tools/resources/generate_resource_whitelist.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
+import("//ui/gl/features.gni")
 import("//v8/gni/v8.gni")
 
 if (is_android) {
@@ -34,7 +36,7 @@ if (is_android) {
   import("//build/mac/tweak_info_plist.gni")
   import("//build/util/branding.gni")
   import("//build/util/version.gni")
-  import("//media/cdm/ppapi/cdm_paths.gni")
+  import("//media/cdm/library_cdm/cdm_paths.gni")
   import("//third_party/icu/config.gni")
 }
 
@@ -210,6 +212,7 @@ if (!is_android && !is_mac) {
         ]
         data_deps = [
           "//chrome/app/version_assembly:version_assembly_manifest",
+          "//notification_helper",
         ]
 
         if (win_console_app) {
@@ -261,7 +264,7 @@ if (!is_android && !is_mac) {
 
         public_deps = [
           ":xdg_mime",  # Needs to be public for installer to consume files.
-          "//chrome/common:features",
+          "//chrome/common:buildflags",
         ]
 
         ldflags = [ "-pie" ]
@@ -380,7 +383,7 @@ if (is_win) {
       "//chrome/app:chrome_dll_resources",
       "//chrome/app:command_ids",
       "//chrome/app/theme:chrome_unscaled_resources",
-      "//chrome/common:features",
+      "//chrome/common:buildflags",
       "//chrome/install_static:install_static_util",
       "//chrome/install_static:secondary_module",
       "//chrome_elf",
@@ -435,7 +438,6 @@ if (is_win) {
         # The browser DLL may not depend on blink or v8.
         "//third_party/WebKit/public:blink",
         "//gin",
-        "//tools/v8_context_snapshot",
         "//v8",
       ]
     } else {
@@ -486,7 +488,7 @@ if (is_win) {
         ":chrome_dll_version",
         "//build/config:exe_and_shlib_deps",
         "//chrome/browser/policy:path_parser",
-        "//chrome/common:features",
+        "//chrome/common:buildflags",
         "//chrome/install_static:install_static_util",
         "//chrome/install_static:secondary_module",
         "//chrome_elf",
@@ -852,7 +854,6 @@ if (is_win) {
   bundle_data("chrome_framework_resources") {
     sources = [
       "$root_out_dir/app_mode_loader.app",
-      "$root_out_dir/v8_context_snapshot.bin",
 
       # This image is used to badge the lock icon in the
       # authentication dialogs, such as those used for installation
@@ -872,7 +873,6 @@ if (is_win) {
     public_deps = [
       ":packed_resources",
       "//chrome/app_shim:app_mode_loader",
-      "//tools/v8_context_snapshot",
     ]
 
     if (is_chrome_branded) {
@@ -888,11 +888,14 @@ if (is_win) {
     }
 
     if (v8_use_external_startup_data) {
-      sources += [
-        "$root_out_dir/natives_blob.bin",
-        "$root_out_dir/snapshot_blob.bin",
-      ]
+      sources += [ "$root_out_dir/natives_blob.bin" ]
       public_deps += [ "//v8" ]
+      if (use_v8_context_snapshot) {
+        sources += [ "$root_out_dir/v8_context_snapshot.bin" ]
+        public_deps += [ "//tools/v8_context_snapshot" ]
+      } else {
+        sources += [ "$root_out_dir/snapshot_blob.bin" ]
+      }
     }
   }
 
@@ -953,6 +956,48 @@ if (is_win) {
     }
   } else {
     group("chrome_framework_plugins") {
+    }
+  }
+
+  if (use_egl_on_mac) {
+    # We need to copy the ANGLE libraries so that the bundle_data dependencies
+    # have a "copy" target type. Otherwise for "shared_library" target types
+    # it will try to link things into Chromium.app when we want to keep the
+    # ANGLE libraries separate instead.
+    copy("angle_library_copy") {
+      sources = [
+        "$root_out_dir/libEGL.dylib",
+        "$root_out_dir/libGLESv2.dylib",
+      ]
+      outputs = [
+        "$root_out_dir/for_bundle/{{source_file_part}}",
+      ]
+      deps = [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
+
+    # Add the ANGLE .dylibs in the MODULE_DIR of Chromium.app
+    bundle_data("angle_binaries") {
+      sources = [
+        "$root_out_dir/for_bundle/libEGL.dylib",
+        "$root_out_dir/for_bundle/libGLESv2.dylib",
+      ]
+      outputs = [
+        "{{bundle_contents_dir}}/{{source_file_part}}",
+      ]
+      public_deps = [
+        ":angle_library_copy",
+      ]
+    }
+  }
+
+  group("angle_library") {
+    if (use_egl_on_mac) {
+      deps = [
+        ":angle_binaries",
+      ]
     }
   }
 
@@ -1170,7 +1215,7 @@ if (is_win) {
       ":browser_dependencies",
       ":child_dependencies",
       "//chrome/app:command_ids",
-      "//chrome/common:features",
+      "//chrome/common:buildflags",
       "//components/crash/content/app",
       "//components/policy:generated",
       "//content/public/app:both",
@@ -1229,6 +1274,7 @@ if (is_win) {
     ]
 
     deps = [
+      ":angle_library",
       ":chrome_framework_helpers",
       ":chrome_framework_plugins",
       ":chrome_framework_resources",
@@ -1428,7 +1474,6 @@ group("browser_dependencies") {
       assert_no_deps += [
         # V8/Gin should not be used in the browser DLL on Windows.
         "//gin",
-        "//tools/v8_context_snapshot",
         "//v8",
       ]
     }
@@ -1728,6 +1773,18 @@ if (is_android) {
   java_cpp_enum("offline_pages_enum_javagen") {
     sources = [
       "browser/offline_pages/offline_page_utils.h",
+    ]
+  }
+
+  java_cpp_enum("download_enum_javagen") {
+    sources = [
+      "browser/download/download_prompt_status.h",
+    ]
+  }
+
+  java_cpp_enum("instant_apps_reasons_enum_javagen") {
+    sources = [
+      "browser/android/instantapps/instant_apps_settings.cc",
     ]
   }
 

@@ -13,11 +13,12 @@
 #include "SkArenaAllocList.h"
 #include "SkRefCnt.h"
 
+class GrAtlasGlyphCache;
+class GrContext;
+class GrTextBlobCache;
+
 class SkAtlasTextRenderer;
 class SkMatrix;
-class GrContext;
-class GrAtlasGlyphCache;
-class GrTextBlobCache;
 
 /**
  * The implementation of SkAtlasTextContext. This exists to hide the details from the public class.
@@ -35,9 +36,9 @@ public:
     GrAtlasGlyphCache* atlasGlyphCache();
     GrTextBlobCache* textBlobCache();
 
-    GrDeferredUploadToken addInlineUpload(GrDeferredTextureUploadFn&&) override;
-
-    GrDeferredUploadToken addASAPUpload(GrDeferredTextureUploadFn&&) override;
+    const GrTokenTracker* tokenTracker() final { return &fTokenTracker; }
+    GrDeferredUploadToken addInlineUpload(GrDeferredTextureUploadFn&&) final;
+    GrDeferredUploadToken addASAPUpload(GrDeferredTextureUploadFn&&) final;
 
     void recordDraw(const void* vertexData, int glyphCnt, const SkMatrix&, void* targetHandle);
 
@@ -70,6 +71,7 @@ private:
         GrDeferredUploadToken fToken;
     };
 
+    GrTokenTracker fTokenTracker;
     SkArenaAllocList<InlineUpload> fInlineUploads;
     SkArenaAllocList<Draw> fDraws;
     SkArenaAllocList<GrDeferredTextureUploadFn> fASAPUploads;

@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/optional.h"
+#include "base/time/time.h"
 #include "headless/public/headless_browser.h"
 #include "headless/public/headless_browser_context.h"
 
@@ -41,10 +42,23 @@ class HeadlessBrowserContextOptions {
   // See HeadlessBrowser::Options::user_data_dir.
   const base::FilePath& user_data_dir() const;
 
-  // Set HeadlessBrowser::Options::incognito_mode.
+  // See HeadlessBrowser::Options::incognito_mode.
   bool incognito_mode() const;
 
+  // See HeadlessBrowser::Options::site_per_process.
+  bool site_per_process() const;
+
+  // See HeadlessBrowser::Options::block_new_web_contents.
+  bool block_new_web_contents() const;
+
+  // If set the renderer will be constructed with virtual time enabled and in it
+  // base::Time::Now will be overridden to initially return this value.
+  base::Optional<base::Time> initial_virtual_time() const;
+
   bool allow_cookies() const;
+
+  // See HeadlessBrowser::Options::font_render_hinting.
+  gfx::FontRenderParams::Hinting font_render_hinting() const;
 
   // Custom network protocol handlers. These can be used to override URL
   // fetching for different network schemes.
@@ -72,11 +86,16 @@ class HeadlessBrowserContextOptions {
   base::Optional<gfx::Size> window_size_;
   base::Optional<base::FilePath> user_data_dir_;
   base::Optional<bool> incognito_mode_;
+  base::Optional<bool> site_per_process_;
+  base::Optional<bool> block_new_web_contents_;
+  base::Optional<base::Time> initial_virtual_time_;
   base::Optional<bool> allow_cookies_;
   base::Optional<base::Callback<void(WebPreferences*)>>
       override_web_preferences_callback_;
 
   ProtocolHandlerMap protocol_handlers_;
+
+  base::Optional<gfx::FontRenderParams::Hinting> font_render_hinting_;
 
   DISALLOW_COPY_AND_ASSIGN(HeadlessBrowserContextOptions);
 };

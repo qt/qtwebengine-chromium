@@ -230,7 +230,7 @@
         "Frequency",
         "Length",
         "Number",
-        "Percent",
+        "Percentage",
         "Position",
         "Resolution",
         "Time",
@@ -438,6 +438,7 @@
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_all: true,
       priority: "High",
+      keywords: ["currentcolor"]
     },
     {
       name: "direction",
@@ -513,6 +514,7 @@
       name_for_methods: "Style",
       converter: "ConvertFontStyle",
       priority: "High",
+      keywords: ["normal", "italic", "oblique"]
     },
     {
       name: "font-variant-ligatures",
@@ -561,6 +563,8 @@
       name_for_methods: "Weight",
       converter: "ConvertFontWeight",
       priority: "High",
+      keywords: ["normal", "bold", "bolder", "lighter"],
+      typedom_types: ["Number"]
     },
     {
       name: "font-feature-settings",
@@ -577,7 +581,6 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       inherited: true,
-      runtime_flag: "CSSVariableFonts",
       font: true,
       name_for_methods: "VariationSettings",
       converter: "ConvertFontVariationSettings",
@@ -743,6 +746,7 @@
       type_name: "StyleColor",
       computed_style_custom_functions: ["getter"],
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "background-image",
@@ -750,6 +754,7 @@
       interpolable: true,
       keywords: ["auto", "none"],
       typedom_types: ["Image"],
+      separator: " ",
       custom_apply_functions_all: true,
     },
     {
@@ -802,6 +807,7 @@
       type_name: "Color",
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "border-bottom-left-radius",
@@ -835,7 +841,6 @@
         "dashed", "solid", "double"
       ],
       default_value: "none",
-      typedom_types: ["Image"],
       type_name: "EBorderStyle",
     },
     {
@@ -903,6 +908,7 @@
       type_name: "Color",
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "border-left-style",
@@ -914,7 +920,6 @@
         "dashed", "solid", "double"
       ],
       default_value: "none",
-      typedom_types: ["Image"],
       type_name: "EBorderStyle",
     },
     {
@@ -942,6 +947,7 @@
       type_name: "Color",
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "border-right-style",
@@ -953,7 +959,6 @@
         "dashed", "solid", "double"
       ],
       default_value: "none",
-      typedom_types: ["Image"],
       type_name: "EBorderStyle",
     },
     {
@@ -981,6 +986,7 @@
       type_name: "Color",
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "border-top-left-radius",
@@ -1014,7 +1020,6 @@
         "dashed", "solid", "double"
       ],
       default_value: "none",
-      typedom_types: ["Image"],
       type_name: "EBorderStyle",
     },
     {
@@ -1039,7 +1044,7 @@
       field_template: "<length>",
       keywords: ["auto"],
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthOrAuto",
     },
     {
@@ -1123,6 +1128,7 @@
       type_name: "Color",
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_all: true,
+      keywords: ["auto", "currentcolor"]
     },
     {
       name: "clear",
@@ -1266,8 +1272,7 @@
     },
     {
       name: "display",
-      property_methods: ["CSSValueFromComputedStyleInternal"],
-      field_template: 'keyword',
+      property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       keywords: [
         "inline", "block", "list-item", "inline-block", "table", "inline-table",
         "table-row-group", "table-header-group", "table-footer-group",
@@ -1275,7 +1280,7 @@
         "table-caption", "-webkit-box", "-webkit-inline-box", "flex",
         "inline-flex", "grid", "inline-grid", "contents", "flow-root", "none"
       ],
-      default_value: "inline",
+      custom_apply_functions_all: true,
     },
     {
       name: "dominant-baseline",
@@ -1438,14 +1443,6 @@
       converter: "ConvertGridPosition",
     },
     {
-      name: "grid-column-gap",
-      property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
-      field_group: "*",
-      field_template: "<length>",
-      default_value: "Length(kFixed)",
-      converter: "ConvertLength",
-    },
-    {
       name: "grid-column-start",
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       field_group: "*",
@@ -1464,14 +1461,6 @@
       default_value: "GridPosition()",
       type_name: "GridPosition",
       converter: "ConvertGridPosition",
-    },
-    {
-      name: "grid-row-gap",
-      property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
-      field_group: "*",
-      field_template: "<length>",
-      default_value: "Length(kFixed)",
-      converter: "ConvertLength",
     },
     {
       name: "grid-row-start",
@@ -1517,7 +1506,7 @@
       field_template: "<length>",
       keywords: ["auto", "fit-content", "min-content", "max-content"],
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthSizing",
     },
     {
@@ -1578,7 +1567,7 @@
       field_group: "*",
       field_template: "external",
       include_paths: ["core/style/StyleSelfAlignmentData.h"],
-      default_value: "StyleSelfAlignmentData(ItemPosition::kAuto, OverflowAlignment::kDefault)",
+      default_value: "StyleSelfAlignmentData(ItemPosition::kLegacy, OverflowAlignment::kDefault)",
       type_name: "StyleSelfAlignmentData",
       converter: "ConvertSelfOrDefaultAlignmentData",
     },
@@ -1600,7 +1589,7 @@
       field_template: "<length>",
       keywords: ["auto"],
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthOrAuto",
     },
     {
@@ -1628,6 +1617,8 @@
       getter: "SpecifiedLineHeight",
       computed_style_custom_functions: ["getter"],
       converter: "ConvertLineHeight",
+      keywords: ["normal"],
+      typedom_types: ["Length", "Number", "Percentage"]
     },
     {
       name: "line-height-step",
@@ -1654,6 +1645,7 @@
       type_name: "StyleImage",
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_value: true,
+      keywords: ["none"]
     },
     {
       name: "list-style-position",
@@ -1694,6 +1686,8 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertQuirkyLength",
+      keywords: ["auto"],
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "margin-left",
@@ -1703,6 +1697,8 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertQuirkyLength",
+      keywords: ["auto"],
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "margin-right",
@@ -1712,6 +1708,8 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertQuirkyLength",
+      keywords: ["auto"],
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "margin-top",
@@ -1721,6 +1719,8 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertQuirkyLength",
+      keywords: ["auto"],
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "marker-end",
@@ -1838,6 +1838,7 @@
       default_value: "LengthPoint(Length(50.0, kPercent), Length(50.0, kPercent))",
       type_name: "LengthPoint",
       converter: "ConvertPosition",
+      typedom_types: ["Position"],
     },
     {
       name: "offset-anchor",
@@ -1905,6 +1906,7 @@
       default_value: "1.0",
       type_name: "float",
       computed_style_custom_functions: ["setter"],
+      typedom_types: ["Number"]
     },
     {
       name: "order",
@@ -1937,6 +1939,7 @@
       type_name: "Color",
       computed_style_custom_functions: ["getter", "setter"],
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "outline-offset",
@@ -2042,6 +2045,7 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertLength",
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "padding-left",
@@ -2051,6 +2055,7 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertLength",
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "padding-right",
@@ -2060,6 +2065,7 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertLength",
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "padding-top",
@@ -2069,6 +2075,7 @@
       field_template: "<length>",
       default_value: "Length(kFixed)",
       converter: "ConvertLength",
+      typedom_types: ["Length", "Percentage"]
     },
     {
       name: "paint-order",
@@ -2150,7 +2157,7 @@
       field_template: "<length>",
       keywords: ["auto"],
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthOrAuto",
     },
     {
@@ -2192,6 +2199,18 @@
         logical_side: "after",
         shorthand_for_physical_side: "scrollMarginShorthand",
       },
+    },
+    {
+      name: "scroll-customization",
+      property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
+      converter: "ConvertFlags<blink::ScrollCustomization::ScrollDirection>",
+      type_name: "ScrollCustomization::ScrollDirection",
+      field_group: "*",
+      field_size: 4,
+      field_template: "primitive",
+      default_value: "ScrollCustomization::kScrollDirectionNone",
+      include_paths: ["platform/scroll/ScrollCustomization.h"],
+      runtime_flag: "ScrollCustomization",
     },
     {
       name: "scroll-margin-block-start",
@@ -2265,7 +2284,7 @@
       property_methods: ["ParseSingleValue"],
       runtime_flag: "CSSScrollSnapPoints",
       include_paths: ["platform/Length.h"],
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       type_name: "Length",
       converter: "ConvertLength",
       direction_aware_options: {
@@ -2278,7 +2297,7 @@
       property_methods: ["ParseSingleValue"],
       runtime_flag: "CSSScrollSnapPoints",
       include_paths: ["platform/Length.h"],
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       type_name: "Length",
       converter: "ConvertLength",
       direction_aware_options: {
@@ -2293,7 +2312,7 @@
       field_group: "*",
       field_template: "<length>",
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -2301,7 +2320,7 @@
       property_methods: ["ParseSingleValue"],
       runtime_flag: "CSSScrollSnapPoints",
       include_paths: ["platform/Length.h"],
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       type_name: "Length",
       converter: "ConvertLength",
       direction_aware_options: {
@@ -2314,7 +2333,7 @@
       property_methods: ["ParseSingleValue"],
       runtime_flag: "CSSScrollSnapPoints",
       include_paths: ["platform/Length.h"],
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       type_name: "Length",
       converter: "ConvertLength",
       direction_aware_options: {
@@ -2329,7 +2348,7 @@
       field_group: "*",
       field_template: "<length>",
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -2339,7 +2358,7 @@
       field_group: "*",
       field_template: "<length>",
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -2349,7 +2368,7 @@
       field_group: "*",
       field_template: "<length>",
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLength",
     },
     {
@@ -2416,6 +2435,7 @@
       type_name: "ShapeValue",
       computed_style_custom_functions: ["getter"],
       converter: "ConvertShapeValue",
+      keywords: ["none"]
     },
     {
       name: "shape-rendering",
@@ -2592,6 +2612,7 @@
       default_value: "StyleColor::CurrentColor()",
       type_name: "StyleColor",
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "text-decoration-line",
@@ -2705,7 +2726,7 @@
       field_template: "<length>",
       keywords: ["auto"],
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthOrAuto",
     },
     {
@@ -2828,6 +2849,8 @@
       interpolable: true,
       custom_apply_functions_inherit: true,
       custom_apply_functions_value: true,
+      typedom_types: ["Length", "Percentage"],
+      keywords: ["baseline", "sub", "super", "text-top", "text-bottom", "middle"],
     },
     {
       name: "visibility",
@@ -3005,12 +3028,22 @@
       property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
       interpolable: true,
       field_group: "*",
-      field_template: "primitive",
-      default_value: "0.0f",
-      type_name: "float",
-      computed_style_custom_functions: ["setter"],
-      converter: "ConvertComputedLength<float>",
-      custom_apply_functions_all: true,
+      field_template: "external",
+      include_paths: ["core/style/GapLength.h"],
+      default_value: "GapLength()",
+      type_name: "GapLength",
+      converter: "ConvertGapLength",
+    },
+    {
+      name: "row-gap",
+      property_methods: ["ParseSingleValue", "CSSValueFromComputedStyleInternal"],
+      interpolable: true,
+      field_group: "*",
+      field_template: "external",
+      include_paths: ["core/style/GapLength.h"],
+      default_value: "GapLength()",
+      type_name: "GapLength",
+      converter: "ConvertGapLength",
     },
     {
       name: "column-rule-color",
@@ -3023,6 +3056,7 @@
       type_name: "Color",
       computed_style_custom_functions: ["getter","setter"],
       custom_apply_functions_all: true,
+      keywords: ["currentcolor"]
     },
     {
       name: "column-rule-style",
@@ -3429,7 +3463,7 @@
       field_template: "<length>",
       keywords: ["auto", "fit-content", "min-content", "max-content"],
       default_value: "Length()",
-      typedom_types: ["Length", "Percent"],
+      typedom_types: ["Length", "Percentage"],
       converter: "ConvertLengthSizing",
     },
     {
@@ -3472,6 +3506,7 @@
       type_name: "int",
       computed_style_custom_functions: ["setter"],
       custom_apply_functions_all: true,
+      keywords: ["auto"],
     },
 
     // CSS logical props
@@ -3895,7 +3930,6 @@
       ],
       property_methods: ["ParseShorthand", "CSSValueFromComputedStyleInternal"],
       keywords: ["none"],
-      typedom_types: ["Image"],
     },
     {
       name: "border-top",
@@ -3975,8 +4009,23 @@
       property_methods: ["ParseShorthand", "CSSValueFromComputedStyleInternal"],
     },
     {
+      name: "grid-column-gap",
+      longhands: ["column-gap"],
+      property_methods: ["ParseShorthand", "CSSValueFromComputedStyleInternal"],
+    },
+    {
+      name: "grid-row-gap",
+      longhands: ["row-gap"],
+      property_methods: ["ParseShorthand", "CSSValueFromComputedStyleInternal"],
+    },
+    {
+      name: "gap",
+      longhands: ["row-gap", "column-gap"],
+      property_methods: ["ParseShorthand", "CSSValueFromComputedStyleInternal"],
+    },
+    {
       name: "grid-gap",
-      longhands: ["grid-row-gap", "grid-column-gap"],
+      longhands: ["row-gap", "column-gap"],
       property_methods: ["ParseShorthand", "CSSValueFromComputedStyleInternal"],
     },
     {

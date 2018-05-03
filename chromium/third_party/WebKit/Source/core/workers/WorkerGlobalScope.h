@@ -39,9 +39,9 @@
 #include "core/workers/WorkerSettings.h"
 #include "platform/heap/Handle.h"
 #include "platform/loader/fetch/CachedMetadataHandler.h"
-#include "services/network/public/interfaces/fetch_api.mojom-shared.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom-blink.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
 
 namespace service_manager {
 class InterfaceProvider;
@@ -118,6 +118,9 @@ class CORE_EXPORT WorkerGlobalScope
   OffscreenFontSelector* GetFontSelector() { return font_selector_; }
 
   CoreProbeSink* GetProbeSink() final;
+  const base::UnguessableToken& GetParentDevToolsToken() {
+    return parent_devtools_token_;
+  }
 
   // EventTarget
   ExecutionContext* GetExecutionContext() const final;
@@ -187,6 +190,7 @@ class CORE_EXPORT WorkerGlobalScope
 
   const KURL url_;
   const String user_agent_;
+  const base::UnguessableToken parent_devtools_token_;
   const V8CacheOptions v8_cache_options_;
   std::unique_ptr<WorkerSettings> worker_settings_;
 

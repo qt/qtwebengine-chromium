@@ -10,6 +10,7 @@
 #include "platform/heap/GCTaskRunner.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Noncopyable.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 
@@ -30,30 +31,29 @@ class PLATFORM_EXPORT WebThreadSupportingGC final {
   WTF_MAKE_NONCOPYABLE(WebThreadSupportingGC);
 
  public:
-  static std::unique_ptr<WebThreadSupportingGC> Create(const char* name);
+  static std::unique_ptr<WebThreadSupportingGC> Create(
+      const WebThreadCreationParams&);
   static std::unique_ptr<WebThreadSupportingGC> CreateForThread(WebThread*);
   ~WebThreadSupportingGC();
 
   void PostTask(const base::Location& location, base::OnceClosure task) {
-    thread_->GetWebTaskRunner()->PostTask(location, std::move(task));
+    thread_->GetTaskRunner()->PostTask(location, std::move(task));
   }
 
   void PostDelayedTask(const base::Location& location,
                        base::OnceClosure task,
                        TimeDelta delay) {
-    thread_->GetWebTaskRunner()->PostDelayedTask(location, std::move(task),
-                                                 delay);
+    thread_->GetTaskRunner()->PostDelayedTask(location, std::move(task), delay);
   }
 
   void PostTask(const base::Location& location, CrossThreadClosure task) {
-    PostCrossThreadTask(*thread_->GetWebTaskRunner(), location,
-                        std::move(task));
+    PostCrossThreadTask(*thread_->GetTaskRunner(), location, std::move(task));
   }
 
   void PostDelayedTask(const base::Location& location,
                        CrossThreadClosure task,
                        TimeDelta delay) {
-    PostDelayedCrossThreadTask(*thread_->GetWebTaskRunner(), location,
+    PostDelayedCrossThreadTask(*thread_->GetTaskRunner(), location,
                                std::move(task), delay);
   }
 
@@ -77,7 +77,7 @@ class PLATFORM_EXPORT WebThreadSupportingGC final {
   }
 
  private:
-  WebThreadSupportingGC(const char* name, WebThread*);
+  WebThreadSupportingGC(const WebThreadCreationParams*, WebThread*);
 
   std::unique_ptr<GCTaskRunner> gc_task_runner_;
 

@@ -6,17 +6,16 @@
 #define ImageBitmapRenderingContext_h
 
 #include "base/memory/scoped_refptr.h"
-#include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/CanvasRenderingContextFactory.h"
 #include "modules/ModulesExport.h"
+#include "modules/canvas/imagebitmap/ImageBitmapRenderingContextBase.h"
 
 namespace blink {
 
 class ImageBitmap;
-class ImageLayerBridge;
 
 class MODULES_EXPORT ImageBitmapRenderingContext final
-    : public CanvasRenderingContext {
+    : public ImageBitmapRenderingContextBase {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -29,48 +28,27 @@ class MODULES_EXPORT ImageBitmapRenderingContext final
 
     CanvasRenderingContext* Create(
         CanvasRenderingContextHost*,
-        const CanvasContextCreationAttributes&) override;
+        const CanvasContextCreationAttributesCore&) override;
     CanvasRenderingContext::ContextType GetContextType() const override {
       return CanvasRenderingContext::kContextImageBitmap;
     }
   };
 
-  void Trace(blink::Visitor*);
-
   // Script API
   void transferFromImageBitmap(ImageBitmap*, ExceptionState&);
-
-  HTMLCanvasElement* canvas() {
-    DCHECK(!Host() || !Host()->IsOffscreenCanvas());
-    return static_cast<HTMLCanvasElement*>(Host());
-  }
 
   // CanvasRenderingContext implementation
   ContextType GetContextType() const override {
     return CanvasRenderingContext::kContextImageBitmap;
   }
-  void SetIsHidden(bool) override {}
-  bool isContextLost() const override { return false; }
+
   void SetCanvasGetContextResult(RenderingContext&) final;
-  scoped_refptr<StaticBitmapImage> GetImage(AccelerationHint) const final;
-  bool IsComposited() const final { return true; }
-  bool IsAccelerated() const final;
-
-  WebLayer* PlatformLayer() const final;
-  // TODO(junov): handle lost contexts when content is GPU-backed
-  void LoseContext(LostContextMode) override {}
-
-  void Stop() override;
-
-  bool IsPaintable() const final;
 
   virtual ~ImageBitmapRenderingContext();
 
  private:
   ImageBitmapRenderingContext(CanvasRenderingContextHost*,
-                              const CanvasContextCreationAttributes&);
-
-  Member<ImageLayerBridge> image_layer_bridge_;
+                              const CanvasContextCreationAttributesCore&);
 };
 
 DEFINE_TYPE_CASTS(ImageBitmapRenderingContext,

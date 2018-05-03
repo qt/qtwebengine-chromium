@@ -94,16 +94,16 @@
 namespace WTF {
 
 // This is for tracing inside collections that have special support for weak
-// pointers. The trait has a trace method which returns true if there are weak
-// pointers to things that have not (yet) been marked live. Returning true
-// indicates that the entry in the collection may yet be removed by weak
-// handling. Default implementation for non-weak types is to use the regular
-// non-weak TraceTrait. Default implementation for types with weakness is to
-// call traceInCollection on the type's trait.
-template <WeakHandlingFlag weakHandlingFlag,
-          ShouldWeakPointersBeMarkedStrongly strongify,
-          typename T,
-          typename Traits>
+// pointers.
+//
+// Structure:
+// - |Trace|: Traces the contents and returns true if there are still unmarked
+//   objects left to process
+//
+// Default implementation for non-weak types is to use the regular non-weak
+// TraceTrait. Default implementation for types with weakness is to
+// call |TraceInCollection| on the type's trait.
+template <WeakHandlingFlag weakness, typename T, typename Traits>
 struct TraceInCollectionTrait;
 
 #if DUMP_HASHTABLE_STATS || DUMP_HASHTABLE_STATS_PER_TABLE
@@ -1312,8 +1312,7 @@ HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::
 
   if (ShouldExpand()) {
     entry = Expand(entry);
-  } else if (Traits::kWeakHandlingFlag == kWeakHandlingInCollections &&
-             ShouldShrink()) {
+  } else if (Traits::kWeakHandlingFlag == kWeakHandling && ShouldShrink()) {
     // When weak hash tables are processed by the garbage collector,
     // elements with no other strong references to them will have their
     // table entries cleared. But no shrinking of the backing store is
@@ -1629,7 +1628,10 @@ void HashTable<Key,
       }
     }
   }
-  Allocator::FreeHashTableBacking(table);
+  // Notify if this is a weak table since immediately freeing a weak hash table
+  // backing may cause a use-after-free when the weak callback is called.
+  Allocator::FreeHashTableBacking(table,
+                                  Traits::kWeakHandlingFlag == kWeakHandling);
 }
 
 template <typename Key,
@@ -1697,6 +1699,7 @@ HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::
     }
   }
   table_ = temporary_table;
+  Allocator::BackingWriteBarrier(table_);
 
   if (Traits::kEmptyValueIsZero) {
     memset(original_table, 0, new_table_size * sizeof(ValueType));
@@ -1737,6 +1740,7 @@ HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::
 #endif
 
   table_ = new_table;
+  Allocator::BackingWriteBarrier(table_);
   table_size_ = new_table_size;
 
   Value* new_entry = nullptr;
@@ -1907,6 +1911,8 @@ void HashTable<Key,
                Allocator>::swap(HashTable& other) {
   DCHECK(!AccessForbidden());
   std::swap(table_, other.table_);
+  Allocator::BackingWriteBarrier(table_);
+  Allocator::BackingWriteBarrier(other.table_);
   std::swap(table_size_, other.table_size_);
   std::swap(key_count_, other.key_count_);
   // std::swap does not work for bit fields.
@@ -1980,7 +1986,7 @@ template <typename Key,
           typename Traits,
           typename KeyTraits,
           typename Allocator>
-struct WeakProcessingHashTableHelper<kNoWeakHandlingInCollections,
+struct WeakProcessingHashTableHelper<kNoWeakHandling,
                                      Key,
                                      Value,
                                      Extractor,
@@ -2003,7 +2009,7 @@ template <typename Key,
           typename Traits,
           typename KeyTraits,
           typename Allocator>
-struct WeakProcessingHashTableHelper<kWeakHandlingInCollections,
+struct WeakProcessingHashTableHelper<kWeakHandling,
                                      Key,
                                      Value,
                                      Extractor,
@@ -2036,12 +2042,8 @@ struct WeakProcessingHashTableHelper<kWeakHandlingInCollections,
         // (everything is already traced), but we use the return value
         // to remove things from the collection.
 
-        // FIXME: This should be rewritten so that this can check if the
-        // element is dead without calling trace, which is semantically
-        // not correct to be called in weak processing stage.
-        if (TraceInCollectionTrait<kWeakHandlingInCollections,
-                                   kWeakPointersActWeak, ValueType,
-                                   Traits>::Trace(visitor, *element)) {
+        if (!TraceInCollectionTrait<kWeakHandling, ValueType, Traits>::IsAlive(
+                *element)) {
           table->RegisterModification();
           HashTableType::DeleteBucket(*element);  // Also calls the destructor.
           table->deleted_count_++;
@@ -2057,15 +2059,19 @@ struct WeakProcessingHashTableHelper<kWeakHandlingInCollections,
   static void EphemeronIteration(typename Allocator::Visitor* visitor,
                                  void* closure) {
     HashTableType* table = reinterpret_cast<HashTableType*>(closure);
-    DCHECK(table->table_);
+    // During incremental marking, the table may be freed after the callback has
+    // been registered.
+    if (!table->table_)
+      return;
     // Check the hash table for elements that we now know will not be
     // removed by weak processing. Those elements need to have their strong
     // pointers traced.
     for (ValueType* element = table->table_ + table->table_size_ - 1;
          element >= table->table_; element--) {
-      if (!HashTableType::IsEmptyOrDeletedBucket(*element))
-        TraceInCollectionTrait<kWeakHandlingInCollections, kWeakPointersActWeak,
-                               ValueType, Traits>::Trace(visitor, *element);
+      if (!HashTableType::IsEmptyOrDeletedBucket(*element)) {
+        TraceInCollectionTrait<kWeakHandling, ValueType, Traits>::Trace(
+            visitor, *element);
+      }
     }
   }
 
@@ -2093,82 +2099,57 @@ template <typename VisitorDispatcher, typename A>
 std::enable_if_t<A::kIsGarbageCollected>
 HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::
     Trace(VisitorDispatcher visitor) {
-#if DUMP_HASHTABLE_STATS_PER_TABLE
-// XXX: this will simply crash.
-// Allocator::MarkNoTracing(visitor, stats_);
-#endif
-
-  // If someone else already marked the backing and queued up the trace and/or
-  // weak callback then we are done. This optimization does not happen for
-  // ListHashSet since its iterator does not point at the backing.
-  if (!table_ || Allocator::IsHeapObjectAlive(table_))
+  if (!table_)
     return;
 
-  // Normally, we mark the backing store without performing trace. This means
-  // it is marked live, but the pointers inside it are not marked.  Instead we
-  // will mark the pointers below. However, for backing stores that contain
-  // weak pointers the handling is rather different.  We don't mark the
-  // backing store here, so the marking GC will leave the backing unmarked. If
-  // the backing is found in any other way than through its HashTable (ie from
-  // an iterator) then the mark bit will be set and the pointers will be
-  // marked strongly, avoiding problems with iterating over things that
-  // disappear due to weak processing while we are iterating over them. We
-  // register the backing store pointer for delayed marking which will take
-  // place after we know if the backing is reachable from elsewhere. We also
-  // register a weakProcessing callback which will perform weak processing if
-  // needed.
-  if (Traits::kWeakHandlingFlag == kNoWeakHandlingInCollections) {
-    Allocator::MarkNoTracing(visitor, table_);
+  // Backing store can be moved during compaction.
+  Allocator::RegisterBackingStoreReference(visitor, &table_);
+
+  if (Traits::kWeakHandlingFlag == kNoWeakHandling) {
+    // Strong HashTable.
+    DCHECK(IsTraceableInCollectionTrait<Traits>::value);
+    Allocator::template TraceHashTableBacking<ValueType, HashTable>(visitor,
+                                                                    table_);
   } else {
+    // Weak HashTable. The HashTable may be held alive strongly from somewhere
+    // else, e.g., an iterator.
+
+    // Marking of the table is delayed because the backing store is potentially
+    // held alive strongly by other objects. Delayed marking happens after
+    // regular marking.
     Allocator::RegisterDelayedMarkNoTracing(visitor, table_);
-    // Since we're delaying marking this HashTable, it is possible that the
-    // registerWeakMembers is called multiple times (in rare
-    // cases). However, it shouldn't cause any issue.
+    // It is safe to register the table multiple times.
     Allocator::RegisterWeakMembers(
         visitor, this,
         WeakProcessingHashTableHelper<Traits::kWeakHandlingFlag, Key, Value,
                                       Extractor, HashFunctions, Traits,
                                       KeyTraits, Allocator>::Process);
-  }
-  // If the backing store will be moved by sweep compaction, register the
-  // table reference pointing to the backing store object, so that the
-  // reference is updated upon object relocation. A no-op if not enabled
-  // by the visitor.
-  Allocator::RegisterBackingStoreReference(visitor, &table_);
-  if (!IsTraceableInCollectionTrait<Traits>::value)
-    return;
-  if (Traits::kWeakHandlingFlag == kWeakHandlingInCollections) {
-    // If we have both strong and weak pointers in the collection then
-    // we queue up the collection for fixed point iteration a la
-    // Ephemerons:
-    // http://dl.acm.org/citation.cfm?doid=263698.263733 - see also
-    // http://www.jucs.org/jucs_14_21/eliminating_cycles_in_weak
+
+    if (IsTraceableInCollectionTrait<Traits>::value) {
 #if DCHECK_IS_ON()
-    DCHECK(!Enqueued() || Allocator::WeakTableRegistered(visitor, this));
+      DCHECK(!Allocator::WeakTableRegistered(visitor, this) || Enqueued());
 #endif
-    if (!Enqueued()) {
-      Allocator::RegisterWeakTable(
-          visitor, this,
-          WeakProcessingHashTableHelper<
-              Traits::kWeakHandlingFlag, Key, Value, Extractor, HashFunctions,
-              Traits, KeyTraits, Allocator>::EphemeronIteration,
-          WeakProcessingHashTableHelper<
-              Traits::kWeakHandlingFlag, Key, Value, Extractor, HashFunctions,
-              Traits, KeyTraits, Allocator>::EphemeronIterationDone);
-      SetEnqueued();
+
+      // Mix of strong and weak fields. We use an approach similar to ephemeron
+      // marking to find a fixed point, c.f.:
+      // - http://dl.acm.org/citation.cfm?doid=263698.263733
+      // - http://www.jucs.org/jucs_14_21/eliminating_cycles_in_weak
+      // Adding the table for ephemeron marking delays marking any elements in
+      // the backing until regular marking is finished.
+      if (!Enqueued() &&
+          Allocator::RegisterWeakTable(
+              visitor, this,
+              WeakProcessingHashTableHelper<Traits::kWeakHandlingFlag, Key,
+                                            Value, Extractor, HashFunctions,
+                                            Traits, KeyTraits,
+                                            Allocator>::EphemeronIteration,
+              WeakProcessingHashTableHelper<
+                  Traits::kWeakHandlingFlag, Key, Value, Extractor,
+                  HashFunctions, Traits, KeyTraits,
+                  Allocator>::EphemeronIterationDone)) {
+        SetEnqueued();
+      }
     }
-    // We don't need to trace the elements here, since registering as a
-    // weak table above will cause them to be traced (perhaps several
-    // times). It's better to wait until everything else is traced
-    // before tracing the elements for the first time; this may reduce
-    // (by one) the number of iterations needed to get to a fixed point.
-    return;
-  }
-  for (ValueType* element = table_ + table_size_ - 1; element >= table_;
-       element--) {
-    if (!IsEmptyOrDeletedBucket(*element))
-      Allocator::template Trace<VisitorDispatcher, ValueType, Traits>(visitor,
-                                                                      *element);
   }
 }
 

@@ -8,6 +8,7 @@
 
 #include "compiler/translator/IntermNode_util.h"
 
+#include "compiler/translator/FunctionLookup.h"
 #include "compiler/translator/SymbolTable.h"
 
 namespace sh
@@ -16,13 +17,13 @@ namespace sh
 namespace
 {
 
-const TFunction *LookUpBuiltInFunction(const TString &name,
+const TFunction *LookUpBuiltInFunction(const char *name,
                                        const TIntermSequence *arguments,
                                        const TSymbolTable &symbolTable,
                                        int shaderVersion)
 {
-    TString mangledName = TFunction::GetMangledNameFromCall(name, *arguments);
-    TSymbol *symbol     = symbolTable.findBuiltIn(mangledName, shaderVersion);
+    const ImmutableString &mangledName = TFunctionLookup::GetMangledName(name, *arguments);
+    const TSymbol *symbol              = symbolTable.findBuiltIn(mangledName, shaderVersion);
     if (symbol)
     {
         ASSERT(symbol->isFunction());
@@ -144,23 +145,23 @@ TIntermConstantUnion *CreateBoolNode(bool value)
     return node;
 }
 
-TVariable *CreateTempVariable(TSymbolTable *symbolTable, const TType &type)
+TVariable *CreateTempVariable(TSymbolTable *symbolTable, const TType *type)
 {
     ASSERT(symbolTable != nullptr);
     // TODO(oetuaho): Might be useful to sanitize layout qualifier etc. on the type of the created
     // variable. This might need to be done in other places as well.
-    return new TVariable(symbolTable, nullptr, type, SymbolType::AngleInternal);
+    return new TVariable(symbolTable, ImmutableString(""), type, SymbolType::AngleInternal);
 }
 
-TVariable *CreateTempVariable(TSymbolTable *symbolTable, const TType &type, TQualifier qualifier)
+TVariable *CreateTempVariable(TSymbolTable *symbolTable, const TType *type, TQualifier qualifier)
 {
     ASSERT(symbolTable != nullptr);
-    if (type.getQualifier() == qualifier)
+    if (type->getQualifier() == qualifier)
     {
         return CreateTempVariable(symbolTable, type);
     }
-    TType typeWithQualifier(type);
-    typeWithQualifier.setQualifier(qualifier);
+    TType *typeWithQualifier = new TType(*type);
+    typeWithQualifier->setQualifier(qualifier);
     return CreateTempVariable(symbolTable, typeWithQualifier);
 }
 
@@ -199,7 +200,7 @@ TIntermBinary *CreateTempAssignmentNode(const TVariable *tempVariable, TIntermTy
 }
 
 TVariable *DeclareTempVariable(TSymbolTable *symbolTable,
-                               const TType &type,
+                               const TType *type,
                                TQualifier qualifier,
                                TIntermDeclaration **declarationOut)
 {
@@ -213,7 +214,8 @@ TVariable *DeclareTempVariable(TSymbolTable *symbolTable,
                                TQualifier qualifier,
                                TIntermDeclaration **declarationOut)
 {
-    TVariable *variable = CreateTempVariable(symbolTable, initializer->getType(), qualifier);
+    TVariable *variable =
+        CreateTempVariable(symbolTable, new TType(initializer->getType()), qualifier);
     *declarationOut     = CreateTempInitDeclarationNode(variable, initializer);
     return variable;
 }
@@ -232,14 +234,14 @@ TIntermBlock *EnsureBlock(TIntermNode *node)
     return blockNode;
 }
 
-TIntermSymbol *ReferenceGlobalVariable(const TString &name, const TSymbolTable &symbolTable)
+TIntermSymbol *ReferenceGlobalVariable(const ImmutableString &name, const TSymbolTable &symbolTable)
 {
-    TVariable *var = reinterpret_cast<TVariable *>(symbolTable.findGlobal(name));
+    const TVariable *var = reinterpret_cast<const TVariable *>(symbolTable.findGlobal(name));
     ASSERT(var);
     return new TIntermSymbol(var);
 }
 
-TIntermSymbol *ReferenceBuiltInVariable(const TString &name,
+TIntermSymbol *ReferenceBuiltInVariable(const ImmutableString &name,
                                         const TSymbolTable &symbolTable,
                                         int shaderVersion)
 {
@@ -249,7 +251,7 @@ TIntermSymbol *ReferenceBuiltInVariable(const TString &name,
     return new TIntermSymbol(var);
 }
 
-TIntermTyped *CreateBuiltInFunctionCallNode(const TString &name,
+TIntermTyped *CreateBuiltInFunctionCallNode(const char *name,
                                             TIntermSequence *arguments,
                                             const TSymbolTable &symbolTable,
                                             int shaderVersion)
@@ -257,13 +259,9 @@ TIntermTyped *CreateBuiltInFunctionCallNode(const TString &name,
     const TFunction *fn = LookUpBuiltInFunction(name, arguments, symbolTable, shaderVersion);
     ASSERT(fn);
     TOperator op = fn->getBuiltInOp();
-    if (op != EOpNull)
+    if (op != EOpCallBuiltInFunction && arguments->size() == 1)
     {
-        if (arguments->size() == 1)
-        {
-            return new TIntermUnary(op, arguments->at(0)->getAsTyped());
-        }
-        return TIntermAggregate::Create(fn->getReturnType(), op, arguments);
+        return new TIntermUnary(op, arguments->at(0)->getAsTyped());
     }
     return TIntermAggregate::CreateBuiltInFunctionCall(*fn, arguments);
 }

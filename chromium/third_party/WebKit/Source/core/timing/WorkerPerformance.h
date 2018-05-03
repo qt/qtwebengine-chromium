@@ -31,7 +31,7 @@
 #ifndef WorkerPerformance_h
 #define WorkerPerformance_h
 
-#include "core/timing/PerformanceBase.h"
+#include "core/timing/Performance.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Forward.h"
@@ -39,10 +39,9 @@
 namespace blink {
 
 class ExecutionContext;
-class MemoryInfo;
 class WorkerGlobalScope;
 
-class WorkerPerformance final : public PerformanceBase {
+class WorkerPerformance final : public Performance {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -53,8 +52,6 @@ class WorkerPerformance final : public PerformanceBase {
   ExecutionContext* GetExecutionContext() const override {
     return execution_context_;
   }
-
-  MemoryInfo* memory();
 
   virtual void Trace(blink::Visitor*);
 

@@ -32,7 +32,7 @@ class TestMdDownloadsDOMHandler : public MdDownloadsDOMHandler {
   int danger_prompt_count() { return danger_prompt_count_; }
 
  private:
-  void ShowDangerPrompt(content::DownloadItem* dangerous) override {
+  void ShowDangerPrompt(download::DownloadItem* dangerous) override {
     danger_prompt_count_++;
   }
 
@@ -89,14 +89,14 @@ TEST_F(MdDownloadsDOMHandlerTest, HandleGetDownloads) {
 }
 
 TEST_F(MdDownloadsDOMHandlerTest, ClearAll) {
-  std::vector<content::DownloadItem*> downloads;
+  std::vector<download::DownloadItem*> downloads;
 
   // Safe, in-progress items should be passed over.
   testing::StrictMock<content::MockDownloadItem> in_progress;
   EXPECT_CALL(in_progress, IsDangerous()).WillOnce(testing::Return(false));
   EXPECT_CALL(in_progress, IsTransient()).WillOnce(testing::Return(false));
-  EXPECT_CALL(in_progress, GetState()).WillOnce(
-      testing::Return(content::DownloadItem::IN_PROGRESS));
+  EXPECT_CALL(in_progress, GetState())
+      .WillOnce(testing::Return(download::DownloadItem::IN_PROGRESS));
   downloads.push_back(&in_progress);
 
   // Dangerous items should be removed (regardless of state).
@@ -109,8 +109,8 @@ TEST_F(MdDownloadsDOMHandlerTest, ClearAll) {
   testing::StrictMock<content::MockDownloadItem> completed;
   EXPECT_CALL(completed, IsDangerous()).WillOnce(testing::Return(false));
   EXPECT_CALL(completed, IsTransient()).WillRepeatedly(testing::Return(false));
-  EXPECT_CALL(completed, GetState()).WillOnce(
-      testing::Return(content::DownloadItem::COMPLETE));
+  EXPECT_CALL(completed, GetState())
+      .WillOnce(testing::Return(download::DownloadItem::COMPLETE));
   EXPECT_CALL(completed, GetId()).WillOnce(testing::Return(1));
   EXPECT_CALL(completed, UpdateObservers());
   downloads.push_back(&completed);
@@ -135,7 +135,7 @@ TEST_F(MdDownloadsDOMHandlerTest, HandleSaveDownload) {
   testing::StrictMock<content::MockDownloadItem> dangerous_file_type;
   EXPECT_CALL(dangerous_file_type, GetDangerType())
       .WillRepeatedly(
-          testing::Return(content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE));
+          testing::Return(download::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE));
   EXPECT_CALL(dangerous_file_type, GetId())
       .WillOnce(testing::Return(uint32_t()));
   TestMdDownloadsDOMHandler handler(manager(), web_ui());
@@ -148,7 +148,7 @@ TEST_F(MdDownloadsDOMHandlerTest, HandleSaveDownload) {
   testing::StrictMock<content::MockDownloadItem> malicious_download;
   EXPECT_CALL(malicious_download, GetDangerType())
       .WillRepeatedly(
-          testing::Return(content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL));
+          testing::Return(download::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL));
   handler.SaveDownload(&malicious_download);
   EXPECT_EQ(1, handler.danger_prompt_count());
 }

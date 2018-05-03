@@ -59,12 +59,12 @@ class PLATFORM_EXPORT ScriptWrappable
 
   virtual void Trace(blink::Visitor*) {}
 
-  void TraceWrappers(const ScriptWrappableVisitor*) const override {
-    // TODO(mlippautz/ulan): Trace |main_world_wrapper_| here once the GC plugin
-    // can make sure that all children properly dispatch to ScriptWrappable.
-  }
+  // Traces wrapper objects corresponding to this ScriptWrappable in all worlds.
+  void TraceWrappers(const ScriptWrappableVisitor*) const override;
 
   bool IsScriptWrappable() const override { return true; }
+
+  const char* NameInHeapSnapshot() const override;
 
   template <typename T>
   T* ToImpl() {
@@ -141,20 +141,11 @@ class PLATFORM_EXPORT ScriptWrappable
   }
 
   bool SetReturnValue(v8::ReturnValue<v8::Value> return_value) {
-    v8::Isolate* isolate = return_value.GetIsolate();
-    return_value.Set(main_world_wrapper_.Get().Get(isolate));
+    return_value.Set(main_world_wrapper_.Get());
     return ContainsWrapper();
   }
 
   bool ContainsWrapper() const { return !main_world_wrapper_.IsEmpty(); }
-
-  // Mark wrapper of this ScriptWrappable as alive in V8. Only marks
-  // wrapper in the main world. To mark wrappers in all worlds call
-  // ScriptWrappableVisitor::MarkWrappersInAllWorlds.
-  // TODO(ulan): Move body of this function to TraceWrappers and
-  // remove this function once all ScriptWrappable objects dispatch to
-  // ScriptWrappable::TraceWrappers from their overriden TraceWrappers.
-  void MarkWrapper(const ScriptWrappableVisitor*) const;
 
  protected:
   ScriptWrappable() = default;

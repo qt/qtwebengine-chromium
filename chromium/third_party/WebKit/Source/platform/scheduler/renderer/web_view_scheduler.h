@@ -21,7 +21,7 @@ class PLATFORM_EXPORT WebViewScheduler {
     virtual ~WebViewSchedulerDelegate() = default;
 
     virtual void RequestBeginMainFrameNotExpected(bool new_state) = 0;
-    virtual void SetPageStopped(bool) = 0;
+    virtual void SetPageFrozen(bool) = 0;
   };
 
   virtual ~WebViewScheduler() = default;
@@ -29,7 +29,7 @@ class PLATFORM_EXPORT WebViewScheduler {
   // The scheduler may throttle tasks associated with background pages.
   virtual void SetPageVisible(bool) = 0;
   // The scheduler transitions app to and from STOPPED state in background.
-  virtual void SetPageStopped(bool) = 0;
+  virtual void SetPageFrozen(bool) = 0;
 
   // Creates a new WebFrameScheduler. The caller is responsible for deleting
   // it. All tasks executed by the frame scheduler will be attributed to
@@ -67,7 +67,7 @@ class PLATFORM_EXPORT WebViewScheduler {
     kAdvance,
 
     // In this policy virtual time is not allowed to advance. Delayed tasks
-    // posted to WebTaskRunners owned by any child WebFrameSchedulers will be
+    // posted to task runners owned by any child WebFrameSchedulers will be
     // paused, unless their scheduled run time is less than or equal to the
     // current virtual time.  Note non-delayed tasks will run as normal.
     kPause,
@@ -79,6 +79,8 @@ class PLATFORM_EXPORT WebViewScheduler {
     // being to try and make loading (more) deterministic.
     kDeterministicLoading,
   };
+
+  virtual void SetInitialVirtualTimeOffset(base::TimeDelta offset) = 0;
 
   // Sets the virtual time policy, which is applied imemdiatly to all child
   // WebFrameSchedulers.

@@ -16,6 +16,7 @@
 #include "api/call/audio_sink.h"
 #include "audio/audio_send_stream.h"
 #include "audio/audio_state.h"
+#include "audio/channel_proxy.h"
 #include "audio/conversion.h"
 #include "call/rtp_stream_receiver_controller_interface.h"
 #include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
@@ -23,13 +24,13 @@
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/strings/string_builder.h"
 #include "rtc_base/timeutils.h"
-#include "voice_engine/channel_proxy.h"
 
 namespace webrtc {
 
 std::string AudioReceiveStream::Config::Rtp::ToString() const {
-  std::stringstream ss;
+  rtc::SimpleStringBuilder<1024> ss;
   ss << "{remote_ssrc: " << remote_ssrc;
   ss << ", local_ssrc: " << local_ssrc;
   ss << ", transport_cc: " << (transport_cc ? "on" : "off");
@@ -47,7 +48,7 @@ std::string AudioReceiveStream::Config::Rtp::ToString() const {
 }
 
 std::string AudioReceiveStream::Config::ToString() const {
-  std::stringstream ss;
+  rtc::SimpleStringBuilder<1024> ss;
   ss << "{rtp: " << rtp.ToString();
   ss << ", rtcp_send_transport: "
      << (rtcp_send_transport ? "(Transport)" : "null");
@@ -102,7 +103,7 @@ AudioReceiveStream::AudioReceiveStream(
     std::unique_ptr<voe::ChannelProxy> channel_proxy)
     : audio_state_(audio_state),
       channel_proxy_(std::move(channel_proxy)) {
-  RTC_LOG(LS_INFO) << "AudioReceiveStream: " << config.ToString();
+  RTC_LOG(LS_INFO) << "AudioReceiveStream: " << config.rtp.remote_ssrc;
   RTC_DCHECK(receiver_controller);
   RTC_DCHECK(packet_router);
   RTC_DCHECK(config.decoder_factory);
@@ -127,7 +128,7 @@ AudioReceiveStream::AudioReceiveStream(
 
 AudioReceiveStream::~AudioReceiveStream() {
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
-  RTC_LOG(LS_INFO) << "~AudioReceiveStream: " << config_.ToString();
+  RTC_LOG(LS_INFO) << "~AudioReceiveStream: " << config_.rtp.remote_ssrc;
   Stop();
   channel_proxy_->DisassociateSendChannel();
   channel_proxy_->RegisterTransport(nullptr);
@@ -138,7 +139,6 @@ AudioReceiveStream::~AudioReceiveStream() {
 void AudioReceiveStream::Reconfigure(
     const webrtc::AudioReceiveStream::Config& config) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  RTC_LOG(LS_INFO) << "AudioReceiveStream::Reconfigure: " << config_.ToString();
   ConfigureStream(this, config, false);
 }
 
@@ -220,11 +220,6 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.decoding_muted_output = ds.decoded_muted_output;
 
   return stats;
-}
-
-int AudioReceiveStream::GetOutputLevel() const {
-  RTC_DCHECK_RUN_ON(&worker_thread_checker_);
-  return channel_proxy_->GetSpeechOutputLevel();
 }
 
 void AudioReceiveStream::SetSink(AudioSinkInterface* sink) {
@@ -348,6 +343,8 @@ internal::AudioState* AudioReceiveStream::audio_state() const {
 void AudioReceiveStream::ConfigureStream(AudioReceiveStream* stream,
                                          const Config& new_config,
                                          bool first_time) {
+  RTC_LOG(LS_INFO) << "AudioReceiveStream::ConfigureStream: "
+                   << new_config.ToString();
   RTC_DCHECK(stream);
   const auto& channel_proxy = stream->channel_proxy_;
   const auto& old_config = stream->config_;

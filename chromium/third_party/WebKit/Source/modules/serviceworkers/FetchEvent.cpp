@@ -6,6 +6,7 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ToV8ForCore.h"
+#include "core/dom/AbortSignal.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fetch/BytesConsumerForDataConsumerHandle.h"
 #include "core/fetch/Request.h"
@@ -73,10 +74,12 @@ const AtomicString& FetchEvent::InterfaceName() const {
 bool FetchEvent::HasPendingActivity() const {
   // Prevent V8 from garbage collecting the wrapper object while waiting for the
   // preload response. This is in order to keep the resolver of preloadResponse
-  // Promise alive.
-  return preload_response_property_->GetState() ==
-             PreloadResponseProperty::kPending &&
-         GetExecutionContext();
+  // Promise alive. Note that |preload_response_property_| can be nullptr as
+  // GC can run while running the FetchEvent constructor, before the member is
+  // set. If it isn't set we treat it as a pending state.
+  return !preload_response_property_ ||
+         preload_response_property_->GetState() ==
+             PreloadResponseProperty::kPending;
 }
 
 FetchEvent::FetchEvent(ScriptState* script_state,
@@ -132,12 +135,15 @@ void FetchEvent::OnNavigationPreloadResponse(
   DCHECK(!preload_response_);
   ScriptState::Scope scope(script_state);
   preload_response_ = std::move(response);
+  // TODO(ricea): Verify that this response can't be aborted from JS.
   FetchResponseData* response_data =
       data_consume_handle
           ? FetchResponseData::CreateWithBuffer(new BodyStreamBuffer(
-                script_state, new BytesConsumerForDataConsumerHandle(
-                                  ExecutionContext::From(script_state),
-                                  std::move(data_consume_handle))))
+                script_state,
+                new BytesConsumerForDataConsumerHandle(
+                    ExecutionContext::From(script_state),
+                    std::move(data_consume_handle)),
+                new AbortSignal(ExecutionContext::From(script_state))))
           : FetchResponseData::Create();
   Vector<KURL> url_list(1);
   url_list[0] = preload_response_->Url();
@@ -189,7 +195,9 @@ void FetchEvent::OnNavigationPreloadComplete(
   // navigation preload request must be "other". But it may change when the spec
   // discussion is settled. https://github.com/w3c/resource-timing/issues/110
   scoped_refptr<ResourceTimingInfo> info = ResourceTimingInfo::Create(
-      "other", resource_response.GetResourceLoadTiming()->RequestTime(),
+      "other",
+      TimeTicksInSeconds(
+          resource_response.GetResourceLoadTiming()->RequestTime()),
       false /* is_main_resource */);
   info->SetNegativeAllowed(true);
   info->SetLoadFinishTime(completion_time);

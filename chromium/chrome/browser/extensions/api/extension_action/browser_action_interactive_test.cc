@@ -7,7 +7,6 @@
 #include "base/run_loop.h"
 #include "base/test/test_timeouts.h"
 #include "build/build_config.h"
-#include "chrome/browser/extensions/browser_action_test_util.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -18,6 +17,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/browser_action_test_util.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
 #include "chrome/test/base/interactive_test_utils.h"
@@ -134,16 +134,23 @@ class BrowserActionInteractiveTest : public ExtensionApiTest {
   }
 
   // Open an extension popup via the chrome.browserAction.openPopup API.
+  // If |will_reply| is true, then the listener is responsible for having a
+  // test message listener that replies to the extension. Otherwise, this
+  // method will create a listener and reply to the extension before returning
+  // to avoid leaking an API function while waiting for a reply.
   void OpenPopupViaAPI(bool will_reply) {
     // Setup the notification observer to wait for the popup to finish loading.
     content::WindowedNotificationObserver frame_observer(
         content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
         content::NotificationService::AllSources());
-    ExtensionTestMessageListener listener("ready", will_reply);
+    std::unique_ptr<ExtensionTestMessageListener> listener;
+    if (!will_reply)
+      listener = std::make_unique<ExtensionTestMessageListener>("ready", false);
     // Show first popup in first window and expect it to have loaded.
     ASSERT_TRUE(RunExtensionSubtest("browser_action/open_popup",
                                     "open_popup_succeeds.html")) << message_;
-    EXPECT_TRUE(listener.WaitUntilSatisfied());
+    if (listener)
+      EXPECT_TRUE(listener->WaitUntilSatisfied());
     frame_observer.Wait();
     EnsurePopupActive();
   }
@@ -446,21 +453,20 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
 }
 
 #if defined(OS_WIN)
-// Test that forcibly closing the browser and popup HWND does not cause a crash.
-// http://crbug.com/400646
-IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
-                       DISABLED_DestroyHWNDDoesNotCrash) {
+// Forcibly closing a browser HWND with a popup should not cause a crash.
+IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, DestroyHWNDDoesNotCrash) {
   if (!ShouldRunPopupTest())
     return;
 
   OpenPopupViaAPI(false);
   BrowserActionTestUtil test_util(browser());
-  const gfx::NativeView view = test_util.GetPopupNativeView();
-  EXPECT_NE(static_cast<gfx::NativeView>(NULL), view);
-  const HWND hwnd = views::HWNDForNativeView(view);
-  EXPECT_EQ(hwnd,
-            views::HWNDForNativeView(browser()->window()->GetNativeWindow()));
-  EXPECT_EQ(TRUE, ::IsWindow(hwnd));
+  const gfx::NativeView popup_view = test_util.GetPopupNativeView();
+  EXPECT_NE(static_cast<gfx::NativeView>(nullptr), popup_view);
+  const HWND popup_hwnd = views::HWNDForNativeView(popup_view);
+  EXPECT_EQ(TRUE, ::IsWindow(popup_hwnd));
+  const HWND browser_hwnd =
+      views::HWNDForNativeView(browser()->window()->GetNativeWindow());
+  EXPECT_EQ(TRUE, ::IsWindow(browser_hwnd));
 
   // Create a new browser window to prevent the message loop from terminating.
   browser()->OpenURL(content::OpenURLParams(GURL("about:"), content::Referrer(),
@@ -468,9 +474,10 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
                                             ui::PAGE_TRANSITION_TYPED, false));
 
   // Forcibly closing the browser HWND should not cause a crash.
-  EXPECT_EQ(TRUE, ::CloseWindow(hwnd));
-  EXPECT_EQ(TRUE, ::DestroyWindow(hwnd));
-  EXPECT_EQ(FALSE, ::IsWindow(hwnd));
+  EXPECT_EQ(TRUE, ::CloseWindow(browser_hwnd));
+  EXPECT_EQ(TRUE, ::DestroyWindow(browser_hwnd));
+  EXPECT_EQ(FALSE, ::IsWindow(browser_hwnd));
+  EXPECT_EQ(FALSE, ::IsWindow(popup_hwnd));
 }
 #endif  // OS_WIN
 

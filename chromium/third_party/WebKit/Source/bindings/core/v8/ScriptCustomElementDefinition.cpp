@@ -139,7 +139,7 @@ HTMLElement* ScriptCustomElementDefinition::HandleCreateElementSyncException(
   return CustomElement::CreateFailedElement(document, tag_name);
 }
 
-HTMLElement* ScriptCustomElementDefinition::CreateElementSync(
+HTMLElement* ScriptCustomElementDefinition::CreateAutonomousCustomElementSync(
     Document& document,
     const QualifiedName& tag_name) {
   if (!script_state_->ContextIsValid())
@@ -188,6 +188,9 @@ HTMLElement* ScriptCustomElementDefinition::CreateElementSync(
     return HandleCreateElementSyncException(document, tag_name, isolate,
                                             exception_state);
   }
+  // 6.1.10. Set result’s namespace prefix to prefix.
+  if (element->prefix() != tag_name.Prefix())
+    element->SetTagNameForCreateElementNS(tag_name);
   DCHECK_EQ(element->GetCustomElementState(), CustomElementState::kCustom);
   return ToHTMLElement(element);
 }

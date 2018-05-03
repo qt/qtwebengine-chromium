@@ -64,8 +64,8 @@ ACTION_P2(PostFetchReplyWithMetadata, p0, p1) {
 }
 
 ACTION_P(PostBoolReply, p0) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                base::Bind(arg4, p0));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(*arg4), p0));
 }
 
 SkBitmap CreateTestSkBitmap(int w, int h, SkColor color) {
@@ -429,7 +429,7 @@ class LargeIconServiceGetterTest : public LargeIconServiceTest,
   void RawBitmapResultCallback(const favicon_base::LargeIconResult& result) {
     if (result.bitmap.is_valid()) {
       returned_bitmap_size_ =
-          base::MakeUnique<gfx::Size>(result.bitmap.pixel_size);
+          std::make_unique<gfx::Size>(result.bitmap.pixel_size);
     }
     StoreFallbackStyle(result.fallback_icon_style.get());
   }
@@ -437,7 +437,7 @@ class LargeIconServiceGetterTest : public LargeIconServiceTest,
   void ImageResultCallback(const favicon_base::LargeIconImageResult& result) {
     if (!result.image.IsEmpty()) {
       returned_bitmap_size_ =
-          base::MakeUnique<gfx::Size>(result.image.ToImageSkia()->size());
+          std::make_unique<gfx::Size>(result.image.ToImageSkia()->size());
       ASSERT_TRUE(result.icon_url.is_valid());
     }
     StoreFallbackStyle(result.fallback_icon_style.get());
@@ -447,7 +447,7 @@ class LargeIconServiceGetterTest : public LargeIconServiceTest,
       const favicon_base::FallbackIconStyle* fallback_style) {
     if (fallback_style) {
       returned_fallback_style_ =
-          base::MakeUnique<favicon_base::FallbackIconStyle>(*fallback_style);
+          std::make_unique<favicon_base::FallbackIconStyle>(*fallback_style);
     }
   }
 

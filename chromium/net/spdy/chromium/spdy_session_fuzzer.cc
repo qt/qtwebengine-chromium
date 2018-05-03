@@ -14,10 +14,12 @@
 #include "net/log/test_net_log.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/fuzzed_socket_factory.h"
+#include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/chromium/spdy_test_util_common.h"
 #include "net/ssl/ssl_config.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 
 namespace {
 
@@ -117,7 +119,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   net::ProxyServer direct_connect(net::ProxyServer::Direct());
   net::SpdySessionKey session_key(net::HostPortPair("127.0.0.1", 80),
-                                  direct_connect, net::PRIVACY_MODE_DISABLED);
+                                  direct_connect, net::PRIVACY_MODE_DISABLED,
+                                  net::SocketTag());
   base::WeakPtr<net::SpdySession> spdy_session(net::CreateSpdySession(
       http_session.get(), session_key, bound_test_net_log.bound()));
 
@@ -128,7 +131,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   int rv = stream_request.StartRequest(
       net::SPDY_REQUEST_RESPONSE_STREAM, spdy_session,
       GURL("http://www.example.invalid/"), net::DEFAULT_PRIORITY,
-      bound_test_net_log.bound(), wait_for_start.callback());
+      net::SocketTag(), bound_test_net_log.bound(), wait_for_start.callback(),
+      TRAFFIC_ANNOTATION_FOR_TESTS);
 
   if (rv == net::ERR_IO_PENDING) {
     rv = wait_for_start.WaitForResult();

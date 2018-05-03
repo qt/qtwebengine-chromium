@@ -18,7 +18,7 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_client.h"
-#include "third_party/WebKit/common/message_port/message_port_channel.h"
+#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
 #include "third_party/WebKit/public/platform/web_feature.mojom.h"
 #include "third_party/WebKit/public/web/worker_content_settings_proxy.mojom.h"
 
@@ -229,14 +229,6 @@ void SharedWorkerHost::AddClient(mojom::SharedWorkerClientPtr client,
       &SharedWorkerHost::OnClientConnectionLost, weak_factory_.GetWeakPtr()));
 
   worker_->Connect(info.connection_request_id, port.ReleaseHandle());
-}
-
-bool SharedWorkerHost::ServesExternalClient() {
-  for (const ClientInfo& info : clients_) {
-    if (info.process_id != process_id_)
-      return true;
-  }
-  return false;
 }
 
 void SharedWorkerHost::BindDevToolsAgent(

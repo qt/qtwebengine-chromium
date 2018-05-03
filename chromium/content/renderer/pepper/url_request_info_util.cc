@@ -178,6 +178,12 @@ bool CreateWebURLRequest(PP_Instance instance,
 
   dest->SetSiteForCookies(frame->GetDocument().SiteForCookies());
 
+  // Plug-ins should not load via service workers as plug-ins may have their own
+  // origin checking logic that may get confused if service workers respond with
+  // resources from another origin.
+  // https://w3c.github.io/ServiceWorker/#implementer-concerns
+  dest->SetSkipServiceWorker(true);
+
   const std::string& headers = data->headers;
   if (!headers.empty()) {
     net::HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\n\r");
@@ -225,7 +231,7 @@ bool CreateWebURLRequest(PP_Instance instance,
   }
 
   if (data->has_custom_user_agent || !name_version.empty()) {
-    RequestExtraData* extra_data = new RequestExtraData();
+    auto extra_data = std::make_unique<RequestExtraData>();
     if (data->has_custom_user_agent) {
       extra_data->set_custom_user_agent(
           WebString::FromUTF8(data->custom_user_agent));
@@ -233,7 +239,7 @@ bool CreateWebURLRequest(PP_Instance instance,
     if (!name_version.empty()) {
       extra_data->set_requested_with(WebString::FromUTF8(name_version));
     }
-    dest->SetExtraData(extra_data);
+    dest->SetExtraData(std::move(extra_data));
   }
 
   return true;

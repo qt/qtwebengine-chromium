@@ -32,8 +32,10 @@
 #include "platform/fonts/FontCache.h"
 
 #include <memory>
+
 #include "SkFontMgr.h"
 #include "SkTypeface_win.h"
+#include "base/debug/alias.h"
 #include "platform/Language.h"
 #include "platform/fonts/BitmapGlyphsBlacklist.h"
 #include "platform/fonts/FontDescription.h"
@@ -103,8 +105,15 @@ void FontCache::SetStatusFontMetrics(const wchar_t* family_name,
 
 FontCache::FontCache() : purge_prevent_count_(0) {
   font_manager_ = sk_ref_sp(static_font_manager_);
-  if (!font_manager_)
+  if (!font_manager_) {
+    // This code path is only for unit tests. This SkFontMgr does not work in
+    // sandboxed environments, but injecting this initialization code to all
+    // unit tests isn't easy.
     font_manager_ = SkFontMgr_New_DirectWrite();
+    // Set |is_test_font_mgr_| to capture if this is not happening in the
+    // production code. crbug.com/561873
+    is_test_font_mgr_ = true;
+  }
   DCHECK(font_manager_.get());
 }
 
@@ -126,18 +135,18 @@ scoped_refptr<SimpleFontData> FontCache::PlatformFallbackFontForCharacter(
   }
 
   UScriptCode script;
-  const wchar_t* family = GetFallbackFamily(
+  const UChar* family = GetFallbackFamily(
       character, font_description.GenericFamily(), font_description.Locale(),
       &script, fallback_priority, font_manager_.get());
-  FontPlatformData* data = nullptr;
   if (family) {
-    FontFaceCreationParams create_by_family(
-        AtomicString(family, wcslen(family)));
-    data = GetFontPlatformData(font_description, create_by_family);
+    FontFaceCreationParams create_by_family(family);
+    FontPlatformData* data =
+        GetFontPlatformData(font_description, create_by_family);
+    if (data && data->FontContainsCharacter(character))
+      return FontDataFromFontPlatformData(data, kDoNotRetain);
   }
 
-  if ((!data || !data->FontContainsCharacter(character)) &&
-      use_skia_font_fallback_) {
+  if (use_skia_font_fallback_) {
     const char* bcp47_locale = nullptr;
     int locale_count = 0;
     // If the font description has a locale, use that. Otherwise, Skia will
@@ -158,9 +167,22 @@ scoped_refptr<SimpleFontData> FontCache::PlatformFallbackFontForCharacter(
       SkString skia_family;
       typeface->getFamilyName(&skia_family);
       FontFaceCreationParams create_by_family(ToAtomicString(skia_family));
-      data = GetFontPlatformData(font_description, create_by_family);
+      FontPlatformData* data =
+          GetFontPlatformData(font_description, create_by_family);
+      if (data && data->FontContainsCharacter(character))
+        return FontDataFromFontPlatformData(data, kDoNotRetain);
     }
   }
+
+  // In production, these 3 font managers must match.
+  // They don't match in unit tests or in single process mode.
+  // Capture them in minidump for crbug.com/409784
+  SkFontMgr* font_mgr = font_manager_.get();
+  SkFontMgr* static_font_mgr = static_font_manager_;
+  SkFontMgr* skia_default_font_mgr = SkFontMgr::RefDefault().get();
+  base::debug::Alias(&font_mgr);
+  base::debug::Alias(&static_font_mgr);
+  base::debug::Alias(&skia_default_font_mgr);
 
   // Last resort font list : PanUnicode. CJK fonts have a pretty
   // large repertoire. Eventually, we need to scan all the fonts
@@ -200,23 +222,14 @@ scoped_refptr<SimpleFontData> FontCache::PlatformFallbackFontForCharacter(
   // because it's based on script to font mapping. This problem is
   // critical enough for non-Latin scripts (especially Han) to
   // warrant an additional (real coverage) check with fontCotainsCharacter.
-  int i;
-  for (i = 0;
-       (!data || !data->FontContainsCharacter(character)) && i < num_fonts;
-       ++i) {
+  for (int i = 0; i < num_fonts; ++i) {
     family = pan_uni_fonts[i];
-    FontFaceCreationParams create_by_family(
-        AtomicString(family, wcslen(family)));
-    data = GetFontPlatformData(font_description, create_by_family);
+    FontFaceCreationParams create_by_family(family);
+    FontPlatformData* data =
+        GetFontPlatformData(font_description, create_by_family);
+    if (data && data->FontContainsCharacter(character))
+      return FontDataFromFontPlatformData(data, kDoNotRetain);
   }
-
-  // When i-th font (0-base) in |panUniFonts| contains a character and
-  // we get out of the loop, |i| will be |i + 1|. That is, if only the
-  // last font in the array covers the character, |i| will be numFonts.
-  // So, we have to use '<=" rather than '<' to see if we found a font
-  // covering the character.
-  if (i <= num_fonts)
-    return FontDataFromFontPlatformData(data, kDoNotRetain);
 
   return nullptr;
 }

@@ -40,6 +40,19 @@ bool CheckLRUListOrder(const base::LinkedList<MemEntryImpl>& lru_list) {
   return true;
 }
 
+// Returns the next entry after |node| in |lru_list| that's not a child
+// of |node|.  This is useful when dooming, since dooming a parent entry
+// will also doom its children.
+base::LinkNode<MemEntryImpl>* NextSkippingChildren(
+    const base::LinkedList<MemEntryImpl>& lru_list,
+    base::LinkNode<MemEntryImpl>* node) {
+  MemEntryImpl* cur = node->value();
+  do {
+    node = node->next();
+  } while (node != lru_list.end() && node->value()->parent() == cur);
+  return node;
+}
+
 }  // namespace
 
 MemBackendImpl::MemBackendImpl(net::NetLog* net_log)
@@ -50,7 +63,6 @@ MemBackendImpl::~MemBackendImpl() {
   DCHECK(CheckLRUListOrder(lru_list_));
   while (!entries_.empty())
     entries_.begin()->second->Doom();
-  DCHECK_EQ(0, current_size_);
 
   if (!post_cleanup_callback_.is_null())
     base::SequencedTaskRunnerHandle::Get()->PostTask(
@@ -175,7 +187,8 @@ int MemBackendImpl::CreateEntry(const std::string& key,
   if (!did_insert)
     return net::ERR_FAILED;
 
-  MemEntryImpl* cache_entry = new MemEntryImpl(this, key, net_log_);
+  MemEntryImpl* cache_entry =
+      new MemEntryImpl(weak_factory_.GetWeakPtr(), key, net_log_);
   create_result.first->second = cache_entry;
   *entry = cache_entry;
   return net::OK;
@@ -207,7 +220,7 @@ int MemBackendImpl::DoomEntriesBetween(Time initial_time,
     node = node->next();
   while (node != lru_list_.end() && node->value()->GetLastUsed() < end_time) {
     MemEntryImpl* to_doom = node->value();
-    node = node->next();
+    node = NextSkippingChildren(lru_list_, node);
     to_doom->Doom();
   }
 
@@ -332,7 +345,8 @@ void MemBackendImpl::EvictIfNeeded() {
   base::LinkNode<MemEntryImpl>* entry = lru_list_.head();
   while (current_size_ > target_size && entry != lru_list_.end()) {
     MemEntryImpl* to_doom = entry->value();
-    entry = entry->next();
+    entry = NextSkippingChildren(lru_list_, entry);
+
     if (!to_doom->InUse())
       to_doom->Doom();
   }

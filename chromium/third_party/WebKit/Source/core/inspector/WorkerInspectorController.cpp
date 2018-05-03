@@ -66,21 +66,19 @@ WorkerInspectorController::~WorkerInspectorController() {
   DCHECK(!thread_);
 }
 
-void WorkerInspectorController::ConnectFrontend(
-    int session_id,
-    const String& parent_instrumentation_token) {
+void WorkerInspectorController::ConnectFrontend(int session_id) {
   if (sessions_.find(session_id) != sessions_.end())
     return;
 
   InspectorSession* session = new InspectorSession(
       this, probe_sink_.Get(), session_id, debugger_->GetV8Inspector(),
-      debugger_->ContextGroupId(thread_), nullptr);
+      debugger_->ContextGroupId(thread_), String());
   session->Append(new InspectorLogAgent(thread_->GetConsoleMessageStorage(),
                                         nullptr, session->V8Session()));
   if (thread_->GlobalScope()->IsWorkerGlobalScope()) {
     DCHECK(ToWorkerGlobalScope(thread_->GlobalScope())->EnsureFetcher());
     session->Append(new InspectorNetworkAgent(
-        new InspectedFrames(nullptr, parent_instrumentation_token),
+        new InspectedFrames(nullptr),
         ToWorkerGlobalScope(thread_->GlobalScope()), session->V8Session()));
   }
   if (sessions_.IsEmpty())
@@ -120,17 +118,24 @@ void WorkerInspectorController::FlushProtocolNotifications() {
     it.value->flushProtocolNotifications();
 }
 
-void WorkerInspectorController::SendProtocolMessage(int session_id,
-                                                    int call_id,
-                                                    const String& response,
-                                                    const String& state) {
+void WorkerInspectorController::SendProtocolResponse(int session_id,
+                                                     int call_id,
+                                                     const String& response,
+                                                     const String& state) {
   // Make tests more predictable by flushing all sessions before sending
   // protocol response in any of them.
-  if (LayoutTestSupport::IsRunningLayoutTest() && call_id)
+  if (LayoutTestSupport::IsRunningLayoutTest())
     FlushProtocolNotifications();
   // Worker messages are wrapped, no need to handle callId or state.
   thread_->GetWorkerReportingProxy().PostMessageToPageInspector(session_id,
                                                                 response);
+}
+
+void WorkerInspectorController::SendProtocolNotification(
+    int session_id,
+    const String& message) {
+  thread_->GetWorkerReportingProxy().PostMessageToPageInspector(session_id,
+                                                                message);
 }
 
 void WorkerInspectorController::WillProcessTask() {}

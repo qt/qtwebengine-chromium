@@ -24,12 +24,11 @@
 #include "components/sync/base/sync_prefs.h"
 #include "components/sync/device_info/device_info.h"
 #include "components/sync/model/syncable_service.h"
-#include "components/sync/user_events/global_id_mapper.h"
 #include "components/sync_sessions/favicon_cache.h"
 #include "components/sync_sessions/local_session_event_router.h"
 #include "components/sync_sessions/lost_navigations_recorder.h"
-#include "components/sync_sessions/open_tabs_ui_delegate.h"
-#include "components/sync_sessions/revisit/page_revisit_broadcaster.h"
+#include "components/sync_sessions/open_tabs_ui_delegate_impl.h"
+#include "components/sync_sessions/sessions_global_id_mapper.h"
 #include "components/sync_sessions/synced_session.h"
 #include "components/sync_sessions/synced_session_tracker.h"
 #include "components/sync_sessions/task_tracker.h"
@@ -41,10 +40,8 @@ class SyncPrefs;
 }  // namespace syncer
 
 namespace sync_pb {
-class SessionHeader;
 class SessionSpecifics;
 class SessionTab;
-class SessionWindow;
 }  // namespace sync_pb
 
 namespace extensions {
@@ -53,22 +50,20 @@ class ExtensionSessionsTest;
 
 namespace sync_sessions {
 
+class SessionsGlobalIdMapper;
 class SyncedTabDelegate;
 class SyncedWindowDelegatesGetter;
 
 // Contains all logic for associating the Chrome sessions model and
 // the sync sessions model.
 class SessionsSyncManager : public syncer::SyncableService,
-                            public OpenTabsUIDelegate,
-                            public LocalSessionEventHandler,
-                            public syncer::GlobalIdMapper {
+                            public LocalSessionEventHandler {
  public:
   SessionsSyncManager(SyncSessionsClient* sessions_client,
                       syncer::SyncPrefs* sync_prefs,
                       syncer::LocalDeviceInfoProvider* local_device,
                       LocalSessionEventRouter* router,
-                      const base::Closure& sessions_updated_callback,
-                      const base::Closure& datatype_refresh_callback);
+                      const base::RepeatingClosure& sessions_updated_callback);
   ~SessionsSyncManager() override;
 
   // syncer::SyncableService implementation.
@@ -82,24 +77,6 @@ class SessionsSyncManager : public syncer::SyncableService,
   syncer::SyncError ProcessSyncChanges(
       const base::Location& from_here,
       const syncer::SyncChangeList& change_list) override;
-
-  // OpenTabsUIDelegate implementation.
-  bool GetSyncedFaviconForPageURL(
-      const std::string& pageurl,
-      scoped_refptr<base::RefCountedMemory>* favicon_png) const override;
-  bool GetAllForeignSessions(
-      std::vector<const SyncedSession*>* sessions) override;
-  bool GetForeignSession(
-      const std::string& tag,
-      std::vector<const sessions::SessionWindow*>* windows) override;
-  bool GetForeignTab(const std::string& tag,
-                     SessionID::id_type tab_id,
-                     const sessions::SessionTab** tab) override;
-  bool GetForeignSessionTabs(
-      const std::string& tag,
-      std::vector<const sessions::SessionTab*>* tabs) override;
-  void DeleteForeignSession(const std::string& tag) override;
-  bool GetLocalSession(const SyncedSession** local_session) override;
 
   // LocalSessionEventHandler implementation.
   void OnLocalTabModified(SyncedTabDelegate* modified_tab) override;
@@ -120,16 +97,13 @@ class SessionsSyncManager : public syncer::SyncableService,
   // sessions data downloaded (sync cycles complete).
   void DoGarbageCollection();
 
-  // GlobalIdMapper implementation.
-  void AddGlobalIdChangeObserver(syncer::GlobalIdChange callback) override;
-  int64_t GetLatestGlobalId(int64_t global_id) override;
+  SessionsGlobalIdMapper* GetGlobalIdMapper();
+
+  OpenTabsUIDelegate* GetOpenTabsUIDelegate();
 
  private:
   friend class extensions::ExtensionSessionsTest;
   friend class SessionsSyncManagerTest;
-  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, PopulateSyncedSession);
-  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, PopulateSessionWindow);
-  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, ValidTabs);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, SetSessionTabFromDelegate);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
                            SetSessionTabFromDelegateNavigationIndex);
@@ -143,12 +117,9 @@ class SessionsSyncManager : public syncer::SyncableService,
                            ProcessForeignDeleteTabsWithReusedNodeIds);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
                            SaveUnassociatedNodesForReassociation);
-  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, MergeDeletesCorruptNode);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, MergeDeletesBadHash);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
                            MergeLocalSessionExistingTabs);
-  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
-                           CheckPrerenderedWebContentsSwap);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
                            AssociateWindowsDontReloadTabs);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, SwappedOutOnRestore);
@@ -156,11 +127,6 @@ class SessionsSyncManager : public syncer::SyncableService,
                            ProcessRemoteDeleteOfLocalSession);
 
   void InitializeCurrentMachineTag(const std::string& cache_guid);
-
-  // Load and add window or tab data from synced specifics to our internal
-  // tracking.
-  void UpdateTrackerWithSpecifics(const sync_pb::SessionSpecifics& specifics,
-                                  const base::Time& modification_time);
 
   // Returns true if |sync_data| contained a header node for the current
   // machine, false otherwise. |new_changes| is a link to the SyncChange
@@ -193,21 +159,8 @@ class SessionsSyncManager : public syncer::SyncableService,
   void DeleteForeignSessionInternal(const std::string& tag,
                                     syncer::SyncChangeList* change_output);
 
-  // Used to populate a session header from the session specifics header
-  // provided.
-  void PopulateSyncedSessionFromSpecifics(
-      const std::string& session_tag,
-      const sync_pb::SessionHeader& header_specifics,
-      base::Time mtime,
-      SyncedSession* synced_session);
-
-  // Builds |synced_session_window| from the session specifics window
-  // provided and updates the SessionTracker with foreign session data created.
-  void PopulateSyncedSessionWindowFromSpecifics(
-      const std::string& session_tag,
-      const sync_pb::SessionWindow& specifics,
-      base::Time mtime,
-      SyncedSessionWindow* synced_session_window);
+  // Same as above but it also notifies the processor.
+  void DeleteForeignSessionFromUI(const std::string& tag);
 
   // Resync local window information. Updates the local sessions header node
   // with the status of open windows and the order of tabs they contain. Should
@@ -275,10 +228,6 @@ class SessionsSyncManager : public syncer::SyncableService,
   // See |local_tab_pool_out_of_sync_|.
   bool RebuildAssociations();
 
-  // Validates the content of a SessionHeader protobuf.
-  // Returns false if validation fails.
-  static bool IsValidSessionHeader(const sync_pb::SessionHeader& header);
-
   // Calculates the tag hash from a specifics object. Calculating the hash is
   // something we typically want to avoid doing in the model type like this.
   // However, the only place that understands how to generate a tag from the
@@ -291,10 +240,6 @@ class SessionsSyncManager : public syncer::SyncableService,
 
   SyncedWindowDelegatesGetter* synced_window_delegates_getter() const;
 
-  void TrackNavigationIds(const sessions::SerializedNavigationEntry& current);
-
-  void CleanupNavigationTracking();
-
   // On Android, it's possible to not have any tabbed windows when only custom
   // tabs are currently open. This means that there is tab data that will be
   // restored later, but we cannot access it. This method is an elaborate way to
@@ -306,6 +251,8 @@ class SessionsSyncManager : public syncer::SyncableService,
 
   SyncedSessionTracker session_tracker_;
   FaviconCache favicon_cache_;
+  SessionsGlobalIdMapper global_id_mapper_;
+  OpenTabsUIDelegateImpl open_tabs_ui_delegate_;
 
   // Tracks whether our local representation of which sync nodes map to what
   // tabs (belonging to the current local session) is inconsistent.  This can
@@ -341,27 +288,15 @@ class SessionsSyncManager : public syncer::SyncableService,
 
   LocalSessionEventRouter* local_event_router_;
 
-  // Owns revisiting instrumentation logic for page visit events.
-  PageRevisitBroadcaster page_revisit_broadcaster_;
-
   std::unique_ptr<sync_sessions::LostNavigationsRecorder>
       lost_navigations_recorder_;
 
   // Callback to inform interested observer that new sessions data has arrived.
-  base::Closure sessions_updated_callback_;
-
-  // Callback to inform sync that a sync data refresh is requested.
-  base::Closure datatype_refresh_callback_;
+  base::RepeatingClosure sessions_updated_callback_;
 
   // Tracks Chrome Tasks, which associates navigations, with tab and navigation
   // changes of current session.
   std::unique_ptr<TaskTracker> task_tracker_;
-
-  // Used to track global_ids that should be used when referencing various
-  // pieces of sessions data, and notify observer when things have changed.
-  std::map<int64_t, int> global_to_unique_;
-  std::map<int, int64_t> unique_to_current_global_;
-  std::vector<syncer::GlobalIdChange> global_id_change_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionsSyncManager);
 };

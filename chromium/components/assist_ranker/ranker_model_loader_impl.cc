@@ -6,13 +6,14 @@
 
 #include <utility>
 
+#include <memory>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/files/important_file_writer.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
@@ -102,7 +103,7 @@ RankerModelLoaderImpl::RankerModelLoaderImpl(
       model_path_(std::move(model_path)),
       model_url_(std::move(model_url)),
       uma_prefix_(std::move(uma_prefix)),
-      url_fetcher_(base::MakeUnique<RankerURLFetcher>()),
+      url_fetcher_(std::make_unique<RankerURLFetcher>()),
       weak_ptr_factory_(this) {}
 
 RankerModelLoaderImpl::~RankerModelLoaderImpl() {
@@ -120,6 +121,7 @@ void RankerModelLoaderImpl::NotifyOfRankerActivity() {
       // There was no configured model path. Switch the state to IDLE and
       // fall through to consider the URL.
       state_ = LoaderState::IDLE;
+      FALLTHROUGH;
     case LoaderState::IDLE:
       if (model_url_.is_valid()) {
         StartLoadFromURL();
@@ -128,6 +130,7 @@ void RankerModelLoaderImpl::NotifyOfRankerActivity() {
       // There was no configured model URL. Switch the state to FINISHED and
       // fall through.
       state_ = LoaderState::FINISHED;
+      FALLTHROUGH;
     case LoaderState::FINISHED:
     case LoaderState::LOADING_FROM_FILE:
     case LoaderState::LOADING_FROM_URL:

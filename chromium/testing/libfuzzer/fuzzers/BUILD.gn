@@ -220,6 +220,20 @@ fuzzer_test("v8_regexp_parser_fuzzer") {
   libfuzzer_options = [ "max_len=64" ]
 }
 
+fuzzer_test("v8_regexp_builtins_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:regexp_builtins_fuzzer",
+  ]
+}
+
+fuzzer_test("v8_multi_return_fuzzer") {
+  sources = []
+  deps = [
+    "//v8:multi_return_fuzzer",
+  ]
+}
+
 fuzzer_test("v8_wasm_code_fuzzer") {
   sources = []
   deps = [
@@ -232,14 +246,6 @@ fuzzer_test("v8_wasm_compile_fuzzer") {
   sources = []
   deps = [
     "//v8:wasm_compile_fuzzer",
-  ]
-  libfuzzer_options = [ "max_len=500" ]
-}
-
-fuzzer_test("v8_wasm_call_fuzzer") {
-  sources = []
-  deps = [
-    "//v8:wasm_call_fuzzer",
   ]
   libfuzzer_options = [ "max_len=500" ]
 }
@@ -517,4 +523,21 @@ fuzzer_test("v8_fully_instrumented_fuzzer") {
   ]
   dict = "dicts/generated/javascript.dict"
   libfuzzer_options = [ "only_ascii=1" ]
+}
+
+if (!is_win) {
+  fuzzer_test("skia_image_filter_proto_fuzzer") {
+    sources = [
+      "skia_image_filter_proto_fuzzer.cc",
+    ]
+
+    deps = [
+      "//base",
+      "//base/test:test_support",
+      "//skia",
+      "//testing/libfuzzer/proto:skia_image_filter_converter",
+      "//testing/libfuzzer/proto:skia_image_filter_proto",
+      "//third_party/libprotobuf-mutator",
+    ]
+  }
 }

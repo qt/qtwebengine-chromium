@@ -24,6 +24,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task_runner_util.h"
 #include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_configurator.h"
@@ -39,9 +40,9 @@
 #include "net/base/load_flags.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_interfaces.h"
+#include "net/base/proxy_server.h"
 #include "net/log/net_log_source_type.h"
 #include "net/nqe/effective_connection_type.h"
-#include "net/proxy/proxy_server.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -117,6 +118,52 @@ void RecordWarmupURLFetchAttemptEvent(
   UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.WarmupURL.FetchAttemptEvent",
                             warmup_url_fetch_event,
                             WarmupURLFetchAttemptEvent::kCount);
+}
+
+std::string DoGetCurrentNetworkID() {
+  // It is possible that the connection type changed between when
+  // GetConnectionType() was called and when the API to determine the
+  // network name was called. Check if that happened and retry until the
+  // connection type stabilizes. This is an imperfect solution but should
+  // capture majority of cases, and should not significantly affect estimates
+  // (that are approximate to begin with).
+
+  while (true) {
+    net::NetworkChangeNotifier::ConnectionType connection_type =
+        net::NetworkChangeNotifier::GetConnectionType();
+    std::string ssid_mccmnc;
+
+    switch (connection_type) {
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_UNKNOWN:
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE:
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_BLUETOOTH:
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_ETHERNET:
+        break;
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI:
+#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_WIN)
+        ssid_mccmnc = net::GetWifiSSID();
+#endif
+        break;
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_2G:
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_3G:
+      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_4G:
+#if defined(OS_ANDROID)
+        ssid_mccmnc = net::android::GetTelephonyNetworkOperator();
+#endif
+        break;
+    }
+
+    if (connection_type == net::NetworkChangeNotifier::GetConnectionType()) {
+      if (connection_type >= net::NetworkChangeNotifier::CONNECTION_2G &&
+          connection_type <= net::NetworkChangeNotifier::CONNECTION_4G) {
+        // No need to differentiate cellular connections by the exact
+        // connection type.
+        return "cell," + ssid_mccmnc;
+      }
+      return base::IntToString(connection_type) + "," + ssid_mccmnc;
+    }
+  }
+  NOTREACHED();
 }
 
 }  // namespace
@@ -274,7 +321,7 @@ bool DataReductionProxyConfig::IsBypassedByDataReductionProxyLocalRules(
     const net::ProxyConfig& data_reduction_proxy_config) const {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(request.context());
-  DCHECK(request.context()->proxy_service());
+  DCHECK(request.context()->proxy_resolution_service());
   net::ProxyInfo result;
   data_reduction_proxy_config.proxy_rules().Apply(
       request.url(), &result);
@@ -291,9 +338,9 @@ bool DataReductionProxyConfig::AreDataReductionProxiesBypassed(
     base::TimeDelta* min_retry_delay) const {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (request.context() != nullptr &&
-      request.context()->proxy_service() != nullptr) {
+      request.context()->proxy_resolution_service() != nullptr) {
     return AreProxiesBypassed(
-        request.context()->proxy_service()->proxy_retry_info(),
+        request.context()->proxy_resolution_service()->proxy_retry_info(),
         data_reduction_proxy_config.proxy_rules(),
         request.url().SchemeIsCryptographic(), min_retry_delay);
   }
@@ -306,8 +353,8 @@ bool DataReductionProxyConfig::AreProxiesBypassed(
     const net::ProxyConfig::ProxyRules& proxy_rules,
     bool is_https,
     base::TimeDelta* min_retry_delay) const {
-  // Data reduction proxy config is TYPE_PROXY_PER_SCHEME.
-  if (proxy_rules.type != net::ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME)
+  // Data reduction proxy config is Type::PROXY_LIST_PER_SCHEME.
+  if (proxy_rules.type != net::ProxyConfig::ProxyRules::Type::PROXY_LIST_PER_SCHEME)
     return false;
 
   if (is_https)
@@ -363,8 +410,8 @@ bool DataReductionProxyConfig::IsProxyBypassed(
 bool DataReductionProxyConfig::ContainsDataReductionProxy(
     const net::ProxyConfig::ProxyRules& proxy_rules) const {
   DCHECK(thread_checker_.CalledOnValidThread());
-  // Data Reduction Proxy configurations are always TYPE_PROXY_PER_SCHEME.
-  if (proxy_rules.type != net::ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME)
+  // Data Reduction Proxy configurations are always Type::PROXY_LIST_PER_SCHEME.
+  if (proxy_rules.type != net::ProxyConfig::ProxyRules::Type::PROXY_LIST_PER_SCHEME)
     return false;
 
   const net::ProxyList* http_proxy_list =
@@ -629,7 +676,22 @@ void DataReductionProxyConfig::OnNetworkChanged(
 
   connection_type_ = type;
   RecordNetworkChangeEvent(NETWORK_CHANGED);
-  network_properties_manager_->OnChangeInNetworkID(GetCurrentNetworkID());
+
+  if (!get_network_id_task_runner_) {
+    ContinueNetworkChanged(GetCurrentNetworkID());
+    return;
+  }
+
+  base::PostTaskAndReplyWithResult(
+      get_network_id_task_runner_.get(), FROM_HERE,
+      base::BindOnce(&DoGetCurrentNetworkID),
+      base::BindOnce(&DataReductionProxyConfig::ContinueNetworkChanged,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void DataReductionProxyConfig::ContinueNetworkChanged(
+    const std::string& network_id) {
+  network_properties_manager_->OnChangeInNetworkID(network_id);
 
   ReloadConfig();
 
@@ -761,7 +823,8 @@ bool DataReductionProxyConfig::ShouldAcceptServerPreview(
   DCHECK((request.load_flags() & net::LOAD_MAIN_FRAME_DEPRECATED) != 0);
   DCHECK(!request.url().SchemeIsCryptographic());
 
-  if (!base::FeatureList::IsEnabled(
+  if (!previews::params::ArePreviewsAllowed() ||
+      !base::FeatureList::IsEnabled(
           features::kDataReductionProxyDecidesTransform)) {
     return false;
   }
@@ -805,50 +868,7 @@ DataReductionProxyConfig::GetProxiesForHttp() const {
 
 std::string DataReductionProxyConfig::GetCurrentNetworkID() const {
   DCHECK(thread_checker_.CalledOnValidThread());
-
-  // It is possible that the connection type changed between when
-  // GetConnectionType() was called and when the API to determine the
-  // network name was called. Check if that happened and retry until the
-  // connection type stabilizes. This is an imperfect solution but should
-  // capture majority of cases, and should not significantly affect estimates
-  // (that are approximate to begin with).
-
-  while (true) {
-    net::NetworkChangeNotifier::ConnectionType connection_type =
-        net::NetworkChangeNotifier::GetConnectionType();
-    std::string ssid_mccmnc;
-
-    switch (connection_type) {
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_UNKNOWN:
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE:
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_BLUETOOTH:
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_ETHERNET:
-        break;
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI:
-#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_WIN)
-        ssid_mccmnc = net::GetWifiSSID();
-#endif
-        break;
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_2G:
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_3G:
-      case net::NetworkChangeNotifier::ConnectionType::CONNECTION_4G:
-#if defined(OS_ANDROID)
-        ssid_mccmnc = net::android::GetTelephonyNetworkOperator();
-#endif
-        break;
-    }
-
-    if (connection_type == net::NetworkChangeNotifier::GetConnectionType()) {
-      if (connection_type >= net::NetworkChangeNotifier::CONNECTION_2G &&
-          connection_type <= net::NetworkChangeNotifier::CONNECTION_4G) {
-        // No need to differentiate cellular connections by the exact
-        // connection type.
-        return "cell," + ssid_mccmnc;
-      }
-      return base::IntToString(connection_type) + "," + ssid_mccmnc;
-    }
-  }
-  NOTREACHED();
+  return DoGetCurrentNetworkID();
 }
 
 const NetworkPropertiesManager&

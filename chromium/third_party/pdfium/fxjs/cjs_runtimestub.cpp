@@ -30,11 +30,13 @@ class CJS_RuntimeStub final : public IJS_Runtime {
   }
 
 #ifdef PDF_ENABLE_XFA
-  bool GetValueByName(const ByteStringView&, CFXJSE_Value*) override {
+  bool GetValueByNameFromGlobalObject(const ByteStringView&,
+                                      CFXJSE_Value*) override {
     return false;
   }
 
-  bool SetValueByName(const ByteStringView&, CFXJSE_Value*) override {
+  bool SetValueByNameInGlobalObject(const ByteStringView&,
+                                    CFXJSE_Value*) override {
     return false;
   }
 #endif  // PDF_ENABLE_XFA
@@ -55,6 +57,7 @@ void IJS_Runtime::Initialize(unsigned int slot, void* isolate) {}
 void IJS_Runtime::Destroy() {}
 
 // static
-IJS_Runtime* IJS_Runtime::Create(CPDFSDK_FormFillEnvironment* pFormFillEnv) {
-  return new CJS_RuntimeStub(pFormFillEnv);
+std::unique_ptr<IJS_Runtime> IJS_Runtime::Create(
+    CPDFSDK_FormFillEnvironment* pFormFillEnv) {
+  return pdfium::MakeUnique<CJS_RuntimeStub>(pFormFillEnv);
 }

@@ -29,11 +29,18 @@ rtc_source_set("call_api") {
 
   deps = [
     # TODO(kjellander): Add remaining dependencies when webrtc:4243 is done.
-    ":audio_mixer_api",
     ":transport_api",
     "..:webrtc_common",
     "../rtc_base:rtc_base_approved",
+    "audio:audio_mixer_api",
     "audio_codecs:audio_codecs_api",
+  ]
+}
+
+rtc_source_set("callfactory_api") {
+  visibility = [ "*" ]
+  sources = [
+    "call/callfactoryinterface.h",
   ]
 }
 
@@ -60,6 +67,7 @@ rtc_static_library("libjingle_peerconnection_api") {
     "mediatypes.h",
     "notifier.h",
     "peerconnectionfactoryproxy.h",
+    "peerconnectioninterface.h",
     "peerconnectionproxy.h",
     "proxy.cc",
     "proxy.h",
@@ -69,6 +77,7 @@ rtc_static_library("libjingle_peerconnection_api") {
     "rtp_headers.h",
     "rtpparameters.cc",
     "rtpparameters.h",
+    "rtpreceiverinterface.cc",
     "rtpreceiverinterface.h",
     "rtpsenderinterface.h",
     "rtptransceiverinterface.h",
@@ -78,7 +87,6 @@ rtc_static_library("libjingle_peerconnection_api") {
     "turncustomizer.h",
     "umametrics.cc",
     "umametrics.h",
-    "videosinkinterface.h",
     "videosourceinterface.cc",
     "videosourceinterface.h",
     "videosourceproxy.h",
@@ -91,10 +99,14 @@ rtc_static_library("libjingle_peerconnection_api") {
 
   deps = [
     ":array_view",
+    ":audio_options_api",
+    ":callfactory_api",
+    ":fec_controller_api",
+    ":libjingle_logging_api",
     ":optional",
-    ":peerconnection_and_implicit_call_api",
     ":rtc_stats_api",
     ":video_frame_api",
+    "audio:audio_mixer_api",
     "audio_codecs:audio_codecs_api",
 
     # Basically, don't add stuff here. You might break sensitive downstream
@@ -102,6 +114,8 @@ rtc_static_library("libjingle_peerconnection_api") {
     # file, really. All these should arguably go away in time.
     "..:typedefs",
     "..:webrtc_common",
+    "../logging:rtc_event_log_api",
+    "../media:rtc_media_config",
     "../modules/audio_processing:audio_processing_statistics",
     "../rtc_base:checks",
     "../rtc_base:deprecation",
@@ -109,24 +123,11 @@ rtc_static_library("libjingle_peerconnection_api") {
     "../rtc_base:rtc_base_approved",
     "../rtc_base:stringutils",
   ]
+
   if (is_nacl) {
     # This is needed by .h files included from rtc_base.
     deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
   }
-}
-
-rtc_source_set("peerconnection_and_implicit_call_api") {
-  visibility = [ "*" ]
-
-  # The peerconnectioninterface.h file pulls in call/callfactoryinterface.h
-  # and the entire call module with it. We need to either get rid of this
-  # dependency or pull most of call/ into the API. For now, silence the warnings
-  # this creates since it creates a circular dependency (call very much depends
-  # on API). See bugs.webrtc.org/8667.
-  check_includes = false
-  sources = [
-    "peerconnectioninterface.h",
-  ]
 }
 
 rtc_source_set("libjingle_logging_api") {
@@ -185,14 +186,14 @@ rtc_source_set("rtc_stats_api") {
   ]
 }
 
-rtc_source_set("audio_mixer_api") {
+rtc_source_set("audio_options_api") {
   visibility = [ "*" ]
   sources = [
-    "audio/audio_mixer.h",
+    "audio_options.h",
   ]
 
   deps = [
-    "../modules:module_api",
+    ":optional",
     "../rtc_base:rtc_base_approved",
   ]
 }
@@ -200,7 +201,20 @@ rtc_source_set("audio_mixer_api") {
 rtc_source_set("transport_api") {
   visibility = [ "*" ]
   sources = [
+    "call/transport.cc",
     "call/transport.h",
+  ]
+}
+
+rtc_source_set("fec_controller_api") {
+  visibility = [ "*" ]
+  sources = [
+    "fec_controller.h",
+  ]
+
+  deps = [
+    "..:webrtc_common",
+    "../modules:module_fec_api",
   ]
 }
 
@@ -216,11 +230,23 @@ rtc_source_set("video_frame_api") {
     "video/video_rotation.h",
     "video/video_timing.cc",
     "video/video_timing.h",
+    "videosinkinterface.h",
   ]
 
   deps = [
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+  ]
+}
+
+rtc_source_set("encoded_frame_api") {
+  visibility = [ "*" ]
+  sources = [
+    "video/encoded_frame.h",
+  ]
+
+  deps = [
+    "../modules/video_coding:encoded_frame",
   ]
 }
 
@@ -294,9 +320,8 @@ if (rtc_include_tests) {
     ]
 
     deps = [
-      ":audio_mixer_api",
       "../test:test_support",
-      "//testing/gmock",
+      "audio:audio_mixer_api",
     ]
   }
 
@@ -310,7 +335,6 @@ if (rtc_include_tests) {
     deps = [
       ":libjingle_peerconnection_api",
       "../test:test_support",
-      "//testing/gmock",
     ]
   }
 
@@ -324,7 +348,6 @@ if (rtc_include_tests) {
     deps = [
       "../api/video_codecs:video_codecs_api",
       "../test:test_support",
-      "//testing/gmock",
     ]
   }
 
@@ -335,7 +358,6 @@ if (rtc_include_tests) {
       "fakemetricsobserver.h",
     ]
     deps = [
-      "../api:peerconnection_and_implicit_call_api",
       "../media:rtc_media_base",
       "../rtc_base:checks",
       "../rtc_base:rtc_base_approved",

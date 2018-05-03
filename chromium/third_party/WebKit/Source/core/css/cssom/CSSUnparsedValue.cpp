@@ -19,9 +19,9 @@ StringView FindVariableName(CSSParserTokenRange& range) {
   return range.Consume().Value();
 }
 
-StringOrCSSVariableReferenceValue VariableReferenceValue(
+CSSUnparsedSegment VariableReferenceValue(
     const StringView& variable_name,
-    const HeapVector<StringOrCSSVariableReferenceValue>& tokens) {
+    const HeapVector<CSSUnparsedSegment>& tokens) {
   CSSUnparsedValue* unparsed_value;
   if (tokens.size() == 0)
     unparsed_value = nullptr;
@@ -31,19 +31,17 @@ StringOrCSSVariableReferenceValue VariableReferenceValue(
   CSSStyleVariableReferenceValue* variable_reference =
       CSSStyleVariableReferenceValue::Create(variable_name.ToString(),
                                              unparsed_value);
-  return StringOrCSSVariableReferenceValue::FromCSSVariableReferenceValue(
-      variable_reference);
+  return CSSUnparsedSegment::FromCSSVariableReferenceValue(variable_reference);
 }
 
-HeapVector<StringOrCSSVariableReferenceValue> ParserTokenRangeToTokens(
+HeapVector<CSSUnparsedSegment> ParserTokenRangeToTokens(
     CSSParserTokenRange range) {
-  HeapVector<StringOrCSSVariableReferenceValue> tokens;
+  HeapVector<CSSUnparsedSegment> tokens;
   StringBuilder builder;
   while (!range.AtEnd()) {
     if (range.Peek().FunctionId() == CSSValueVar) {
       if (!builder.IsEmpty()) {
-        tokens.push_back(
-            StringOrCSSVariableReferenceValue::FromString(builder.ToString()));
+        tokens.push_back(CSSUnparsedSegment::FromString(builder.ToString()));
         builder.Clear();
       }
       CSSParserTokenRange block = range.ConsumeBlock();
@@ -58,8 +56,7 @@ HeapVector<StringOrCSSVariableReferenceValue> ParserTokenRangeToTokens(
     }
   }
   if (!builder.IsEmpty()) {
-    tokens.push_back(
-        StringOrCSSVariableReferenceValue::FromString(builder.ToString()));
+    tokens.push_back(CSSUnparsedSegment::FromString(builder.ToString()));
   }
   return tokens;
 }
@@ -76,7 +73,39 @@ CSSUnparsedValue* CSSUnparsedValue::FromCSSValue(const CSSVariableData& value) {
   return CSSUnparsedValue::Create(ParserTokenRangeToTokens(value.TokenRange()));
 }
 
+CSSUnparsedSegment CSSUnparsedValue::AnonymousIndexedGetter(
+    unsigned index,
+    ExceptionState& exception_state) {
+  if (index < tokens_.size())
+    return tokens_[index];
+  return {};
+}
+
+bool CSSUnparsedValue::AnonymousIndexedSetter(unsigned index,
+                                              const CSSUnparsedSegment& segment,
+                                              ExceptionState& exception_state) {
+  if (index < tokens_.size()) {
+    tokens_[index] = segment;
+    return true;
+  }
+
+  if (index == tokens_.size()) {
+    tokens_.push_back(segment);
+    return true;
+  }
+
+  exception_state.ThrowRangeError(
+      ExceptionMessages::IndexOutsideRange<unsigned>(
+          "index", index, 0, ExceptionMessages::kInclusiveBound, tokens_.size(),
+          ExceptionMessages::kInclusiveBound));
+  return false;
+}
+
 const CSSValue* CSSUnparsedValue::ToCSSValue() const {
+  if (tokens_.IsEmpty()) {
+    return CSSVariableReferenceValue::Create(CSSVariableData::Create());
+  }
+
   CSSTokenizer tokenizer(ToString());
   const auto tokens = tokenizer.TokenizeToEOF();
   return CSSVariableReferenceValue::Create(CSSVariableData::Create(

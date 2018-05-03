@@ -12,6 +12,67 @@
 
 namespace IPC {
 
+void ParamTraits<scoped_refptr<net::AuthChallengeInfo>>::Write(
+    base::Pickle* m,
+    const param_type& p) {
+  WriteParam(m, p != nullptr);
+  if (p) {
+    WriteParam(m, p->is_proxy);
+    WriteParam(m, p->challenger);
+    WriteParam(m, p->scheme);
+    WriteParam(m, p->realm);
+  }
+}
+
+bool ParamTraits<scoped_refptr<net::AuthChallengeInfo>>::Read(
+    const base::Pickle* m,
+    base::PickleIterator* iter,
+    param_type* r) {
+  bool has_object;
+  if (!ReadParam(m, iter, &has_object))
+    return false;
+  if (!has_object) {
+    *r = nullptr;
+    return true;
+  }
+  *r = new net::AuthChallengeInfo();
+  return ReadParam(m, iter, &(*r)->is_proxy) &&
+         ReadParam(m, iter, &(*r)->challenger) &&
+         ReadParam(m, iter, &(*r)->scheme) && ReadParam(m, iter, &(*r)->realm);
+}
+
+void ParamTraits<scoped_refptr<net::AuthChallengeInfo>>::Log(
+    const param_type& p,
+    std::string* l) {
+  l->append("<AuthChallengeInfo>");
+}
+
+void ParamTraits<net::AuthCredentials>::Write(base::Pickle* m,
+                                              const param_type& p) {
+  WriteParam(m, p.username());
+  WriteParam(m, p.password());
+}
+
+bool ParamTraits<net::AuthCredentials>::Read(const base::Pickle* m,
+                                             base::PickleIterator* iter,
+                                             param_type* r) {
+  base::string16 username;
+  bool read_username = ReadParam(m, iter, &username);
+  base::string16 password;
+  bool read_password = ReadParam(m, iter, &password);
+
+  if (!read_username || !read_password)
+    return false;
+
+  r->Set(username, password);
+  return true;
+}
+
+void ParamTraits<net::AuthCredentials>::Log(const param_type& p,
+                                            std::string* l) {
+  l->append("<AuthCredentials>");
+}
+
 void ParamTraits<net::CertVerifyResult>::Write(base::Pickle* m,
                                                const param_type& p) {
   WriteParam(m, p.verified_cert);
@@ -24,7 +85,6 @@ void ParamTraits<net::CertVerifyResult>::Write(base::Pickle* m,
   WriteParam(m, p.public_key_hashes);
   WriteParam(m, p.is_issued_by_known_root);
   WriteParam(m, p.is_issued_by_additional_trust_anchor);
-  WriteParam(m, p.common_name_fallback_used);
   WriteParam(m, p.ocsp_result);
 }
 
@@ -39,7 +99,6 @@ bool ParamTraits<net::CertVerifyResult>::Read(const base::Pickle* m,
          ReadParam(m, iter, &r->public_key_hashes) &&
          ReadParam(m, iter, &r->is_issued_by_known_root) &&
          ReadParam(m, iter, &r->is_issued_by_additional_trust_anchor) &&
-         ReadParam(m, iter, &r->common_name_fallback_used) &&
          ReadParam(m, iter, &r->ocsp_result);
 }
 
@@ -160,6 +219,42 @@ bool ParamTraits<net::OCSPVerifyResult>::Read(const base::Pickle* m,
 void ParamTraits<net::OCSPVerifyResult>::Log(const param_type& p,
                                              std::string* l) {
   l->append("<OCSPVerifyResult>");
+}
+
+void ParamTraits<scoped_refptr<net::SSLCertRequestInfo>>::Write(
+    base::Pickle* m,
+    const param_type& p) {
+  WriteParam(m, p != nullptr);
+  if (p) {
+    WriteParam(m, p->host_and_port);
+    WriteParam(m, p->is_proxy);
+    WriteParam(m, p->cert_authorities);
+    WriteParam(m, p->cert_key_types);
+  }
+}
+
+bool ParamTraits<scoped_refptr<net::SSLCertRequestInfo>>::Read(
+    const base::Pickle* m,
+    base::PickleIterator* iter,
+    param_type* r) {
+  bool has_object;
+  if (!ReadParam(m, iter, &has_object))
+    return false;
+  if (!has_object) {
+    *r = nullptr;
+    return true;
+  }
+  *r = new net::SSLCertRequestInfo();
+  return ReadParam(m, iter, &(*r)->host_and_port) &&
+         ReadParam(m, iter, &(*r)->is_proxy) &&
+         ReadParam(m, iter, &(*r)->cert_authorities) &&
+         ReadParam(m, iter, &(*r)->cert_key_types);
+}
+
+void ParamTraits<scoped_refptr<net::SSLCertRequestInfo>>::Log(
+    const param_type& p,
+    std::string* l) {
+  l->append("<SSLCertRequestInfo>");
 }
 
 void ParamTraits<net::SSLInfo>::Write(base::Pickle* m, const param_type& p) {
@@ -423,10 +518,6 @@ void ParamTraits<network::DataElement>::Write(base::Pickle* m,
       m->WriteData(p.bytes(), static_cast<int>(p.length()));
       break;
     }
-    case network::DataElement::TYPE_BYTES_DESCRIPTION: {
-      WriteParam(m, p.length());
-      break;
-    }
     case network::DataElement::TYPE_FILE: {
       WriteParam(m, p.path());
       WriteParam(m, p.offset());
@@ -444,21 +535,10 @@ void ParamTraits<network::DataElement>::Write(base::Pickle* m,
       WriteParam(m, p.expected_modification_time());
       break;
     }
-    case network::DataElement::TYPE_FILE_FILESYSTEM: {
-      WriteParam(m, p.filesystem_url());
-      WriteParam(m, p.offset());
-      WriteParam(m, p.length());
-      WriteParam(m, p.expected_modification_time());
-      break;
-    }
     case network::DataElement::TYPE_BLOB: {
       WriteParam(m, p.blob_uuid());
       WriteParam(m, p.offset());
       WriteParam(m, p.length());
-      break;
-    }
-    case network::DataElement::TYPE_DISK_CACHE_ENTRY: {
-      NOTREACHED() << "Can't be sent by IPC.";
       break;
     }
     case network::DataElement::TYPE_DATA_PIPE: {
@@ -489,13 +569,6 @@ bool ParamTraits<network::DataElement>::Read(const base::Pickle* m,
       if (!iter->ReadData(&data, &len))
         return false;
       r->SetToBytes(data, len);
-      return true;
-    }
-    case network::DataElement::TYPE_BYTES_DESCRIPTION: {
-      uint64_t length;
-      if (!ReadParam(m, iter, &length))
-        return false;
-      r->SetToBytesDescription(length);
       return true;
     }
     case network::DataElement::TYPE_FILE: {
@@ -535,22 +608,6 @@ bool ParamTraits<network::DataElement>::Read(const base::Pickle* m,
                         expected_modification_time);
       return true;
     }
-    case network::DataElement::TYPE_FILE_FILESYSTEM: {
-      GURL file_system_url;
-      uint64_t offset, length;
-      base::Time expected_modification_time;
-      if (!ReadParam(m, iter, &file_system_url))
-        return false;
-      if (!ReadParam(m, iter, &offset))
-        return false;
-      if (!ReadParam(m, iter, &length))
-        return false;
-      if (!ReadParam(m, iter, &expected_modification_time))
-        return false;
-      r->SetToFileSystemUrlRange(file_system_url, offset, length,
-                                 expected_modification_time);
-      return true;
-    }
     case network::DataElement::TYPE_BLOB: {
       std::string blob_uuid;
       uint64_t offset, length;
@@ -562,10 +619,6 @@ bool ParamTraits<network::DataElement>::Read(const base::Pickle* m,
         return false;
       r->SetToBlobRange(blob_uuid, offset, length);
       return true;
-    }
-    case network::DataElement::TYPE_DISK_CACHE_ENTRY: {
-      NOTREACHED() << "Can't be sent by IPC.";
-      return false;
     }
     case network::DataElement::TYPE_DATA_PIPE: {
       network::mojom::DataPipeGetterPtr data_pipe_getter;
@@ -637,7 +690,6 @@ void ParamTraits<url::Origin>::Write(base::Pickle* m, const url::Origin& p) {
   WriteParam(m, p.scheme());
   WriteParam(m, p.host());
   WriteParam(m, p.port());
-  WriteParam(m, p.suborigin());
 }
 
 bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
@@ -647,17 +699,15 @@ bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
   std::string scheme;
   std::string host;
   uint16_t port;
-  std::string suborigin;
   if (!ReadParam(m, iter, &unique) || !ReadParam(m, iter, &scheme) ||
-      !ReadParam(m, iter, &host) || !ReadParam(m, iter, &port) ||
-      !ReadParam(m, iter, &suborigin)) {
+      !ReadParam(m, iter, &host) || !ReadParam(m, iter, &port)) {
     *p = url::Origin();
     return false;
   }
 
   *p = unique ? url::Origin()
               : url::Origin::UnsafelyCreateOriginWithoutNormalization(
-                    scheme, host, port, suborigin);
+                    scheme, host, port);
 
   // If a unique origin was created, but the unique flag wasn't set, then
   // the values provided to 'UnsafelyCreateOriginWithoutNormalization' were

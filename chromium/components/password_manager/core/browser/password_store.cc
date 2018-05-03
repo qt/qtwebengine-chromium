@@ -53,15 +53,16 @@ void PasswordStore::GetLoginsRequest::NotifyConsumerWithResults(
   }
 
   origin_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&PasswordStoreConsumer::OnGetPasswordStoreResults,
-                            consumer_weak_, base::Passed(&results)));
+      FROM_HERE,
+      base::BindOnce(&PasswordStoreConsumer::OnGetPasswordStoreResults,
+                     consumer_weak_, std::move(results)));
 }
 
 void PasswordStore::GetLoginsRequest::NotifyWithSiteStatistics(
     std::vector<InteractionsStats> stats) {
   origin_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&PasswordStoreConsumer::OnGetSiteStatistics,
-                            consumer_weak_, base::Passed(&stats)));
+      FROM_HERE, base::BindOnce(&PasswordStoreConsumer::OnGetSiteStatistics,
+                                consumer_weak_, std::move(stats)));
 }
 
 // TODO(crbug.com/706392): Fix password reuse detection for Android.
@@ -352,20 +353,26 @@ void PasswordStore::CheckReuse(const base::string16& input,
 #endif
 
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
-void PasswordStore::SaveSyncPasswordHash(const base::string16& password) {
-  // TODO(crbug.com/657041): Log success of saving password hash to UMA.
-  hash_password_manager_.SavePasswordHash(password);
-  base::Optional<SyncPasswordData> sync_password_data =
-      hash_password_manager_.RetrievePasswordHash();
-  ScheduleTask(base::Bind(&PasswordStore::SaveSyncPasswordHashImpl, this,
-                          std::move(sync_password_data)));
+void PasswordStore::SaveSyncPasswordHash(
+    const base::string16& password,
+    metrics_util::SyncPasswordHashChange event) {
+  if (hash_password_manager_.SavePasswordHash(password)) {
+    base::Optional<SyncPasswordData> sync_password_data =
+        hash_password_manager_.RetrievePasswordHash();
+    metrics_util::LogSyncPasswordHashChange(event);
+    ScheduleTask(base::BindRepeating(&PasswordStore::SaveSyncPasswordHashImpl,
+                                     this, std::move(sync_password_data)));
+  }
 }
 
 void PasswordStore::SaveSyncPasswordHash(
-    const SyncPasswordData& sync_password_data) {
-  hash_password_manager_.SavePasswordHash(sync_password_data);
-  ScheduleTask(base::BindRepeating(&PasswordStore::SaveSyncPasswordHashImpl,
-                                   this, sync_password_data));
+    const SyncPasswordData& sync_password_data,
+    metrics_util::SyncPasswordHashChange event) {
+  if (hash_password_manager_.SavePasswordHash(sync_password_data)) {
+    metrics_util::LogSyncPasswordHashChange(event);
+    ScheduleTask(base::BindRepeating(&PasswordStore::SaveSyncPasswordHashImpl,
+                                     this, sync_password_data));
+  }
 }
 
 void PasswordStore::ClearSyncPasswordHash() {
@@ -496,7 +503,7 @@ void PasswordStore::Schedule(
   std::unique_ptr<GetLoginsRequest> request(new GetLoginsRequest(consumer));
   consumer->cancelable_task_tracker()->PostTask(
       background_task_runner_.get(), FROM_HERE,
-      base::BindOnce(func, this, base::Passed(&request)));
+      base::BindOnce(func, this, std::move(request)));
 }
 
 void PasswordStore::WrapModificationTask(ModificationTask task) {
@@ -601,8 +608,8 @@ void PasswordStore::
   // post a request to UI thread.
   main_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&PasswordStore::InjectAffiliationAndBrandingInformation, this,
-                 base::Passed(&obtained_forms), base::Passed(&request)));
+      base::BindOnce(&PasswordStore::InjectAffiliationAndBrandingInformation,
+                     this, std::move(obtained_forms), std::move(request)));
 }
 
 void PasswordStore::GetBlacklistLoginsImpl(
@@ -622,8 +629,8 @@ void PasswordStore::GetBlacklistLoginsWithAffiliationAndBrandingInformationImpl(
   // post a request to UI thread.
   main_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&PasswordStore::InjectAffiliationAndBrandingInformation, this,
-                 base::Passed(&obtained_forms), base::Passed(&request)));
+      base::BindOnce(&PasswordStore::InjectAffiliationAndBrandingInformation,
+                     this, std::move(obtained_forms), std::move(request)));
 }
 
 void PasswordStore::NotifyAllSiteStats(

@@ -29,7 +29,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_message.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "url/gurl.h"
 
@@ -552,18 +552,6 @@ void EmbeddedWorkerInstance::StopIfNotAttachedToDevTools() {
     return;
   }
   Stop();
-}
-
-ServiceWorkerStatusCode EmbeddedWorkerInstance::SendIpcMessage(
-    const IPC::Message& message) {
-  DCHECK_NE(kInvalidEmbeddedWorkerThreadId, thread_id_);
-  if (status_ != EmbeddedWorkerStatus::RUNNING &&
-      status_ != EmbeddedWorkerStatus::STARTING) {
-    return SERVICE_WORKER_ERROR_IPC_FAILED;
-  }
-  return registry_->Send(process_id(),
-                         new EmbeddedWorkerContextMsg_MessageToWorker(
-                             thread_id_, embedded_worker_id_, message));
 }
 
 void EmbeddedWorkerInstance::ResumeAfterDownload() {

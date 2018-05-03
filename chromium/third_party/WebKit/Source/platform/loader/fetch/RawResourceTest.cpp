@@ -30,6 +30,7 @@
 
 #include "platform/loader/fetch/RawResource.h"
 
+#include <memory>
 #include "platform/SharedBuffer.h"
 #include "platform/heap/Handle.h"
 #include "platform/loader/fetch/MemoryCache.h"
@@ -38,6 +39,7 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebURL.h"
@@ -63,13 +65,18 @@ TEST_F(RawResourceTest, DontIgnoreAcceptForCacheReuse) {
   ResourceRequest jpeg_request;
   jpeg_request.SetHTTPAccept("image/jpeg");
 
+  scoped_refptr<const SecurityOrigin> source_origin =
+      SecurityOrigin::CreateUnique();
+
   RawResource* jpeg_resource(
       RawResource::CreateForTest(jpeg_request, Resource::kRaw));
+  jpeg_resource->SetSourceOrigin(source_origin);
 
   ResourceRequest png_request;
   png_request.SetHTTPAccept("image/png");
 
-  EXPECT_FALSE(jpeg_resource->CanReuse(FetchParameters(png_request)));
+  EXPECT_FALSE(
+      jpeg_resource->CanReuse(FetchParameters(png_request), source_origin));
 }
 
 class DummyClient final : public GarbageCollectedFinalized<DummyClient>,
@@ -126,12 +133,12 @@ class AddingClient final : public GarbageCollectedFinalized<AddingClient>,
     // First schedule an asynchronous task to remove the client.
     // We do not expect a client to be called if the client is removed before
     // a callback invocation task queued inside addClient() is scheduled.
-    Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+    Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
         FROM_HERE,
         WTF::Bind(&AddingClient::RemoveClient, WrapPersistent(this)));
     resource->AddClient(
         dummy_client_,
-        Platform::Current()->CurrentThread()->GetWebTaskRunner());
+        Platform::Current()->CurrentThread()->GetTaskRunner().get());
   }
   String DebugName() const override { return "AddingClient"; }
 
@@ -158,7 +165,7 @@ TEST_F(RawResourceTest, AddClientDuringCallback) {
   Persistent<AddingClient> adding_client =
       new AddingClient(dummy_client.Get(), raw);
   raw->AddClient(adding_client,
-                 Platform::Current()->CurrentThread()->GetWebTaskRunner());
+                 Platform::Current()->CurrentThread()->GetTaskRunner().get());
   platform_->RunUntilIdle();
   raw->RemoveClient(adding_client);
   EXPECT_FALSE(dummy_client->Called());
@@ -200,21 +207,24 @@ TEST_F(RawResourceTest, RemoveClientDuringCallback) {
   Persistent<RemovingClient> removing_client =
       new RemovingClient(dummy_client.Get());
   raw->AddClient(dummy_client,
-                 Platform::Current()->CurrentThread()->GetWebTaskRunner());
+                 Platform::Current()->CurrentThread()->GetTaskRunner().get());
   raw->AddClient(removing_client,
-                 Platform::Current()->CurrentThread()->GetWebTaskRunner());
+                 Platform::Current()->CurrentThread()->GetTaskRunner().get());
   platform_->RunUntilIdle();
   EXPECT_FALSE(raw->IsAlive());
 }
 
 TEST_F(RawResourceTest,
        CanReuseDevToolsEmulateNetworkConditionsClientIdHeader) {
+  scoped_refptr<const SecurityOrigin> source_origin =
+      SecurityOrigin::CreateUnique();
   ResourceRequest request("data:text/html,");
   request.SetHTTPHeaderField(
       HTTPNames::X_DevTools_Emulate_Network_Conditions_Client_Id, "Foo");
   Resource* raw = RawResource::CreateForTest(request, Resource::kRaw);
-  EXPECT_TRUE(
-      raw->CanReuse(FetchParameters(ResourceRequest("data:text/html,"))));
+  raw->SetSourceOrigin(source_origin);
+  EXPECT_TRUE(raw->CanReuse(FetchParameters(ResourceRequest("data:text/html,")),
+                            source_origin));
 }
 
 }  // namespace blink

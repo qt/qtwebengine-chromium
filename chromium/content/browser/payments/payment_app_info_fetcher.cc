@@ -14,6 +14,7 @@
 #include "content/public/browser/manifest_icon_selector.h"
 #include "content/public/common/console_message_level.h"
 #include "ui/gfx/image/image.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -78,22 +79,34 @@ void PaymentAppInfoFetcher::SelfDeleteFetcher::Start(
   }
 
   for (const auto& frame : *provider_hosts) {
+    // Find out the render frame host registering the payment app.
     RenderFrameHostImpl* render_frame_host =
         RenderFrameHostImpl::FromID(frame.first, frame.second);
-    if (!render_frame_host)
-      continue;
-
-    WebContentsImpl* web_content = static_cast<WebContentsImpl*>(
-        WebContents::FromRenderFrameHost(render_frame_host));
-    if (!web_content || web_content->IsHidden() ||
-        context_url.spec().compare(web_content->GetLastCommittedURL().spec()) !=
-            0) {
+    if (!render_frame_host ||
+        context_url.spec().compare(
+            render_frame_host->GetLastCommittedURL().spec()) != 0) {
       continue;
     }
 
-    web_contents_helper_ = std::make_unique<WebContentsHelper>(web_content);
+    // Get the main frame since web app manifest is only available in the main
+    // frame's document by definition. The main frame's document must come from
+    // the same origin.
+    RenderFrameHostImpl* top_level_render_frame_host = render_frame_host;
+    while (top_level_render_frame_host->GetParent() != nullptr) {
+      top_level_render_frame_host = top_level_render_frame_host->GetParent();
+    }
+    WebContentsImpl* top_level_web_content = static_cast<WebContentsImpl*>(
+        WebContents::FromRenderFrameHost(top_level_render_frame_host));
+    if (!top_level_web_content || top_level_web_content->IsHidden() ||
+        !url::IsSameOriginWith(context_url,
+                               top_level_web_content->GetLastCommittedURL())) {
+      continue;
+    }
 
-    web_content->GetManifest(
+    web_contents_helper_ =
+        std::make_unique<WebContentsHelper>(top_level_web_content);
+
+    top_level_web_content->GetManifest(
         base::Bind(&PaymentAppInfoFetcher::SelfDeleteFetcher::
                        FetchPaymentAppManifestCallback,
                    base::Unretained(this)));

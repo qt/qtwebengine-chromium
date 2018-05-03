@@ -6,6 +6,7 @@
  */
 
 #include "SkSurface_Base.h"
+#include "SkImageInfoPriv.h"
 #include "SkImagePriv.h"
 #include "SkCanvas.h"
 #include "SkDevice.h"
@@ -21,6 +22,7 @@ public:
     SkCanvas* onNewCanvas() override;
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
     sk_sp<SkImage> onNewImageSnapshot() override;
+    void onWritePixels(const SkPixmap&, int x, int y) override;
     void onDraw(SkCanvas*, SkScalar x, SkScalar y, const SkPaint*) override;
     void onCopyOnWrite(ContentChangeMode) override;
     void onRestoreBackingMutability() override;
@@ -36,43 +38,39 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 bool SkSurfaceValidateRasterInfo(const SkImageInfo& info, size_t rowBytes) {
+    if (!SkImageInfoIsValidCommon(info)) {
+        return false;
+    }
     if (info.isEmpty()) {
         return false;
     }
 
     static const size_t kMaxTotalSize = SK_MaxS32;
 
-    int shift = 0;
+    // TODO(mtklein,brianosman): revisit all these color space decisions
     switch (info.colorType()) {
         case kAlpha_8_SkColorType:
-            if (info.colorSpace()) {
-                return false;
-            }
-            shift = 0;
-            break;
         case kGray_8_SkColorType:
-            if (info.colorSpace()) {
-                return false;
-            }
-            shift = 0;
-            break;
         case kRGB_565_SkColorType:
+        case kARGB_4444_SkColorType:
+        case kRGB_888x_SkColorType:
+        case kRGBA_1010102_SkColorType:
+        case kRGB_101010x_SkColorType:
             if (info.colorSpace()) {
                 return false;
             }
-            shift = 1;
             break;
-        case kN32_SkColorType:
+
+        case kRGBA_8888_SkColorType:
+        case kBGRA_8888_SkColorType:
             if (info.colorSpace() && !info.colorSpace()->gammaCloseToSRGB()) {
                 return false;
             }
-            shift = 2;
             break;
         case kRGBA_F16_SkColorType:
             if (info.colorSpace() && (!info.colorSpace()->gammaIsLinear())) {
                 return false;
             }
-            shift = 3;
             break;
         default:
             return false;
@@ -81,6 +79,8 @@ bool SkSurfaceValidateRasterInfo(const SkImageInfo& info, size_t rowBytes) {
     if (kIgnoreRowBytesValue == rowBytes) {
         return true;
     }
+
+    int shift = info.shiftPerPixel();
 
     uint64_t minRB = (uint64_t)info.width() << shift;
     if (minRB > rowBytes) {
@@ -146,6 +146,10 @@ sk_sp<SkImage> SkSurface_Raster::onNewImageSnapshot() {
     // Our pixels are in memory, so read access on the snapshot SkImage could be cheap.
     // Lock the shared pixel ref to ensure peekPixels() is usable.
     return SkMakeImageFromRasterBitmap(fBitmap, cpm);
+}
+
+void SkSurface_Raster::onWritePixels(const SkPixmap& src, int x, int y) {
+    fBitmap.writePixels(src, x, y);
 }
 
 void SkSurface_Raster::onRestoreBackingMutability() {

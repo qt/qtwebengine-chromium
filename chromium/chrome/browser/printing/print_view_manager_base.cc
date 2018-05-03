@@ -24,6 +24,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_manager.h"
+#include "chrome/browser/printing/print_view_manager_common.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/simple_message_box.h"
@@ -34,6 +35,7 @@
 #include "components/printing/browser/print_composite_client.h"
 #include "components/printing/browser/print_manager_utils.h"
 #include "components/printing/common/print_messages.h"
+#include "components/printing/service/public/cpp/pdf_service_mojo_types.h"
 #include "components/printing/service/public/cpp/pdf_service_mojo_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -134,7 +136,7 @@ bool PrintViewManagerBase::PrintNow(content::RenderFrameHost* rfh) {
 
   SetPrintingRFH(rfh);
   int32_t id = rfh->GetRoutingID();
-  return PrintNowInternal(rfh, base::MakeUnique<PrintMsg_PrintPages>(id));
+  return PrintNowInternal(rfh, std::make_unique<PrintMsg_PrintPages>(id));
 }
 #endif
 
@@ -197,7 +199,7 @@ void PrintViewManagerBase::PrintDocument(
   document->SetConvertingPdf();
 #else
   std::unique_ptr<PdfMetafileSkia> metafile =
-      std::make_unique<PdfMetafileSkia>(SkiaDocumentType::PDF);
+      std::make_unique<PdfMetafileSkia>();
   CHECK(metafile->InitFromData(print_data->front(), print_data->size()));
 
   // Update the rendered document. It will send notifications to the listener.
@@ -260,6 +262,10 @@ void PrintViewManagerBase::StartLocalPrintJob(
     std::move(callback).Run(base::Value("Failed to print"));
     return;
   }
+
+#if defined(OS_WIN)
+  print_job_->ResetPageMapping();
+#endif
 
   const printing::PrintSettings& settings = printer_query->settings();
   gfx::Size page_size = settings.page_setup_device_units().physical_size();
@@ -336,29 +342,31 @@ void PrintViewManagerBase::OnComposePdfDone(
 }
 
 void PrintViewManagerBase::OnDidPrintDocument(
+    content::RenderFrameHost* render_frame_host,
     const PrintHostMsg_DidPrintDocument_Params& params) {
   PrintedDocument* document = GetDocument(params.document_cookie);
   if (!document)
     return;
 
-  if (!base::SharedMemory::IsHandleValid(params.metafile_data_handle)) {
+  const PrintHostMsg_DidPrintContent_Params& content = params.content;
+  if (!base::SharedMemory::IsHandleValid(content.metafile_data_handle)) {
     NOTREACHED() << "invalid memory handle";
     web_contents()->Stop();
     return;
   }
 
   auto* client = PrintCompositeClient::FromWebContents(web_contents());
-  if (IsOopifEnabled() && !client->for_preview() &&
-      !document->settings().is_modifiable()) {
-    client->DoComposite(params.metafile_data_handle, params.data_size,
-                        base::BindOnce(&PrintViewManagerBase::OnComposePdfDone,
-                                       weak_ptr_factory_.GetWeakPtr(), params));
+  if (IsOopifEnabled() && !PrintingPdfContent(render_frame_host)) {
+    client->DoCompositeDocumentToPdf(
+        params.document_cookie, render_frame_host, content.metafile_data_handle,
+        content.data_size, content.subframe_content_info,
+        base::BindOnce(&PrintViewManagerBase::OnComposePdfDone,
+                       weak_ptr_factory_.GetWeakPtr(), params));
     return;
   }
-
-  std::unique_ptr<base::SharedMemory> shared_buf =
-      std::make_unique<base::SharedMemory>(params.metafile_data_handle, true);
-  if (!shared_buf->Map(params.data_size)) {
+  auto shared_buf =
+      std::make_unique<base::SharedMemory>(content.metafile_data_handle, true);
+  if (!shared_buf->Map(content.data_size)) {
     NOTREACHED() << "couldn't map";
     web_contents()->Stop();
     return;
@@ -366,7 +374,7 @@ void PrintViewManagerBase::OnDidPrintDocument(
   scoped_refptr<base::RefCountedBytes> bytes =
       base::MakeRefCounted<base::RefCountedBytes>(
           reinterpret_cast<const unsigned char*>(shared_buf->memory()),
-          params.data_size);
+          content.data_size);
   PrintDocument(document, bytes, params.page_size, params.content_area,
                 params.physical_offsets);
 }
@@ -438,8 +446,16 @@ bool PrintViewManagerBase::OnMessageReceived(
     const IPC::Message& message,
     content::RenderFrameHost* render_frame_host) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(PrintViewManagerBase, message)
+  IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(PrintViewManagerBase, message,
+                                   render_frame_host)
     IPC_MESSAGE_HANDLER(PrintHostMsg_DidPrintDocument, OnDidPrintDocument)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  if (handled)
+    return true;
+
+  handled = true;
+  IPC_BEGIN_MESSAGE_MAP(PrintViewManagerBase, message)
     IPC_MESSAGE_HANDLER(PrintHostMsg_ShowInvalidPrinterSettingsError,
                         OnShowInvalidPrinterSettingsError)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -566,8 +582,6 @@ bool PrintViewManagerBase::CreateNewPrintJob(PrintJobWorkerOwner* job) {
     return false;
   }
 
-  // Ask the renderer to generate the print preview, create the print preview
-  // view and switch to it, initialize the printer and show the print dialog.
   DCHECK(!print_job_.get());
   DCHECK(job);
   if (!job)
@@ -627,7 +641,7 @@ void PrintViewManagerBase::ReleasePrintJob() {
     return;
 
   if (rfh) {
-    auto msg = base::MakeUnique<PrintMsg_PrintingDone>(rfh->GetRoutingID(),
+    auto msg = std::make_unique<PrintMsg_PrintingDone>(rfh->GetRoutingID(),
                                                        printing_succeeded_);
     rfh->Send(msg.release());
   }

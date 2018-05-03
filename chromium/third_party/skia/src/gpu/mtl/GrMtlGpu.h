@@ -31,23 +31,22 @@ public:
 
     id<MTLDevice> device() const { return fDevice; }
 
-    bool onGetReadPixelsInfo(GrSurface* srcSurface, GrSurfaceOrigin origin,
-                             int readWidth, int readHeight, size_t rowBytes,
-                             GrPixelConfig readConfig, DrawPreference*,
-                             ReadPixelTempDrawInfo*) override { return false; }
+    bool onGetReadPixelsInfo(GrSurface* srcSurface, GrSurfaceOrigin origin, int readWidth,
+                             int readHeight, size_t rowBytes, GrColorType readConfig,
+                             DrawPreference*, ReadPixelTempDrawInfo*) override {
+        return false;
+    }
 
-    bool onGetWritePixelsInfo(GrSurface* dstSurface, GrSurfaceOrigin dstOrigin,
-                              int width, int height,
-                              GrPixelConfig srcConfig, DrawPreference*,
-                              WritePixelTempDrawInfo*) override { return false; }
+    bool onGetWritePixelsInfo(GrSurface* dstSurface, GrSurfaceOrigin dstOrigin, int width,
+                              int height, GrColorType srcColorType, DrawPreference*,
+                              WritePixelTempDrawInfo*) override {
+        return false;
+    }
 
     bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
                        GrSurface* src, GrSurfaceOrigin srcOrigin,
                        const SkIRect& srcRect,
                        const SkIPoint& dstPoint) override { return false; }
-
-    void onQueryMultisampleSpecs(GrRenderTarget*, GrSurfaceOrigin, const GrStencilSettings&,
-                                 int* effectiveSampleCnt, SamplePattern*) override {}
 
     GrGpuRTCommandBuffer* createCommandBuffer(
                                     GrRenderTarget*, GrSurfaceOrigin,
@@ -67,6 +66,11 @@ public:
     sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned) override {
         return nullptr;
     }
+    sk_sp<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
+                                            GrResourceProvider::SemaphoreWrapType wrapType,
+                                            GrWrapOwnership ownership) override { return nullptr; }
+    void insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override {}
+    void waitSemaphore(sk_sp<GrSemaphore> semaphore) override {}
     sk_sp<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override { return nullptr; }
 
 private:
@@ -103,36 +107,27 @@ private:
         return nullptr;
     }
 
-    bool onReadPixels(GrSurface* surface, GrSurfaceOrigin,
-                      int left, int top, int width, int height,
-                      GrPixelConfig,
-                      void* buffer,
-                      size_t rowBytes) override {
+    bool onReadPixels(GrSurface* surface, GrSurfaceOrigin, int left, int top, int width, int height,
+                      GrColorType, void* buffer, size_t rowBytes) override {
         return false;
     }
 
-    bool onWritePixels(GrSurface* surface, GrSurfaceOrigin,
-                       int left, int top, int width, int height,
-                       GrPixelConfig config,
-                       const GrMipLevel texels[], int mipLevelCount) override {
+    bool onWritePixels(GrSurface*, GrSurfaceOrigin, int left, int top, int width,
+                       int height, GrColorType, const GrMipLevel[],
+                       int) override {
         return false;
     }
 
-    bool onTransferPixels(GrTexture* texture,
+    bool onTransferPixels(GrTexture*,
                           int left, int top, int width, int height,
-                          GrPixelConfig config, GrBuffer* transferBuffer,
+                          GrColorType, GrBuffer*,
                           size_t offset, size_t rowBytes) override {
         return false;
     }
 
-    void onResolveRenderTarget(GrRenderTarget* target, GrSurfaceOrigin) override { return; }
+    void onResolveRenderTarget(GrRenderTarget* target) override { return; }
 
     void onFinishFlush(bool insertedSemaphores) override {}
-
-    sk_sp<GrSemaphore> onWrapBackendSemaphore(const GrBackendSemaphore& semaphore,
-                                            GrWrapOwnership ownership) override { return nullptr; }
-    void onInsertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override {}
-    void onWaitSemaphore(sk_sp<GrSemaphore> semaphore) override {}
 
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget*,
                                                                 int width,

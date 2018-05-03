@@ -11,10 +11,9 @@
 #include "core/dom/StaticNodeList.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/forms/HTMLFormElement.h"
-#include "core/html/forms/HTMLInputElement.h"
+#include "public/web/WebFormControlElement.h"
 #include "public/web/WebFormElement.h"
-#include "public/web/WebInputElement.h"
-#include "public/web/modules/password_manager/WebFormElementObserverCallback.h"
+#include "public/web/modules/autofill/WebFormElementObserverCallback.h"
 
 namespace blink {
 
@@ -34,6 +33,7 @@ class WebFormElementObserverImpl::ObserverCallback
 
  private:
   Member<HTMLElement> element_;
+  HeapHashSet<Member<Node>> parents_;
   Member<MutationObserver> mutation_observer_;
   std::unique_ptr<WebFormElementObserverCallback> callback_;
 };
@@ -47,20 +47,24 @@ WebFormElementObserverImpl::ObserverCallback::ObserverCallback(
   {
     MutationObserverInit init;
     init.setAttributes(true);
-    init.setAttributeFilter({"action", "class", "style"});
+    init.setAttributeFilter({"class", "style"});
     mutation_observer_->observe(element_, init, ASSERT_NO_EXCEPTION);
   }
-  if (element_->parentElement()) {
+  for (Node* node = element_; node->parentElement();
+       node = node->parentElement()) {
     MutationObserverInit init;
     init.setChildList(true);
-    mutation_observer_->observe(element_->parentElement(), init,
+    init.setAttributes(true);
+    init.setAttributeFilter({"class", "style"});
+    mutation_observer_->observe(node->parentElement(), init,
                                 ASSERT_NO_EXCEPTION);
+    parents_.insert(node->parentElement());
   }
 }
 
 ExecutionContext*
 WebFormElementObserverImpl::ObserverCallback::GetExecutionContext() const {
-  return &element_->GetDocument();
+  return element_ ? &element_->GetDocument() : nullptr;
 }
 
 void WebFormElementObserverImpl::ObserverCallback::Deliver(
@@ -69,23 +73,18 @@ void WebFormElementObserverImpl::ObserverCallback::Deliver(
   for (const auto& record : records) {
     if (record->type() == "childList") {
       for (unsigned i = 0; i < record->removedNodes()->length(); ++i) {
-        if (record->removedNodes()->item(i) != element_)
+        Node* removed_node = record->removedNodes()->item(i);
+        if (removed_node != element_ &&
+            parents_.find(removed_node) == parents_.end()) {
           continue;
+        }
         callback_->ElementWasHiddenOrRemoved();
         Disconnect();
         return;
       }
     } else {
+      // Either "style" or "class" was modified. Check the computed style.
       HTMLElement& element = *ToHTMLElement(record->target());
-      if (record->attributeName() == "action") {
-        // If the action was modified, we just assume that the form as
-        // submitted.
-        callback_->ElementWasHiddenOrRemoved();
-        Disconnect();
-        return;
-      }
-      // Otherwise, either "style" or "class" was modified. Check the
-      // computed style.
       CSSComputedStyleDeclaration* style =
           CSSComputedStyleDeclaration::Create(&element);
       if (style->GetPropertyValue(CSSPropertyDisplay) == "none") {
@@ -105,6 +104,7 @@ void WebFormElementObserverImpl::ObserverCallback::Disconnect() {
 void WebFormElementObserverImpl::ObserverCallback::Trace(
     blink::Visitor* visitor) {
   visitor->Trace(element_);
+  visitor->Trace(parents_);
   visitor->Trace(mutation_observer_);
   MutationObserver::Delegate::Trace(visitor);
 }
@@ -117,9 +117,9 @@ WebFormElementObserver* WebFormElementObserver::Create(
 }
 
 WebFormElementObserver* WebFormElementObserver::Create(
-    WebInputElement& element,
+    WebFormControlElement& element,
     std::unique_ptr<WebFormElementObserverCallback> callback) {
-  return new WebFormElementObserverImpl(*element.Unwrap<HTMLInputElement>(),
+  return new WebFormElementObserverImpl(*element.Unwrap<HTMLElement>(),
                                         std::move(callback));
 }
 

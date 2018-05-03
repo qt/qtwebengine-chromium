@@ -27,8 +27,7 @@ class SurfaceManager;
 // BeginFrames.
 class VIZ_SERVICE_EXPORT SurfaceDependencyTracker {
  public:
-  SurfaceDependencyTracker(SurfaceManager* surface_manager,
-                           uint32_t number_of_frames_to_deadline);
+  explicit SurfaceDependencyTracker(SurfaceManager* surface_manager);
   ~SurfaceDependencyTracker();
 
   // Called when |surface| has a pending CompositorFrame and it wishes to be
@@ -62,8 +61,6 @@ class VIZ_SERVICE_EXPORT SurfaceDependencyTracker {
   void NotifySurfaceIdAvailable(const SurfaceId& surface_id);
 
   SurfaceManager* const surface_manager_;
-
-  const uint32_t number_of_frames_to_deadline_;
 
   // A map from a FrameSinkId to the set of Surfaces that are blocked on
   // surfaces associated with that FrameSinkId.

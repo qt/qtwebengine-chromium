@@ -6,7 +6,6 @@
 
 #include <memory>
 #include "platform/WaitableEvent.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/testing/URLTestHelpers.h"
@@ -23,7 +22,7 @@
 #include "public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/message_port/message_port_channel.h"
+#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
 
 namespace blink {
 namespace {
@@ -73,8 +72,7 @@ class MockServiceWorkerContextClient : public WebServiceWorkerContextClient {
     NOTREACHED();
   }
   void PostMessageToClient(const WebString& uuid,
-                           const WebString&,
-                           WebVector<MessagePortChannel>) override {
+                           TransferableMessage) override {
     NOTREACHED();
   }
   void SkipWaiting(
@@ -118,11 +116,7 @@ class WebEmbeddedWorkerImplTest : public ::testing::Test {
     auto installed_scripts_manager =
         std::make_unique<MockServiceWorkerInstalledScriptsManager>();
     mock_client_ = client.get();
-    if (RuntimeEnabledFeatures::ServiceWorkerScriptStreamingEnabled()) {
-      mock_installed_scripts_manager_ = installed_scripts_manager.get();
-    } else {
-      mock_installed_scripts_manager_ = nullptr;
-    }
+    mock_installed_scripts_manager_ = installed_scripts_manager.get();
     worker_ = WebEmbeddedWorker::Create(
         std::move(client), std::move(installed_scripts_manager),
         mojo::ScopedMessagePipeHandle(), mojo::ScopedMessagePipeHandle());
@@ -187,18 +181,13 @@ TEST_F(WebEmbeddedWorkerImplTest, TerminateWhileLoadingScript) {
   // Load the shadow page.
   EXPECT_CALL(*mock_client_, CreateServiceWorkerNetworkProviderProxy())
       .WillOnce(::testing::Return(nullptr));
-  if (mock_installed_scripts_manager_) {
-    EXPECT_CALL(*mock_installed_scripts_manager_,
-                IsScriptInstalled(start_data_.script_url))
-        .Times(1)
-        .WillOnce(::testing::Return(false));
-  }
+  EXPECT_CALL(*mock_installed_scripts_manager_,
+              IsScriptInstalled(start_data_.script_url))
+      .Times(::testing::AtLeast(1))
+      .WillRepeatedly(::testing::Return(false));
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
-  if (mock_installed_scripts_manager_) {
-    ::testing::Mock::VerifyAndClearExpectations(
-        mock_installed_scripts_manager_);
-  }
+  ::testing::Mock::VerifyAndClearExpectations(mock_installed_scripts_manager_);
 
   // Terminate before loading the script.
   EXPECT_CALL(*mock_client_, WorkerContextFailedToStart()).Times(1);
@@ -216,18 +205,14 @@ TEST_F(WebEmbeddedWorkerImplTest, TerminateWhilePausedAfterDownload) {
   // Load the shadow page.
   EXPECT_CALL(*mock_client_, CreateServiceWorkerNetworkProviderProxy())
       .WillOnce(::testing::Return(nullptr));
-  if (mock_installed_scripts_manager_) {
-    EXPECT_CALL(*mock_installed_scripts_manager_,
-                IsScriptInstalled(start_data_.script_url))
-        .Times(1)
-        .WillOnce(::testing::Return(false));
-  }
+  EXPECT_CALL(*mock_installed_scripts_manager_,
+              IsScriptInstalled(start_data_.script_url))
+      .Times(::testing::AtLeast(1))
+      .WillRepeatedly(::testing::Return(false));
+
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
-  if (mock_installed_scripts_manager_) {
-    ::testing::Mock::VerifyAndClearExpectations(
-        mock_installed_scripts_manager_);
-  }
+  ::testing::Mock::VerifyAndClearExpectations(mock_installed_scripts_manager_);
 
   // Load the script.
   EXPECT_CALL(*mock_client_, WorkerScriptLoaded()).Times(1);
@@ -260,18 +245,14 @@ TEST_F(WebEmbeddedWorkerImplTest, ScriptNotFound) {
   // Load the shadow page.
   EXPECT_CALL(*mock_client_, CreateServiceWorkerNetworkProviderProxy())
       .WillOnce(::testing::Return(nullptr));
-  if (mock_installed_scripts_manager_) {
-    EXPECT_CALL(*mock_installed_scripts_manager_,
-                IsScriptInstalled(start_data_.script_url))
-        .Times(1)
-        .WillOnce(::testing::Return(false));
-  }
+  EXPECT_CALL(*mock_installed_scripts_manager_,
+              IsScriptInstalled(start_data_.script_url))
+      .Times(::testing::AtLeast(1))
+      .WillRepeatedly(::testing::Return(false));
+
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
-  if (mock_installed_scripts_manager_) {
-    ::testing::Mock::VerifyAndClearExpectations(
-        mock_installed_scripts_manager_);
-  }
+  ::testing::Mock::VerifyAndClearExpectations(mock_installed_scripts_manager_);
 
   // Load the script.
   EXPECT_CALL(*mock_client_, WorkerScriptLoaded()).Times(0);
@@ -281,7 +262,14 @@ TEST_F(WebEmbeddedWorkerImplTest, ScriptNotFound) {
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
 }
 
-TEST_F(WebEmbeddedWorkerImplTest, DontPauseAfterDownload) {
+// The running worker is detected as a memory leak. crbug.com/586897 and
+// crbug.com/807754.
+#if defined(ADDRESS_SANITIZER)
+#define MAYBE_DontPauseAfterDownload DISABLED_DontPauseAfterDownload
+#else
+#define MAYBE_DontPauseAfterDownload DontPauseAfterDownload
+#endif
+TEST_F(WebEmbeddedWorkerImplTest, MAYBE_DontPauseAfterDownload) {
   EXPECT_CALL(*mock_client_, WorkerReadyForInspection()).Times(1);
   worker_->StartWorkerContext(start_data_);
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
@@ -289,37 +277,27 @@ TEST_F(WebEmbeddedWorkerImplTest, DontPauseAfterDownload) {
   // Load the shadow page.
   EXPECT_CALL(*mock_client_, CreateServiceWorkerNetworkProviderProxy())
       .WillOnce(::testing::Return(nullptr));
-  if (mock_installed_scripts_manager_) {
-    EXPECT_CALL(*mock_installed_scripts_manager_,
-                IsScriptInstalled(start_data_.script_url))
-        .Times(1)
-        .WillOnce(::testing::Return(false));
-  }
+  EXPECT_CALL(*mock_installed_scripts_manager_,
+              IsScriptInstalled(start_data_.script_url))
+      .Times(::testing::AtLeast(1))
+      .WillRepeatedly(::testing::Return(false));
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
-  if (mock_installed_scripts_manager_) {
-    ::testing::Mock::VerifyAndClearExpectations(
-        mock_installed_scripts_manager_);
-  }
+  ::testing::Mock::VerifyAndClearExpectations(mock_installed_scripts_manager_);
 
   // Load the script.
   EXPECT_CALL(*mock_client_, WorkerScriptLoaded()).Times(1);
   EXPECT_CALL(*mock_client_, CreateServiceWorkerProviderProxy())
       .WillOnce(::testing::Return(nullptr));
   // This is called on the worker thread.
-  if (mock_installed_scripts_manager_) {
-    EXPECT_CALL(*mock_installed_scripts_manager_,
-                IsScriptInstalled(start_data_.script_url))
-        .Times(1)
-        .WillOnce(::testing::Return(false));
-  }
+  EXPECT_CALL(*mock_installed_scripts_manager_,
+              IsScriptInstalled(start_data_.script_url))
+      .Times(::testing::AtLeast(1))
+      .WillRepeatedly(::testing::Return(false));
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   mock_client_->WaitUntilScriptEvaluated();
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
-  if (mock_installed_scripts_manager_) {
-    ::testing::Mock::VerifyAndClearExpectations(
-        mock_installed_scripts_manager_);
-  }
+  ::testing::Mock::VerifyAndClearExpectations(mock_installed_scripts_manager_);
 
   // Terminate the running worker thread.
   EXPECT_CALL(*mock_client_, WorkerContextFailedToStart()).Times(0);
@@ -327,7 +305,14 @@ TEST_F(WebEmbeddedWorkerImplTest, DontPauseAfterDownload) {
   mock_client_->WaitUntilThreadTermination();
 }
 
-TEST_F(WebEmbeddedWorkerImplTest, PauseAfterDownload) {
+// The running worker is detected as a memory leak. crbug.com/586897 and
+// crbug.com/807754.
+#if defined(ADDRESS_SANITIZER)
+#define MAYBE_PauseAfterDownload DISABLED_PauseAfterDownload
+#else
+#define MAYBE_PauseAfterDownload PauseAfterDownload
+#endif
+TEST_F(WebEmbeddedWorkerImplTest, MAYBE_PauseAfterDownload) {
   EXPECT_CALL(*mock_client_, WorkerReadyForInspection()).Times(1);
   start_data_.pause_after_download_mode =
       WebEmbeddedWorkerStartData::kPauseAfterDownload;
@@ -337,18 +322,13 @@ TEST_F(WebEmbeddedWorkerImplTest, PauseAfterDownload) {
   // Load the shadow page.
   EXPECT_CALL(*mock_client_, CreateServiceWorkerNetworkProviderProxy())
       .WillOnce(::testing::Return(nullptr));
-  if (mock_installed_scripts_manager_) {
-    EXPECT_CALL(*mock_installed_scripts_manager_,
-                IsScriptInstalled(start_data_.script_url))
-        .Times(1)
-        .WillOnce(::testing::Return(false));
-  }
+  EXPECT_CALL(*mock_installed_scripts_manager_,
+              IsScriptInstalled(start_data_.script_url))
+      .Times(::testing::AtLeast(1))
+      .WillRepeatedly(::testing::Return(false));
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
-  if (mock_installed_scripts_manager_) {
-    ::testing::Mock::VerifyAndClearExpectations(
-        mock_installed_scripts_manager_);
-  }
+  ::testing::Mock::VerifyAndClearExpectations(mock_installed_scripts_manager_);
 
   // Load the script.
   EXPECT_CALL(*mock_client_, WorkerScriptLoaded()).Times(1);
@@ -360,19 +340,14 @@ TEST_F(WebEmbeddedWorkerImplTest, PauseAfterDownload) {
   EXPECT_CALL(*mock_client_, CreateServiceWorkerProviderProxy())
       .WillOnce(::testing::Return(nullptr));
   // This is called on the worker thread.
-  if (mock_installed_scripts_manager_) {
-    EXPECT_CALL(*mock_installed_scripts_manager_,
-                IsScriptInstalled(start_data_.script_url))
-        .Times(1)
-        .WillOnce(::testing::Return(false));
-  }
+  EXPECT_CALL(*mock_installed_scripts_manager_,
+              IsScriptInstalled(start_data_.script_url))
+      .Times(::testing::AtLeast(1))
+      .WillRepeatedly(::testing::Return(false));
   worker_->ResumeAfterDownload();
   mock_client_->WaitUntilScriptEvaluated();
   ::testing::Mock::VerifyAndClearExpectations(mock_client_);
-  if (mock_installed_scripts_manager_) {
-    ::testing::Mock::VerifyAndClearExpectations(
-        mock_installed_scripts_manager_);
-  }
+  ::testing::Mock::VerifyAndClearExpectations(mock_installed_scripts_manager_);
 
   // Terminate the running worker thread.
   EXPECT_CALL(*mock_client_, WorkerContextFailedToStart()).Times(0);

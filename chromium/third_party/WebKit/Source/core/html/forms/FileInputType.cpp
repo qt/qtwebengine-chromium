@@ -278,9 +278,9 @@ void FileInputType::CountUsage() {
 }
 
 void FileInputType::CreateShadowSubtree() {
-  DCHECK(GetElement().Shadow());
-  HTMLInputElement* button =
-      HTMLInputElement::Create(GetElement().GetDocument(), false);
+  DCHECK(IsShadowHost(GetElement()));
+  auto* button = HTMLInputElement::Create(GetElement().GetDocument(),
+                                          CreateElementFlags());
   button->setType(InputTypeNames::button);
   button->setAttribute(
       valueAttr,
@@ -293,7 +293,7 @@ void FileInputType::CreateShadowSubtree() {
 }
 
 void FileInputType::DisabledAttributeChanged() {
-  DCHECK(GetElement().Shadow());
+  DCHECK(IsShadowHost(GetElement()));
   if (Element* button =
           ToElementOrDie(GetElement().UserAgentShadowRoot()->firstChild()))
     button->SetBooleanAttribute(disabledAttr,
@@ -301,7 +301,7 @@ void FileInputType::DisabledAttributeChanged() {
 }
 
 void FileInputType::MultipleAttributeChanged() {
-  DCHECK(GetElement().Shadow());
+  DCHECK(IsShadowHost(GetElement()));
   if (Element* button =
           ToElementOrDie(GetElement().UserAgentShadowRoot()->firstChild()))
     button->setAttribute(
@@ -339,6 +339,7 @@ void FileInputType::SetFiles(FileList* files) {
   if (files_changed) {
     // This call may cause destruction of this instance.
     // input instance is safe since it is ref-counted.
+    GetElement().DispatchInputEvent();
     GetElement().DispatchChangeEvent();
   }
 }

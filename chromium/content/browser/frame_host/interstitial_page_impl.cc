@@ -28,6 +28,7 @@
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
@@ -595,7 +596,7 @@ RenderViewHostImpl* InterstitialPageImpl::CreateRenderViewHost() {
           BrowserContext::GetStoragePartition(
               browser_context, site_instance.get())->GetDOMStorageContext());
   session_storage_namespace_ =
-      new SessionStorageNamespaceImpl(dom_storage_context);
+      SessionStorageNamespaceImpl::Create(dom_storage_context);
 
   // Use the RenderViewHost from our FrameTree.
   // TODO(avi): The view routing ID can be restored to MSG_ROUTING_NONE once
@@ -992,17 +993,6 @@ void InterstitialPageImpl::UnderlyingContentObserver::WebContentsDestroyed() {
 TextInputManager* InterstitialPageImpl::GetTextInputManager() {
   return !web_contents_ ? nullptr : static_cast<WebContentsImpl*>(web_contents_)
                                         ->GetTextInputManager();
-}
-
-void InterstitialPageImpl::GetScreenInfo(ScreenInfo* screen_info) {
-  WebContentsImpl* web_contents_impl =
-      static_cast<WebContentsImpl*>(web_contents_);
-  if (!web_contents_impl) {
-    WebContentsView::GetDefaultScreenInfo(screen_info);
-    return;
-  }
-
-  web_contents_impl->GetView()->GetScreenInfo(screen_info);
 }
 
 RenderWidgetHostInputEventRouter* InterstitialPageImpl::GetInputEventRouter() {

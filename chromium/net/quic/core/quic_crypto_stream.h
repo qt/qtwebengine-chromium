@@ -14,6 +14,7 @@
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/core/quic_stream.h"
 #include "net/quic/platform/api/quic_export.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
 namespace net {
@@ -51,7 +52,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   bool ExportKeyingMaterial(QuicStringPiece label,
                             QuicStringPiece context,
                             size_t result_len,
-                            std::string* result) const;
+                            QuicString* result) const;
 
   // Performs key extraction for Token Binding. Unlike ExportKeyingMaterial,
   // this function can be called before forward-secure encryption is
@@ -61,7 +62,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // Since this depends only on the initial keys, a signature over it can be
   // repurposed by an attacker who obtains the client's or server's DH private
   // value.
-  bool ExportTokenBindingKeyingMaterial(std::string* result) const;
+  bool ExportTokenBindingKeyingMaterial(QuicString* result) const;
 
   // Writes |data| to the QuicStream.
   virtual void WriteCryptoData(const QuicStringPiece& data);
@@ -79,6 +80,10 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // Provides the message parser to use when data is received on this stream.
   virtual CryptoMessageParser* crypto_message_parser() = 0;
 
+  // Called when the underlying QuicConnection has agreed upon a QUIC version to
+  // use.
+  virtual void OnSuccessfulVersionNegotiation(const ParsedQuicVersion& version);
+
   // Called to cancel retransmission of unencrypted crypto stream data.
   void NeuterUnencryptedStreamData();
 
@@ -88,6 +93,11 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // Override to retransmit lost crypto data with the appropriate encryption
   // level.
   void WritePendingRetransmission() override;
+
+  // Override to send unacked crypto data with the appropriate encryption level.
+  bool RetransmitStreamData(QuicStreamOffset offset,
+                            QuicByteCount data_length,
+                            bool fin) override;
 
  private:
   // Consumed data according to encryption levels.

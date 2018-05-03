@@ -672,7 +672,12 @@ CreatePositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(
                                           should_affinity_be_downstream);
 }
 
-PositionWithAffinity LayoutText::PositionForPoint(const LayoutPoint& point) {
+PositionWithAffinity LayoutText::PositionForPoint(
+    const LayoutPoint& point) const {
+  if (const LayoutBlockFlow* ng_block_flow = EnclosingNGBlockFlow())
+    return ng_block_flow->PositionForPoint(point);
+
+  DCHECK(CanUseInlineBox(*this));
   if (!FirstTextBox() || TextLength() == 0)
     return CreatePositionWithAffinity(0);
 
@@ -1960,16 +1965,14 @@ LayoutRect LayoutText::LocalSelectionRect() const {
 const NGOffsetMapping* LayoutText::GetNGOffsetMapping() const {
   if (!RuntimeEnabledFeatures::LayoutNGEnabled())
     return nullptr;
-  // LayoutNG alternatives rely on |TextLength()| property, which is correct
-  // only when fragment painting is enabled.
-  if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled())
-    return nullptr;
   return NGOffsetMapping::GetFor(this);
 }
 
 Position LayoutText::PositionForCaretOffset(unsigned offset) const {
   // ::first-letter handling should be done by LayoutTextFragment override.
   DCHECK(!IsTextFragment());
+  // WBR handling should be done by LayoutWordBreak override.
+  DCHECK(!IsWordBreak());
   DCHECK_LE(offset, TextLength());
   const Node* node = GetNode();
   if (!node)
@@ -1978,6 +1981,7 @@ Position LayoutText::PositionForCaretOffset(unsigned offset) const {
     // TODO(layout-dev): Support offset change due to text-transform.
     return Position(node, offset);
   }
+  // TODO(xiaochengh): This should be done in LayoutBR override.
   if (IsBR()) {
     DCHECK(IsHTMLBRElement(node));
     DCHECK_LE(offset, 1u);
@@ -1991,6 +1995,8 @@ Optional<unsigned> LayoutText::CaretOffsetForPosition(
     const Position& position) const {
   // ::first-letter handling should be done by LayoutTextFragment override.
   DCHECK(!IsTextFragment());
+  // WBR handling should be done by LayoutWordBreak override.
+  DCHECK(!IsWordBreak());
   if (position.IsNull() || position.AnchorNode() != GetNode())
     return WTF::nullopt;
   if (GetNode()->IsTextNode()) {
@@ -2001,6 +2007,7 @@ Optional<unsigned> LayoutText::CaretOffsetForPosition(
         << position;
     return position.OffsetInContainerNode();
   }
+  // TODO(xiaochengh): This should be done by LayoutBR override.
   if (IsBR()) {
     DCHECK(position.IsBeforeAnchor() || position.IsAfterAnchor()) << position;
     return position.IsBeforeAnchor() ? 0 : 1;
@@ -2069,8 +2076,11 @@ unsigned LayoutText::ResolvedTextLength() const {
     DCHECK(end_position.IsNotNull()) << start_position;
     Optional<unsigned> start = mapping->GetTextContentOffset(start_position);
     Optional<unsigned> end = mapping->GetTextContentOffset(end_position);
-    DCHECK(start);
-    DCHECK(end);
+    if (!start.has_value() || !end.has_value()) {
+      DCHECK(!start.has_value()) << this;
+      DCHECK(!end.has_value()) << this;
+      return 0;
+    }
     DCHECK_LE(*start, *end);
     return *end - *start;
   }

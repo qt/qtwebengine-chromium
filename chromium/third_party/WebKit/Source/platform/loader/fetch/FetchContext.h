@@ -49,7 +49,7 @@
 #include "public/platform/WebURLLoader.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-shared.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 
 namespace blink {
 
@@ -153,7 +153,8 @@ class PLATFORM_EXPORT FetchContext
                                         int64_t encoded_data_length,
                                         int64_t decoded_body_length,
                                         bool blocked_cross_site_document);
-  virtual void DispatchDidFail(unsigned long identifier,
+  virtual void DispatchDidFail(const KURL&,
+                               unsigned long identifier,
                                const ResourceError&,
                                int64_t encoded_data_length,
                                bool is_internal_request);
@@ -219,9 +220,6 @@ class PLATFORM_EXPORT FetchContext
                                        const ClientHintsPreferences&,
                                        const FetchParameters::ResourceWidth&,
                                        ResourceRequest&);
-  // Sets the first party for cookies and requestor origin using information
-  // stored in the FetchContext implementation.
-  virtual void SetFirstPartyCookieAndRequestorOrigin(ResourceRequest&);
 
   virtual MHTMLArchive* Archive() const { return nullptr; }
 
@@ -231,7 +229,8 @@ class PLATFORM_EXPORT FetchContext
 
   virtual std::unique_ptr<WebURLLoader> CreateURLLoader(
       const ResourceRequest&,
-      scoped_refptr<WebTaskRunner>) {
+      scoped_refptr<base::SingleThreadTaskRunner>,
+      const ResourceLoaderOptions&) {
     NOTREACHED();
     return nullptr;
   }
@@ -251,11 +250,11 @@ class PLATFORM_EXPORT FetchContext
 
   // Returns a task runner intended for loading tasks. Should work even in a
   // worker context, where WebFrameScheduler doesn't exist, but the returned
-  // WebTaskRunner will not work after the context detaches (after Detach() is
-  // called, this will return a generic timer suitable for post-detach actions
-  // like keepalive requests.
-  virtual scoped_refptr<WebTaskRunner> GetLoadingTaskRunner() {
-    return Platform::Current()->CurrentThread()->GetWebTaskRunner();
+  // base::SingleThreadTaskRunner will not work after the context detaches
+  // (after Detach() is called, this will return a generic timer suitable for
+  // post-detach actions like keepalive requests.
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner() {
+    return Platform::Current()->CurrentThread()->GetTaskRunner();
   }
 
   // Called when the underlying context is detached. Note that some
@@ -269,6 +268,14 @@ class PLATFORM_EXPORT FetchContext
   virtual ResourceLoadPriority ModifyPriorityForExperiments(
       ResourceLoadPriority priority) const {
     return priority;
+  }
+
+  // Returns if the |resource_url| is identified as ad.
+  virtual bool IsAdResource(
+      const KURL& resource_url,
+      Resource::Type type,
+      WebURLRequest::RequestContext request_context) const {
+    return false;
   }
 
  protected:

@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ostream>
+#include <string>
+#include <utility>
+
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/strings/pattern.h"
@@ -9,6 +13,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
+#include "content/browser/loader/cross_site_document_resource_handler.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -16,20 +23,60 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "content/public/test/url_loader_interceptor.h"
 #include "content/shell/browser/shell.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "services/network/public/cpp/network_switches.h"
+#include "services/network/test/test_url_loader_client.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace content {
 
+using testing::Not;
+using testing::HasSubstr;
+
 namespace {
+
+enum HistogramExpectations {
+  kShouldBeBlocked = 1 << 0,
+  kShouldBeSniffed = 1 << 1,
+  kShouldHaveContentLength = 1 << 2,
+
+  kShouldBeAllowedWithoutSniffing = 0,
+  kShouldBeBlockedWithoutSniffing = kShouldBeBlocked,
+  kShouldBeSniffedAndAllowed = kShouldBeSniffed,
+  kShouldBeSniffedAndBlocked = kShouldBeSniffed | kShouldBeBlocked,
+};
+
+HistogramExpectations operator|(HistogramExpectations a,
+                                HistogramExpectations b) {
+  return static_cast<HistogramExpectations>(static_cast<int>(a) |
+                                            static_cast<int>(b));
+}
+
+std::ostream& operator<<(std::ostream& os, const HistogramExpectations& value) {
+  if (value == 0) {
+    os << "(none)";
+    return os;
+  }
+
+  os << "( ";
+  if (0 != (value & kShouldBeBlocked))
+    os << "kShouldBeBlocked ";
+  if (0 != (value & kShouldBeSniffed))
+    os << "kShouldBeSniffed ";
+  if (0 != (value & kShouldHaveContentLength))
+    os << "kShouldHaveContentLength ";
+  os << ")";
+  return os;
+}
 
 // Ensure the correct histograms are incremented for blocking events.
 // Assumes the resource type is XHR.
 void InspectHistograms(const base::HistogramTester& histograms,
-                       bool should_be_blocked,
-                       bool should_be_sniffed,
+                       const HistogramExpectations& expectations,
                        const std::string& resource_name,
                        ResourceType resource_type) {
   std::string bucket;
@@ -52,14 +99,17 @@ void InspectHistograms(const base::HistogramTester& histograms,
   std::string base = "SiteIsolation.XSD.Browser";
   expected_counts[base + ".Action"] = 2;
   if ((base::MatchPattern(resource_name, "*prefixed*") || bucket == "Others") &&
-      should_be_blocked) {
+      (0 != (expectations & kShouldBeBlocked))) {
     expected_counts[base + ".BlockedForParserBreaker"] = 1;
   }
-  if (should_be_sniffed)
+  if (0 != (expectations & kShouldBeSniffed))
     expected_counts[base + ".BytesReadForSniffing"] = 1;
-  if (should_be_blocked) {
+  if (0 != (expectations & kShouldBeBlocked)) {
     expected_counts[base + ".Blocked"] = 1;
     expected_counts[base + ".Blocked." + bucket] = 1;
+    expected_counts[base + ".Blocked.ContentLength.WasAvailable"] = 1;
+    if (0 != (expectations & kShouldHaveContentLength))
+      expected_counts[base + ".Blocked.ContentLength.ValueIfAvailable"] = 1;
   }
 
   // Make sure that the expected metrics, and only those metrics, were
@@ -67,10 +117,10 @@ void InspectHistograms(const base::HistogramTester& histograms,
   EXPECT_THAT(histograms.GetTotalCountsForPrefix("SiteIsolation.XSD.Browser"),
               testing::ContainerEq(expected_counts))
       << "For resource_name=" << resource_name
-      << ", should_be_blocked=" << should_be_blocked;
+      << ", expectations=" << expectations;
 
   // Determine if the bucket for the resource type (XHR) was incremented.
-  if (should_be_blocked) {
+  if (0 != (expectations & kShouldBeBlocked)) {
     EXPECT_THAT(histograms.GetAllSamples(base + ".Blocked"),
                 testing::ElementsAre(base::Bucket(resource_type, 1)))
         << "The wrong Blocked bucket was incremented.";
@@ -79,6 +129,128 @@ void InspectHistograms(const base::HistogramTester& histograms,
         << "The wrong Blocked bucket was incremented.";
   }
 }
+
+// Helper for intercepting a resource request to the given URL and capturing the
+// response headers and body.
+//
+// Note that after the request completes, the original requestor (e.g. the
+// renderer) will see an injected request failure (this is easier to accomplish
+// than forwarding the intercepted response to the original requestor),
+class RequestInterceptor {
+ public:
+  // Start intercepting requests to |url_to_intercept|.
+  explicit RequestInterceptor(const GURL& url_to_intercept)
+      : url_to_intercept_(url_to_intercept),
+        interceptor_(
+            base::BindRepeating(&RequestInterceptor::InterceptorCallback,
+                                base::Unretained(this))) {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    DCHECK(url_to_intercept.is_valid());
+  }
+
+  // Waits until a request gets intercepted and completed.
+  void WaitForRequestCompletion() {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    DCHECK(!request_completed_);
+    test_client_.RunUntilComplete();
+
+    // Read the intercepted response body into |body_|.
+    if (test_client_.completion_status().error_code == net::OK) {
+      char buffer[128];
+      while (true) {
+        uint32_t num_bytes = sizeof(buffer);
+        auto result = test_client_.response_body().ReadData(
+            buffer, &num_bytes, MOJO_READ_DATA_FLAG_NONE);
+        if (result != MOJO_RESULT_OK)
+          break;
+
+        if (num_bytes == 0)
+          break;
+
+        body_ += std::string(buffer, num_bytes);
+      }
+    }
+
+    // Wait until IO cleanup completes.
+    base::RunLoop run_loop;
+    BrowserThread::PostTaskAndReply(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(&RequestInterceptor::CleanUpOnIOThread,
+                       base::Unretained(this)),
+        run_loop.QuitClosure());
+    run_loop.Run();
+
+    // Mark the request as completed (for DCHECK purposes).
+    request_completed_ = true;
+  }
+
+  const network::URLLoaderCompletionStatus& completion_status() const {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    DCHECK(request_completed_);
+    return test_client_.completion_status();
+  }
+
+  const network::ResourceResponseHead& response_head() const {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    DCHECK(request_completed_);
+    return test_client_.response_head();
+  }
+
+  const std::string& response_body() const {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    DCHECK(request_completed_);
+    return body_;
+  }
+
+ private:
+  bool InterceptorCallback(URLLoaderInterceptor::RequestParams* params) {
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
+    DCHECK(params);
+
+    if (url_to_intercept_ != params->url_request.url)
+      return false;
+
+    // Prevent more than one intercept.
+    if (request_intercepted_)
+      return false;
+    request_intercepted_ = true;
+
+    // Inject |test_client_| into the request.
+    DCHECK(!original_client_);
+    original_client_ = std::move(params->client);
+    params->client = test_client_.CreateInterfacePtr();
+
+    // Forward the request to the original URLLoaderFactory.
+    return false;
+  }
+
+  void CleanUpOnIOThread() {
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+    // Tell the |original_client_| that the request has completed (and that it
+    // can release its URLLoaderClient.
+    original_client_->OnComplete(
+        network::URLLoaderCompletionStatus(net::ERR_NOT_IMPLEMENTED));
+
+    // Reset all temporary mojo bindings.
+    original_client_.reset();
+    test_client_.Unbind();
+  }
+
+  const GURL url_to_intercept_;
+  URLLoaderInterceptor interceptor_;
+  network::TestURLLoaderClient test_client_;
+
+  // UI thread state:
+  std::string body_;
+  bool request_completed_ = false;
+
+  // IO thread state:
+  network::mojom::URLLoaderClientPtr original_client_;
+  bool request_intercepted_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(RequestInterceptor);
+};
 
 }  // namespace
 
@@ -114,7 +286,7 @@ class CrossSiteDocumentBlockingBaseTest : public ContentBrowserTest {
     // without having to inject the port number into all URLs), which we can use
     // to create arbitrary SiteInstances.
     command_line->AppendSwitchASCII(
-        switches::kHostResolverRules,
+        network::switches::kHostResolverRules,
         "MAP * " + embedded_test_server()->host_port_pair().ToString() +
             ",EXCLUDE localhost");
 
@@ -192,9 +364,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
         shell(), base::StringPrintf("sendRequest('%s');", resource),
         &was_blocked));
     EXPECT_TRUE(was_blocked);
-    InspectHistograms(histograms, true /* should_be_blocked */,
-                      true /* should_be_sniffed */, resource,
-                      RESOURCE_TYPE_XHR);
+    InspectHistograms(histograms,
+                      kShouldBeSniffedAndBlocked | kShouldHaveContentLength,
+                      resource, RESOURCE_TYPE_XHR);
   }
 
   // These files should be disallowed without sniffing.
@@ -209,8 +381,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
         shell(), base::StringPrintf("sendRequest('%s');", resource),
         &was_blocked));
     EXPECT_TRUE(was_blocked);
-    InspectHistograms(histograms, true /* should_be_blocked */,
-                      false /* should_be_sniffed */, resource,
+    InspectHistograms(histograms, kShouldBeBlockedWithoutSniffing, resource,
                       RESOURCE_TYPE_XHR);
   }
 
@@ -233,8 +404,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
         shell(), base::StringPrintf("sendRequest('%s');", resource),
         &was_blocked));
     EXPECT_FALSE(was_blocked);
-    InspectHistograms(histograms, false /* should_be_blocked */,
-                      true /* should_be_sniffed */, resource,
+    InspectHistograms(histograms, kShouldBeSniffedAndAllowed, resource,
                       RESOURCE_TYPE_XHR);
   }
 
@@ -250,8 +420,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
         shell(), base::StringPrintf("sendRequest('%s');", resource),
         &was_blocked));
     EXPECT_FALSE(was_blocked);
-    InspectHistograms(histograms, false /* should_be_blocked */,
-                      false /* should_be_sniffed */, resource,
+    InspectHistograms(histograms, kShouldBeAllowedWithoutSniffing, resource,
                       RESOURCE_TYPE_XHR);
   }
 }
@@ -273,9 +442,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, RangeRequest) {
     ASSERT_TRUE(ExecuteScriptAndExtractBool(
         shell(), "sendRequest('valid.html', 'bytes=1-24');", &was_blocked));
     EXPECT_TRUE(was_blocked);
-    InspectHistograms(histograms, true /* should_be_blocked */,
-                      false /* should_be_sniffed */, "valid.html",
-                      RESOURCE_TYPE_XHR);
+    InspectHistograms(
+        histograms, kShouldBeBlockedWithoutSniffing | kShouldHaveContentLength,
+        "valid.html", RESOURCE_TYPE_XHR);
   }
   {
     // Verify that a response which would have been allowed by MIME type anyway
@@ -285,8 +454,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, RangeRequest) {
     ASSERT_TRUE(ExecuteScriptAndExtractBool(
         shell(), "sendRequest('valid.js', 'bytes=1-5');", &was_blocked));
     EXPECT_FALSE(was_blocked);
-    InspectHistograms(histograms, false /* should_be_blocked */,
-                      false /* should_be_sniffed */, "valid.js",
+    InspectHistograms(histograms, kShouldBeAllowedWithoutSniffing, "valid.js",
                       RESOURCE_TYPE_XHR);
   }
   {
@@ -297,8 +465,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, RangeRequest) {
     ASSERT_TRUE(ExecuteScriptAndExtractBool(
         shell(), "sendRequest('cors.json', 'bytes=2-7');", &was_blocked));
     EXPECT_FALSE(was_blocked);
-    InspectHistograms(histograms, false /* should_be_blocked */,
-                      false /* should_be_sniffed */, "cors.json",
+    InspectHistograms(histograms, kShouldBeAllowedWithoutSniffing, "cors.json",
                       RESOURCE_TYPE_XHR);
   }
 }
@@ -318,6 +485,103 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockForVariousTargets) {
 
   // TODO(creis): Wait for all the subresources to load and ensure renderer
   // process is still alive.
+}
+
+// Checks to see that CORB blocking applies to processes hosting error pages.
+// Regression test for https://crbug.com/814913.
+IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest,
+                       BlockRequestFromErrorPage) {
+  GURL error_url = embedded_test_server()->GetURL("bar.com", "/close-socket");
+  GURL subresource_url =
+      embedded_test_server()->GetURL("foo.com", "/site_isolation/json.js");
+
+  // Load |error_url| and expect a network error page.
+  TestNavigationObserver observer(shell()->web_contents());
+  EXPECT_FALSE(NavigateToURL(shell(), error_url));
+  EXPECT_EQ(error_url, observer.last_navigation_url());
+  NavigationEntry* entry =
+      shell()->web_contents()->GetController().GetLastCommittedEntry();
+  EXPECT_EQ(PAGE_TYPE_ERROR, entry->GetPageType());
+
+  // Add a <script> tag whose src is a CORB-protected resource. Expect no
+  // window.onerror to result, because no syntax error is generated by the empty
+  // response.
+  std::string script = R"((subresource_url => {
+    window.onerror = () => domAutomationController.send("CORB BYPASSED");
+    var script = document.createElement('script');
+    script.src = subresource_url;
+    script.onload = () => domAutomationController.send("CORB WORKED");
+    document.body.appendChild(script);
+    }))";
+  std::string result;
+  ASSERT_TRUE(ExecuteScriptAndExtractString(
+      shell(), script + "('" + subresource_url.spec() + "')", &result));
+
+  EXPECT_EQ("CORB WORKED", result);
+}
+
+IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockHeaders) {
+  GURL foo_url("http://foo.com/title1.html");
+  EXPECT_TRUE(NavigateToURL(shell(), foo_url));
+
+  // Prepare to intercept the network request at the IPC layer.
+  //
+  // Note: we want to verify that the blocking prevents the data from being sent
+  // over IPC.  Testing later (e.g. via Response/Headers Web APIs) might give a
+  // false sense of security, since some sanitization happens inside the
+  // renderer (e.g. via FetchResponseData::CreateCORSFilteredResponse).
+  GURL bar_url("http://bar.com/cross_site_document_blocking/headers-test.json");
+  RequestInterceptor interceptor(bar_url);
+
+  // Issue the request that will be intercepted
+  EXPECT_TRUE(ExecuteScript(shell(),
+                            base::StringPrintf("fetch('%s').catch(error => {})",
+                                               bar_url.spec().c_str())));
+  interceptor.WaitForRequestCompletion();
+
+  // Verify that the response completed successfully and was blocked.
+  ASSERT_EQ(net::OK, interceptor.completion_status().error_code);
+  ASSERT_TRUE(interceptor.completion_status().blocked_cross_site_document);
+
+  // Verify that safelisted headers have not been removed by XSDB.
+  // See https://fetch.spec.whatwg.org/#cors-safelisted-response-header-name.
+  const std::string& headers =
+      interceptor.response_head().headers->raw_headers();
+  EXPECT_THAT(headers,
+              HasSubstr("Cache-Control: no-cache, no-store, must-revalidate"));
+  EXPECT_THAT(headers, HasSubstr("Content-Language: TestLanguage"));
+  EXPECT_THAT(headers,
+              HasSubstr("Content-Type: application/json; charset=utf-8"));
+  EXPECT_THAT(headers, HasSubstr("Expires: Wed, 21 Oct 2199 07:28:00 GMT"));
+  EXPECT_THAT(headers,
+              HasSubstr("Last-Modified: Wed, 07 Feb 2018 13:55:00 PST"));
+  EXPECT_THAT(headers, HasSubstr("Pragma: TestPragma"));
+
+  // Make sure the test covers all the safelisted headers known to the product
+  // code.
+  for (const std::string& safelisted_header :
+       CrossSiteDocumentResourceHandler::GetCorsSafelistedHeadersForTesting()) {
+    EXPECT_TRUE(
+        interceptor.response_head().headers->HasHeader(safelisted_header));
+
+    std::string value;
+    interceptor.response_head().headers->EnumerateHeader(
+        nullptr, safelisted_header, &value);
+    EXPECT_FALSE(value.empty());
+  }
+
+  // Verify that other response headers have been removed by XSDB.
+  EXPECT_THAT(headers, Not(HasSubstr("Content-Length")));
+  EXPECT_THAT(headers, Not(HasSubstr("X-My-Secret-Header")));
+  EXPECT_THAT(headers, Not(HasSubstr("MySecretCookieKey")));
+  EXPECT_THAT(headers, Not(HasSubstr("MySecretCookieValue")));
+
+  // Verify that the body is empty.
+  EXPECT_EQ("", interceptor.response_body());
+  EXPECT_EQ(0, interceptor.completion_status().decoded_body_length);
+
+  // Verify that other response parts have been sanitized.
+  EXPECT_EQ(0u, interceptor.response_head().content_length);
 }
 
 // This test class sets up a service worker that can be used to try to respond
@@ -378,6 +642,7 @@ class CrossSiteDocumentBlockingServiceWorkerTest : public ContentBrowserTest {
         "/cross_site_document_blocking/request.html");
     ASSERT_TRUE(NavigateToURL(shell(), url));
 
+    // Register the service worker.
     bool is_script_done;
     std::string script = R"(
         navigator.serviceWorker
@@ -390,6 +655,17 @@ class CrossSiteDocumentBlockingServiceWorkerTest : public ContentBrowserTest {
             }); )";
     ASSERT_TRUE(ExecuteScriptAndExtractBool(shell(), script, &is_script_done));
     ASSERT_TRUE(is_script_done);
+
+    // Navigate again to the same URL - the service worker should be 1) active
+    // at this time (because of waiting for |navigator.serviceWorker.ready|
+    // above) and 2) controlling the current page (because of the reload).
+    ASSERT_TRUE(NavigateToURL(shell(), url));
+    bool is_controlled_by_service_worker;
+    ASSERT_TRUE(ExecuteScriptAndExtractBool(
+        shell(),
+        "domAutomationController.send(!!navigator.serviceWorker.controller)",
+        &is_controlled_by_service_worker));
+    ASSERT_TRUE(is_controlled_by_service_worker);
   }
 
  private:
@@ -439,18 +715,17 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest, NoNetwork) {
   // Verify that XSDB didn't block the response (since it was "faked" within the
   // service worker and didn't cross any security boundaries).
   EXPECT_EQ("Response created by service worker", response);
-  InspectHistograms(histograms, false /* should_be_blocked */,
-                    false /* should_be_sniffed */, "blah.html",
+  InspectHistograms(histograms, kShouldBeAllowedWithoutSniffing, "blah.html",
                     RESOURCE_TYPE_XHR);
 }
 
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest,
-                       NetworkAndOpaqueResponse) {
+                       NetworkToServiceWorkerResponse) {
   SetUpServiceWorker();
 
   // Build a script for XHR-ing a cross-origin, nosniff HTML document.
   GURL cross_origin_url =
-      GetURLOnCrossOriginServer("/site_isolation/nosniff.html");
+      GetURLOnCrossOriginServer("/site_isolation/nosniff.txt");
   const char* script_template = R"(
       fetch('%s', { mode: 'no-cors' })
           .then(response => response.text())
@@ -464,50 +739,24 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest,
   std::string script =
       base::StringPrintf(script_template, cross_origin_url.spec().c_str());
 
-  {
-    // The first time the request reaches the service worker, it will be
-    // forwarded to the network, but a response will be intercepted by the
-    // service worker and replaced with a new, artificial error.
-    base::HistogramTester histograms;
-    std::string response;
-    EXPECT_TRUE(ExecuteScriptAndExtractString(shell(), script, &response));
+  // The service worker will forward the request to the network, but a response
+  // will be intercepted by the service worker and replaced with a new,
+  // artificial error.
+  base::HistogramTester histograms;
+  std::string response;
+  EXPECT_TRUE(ExecuteScriptAndExtractString(shell(), script, &response));
 
-    // Verify that XSDB blocked the response from the network (from
-    // |cross_origin_https_server_|) to the service worker.
-    InspectHistograms(histograms, true /* should_be_blocked */,
-                      false /* should_be_sniffed */, "nosniff.html",
-                      RESOURCE_TYPE_XHR);
+  // Verify that XSDB blocked the response from the network (from
+  // |cross_origin_https_server_|) to the service worker.
+  InspectHistograms(histograms, kShouldBeBlockedWithoutSniffing, "network.txt",
+                    RESOURCE_TYPE_XHR);
 
-    // Verify that the service worker replied with an expected error.
-    // Replying with an error means that XSDB is only active once (for the
-    // initial, real network request) and therefore the test doesn't get
-    // confused (second successful response would have added noise to the
-    // histograms captured by the test).
-    EXPECT_EQ("error: TypeError: Failed to fetch", response);
-  }
-
-  // TODO(lukasza): https://crbug.com/715640: The remainder of this test might
-  // become invalid after servicification of service workers.
-  {
-    // Stop the server, to make sure the response below comes back from the
-    // service worker (and not from the network).
-    StopCrossOriginServer();
-
-    // The second time the request reaches the service worker, it will return
-    // the previously cached response from the network.  This should hit the
-    // case in CrossSiteDocumentResourceHandler::ShouldBlockBasedOnHeaders where
-    // |response_type_via_service_worker| is equal to |kOpaque|.
-    base::HistogramTester histograms;
-    std::string response;
-    EXPECT_TRUE(ExecuteScriptAndExtractString(shell(), script, &response));
-
-    // Verify that XSDB blocked the cached/opaque service worker response from
-    // reaching a cross-origin page.
-    EXPECT_EQ("", response);
-    InspectHistograms(histograms, true /* should_be_blocked */,
-                      false /* should_be_sniffed */, "nosniff.html",
-                      RESOURCE_TYPE_XHR);
-  }
+  // Verify that the service worker replied with an expected error.
+  // Replying with an error means that XSDB is only active once (for the
+  // initial, real network request) and therefore the test doesn't get
+  // confused (second successful response would have added noise to the
+  // histograms captured by the test).
+  EXPECT_EQ("error: TypeError: Failed to fetch", response);
 }
 
 class CrossSiteDocumentBlockingKillSwitchTest

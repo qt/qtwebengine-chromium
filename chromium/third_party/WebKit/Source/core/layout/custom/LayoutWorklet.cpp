@@ -8,19 +8,22 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
+#include "core/layout/custom/DocumentLayoutDefinition.h"
 #include "core/layout/custom/LayoutWorkletGlobalScopeProxy.h"
+#include "core/layout/custom/PendingLayoutRegistry.h"
 
 namespace blink {
 
 const size_t LayoutWorklet::kNumGlobalScopes = 2u;
+DocumentLayoutDefinition* const kInvalidDocumentLayoutDefinition = nullptr;
 
 // static
 LayoutWorklet* LayoutWorklet::From(LocalDOMWindow& window) {
-  LayoutWorklet* supplement = static_cast<LayoutWorklet*>(
-      Supplement<LocalDOMWindow>::From(window, SupplementName()));
+  LayoutWorklet* supplement =
+      Supplement<LocalDOMWindow>::From<LayoutWorklet>(window);
   if (!supplement && window.GetFrame()) {
     supplement = Create(window.GetFrame());
-    ProvideTo(window, SupplementName(), supplement);
+    ProvideTo(window, supplement);
   }
   return supplement;
 }
@@ -32,15 +35,24 @@ LayoutWorklet* LayoutWorklet::Create(LocalFrame* frame) {
 
 LayoutWorklet::LayoutWorklet(LocalFrame* frame)
     : Worklet(frame->GetDocument()),
-      Supplement<LocalDOMWindow>(*frame->DomWindow()) {}
+      Supplement<LocalDOMWindow>(*frame->DomWindow()),
+      pending_layout_registry_(new PendingLayoutRegistry()) {}
 
 LayoutWorklet::~LayoutWorklet() = default;
 
-const char* LayoutWorklet::SupplementName() {
-  return "LayoutWorklet";
+const char LayoutWorklet::kSupplementName[] = "LayoutWorklet";
+
+void LayoutWorklet::AddPendingLayout(const AtomicString& name, Node* node) {
+  pending_layout_registry_->AddPendingLayout(name, node);
+}
+
+LayoutWorkletGlobalScopeProxy* LayoutWorklet::Proxy() {
+  return LayoutWorkletGlobalScopeProxy::From(FindAvailableGlobalScope());
 }
 
 void LayoutWorklet::Trace(blink::Visitor* visitor) {
+  visitor->Trace(document_definition_map_);
+  visitor->Trace(pending_layout_registry_);
   Worklet::Trace(visitor);
   Supplement<LocalDOMWindow>::Trace(visitor);
 }
@@ -52,7 +64,7 @@ bool LayoutWorklet::NeedsToCreateGlobalScope() {
 WorkletGlobalScopeProxy* LayoutWorklet::CreateGlobalScope() {
   DCHECK(NeedsToCreateGlobalScope());
   return new LayoutWorkletGlobalScopeProxy(
-      ToDocument(GetExecutionContext())->GetFrame(),
+      ToDocument(GetExecutionContext())->GetFrame(), pending_layout_registry_,
       GetNumberOfGlobalScopes() + 1);
 }
 

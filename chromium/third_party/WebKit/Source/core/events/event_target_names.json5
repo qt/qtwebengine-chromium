@@ -5,7 +5,7 @@
   },
 
   data: [
-    "core/animation/AnimationPlayer",
+    "core/animation/Animation",
     "core/clipboard/Clipboard",
     "core/css/FontFaceSet",
     "core/css/MediaQueryList",
@@ -14,6 +14,7 @@
     "core/dom/MessagePort",
     "core/dom/Node",
     "core/dom/events/EventTargetImpl",
+    "core/fetch/AbortSignal",
     "core/fileapi/FileReader",
     "core/html/ime/InputMethodContext",
     "core/html/track/AudioTrackList",

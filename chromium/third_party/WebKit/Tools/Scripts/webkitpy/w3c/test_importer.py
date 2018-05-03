@@ -89,6 +89,14 @@ class TestImporter(object):
         credentials = read_credentials(self.host, options.credentials_json)
         gh_user = credentials.get('GH_USER')
         gh_token = credentials.get('GH_TOKEN')
+        if not gh_user or not gh_token:
+            _log.warning('You have not set your GitHub credentials. This '
+                         'script may fail with a network error when making '
+                         'an API request to GitHub.')
+            _log.warning('See https://chromium.googlesource.com/chromium/src'
+                         '/+/master/docs/testing/web_platform_tests.md'
+                         '#GitHub-credentials for instructions on how to set '
+                         'your credentials up.')
         self.wpt_github = self.wpt_github or WPTGitHub(self.host, gh_user, gh_token)
         self.git_cl = GitCL(self.host, auth_refresh_token_json=options.auth_refresh_token_json)
 
@@ -133,7 +141,8 @@ class TestImporter(object):
 
         self._generate_manifest()
 
-        self._delete_orphaned_baselines()
+        # TODO(crbug.com/800570 robertma): Re-enable it once we fix the bug.
+        # self._delete_orphaned_baselines()
 
         # TODO(qyearsley): Consider running the imported tests with
         # `run-webkit-tests --reset-results external/wpt` to get some baselines
@@ -230,7 +239,7 @@ class TestImporter(object):
         cq_try_results = cl_status.try_job_results
 
         if not cq_try_results:
-            _log.error('No CQ try results found in try results: %s.', try_results)
+            _log.error('No CQ try results found in try results')
             self.git_cl.run(['set-close'])
             return False
 

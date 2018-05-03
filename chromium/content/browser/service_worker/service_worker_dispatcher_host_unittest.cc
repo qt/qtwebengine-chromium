@@ -12,7 +12,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
-#include "base/test/simple_test_tick_clock.h"
 #include "base/time/time.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
@@ -32,11 +31,9 @@
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_provider_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
-
-using blink::MessagePortChannel;
+#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_provider_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 namespace service_worker_dispatcher_host_unittest {
@@ -46,12 +43,6 @@ static void SaveStatusCallback(bool* called,
                                ServiceWorkerStatusCode status) {
   *called = true;
   *out = status;
-}
-
-void SetUpDummyMessagePort(std::vector<MessagePortChannel>* ports) {
-  // Let the other end of the pipe close.
-  mojo::MessagePipe pipe;
-  ports->push_back(MessagePortChannel(std::move(pipe.handle0)));
 }
 
 struct RemoteProviderInfo {
@@ -96,8 +87,6 @@ std::unique_ptr<ServiceWorkerNavigationHandleCore> CreateNavigationHandleCore(
   return navigation_handle_core;
 }
 
-static const int kRenderFrameId = 1;
-
 class TestingServiceWorkerDispatcherHost : public ServiceWorkerDispatcherHost {
  public:
   TestingServiceWorkerDispatcherHost(int process_id,
@@ -118,30 +107,6 @@ class TestingServiceWorkerDispatcherHost : public ServiceWorkerDispatcherHost {
  protected:
   EmbeddedWorkerTestHelper* helper_;
   ~TestingServiceWorkerDispatcherHost() override {}
-};
-
-class FailToStartWorkerTestHelper : public EmbeddedWorkerTestHelper {
- public:
-  FailToStartWorkerTestHelper() : EmbeddedWorkerTestHelper(base::FilePath()) {}
-
-  void OnStartWorker(
-      int embedded_worker_id,
-      int64_t service_worker_version_id,
-      const GURL& scope,
-      const GURL& script_url,
-      bool pause_after_download,
-      mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
-      mojom::ControllerServiceWorkerRequest controller_request,
-      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
-      mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
-      mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
-      blink::mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)
-      override {
-    mojom::EmbeddedWorkerInstanceHostAssociatedPtr instance_host_ptr;
-    instance_host_ptr.Bind(std::move(instance_host));
-    instance_host_ptr->OnStopped();
-    base::RunLoop().RunUntilIdle();
-  }
 };
 
 class ServiceWorkerDispatcherHostTest : public testing::Test {
@@ -192,14 +157,13 @@ class ServiceWorkerDispatcherHostTest : public testing::Test {
     version_->SetStatus(ServiceWorkerVersion::INSTALLING);
 
     // Make the registration findable via storage functions.
-    context()->storage()->LazyInitializeForTest(
-        base::BindOnce(&base::DoNothing));
+    context()->storage()->LazyInitializeForTest(base::DoNothing());
     base::RunLoop().RunUntilIdle();
     bool called = false;
     ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
     context()->storage()->StoreRegistration(
         registration_.get(), version_.get(),
-        base::Bind(&SaveStatusCallback, &called, &status));
+        base::BindOnce(&SaveStatusCallback, &called, &status));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(called);
     EXPECT_EQ(SERVICE_WORKER_OK, status);
@@ -217,45 +181,7 @@ class ServiceWorkerDispatcherHostTest : public testing::Test {
         helper_->mock_render_process_id(), kProviderId);
   }
 
-  void PrepareProviderForServiceWorkerContext(ServiceWorkerVersion* version,
-                                              const GURL& pattern) {
-    std::unique_ptr<ServiceWorkerProviderHost> host =
-        CreateProviderHostForServiceWorkerContext(
-            helper_->mock_render_process_id(),
-            true /* is_parent_frame_secure */, version, context()->AsWeakPtr(),
-            &remote_endpoint_);
-    provider_host_ = host.get();
-    context()->AddProviderHost(std::move(host));
-  }
-
-  void DispatchExtendableMessageEvent(
-      scoped_refptr<ServiceWorkerVersion> worker,
-      const base::string16& message,
-      const url::Origin& source_origin,
-      const std::vector<MessagePortChannel>& sent_message_ports,
-      ServiceWorkerProviderHost* sender_provider_host,
-      ServiceWorkerDispatcherHost::StatusCallback callback) {
-    dispatcher_host_->DispatchExtendableMessageEvent(
-        std::move(worker), message, source_origin, sent_message_ports,
-        sender_provider_host, std::move(callback));
-  }
-
-  ServiceWorkerRemoteProviderEndpoint PrepareServiceWorkerProviderHost(
-      int provider_id,
-      const GURL& document_url) {
-    ServiceWorkerRemoteProviderEndpoint remote_endpoint;
-    std::unique_ptr<ServiceWorkerProviderHost> host =
-        CreateProviderHostWithDispatcherHost(
-            helper_->mock_render_process_id(), provider_id,
-            context()->AsWeakPtr(), kRenderFrameId, dispatcher_host_.get(),
-            &remote_endpoint);
-    host->SetDocumentUrl(document_url);
-    context()->AddProviderHost(std::move(host));
-    return remote_endpoint;
-  }
-
   TestBrowserThreadBundle browser_thread_bundle_;
-  base::SimpleTestTickClock tick_clock_;
   content::MockResourceContext resource_context_;
   std::unique_ptr<EmbeddedWorkerTestHelper> helper_;
   scoped_refptr<TestingServiceWorkerDispatcherHost> dispatcher_host_;
@@ -341,7 +267,7 @@ TEST_F(ServiceWorkerDispatcherHostTest, CleanupOnRendererCrash) {
   bool called = false;
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_ABORT;
   version_->StartWorker(ServiceWorkerMetrics::EventType::UNKNOWN,
-                        base::Bind(&SaveStatusCallback, &called, &status));
+                        base::BindOnce(&SaveStatusCallback, &called, &status));
   base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(called);
@@ -379,90 +305,6 @@ TEST_F(ServiceWorkerDispatcherHostTest, CleanupOnRendererCrash) {
   remote_endpoint.BindWithProviderHostInfo(&host_info);
   new_dispatcher_host->OnProviderCreated(std::move(host_info));
   EXPECT_EQ(0, new_dispatcher_host->bad_messages_received_count_);
-}
-
-TEST_F(ServiceWorkerDispatcherHostTest, DispatchExtendableMessageEvent) {
-  GURL pattern = GURL("http://www.example.com/");
-  GURL script_url = GURL("http://www.example.com/service_worker.js");
-
-  SetUpRegistration(pattern, script_url);
-  PrepareProviderForServiceWorkerContext(version_.get(), pattern);
-
-  // Set the running hosted version so that we can retrieve a valid service
-  // worker object information for the source attribute of the message event.
-  provider_host_->running_hosted_version_ = version_;
-
-  // Set aside the initial refcount of the worker handle.
-  provider_host_->GetOrCreateServiceWorkerHandle(version_.get());
-  ServiceWorkerHandle* sender_worker_handle =
-      dispatcher_host_->FindServiceWorkerHandle(provider_host_->provider_id(),
-                                                version_->version_id());
-  const int ref_count = sender_worker_handle->ref_count();
-
-  // Set mock clock on version_ to check timeout behavior.
-  tick_clock_.SetNowTicks(base::TimeTicks::Now());
-  version_->SetTickClockForTesting(&tick_clock_);
-
-  // Make sure worker has a non-zero timeout.
-  bool called = false;
-  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
-  version_->StartWorker(ServiceWorkerMetrics::EventType::UNKNOWN,
-                        base::Bind(&SaveStatusCallback, &called, &status));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(called);
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
-  version_->StartRequestWithCustomTimeout(
-      ServiceWorkerMetrics::EventType::ACTIVATE,
-      base::Bind(&ServiceWorkerUtils::NoOpStatusCallback),
-      base::TimeDelta::FromSeconds(10), ServiceWorkerVersion::KILL_ON_TIMEOUT);
-
-  // Advance clock by a couple seconds.
-  tick_clock_.Advance(base::TimeDelta::FromSeconds(4));
-  base::TimeDelta remaining_time = version_->remaining_timeout();
-  EXPECT_EQ(base::TimeDelta::FromSeconds(6), remaining_time);
-
-  // Dispatch ExtendableMessageEvent.
-  std::vector<MessagePortChannel> ports;
-  SetUpDummyMessagePort(&ports);
-  called = false;
-  status = SERVICE_WORKER_ERROR_MAX_VALUE;
-  DispatchExtendableMessageEvent(
-      version_, base::string16(),
-      url::Origin::Create(version_->scope().GetOrigin()), ports, provider_host_,
-      base::BindOnce(&SaveStatusCallback, &called, &status));
-  EXPECT_EQ(ref_count + 1, sender_worker_handle->ref_count());
-  base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(called);
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
-
-  EXPECT_EQ(ref_count + 1, sender_worker_handle->ref_count());
-
-  // Timeout of message event should not have extended life of service worker.
-  EXPECT_EQ(remaining_time, version_->remaining_timeout());
-}
-
-TEST_F(ServiceWorkerDispatcherHostTest, DispatchExtendableMessageEvent_Fail) {
-  GURL pattern = GURL("http://www.example.com/");
-  GURL script_url = GURL("http://www.example.com/service_worker.js");
-
-  Initialize(base::WrapUnique(new FailToStartWorkerTestHelper));
-  SendProviderCreated(blink::mojom::ServiceWorkerProviderType::kForSharedWorker,
-                      pattern);
-  SetUpRegistration(pattern, script_url);
-
-  // Try to dispatch ExtendableMessageEvent. This should fail to start the
-  // worker and to dispatch the event.
-  std::vector<MessagePortChannel> ports;
-  SetUpDummyMessagePort(&ports);
-  bool called = false;
-  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
-  DispatchExtendableMessageEvent(
-      version_, base::string16(),
-      url::Origin::Create(version_->scope().GetOrigin()), ports, provider_host_,
-      base::BindOnce(&SaveStatusCallback, &called, &status));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_TRUE(called);
-  EXPECT_EQ(SERVICE_WORKER_ERROR_START_WORKER_FAILED, status);
 }
 
 }  // namespace service_worker_dispatcher_host_unittest

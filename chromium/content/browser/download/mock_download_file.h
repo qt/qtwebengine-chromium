@@ -28,11 +28,12 @@ class MockDownloadFile : public DownloadFile {
   virtual ~MockDownloadFile();
 
   // DownloadFile functions.
-  MOCK_METHOD4(Initialize,
-               void(const InitializeCallback&,
-                    const CancelRequestCallback&,
-                    const DownloadItem::ReceivedSlices& received_slices,
-                    bool is_parallelizable));
+  MOCK_METHOD4(
+      Initialize,
+      void(const InitializeCallback&,
+           const CancelRequestCallback&,
+           const download::DownloadItem::ReceivedSlices& received_slices,
+           bool is_parallelizable));
   void AddInputStream(
       std::unique_ptr<DownloadManager::InputStream> input_stream,
       int64_t offset,
@@ -41,12 +42,14 @@ class MockDownloadFile : public DownloadFile {
                void(DownloadManager::InputStream* input_stream,
                     int64_t offset,
                     int64_t length));
-  MOCK_METHOD2(OnResponseCompleted, void(int64_t offset,
-                                   DownloadInterruptReason status));
-  MOCK_METHOD2(AppendDataToFile, DownloadInterruptReason(
-      const char* data, size_t data_len));
-  MOCK_METHOD1(Rename, DownloadInterruptReason(
-      const base::FilePath& full_path));
+  MOCK_METHOD2(OnResponseCompleted,
+               void(int64_t offset, download::DownloadInterruptReason status));
+  MOCK_METHOD2(AppendDataToFile,
+               download::DownloadInterruptReason(const char* data,
+                                                 size_t data_len));
+  MOCK_METHOD1(
+      Rename,
+      download::DownloadInterruptReason(const base::FilePath& full_path));
   MOCK_METHOD2(RenameAndUniquify,
                void(const base::FilePath& full_path,
                     const RenameCompletionCallback& callback));

@@ -9,6 +9,7 @@
 #include "base/memory/ptr_util.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/base/task_queue.h"
+#include "platform/scheduler/child/task_runner_impl.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
 #include "platform/scheduler/renderer/web_view_scheduler_impl.h"
 
@@ -19,16 +20,15 @@ RendererWebSchedulerImpl::RendererWebSchedulerImpl(
     RendererSchedulerImpl* renderer_scheduler)
     : WebSchedulerImpl(renderer_scheduler,
                        renderer_scheduler->IdleTaskRunner(),
-                       renderer_scheduler->TimerTaskQueue(),
                        renderer_scheduler->V8TaskQueue()),
       renderer_scheduler_(renderer_scheduler),
       compositor_task_runner_(
-          WebTaskRunnerImpl::Create(renderer_scheduler_->CompositorTaskQueue(),
-                                    base::nullopt)) {}
+          TaskRunnerImpl::Create(renderer_scheduler_->CompositorTaskQueue(),
+                                 base::nullopt)) {}
 
 RendererWebSchedulerImpl::~RendererWebSchedulerImpl() = default;
 
-WebTaskRunner* RendererWebSchedulerImpl::CompositorTaskRunner() {
+base::SingleThreadTaskRunner* RendererWebSchedulerImpl::CompositorTaskRunner() {
   return compositor_task_runner_.get();
 }
 
@@ -45,6 +45,11 @@ RendererWebSchedulerImpl::CreateWebViewScheduler(
       intervention_reporter, delegate, renderer_scheduler_,
       !blink::RuntimeEnabledFeatures::
           TimerThrottlingForBackgroundTabsEnabled()));
+}
+
+base::TimeTicks RendererWebSchedulerImpl::MonotonicallyIncreasingVirtualTime()
+    const {
+  return renderer_scheduler_->GetActiveTimeDomain()->Now();
 }
 
 RendererScheduler* RendererWebSchedulerImpl::GetRendererSchedulerForTest() {

@@ -233,7 +233,8 @@ namespace sw
 		LOCK_READONLY,
 		LOCK_WRITEONLY,
 		LOCK_READWRITE,
-		LOCK_DISCARD
+		LOCK_DISCARD,
+		LOCK_UPDATE   // Write access which doesn't dirty the buffer, because it's being updated with the sibling's data.
 	};
 
 	class [[clang::lto_visibility_public]] Surface
@@ -390,7 +391,6 @@ namespace sw
 		typedef unsigned int dword;
 		typedef uint64_t qword;
 
-		#if S3TC_SUPPORT
 		struct DXT1
 		{
 			word c0;
@@ -424,7 +424,6 @@ namespace sw
 			word c1;
 			dword clut;
 		};
-		#endif
 
 		struct ATI2
 		{
@@ -472,11 +471,9 @@ namespace sw
 		static void decodeA4R4G4B4(Buffer &destination, Buffer &source);
 		static void decodeP8(Buffer &destination, Buffer &source);
 
-		#if S3TC_SUPPORT
 		static void decodeDXT1(Buffer &internal, Buffer &external);
 		static void decodeDXT3(Buffer &internal, Buffer &external);
 		static void decodeDXT5(Buffer &internal, Buffer &external);
-		#endif
 		static void decodeATI1(Buffer &internal, Buffer &external);
 		static void decodeATI2(Buffer &internal, Buffer &external);
 		static void decodeEAC(Buffer &internal, Buffer &external, int nbChannels, bool isSigned);

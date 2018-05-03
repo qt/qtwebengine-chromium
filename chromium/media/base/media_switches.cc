@@ -15,6 +15,8 @@ const char kAudioBufferSize[] = "audio-buffer-size";
 // Command line flag name to set the autoplay policy.
 const char kAutoplayPolicy[] = "autoplay-policy";
 
+const char kDisableAudioOutput[] = "disable-audio-output";
+
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
 
@@ -40,11 +42,6 @@ const char kAlsaOutputDevice[] = "alsa-output-device";
 // See http://msdn.microsoft.com/en-us/library/windows/desktop/dd370844.aspx
 // for details.
 const char kEnableExclusiveAudio[] = "enable-exclusive-audio";
-
-// Force the use of MediaFoundation for video capture. This is only supported in
-// Windows 7 and above. Used, like |kForceDirectShowVideoCapture|, to
-// troubleshoot problems in Windows platforms.
-const char kForceMediaFoundationVideoCapture[] = "force-mediafoundation";
 
 // Use Windows WaveOut/In audio API even if Core Audio is supported.
 const char kForceWaveAudio[] = "force-wave-audio";
@@ -124,6 +121,10 @@ const char kEnableInbandTextTracks[] = "enable-inband-text-tracks";
 const char kRequireAudioHardwareForTesting[] =
     "require-audio-hardware-for-testing";
 
+// Mutes audio sent to the audio device so it is not audible during
+// automated testing.
+const char kMuteAudio[] = "mute-audio";
+
 // Allows clients to override the threshold for when the media renderer will
 // declare the underflow state for the video stream when audio is present.
 // TODO(dalecurtis): Remove once experiments for http://crbug.com/470940 finish.
@@ -185,7 +186,7 @@ const base::Feature kNewAudioRenderingMixingStrategy{
 const base::Feature kOverlayFullscreenVideo{"overlay-fullscreen-video",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Enable Picture in Picture.
+// Enable Picture-in-Picture.
 const base::Feature kPictureInPicture{"PictureInPicture",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -235,9 +236,7 @@ const base::Feature kMemoryPressureBasedSourceBufferGC{
     "MemoryPressureBasedSourceBufferGC", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // On systems where pepper CDMs are enabled, use mojo CDM instead of PPAPI CDM.
-// Note that mojo CDM support is still under development. Some features are
-// still missing and this feature should only be enabled for testing.
-const base::Feature kMojoCdm{"MojoCdm", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kMojoCdm{"MojoCdm", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enable MojoVideoDecoder.  Has no effect except on Android currently.
 const base::Feature kMojoVideoDecoder{"MojoVideoDecoder",
@@ -250,6 +249,13 @@ const base::Feature kMseBufferByPts{"MseBufferByPts",
 // Support FLAC codec within ISOBMFF streams used with Media Source Extensions.
 const base::Feature kMseFlacInIsobmff{"MseFlacInIsobmff",
                                       base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enable new cpu load estimator. Intended for evaluation in local
+// testing and origin-trial.
+// TODO(nisse): Delete once we have switched over to always using the
+// new estimator.
+const base::Feature kNewEncodeCpuLoadEstimator{
+    "NewEncodeCpuLoadEstimator", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Use the new Remote Playback / media flinging pipeline.
 const base::Feature kNewRemotePlaybackPipeline{
@@ -270,7 +276,7 @@ const base::Feature kUseR16Texture{"use-r16-texture",
 // Enables the Unified Autoplay policy by overriding the platform's default
 // autoplay policy.
 const base::Feature kUnifiedAutoplay{"UnifiedAutoplay",
-                                     base::FEATURE_DISABLED_BY_DEFAULT};
+                                     base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Use SurfaceLayer instead of VideoLayer.
 const base::Feature kUseSurfaceLayerForVideo{"UseSurfaceLayerForVideo",
@@ -297,16 +303,6 @@ const base::Feature kSupportExperimentalCdmInterface{
 const base::Feature kLowDelayVideoRenderingOnLiveStream{
     "low-delay-video-rendering-on-live-stream",
     base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Enables Media Engagement Index recording. The data from which will
-// be used to bypass autoplay policies.
-const base::Feature kRecordMediaEngagementScores{
-    "RecordMediaEngagementScores", base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Enables the Media Engagement Index to override autoplay policies if an
-// origins engagement score is high enough.
-const base::Feature kMediaEngagementBypassAutoplayPolicies{
-    "MediaEngagementBypassAutoplayPolicies", base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_ANDROID)
 // Lock the screen orientation when a video goes fullscreen.
@@ -339,6 +335,11 @@ const base::Feature kDelayCopyNV12Textures{"DelayCopyNV12Textures",
 // Enables H264 HW encode acceleration using Media Foundation for Windows.
 const base::Feature kMediaFoundationH264Encoding{
     "MediaFoundationH264Encoding", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enables MediaFoundation based video capture
+const base::Feature kMediaFoundationVideoCapture{
+    "MediaFoundationVideoCapture", base::FEATURE_DISABLED_BY_DEFAULT};
+
 #endif  // defined(OS_WIN)
 
 std::string GetEffectiveAutoplayPolicy(const base::CommandLine& command_line) {
@@ -374,9 +375,28 @@ const base::Feature kOverflowIconsForMediaControls{
 const base::Feature kUseModernMediaControls{"UseModernMediaControls",
                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Allows Media Engagement to use preloaded data to decide whether an origin has
-// a high media engagement.
+// Enables Media Engagement Index recording. This data will be used to determine
+// when to bypass autoplay policies. This is recorded on all platforms.
+const base::Feature kRecordMediaEngagementScores{
+    "RecordMediaEngagementScores", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// The following Media Engagement flags are not enabled on mobile platforms:
+// - MediaEngagementBypassAutoplayPolicies: enables the Media Engagement Index
+//   data to be esude to override autoplay policies. An origin with a high MEI
+//   will be allowed to autoplay.
+// - PreloadMediaEngagementData: enables a list of origins to be considered as
+//   having a high MEI until there is enough local data to determine the user's
+//   preferred behaviour.
+#if defined(OS_ANDROID) || defined(OS_IOS)
+const base::Feature kMediaEngagementBypassAutoplayPolicies{
+    "MediaEngagementBypassAutoplayPolicies", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kPreloadMediaEngagementData{
     "PreloadMediaEngagementData", base::FEATURE_DISABLED_BY_DEFAULT};
+#else
+const base::Feature kMediaEngagementBypassAutoplayPolicies{
+    "MediaEngagementBypassAutoplayPolicies", base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kPreloadMediaEngagementData{
+    "PreloadMediaEngagementData", base::FEATURE_ENABLED_BY_DEFAULT};
+#endif
 
 }  // namespace media

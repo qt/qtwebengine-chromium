@@ -38,25 +38,8 @@
 
 namespace base {
 
-#if defined(OS_WIN)
-// _WINDOWS_ will be defined if Windows.h was included - include Windows.h first
-// to get access to the full struct definition.
-#if defined(_WINDOWS_)
-struct IoCounters : public IO_COUNTERS {
-};
-#else
+// Full declaration is in process_metrics_iocounters.h.
 struct IoCounters;
-#endif
-#elif defined(OS_POSIX)
-struct IoCounters {
-  uint64_t ReadOperationCount;
-  uint64_t WriteOperationCount;
-  uint64_t OtherOperationCount;
-  uint64_t ReadTransferCount;
-  uint64_t WriteTransferCount;
-  uint64_t OtherTransferCount;
-};
-#endif
 
 // Working Set (resident) memory usage broken down by
 //
@@ -351,7 +334,7 @@ BASE_EXPORT size_t GetPageSize();
 // at once. If the number is unavailable, a conservative best guess is returned.
 BASE_EXPORT size_t GetMaxFds();
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_FUCHSIA)
 // Sets the file descriptor soft limit to |max_descriptors| or the OS hard
 // limit, whichever is lower.
 BASE_EXPORT void SetFdLimit(unsigned int max_descriptors);

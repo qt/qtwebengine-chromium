@@ -34,6 +34,15 @@ static string preformat(const string& orig) {
     return result;
 }
 
+static bool all_lower(const string& ref) {
+	for (auto ch : ref) {
+		if (!islower(ch)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 // FIXME: preserve inter-line spaces and don't add new ones
 string MdOut::addReferences(const char* refStart, const char* refEnd,
         BmhParser::Resolvable resolvable) {
@@ -128,8 +137,12 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
                     }
                     ref = fullRef;
                 }
-            }
-            result += linkRef(leadingSpaces, def, ref);
+			} else if (BmhParser::Resolvable::kClone != resolvable &&
+					all_lower(ref) && (t.eof() || '(' != t.peek())) {
+				add_ref(leadingSpaces, ref, &result);
+				continue;
+			}
+			result += linkRef(leadingSpaces, def, ref, resolvable);
             continue;
         }
         if (!t.eof() && '(' == t.peek()) {
@@ -141,7 +154,7 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
             ref = string(start, t.fChar - start);
             if (const Definition* def = this->isDefined(t, ref, true)) {
                 SkASSERT(def->fFiddle.length());
-                result += linkRef(leadingSpaces, def, ref);
+				result += linkRef(leadingSpaces, def, ref, resolvable);
                 continue;
             }
         }
@@ -168,7 +181,7 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
             // will also need to see if Example Description matches var in example
             const Definition* def;
             if (fMethod && (def = fMethod->hasParam(ref))) {
-                result += linkRef(leadingSpaces, def, ref);
+				result += linkRef(leadingSpaces, def, ref, resolvable);
                 fLastParam = def;
                 distFromParam = 0;
                 continue;
@@ -183,7 +196,7 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
                         if (paramType) {
                             string fullName = paramType->fName + "::" + ref;
                             if (paramType->hasMatch(fullName)) {
-                                result += linkRef(leadingSpaces, paramType, ref);
+								result += linkRef(leadingSpaces, paramType, ref, resolvable);
                                 continue;
                             }
                         }
@@ -199,37 +212,37 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
         }
         auto topicIter = fBmhParser.fTopicMap.find(ref);
         if (topicIter != fBmhParser.fTopicMap.end()) {
-            result += linkRef(leadingSpaces, topicIter->second, ref);
+			result += linkRef(leadingSpaces, topicIter->second, ref, resolvable);
             continue;
         }
         bool startsSentence = t.sentenceEnd(start);
         if (!t.eof() && ' ' != t.peek()) {
-            add_ref(leadingSpaces, ref, &result);
+			add_ref(leadingSpaces, ref, &result);
             continue;
         }
         if (t.fChar + 1 >= t.fEnd || (!isupper(t.fChar[1]) && startsSentence)) {
-            add_ref(leadingSpaces, ref, &result);
+			add_ref(leadingSpaces, ref, &result);
             continue;
         }
         if (isupper(t.fChar[1]) && startsSentence) {
             TextParser next(t.fFileName, &t.fChar[1], t.fEnd, t.fLineCount);
             string nextWord(next.fChar, next.wordEnd() - next.fChar);
             if (this->isDefined(t, nextWord, true)) {
-                add_ref(leadingSpaces, ref, &result);
+				add_ref(leadingSpaces, ref, &result);
                 continue;
             }
         }
-        Definition* test = fRoot;
+        const Definition* test = fRoot;
         do {
             if (!test->isRoot()) {
                 continue;
             }
             for (string prefix : { "_", "::" } ) {
-                RootDefinition* root = test->asRoot();
+                const RootDefinition* root = test->asRoot();
                 string prefixed = root->fName + prefix + ref;
                 if (const Definition* def = root->find(prefixed,
                         RootDefinition::AllowParens::kYes)) {
-                    result += linkRef(leadingSpaces, def, ref);
+					result += linkRef(leadingSpaces, def, ref, resolvable);
                     goto found;
                 }
             }
@@ -243,6 +256,8 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
     } while (!t.eof());
     return result;
 }
+
+
 
 bool MdOut::buildReferences(const char* docDir, const char* mdFileOrPath) {
     if (!sk_isdir(mdFileOrPath)) {
@@ -259,15 +274,8 @@ bool MdOut::buildReferences(const char* docDir, const char* mdFileOrPath) {
         SkOSFile::Iter it(docDir, ".bmh");
         for (SkString file; it.next(&file); ) {
             SkString p = SkOSPath::Join(docDir, file.c_str());
-            const char* hunk = p.c_str();
-            if (!SkStrEndsWith(hunk, ".bmh")) {
-                continue;
-            }
-            if (SkStrEndsWith(hunk, "markup.bmh")) {  // don't look inside this for now
-                continue;
-            }
-            if (!this->buildRefFromFile(hunk, mdFileOrPath)) {
-                SkDebugf("failed to parse %s\n", hunk);
+            if (!this->buildRefFromFile(p.c_str(), mdFileOrPath)) {
+                SkDebugf("failed to parse %s\n", p.c_str());
                 return false;
             }
         }
@@ -289,6 +297,15 @@ bool MdOut::buildStatus(const char* statusFile, const char* outDir) {
 }
 
 bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
+    if (!SkStrEndsWith(name, ".bmh")) {
+        return true;
+    }
+    if (SkStrEndsWith(name, "markup.bmh")) {  // don't look inside this for now
+        return true;
+    }
+    if (SkStrEndsWith(name, "illustrations.bmh")) {  // don't look inside this for now
+        return true;
+    }
     fFileName = string(name);
     string filename(name);
     if (filename.substr(filename.length() - 4) == ".bmh") {
@@ -344,6 +361,16 @@ bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
             this->lfAlways(1);
             FPRINTF("===");
         }
+        fPopulators.clear();
+        fPopulators[kClassesAndStructs].fDescription = "embedded struct and class members";
+        fPopulators[kConstants].fDescription = "enum and enum class, const values";
+        fPopulators[kConstructors].fDescription = "functions that construct";
+        fPopulators[kMemberFunctions].fDescription = "static functions and member methods";
+        fPopulators[kMembers].fDescription = "member values";
+        fPopulators[kOperators].fDescription = "operator overloading methods";
+        fPopulators[kRelatedFunctions].fDescription = "similar methods grouped together";
+        fPopulators[kSubtopics].fDescription = "";
+        this->populateTables(fRoot);
         this->markTypeOut(topicDef);
     }
     if (fOut) {
@@ -411,6 +438,24 @@ void MdOut::childrenOut(const Definition* def, const char* start) {
     }
 }
 
+const Definition* MdOut::csParent() const {
+    const Definition* csParent = fRoot->csParent();
+    if (!csParent) {
+        const Definition* topic = fRoot;
+        while (topic && MarkType::kTopic != topic->fMarkType) {
+            topic = topic->fParent;
+        }
+        for (auto child : topic->fChildren) {
+            if (child->isStructOrClass() || MarkType::kTypedef == child->fMarkType) {
+                csParent = child;
+                break;
+            }
+        }
+        SkASSERT(csParent || string::npos == fRoot->fFileName.find("Sk"));
+    }
+    return csParent;
+}
+
 const Definition* MdOut::findParamType() {
     SkASSERT(fMethod);
     TextParser parser(fMethod->fFileName, fMethod->fStart, fMethod->fContentStart,
@@ -473,12 +518,12 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
         if (const Definition* definition = fRoot->find(ref, RootDefinition::AllowParens::kYes)) {
             return definition;
         }
-        Definition* test = fRoot;
+        const Definition* test = fRoot;
         do {
             if (!test->isRoot()) {
                 continue;
             }
-            RootDefinition* root = test->asRoot();
+            const RootDefinition* root = test->asRoot();
             for (auto& leaf : root->fBranches) {
                 if (ref == leaf.first) {
                     return leaf.second;
@@ -502,6 +547,11 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
                     }
                 }
             }
+            string fiddlePrefixed = root->fFiddle + "_" + ref;
+            auto topicIter = fBmhParser.fTopicMap.find(fiddlePrefixed);
+            if (topicIter != fBmhParser.fTopicMap.end()) {
+                return topicIter->second;
+            }
         } while ((test = test->fParent));
     }
     size_t doubleColon = ref.find("::");
@@ -523,8 +573,9 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
         // try with a prefix
         if ('k' == ref[0]) {
             for (auto const& iter : fBmhParser.fEnumMap) {
-                if (iter.second.find(ref, RootDefinition::AllowParens::kYes)) {
-                    return &iter.second;
+                auto def = iter.second.find(ref, RootDefinition::AllowParens::kYes);
+                if (def) {
+                    return def;
                 }
             }
             if (fEnumClass) {
@@ -603,38 +654,42 @@ string MdOut::linkName(const Definition* ref) const {
 // for now, hard-code to html links
 // def should not include SkXXX_
 string MdOut::linkRef(const string& leadingSpaces, const Definition* def,
-        const string& ref) const {
+        const string& ref, BmhParser::Resolvable resolvable) const {
     string buildup;
+    string refName;
     const string* str = &def->fFiddle;
     SkASSERT(str->length() > 0);
-    size_t under = str->find('_');
-    Definition* curRoot = fRoot;
-    string classPart = string::npos != under ? str->substr(0, under) : *str;
-    bool classMatch = curRoot->fName == classPart;
-    while (curRoot->fParent) {
-        curRoot = curRoot->fParent;
-        classMatch |= curRoot->fName == classPart;
+    string classPart = *str;
+    bool globalEnumMember = false;
+    if (MarkType::kAlias == def->fMarkType) {
+        def = def->fParent;
+        SkASSERT(def);
+        SkASSERT(MarkType::kSubtopic == def->fMarkType ||MarkType::kTopic == def->fMarkType);
     }
-    const Definition* defRoot;
-    const Definition* temp = def;
-    do {
-        defRoot = temp;
-        if (!(temp = temp->fParent)) {
-            break;
+    if (MarkType::kSubtopic == def->fMarkType) {
+        const Definition* topic = def->topicParent();
+        SkASSERT(topic);
+        classPart = topic->fName;
+        refName = def->fName;
+    } else if (MarkType::kTopic == def->fMarkType) {
+        refName = def->fName;
+    } else {
+        if ('k' == (*str)[0] && string::npos != str->find("_Sk")) {
+            globalEnumMember = true;
+        } else {
+            SkASSERT("Sk" == str->substr(0, 2) || "SK" == str->substr(0, 2)
+                    // FIXME: kitchen sink catch below, need to do better
+                    || string::npos != def->fFileName.find("undocumented"));
+            size_t under = str->find('_');
+            classPart = string::npos != under ? str->substr(0, under) : *str;
         }
-        classMatch |= temp != defRoot && temp->fName == classPart;
-    } while (true);
-    string namePart = string::npos != under ? str->substr(under + 1, str->length()) : *str;
+        refName = def->fFiddle;
+    }
+    bool classMatch = fRoot->fFileName == def->fFileName;
     SkASSERT(fRoot);
     SkASSERT(fRoot->fFileName.length());
-    if (classMatch) {
-        buildup = "#";
-        if (*str != classPart && "Sk" == classPart.substr(0, 2)) {
-            buildup += classPart + "_";
-        }
-        buildup += namePart;
-    } else {
-        string filename = defRoot->asRoot()->fFileName;
+    if (!classMatch) {
+        string filename = def->fFileName;
         if (filename.substr(filename.length() - 4) == ".bmh") {
             filename = filename.substr(0, filename.length() - 4);
         }
@@ -642,19 +697,46 @@ string MdOut::linkRef(const string& leadingSpaces, const Definition* def,
         while (start > 0 && (isalnum(filename[start - 1]) || '_' == filename[start - 1])) {
             --start;
         }
-        buildup = filename.substr(start) + "#" + (classMatch ? namePart : *str);
+        buildup = filename.substr(start);
     }
+    buildup += "#" + refName;
     if (MarkType::kParam == def->fMarkType) {
         const Definition* parent = def->fParent;
         SkASSERT(MarkType::kMethod == parent->fMarkType);
         buildup = '#' + parent->fFiddle + '_' + ref;
     }
     string refOut(ref);
-    std::replace(refOut.begin(), refOut.end(), '_', ' ');
+    if (!globalEnumMember) {
+        std::replace(refOut.begin(), refOut.end(), '_', ' ');
+    }
     if (ref.length() > 2 && islower(ref[0]) && "()" == ref.substr(ref.length() - 2)) {
         refOut = refOut.substr(0, refOut.length() - 2);
     }
-    return leadingSpaces + "<a href=\"" + buildup + "\">" + refOut + "</a>";
+    string result = leadingSpaces + "<a href=\"" + buildup + "\">" + refOut + "</a>";
+	if (BmhParser::Resolvable::kClone == resolvable && MarkType::kMethod == def->fMarkType &&
+			def->fCloned && !def->fClone) {
+		bool found = false;
+		string match = def->fName;
+		if ("()" == match.substr(match.length() - 2)) {
+			match = match.substr(0, match.length() - 2);
+		}
+		match += '_';
+		auto classIter = fBmhParser.fClassMap.find(classPart);
+		if (fBmhParser.fClassMap.end() != classIter) {
+			for (char num = '2'; num <= '9'; ++num) {
+				string clone = match + num;
+				const auto& leafIter = classIter->second.fLeaves.find(clone);
+				if (leafIter != classIter->second.fLeaves.end()) {
+					result += "<sup><a href=\"" + buildup + "_" + num + "\">[" + num + "]</a></sup>";
+					found = true;
+				}
+			}
+		}
+		if (!found) {
+			SkDebugf("");  // convenient place to set a breakpoint
+		}
+	}
+	return result;
 }
 
 void MdOut::markTypeOut(Definition* def) {
@@ -755,8 +837,6 @@ void MdOut::markTypeOut(Definition* def) {
             FPRINTF("<a name=\"%s\"></a> Enum %s", def->fFiddle.c_str(), def->fName.c_str());
             this->lf(2);
             break;
-        case MarkType::kError:
-            break;
         case MarkType::kExample: {
             this->mdHeaderOut(3);
             FPRINTF("Example\n"
@@ -773,7 +853,7 @@ void MdOut::markTypeOut(Definition* def) {
                     gpuAndCpu = platParse.strnstr("cpu", platParse.fEnd);
                 }
             }
-            if (fHasFiddle && !def->hasChild(MarkType::kError)) {
+            if (fHasFiddle) {
                 SkASSERT(def->fHash.length() > 0);
                 FPRINTF("<div><fiddle-embed name=\"%s\"", def->fHash.c_str());
                 if (showGpu) {
@@ -806,9 +886,30 @@ void MdOut::markTypeOut(Definition* def) {
             break;
         case MarkType::kHeight:
             break;
+        case MarkType::kIllustration: {
+            string illustName = "Illustrations_" + def->fParent->fFiddle;
+            auto illustIter = fBmhParser.fTopicMap.find(illustName);
+            SkASSERT(fBmhParser.fTopicMap.end() != illustIter);
+            Definition* illustDef = illustIter->second;
+            SkASSERT(MarkType::kSubtopic == illustDef->fMarkType);
+            SkASSERT(1 == illustDef->fChildren.size());
+            Definition* illustExample = illustDef->fChildren[0];
+            SkASSERT(MarkType::kExample == illustExample->fMarkType);
+            string hash = illustExample->fHash;
+            SkASSERT("" != hash);
+            string title;
+            this->writePending();
+            FPRINTF("![%s](https://fiddle.skia.org/i/%s_raster.png \"%s\")",
+                    def->fName.c_str(), hash.c_str(), title.c_str());
+            this->lf(2);
+        } break;
         case MarkType::kImage:
             break;
+        case MarkType::kIn:
+            break;
         case MarkType::kLegend:
+            break;
+        case MarkType::kLine:
             break;
         case MarkType::kLink:
             break;
@@ -835,15 +936,15 @@ void MdOut::markTypeOut(Definition* def) {
             } break;
         case MarkType::kMethod: {
             string method_name = def->methodName();
-            string formattedStr = def->formatFunction();
+            string formattedStr = def->formatFunction(Definition::Format::kIncludeReturn);
 
-            if (!def->isClone()) {
-                this->lfAlways(2);
-                FPRINTF("<a name=\"%s\"></a>", def->fFiddle.c_str());
+			this->lfAlways(2);
+			FPRINTF("<a name=\"%s\"></a>", def->fFiddle.c_str());
+			if (!def->isClone()) {
                 this->mdHeaderOutLF(2, 1);
                 FPRINTF("%s", method_name.c_str());
-                this->lf(2);
-            }
+			}
+			this->lf(2);
 
             // TODO: put in css spec that we can define somewhere else (if markup supports that)
             // TODO: 50em below should match limit = 80 in formatFunction()
@@ -897,6 +998,15 @@ void MdOut::markTypeOut(Definition* def) {
         } break;
         case MarkType::kPlatform:
             break;
+        case MarkType::kPopulate: {
+            SkASSERT(MarkType::kSubtopic == def->fParent->fMarkType);
+            string name = def->fParent->fName;
+            if (kSubtopics == name) {
+                this->subtopicsOut();
+            } else {
+                this->subtopicOut(this->populator(name.c_str()));
+            }
+            } break;
         case MarkType::kPrivate:
             break;
         case MarkType::kReturn:
@@ -1100,6 +1210,73 @@ void MdOut::mdHeaderOutLF(int depth, int lf) {
     FPRINTF(" ");
 }
 
+void MdOut::populateTables(const Definition* def) {
+    const Definition* csParent = this->csParent();
+    if (!csParent) {
+        return;
+    }
+    for (auto child : def->fChildren) {
+        if (MarkType::kTopic == child->fMarkType || MarkType::kSubtopic == child->fMarkType) {
+            string name = child->fName;
+            bool builtInTopic = name == kClassesAndStructs || name == kConstants
+                    || name == kConstructors || name == kMemberFunctions || name == kMembers
+                    || name == kOperators || name == kOverview || name == kRelatedFunctions
+                    || name == kSubtopics;
+            if (!builtInTopic && child->fName != kOverview) {
+                this->populator(kRelatedFunctions).fMembers.push_back(child);
+            }
+            this->populateTables(child);
+            continue;
+        }
+        if (child->isStructOrClass()) {
+            if (fClassStack.size() > 0) {
+                this->populator(kClassesAndStructs).fMembers.push_back(child);
+            }
+            fClassStack.push_back(child);
+            this->populateTables(child);
+            fClassStack.pop_back();
+            continue;
+        }
+        if (MarkType::kEnum == child->fMarkType || MarkType::kEnumClass == child->fMarkType) {
+            this->populator(kConstants).fMembers.push_back(child);
+            continue;
+        }
+        if (MarkType::kMember == child->fMarkType) {
+            this->populator(kMembers).fMembers.push_back(child);
+            continue;
+        }
+        if (MarkType::kMethod != child->fMarkType) {
+            continue;
+        }
+        if (child->fClone) {
+            continue;
+        }
+        if (Definition::MethodType::kConstructor == child->fMethodType
+                || Definition::MethodType::kDestructor == child->fMethodType) {
+            this->populator(kConstructors).fMembers.push_back(child);
+            continue;
+        }
+        if (Definition::MethodType::kOperator == child->fMethodType) {
+            this->populator(kOperators).fMembers.push_back(child);
+            continue;
+        }
+        this->populator(kMemberFunctions).fMembers.push_back(child);
+        if (csParent && (0 == child->fName.find(csParent->fName + "::Make")
+                || 0 == child->fName.find(csParent->fName + "::make"))) {
+            this->populator(kConstructors).fMembers.push_back(child);
+            continue;
+        }
+        for (auto item : child->fChildren) {
+            if (MarkType::kIn == item->fMarkType) {
+                string name(item->fContentStart, item->fContentEnd - item->fContentStart);
+                fPopulators[name].fMembers.push_back(child);
+                fPopulators[name].fShowClones = true;
+                break;
+            }
+        }
+    }
+}
+
 void MdOut::resolveOut(const char* start, const char* end, BmhParser::Resolvable resolvable) {
     if ((BmhParser::Resolvable::kLiteral == resolvable || fRespectLeadingSpace) && end > start) {
         while ('\n' == *start) {
@@ -1176,5 +1353,90 @@ void MdOut::resolveOut(const char* start, const char* end, BmhParser::Resolvable
             --end;
         }
 #endif
+    }
+}
+
+void MdOut::rowOut(const char* name, const string& description) {
+    this->lfAlways(1);
+    FPRINTF("| ");
+    this->resolveOut(name, name + strlen(name), BmhParser::Resolvable::kYes);
+    FPRINTF(" | ");
+    this->resolveOut(&description.front(), &description.back() + 1, BmhParser::Resolvable::kYes);
+    FPRINTF(" |");
+    this->lf(1);
+}
+
+void MdOut::subtopicsOut() {
+    const Definition* csParent = this->csParent();
+    SkASSERT(csParent);
+    this->rowOut("name", "description");
+    this->rowOut("---", "---");
+    for (auto item : { kClassesAndStructs, kConstants, kConstructors, kMemberFunctions,
+            kMembers, kOperators, kRelatedFunctions } ) {
+        for (auto entry : this->populator(item).fMembers) {
+            if (entry->csParent() == csParent) {
+                string description = fPopulators.find(item)->second.fDescription;
+                if (kConstructors == item) {
+                    description += " " + csParent->fName;
+                }
+                this->rowOut(item, description);
+                break;
+            }
+        }
+    }
+}
+
+void MdOut::subtopicOut(const TableContents& tableContents) {
+    const auto& data = tableContents.fMembers;
+    const Definition* csParent = this->csParent();
+    SkASSERT(csParent);
+    fRoot = csParent->asRoot();
+    this->rowOut("name", "description");
+    this->rowOut("---", "---");
+    std::map<string, const Definition*> items;
+    for (auto entry : data) {
+        if (entry->csParent() != csParent) {
+            continue;
+        }
+        size_t start = entry->fName.find_last_of("::");
+        string name = entry->fName.substr(string::npos == start ? 0 : start + 1);
+        items[name] = entry;
+    }
+    for (auto entry : items) {
+        if (entry.second->fDeprecated) {
+            continue;
+        }
+        const Definition* oneLiner = nullptr;
+        for (auto child : entry.second->fChildren) {
+            if (MarkType::kLine == child->fMarkType) {
+                oneLiner = child;
+                break;
+            }
+        }
+        if (!oneLiner) {
+            SkDebugf(""); // convenient place to set a breakpoint
+        }
+        // TODO: detect this earlier? throw error here?
+        SkASSERT(oneLiner);
+        this->rowOut(entry.first.c_str(), string(oneLiner->fContentStart,
+            oneLiner->fContentEnd - oneLiner->fContentStart));
+        if (tableContents.fShowClones && entry.second->fCloned) {
+            int cloneNo = 2;
+            string builder = entry.second->fName;
+            if ("()" == builder.substr(builder.length() - 2)) {
+                builder = builder.substr(0, builder.length() - 2);
+            }
+            builder += '_';
+            this->rowOut("",
+                    preformat(entry.second->formatFunction(Definition::Format::kOmitReturn)));
+            do {
+                string match = builder + to_string(cloneNo);
+                auto child = csParent->findClone(match);
+                if (!child) {
+                    break;
+                }
+                this->rowOut("", preformat(child->formatFunction(Definition::Format::kOmitReturn)));
+            } while (++cloneNo);
+        }
     }
 }

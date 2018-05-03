@@ -54,8 +54,7 @@ class InteractiveDetectorTest : public ::testing::Test {
     // By this time, the DummyPageHolder has created an InteractiveDetector, and
     // sent DOMContentLoadedEnd. We overwrite it with our new
     // InteractiveDetector, which won't have received any timestamps.
-    Supplement<Document>::ProvideTo(
-        *document, InteractiveDetector::SupplementName(), detector_.Get());
+    Supplement<Document>::ProvideTo(*document, detector_.Get());
 
     // Ensure the document is using the injected InteractiveDetector.
     DCHECK_EQ(detector_, InteractiveDetector::From(*document));
@@ -81,29 +80,31 @@ class InteractiveDetectorTest : public ::testing::Test {
 
   void SimulateNavigationStart(double nav_start_time) {
     RunTillTimestamp(nav_start_time);
-    detector_->SetNavigationStartTime(nav_start_time);
+    detector_->SetNavigationStartTime(TimeTicksFromSeconds(nav_start_time));
   }
 
   void SimulateLongTask(double start, double end) {
     CHECK(end - start >= 0.05);
     RunTillTimestamp(end);
-    detector_->OnLongTaskDetected(start, end);
+    detector_->OnLongTaskDetected(TimeTicksFromSeconds(start),
+                                  TimeTicksFromSeconds(end));
   }
 
   void SimulateDOMContentLoadedEnd(double dcl_time) {
     RunTillTimestamp(dcl_time);
-    detector_->OnDomContentLoadedEnd(dcl_time);
+    detector_->OnDomContentLoadedEnd(TimeTicksFromSeconds(dcl_time));
   }
 
   void SimulateFMPDetected(double fmp_time, double detection_time) {
     RunTillTimestamp(detection_time);
     detector_->OnFirstMeaningfulPaintDetected(
-        fmp_time, FirstMeaningfulPaintDetector::kNoUserInput);
+        TimeTicksFromSeconds(fmp_time),
+        FirstMeaningfulPaintDetector::kNoUserInput);
   }
 
   void SimulateInteractiveInvalidatingInput(double timestamp) {
     RunTillTimestamp(timestamp);
-    detector_->OnInvalidatingInputEvent(timestamp);
+    detector_->OnInvalidatingInputEvent(TimeTicksFromSeconds(timestamp));
   }
 
   void RunTillTimestamp(double target_time) {
@@ -121,7 +122,7 @@ class InteractiveDetectorTest : public ::testing::Test {
 
   void SimulateResourceLoadBegin(double load_begin_time) {
     RunTillTimestamp(load_begin_time);
-    detector_->OnResourceLoadBegin(load_begin_time);
+    detector_->OnResourceLoadBegin(TimeTicksFromSeconds(load_begin_time));
     // ActiveConnections is incremented after detector runs OnResourceLoadBegin;
     SetActiveConnections(GetActiveConnections() + 1);
   }
@@ -130,10 +131,12 @@ class InteractiveDetectorTest : public ::testing::Test {
     RunTillTimestamp(load_finish_time);
     int active_connections = GetActiveConnections();
     SetActiveConnections(active_connections - 1);
-    detector_->OnResourceLoadEnd(load_finish_time);
+    detector_->OnResourceLoadEnd(TimeTicksFromSeconds(load_finish_time));
   }
 
-  double GetInteractiveTime() { return detector_->GetInteractiveTime(); }
+  double GetInteractiveTime() {
+    return TimeTicksInSeconds(detector_->GetInteractiveTime());
+  }
 
   ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
       platform_;
@@ -410,7 +413,25 @@ TEST_F(InteractiveDetectorTest, InvalidatingUserInput) {
   // invalidating user input. Page Load Metrics filters out this value in the
   // browser process for UMA reporting.
   EXPECT_EQ(GetInteractiveTime(), t0 + 7.1);
-  EXPECT_EQ(GetDetector()->GetFirstInvalidatingInputTime(), t0 + 5.0);
+  EXPECT_EQ(TimeTicksInSeconds(GetDetector()->GetFirstInvalidatingInputTime()),
+            t0 + 5.0);
+}
+
+TEST_F(InteractiveDetectorTest, InvalidatingUserInputClampedAtNavStart) {
+  double t0 = CurrentTimeTicksInSeconds();
+  SimulateNavigationStart(t0);
+  // Network is forever quiet for this test.
+  SetActiveConnections(1);
+  SimulateDOMContentLoadedEnd(t0 + 2.0);
+  SimulateFMPDetected(/* fmp_time */ t0 + 3.0, /* detection_time */ t0 + 4.0);
+  // Invalidating input timestamp is earlier than navigation start.
+  SimulateInteractiveInvalidatingInput(t0 - 10.0);
+  // Run till 5 seconds after FMP.
+  RunTillTimestamp((t0 + 7.1) + 5.0 + 0.1);
+  EXPECT_EQ(GetInteractiveTime(), t0 + 3.0);  // TTI at FMP.
+  // Invalidating input timestamp is clamped at navigation start.
+  EXPECT_EQ(TimeTicksInSeconds(GetDetector()->GetFirstInvalidatingInputTime()),
+            t0);
 }
 
 TEST_F(InteractiveDetectorTest, InvalidatedFMP) {
@@ -422,26 +443,29 @@ TEST_F(InteractiveDetectorTest, InvalidatedFMP) {
   SimulateDOMContentLoadedEnd(t0 + 2.0);
   RunTillTimestamp(t0 + 4.0);  // FMP Detection time.
   GetDetector()->OnFirstMeaningfulPaintDetected(
-      t0 + 3.0, FirstMeaningfulPaintDetector::kHadUserInput);
+      TimeTicksFromSeconds(t0 + 3.0),
+      FirstMeaningfulPaintDetector::kHadUserInput);
   // Run till 5 seconds after FMP.
   RunTillTimestamp((t0 + 3.0) + 5.0 + 0.1);
   // Since FMP was invalidated, we do not have TTI or TTI Detection Time.
   EXPECT_EQ(GetInteractiveTime(), 0.0);
-  EXPECT_EQ(GetDetector()->GetInteractiveDetectionTime(), 0.0);
+  EXPECT_EQ(TimeTicksInSeconds(GetDetector()->GetInteractiveDetectionTime()),
+            0.0);
   // Invalidating input timestamp is available.
-  EXPECT_EQ(GetDetector()->GetFirstInvalidatingInputTime(), t0 + 1.0);
+  EXPECT_EQ(TimeTicksInSeconds(GetDetector()->GetFirstInvalidatingInputTime()),
+            t0 + 1.0);
 }
 
 TEST_F(InteractiveDetectorTest, TaskLongerThan5sBlocksTTI) {
   double t0 = CurrentTimeTicksInSeconds();
-  GetDetector()->SetNavigationStartTime(t0);
+  GetDetector()->SetNavigationStartTime(TimeTicksFromSeconds(t0));
 
   SimulateDOMContentLoadedEnd(t0 + 2.0);
   SimulateFMPDetected(t0 + 3.0, t0 + 4.0);
 
   // Post a task with 6 seconds duration.
   PostCrossThreadTask(
-      *platform_->CurrentThread()->GetWebTaskRunner(), FROM_HERE,
+      *platform_->CurrentThread()->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(&InteractiveDetectorTest::DummyTaskWithDuration,
                       CrossThreadUnretained(this), 6.0));
 
@@ -449,19 +473,20 @@ TEST_F(InteractiveDetectorTest, TaskLongerThan5sBlocksTTI) {
 
   // We should be able to detect TTI 5s after the end of long task.
   platform_->RunForPeriodSeconds(5.1);
-  EXPECT_EQ(GetDetector()->GetInteractiveTime(), GetDummyTaskEndTime());
+  EXPECT_EQ(TimeTicksInSeconds(GetDetector()->GetInteractiveTime()),
+            GetDummyTaskEndTime());
 }
 
 TEST_F(InteractiveDetectorTest, LongTaskAfterTTIDoesNothing) {
   double t0 = CurrentTimeTicksInSeconds();
-  GetDetector()->SetNavigationStartTime(t0);
+  GetDetector()->SetNavigationStartTime(TimeTicksFromSeconds(t0));
 
   SimulateDOMContentLoadedEnd(2.0);
   SimulateFMPDetected(t0 + 3.0, t0 + 4.0);
 
   // Long task 1.
   PostCrossThreadTask(
-      *platform_->CurrentThread()->GetWebTaskRunner(), FROM_HERE,
+      *platform_->CurrentThread()->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(&InteractiveDetectorTest::DummyTaskWithDuration,
                       CrossThreadUnretained(this), 0.1));
 
@@ -470,11 +495,12 @@ TEST_F(InteractiveDetectorTest, LongTaskAfterTTIDoesNothing) {
   double long_task_1_end_time = GetDummyTaskEndTime();
   // We should be able to detect TTI 5s after the end of long task.
   platform_->RunForPeriodSeconds(5.1);
-  EXPECT_EQ(GetDetector()->GetInteractiveTime(), long_task_1_end_time);
+  EXPECT_EQ(TimeTicksInSeconds(GetDetector()->GetInteractiveTime()),
+            long_task_1_end_time);
 
   // Long task 2.
   PostCrossThreadTask(
-      *platform_->CurrentThread()->GetWebTaskRunner(), FROM_HERE,
+      *platform_->CurrentThread()->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(&InteractiveDetectorTest::DummyTaskWithDuration,
                       CrossThreadUnretained(this), 0.1));
 
@@ -482,7 +508,8 @@ TEST_F(InteractiveDetectorTest, LongTaskAfterTTIDoesNothing) {
   // Wait 5 seconds to see if TTI time changes.
   platform_->RunForPeriodSeconds(5.1);
   // TTI time should not change.
-  EXPECT_EQ(GetDetector()->GetInteractiveTime(), long_task_1_end_time);
+  EXPECT_EQ(TimeTicksInSeconds(GetDetector()->GetInteractiveTime()),
+            long_task_1_end_time);
 }
 
 }  // namespace blink

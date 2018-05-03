@@ -17,6 +17,8 @@
 #include "chromeos/network/network_state_handler_observer.h"
 #include "chromeos/settings/timezone_settings.h"
 
+class Profile;
+
 namespace arc {
 class ArcOptInPreferenceHandler;
 }
@@ -66,12 +68,16 @@ class ArcTermsOfServiceScreenHandler
   void DoShow();
   void HandleSkip();
   void HandleAccept(bool enable_backup_restore,
-                    bool enable_location_services);
+                    bool enable_location_services,
+                    const std::string& tos_content);
   // Loads Play Store ToS content in case default network exists. If
   // |ignore_network_state| is set then network state is not checked.
   void MaybeLoadPlayStoreToS(bool ignore_network_state);
 
   void StartNetworkAndTimeZoneObserving();
+
+  // Sends if Arc enable status is manged to screen.
+  void SendArcManagedStatus(Profile* profile);
 
   bool NeedDispatchEventOnAction();
 
@@ -90,6 +96,10 @@ class ArcTermsOfServiceScreenHandler
 
   // To filter out duplicate notifications from html.
   bool action_taken_ = false;
+
+  // To track if optional features are managed preferences.
+  bool backup_restore_managed_ = false;
+  bool location_services_managed_ = false;
 
   std::unique_ptr<arc::ArcOptInPreferenceHandler> pref_handler_;
 

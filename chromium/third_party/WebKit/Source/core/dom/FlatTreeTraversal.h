@@ -98,7 +98,7 @@ class CORE_EXPORT FlatTreeTraversal {
   static bool IsDescendantOf(const Node& /*node*/, const Node& other);
 
   static bool Contains(const ContainerNode& container, const Node& node) {
-    if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+    if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
       return FlatTreeTraversalNg::Contains(container, node);
     AssertPrecondition(container);
     AssertPrecondition(node);
@@ -127,11 +127,12 @@ class CORE_EXPORT FlatTreeTraversal {
   // Flat tree range helper functions for range based for statement.
   // TODO(dom-team): We should have following functions to match with
   // |NodeTraversal|:
-  //   - AncestorsOf()
   //   - DescendantsOf()
   //   - InclusiveDescendantsOf()
   //   - StartsAt()
   //   - StartsAfter()
+  static TraversalRange<TraversalAncestorsIterator<FlatTreeTraversal>>
+  AncestorsOf(const Node&);
   static TraversalRange<TraversalChildrenIterator<FlatTreeTraversal>>
   ChildrenOf(const Node&);
 
@@ -193,8 +194,8 @@ class CORE_EXPORT FlatTreeTraversal {
 inline ContainerNode* FlatTreeTraversal::Parent(
     const Node& node,
     ParentTraversalDetails* details) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
-    return FlatTreeTraversalNg::Parent(node);
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
+    return FlatTreeTraversalNg::Parent(node, details);
   AssertPrecondition(node);
   ContainerNode* result = TraverseParent(node, details);
   AssertPostcondition(result);
@@ -202,14 +203,14 @@ inline ContainerNode* FlatTreeTraversal::Parent(
 }
 
 inline Element* FlatTreeTraversal::ParentElement(const Node& node) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::ParentElement(node);
   ContainerNode* parent = FlatTreeTraversal::Parent(node);
   return parent && parent->IsElementNode() ? ToElement(parent) : nullptr;
 }
 
 inline Node* FlatTreeTraversal::NextSibling(const Node& node) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::NextSibling(node);
   AssertPrecondition(node);
   Node* result = TraverseSiblings(node, kTraversalDirectionForward);
@@ -218,7 +219,7 @@ inline Node* FlatTreeTraversal::NextSibling(const Node& node) {
 }
 
 inline Node* FlatTreeTraversal::PreviousSibling(const Node& node) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::PreviousSibling(node);
   AssertPrecondition(node);
   Node* result = TraverseSiblings(node, kTraversalDirectionBackward);
@@ -227,7 +228,7 @@ inline Node* FlatTreeTraversal::PreviousSibling(const Node& node) {
 }
 
 inline Node* FlatTreeTraversal::Next(const Node& node) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::Next(node);
   AssertPrecondition(node);
   Node* result = TraverseNext(node);
@@ -237,7 +238,7 @@ inline Node* FlatTreeTraversal::Next(const Node& node) {
 
 inline Node* FlatTreeTraversal::Next(const Node& node,
                                      const Node* stay_within) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::Next(node, stay_within);
   AssertPrecondition(node);
   Node* result = TraverseNext(node, stay_within);
@@ -247,7 +248,7 @@ inline Node* FlatTreeTraversal::Next(const Node& node,
 
 inline Node* FlatTreeTraversal::NextSkippingChildren(const Node& node,
                                                      const Node* stay_within) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::NextSkippingChildren(node, stay_within);
   AssertPrecondition(node);
   Node* result = TraverseNextSkippingChildren(node, stay_within);
@@ -285,7 +286,7 @@ inline Node* FlatTreeTraversal::TraverseNextSkippingChildren(
 }
 
 inline Node* FlatTreeTraversal::Previous(const Node& node) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::Previous(node);
   AssertPrecondition(node);
   Node* result = TraversePrevious(node);
@@ -303,7 +304,7 @@ inline Node* FlatTreeTraversal::TraversePrevious(const Node& node) {
 }
 
 inline Node* FlatTreeTraversal::FirstChild(const Node& node) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::FirstChild(node);
   AssertPrecondition(node);
   Node* result = TraverseChild(node, kTraversalDirectionForward);
@@ -312,7 +313,7 @@ inline Node* FlatTreeTraversal::FirstChild(const Node& node) {
 }
 
 inline Node* FlatTreeTraversal::LastChild(const Node& node) {
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled())
     return FlatTreeTraversalNg::LastChild(node);
   AssertPrecondition(node);
   Node* result = TraverseLastChild(node);
@@ -341,6 +342,11 @@ inline Node* FlatTreeTraversal::TraverseLastChild(const Node& node) {
 }
 
 // TraverseRange<T> implementations
+inline TraversalRange<TraversalAncestorsIterator<FlatTreeTraversal>>
+FlatTreeTraversal::AncestorsOf(const Node& node) {
+  return TraversalRange<TraversalAncestorsIterator<FlatTreeTraversal>>(&node);
+}
+
 inline TraversalRange<TraversalChildrenIterator<FlatTreeTraversal>>
 FlatTreeTraversal::ChildrenOf(const Node& parent) {
   return TraversalRange<TraversalChildrenIterator<FlatTreeTraversal>>(&parent);

@@ -27,10 +27,11 @@ CC_BASE_EXPORT extern const char kBrowserControlsShowThreshold[];
 CC_BASE_EXPORT extern const char kSlowDownRasterScaleFactor[];
 CC_BASE_EXPORT extern const char kStrictLayerPropertyChangeChecking[];
 CC_BASE_EXPORT extern const char kEnableTileCompression[];
+CC_BASE_EXPORT extern const char kCheckDamageEarly[];
 
 // Switches for both the renderer and ui compositors.
 CC_BASE_EXPORT extern const char kEnableGpuBenchmarking[];
-CC_BASE_EXPORT extern const char kRunAllCompositorStagesBeforeDraw[];
+CC_BASE_EXPORT extern const char kAlwaysRequestPresentationTime[];
 
 // Debug visualizations.
 CC_BASE_EXPORT extern const char kShowCompositedLayerBorders[];

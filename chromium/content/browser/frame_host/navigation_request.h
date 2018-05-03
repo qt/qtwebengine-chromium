@@ -34,6 +34,7 @@ class NavigationControllerImpl;
 class NavigationHandleImpl;
 class NavigationURLLoader;
 class NavigationData;
+class NavigationUIData;
 class SiteInstanceImpl;
 class StreamHandle;
 struct SubresourceLoaderParams;
@@ -91,7 +92,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
       bool is_history_navigation_in_new_child,
       const scoped_refptr<network::ResourceRequestBody>& post_body,
       const base::TimeTicks& navigation_start,
-      NavigationControllerImpl* controller);
+      NavigationControllerImpl* controller,
+      std::unique_ptr<NavigationUIData> navigation_ui_data);
 
   // Creates a request for a renderer-intiated navigation.
   // Note: |body| is sent to the IO thread when calling BeginNavigation, and
@@ -171,13 +173,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // NavigationRequest for the FrameTreeNode has been destroyed.
   void CreateNavigationHandle();
 
-  // Transfers the ownership of the NavigationHandle to |render_frame_host|.
-  // This should be called when the navigation is ready to commit, because the
-  // NavigationHandle outlives the NavigationRequest. The NavigationHandle's
-  // lifetime is the entire navigation, while the NavigationRequest is
-  // destroyed when a navigation is ready for commit.
-  void TransferNavigationHandleOwnership(
-      RenderFrameHostImpl* render_frame_host);
+  // Returns ownership of the navigation handle.
+  std::unique_ptr<NavigationHandleImpl> TakeNavigationHandle();
 
   void set_on_start_checks_complete_closure_for_testing(
       const base::Closure& closure) {
@@ -200,6 +197,11 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     return devtools_navigation_token_;
   }
 
+  // Called on same-document navigation requests that need to be restarted as
+  // cross-document navigations. This happens when a same-document commit fails
+  // due to another navigation committing in the meantime.
+  void ResetForCrossDocumentRestart();
+
  private:
   // This enum describes the result of a Content Security Policy (CSP) check for
   // the request.
@@ -218,7 +220,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
                     bool browser_initiated,
                     bool from_begin_navigation,
                     const FrameNavigationEntry* frame_navigation_entry,
-                    const NavigationEntryImpl* navitation_entry);
+                    const NavigationEntryImpl* navitation_entry,
+                    std::unique_ptr<NavigationUIData> navigation_ui_data);
 
   // NavigationURLLoaderDelegate implementation.
   void OnRequestRedirected(
@@ -241,11 +244,14 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   void OnRequestStarted(base::TimeTicks timestamp) override;
 
   // A version of OnRequestFailed() that allows skipping throttles, to be used
-  // when a request failed due to a throttle result itself.
-  void OnRequestFailedInternal(bool has_stale_copy_in_cache,
-                               int net_error,
-                               const base::Optional<net::SSLInfo>& ssl_info,
-                               bool skip_throttles);
+  // when a request failed due to a throttle result itself. |error_page_content|
+  // is only used when |skip_throttles| is true.
+  void OnRequestFailedInternal(
+      bool has_stale_copy_in_cache,
+      int net_error,
+      const base::Optional<net::SSLInfo>& ssl_info,
+      bool skip_throttles,
+      const base::Optional<std::string>& error_page_content);
 
   // Called when the NavigationThrottles have been checked by the
   // NavigationHandle.
@@ -319,6 +325,11 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   mojom::BeginNavigationParamsPtr begin_params_;
   RequestNavigationParams request_params_;
   const bool browser_initiated_;
+
+  // Stores the NavigationUIData for this navigation until the NavigationHandle
+  // is created. This can be null if the embedded did not provide a
+  // NavigationUIData at the beginning of the navigation.
+  std::unique_ptr<NavigationUIData> navigation_ui_data_;
 
   NavigationState state_;
 

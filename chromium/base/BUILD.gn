@@ -67,6 +67,13 @@ config("base_flags") {
       # Don't die on dtoa code that uses a char as an array index.
       # This is required solely for base/third_party/dmg_fp/dtoa_wrapper.cc.
       "-Wno-char-subscripts",
+
+      # Ideally all product code (but no test code) in chrome would have these
+      # flags. But this isn't trivial so start with //base as a minimum
+      # requirement.
+      # https://groups.google.com/a/chromium.org/d/topic/chromium-dev/B9Q5KTD7iCo/discussion
+      "-Wglobal-constructors",
+      "-Wexit-time-destructors",
     ]
   }
 }
@@ -236,7 +243,6 @@ jumbo_component("base") {
     "big_endian.cc",
     "big_endian.h",
     "bind.h",
-    "bind_helpers.cc",
     "bind_helpers.h",
     "bind_internal.h",
     "bit_cast.h",
@@ -254,6 +260,7 @@ jumbo_component("base") {
     "command_line.cc",
     "command_line.h",
     "compiler_specific.h",
+    "component_export.h",
     "containers/adapters.h",
     "containers/circular_deque.h",
     "containers/flat_map.h",
@@ -267,7 +274,7 @@ jumbo_component("base") {
     "containers/span.h",
     "containers/stack.h",
     "containers/stack_container.h",
-    "containers/unique_ptr_comparator.h",
+    "containers/unique_ptr_adapters.h",
     "containers/vector_buffer.h",
     "cpu.cc",
     "cpu.h",
@@ -712,6 +719,8 @@ jumbo_component("base") {
     "rand_util_win.cc",
     "run_loop.cc",
     "run_loop.h",
+    "sampling_heap_profiler/sampling_heap_profiler.cc",
+    "sampling_heap_profiler/sampling_heap_profiler.h",
     "scoped_clear_errno.h",
     "scoped_generic.h",
     "scoped_native_library.cc",
@@ -877,6 +886,7 @@ jumbo_component("base") {
     "third_party/nspr/prtime.cc",
     "third_party/nspr/prtime.h",
     "third_party/superfasthash/superfasthash.c",
+    "thread_annotations.h",
     "threading/platform_thread.h",
     "threading/platform_thread_android.cc",
     "threading/platform_thread_internal_posix.cc",
@@ -895,8 +905,6 @@ jumbo_component("base") {
     "threading/sequence_local_storage_slot.h",
     "threading/sequenced_task_runner_handle.cc",
     "threading/sequenced_task_runner_handle.h",
-    "threading/sequenced_worker_pool.cc",
-    "threading/sequenced_worker_pool.h",
     "threading/simple_thread.cc",
     "threading/simple_thread.h",
     "threading/thread.cc",
@@ -929,6 +937,10 @@ jumbo_component("base") {
     "time/tick_clock.h",
     "time/time.cc",
     "time/time.h",
+    "time/time_override.cc",
+    "time/time_override.h",
+    "time/time_to_iso8601.cc",
+    "time/time_to_iso8601.h",
     "timer/elapsed_timer.cc",
     "timer/elapsed_timer.h",
     "timer/hi_res_timer_manager.h",
@@ -1073,6 +1085,8 @@ jumbo_component("base") {
     "win/scoped_gdi_object.h",
     "win/scoped_handle.cc",
     "win/scoped_handle.h",
+    "win/scoped_handle_verifier.cc",
+    "win/scoped_handle_verifier.h",
     "win/scoped_hdc.h",
     "win/scoped_hglobal.h",
     "win/scoped_hstring.cc",
@@ -1141,19 +1155,20 @@ jumbo_component("base") {
 
   deps = [
     "//base/allocator",
-    "//base/allocator:features",
+    "//base/allocator:buildflags",
     "//base/third_party/dynamic_annotations",
     "//third_party/modp_b64",
   ]
 
   public_deps = [
-    ":anchor_functions_flags",
+    ":anchor_functions_buildflags",
     ":base_static",
     ":build_date",
-    ":cfi_flags",
-    ":debugging_flags",
-    ":protected_memory_flags",
-    ":synchronization_flags",
+    ":cfi_buildflags",
+    ":debugging_buildflags",
+    ":partition_alloc_buildflags",
+    ":protected_memory_buildflags",
+    ":synchronization_buildflags",
     "//base/numerics:base_numerics",
   ]
 
@@ -1215,6 +1230,7 @@ jumbo_component("base") {
     sources += [
       "memory/shared_memory_android.cc",
       "memory/shared_memory_handle_android.cc",
+      "time/time_android.cc",
     ]
 
     # Android uses some Linux sources, put those back.
@@ -1265,10 +1281,13 @@ jumbo_component("base") {
       "process/process_handle_posix.cc",
       "process/process_posix.cc",
       "rand_util_posix.cc",
+      "threading/platform_thread_internal_posix.cc",
+      "threading/platform_thread_internal_posix.h",
     ]
 
     sources += [
       "base_paths_fuchsia.cc",
+      "base_paths_fuchsia.h",
       "debug/stack_trace_fuchsia.cc",
       "files/file_path_watcher_fuchsia.cc",
       "fuchsia/default_job.cc",
@@ -1429,7 +1448,7 @@ jumbo_component("base") {
 
     deps += [
       "//base/trace_event/etw_manifest:chrome_events_win",
-      "//base/win:base_win_features",
+      "//base/win:base_win_buildflags",
     ]
 
     if (com_init_check_hook_disabled) {
@@ -1727,8 +1746,8 @@ jumbo_component("base") {
 
 # Build flags for Control Flow Integrity
 # https://www.chromium.org/developers/testing/control-flow-integrity
-buildflag_header("cfi_flags") {
-  header = "cfi_flags.h"
+buildflag_header("cfi_buildflags") {
+  header = "cfi_buildflags.h"
 
   # buildflag entries added to this header must also must be manually added to
   # tools/gn/bootstrap/bootstrap.py
@@ -1741,8 +1760,8 @@ buildflag_header("cfi_flags") {
   ]
 }
 
-buildflag_header("debugging_flags") {
-  header = "debugging_flags.h"
+buildflag_header("debugging_buildflags") {
+  header = "debugging_buildflags.h"
   header_dir = "base/debug"
 
   # buildflag entries added to this header must also must be manually added to
@@ -1757,8 +1776,8 @@ buildflag_header("debugging_flags") {
 
 # Build flags for ProtectedMemory, temporary workaround for crbug.com/792777
 # TODO(vtsyrklevich): Remove once support for gold on Android/CrOs is dropped
-buildflag_header("protected_memory_flags") {
-  header = "protected_memory_flags.h"
+buildflag_header("protected_memory_buildflags") {
+  header = "protected_memory_buildflags.h"
   header_dir = "base/memory"
 
   # buildflag entries added to this header must also must be manually added to
@@ -1766,21 +1785,32 @@ buildflag_header("protected_memory_flags") {
   flags = [ "USE_LLD=$use_lld" ]
 }
 
-buildflag_header("synchronization_flags") {
-  header = "synchronization_flags.h"
+buildflag_header("synchronization_buildflags") {
+  header = "synchronization_buildflags.h"
   header_dir = "base/synchronization"
 
   flags =
       [ "ENABLE_MUTEX_PRIORITY_INHERITANCE=$enable_mutex_priority_inheritance" ]
 }
 
-buildflag_header("anchor_functions_flags") {
-  header = "anchor_functions_flags.h"
+buildflag_header("anchor_functions_buildflags") {
+  header = "anchor_functions_buildflags.h"
   header_dir = "base/android/library_loader"
+  _supports_code_ordering = current_cpu == "arm"
 
   # buildflag entries added to this header must also must be manually added to
   # tools/gn/bootstrap/bootstrap.py
-  flags = [ "USE_LLD=$use_lld" ]
+  flags = [
+    "USE_LLD=$use_lld",
+    "SUPPORTS_CODE_ORDERING=$_supports_code_ordering",
+  ]
+}
+
+buildflag_header("partition_alloc_buildflags") {
+  header = "partition_alloc_buildflags.h"
+  header_dir = "base"
+
+  flags = [ "USE_PARTITION_ALLOC=$use_partition_alloc" ]
 }
 
 # This is the subset of files from base that should not be used with a dynamic
@@ -1968,7 +1998,7 @@ if (is_win) {
     ]
     deps = [
       ":base",
-      "//base/win:base_win_features",
+      "//base/win:base_win_buildflags",
     ]
   }
 }
@@ -2056,7 +2086,6 @@ test("base_unittests") {
     "base64_unittest.cc",
     "base64url_unittest.cc",
     "big_endian_unittest.cc",
-    "bind_helpers_unittest.cc",
     "bind_unittest.cc",
     "bit_cast_unittest.cc",
     "bits_unittest.cc",
@@ -2066,6 +2095,7 @@ test("base_unittests") {
     "callback_unittest.cc",
     "cancelable_callback_unittest.cc",
     "command_line_unittest.cc",
+    "component_export_unittest.cc",
     "containers/adapters_unittest.cc",
     "containers/circular_deque_unittest.cc",
     "containers/flat_map_unittest.cc",
@@ -2078,7 +2108,7 @@ test("base_unittests") {
     "containers/small_map_unittest.cc",
     "containers/span_unittest.cc",
     "containers/stack_container_unittest.cc",
-    "containers/unique_ptr_comparator_unittest.cc",
+    "containers/unique_ptr_adapters_unittest.cc",
     "containers/vector_buffer_unittest.cc",
     "cpu_unittest.cc",
     "debug/activity_analyzer_unittest.cc",
@@ -2284,13 +2314,13 @@ test("base_unittests") {
     "test/test_reg_util_win_unittest.cc",
     "test/trace_event_analyzer_unittest.cc",
     "test/user_action_tester_unittest.cc",
+    "thread_annotations_unittest.cc",
     "threading/platform_thread_unittest.cc",
     "threading/post_task_and_reply_impl_unittest.cc",
     "threading/scoped_blocking_call_unittest.cc",
     "threading/sequence_local_storage_map_unittest.cc",
     "threading/sequence_local_storage_slot_unittest.cc",
     "threading/sequenced_task_runner_handle_unittest.cc",
-    "threading/sequenced_worker_pool_unittest.cc",
     "threading/simple_thread_unittest.cc",
     "threading/thread_checker_unittest.cc",
     "threading/thread_collision_warner_unittest.cc",
@@ -2370,7 +2400,7 @@ test("base_unittests") {
   deps = [
     ":base",
     ":i18n",
-    "//base/allocator:features",
+    "//base/allocator:buildflags",
     "//base/test:native_library_test_utils",
     "//base/test:run_all_base_unittests",
     "//base/test:test_support",
@@ -2508,7 +2538,10 @@ test("base_unittests") {
   }
 
   if (use_allocator_shim) {
-    sources += [ "allocator/allocator_shim_unittest.cc" ]
+    sources += [
+      "allocator/allocator_shim_unittest.cc",
+      "sampling_heap_profiler/sampling_heap_profiler_unittest.cc",
+    ]
   }
 
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -2561,8 +2594,10 @@ if (enable_nocompile_tests) {
       "memory/weak_ptr_unittest.nc",
       "metrics/field_trial_params_unittest.nc",
       "metrics/histogram_unittest.nc",
+      "optional_unittest.nc",
       "strings/string16_unittest.nc",
       "task_scheduler/task_traits_unittest.nc",
+      "thread_annotations_unittest.nc",
     ]
 
     deps = [
@@ -2643,7 +2678,6 @@ if (is_android) {
       "android/java/src/org/chromium/base/ApiCompatibilityUtils.java",
       "android/java/src/org/chromium/base/ApkAssets.java",
       "android/java/src/org/chromium/base/ApplicationStatus.java",
-      "android/java/src/org/chromium/base/BaseChromiumApplication.java",
       "android/java/src/org/chromium/base/BaseSwitches.java",
       "android/java/src/org/chromium/base/BuildInfo.java",
       "android/java/src/org/chromium/base/Callback.java",
@@ -2676,6 +2710,7 @@ if (is_android) {
       "android/java/src/org/chromium/base/SecureRandomInitializer.java",
       "android/java/src/org/chromium/base/StreamUtil.java",
       "android/java/src/org/chromium/base/StrictModeContext.java",
+      "android/java/src/org/chromium/base/Supplier.java",
       "android/java/src/org/chromium/base/SysUtils.java",
       "android/java/src/org/chromium/base/SystemMessageHandler.java",
       "android/java/src/org/chromium/base/ThreadUtils.java",
@@ -2746,6 +2781,7 @@ if (is_android) {
       "android/javatests/src/org/chromium/base/CommandLineInitUtilTest.java",
       "android/javatests/src/org/chromium/base/CommandLineTest.java",
       "android/javatests/src/org/chromium/base/EarlyTraceEventTest.java",
+      "android/javatests/src/org/chromium/base/MemoryPressureListenerTest.java",
 
       # TODO(nona): move to Junit once that is built for Android N.
       "android/javatests/src/org/chromium/base/LocaleUtilsTest.java",
@@ -2770,10 +2806,10 @@ if (is_android) {
       "//third_party/junit",
       "//third_party/ub-uiautomator:ub_uiautomator_java",
     ]
+
+    deps += android_extra_test_deps
+
     java_files = [
-      "test/android/javatests/src/org/chromium/base/test/BaseActivityInstrumentationTestCase.java",
-      "test/android/javatests/src/org/chromium/base/test/BaseChromiumInstrumentationTestRunner.java",
-      "test/android/javatests/src/org/chromium/base/test/BaseInstrumentationTestRunner.java",
       "test/android/javatests/src/org/chromium/base/test/BaseJUnit4ClassRunner.java",
       "test/android/javatests/src/org/chromium/base/test/BaseChromiumAndroidJUnitRunner.java",
       "test/android/javatests/src/org/chromium/base/test/BaseChromiumRunnerCommon.java",
@@ -2842,9 +2878,13 @@ if (is_android) {
     # Plaform checks are broken for Robolectric.
     bypass_platform_checks = true
     testonly = true
-    java_files = [ "android/junit/src/org/chromium/base/metrics/test/ShadowRecordHistogram.java" ]
+    java_files = [
+      "android/junit/src/org/chromium/base/metrics/test/ShadowRecordHistogram.java",
+      "test/android/junit/src/org/chromium/base/test/BaseRobolectricTestRunner.java",
+    ]
     deps = [
       ":base_java",
+      "//testing/android/junit:junit_test_support",
       "//third_party/robolectric:robolectric_all_java",
     ]
   }
@@ -2874,10 +2914,9 @@ if (is_android) {
       ":base_java",
       ":base_java_process_launcher_test_support",
       ":base_java_test_support",
-      "//third_party/android_support_test_runner:runner_java",
+      ":base_junit_test_support",
       "//third_party/hamcrest:hamcrest_java",
     ]
-    srcjar_deps = [ ":base_build_config_gen" ]
   }
 
   java_cpp_enum("base_android_java_enums_srcjar") {
@@ -2891,19 +2930,8 @@ if (is_android) {
     ]
   }
 
-  java_cpp_template("base_build_config_gen") {
-    sources = [
-      "android/java/templates/BuildConfig.template",
-    ]
-    package_path = "org/chromium/base"
-
-    defines = []
-    if (is_java_debug || dcheck_always_on) {
-      defines += [ "_DCHECK_IS_ON" ]
-    }
-    if (use_cfi_diag || is_ubsan || is_ubsan_security || is_ubsan_vptr) {
-      defines += [ "_IS_UBSAN" ]
-    }
+  generate_build_config_srcjar("base_build_config_gen") {
+    use_final_fields = false
   }
 
   java_cpp_template("base_native_libraries_gen") {

@@ -28,6 +28,20 @@ const base::Feature kAdSamplerCollectButDontSendFeature{
 const base::Feature kAdSamplerTriggerFeature{"SafeBrowsingAdSamplerTrigger",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
 
+// If enabled in pre-network-service world, SafeBrowsing URL checks are done by
+// applying SafeBrowsing's URLLoaderThrottle subclasses to ThrottlingURLLoader.
+// It affects:
+//   - subresource loading from renderers;
+//   - frame resource loading from the browser, if
+//     content::IsNavigationMojoResponseEnabled() is true.
+//
+// This flag has no effect if network service is enabled. With network service,
+// SafeBrowsing URL checks are always done by SafeBrowsing's URLLoaderThrottle
+// subclasses.
+const base::Feature kCheckByURLLoaderThrottle{
+    "S13nSafeBrowsingCheckByURLLoaderThrottle",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kGaiaPasswordReuseReporting{
     "SyncPasswordReuseEvent", base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -43,10 +57,16 @@ const base::Feature kTriggerThrottlerDailyQuotaFeature{
     base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kDispatchSafetyNetCheckOffThread{
-    "DispatchSafetyNetCheckOffThread", base::FEATURE_DISABLED_BY_DEFAULT};
+    "DispatchSafetyNetCheckOffThread", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kAppendRecentNavigationEvents{
     "AppendRecentNavigationEvents", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kInspectDownloadedRarFiles{
+    "InspectDownloadedRarFiles", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kEnterprisePasswordProtectionV1{
+    "EnterprisePasswordProtectionV1", base::FEATURE_DISABLED_BY_DEFAULT};
 
 namespace {
 // List of experimental features. Boolean value for each list member should be
@@ -60,11 +80,14 @@ constexpr struct {
     {&kAdSamplerCollectButDontSendFeature, false},
     {&kAdSamplerTriggerFeature, false},
     {&kAppendRecentNavigationEvents, true},
+    {&kCheckByURLLoaderThrottle, true},
+    {&kDispatchSafetyNetCheckOffThread, false},
+    {&kEnterprisePasswordProtectionV1, true},
     {&kGaiaPasswordReuseReporting, true},
     {&kGoogleBrandedPhishingWarning, true},
+    {&kInspectDownloadedRarFiles, true},
     {&kThreatDomDetailsTagAndAttributeFeature, false},
     {&kTriggerThrottlerDailyQuotaFeature, false},
-    {&kDispatchSafetyNetCheckOffThread, false},
 };
 
 // Adds the name and the enabled/disabled status of a given feature.

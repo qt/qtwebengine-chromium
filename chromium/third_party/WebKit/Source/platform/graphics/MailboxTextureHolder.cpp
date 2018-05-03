@@ -72,7 +72,7 @@ MailboxTextureHolder::MailboxTextureHolder(
 }
 
 void MailboxTextureHolder::Sync(MailboxSyncMode mode) {
-  if (thread_id_ != Platform::Current()->CurrentThread()->ThreadId()) {
+  if (IsCrossThread()) {
     // Was originally created on another thread. Should already have a sync
     // token from the original source context, already verified if needed.
     DCHECK(sync_token_.HasData());
@@ -119,16 +119,20 @@ void MailboxTextureHolder::Sync(MailboxSyncMode mode) {
 void MailboxTextureHolder::InitCommon() {
   WebThread* thread = Platform::Current()->CurrentThread();
   thread_id_ = thread->ThreadId();
-  texture_thread_task_runner_ = thread->GetWebTaskRunner();
+  texture_thread_task_runner_ = thread->GetTaskRunner();
 }
 
 bool MailboxTextureHolder::IsValid() const {
-  if (thread_id_ != Platform::Current()->CurrentThread()->ThreadId()) {
+  if (IsCrossThread()) {
     // If context is is from another thread, validity cannot be verified.
     // Just assume valid. Potential problem will be detected later.
     return true;
   }
   return !IsAbandoned() && !!ContextProviderWrapper();
+}
+
+bool MailboxTextureHolder::IsCrossThread() const {
+  return thread_id_ != Platform::Current()->CurrentThread()->ThreadId();
 }
 
 MailboxTextureHolder::~MailboxTextureHolder() {

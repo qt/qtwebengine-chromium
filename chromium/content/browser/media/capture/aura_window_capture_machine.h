@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/browser/media/capture/cursor_renderer_aura.h"
 #include "media/capture/content/screen_capture_device_core.h"
-#include "services/device/public/interfaces/wake_lock.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/cursor/cursors_aura.h"
@@ -25,6 +25,10 @@ class ReadbackYUVInterface;
 
 namespace content {
 
+// AuraWindowCaptureMachine uses the compositor to capture Aura windows.
+//
+// It is used for browser window capture on platforms that use Aura (Windows,
+// Linux, and Chrome OS) and additionally for desktop capture on Chrome OS.
 class AuraWindowCaptureMachine : public media::VideoCaptureMachine,
                                  public aura::WindowObserver,
                                  public ui::ContextFactoryObserver,

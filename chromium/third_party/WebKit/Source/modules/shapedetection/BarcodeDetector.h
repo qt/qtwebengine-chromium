@@ -10,7 +10,7 @@
 #include "modules/ModulesExport.h"
 #include "modules/canvas/canvas2d/CanvasRenderingContext2D.h"
 #include "modules/shapedetection/ShapeDetector.h"
-#include "services/shape_detection/public/interfaces/barcodedetection.mojom-blink.h"
+#include "services/shape_detection/public/mojom/barcodedetection.mojom-blink.h"
 
 namespace blink {
 
@@ -28,8 +28,7 @@ class MODULES_EXPORT BarcodeDetector final : public ShapeDetector {
   explicit BarcodeDetector(ExecutionContext*);
   ~BarcodeDetector() override = default;
 
-  ScriptPromise DoDetect(ScriptPromiseResolver*,
-                         skia::mojom::blink::BitmapPtr) override;
+  ScriptPromise DoDetect(ScriptPromiseResolver*, SkBitmap) override;
   void OnDetectBarcodes(
       ScriptPromiseResolver*,
       Vector<shape_detection::mojom::blink::BarcodeDetectionResultPtr>);

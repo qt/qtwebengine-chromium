@@ -12,17 +12,16 @@
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "net/url_request/url_request_test_util.h"
 #include "services/device/device_service.h"
-#include "services/device/public/interfaces/constants.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/service_context.h"
-#include "services/service_manager/public/interfaces/service_factory.mojom.h"
+#include "services/service_manager/public/mojom/service_factory.mojom.h"
 
 namespace device {
 
 namespace {
 
 const char kTestServiceName[] = "device_unittests";
-const char kTestGeolocationApiKey[] = "";
 
 // Simple request context producer that immediately produces a
 // TestURLRequestContextGetter.

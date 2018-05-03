@@ -221,11 +221,21 @@ void InkDropHostView::AnimateInkDrop(InkDropState state,
   GetInkDrop()->AnimateToState(state);
 }
 
+void InkDropHostView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  // If we're being removed hide the ink-drop so if we're highlighted now the
+  // highlight won't be active if we're added back again.
+  if (!details.is_add && details.child == this && ink_drop_) {
+    GetInkDrop()->SnapToHidden();
+    GetInkDrop()->SetHovered(false);
+  }
+  View::ViewHierarchyChanged(details);
+}
+
 void InkDropHostView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   if (ink_drop_)
     ink_drop_->HostSizeChanged(size());
-  if (ink_drop_mask_)
-    ink_drop_mask_->UpdateLayerSize(size());
+  UpdateInkDropMaskLayerSize(size());
 }
 
 void InkDropHostView::VisibilityChanged(View* starting_from, bool is_visible) {
@@ -300,11 +310,19 @@ void InkDropHostView::ResetInkDropMask() {
   ink_drop_mask_.reset();
 }
 
+void InkDropHostView::UpdateInkDropMaskLayerSize(const gfx::Size& new_size) {
+  if (ink_drop_mask_)
+    ink_drop_mask_->UpdateLayerSize(new_size);
+}
+
 std::unique_ptr<InkDropImpl> InkDropHostView::CreateDefaultInkDropImpl() {
   std::unique_ptr<InkDropImpl> ink_drop =
       std::make_unique<InkDropImpl>(this, size());
-  ink_drop->SetAutoHighlightMode(
-      views::InkDropImpl::AutoHighlightMode::HIDE_ON_RIPPLE);
+  views::InkDropImpl::AutoHighlightMode mode =
+      PlatformStyle::kUseRipples
+          ? views::InkDropImpl::AutoHighlightMode::HIDE_ON_RIPPLE
+          : views::InkDropImpl::AutoHighlightMode::SHOW_ON_RIPPLE;
+  ink_drop->SetAutoHighlightMode(mode);
   return ink_drop;
 }
 

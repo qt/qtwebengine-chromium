@@ -8,12 +8,12 @@
 #define NET_TOOLS_QUIC_QUIC_SPDY_CLIENT_SESSION_H_
 
 #include <memory>
-#include <string>
 
 #include "base/macros.h"
 #include "net/quic/core/quic_crypto_client_stream.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/core/quic_spdy_client_session_base.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 
 namespace net {
@@ -39,7 +39,7 @@ class QuicSpdyClientSession : public QuicSpdyClientSessionBase {
   QuicCryptoClientStreamBase* GetMutableCryptoStream() override;
   const QuicCryptoClientStreamBase* GetCryptoStream() const override;
 
-  bool IsAuthorized(const std::string& authority) override;
+  bool IsAuthorized(const QuicString& authority) override;
 
   // QuicSpdyClientSessionBase methods:
   void OnProofValid(const QuicCryptoClientConfig::CachedState& cached) override;

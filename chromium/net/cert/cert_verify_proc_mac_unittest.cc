@@ -15,7 +15,6 @@
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/crl_set.h"
-#include "net/cert/crl_set_storage.h"
 #include "net/cert/test_keychain_search_list_mac.h"
 #include "net/cert/test_root_certs.h"
 #include "net/cert/x509_certificate.h"
@@ -103,7 +102,7 @@ TEST(CertVerifyProcMacTest, MacCRLIntermediate) {
   EXPECT_TRUE(base::ReadFileToString(
       GetTestCertsDirectory().AppendASCII("multi-root-crlset-C.raw"),
       &crl_set_bytes));
-  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   int flags = 0;
   CertVerifyResult verify_result;
@@ -138,9 +137,9 @@ TEST(CertVerifyProcMacTest, MacCRLIntermediate) {
 // one using SHA1), that the keychain reordering hack will cause the better
 // root in the System Roots to be used instead.
 TEST(CertVerifyProcMacTest, MacKeychainReordering) {
-  // Note: target cert expires Apr  2 23:59:59 2018 GMT
+  // Note: target cert expires Dec 30 23:59:59 2019 GMT
   scoped_refptr<X509Certificate> cert = CreateCertificateChainFromFile(
-      GetTestCertsDirectory(), "tripadvisor-verisign-chain.pem",
+      GetTestCertsDirectory(), "gms.hongleong.com.my-verisign-chain.pem",
       X509Certificate::FORMAT_AUTO);
   ASSERT_TRUE(cert);
 
@@ -166,7 +165,7 @@ TEST(CertVerifyProcMacTest, MacKeychainReordering) {
   int flags = 0;
   CertVerifyResult verify_result;
   scoped_refptr<CertVerifyProc> verify_proc = new CertVerifyProcMac;
-  int error = verify_proc->Verify(cert.get(), "www.tripadvisor.com",
+  int error = verify_proc->Verify(cert.get(), "gms.hongleong.com.my",
                                   std::string(), flags, nullptr /* crl_set */,
                                   CertificateList(), &verify_result);
 

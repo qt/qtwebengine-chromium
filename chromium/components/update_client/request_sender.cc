@@ -52,22 +52,25 @@ constexpr int64_t kMaxRetryAfterSec = 24 * 60 * 60;
 
 }  // namespace
 
-RequestSender::RequestSender(const scoped_refptr<Configurator>& config)
+RequestSender::RequestSender(scoped_refptr<Configurator> config)
     : config_(config), use_signing_(false) {}
 
 RequestSender::~RequestSender() {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
-void RequestSender::Send(bool use_signing,
-                         const std::string& request_body,
-                         const std::vector<GURL>& urls,
-                         RequestSenderCallback request_sender_callback) {
+void RequestSender::Send(
+    const std::vector<GURL>& urls,
+    const std::map<std::string, std::string>& request_extra_headers,
+    const std::string& request_body,
+    bool use_signing,
+    RequestSenderCallback request_sender_callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  use_signing_ = use_signing;
-  request_body_ = request_body;
   urls_ = urls;
+  request_extra_headers_ = request_extra_headers;
+  request_body_ = request_body;
+  use_signing_ = use_signing;
   request_sender_callback_ = std::move(request_sender_callback);
 
   if (urls_.empty()) {
@@ -101,8 +104,8 @@ void RequestSender::SendInternal() {
     url = BuildUpdateUrl(url, request_query_string);
   }
 
-  url_fetcher_ =
-      SendProtocolRequest(url, request_body_, this, config_->RequestContext());
+  url_fetcher_ = SendProtocolRequest(url, request_extra_headers_, request_body_,
+                                     this, config_->RequestContext());
   if (!url_fetcher_.get())
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::BindOnce(&RequestSender::SendInternalComplete,

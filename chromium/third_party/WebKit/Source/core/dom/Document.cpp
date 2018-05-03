@@ -38,7 +38,6 @@
 #include "bindings/core/v8/WindowProxy.h"
 #include "bindings/core/v8/html_script_element_or_svg_script_element.h"
 #include "bindings/core/v8/string_or_dictionary.h"
-#include "common/net/ip_address_space.mojom-blink.h"
 #include "core/animation/DocumentAnimations.h"
 #include "core/animation/DocumentTimeline.h"
 #include "core/animation/PendingAnimations.h"
@@ -144,11 +143,10 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLScriptElement.h"
-#include "core/html/HTMLTemplateElement.h"
 #include "core/html/HTMLTitleElement.h"
+#include "core/html/HTMLUnknownElement.h"
 #include "core/html/PluginDocument.h"
 #include "core/html/WindowNameCollection.h"
-#include "core/html/canvas/CanvasContextCreationAttributes.h"
 #include "core/html/canvas/CanvasFontCache.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/HTMLCanvasElement.h"
@@ -203,6 +201,7 @@
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/page/scrolling/SnapCoordinator.h"
 #include "core/page/scrolling/TopDocumentRootScrollerController.h"
+#include "core/paint/PaintLayerScrollableArea.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "core/policy/DocumentPolicy.h"
 #include "core/probe/CoreProbes.h"
@@ -211,11 +210,12 @@
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGScriptElement.h"
 #include "core/svg/SVGTitleElement.h"
+#include "core/svg/SVGUnknownElement.h"
 #include "core/svg/SVGUseElement.h"
 #include "core/svg_element_factory.h"
 #include "core/svg_names.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "core/workers/SharedWorkerRepositoryClient.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 #include "core/xml_names.h"
@@ -256,6 +256,7 @@
 #include "platform/wtf/text/CharacterNames.h"
 #include "platform/wtf/text/StringBuffer.h"
 #include "platform/wtf/text/TextEncodingRegistry.h"
+#include "public/mojom/net/ip_address_space.mojom-blink.h"
 #include "public/platform/InterfaceProvider.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
@@ -265,9 +266,9 @@
 #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
-#include "services/metrics/public/interfaces/ukm_interface.mojom-shared.h"
+#include "services/metrics/public/mojom/ukm_interface.mojom-shared.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 #ifndef NDEBUG
 using WeakDocumentSet =
@@ -853,9 +854,47 @@ AtomicString Document::ConvertLocalName(const AtomicString& name) {
   return IsHTMLDocument() ? name.LowerASCII() : name;
 }
 
+// Just creates an element with specified qualified name without any
+// custom element processing.
+// This is a common code for step 5.2 and 7.2 of "create an element"
+// <https://dom.spec.whatwg.org/#concept-create-element>
+// Functions other than this one should not use HTMLElementFactory and
+// SVGElementFactory because they don't support prefixes correctly.
+Element* Document::CreateRawElement(const QualifiedName& qname,
+                                    CreateElementFlags flags) {
+  Element* element = nullptr;
+  if (qname.NamespaceURI() == HTMLNames::xhtmlNamespaceURI) {
+    // https://html.spec.whatwg.org/multipage/dom.html#elements-in-the-dom:element-interface
+    element = HTMLElementFactory::Create(qname.LocalName(), *this, flags);
+    if (!element) {
+      // 6. If name is a valid custom element name, then return
+      // HTMLElement.
+      // 7. Return HTMLUnknownElement.
+      if (CustomElement::IsValidName(qname.LocalName()))
+        element = HTMLElement::Create(qname, *this);
+      else
+        element = HTMLUnknownElement::Create(qname, *this);
+    }
+    saw_elements_in_known_namespaces_ = true;
+  } else if (qname.NamespaceURI() == SVGNames::svgNamespaceURI) {
+    element = SVGElementFactory::Create(qname.LocalName(), *this, flags);
+    if (!element)
+      element = SVGUnknownElement::Create(qname, *this);
+    saw_elements_in_known_namespaces_ = true;
+  } else {
+    element = Element::Create(qname, this);
+  }
+
+  if (element->prefix() != qname.Prefix())
+    element->SetTagNameForCreateElementNS(qname);
+  DCHECK(qname == element->TagQName());
+
+  return element;
+}
+
 // https://dom.spec.whatwg.org/#dom-document-createelement
-Element* Document::createElement(const AtomicString& name,
-                                 ExceptionState& exception_state) {
+Element* Document::CreateElementForBinding(const AtomicString& name,
+                                           ExceptionState& exception_state) {
   if (!IsValidElementName(this, name)) {
     exception_state.ThrowDOMException(
         kInvalidCharacterError,
@@ -868,12 +907,18 @@ Element* Document::createElement(const AtomicString& name,
     // converted to ASCII lowercase.
     AtomicString local_name = ConvertLocalName(name);
     if (CustomElement::ShouldCreateCustomElement(local_name)) {
-      return CustomElement::CreateCustomElementSync(
+      return CustomElement::CreateCustomElement(
           *this,
-          QualifiedName(g_null_atom, local_name, HTMLNames::xhtmlNamespaceURI));
+          QualifiedName(g_null_atom, local_name, HTMLNames::xhtmlNamespaceURI),
+          CreateElementFlags::ByCreateElement());
     }
-    return HTMLElementFactory::createHTMLElement(local_name, *this,
-                                                 kCreatedByCreateElement);
+    if (auto* element = HTMLElementFactory::Create(
+            local_name, *this, CreateElementFlags::ByCreateElement()))
+      return element;
+    QualifiedName q_name(g_null_atom, local_name, HTMLNames::xhtmlNamespaceURI);
+    if (RegistrationContext() && V0CustomElement::IsValidName(local_name))
+      return RegistrationContext()->CreateCustomTagElement(*this, q_name);
+    return HTMLUnknownElement::Create(q_name, *this);
   }
   return Element::Create(QualifiedName(g_null_atom, name, g_null_atom), this);
 }
@@ -882,7 +927,7 @@ String GetTypeExtension(Document* document,
                         const StringOrDictionary& string_or_options,
                         ExceptionState& exception_state) {
   if (string_or_options.IsNull())
-    return g_empty_string;
+    return String();
 
   if (string_or_options.IsString()) {
     UseCounter::Count(document,
@@ -896,19 +941,20 @@ String GetTypeExtension(Document* document,
     V8ElementCreationOptions::ToImpl(dict.GetIsolate(), dict.V8Value(), impl,
                                      exception_state);
     if (exception_state.HadException())
-      return g_empty_string;
+      return String();
 
     if (impl.hasIs())
       return impl.is();
   }
 
-  return g_empty_string;
+  return String();
 }
 
 // https://dom.spec.whatwg.org/#dom-document-createelement
-Element* Document::createElement(const AtomicString& local_name,
-                                 const StringOrDictionary& string_or_options,
-                                 ExceptionState& exception_state) {
+Element* Document::CreateElementForBinding(
+    const AtomicString& local_name,
+    const StringOrDictionary& string_or_options,
+    ExceptionState& exception_state) {
   // 1. If localName does not match Name production, throw InvalidCharacterError
   if (!IsValidElementName(this, local_name)) {
     exception_state.ThrowDOMException(
@@ -919,6 +965,10 @@ Element* Document::createElement(const AtomicString& local_name,
 
   // 2. localName converted to ASCII lowercase
   const AtomicString& converted_local_name = ConvertLocalName(local_name);
+  QualifiedName q_name(g_null_atom, converted_local_name,
+                       IsXHTMLDocument() || IsHTMLDocument()
+                           ? HTMLNames::xhtmlNamespaceURI
+                           : g_null_atom);
 
   bool is_v1 = string_or_options.IsDictionary() || !RegistrationContext();
   bool create_v1_builtin =
@@ -930,56 +980,17 @@ Element* Document::createElement(const AtomicString& local_name,
   // 3.
   const AtomicString& is =
       AtomicString(GetTypeExtension(this, string_or_options, exception_state));
-  const AtomicString& name = should_create_builtin ? is : converted_local_name;
 
-  // 4. Let definition be result of lookup up custom element definition
-  CustomElementDefinition* definition = nullptr;
-  if (is_v1) {
-    // Is the runtime flag enabled for customized builtin elements?
-    const CustomElementDescriptor desc =
-        RuntimeEnabledFeatures::CustomElementsBuiltinEnabled()
-            ? CustomElementDescriptor(name, converted_local_name)
-            : CustomElementDescriptor(converted_local_name,
-                                      converted_local_name);
-    if (CustomElementRegistry* registry = CustomElement::Registry(*this))
-      definition = registry->DefinitionFor(desc);
-
-    // 5. If 'is' is non-null and definition is null, throw NotFoundError
-    // TODO(yurak): update when https://github.com/w3c/webcomponents/issues/608
-    //              is resolved
-    if (!definition && create_v1_builtin) {
-      exception_state.ThrowDOMException(kNotFoundError,
-                                        "Custom element definition not found.");
-      return nullptr;
-    }
-  }
-
-  // 7. Let element be the result of creating an element
-  Element* element;
-
-  if (definition) {
-    element = CustomElement::CreateCustomElementSync(
-        *this, converted_local_name, definition);
-  } else if (V0CustomElement::IsValidName(local_name) &&
-             RegistrationContext()) {
-    element = RegistrationContext()->CreateCustomTagElement(
-        *this,
-        QualifiedName(g_null_atom, converted_local_name, xhtmlNamespaceURI));
-  } else {
-    element = createElement(local_name, exception_state);
-    if (exception_state.HadException())
-      return nullptr;
-  }
+  // 5. Let element be the result of creating an element given ...
+  Element* element =
+      CreateElement(q_name,
+                    is_v1 ? CreateElementFlags::ByCreateElementV1()
+                          : CreateElementFlags::ByCreateElementV0(),
+                    should_create_builtin ? is : g_null_atom);
 
   // 8. If 'is' is non-null, set 'is' attribute
-  if (!is.IsEmpty()) {
-    if (string_or_options.IsString()) {
-      V0CustomElementRegistrationContext::SetIsAttributeAndTypeExtension(
-          element, is);
-    } else if (string_or_options.IsDictionary()) {
-      element->setAttribute(HTMLNames::isAttr, is);
-    }
-  }
+  if (!is_v1 && !is.IsEmpty())
+    element->setAttribute(HTMLNames::isAttr, is);
 
   return element;
 }
@@ -1014,9 +1025,12 @@ Element* Document::createElementNS(const AtomicString& namespace_uri,
   if (q_name == QualifiedName::Null())
     return nullptr;
 
+  CreateElementFlags flags = CreateElementFlags::ByCreateElement();
   if (CustomElement::ShouldCreateCustomElement(q_name))
-    return CustomElement::CreateCustomElementSync(*this, q_name);
-  return createElement(q_name, kCreatedByCreateElement);
+    return CustomElement::CreateCustomElement(*this, q_name, flags);
+  if (RegistrationContext() && V0CustomElement::IsValidName(q_name.LocalName()))
+    return RegistrationContext()->CreateCustomTagElement(*this, q_name);
+  return CreateRawElement(q_name, flags);
 }
 
 // https://dom.spec.whatwg.org/#internal-createelementns-steps
@@ -1040,7 +1054,6 @@ Element* Document::createElementNS(const AtomicString& namespace_uri,
   // 2.
   const AtomicString& is =
       AtomicString(GetTypeExtension(this, string_or_options, exception_state));
-  const AtomicString& name = should_create_builtin ? is : qualified_name;
 
   if (!IsValidElementName(this, qualified_name)) {
     exception_state.ThrowDOMException(
@@ -1049,47 +1062,39 @@ Element* Document::createElementNS(const AtomicString& namespace_uri,
     return nullptr;
   }
 
-  // 3. Let definition be result of lookup up custom element definition
-  CustomElementDefinition* definition = nullptr;
-  if (is_v1) {
-    const CustomElementDescriptor desc =
-        RuntimeEnabledFeatures::CustomElementsBuiltinEnabled()
-            ? CustomElementDescriptor(name, qualified_name)
-            : CustomElementDescriptor(qualified_name, qualified_name);
-    if (CustomElementRegistry* registry = CustomElement::Registry(*this))
-      definition = registry->DefinitionFor(desc);
+  // 3. Let element be the result of creating an element
+  Element* element =
+      CreateElement(q_name,
+                    is_v1 ? CreateElementFlags::ByCreateElementV1()
+                          : CreateElementFlags::ByCreateElementV0(),
+                    should_create_builtin ? is : g_null_atom);
 
-    // 4. If 'is' is non-null and definition is null, throw NotFoundError
-    if (!definition && create_v1_builtin) {
-      exception_state.ThrowDOMException(kNotFoundError,
-                                        "Custom element definition not found.");
-      return nullptr;
-    }
-  }
-
-  // 5. Let element be the result of creating an element
-  Element* element;
-
-  if (CustomElement::ShouldCreateCustomElement(q_name) || create_v1_builtin) {
-    element = CustomElement::CreateCustomElementSync(*this, q_name, definition);
-  } else if (V0CustomElement::IsValidName(q_name.LocalName()) &&
-             RegistrationContext()) {
-    element = RegistrationContext()->CreateCustomTagElement(*this, q_name);
-  } else {
-    element = createElement(q_name, kCreatedByCreateElement);
-  }
-
-  // 6. If 'is' is non-null, set 'is' attribute
-  if (!is.IsEmpty()) {
-    if (element->GetCustomElementState() != CustomElementState::kCustom) {
-      V0CustomElementRegistrationContext::SetIsAttributeAndTypeExtension(
-          element, is);
-    } else if (string_or_options.IsDictionary()) {
-      element->setAttribute(HTMLNames::isAttr, is);
-    }
-  }
+  // 4. If 'is' is non-null, set 'is' attribute
+  if (!is_v1 && !is.IsEmpty())
+    element->setAttribute(HTMLNames::isAttr, is);
 
   return element;
+}
+
+// Entry point of "create an element".
+// https://dom.spec.whatwg.org/#concept-create-element
+Element* Document::CreateElement(const QualifiedName& q_name,
+                                 const CreateElementFlags flags,
+                                 const AtomicString& is) {
+  CustomElementDefinition* definition = nullptr;
+  if (flags.IsCustomElementsV1() &&
+      q_name.NamespaceURI() == HTMLNames::xhtmlNamespaceURI) {
+    const CustomElementDescriptor desc(is.IsNull() ? q_name.LocalName() : is,
+                                       q_name.LocalName());
+    if (CustomElementRegistry* registry = CustomElement::Registry(*this))
+      definition = registry->DefinitionFor(desc);
+  }
+
+  if (definition)
+    return definition->CreateElement(*this, q_name, flags);
+
+  return CustomElement::CreateUncustomizedOrUndefinedElement(*this, q_name,
+                                                             flags, is);
 }
 
 ScriptValue Document::registerElement(ScriptState* script_state,
@@ -1232,101 +1237,32 @@ Text* Document::CreateEditingTextNode(const String& text) {
   return Text::CreateEditingText(*this, text);
 }
 
-bool Document::ImportContainerNodeChildren(ContainerNode* old_container_node,
-                                           ContainerNode* new_container_node,
-                                           ExceptionState& exception_state) {
-  for (Node& old_child : NodeTraversal::ChildrenOf(*old_container_node)) {
-    Node* new_child = importNode(&old_child, true, exception_state);
-    if (exception_state.HadException())
-      return false;
-    new_container_node->AppendChild(new_child, exception_state);
-    if (exception_state.HadException())
-      return false;
-  }
-
-  return true;
-}
-
 Node* Document::importNode(Node* imported_node,
                            bool deep,
                            ExceptionState& exception_state) {
-  switch (imported_node->getNodeType()) {
-    case kTextNode:
-      return createTextNode(imported_node->nodeValue());
-    case kCdataSectionNode:
-      return CDATASection::Create(*this, imported_node->nodeValue());
-    case kProcessingInstructionNode:
-      return createProcessingInstruction(imported_node->nodeName(),
-                                         imported_node->nodeValue(),
-                                         exception_state);
-    case kCommentNode:
-      return createComment(imported_node->nodeValue());
-    case kDocumentTypeNode: {
-      DocumentType* doctype = ToDocumentType(imported_node);
-      return DocumentType::Create(this, doctype->name(), doctype->publicId(),
-                                  doctype->systemId());
-    }
-    case kElementNode: {
-      Element* old_element = ToElement(imported_node);
-      // FIXME: The following check might be unnecessary. Is it possible that
-      // oldElement has mismatched prefix/namespace?
-      if (!HasValidNamespaceForElements(old_element->TagQName())) {
-        exception_state.ThrowDOMException(
-            kNamespaceError, "The imported node has an invalid namespace.");
-        return nullptr;
-      }
-      Element* new_element =
-          createElement(old_element->TagQName(), kCreatedByImportNode);
+  // https://dom.spec.whatwg.org/#dom-document-importnode
 
-      new_element->CloneDataFromElement(*old_element);
-
-      if (deep) {
-        if (!ImportContainerNodeChildren(old_element, new_element,
-                                         exception_state))
-          return nullptr;
-        if (IsHTMLTemplateElement(*old_element) &&
-            !EnsureTemplateDocument().ImportContainerNodeChildren(
-                ToHTMLTemplateElement(old_element)->content(),
-                ToHTMLTemplateElement(new_element)->content(), exception_state))
-          return nullptr;
-      }
-
-      return new_element;
-    }
-    case kAttributeNode:
-      return Attr::Create(
-          *this,
-          QualifiedName(g_null_atom,
-                        AtomicString(ToAttr(imported_node)->name()),
-                        g_null_atom),
-          ToAttr(imported_node)->value());
-    case kDocumentFragmentNode: {
-      if (imported_node->IsShadowRoot()) {
-        // ShadowRoot nodes should not be explicitly importable.
-        // Either they are imported along with their host node, or created
-        // implicitly.
-        exception_state.ThrowDOMException(
-            kNotSupportedError,
-            "The node provided is a shadow root, which may not be imported.");
-        return nullptr;
-      }
-      DocumentFragment* old_fragment = ToDocumentFragment(imported_node);
-      DocumentFragment* new_fragment = createDocumentFragment();
-      if (deep && !ImportContainerNodeChildren(old_fragment, new_fragment,
-                                               exception_state))
-        return nullptr;
-
-      return new_fragment;
-    }
-    case kDocumentNode:
-      exception_state.ThrowDOMException(
-          kNotSupportedError,
-          "The node provided is a document, which may not be imported.");
-      return nullptr;
+  // 1. If node is a document or shadow root, then throw a "NotSupportedError"
+  // DOMException.
+  if (imported_node->IsDocumentNode()) {
+    exception_state.ThrowDOMException(
+        kNotSupportedError,
+        "The node provided is a document, which may not be imported.");
+    return nullptr;
+  }
+  if (imported_node->IsShadowRoot()) {
+    // ShadowRoot nodes should not be explicitly importable.  Either they are
+    // imported along with their host node, or created implicitly.
+    exception_state.ThrowDOMException(
+        kNotSupportedError,
+        "The node provided is a shadow root, which may not be imported.");
+    return nullptr;
   }
 
-  NOTREACHED();
-  return nullptr;
+  // 2. Return a clone of node, with context object and the clone children flag
+  // set if deep is true.
+  return imported_node->Clone(
+      *this, deep ? CloneChildrenFlag::kClone : CloneChildrenFlag::kSkip);
 }
 
 Node* Document::adoptNode(Node* source, ExceptionState& exception_state) {
@@ -1412,31 +1348,6 @@ bool Document::HasValidNamespaceForAttributes(const QualifiedName& q_name) {
   return HasValidNamespaceForElements(q_name);
 }
 
-// FIXME: This should really be in a possible ElementFactory class
-Element* Document::createElement(const QualifiedName& q_name,
-                                 CreateElementFlags flags) {
-  Element* e = nullptr;
-
-  // FIXME: Use registered namespaces and look up in a hash to find the right
-  // factory.
-  if (q_name.NamespaceURI() == xhtmlNamespaceURI)
-    e = HTMLElementFactory::createHTMLElement(q_name.LocalName(), *this, flags);
-  else if (q_name.NamespaceURI() == SVGNames::svgNamespaceURI)
-    e = SVGElementFactory::createSVGElement(q_name.LocalName(), *this, flags);
-
-  if (e)
-    saw_elements_in_known_namespaces_ = true;
-  else
-    e = Element::Create(q_name, this);
-
-  if (e->prefix() != q_name.Prefix())
-    e->SetTagNameForCreateElementNS(q_name);
-
-  DCHECK(q_name == e->TagQName());
-
-  return e;
-}
-
 String Document::readyState() const {
   DEFINE_STATIC_LOCAL(const String, loading, ("loading"));
   DEFINE_STATIC_LOCAL(const String, interactive, ("interactive"));
@@ -1461,16 +1372,16 @@ void Document::SetReadyState(DocumentReadyState ready_state) {
 
   switch (ready_state) {
     case kLoading:
-      if (!document_timing_.DomLoading()) {
+      if (document_timing_.DomLoading().is_null()) {
         document_timing_.MarkDomLoading();
       }
       break;
     case kInteractive:
-      if (!document_timing_.DomInteractive())
+      if (document_timing_.DomInteractive().is_null())
         document_timing_.MarkDomInteractive();
       break;
     case kComplete:
-      if (!document_timing_.DomComplete())
+      if (document_timing_.DomComplete().is_null())
         document_timing_.MarkDomComplete();
       break;
   }
@@ -2023,8 +1934,7 @@ void Document::PropagateStyleToViewport() {
   EOverflowAnchor overflow_anchor = EOverflowAnchor::kAuto;
   EOverflow overflow_x = EOverflow::kAuto;
   EOverflow overflow_y = EOverflow::kAuto;
-  bool column_gap_normal = true;
-  float column_gap = 0;
+  GapLength column_gap;
   if (overflow_style) {
     overflow_anchor = overflow_style->OverflowAnchor();
     overflow_x = overflow_style->OverflowX();
@@ -2040,10 +1950,7 @@ void Document::PropagateStyleToViewport() {
     // Column-gap is (ab)used by the current paged overflow implementation (in
     // lack of other ways to specify gaps between pages), so we have to
     // propagate it too.
-    if (!overflow_style->HasNormalColumnGap()) {
-      column_gap_normal = false;
-      column_gap = overflow_style->ColumnGap();
-    }
+    column_gap = overflow_style->ColumnGap();
   }
 
   ScrollSnapType snap_type = overflow_style->GetScrollSnapType();
@@ -2062,24 +1969,32 @@ void Document::PropagateStyleToViewport() {
             static_cast<OverscrollBehaviorType>(overscroll_behavior_y)));
   }
 
-  scoped_refptr<ComputedStyle> viewport_style = GetLayoutView()->MutableStyle();
-  if (viewport_style->GetWritingMode() != root_writing_mode ||
-      viewport_style->Direction() != root_direction ||
-      viewport_style->VisitedDependentColor(GetCSSPropertyBackgroundColor()) !=
+  Length scroll_padding_top = overflow_style->ScrollPaddingTop();
+  Length scroll_padding_right = overflow_style->ScrollPaddingRight();
+  Length scroll_padding_bottom = overflow_style->ScrollPaddingBottom();
+  Length scroll_padding_left = overflow_style->ScrollPaddingLeft();
+
+  const ComputedStyle& viewport_style = GetLayoutView()->StyleRef();
+  if (viewport_style.GetWritingMode() != root_writing_mode ||
+      viewport_style.Direction() != root_direction ||
+      viewport_style.VisitedDependentColor(GetCSSPropertyBackgroundColor()) !=
           background_color ||
-      viewport_style->BackgroundLayers() != background_layers ||
-      viewport_style->ImageRendering() != image_rendering ||
-      viewport_style->OverflowAnchor() != overflow_anchor ||
-      viewport_style->OverflowX() != overflow_x ||
-      viewport_style->OverflowY() != overflow_y ||
-      viewport_style->HasNormalColumnGap() != column_gap_normal ||
-      viewport_style->ColumnGap() != column_gap ||
-      viewport_style->GetScrollSnapType() != snap_type ||
-      viewport_style->GetScrollBehavior() != scroll_behavior ||
-      viewport_style->OverscrollBehaviorX() != overscroll_behavior_x ||
-      viewport_style->OverscrollBehaviorY() != overscroll_behavior_y) {
+      viewport_style.BackgroundLayers() != background_layers ||
+      viewport_style.ImageRendering() != image_rendering ||
+      viewport_style.OverflowAnchor() != overflow_anchor ||
+      viewport_style.OverflowX() != overflow_x ||
+      viewport_style.OverflowY() != overflow_y ||
+      viewport_style.ColumnGap() != column_gap ||
+      viewport_style.GetScrollSnapType() != snap_type ||
+      viewport_style.GetScrollBehavior() != scroll_behavior ||
+      viewport_style.OverscrollBehaviorX() != overscroll_behavior_x ||
+      viewport_style.OverscrollBehaviorY() != overscroll_behavior_y ||
+      viewport_style.ScrollPaddingTop() != scroll_padding_top ||
+      viewport_style.ScrollPaddingRight() != scroll_padding_right ||
+      viewport_style.ScrollPaddingBottom() != scroll_padding_bottom ||
+      viewport_style.ScrollPaddingLeft() != scroll_padding_left) {
     scoped_refptr<ComputedStyle> new_style =
-        ComputedStyle::Clone(*viewport_style);
+        ComputedStyle::Clone(viewport_style);
     new_style->SetWritingMode(root_writing_mode);
     new_style->SetDirection(root_direction);
     new_style->SetBackgroundColor(background_color);
@@ -2088,16 +2003,30 @@ void Document::PropagateStyleToViewport() {
     new_style->SetOverflowAnchor(overflow_anchor);
     new_style->SetOverflowX(overflow_x);
     new_style->SetOverflowY(overflow_y);
-    if (column_gap_normal)
-      new_style->SetHasNormalColumnGap();
-    else
-      new_style->SetColumnGap(column_gap);
+    new_style->SetColumnGap(column_gap);
     new_style->SetScrollSnapType(snap_type);
     new_style->SetScrollBehavior(scroll_behavior);
     new_style->SetOverscrollBehaviorX(overscroll_behavior_x);
     new_style->SetOverscrollBehaviorY(overscroll_behavior_y);
+    new_style->SetScrollPaddingTop(scroll_padding_top);
+    new_style->SetScrollPaddingRight(scroll_padding_right);
+    new_style->SetScrollPaddingBottom(scroll_padding_bottom);
+    new_style->SetScrollPaddingLeft(scroll_padding_left);
     GetLayoutView()->SetStyle(new_style);
     SetupFontBuilder(*new_style);
+
+    View()->RecalculateScrollbarOverlayColorTheme(
+        View()->DocumentBackgroundColor());
+    View()->RecalculateCustomScrollbarStyle();
+    if (PaintLayerScrollableArea* scrollable_area =
+            GetLayoutView()->GetScrollableArea()) {
+      if (scrollable_area->HorizontalScrollbar() &&
+          scrollable_area->HorizontalScrollbar()->IsCustomScrollbar())
+        scrollable_area->HorizontalScrollbar()->StyleChanged();
+      if (scrollable_area->VerticalScrollbar() &&
+          scrollable_area->VerticalScrollbar()->IsCustomScrollbar())
+        scrollable_area->VerticalScrollbar()->StyleChanged();
+    }
   }
 }
 
@@ -2118,8 +2047,14 @@ static void AssertLayoutTreeUpdated(Node& root) {
     DCHECK(!node.ChildNeedsDistributionRecalc());
     DCHECK(!node.NeedsStyleInvalidation());
     DCHECK(!node.ChildNeedsStyleInvalidation());
-    for (ShadowRoot* shadow_root = node.YoungestShadowRoot(); shadow_root;
-         shadow_root = shadow_root->OlderShadowRoot())
+    // Make sure there is no node which has a LayoutObject, but doesn't have a
+    // parent in a flat tree. If there is such a node, we forgot to detach the
+    // node. DocumentNode is only an exception.
+    DCHECK((node.IsDocumentNode() || !node.GetLayoutObject() ||
+            FlatTreeTraversal::Parent(node)))
+        << node;
+
+    if (ShadowRoot* shadow_root = node.GetShadowRoot())
       AssertLayoutTreeUpdated(*shadow_root);
   }
 }
@@ -2127,6 +2062,8 @@ static void AssertLayoutTreeUpdated(Node& root) {
 
 void Document::UpdateStyleAndLayoutTree() {
   DCHECK(IsMainThread());
+  if (Lifecycle().LifecyclePostponed())
+    return;
 
   HTMLFrameOwnerElement::PluginDisposeSuspendScope suspend_plugin_dispose;
   ScriptForbiddenScope forbid_script;
@@ -2427,7 +2364,7 @@ void Document::LayoutUpdated() {
   // a paint for many seconds.
   if (IsRenderingReady() && body() &&
       !GetStyleEngine().HasPendingScriptBlockingSheets()) {
-    if (!document_timing_.FirstLayout())
+    if (document_timing_.FirstLayout().is_null())
       document_timing_.MarkFirstLayout();
   }
 
@@ -2453,6 +2390,8 @@ void Document::ClearFocusedElementTimerFired(TimerBase*) {
 // lets us get reasonable answers. The long term solution to this problem is
 // to instead suspend JavaScript execution.
 void Document::UpdateStyleAndLayoutTreeIgnorePendingStylesheets() {
+  if (Lifecycle().LifecyclePostponed())
+    return;
   // See comment for equivalent CHECK in Document::UpdateStyleAndLayoutTree.
   // Updating style and layout can dirty state that must remain clean during
   // lifecycle updates.
@@ -2536,12 +2475,16 @@ void Document::EnsurePaintLocationDataValidForNode(const Node* node) {
   // we need to also clean compositing inputs.
   if (View() && node->GetLayoutObject() &&
       node->GetLayoutObject()->StyleRef().SubtreeIsSticky()) {
+    bool success = false;
     if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
       // In SPv2, compositing inputs are cleaned as part of PrePaint.
-      View()->UpdateAllLifecyclePhasesExceptPaint();
+      success = View()->UpdateAllLifecyclePhasesExceptPaint();
     } else {
-      View()->UpdateLifecycleToCompositingInputsClean();
+      success = View()->UpdateLifecycleToCompositingInputsClean();
     }
+    // The lifecycle update should always succeed, because forced lifecycles
+    // from script are never throttled.
+    DCHECK(success);
   }
 }
 
@@ -2793,9 +2736,6 @@ void Document::Shutdown() {
     ClearImportsController();
   }
 
-  timers_.SetTimerTaskRunner(
-      Platform::Current()->CurrentThread()->Scheduler()->TimerTaskRunner());
-
   if (media_query_matcher_)
     media_query_matcher_->DocumentDetached();
 
@@ -2920,6 +2860,21 @@ ScriptableDocumentParser* Document::GetScriptableDocumentParser() const {
   return Parser() ? Parser()->AsScriptableDocumentParser() : nullptr;
 }
 
+void Document::SetPrinting(PrintingState state) {
+  bool was_printing = Printing();
+  printing_ = state;
+  bool is_printing = Printing();
+
+  // Changing the state of Printing() can change whether layout objects are
+  // created for iframes. As such, we need to do a full reattach. See
+  // LayoutView::CanHaveChildren.
+  // https://crbug.com/819327.
+  if ((was_printing != is_printing) && documentElement() && GetFrame() &&
+      !GetFrame()->IsMainFrame()) {
+    documentElement()->LazyReattachIfAttached();
+  }
+}
+
 void Document::open(Document* entered_document,
                     ExceptionState& exception_state) {
   if (ImportLoader()) {
@@ -2942,7 +2897,7 @@ void Document::open(Document* entered_document,
   }
 
   if (entered_document) {
-    if (!GetSecurityOrigin()->IsSameSchemeHostPortAndSuborigin(
+    if (!GetSecurityOrigin()->IsSameSchemeHostPort(
             entered_document->GetSecurityOrigin())) {
       exception_state.ThrowSecurityError(
           "Can only call open() on same-origin documents.");
@@ -3295,8 +3250,7 @@ void Document::ImplicitClose() {
 
   load_event_progress_ = kLoadEventCompleted;
 
-  if (GetFrame() && GetLayoutView() &&
-      GetSettings()->GetAccessibilityEnabled()) {
+  if (GetFrame() && GetLayoutView()) {
     if (AXObjectCache* cache = GetOrCreateAXObjectCache()) {
       if (this == &AXObjectCacheOwner())
         cache->HandleLoadComplete(this);
@@ -3504,19 +3458,20 @@ void Document::DispatchUnloadEvents() {
           frame_->Loader().GetProvisionalDocumentLoader();
       load_event_progress_ = kUnloadEventInProgress;
       Event* unload_event(Event::Create(EventTypeNames::unload));
-      if (document_loader && !document_loader->GetTiming().UnloadEventStart() &&
-          !document_loader->GetTiming().UnloadEventEnd()) {
+      if (document_loader &&
+          document_loader->GetTiming().UnloadEventStart().is_null() &&
+          document_loader->GetTiming().UnloadEventEnd().is_null()) {
         DocumentLoadTiming& timing = document_loader->GetTiming();
-        DCHECK(timing.NavigationStart());
-        const double unload_event_start = CurrentTimeTicksInSeconds();
+        DCHECK(!timing.NavigationStart().is_null());
+        const TimeTicks unload_event_start = CurrentTimeTicks();
         timing.MarkUnloadEventStart(unload_event_start);
         frame_->DomWindow()->DispatchEvent(unload_event, this);
-        const double unload_event_end = CurrentTimeTicksInSeconds();
+        const TimeTicks unload_event_end = CurrentTimeTicks();
         DEFINE_STATIC_LOCAL(
             CustomCountHistogram, unload_histogram,
             ("DocumentEventTiming.UnloadDuration", 0, 10000000, 50));
-        unload_histogram.Count((unload_event_end - unload_event_start) *
-                               1000000.0);
+        unload_histogram.Count(
+            (unload_event_end - unload_event_start).InMicroseconds());
         timing.MarkUnloadEventEnd(unload_event_end);
       } else {
         frame_->DomWindow()->DispatchEvent(unload_event, frame_->GetDocument());
@@ -3630,9 +3585,8 @@ void Document::write(const String& text,
     return;
   }
 
-  if (entered_document &&
-      !GetSecurityOrigin()->IsSameSchemeHostPortAndSuborigin(
-          entered_document->GetSecurityOrigin())) {
+  if (entered_document && !GetSecurityOrigin()->IsSameSchemeHostPort(
+                              entered_document->GetSecurityOrigin())) {
     exception_state.ThrowSecurityError(
         "Can only call write() on same-origin documents.");
     return;
@@ -4306,15 +4260,17 @@ bool Document::CanAcceptChild(const Node& new_child,
   return true;
 }
 
-Node* Document::cloneNode(bool deep, ExceptionState&) {
+Node* Document::Clone(Document& factory, CloneChildrenFlag flag) const {
+  DCHECK_EQ(this, &factory)
+      << "Document::Clone() doesn't support importNode mode.";
   Document* clone = CloneDocumentWithoutChildren();
   clone->CloneDataFromDocument(*this);
-  if (deep)
-    CloneChildNodes(clone);
+  if (flag == CloneChildrenFlag::kClone)
+    clone->CloneChildNodesFrom(*this);
   return clone;
 }
 
-Document* Document::CloneDocumentWithoutChildren() {
+Document* Document::CloneDocumentWithoutChildren() const {
   DocumentInit init = DocumentInit::Create()
                           .WithContextDocument(ContextDocument())
                           .WithURL(Url());
@@ -4689,10 +4645,10 @@ void Document::SetCSSTarget(Element* new_target) {
 static void LiveNodeListBaseWriteBarrier(void* parent,
                                          const LiveNodeListBase* list) {
   if (IsHTMLCollectionType(list->GetType())) {
-    ScriptWrappableVisitor::WriteBarrier(
+    ScriptWrappableMarkingVisitor::WriteBarrier(
         static_cast<const HTMLCollection*>(list));
   } else {
-    ScriptWrappableVisitor::WriteBarrier(
+    ScriptWrappableMarkingVisitor::WriteBarrier(
         static_cast<const LiveNodeList*>(list));
   }
 }
@@ -5053,15 +5009,21 @@ void Document::WillChangeFrameOwnerProperties(int margin_width,
     }
   }
 
-  if (!body())
-    return;
-
-  if (margin_width != owner->MarginWidth())
-    body()->SetIntegralAttribute(marginwidthAttr, margin_width);
-  if (margin_height != owner->MarginHeight())
-    body()->SetIntegralAttribute(marginheightAttr, margin_height);
-  if (scrolling_mode != owner->ScrollingMode() && View())
+  // body() may become null as a result of modification event listeners, so we
+  // check before each call.
+  if (margin_width != owner->MarginWidth()) {
+    if (auto* body_element = body()) {
+      body_element->SetIntegralAttribute(marginwidthAttr, margin_width);
+    }
+  }
+  if (margin_height != owner->MarginHeight()) {
+    if (auto* body_element = body()) {
+      body_element->SetIntegralAttribute(marginheightAttr, margin_height);
+    }
+  }
+  if (scrolling_mode != owner->ScrollingMode() && View()) {
     View()->SetNeedsLayout();
+  }
 }
 
 bool Document::IsInInvisibleSubframe() const {
@@ -5097,13 +5059,6 @@ String Document::cookie(ExceptionState& exception_state) const {
     UseCounter::Count(*this, WebFeature::kFileAccessedCookies);
   }
 
-  // Suborigins are cookie-averse and thus should always return the empty
-  // string, unless the 'unsafe-cookies' option is provided.
-  if (GetSecurityOrigin()->HasSuborigin() &&
-      !GetSecurityOrigin()->GetSuborigin()->PolicyContains(
-          Suborigin::SuboriginPolicyOptions::kUnsafeCookies))
-    return String();
-
   KURL cookie_url = CookieURL();
   if (cookie_url.IsEmpty())
     return String();
@@ -5134,13 +5089,6 @@ void Document::setCookie(const String& value, ExceptionState& exception_state) {
   } else if (GetSecurityOrigin()->IsLocal()) {
     UseCounter::Count(*this, WebFeature::kFileAccessedCookies);
   }
-
-  // Suborigins are cookie-averse and thus setting should be a no-op, unless
-  // the 'unsafe-cookies' option is provided.
-  if (GetSecurityOrigin()->HasSuborigin() &&
-      !GetSecurityOrigin()->GetSuborigin()->PolicyContains(
-          Suborigin::SuboriginPolicyOptions::kUnsafeCookies))
-    return;
 
   KURL cookie_url = CookieURL();
   if (cookie_url.IsEmpty())
@@ -5526,11 +5474,6 @@ void Document::SetEncodingData(const DocumentEncodingData& new_data) {
       encoding_data_.Encoding().UsesVisualOrdering();
   if (should_use_visual_ordering != visually_ordered_) {
     visually_ordered_ = should_use_visual_ordering;
-    // FIXME: How is possible to not have a layoutObject here?
-    if (GetLayoutView()) {
-      GetLayoutView()->MutableStyleRef().SetRtlOrdering(
-          visually_ordered_ ? EOrder::kVisual : EOrder::kLogical);
-    }
     SetNeedsStyleRecalc(kSubtreeStyleChange,
                         StyleChangeReasonForTracing::Create(
                             StyleChangeReason::kVisuallyOrdered));
@@ -5654,8 +5597,11 @@ void Document::setDesignMode(const String& value) {
   if (new_value == design_mode_)
     return;
   design_mode_ = new_value;
-  SetNeedsStyleRecalc(kSubtreeStyleChange, StyleChangeReasonForTracing::Create(
-                                               StyleChangeReason::kDesignMode));
+  StyleChangeType type = RuntimeEnabledFeatures::LayoutNGEnabled()
+                             ? kNeedsReattachStyleChange
+                             : kSubtreeStyleChange;
+  SetNeedsStyleRecalc(type, StyleChangeReasonForTracing::Create(
+                                StyleChangeReason::kDesignMode));
 }
 
 Document* Document::ParentDocument() const {
@@ -5679,11 +5625,11 @@ Document& Document::TopDocument() const {
   return *doc;
 }
 
-Document* Document::ContextDocument() {
+Document* Document::ContextDocument() const {
   if (context_document_)
     return context_document_;
   if (frame_)
-    return this;
+    return const_cast<Document*>(this);
   return nullptr;
 }
 
@@ -5791,10 +5737,10 @@ void Document::FinishedParsing() {
 
   // FIXME: DOMContentLoaded is dispatched synchronously, but this should be
   // dispatched in a queued task, see https://crbug.com/425790
-  if (!document_timing_.DomContentLoadedEventStart())
+  if (document_timing_.DomContentLoadedEventStart().is_null())
     document_timing_.MarkDomContentLoadedEventStart();
   DispatchEvent(Event::CreateBubble(EventTypeNames::DOMContentLoaded));
-  if (!document_timing_.DomContentLoadedEventEnd())
+  if (document_timing_.DomContentLoadedEventEnd().is_null())
     document_timing_.MarkDomContentLoadedEventEnd();
   SetParsingState(kFinishedParsing);
 
@@ -5997,9 +5943,6 @@ void Document::ApplyFeaturePolicyFromHeader(
 }
 
 void Document::ApplyFeaturePolicy(const ParsedFeaturePolicy& declared_policy) {
-  if (!RuntimeEnabledFeatures::FeaturePolicyEnabled())
-    return;
-
   FeaturePolicy* parent_feature_policy = nullptr;
   ParsedFeaturePolicy container_policy;
 
@@ -6046,7 +5989,6 @@ void Document::InitSecurityContext(const DocumentInit& initializer) {
     SetSecurityOrigin(SecurityOrigin::CreateUnique());
     InitContentSecurityPolicy();
     ApplyFeaturePolicy({});
-    // Unique security origins cannot have a suborigin
     return;
   }
 
@@ -6313,12 +6255,6 @@ void Document::UpdateSecurityOrigin(scoped_refptr<SecurityOrigin> origin) {
 
 String Document::origin() const {
   return GetSecurityOrigin()->ToString();
-}
-
-String Document::suborigin() const {
-  return GetSecurityOrigin()->HasSuborigin()
-             ? GetSecurityOrigin()->GetSuborigin()->GetName()
-             : String();
 }
 
 void Document::DidUpdateSecurityOrigin() {
@@ -7016,7 +6952,8 @@ const AtomicString& Document::bgColor() const {
 }
 
 void Document::setBgColor(const AtomicString& value) {
-  SetBodyAttribute(bgcolorAttr, value);
+  if (!IsFrameSet())
+    SetBodyAttribute(bgcolorAttr, value);
 }
 
 const AtomicString& Document::fgColor() const {
@@ -7024,7 +6961,8 @@ const AtomicString& Document::fgColor() const {
 }
 
 void Document::setFgColor(const AtomicString& value) {
-  SetBodyAttribute(textAttr, value);
+  if (!IsFrameSet())
+    SetBodyAttribute(textAttr, value);
 }
 
 const AtomicString& Document::alinkColor() const {
@@ -7032,7 +6970,8 @@ const AtomicString& Document::alinkColor() const {
 }
 
 void Document::setAlinkColor(const AtomicString& value) {
-  SetBodyAttribute(alinkAttr, value);
+  if (!IsFrameSet())
+    SetBodyAttribute(alinkAttr, value);
 }
 
 const AtomicString& Document::linkColor() const {
@@ -7040,7 +6979,8 @@ const AtomicString& Document::linkColor() const {
 }
 
 void Document::setLinkColor(const AtomicString& value) {
-  SetBodyAttribute(linkAttr, value);
+  if (!IsFrameSet())
+    SetBodyAttribute(linkAttr, value);
 }
 
 const AtomicString& Document::vlinkColor() const {
@@ -7048,7 +6988,8 @@ const AtomicString& Document::vlinkColor() const {
 }
 
 void Document::setVlinkColor(const AtomicString& value) {
-  SetBodyAttribute(vlinkAttr, value);
+  if (!IsFrameSet())
+    SetBodyAttribute(vlinkAttr, value);
 }
 
 template <unsigned type>
@@ -7225,7 +7166,8 @@ service_manager::InterfaceProvider* Document::GetInterfaceProvider() {
   return &GetFrame()->GetInterfaceProvider();
 }
 
-scoped_refptr<WebTaskRunner> Document::GetTaskRunner(TaskType type) {
+scoped_refptr<base::SingleThreadTaskRunner> Document::GetTaskRunner(
+    TaskType type) {
   DCHECK(IsMainThread());
 
   if (ContextDocument() && ContextDocument()->GetFrame())
@@ -7234,13 +7176,17 @@ scoped_refptr<WebTaskRunner> Document::GetTaskRunner(TaskType type) {
   // cases, though, there isn't a good candidate (most commonly when either the
   // passed-in document or ContextDocument() used to be attached to a Frame but
   // has since been detached).
-  return Platform::Current()->CurrentThread()->GetWebTaskRunner();
+  return Platform::Current()->CurrentThread()->GetTaskRunner();
 }
 
 Policy* Document::policy() {
   if (!policy_)
     policy_ = new DocumentPolicy(this);
   return policy_.Get();
+}
+
+const AtomicString& Document::RequiredCSP() {
+  return Loader() ? Loader()->RequiredCSP() : g_null_atom;
 }
 
 void Document::Trace(blink::Visitor* visitor) {
@@ -7334,6 +7280,16 @@ void Document::RecordUkmOutliveTimeAfterShutdown(int outlive_time_count) {
   ukm::builders::Document_OutliveTimeAfterShutdown(ukm_source_id_)
       .SetGCCount(outlive_time_count)
       .Record(ukm_recorder_.get());
+}
+
+bool Document::CurrentFrameHadRAF() const {
+  return scripted_animation_controller_ &&
+         scripted_animation_controller_->CurrentFrameHadRAF();
+}
+
+bool Document::NextFrameHasPendingRAF() const {
+  return scripted_animation_controller_ &&
+         scripted_animation_controller_->NextFrameHasPendingRAF();
 }
 
 void Document::TraceWrappers(const ScriptWrappableVisitor* visitor) const {

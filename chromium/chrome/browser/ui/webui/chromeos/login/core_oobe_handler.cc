@@ -37,6 +37,7 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_constants.h"
+#include "chromeos/chromeos_switches.h"
 #include "components/login/base_screen_handler_utils.h"
 #include "components/login/localized_values_builder.h"
 #include "components/prefs/pref_service.h"
@@ -194,6 +195,7 @@ void CoreOobeHandler::RegisterMessages() {
               &CoreOobeHandler::HandleSetOobeBootstrappingSlave);
   AddRawCallback("getPrimaryDisplayNameForTesting",
                  &CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting);
+  AddCallback("setupDemoMode", &CoreOobeHandler::HandleSetupDemoMode);
 }
 
 void CoreOobeHandler::ShowSignInError(
@@ -211,34 +213,7 @@ void CoreOobeHandler::ShowTpmError() {
 }
 
 void CoreOobeHandler::ShowDeviceResetScreen() {
-  // Powerwash is generally not available on enterprise devices. First, check
-  // the common case of a correctly enrolled device.
-  if (g_browser_process->platform_part()
-          ->browser_policy_connector_chromeos()
-          ->IsEnterpriseManaged()) {
-    // Powerwash not allowed, except if allowed by the admin specifically for
-    // the purpose of installing a TPM firmware update.
-    tpm_firmware_update::ShouldOfferUpdateViaPowerwash(
-        base::Bind([](bool offer_update) {
-          if (offer_update) {
-            // Force the TPM firmware update option to be enabled.
-            g_browser_process->local_state()->SetBoolean(
-                prefs::kFactoryResetTPMFirmwareUpdateRequested, true);
-            LaunchResetScreen();
-          }
-        }));
-    return;
-  }
-
-  // Devices that are still in OOBE may be subject to forced re-enrollment (FRE)
-  // and thus pending for enterprise management. These should not be allowed to
-  // powerwash either. Note that taking consumer device ownership has the side
-  // effect of dropping the FRE requirement if it was previously in effect.
-  const AutoEnrollmentController::FRERequirement requirement =
-      AutoEnrollmentController::GetFRERequirement();
-  if (requirement != AutoEnrollmentController::EXPLICITLY_REQUIRED) {
-    LaunchResetScreen();
-  }
+  LaunchResetScreen();
 }
 
 void CoreOobeHandler::ShowEnableDebuggingScreen() {
@@ -402,7 +377,35 @@ void CoreOobeHandler::HandleSkipToUpdateForTesting() {
 }
 
 void CoreOobeHandler::HandleToggleResetScreen() {
-  ShowDeviceResetScreen();
+  // Powerwash is generally not available on enterprise devices. First, check
+  // the common case of a correctly enrolled device.
+  if (g_browser_process->platform_part()
+          ->browser_policy_connector_chromeos()
+          ->IsEnterpriseManaged()) {
+    // Powerwash is only available if allowed by the admin specifically for the
+    // purpose of installing a TPM firmware update.
+    tpm_firmware_update::ShouldOfferUpdateViaPowerwash(
+        base::BindOnce([](bool offer_update) {
+          if (offer_update) {
+            // Force the TPM firmware update option to be enabled.
+            g_browser_process->local_state()->SetBoolean(
+                prefs::kFactoryResetTPMFirmwareUpdateRequested, true);
+            LaunchResetScreen();
+          }
+        }),
+        base::TimeDelta());
+    return;
+  }
+
+  // Devices that are still in OOBE may be subject to forced re-enrollment (FRE)
+  // and thus pending for enterprise management. These should not be allowed to
+  // powerwash either. Note that taking consumer device ownership has the side
+  // effect of dropping the FRE requirement if it was previously in effect.
+  const AutoEnrollmentController::FRERequirement requirement =
+      AutoEnrollmentController::GetFRERequirement();
+  if (requirement != AutoEnrollmentController::EXPLICITLY_REQUIRED) {
+    LaunchResetScreen();
+  }
 }
 
 void CoreOobeHandler::HandleEnableDebuggingScreen() {
@@ -573,6 +576,15 @@ void CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting(
 
   AllowJavascript();
   ResolveJavascriptCallback(*callback_id, base::Value(display_name));
+}
+
+void CoreOobeHandler::HandleSetupDemoMode() {
+  const bool is_demo_mode_enabled =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kEnableDemoMode);
+  if (is_demo_mode_enabled) {
+    NOTIMPLEMENTED();
+  }
 }
 
 void CoreOobeHandler::InitDemoModeDetection() {

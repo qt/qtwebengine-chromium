@@ -13,6 +13,10 @@ class CXFA_Button : public CXFA_Node {
  public:
   CXFA_Button(CXFA_Document* doc, XFA_PacketType packet);
   ~CXFA_Button() override;
+
+  XFA_FFWidgetType GetDefaultFFWidgetType() const override;
+
+  XFA_AttributeEnum GetHighlight();
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_BUTTON_H_

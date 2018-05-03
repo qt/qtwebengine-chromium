@@ -266,6 +266,7 @@ LayoutBlockFlow::LayoutBlockFlow(ContainerNode* node) : LayoutBlock(node) {
 LayoutBlockFlow::~LayoutBlockFlow() = default;
 
 LayoutBlockFlow* LayoutBlockFlow::CreateAnonymous(Document* document) {
+  // TODO(layout-ng): Find a way to check style.ForceLegacyLayout() Here
   LayoutBlockFlow* layout_block_flow = RuntimeEnabledFeatures::LayoutNGEnabled()
                                            ? new LayoutNGBlockFlow(nullptr)
                                            : new LayoutBlockFlow(nullptr);
@@ -3112,7 +3113,9 @@ void LayoutBlockFlow::AddChild(LayoutObject* new_child,
       return;
     }
 
-    if (new_child->IsInline()) {
+    // LayoutNGListMarker is out-of-flow for the tree building purpose, and that
+    // is not inline level, but IsInline().
+    if (new_child->IsInline() && !new_child->IsLayoutNGListMarker()) {
       // No suitable existing anonymous box - create a new one.
       LayoutBlockFlow* new_block = ToLayoutBlockFlow(CreateAnonymousBlock());
       LayoutBox::AddChild(new_block, before_child);
@@ -3443,6 +3446,12 @@ static void GetInlineRun(LayoutObject* start,
 
   // Start by skipping as many non-inlines as we can.
   LayoutObject* curr = start;
+
+  // LayoutNGListMarker is out-of-flow for the tree building purpose. Skip here
+  // because it's the first child.
+  if (curr && curr->IsLayoutNGListMarker())
+    curr = curr->NextSibling();
+
   bool saw_inline;
   do {
     while (curr &&
@@ -3504,7 +3513,7 @@ void LayoutBlockFlow::MakeChildrenNonInline(LayoutObject* insertion_point) {
 
 #if DCHECK_IS_ON()
   for (LayoutObject* c = FirstChild(); c; c = c->NextSibling())
-    DCHECK(!c->IsInline());
+    DCHECK(!c->IsInline() || c->IsLayoutNGListMarker());
 #endif
 
   SetShouldDoFullPaintInvalidation();
@@ -4157,7 +4166,7 @@ bool LayoutBlockFlow::HitTestFloats(
                             floating_object.GetLayoutObject()->Location().Y();
       LayoutPoint child_point = FlipFloatForWritingModeForChild(
           floating_object, adjusted_location + LayoutSize(x_offset, y_offset));
-      if (floating_object.GetLayoutObject()->HitTest(
+      if (floating_object.GetLayoutObject()->HitTestAllPhases(
               result, location_in_container, child_point)) {
         UpdateHitTestResult(
             result, location_in_container.Point() - ToLayoutSize(child_point));
@@ -4358,7 +4367,7 @@ DISABLE_CFI_PERF
 bool LayoutBlockFlow::CreatesNewFormattingContext() const {
   if (IsInline() || IsFloatingOrOutOfFlowPositioned() || HasOverflowClip() ||
       IsFlexItemIncludingDeprecated() || IsTableCell() || IsTableCaption() ||
-      IsFieldset() || IsDocumentElement() || IsGridItem() ||
+      IsFieldset() || IsCustomItem() || IsDocumentElement() || IsGridItem() ||
       IsWritingModeRoot() || Style()->Display() == EDisplay::kFlowRoot ||
       Style()->ContainsPaint() || Style()->ContainsLayout() ||
       Style()->SpecifiesColumns() ||
@@ -4401,18 +4410,16 @@ bool LayoutBlockFlow::CreatesNewFormattingContext() const {
     return true;
   }
 
-  // Non-container appearances (checkboxes and radio) behave as if it creates
-  // BFC. LayoutNG requires when empty non-NG LayoutObject has intrinsic sizes,
-  // it must create a new BFC.
-  if (StyleRef().HasAppearance() &&
-      !LayoutTheme::GetTheme().IsControlContainer(StyleRef().Appearance()))
-    return true;
-
   // NGBlockNode cannot compute margin collapsing across NG/non-NG boundary.
   // Create a new formatting context for non-NG node to prevent margin
   // collapsing.
-  if (RuntimeEnabledFeatures::LayoutNGEnabled())
+  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
+    if (Node* node = GetNode()) {
+      if (node->IsElementNode() && ToElement(*node).ShouldForceLegacyLayout())
+        return true;
+    }
     return StyleRef().UserModify() != EUserModify::kReadOnly;
+  }
 
   return false;
 }
@@ -4656,7 +4663,7 @@ bool LayoutBlockFlow::RecalcInlineChildrenOverflowAfterStyleChange() {
 }
 
 PositionWithAffinity LayoutBlockFlow::PositionForPoint(
-    const LayoutPoint& point) {
+    const LayoutPoint& point) const {
   if (IsAtomicInlineLevel()) {
     PositionWithAffinity position =
         PositionForPointIfOutsideAtomicInlineLevel(point);
@@ -4792,7 +4799,7 @@ void LayoutBlockFlow::ShowLineTreeAndMark(const InlineBox* marked_box1,
                                           const char* marked_label2,
                                           const LayoutObject* obj) const {
   StringBuilder string_blockflow;
-  DumpLayoutObject(string_blockflow);
+  DumpLayoutObject(string_blockflow, true, kShowTreeCharacterOffset);
   for (const RootInlineBox* root = FirstRootBox(); root;
        root = root->NextRootBox()) {
     root->DumpLineTreeAndMark(string_blockflow, marked_box1, marked_label1,

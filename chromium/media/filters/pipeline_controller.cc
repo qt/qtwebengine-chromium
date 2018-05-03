@@ -38,9 +38,8 @@ PipelineController::~PipelineController() {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
-// TODO(sandersd): If there is a pending suspend, don't call pipeline_->Start()
-// until Resume().
-void PipelineController::Start(Demuxer* demuxer,
+void PipelineController::Start(Pipeline::StartType start_type,
+                               Demuxer* demuxer,
                                Pipeline::Client* client,
                                bool is_streaming,
                                bool is_static) {
@@ -50,15 +49,19 @@ void PipelineController::Start(Demuxer* demuxer,
 
   // Once the pipeline is started, we want to call the seeked callback but
   // without a time update.
+  pending_startup_ = true;
   pending_seeked_cb_ = true;
   state_ = State::STARTING;
 
   demuxer_ = demuxer;
   is_streaming_ = is_streaming;
   is_static_ = is_static;
-  pipeline_->Start(demuxer, renderer_factory_cb_.Run(), client,
+  pipeline_->Start(start_type, demuxer, renderer_factory_cb_.Run(), client,
                    base::Bind(&PipelineController::OnPipelineStatus,
-                              weak_factory_.GetWeakPtr(), State::PLAYING));
+                              weak_factory_.GetWeakPtr(),
+                              start_type == Pipeline::StartType::kNormal
+                                  ? State::PLAYING
+                                  : State::PLAYING_OR_SUSPENDED));
 }
 
 void PipelineController::Seek(base::TimeDelta time, bool time_updated) {
@@ -120,7 +123,7 @@ bool PipelineController::IsPipelineSuspended() {
   return state_ == State::SUSPENDED;
 }
 
-void PipelineController::OnPipelineStatus(State state,
+void PipelineController::OnPipelineStatus(State expected_state,
                                           PipelineStatus pipeline_status) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -130,18 +133,30 @@ void PipelineController::OnPipelineStatus(State state,
   }
 
   State old_state = state_;
-  state_ = state;
+  state_ = expected_state;
 
-  if (state == State::PLAYING) {
+  // Resolve ambiguity of the current state if we may have suspended in startup.
+  if (state_ == State::PLAYING_OR_SUSPENDED) {
+    waiting_for_seek_ = false;
+    state_ = pipeline_->IsSuspended() ? State::SUSPENDED : State::PLAYING;
+  }
+
+  if (state_ == State::PLAYING) {
     // Start(), Seek(), or Resume() completed; we can be sure that
     // |demuxer_| got the seek it was waiting for.
     waiting_for_seek_ = false;
 
     // TODO(avayvod): Remove resumed callback after https://crbug.com/678374 is
     // properly fixed.
-    if (old_state == State::RESUMING)
+    if (old_state == State::RESUMING) {
+      DCHECK(!pipeline_->IsSuspended());
       resumed_cb_.Run();
-  } else if (state == State::SUSPENDED) {
+    }
+  }
+
+  if (state_ == State::SUSPENDED) {
+    DCHECK(pipeline_->IsSuspended());
+
     // Warning: possibly reentrant. The state may change inside this callback.
     // It must be safe to call Dispatch() twice in a row here.
     suspended_cb_.Run();
@@ -233,16 +248,19 @@ void PipelineController::Dispatch() {
 
   // If |state_| is PLAYING and we didn't trigger an operation above then we
   // are in a stable state. If there is a seeked callback pending, emit it.
-  if (state_ == State::PLAYING) {
-    if (pending_seeked_cb_) {
-      // |seeked_cb_| may be reentrant, so update state first and return
-      // immediately.
-      pending_seeked_cb_ = false;
-      bool was_pending_time_updated = pending_time_updated_;
-      pending_time_updated_ = false;
-      seeked_cb_.Run(was_pending_time_updated);
-      return;
-    }
+  //
+  // We also need to emit it if we completed suspended startup.
+  if (pending_seeked_cb_ &&
+      (state_ == State::PLAYING ||
+       (state_ == State::SUSPENDED && pending_startup_))) {
+    // |seeked_cb_| may be reentrant, so update state first and return
+    // immediately.
+    pending_startup_ = false;
+    pending_seeked_cb_ = false;
+    bool was_pending_time_updated = pending_time_updated_;
+    pending_time_updated_ = false;
+    seeked_cb_.Run(was_pending_time_updated);
+    return;
   }
 }
 

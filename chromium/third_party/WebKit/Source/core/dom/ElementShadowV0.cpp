@@ -132,12 +132,8 @@ ElementShadowV0::ElementShadowV0(ElementShadow& element_shadow)
 
 ElementShadowV0::~ElementShadowV0() = default;
 
-ShadowRoot& ElementShadowV0::YoungestShadowRoot() const {
-  return element_shadow_->YoungestShadowRoot();
-}
-
-ShadowRoot& ElementShadowV0::OldestShadowRoot() const {
-  return element_shadow_->OldestShadowRoot();
+inline ShadowRoot& ElementShadowV0::GetShadowRoot() const {
+  return element_shadow_->GetShadowRoot();
 }
 
 const V0InsertionPoint* ElementShadowV0::FinalDestinationInsertionPointFor(
@@ -159,45 +155,28 @@ ElementShadowV0::DestinationInsertionPointsFor(const Node* key) const {
 }
 
 void ElementShadowV0::Distribute() {
-  HeapVector<Member<HTMLShadowElement>, 32> shadow_insertion_points;
   DistributionPool pool(element_shadow_->Host());
+  HTMLShadowElement* shadow_insertion_point = nullptr;
 
-  for (ShadowRoot* root = &YoungestShadowRoot(); root;
-       root = root->OlderShadowRoot()) {
-    HTMLShadowElement* shadow_insertion_point = nullptr;
-    for (const auto& point : root->DescendantInsertionPoints()) {
-      if (!point->IsActive())
-        continue;
-      if (auto* shadow = ToHTMLShadowElementOrNull(*point)) {
-        DCHECK(!shadow_insertion_point);
-        shadow_insertion_point = shadow;
-        shadow_insertion_points.push_back(shadow_insertion_point);
-      } else {
-        pool.DistributeTo(point, this);
-        if (ElementShadow* shadow =
-                ShadowWhereNodeCanBeDistributedForV0(*point)) {
-          if (!(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled() &&
-                shadow->IsV1()))
-            shadow->SetNeedsDistributionRecalc();
-        }
+  for (const auto& point : GetShadowRoot().DescendantInsertionPoints()) {
+    if (!point->IsActive())
+      continue;
+    if (auto* shadow = ToHTMLShadowElementOrNull(*point)) {
+      DCHECK(!shadow_insertion_point);
+      shadow_insertion_point = shadow;
+    } else {
+      pool.DistributeTo(point, this);
+      if (ElementShadow* shadow =
+              ShadowWhereNodeCanBeDistributedForV0(*point)) {
+        if (!(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled() &&
+              shadow->IsV1()))
+          shadow->SetNeedsDistributionRecalc();
       }
     }
   }
 
-  for (size_t i = shadow_insertion_points.size(); i > 0; --i) {
-    HTMLShadowElement* shadow_insertion_point = shadow_insertion_points[i - 1];
-    ShadowRoot* root = shadow_insertion_point->ContainingShadowRoot();
-    DCHECK(root);
-    if (root->IsOldest()) {
-      pool.DistributeTo(shadow_insertion_point, this);
-    } else if (root->OlderShadowRoot()->GetType() == root->GetType()) {
-      // Only allow reprojecting older shadow roots between the same type to
-      // disallow reprojecting UA elements into author shadows.
-      DistributionPool older_shadow_root_pool(*root->OlderShadowRoot());
-      older_shadow_root_pool.DistributeTo(shadow_insertion_point, this);
-      root->OlderShadowRoot()->SetShadowInsertionPointOfYoungerShadowRoot(
-          shadow_insertion_point);
-    }
+  if (shadow_insertion_point) {
+    pool.DistributeTo(shadow_insertion_point, this);
     if (ElementShadow* shadow =
             ShadowWhereNodeCanBeDistributedForV0(*shadow_insertion_point))
       shadow->SetNeedsDistributionRecalc();
@@ -219,9 +198,7 @@ const SelectRuleFeatureSet& ElementShadowV0::EnsureSelectFeatureSet() {
     return select_features_;
 
   select_features_.Clear();
-  for (const ShadowRoot* root = &OldestShadowRoot(); root;
-       root = root->YoungerShadowRoot())
-    CollectSelectFeatureSetFrom(*root);
+  CollectSelectFeatureSetFrom(GetShadowRoot());
   needs_select_feature_set_ = false;
   return select_features_;
 }
@@ -252,10 +229,6 @@ void ElementShadowV0::WillAffectSelector() {
 
 void ElementShadowV0::ClearDistribution() {
   node_to_insertion_points_.clear();
-
-  for (ShadowRoot* root = &element_shadow_->YoungestShadowRoot(); root;
-       root = root->OlderShadowRoot())
-    root->SetShadowInsertionPointOfYoungerShadowRoot(nullptr);
 }
 
 void ElementShadowV0::Trace(blink::Visitor* visitor) {

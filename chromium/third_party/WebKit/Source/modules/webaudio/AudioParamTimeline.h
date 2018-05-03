@@ -101,14 +101,6 @@ class AudioParamTimeline {
   float SmoothedValue() { return smoothed_value_; }
   void SetSmoothedValue(float v) { smoothed_value_ = v; }
 
-  // TODO(crbug.com/764396): Remove this when the bug is fixed.
-
-  // Print a warning if the value setter overlaps an event.  Returns
-  // true if a warning was printed.
-  bool WarnIfSetterOverlapsEvent(BaseAudioContext*,
-                                 String param_name,
-                                 bool print_warning);
-
  private:
   class ParamEvent {
    public:
@@ -120,6 +112,8 @@ class AudioParamTimeline {
       kSetValueCurve,
       // For cancelValuesAndHold
       kCancelValues,
+      // Special marker for the end of a |kSetValueCurve| event.
+      kSetValueCurveEnd,
       kLastType
     };
 
@@ -141,6 +135,8 @@ class AudioParamTimeline {
         const Vector<float>& curve,
         double time,
         double duration);
+    static std::unique_ptr<ParamEvent> CreateSetValueCurveEndEvent(float value,
+                                                                   double time);
     static std::unique_ptr<ParamEvent> CreateCancelValuesEvent(
         double time,
         std::unique_ptr<ParamEvent> saved_event);
@@ -362,9 +358,10 @@ class AudioParamTimeline {
   // Handle the case where the last event in the timeline is in the
   // past.  Returns false if any event is not in the past. Otherwise,
   // return true and also fill in |values| with |defaultValue|.
+  // |defaultValue| may be updated with a new value.
   bool HandleAllEventsInThePast(double current_time,
                                 double sample_rate,
-                                float default_value,
+                                float& default_value,
                                 unsigned number_of_values,
                                 float* values);
 

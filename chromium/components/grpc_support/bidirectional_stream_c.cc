@@ -14,7 +14,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -39,12 +38,12 @@ namespace {
 
 class HeadersArray : public bidirectional_stream_header_array {
  public:
-  HeadersArray(const net::SpdyHeaderBlock& header_block);
+  explicit HeadersArray(const net::SpdyHeaderBlock& header_block);
   ~HeadersArray();
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(HeadersArray);
   base::StringPairs headers_strings_;
+  DISALLOW_COPY_AND_ASSIGN(HeadersArray);
 };
 
 HeadersArray::HeadersArray(const net::SpdyHeaderBlock& header_block)
@@ -118,7 +117,7 @@ BidirectionalStreamAdapter::BidirectionalStreamAdapter(
     bidirectional_stream_callback* callback)
     : request_context_getter_(
           reinterpret_cast<net::URLRequestContextGetter*>(engine->obj)),
-      c_stream_(base::MakeUnique<bidirectional_stream>()),
+      c_stream_(std::make_unique<bidirectional_stream>()),
       c_callback_(callback) {
   DCHECK(request_context_getter_);
   bidirectional_stream_ =
@@ -196,8 +195,9 @@ void BidirectionalStreamAdapter::DestroyAdapterForStream(
   // is valid until calling task is complete.
   adapter->bidirectional_stream_->Destroy();
   adapter->request_context_getter_->GetNetworkTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(&BidirectionalStreamAdapter::DestroyOnNetworkThread,
-                            base::Unretained(adapter)));
+      FROM_HERE,
+      base::BindOnce(&BidirectionalStreamAdapter::DestroyOnNetworkThread,
+                     base::Unretained(adapter)));
 }
 
 void BidirectionalStreamAdapter::DestroyOnNetworkThread() {

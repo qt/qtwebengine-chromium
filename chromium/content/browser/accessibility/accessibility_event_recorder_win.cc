@@ -240,11 +240,46 @@ void AccessibilityEventRecorderWin::OnWinEventHook(
   AccessibleStates ia2_state = 0;
   Microsoft::WRL::ComPtr<IAccessible2> iaccessible2;
   hr = QueryIAccessible2(iaccessible.Get(), iaccessible2.GetAddressOf());
-  if (SUCCEEDED(hr))
-    iaccessible2->get_states(&ia2_state);
 
-  std::string log = base::StringPrintf(
-      "%s on role=%s", event_str.c_str(), RoleVariantToString(role).c_str());
+  base::string16 html_tag;
+  base::string16 obj_class;
+  base::string16 html_id;
+
+  if (SUCCEEDED(hr)) {
+    iaccessible2->get_states(&ia2_state);
+    base::win::ScopedBstr attributes_bstr;
+    if (S_OK == iaccessible2->get_attributes(attributes_bstr.Receive())) {
+      std::vector<base::string16> ia2_attributes = base::SplitString(
+          base::string16(attributes_bstr, attributes_bstr.Length()),
+          base::string16(1, ';'), base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+      for (base::string16& attr : ia2_attributes) {
+        if (base::StringPiece16(attr).starts_with(L"class:"))
+          obj_class = attr.substr(6);  // HTML or view class
+        if (base::StringPiece16(attr).starts_with(L"id:")) {
+          html_id = base::string16(L"#");
+          html_id += attr.substr(3);
+        }
+        if (base::StringPiece16(attr).starts_with(L"tag:")) {
+          html_tag = attr.substr(4);
+        }
+      }
+    }
+  }
+
+  std::string log = base::StringPrintf("%s on", event_str.c_str());
+  if (!html_tag.empty()) {
+    // HTML node with tag
+    log += base::StringPrintf(
+        " <%s%s%s%s>", base::UTF16ToUTF8(html_tag).c_str(),
+        base::UTF16ToUTF8(html_id).c_str(), obj_class.empty() ? "" : ".",
+        base::UTF16ToUTF8(obj_class).c_str());
+  } else if (!obj_class.empty()) {
+    // Non-HTML node with class
+    log +=
+        base::StringPrintf(" class=%s", base::UTF16ToUTF8(obj_class).c_str());
+  }
+
+  log += base::StringPrintf(" role=%s", RoleVariantToString(role).c_str());
   if (name_bstr.Length() > 0)
     log += base::StringPrintf(" name=\"%s\"", BstrToUTF8(name_bstr).c_str());
   if (value_bstr.Length() > 0)

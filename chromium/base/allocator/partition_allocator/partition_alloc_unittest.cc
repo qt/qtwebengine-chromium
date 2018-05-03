@@ -19,9 +19,10 @@
 
 #if defined(OS_POSIX)
 #include <sys/mman.h>
+#if !defined(OS_FUCHSIA)
 #include <sys/resource.h>
+#endif
 #include <sys/time.h>
-
 #endif  // defined(OS_POSIX)
 
 #if !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
@@ -46,7 +47,7 @@ bool SetAddressSpaceLimit() {
 #if !defined(ARCH_CPU_64_BITS) || !defined(OS_POSIX)
   // 32 bits => address space is limited already.
   return true;
-#elif defined(OS_POSIX) && !defined(OS_MACOSX)
+#elif defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_FUCHSIA)
   // macOS will accept, but not enforce, |RLIMIT_AS| changes. See
   // https://crbug.com/435269 and rdar://17576114.
   //
@@ -69,7 +70,7 @@ bool SetAddressSpaceLimit() {
 }
 
 bool ClearAddressSpaceLimit() {
-#if !defined(ARCH_CPU_64_BITS) || !defined(OS_POSIX)
+#if !defined(ARCH_CPU_64_BITS) || !defined(OS_POSIX) || defined(OS_FUCHSIA)
   return true;
 #elif defined(OS_POSIX)
   struct rlimit limit;
@@ -248,13 +249,34 @@ void FreeFullPage(PartitionPage* page) {
 }
 
 #if defined(OS_LINUX)
-bool IsPageInCore(void* ptr) {
-  unsigned char ret = 0;
-  EXPECT_EQ(0, mincore(ptr, kSystemPageSize, &ret));
-  return (ret & 1) != 0;
+bool KernelSupportsMadvFree() {
+  int32_t major_version;
+  int32_t minor_version;
+  int32_t bugfix_version;
+  SysInfo::OperatingSystemVersionNumbers(&major_version, &minor_version,
+                                         &bugfix_version);
+  return std::vector<int32_t>{major_version, minor_version, bugfix_version} >=
+         std::vector<int32_t>{4, 5};
 }
 
-#define CHECK_PAGE_IN_CORE(ptr, in_core) EXPECT_EQ(IsPageInCore(ptr), in_core);
+bool CheckPageInCore(void* ptr, bool in_core) {
+  // If the kernel supports MADV_FREE, then pages may still be in core to be
+  // reclaimed by the OS later.  This is a cool optimization that prevents the
+  // kernel from freeing and allocating memory in case the app needs more memory
+  // soon -- it can just reuse the memory already allocated.  Unfortunately,
+  // there's no way to test if a page is in core because it needs to be, or if
+  // it just hasn't been reclaimed yet.
+  static bool kernel_supports_madv_free = KernelSupportsMadvFree();
+  if (kernel_supports_madv_free)
+    return true;
+
+  unsigned char ret = 0;
+  EXPECT_EQ(0, mincore(ptr, kSystemPageSize, &ret));
+  return in_core == (ret & 1);
+}
+
+#define CHECK_PAGE_IN_CORE(ptr, in_core) \
+  EXPECT_TRUE(CheckPageInCore(ptr, in_core))
 #else
 #define CHECK_PAGE_IN_CORE(ptr, in_core) (void)(0)
 #endif  // defined(OS_LINUX)
@@ -340,7 +362,7 @@ TEST(PageAllocatorTest, AllocFailure) {
     return;
 
   void* result = base::AllocPages(nullptr, size, kPageAllocationGranularity,
-                                  PageInaccessible);
+                                  PageInaccessible, PageTag::kChromium, false);
   if (result == nullptr) {
     // We triggered allocation failure. Our reservation should have been
     // released, and we should be able to make a new reservation.
@@ -1348,7 +1370,7 @@ TEST_F(PartitionAllocTest, LostFreePagesBug) {
 
 // Disable this test on Android because, due to its allocation-heavy behavior,
 // it tends to get OOM-killed rather than pass.
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
+#if defined(OS_MACOSX) || defined(OS_ANDROID) || defined(OS_FUCHSIA)
 #define MAYBE_RepeatedReturnNullDirect DISABLED_RepeatedReturnNullDirect
 #else
 #define MAYBE_RepeatedReturnNullDirect RepeatedReturnNullDirect

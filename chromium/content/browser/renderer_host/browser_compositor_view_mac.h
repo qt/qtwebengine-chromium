@@ -14,6 +14,7 @@
 #include "content/browser/renderer_host/delegated_frame_host.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
+#include "ui/display/display.h"
 
 namespace ui {
 class AcceleratedWidgetMacNSView;
@@ -28,13 +29,14 @@ class BrowserCompositorMacClient {
   virtual SkColor BrowserCompositorMacGetGutterColor() const = 0;
   virtual void BrowserCompositorMacOnBeginFrame() = 0;
   virtual void OnFrameTokenChanged(uint32_t frame_token) = 0;
+  virtual void DidReceiveFirstFrameAfterNavigation() = 0;
+  virtual void DestroyCompositorForShutdown() = 0;
 };
 
 // This class owns a DelegatedFrameHost, and will dynamically attach and
 // detach it from a ui::Compositor as needed. The ui::Compositor will be
 // detached from the DelegatedFrameHost when the following conditions are
 // all met:
-// - There are no outstanding copy requests
 // - The RenderWidgetHostImpl providing frames to the DelegatedFrameHost
 //   is visible.
 // - The RenderWidgetHostViewMac that is used to display these frames is
@@ -59,17 +61,22 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
   gfx::AcceleratedWidget GetAcceleratedWidget();
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink);
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame);
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack);
   void SetBackgroundColor(SkColor background_color);
-  void SetDisplayColorSpace(const gfx::ColorSpace& color_space);
-  void WasResized();
-  bool HasFrameOfSize(const gfx::Size& desired_size);
   void UpdateVSyncParameters(const base::TimeTicks& timebase,
                              const base::TimeDelta& interval);
   void SetNeedsBeginFrames(bool needs_begin_frames);
   void SetWantsAnimateOnlyBeginFrames();
+
+  // Update the renderer's SurfaceId to reflect the current dimensions of the
+  // NSView. This will allocate a new SurfaceId if needed. This will return
+  // true if any properties that need to be communicated to the
+  // RenderWidgetHostImpl have changed.
+  bool UpdateNSViewAndDisplay();
+
+  // Update the renderer's SurfaceId to reflect |size_dip| in anticipation of
+  // the NSView resizing during auto-resize.
+  void UpdateForAutoResize(const gfx::Size& size_dip);
 
   // This is used to ensure that the ui::Compositor be attached to the
   // DelegatedFrameHost while the RWHImpl is visible.
@@ -83,18 +90,13 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
   // hidden (e.g, because it is occluded by another window).
   void SetNSViewAttachedToWindow(bool attached);
 
-  // These functions will track the number of outstanding copy requests, and
-  // will not allow the ui::Compositor to be detached until all outstanding
-  // copies have returned.
-  void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
-                                  const gfx::Size& dst_size,
-                                  const ReadbackRequestCallback& callback,
-                                  SkColorType preferred_color_type);
-  void CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      scoped_refptr<media::VideoFrame> target,
-      const base::Callback<void(const gfx::Rect&, bool)>& callback);
   viz::FrameSinkId GetRootFrameSinkId();
+
+  const gfx::Size& GetRendererSize() const { return dfh_size_dip_; }
+  void GetRendererScreenInfo(ScreenInfo* screen_info) const;
+  const viz::LocalSurfaceId& GetRendererLocalSurfaceId() const {
+    return dfh_surface_id_;
+  }
 
   // Indicate that the recyclable compositor should be destroyed, and no future
   // compositors should be recycled.
@@ -104,17 +106,23 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
   ui::Layer* DelegatedFrameHostGetLayer() const override;
   bool DelegatedFrameHostIsVisible() const override;
   SkColor DelegatedFrameHostGetGutterColor() const override;
-  gfx::Size DelegatedFrameHostDesiredSizeInDIP() const override;
   bool DelegatedFrameCanCreateResizeLock() const override;
-  viz::LocalSurfaceId GetLocalSurfaceId() const override;
   std::unique_ptr<CompositorResizeLock> DelegatedFrameHostCreateResizeLock()
       override;
+  void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
   void OnBeginFrame(base::TimeTicks frame_time) override;
   bool IsAutoResizeEnabled() const override;
   void OnFrameTokenChanged(uint32_t frame_token) override;
+  void DidReceiveFirstFrameAfterNavigation() override;
 
   // Returns nullptr if no compositor is attached.
   ui::Compositor* CompositorForTesting() const;
+
+  void DidNavigate();
+
+  void BeginPauseForFrame(bool auto_resize_enabled);
+  void EndPauseForFrame();
+  bool ShouldContinueToPauseForFrame() const;
 
  private:
   // The state of |delegated_frame_host_| and |recyclable_compositor_| to
@@ -124,8 +132,7 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
     // - |recyclable_compositor_| exists and is attached to
     //   |delegated_frame_host_|.
     // Happens when:
-    // - |render_widet_host_| is in the visible state, or there are
-    //   outstanding copy requests.
+    // - |render_widet_host_| is in the visible state.
     HasAttachedCompositor,
     // Effects:
     // - |recyclable_compositor_| exists, but |delegated_frame_host_| is
@@ -153,19 +160,6 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
   void GetViewProperties(gfx::Size* bounds_in_dip,
                          float* scale_factor,
                          gfx::ColorSpace* color_space) const;
-
-  static void CopyCompleted(
-      base::WeakPtr<BrowserCompositorMac> browser_compositor,
-      const ReadbackRequestCallback& callback,
-      const SkBitmap& bitmap,
-      ReadbackResponse response);
-  static void CopyToVideoFrameCompleted(
-      base::WeakPtr<BrowserCompositorMac> browser_compositor,
-      const base::Callback<void(const gfx::Rect&, bool)>& callback,
-      const gfx::Rect& rect,
-      bool result);
-  uint64_t outstanding_copy_count_ = 0;
-
   bool render_widget_host_is_hidden_ = true;
   bool ns_view_attached_to_window_ = false;
 
@@ -177,15 +171,36 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
   std::unique_ptr<ui::Layer> root_layer_;
 
   SkColor background_color_ = SK_ColorWHITE;
-  const bool enable_viz_ = false;
   viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink_ =
       nullptr;
+
   // The surface for the delegated frame host, rendered into by the renderer
   // process.
-  viz::LocalSurfaceId delegated_frame_host_surface_id_;
-  // The surface for the ui::Compositor, which will embed
-  // |delegated_frame_host_surface_id_| into its tree.
+  viz::LocalSurfaceId dfh_surface_id_;
+  gfx::Size dfh_size_pixels_;
+  gfx::Size dfh_size_dip_;
+  display::Display dfh_display_;
+
+  // The surface for the ui::Compositor, which will embed |dfh_surface_id_|
+  // into its tree. Updated to match the delegated frame host values when
+  // attached and at OnFirstSurfaceActivation.
   viz::LocalSurfaceId compositor_surface_id_;
+  gfx::Size compositor_size_pixels_;
+  float compositor_scale_factor_ = 1.f;
+
+  // Used to disable screen updates while resizing (because frames are drawn in
+  // the GPU process, they can end up appearing on-screen before our window
+  // resizes).
+  enum class RepaintState {
+    // No repaint in progress.
+    None,
+    // Synchronously waiting for a new frame.
+    Paused,
+    // Screen updates are disabled while a new frame is swapped in.
+    ScreenUpdatesDisabled,
+  } repaint_state_ = RepaintState::None;
+  bool repaint_auto_resize_enabled_ = false;
+
   viz::ParentLocalSurfaceIdAllocator parent_local_surface_id_allocator_;
 
   base::WeakPtrFactory<BrowserCompositorMac> weak_factory_;

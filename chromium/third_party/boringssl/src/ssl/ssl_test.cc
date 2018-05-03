@@ -1537,7 +1537,8 @@ struct ClientConfig {
 static bool ConnectClientAndServer(bssl::UniquePtr<SSL> *out_client,
                                    bssl::UniquePtr<SSL> *out_server,
                                    SSL_CTX *client_ctx, SSL_CTX *server_ctx,
-                                   const ClientConfig &config = ClientConfig()) {
+                                   const ClientConfig &config = ClientConfig(),
+                                   bool do_handshake = true) {
   bssl::UniquePtr<SSL> client(SSL_new(client_ctx)), server(SSL_new(server_ctx));
   if (!client || !server) {
     return false;
@@ -1561,7 +1562,7 @@ static bool ConnectClientAndServer(bssl::UniquePtr<SSL> *out_client,
   SSL_set_bio(client.get(), bio1, bio1);
   SSL_set_bio(server.get(), bio2, bio2);
 
-  if (!CompleteHandshakes(client.get(), server.get())) {
+  if (do_handshake && !CompleteHandshakes(client.get(), server.get())) {
     return false;
   }
 
@@ -2618,7 +2619,7 @@ TEST(SSLTest, SetVersion) {
 
   // TLS1_3_DRAFT_VERSION is not an API-level version.
   EXPECT_FALSE(
-      SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_DRAFT22_VERSION));
+      SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_DRAFT23_VERSION));
   ERR_clear_error();
 
   ctx.reset(SSL_CTX_new(DTLS_method()));
@@ -3141,6 +3142,83 @@ TEST(SSLTest, SetChainAndKey) {
                                      server_ctx.get()));
 }
 
+TEST(SSLTest, BuffersFailWithoutCustomVerify) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_with_buffers_method()));
+  ASSERT_TRUE(client_ctx);
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_with_buffers_method()));
+  ASSERT_TRUE(server_ctx);
+
+  bssl::UniquePtr<EVP_PKEY> key = GetChainTestKey();
+  ASSERT_TRUE(key);
+  bssl::UniquePtr<CRYPTO_BUFFER> leaf = GetChainTestCertificateBuffer();
+  ASSERT_TRUE(leaf);
+  std::vector<CRYPTO_BUFFER*> chain = { leaf.get() };
+  ASSERT_TRUE(SSL_CTX_set_chain_and_key(server_ctx.get(), &chain[0],
+                                        chain.size(), key.get(), nullptr));
+
+  // Without SSL_CTX_set_custom_verify(), i.e. with everything in the default
+  // configuration, certificate verification should fail.
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_FALSE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                      server_ctx.get()));
+
+  // Whereas with a verifier, the connection should succeed.
+  SSL_CTX_set_custom_verify(
+      client_ctx.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) -> ssl_verify_result_t {
+        return ssl_verify_ok;
+      });
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get()));
+}
+
+TEST(SSLTest, CustomVerify) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_with_buffers_method()));
+  ASSERT_TRUE(client_ctx);
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_with_buffers_method()));
+  ASSERT_TRUE(server_ctx);
+
+  bssl::UniquePtr<EVP_PKEY> key = GetChainTestKey();
+  ASSERT_TRUE(key);
+  bssl::UniquePtr<CRYPTO_BUFFER> leaf = GetChainTestCertificateBuffer();
+  ASSERT_TRUE(leaf);
+  std::vector<CRYPTO_BUFFER*> chain = { leaf.get() };
+  ASSERT_TRUE(SSL_CTX_set_chain_and_key(server_ctx.get(), &chain[0],
+                                        chain.size(), key.get(), nullptr));
+
+  SSL_CTX_set_custom_verify(
+      client_ctx.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) -> ssl_verify_result_t {
+        return ssl_verify_ok;
+      });
+
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get()));
+
+  // With SSL_VERIFY_PEER, ssl_verify_invalid should result in a dropped
+  // connection.
+  SSL_CTX_set_custom_verify(
+      client_ctx.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) -> ssl_verify_result_t {
+        return ssl_verify_invalid;
+      });
+
+  ASSERT_FALSE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                      server_ctx.get()));
+
+  // But with SSL_VERIFY_NONE, ssl_verify_invalid should not cause a dropped
+  // connection.
+  SSL_CTX_set_custom_verify(
+      client_ctx.get(), SSL_VERIFY_NONE,
+      [](SSL *ssl, uint8_t *out_alert) -> ssl_verify_result_t {
+        return ssl_verify_invalid;
+      });
+
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get()));
+}
+
 TEST(SSLTest, ClientCABuffers) {
   bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_with_buffers_method()));
   ASSERT_TRUE(client_ctx);
@@ -3456,40 +3534,6 @@ INSTANTIATE_TEST_CASE_P(
                         ssl_test_ticket_aead_seal_fail,
                         ssl_test_ticket_aead_open_soft_fail,
                         ssl_test_ticket_aead_open_hard_fail)));
-
-TEST(SSLTest, SSL3Method) {
-  bssl::UniquePtr<X509> cert = GetTestCertificate();
-  ASSERT_TRUE(cert);
-
-  // For compatibility, SSLv3_method should work up to SSL_CTX_new and SSL_new.
-  bssl::UniquePtr<SSL_CTX> ssl3_ctx(SSL_CTX_new(SSLv3_method()));
-  ASSERT_TRUE(ssl3_ctx);
-  ASSERT_TRUE(SSL_CTX_use_certificate(ssl3_ctx.get(), cert.get()));
-  bssl::UniquePtr<SSL> ssl(SSL_new(ssl3_ctx.get()));
-  EXPECT_TRUE(ssl);
-
-  // Create a normal TLS context to test against.
-  bssl::UniquePtr<SSL_CTX> tls_ctx(SSL_CTX_new(TLS_method()));
-  ASSERT_TRUE(tls_ctx);
-  ASSERT_TRUE(SSL_CTX_use_certificate(tls_ctx.get(), cert.get()));
-
-  // However, handshaking an SSLv3_method server should fail to resolve the
-  // version range. Explicit calls to SSL_CTX_set_min_proto_version are the only
-  // way to enable SSL 3.0.
-  bssl::UniquePtr<SSL> client, server;
-  EXPECT_FALSE(ConnectClientAndServer(&client, &server, tls_ctx.get(),
-                                      ssl3_ctx.get()));
-  uint32_t err = ERR_get_error();
-  EXPECT_EQ(ERR_LIB_SSL, ERR_GET_LIB(err));
-  EXPECT_EQ(SSL_R_NO_SUPPORTED_VERSIONS_ENABLED, ERR_GET_REASON(err));
-
-  // Likewise for SSLv3_method clients.
-  EXPECT_FALSE(ConnectClientAndServer(&client, &server, ssl3_ctx.get(),
-                                      tls_ctx.get()));
-  err = ERR_get_error();
-  EXPECT_EQ(ERR_LIB_SSL, ERR_GET_LIB(err));
-  EXPECT_EQ(SSL_R_NO_SUPPORTED_VERSIONS_ENABLED, ERR_GET_REASON(err));
-}
 
 TEST(SSLTest, SelectNextProto) {
   uint8_t *result;
@@ -3844,6 +3888,139 @@ TEST(SSLTest, SignatureAlgorithmProperties) {
   EXPECT_EQ(EVP_sha384(),
             SSL_get_signature_algorithm_digest(SSL_SIGN_RSA_PSS_SHA384));
   EXPECT_TRUE(SSL_is_signature_algorithm_rsa_pss(SSL_SIGN_RSA_PSS_SHA384));
+}
+
+void MoveBIOs(SSL *dest, SSL *src) {
+  BIO *rbio = SSL_get_rbio(src);
+  BIO_up_ref(rbio);
+  SSL_set0_rbio(dest, rbio);
+
+  BIO *wbio = SSL_get_wbio(src);
+  BIO_up_ref(wbio);
+  SSL_set0_wbio(dest, wbio);
+
+  SSL_set0_rbio(src, nullptr);
+  SSL_set0_wbio(src, nullptr);
+}
+
+TEST(SSLTest, Handoff) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_method()));
+  bssl::UniquePtr<SSL_CTX> handshaker_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+  ASSERT_TRUE(server_ctx);
+  ASSERT_TRUE(handshaker_ctx);
+
+  SSL_CTX_set_handoff_mode(server_ctx.get(), 1);
+  ASSERT_TRUE(SSL_CTX_set_max_proto_version(server_ctx.get(), TLS1_2_VERSION));
+  ASSERT_TRUE(
+      SSL_CTX_set_max_proto_version(handshaker_ctx.get(), TLS1_2_VERSION));
+
+  bssl::UniquePtr<X509> cert = GetTestCertificate();
+  bssl::UniquePtr<EVP_PKEY> key = GetTestKey();
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(key);
+  ASSERT_TRUE(SSL_CTX_use_certificate(handshaker_ctx.get(), cert.get()));
+  ASSERT_TRUE(SSL_CTX_use_PrivateKey(handshaker_ctx.get(), key.get()));
+
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get(), ClientConfig(),
+                                     false /* don't handshake */));
+
+  int client_ret = SSL_do_handshake(client.get());
+  int client_err = SSL_get_error(client.get(), client_ret);
+  ASSERT_EQ(client_err, SSL_ERROR_WANT_READ);
+
+  int server_ret = SSL_do_handshake(server.get());
+  int server_err = SSL_get_error(server.get(), server_ret);
+  ASSERT_EQ(server_err, SSL_ERROR_HANDOFF);
+
+  ScopedCBB cbb;
+  Array<uint8_t> handoff;
+  ASSERT_TRUE(CBB_init(cbb.get(), 256));
+  ASSERT_TRUE(SSL_serialize_handoff(server.get(), cbb.get()));
+  ASSERT_TRUE(CBBFinishArray(cbb.get(), &handoff));
+
+  bssl::UniquePtr<SSL> handshaker(SSL_new(handshaker_ctx.get()));
+  ASSERT_TRUE(SSL_apply_handoff(handshaker.get(), handoff));
+
+  MoveBIOs(handshaker.get(), server.get());
+
+  int handshake_ret = SSL_do_handshake(handshaker.get());
+  int handshake_err = SSL_get_error(handshaker.get(), handshake_ret);
+  ASSERT_EQ(handshake_err, SSL_ERROR_WANT_READ);
+
+  ASSERT_TRUE(CompleteHandshakes(client.get(), handshaker.get()));
+
+  ScopedCBB cbb_handback;
+  Array<uint8_t> handback;
+  ASSERT_TRUE(CBB_init(cbb_handback.get(), 1024));
+  ASSERT_TRUE(SSL_serialize_handback(handshaker.get(), cbb_handback.get()));
+  ASSERT_TRUE(CBBFinishArray(cbb_handback.get(), &handback));
+
+  bssl::UniquePtr<SSL> server2(SSL_new(server_ctx.get()));
+  ASSERT_TRUE(SSL_apply_handback(server2.get(), handback));
+
+  MoveBIOs(server2.get(), handshaker.get());
+
+  uint8_t byte = 42;
+  EXPECT_EQ(SSL_write(client.get(), &byte, 1), 1);
+  EXPECT_EQ(SSL_read(server2.get(), &byte, 1), 1);
+  EXPECT_EQ(42, byte);
+
+  byte = 43;
+  EXPECT_EQ(SSL_write(server2.get(), &byte, 1), 1);
+  EXPECT_EQ(SSL_read(client.get(), &byte, 1), 1);
+  EXPECT_EQ(43, byte);
+}
+
+TEST(SSLTest, HandoffDeclined) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+  ASSERT_TRUE(server_ctx);
+
+  SSL_CTX_set_handoff_mode(server_ctx.get(), 1);
+  ASSERT_TRUE(SSL_CTX_set_max_proto_version(server_ctx.get(), TLS1_2_VERSION));
+
+  bssl::UniquePtr<X509> cert = GetTestCertificate();
+  bssl::UniquePtr<EVP_PKEY> key = GetTestKey();
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(key);
+  ASSERT_TRUE(SSL_CTX_use_certificate(server_ctx.get(), cert.get()));
+  ASSERT_TRUE(SSL_CTX_use_PrivateKey(server_ctx.get(), key.get()));
+
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get(), ClientConfig(),
+                                     false /* don't handshake */));
+
+  int client_ret = SSL_do_handshake(client.get());
+  int client_err = SSL_get_error(client.get(), client_ret);
+  ASSERT_EQ(client_err, SSL_ERROR_WANT_READ);
+
+  int server_ret = SSL_do_handshake(server.get());
+  int server_err = SSL_get_error(server.get(), server_ret);
+  ASSERT_EQ(server_err, SSL_ERROR_HANDOFF);
+
+  ScopedCBB cbb;
+  ASSERT_TRUE(CBB_init(cbb.get(), 256));
+  ASSERT_TRUE(SSL_serialize_handoff(server.get(), cbb.get()));
+
+  ASSERT_TRUE(SSL_decline_handoff(server.get()));
+
+  ASSERT_TRUE(CompleteHandshakes(client.get(), server.get()));
+
+  uint8_t byte = 42;
+  EXPECT_EQ(SSL_write(client.get(), &byte, 1), 1);
+  EXPECT_EQ(SSL_read(server.get(), &byte, 1), 1);
+  EXPECT_EQ(42, byte);
+
+  byte = 43;
+  EXPECT_EQ(SSL_write(server.get(), &byte, 1), 1);
+  EXPECT_EQ(SSL_read(client.get(), &byte, 1), 1);
+  EXPECT_EQ(43, byte);
 }
 
 // TODO(davidben): Convert this file to GTest properly.

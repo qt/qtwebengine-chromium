@@ -39,6 +39,7 @@ config("rtc_base_all_dependent_config") {
   if (is_ios) {
     libs = [
       "CFNetwork.framework",
+      "Foundation.framework",
       "Security.framework",
       "SystemConfiguration.framework",
       "UIKit.framework",
@@ -55,7 +56,7 @@ config("rtc_base_all_dependent_config") {
   }
 }
 
-if (!rtc_build_ssl && !build_with_mozilla) {
+if (!rtc_build_ssl) {
   config("external_ssl_library") {
     assert(rtc_ssl_root != "",
            "You must specify rtc_ssl_root when rtc_build_ssl==0.")
@@ -130,6 +131,7 @@ rtc_source_set("safe_compare") {
 
 rtc_source_set("stringutils") {
   sources = [
+    "strings/string_builder.h",
     "stringutils.cc",
     "stringutils.h",
   ]
@@ -216,6 +218,7 @@ rtc_source_set("rtc_base_approved_generic") {
     "platform_file.h",
     "platform_thread.cc",
     "platform_thread.h",
+    "platform_thread_types.cc",
     "platform_thread_types.h",
     "ptr_util.h",
     "race_checker.cc",
@@ -282,6 +285,10 @@ rtc_source_set("rtc_base_approved_generic") {
       "logging.cc",
       "logging.h",
     ]
+
+    # logging.h needs the deprecation header while downstream projects are
+    # removing code that depends on logging implementation details.
+    deps += [ ":deprecation" ]
   }
   if (is_component_build && is_win) {
     # Copy the VS runtime DLLs into the isolate so that they don't have to be
@@ -496,6 +503,7 @@ rtc_source_set("rtc_json") {
     "json.cc",
     "json.h",
   ]
+  all_dependent_configs = [ "//third_party/jsoncpp:jsoncpp_config" ]
   if (rtc_build_json) {
     public_deps = [
       "//third_party/jsoncpp",
@@ -549,6 +557,7 @@ rtc_static_library("rtc_base_generic") {
     ":checks",
     ":stringutils",
     "..:webrtc_common",
+    "../api:array_view",
     "../api:optional",
   ]
   public_deps = [
@@ -655,6 +664,8 @@ rtc_static_library("rtc_base_generic") {
     "stream.h",
     "thread.cc",
     "thread.h",
+    "zero_memory.cc",
+    "zero_memory.h",
   ]
 
   visibility = [
@@ -703,7 +714,7 @@ rtc_static_library("rtc_base_generic") {
 
   if (rtc_build_ssl) {
     deps += [ "//third_party/boringssl" ]
-  } else if (!build_with_mozilla) {
+  } else {
     configs += [ ":external_ssl_library" ]
   }
 
@@ -758,7 +769,6 @@ rtc_static_library("rtc_base_generic") {
       "win32.h",
       "win32filesystem.cc",
       "win32filesystem.h",
-      "win32securityerrors.cc",
       "win32window.cc",
       "win32window.h",
     ]
@@ -829,15 +839,12 @@ rtc_source_set("rtc_base_tests_utils") {
     "fakesslidentity.h",
     "firewallsocketserver.cc",
     "firewallsocketserver.h",
+    "gunit.cc",
     "gunit.h",
     "httpbase.cc",
     "httpbase.h",
     "httpserver.cc",
     "httpserver.h",
-    "md5.cc",
-    "md5.h",
-    "md5digest.cc",
-    "md5digest.h",
     "memory_usage.cc",
     "memory_usage.h",
     "natserver.cc",
@@ -849,10 +856,6 @@ rtc_source_set("rtc_base_tests_utils") {
     "proxyserver.cc",
     "proxyserver.h",
     "refcount.h",
-    "sha1.cc",
-    "sha1.h",
-    "sha1digest.cc",
-    "sha1digest.h",
     "sigslottester.h",
     "sigslottester.h.pump",
     "testbase64.h",
@@ -874,10 +877,25 @@ rtc_source_set("rtc_base_tests_utils") {
     ":stringutils",
     "../test:field_trial",
     "../test:test_support",
+    "system:fallthrough",
   ]
   public_deps = [
-    "//testing/gmock",
     "//testing/gtest",
+  ]
+}
+
+rtc_source_set("rtc_task_queue_for_test") {
+  visibility = [ "*" ]
+  testonly = true
+
+  sources = [
+    "task_queue_for_test.cc",
+    "task_queue_for_test.h",
+  ]
+  deps = [
+    ":checks",
+    ":rtc_base_approved",
+    ":rtc_task_queue",
   ]
 }
 
@@ -892,12 +910,12 @@ if (rtc_include_tests) {
       ":rtc_base",
       ":rtc_base_approved",
       ":rtc_base_tests_utils",
+      "../system_wrappers:field_trial_default",
       "../test:field_trial",
       "../test:test_support",
     ]
 
     public_deps = [
-      "//testing/gmock",
       "//testing/gtest",
     ]
   }
@@ -949,7 +967,6 @@ if (rtc_include_tests) {
       "file_unittest.cc",
       "function_view_unittest.cc",
       "logging_unittest.cc",
-      "md5digest_unittest.cc",
       "numerics/histogram_percentile_counter_unittest.cc",
       "numerics/mod_ops_unittest.cc",
       "numerics/moving_max_counter_unittest.cc",
@@ -966,6 +983,7 @@ if (rtc_include_tests) {
       "string_to_number_unittest.cc",
       "stringencode_unittest.cc",
       "stringize_macros_unittest.cc",
+      "strings/string_builder_unittest.cc",
       "stringutils_unittest.cc",
       "swap_queue_unittest.cc",
       "thread_annotations_unittest.cc",
@@ -1002,6 +1020,7 @@ if (rtc_include_tests) {
       ":rtc_base_tests_main",
       ":rtc_base_tests_utils",
       ":rtc_task_queue",
+      ":rtc_task_queue_for_test",
       "../test:test_support",
     ]
   }
@@ -1083,13 +1102,13 @@ if (rtc_include_tests) {
       "rollingaccumulator_unittest.cc",
       "rtccertificate_unittest.cc",
       "rtccertificategenerator_unittest.cc",
-      "sha1digest_unittest.cc",
       "signalthread_unittest.cc",
       "sigslot_unittest.cc",
       "sigslottester_unittest.cc",
       "stream_unittest.cc",
       "testclient_unittest.cc",
       "thread_unittest.cc",
+      "zero_memory_unittest.cc",
     ]
     if (is_win) {
       sources += [
@@ -1110,6 +1129,7 @@ if (rtc_include_tests) {
       ":rtc_base_tests_main",
       ":rtc_base_tests_utils",
       ":stringutils",
+      "../api:array_view",
       "../api:optional",
       "../test:test_support",
     ]

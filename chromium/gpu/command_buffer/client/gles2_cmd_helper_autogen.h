@@ -2701,6 +2701,19 @@ void WaitSyncTokenCHROMIUM(GLint namespace_id,
   }
 }
 
+void UnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
+                                        GLuint dest_id,
+                                        GLint x,
+                                        GLint y,
+                                        GLsizei width,
+                                        GLsizei height) {
+  gles2::cmds::UnpremultiplyAndDitherCopyCHROMIUM* c =
+      GetCmdSpace<gles2::cmds::UnpremultiplyAndDitherCopyCHROMIUM>();
+  if (c) {
+    c->Init(source_id, dest_id, x, y, width, height);
+  }
+}
+
 void DrawBuffersEXTImmediate(GLsizei count, const GLenum* bufs) {
   const uint32_t size =
       gles2::cmds::DrawBuffersEXTImmediate::ComputeSize(count);
@@ -3259,12 +3272,13 @@ void BeginRasterCHROMIUM(GLuint texture_id,
                          GLuint msaa_sample_count,
                          GLboolean can_use_lcd_text,
                          GLboolean use_distance_field_text,
-                         GLint pixel_config) {
+                         GLint color_type,
+                         GLuint color_space_transfer_cache_id) {
   gles2::cmds::BeginRasterCHROMIUM* c =
       GetCmdSpace<gles2::cmds::BeginRasterCHROMIUM>();
   if (c) {
     c->Init(texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-            use_distance_field_text, pixel_config);
+            use_distance_field_text, color_type, color_space_transfer_cache_id);
   }
 }
 

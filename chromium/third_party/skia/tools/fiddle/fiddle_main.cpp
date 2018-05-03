@@ -133,7 +133,7 @@ static bool setup_backend_objects(GrContext* context,
     backingDesc.fHeight = bm.height();
     // This config must match the SkColorType used in draw.cpp in the SkImage and Surface factories
     backingDesc.fConfig = kRGBA_8888_GrPixelConfig;
-    backingDesc.fSampleCnt = 0;
+    backingDesc.fSampleCnt = 1;
 
     if (!bm.empty()) {
         SkPixmap originalPixmap;
@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
                 perror("Unable to decode the source image.");
                 return 1;
             }
-            SkAssertResult(image->asLegacyBitmap(&source, SkImage::kRO_LegacyBitmapMode));
+            SkAssertResult(image->asLegacyBitmap(&source));
         }
     }
     sk_sp<SkData> rasterData, gpuData, pdfData, skpData;

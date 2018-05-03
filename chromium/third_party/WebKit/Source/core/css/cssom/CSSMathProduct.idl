@@ -6,9 +6,9 @@
 // https://drafts.css-houdini.org/css-typed-om-1/#cssmathsub
 [
   Constructor(CSSNumberish... args),
-  Exposed=(Window,PaintWorklet),
-  RaisesException=Constructor,
-  RuntimeEnabled=CSSTypedOM
+  RuntimeEnabled=CSSTypedOM,
+  Exposed=(Window,LayoutWorklet,PaintWorklet),
+  RaisesException=Constructor
 ] interface CSSMathProduct : CSSMathValue {
-  attribute CSSNumericArray values;
+  readonly attribute CSSNumericArray values;
 };

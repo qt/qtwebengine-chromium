@@ -5,6 +5,7 @@
 #include "components/cdm/browser/media_drm_storage_impl.h"
 
 #include <memory>
+#include <utility>
 
 #include "base/run_loop.h"
 #include "base/unguessable_token.h"
@@ -64,7 +65,7 @@ class MediaDrmStorageImplTest : public content::RenderViewHostTestHarness {
     media::mojom::MediaDrmStoragePtr media_drm_storage_ptr;
     auto request = mojo::MakeRequest(&media_drm_storage_ptr);
 
-    auto media_drm_storage = base::MakeUnique<media::MojoMediaDrmStorage>(
+    auto media_drm_storage = std::make_unique<media::MojoMediaDrmStorage>(
         std::move(media_drm_storage_ptr));
 
     content::RenderFrameHost* rfh = web_contents()->GetMainFrame();
@@ -104,7 +105,7 @@ class MediaDrmStorageImplTest : public content::RenderViewHostTestHarness {
                              const std::vector<uint8_t>& expected_key_set_id,
                              const std::string& expected_mime_type) {
     media_drm_storage_->LoadPersistentSession(
-        session_id, ExpectResult(base::MakeUnique<SessionData>(
+        session_id, ExpectResult(std::make_unique<SessionData>(
                         expected_key_set_id, expected_mime_type)));
   }
 
@@ -135,7 +136,7 @@ class MediaDrmStorageImplTest : public content::RenderViewHostTestHarness {
       std::unique_ptr<SessionData> expected_session_data) {
     return base::BindOnce(&MediaDrmStorageImplTest::CheckLoadedSession,
                           base::Unretained(this),
-                          base::Passed(&expected_session_data));
+                          std::move(expected_session_data));
   }
 
   void CheckResult(bool expected_result, bool result) {

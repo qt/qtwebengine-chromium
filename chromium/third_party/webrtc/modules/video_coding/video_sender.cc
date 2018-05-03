@@ -14,7 +14,6 @@
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/video_bitrate_allocator.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
-#include "modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "modules/video_coding/encoded_frame.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/utility/default_video_bitrate_allocator.h"
@@ -197,7 +196,7 @@ EncoderParameters VideoSender::UpdateEncoderParameters(
   return new_encoder_params;
 }
 
-void VideoSender::UpdateChannelParemeters(
+void VideoSender::UpdateChannelParameters(
     VideoBitrateAllocator* bitrate_allocator,
     VideoBitrateAllocationObserver* bitrate_updated_callback) {
   BitrateAllocation target_rate;

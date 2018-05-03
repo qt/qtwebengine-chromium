@@ -33,6 +33,8 @@
 #include "core/editing/SelectionTemplate.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/commands/DeleteSelectionOptions.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
@@ -64,7 +66,7 @@ bool InsertLineBreakCommand::ShouldUseBreakElement(
 }
 
 void InsertLineBreakCommand::DoApply(EditingState* editing_state) {
-  if (!DeleteSelection(editing_state))
+  if (!DeleteSelection(editing_state, DeleteSelectionOptions::NormalDelete()))
     return;
 
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
@@ -131,7 +133,6 @@ void InsertLineBreakCommand::DoApply(EditingState* editing_state) {
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
             .Collapse(Position::BeforeNode(*node_to_insert))
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build()));
   } else if (pos.ComputeEditingOffset() <= CaretMinOffset(pos.AnchorNode())) {
     InsertNodeAt(node_to_insert, pos, editing_state);
@@ -150,7 +151,6 @@ void InsertLineBreakCommand::DoApply(EditingState* editing_state) {
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
             .Collapse(Position::InParentAfterNode(*node_to_insert))
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build()));
     // If we're inserting after all of the rendered text in a text node, or into
     // a non-text node, a simple insertion is sufficient.
@@ -163,7 +163,6 @@ void InsertLineBreakCommand::DoApply(EditingState* editing_state) {
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
             .Collapse(Position::InParentAfterNode(*node_to_insert))
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build()));
   } else if (pos.AnchorNode()->IsTextNode()) {
     // Split a text node
@@ -198,7 +197,6 @@ void InsertLineBreakCommand::DoApply(EditingState* editing_state) {
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
             .Collapse(ending_position)
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build()));
   }
 

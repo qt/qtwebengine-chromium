@@ -6,7 +6,6 @@ include_rules = [
   "+components/metrics",
   "+components/policy",
   "+components/security_state",
-  "+components/signin/core/browser",
   "+components/sync",
   "+components/variations",
   "+components/version_info",
@@ -16,12 +15,12 @@ include_rules = [
   "+google_apis/gaia",
   "+google_apis/google_api_keys.h",
   "+net",
+  "+services/identity/public",
   "+services/metrics/public",
   "+sql",
   "+third_party/fips181",
   "+third_party/libaddressinput", # For address i18n.
   "+third_party/libphonenumber",  # For phone number i18n.
-  "+third_party/libxml",
   "+third_party/re2",
   "+ui/base",
   "+ui/gfx",

@@ -111,6 +111,17 @@ class TextFinder::DeferredScopeStringMatches
   const WebFindOptions options_;
 };
 
+static void ScrollToVisible(Range* match) {
+  const Node& first_node = *match->FirstNode();
+  first_node.GetLayoutObject()->ScrollRectToVisible(
+      LayoutRect(match->BoundingBox()),
+      WebScrollIntoViewParams(ScrollAlignment::kAlignCenterIfNeeded,
+                              ScrollAlignment::kAlignCenterIfNeeded,
+                              kUserScroll));
+  first_node.GetDocument().SetSequentialFocusNavigationStartingPoint(
+      const_cast<Node*>(&first_node));
+}
+
 bool TextFinder::Find(int identifier,
                       const WebString& search_text,
                       const WebFindOptions& options,
@@ -148,9 +159,8 @@ bool TextFinder::Find(int identifier,
       (options.medial_capital_as_word_start ? kTreatMedialCapitalAsWordStart
                                             : 0) |
       (options.find_next ? 0 : kStartInSelection);
-  active_match_ =
-      OwnerFrame().GetFrame()->GetEditor().FindStringAndScrollToVisible(
-          search_text, active_match_.Get(), find_options);
+  active_match_ = OwnerFrame().GetFrame()->GetEditor().FindRangeOfString(
+      search_text, EphemeralRangeInFlatTree(active_match_.Get()), find_options);
 
   if (!active_match_) {
     // If we're finding next the next active match might not be in the current
@@ -161,6 +171,7 @@ bool TextFinder::Find(int identifier,
     OwnerFrame().GetFrameView()->InvalidatePaintForTickmarks();
     return false;
   }
+  ScrollToVisible(active_match_);
 
   // If the user is browsing a page with autosizing, adjust the zoom to the
   // column where the next hit has been found. Doing this when autosizing is
@@ -171,7 +182,7 @@ bool TextFinder::Find(int identifier,
           ->GetTextAutosizer()
           ->PageNeedsAutosizing()) {
     OwnerFrame().ViewImpl()->ZoomToFindInPageRect(
-        OwnerFrame().GetFrameView()->ContentsToRootFrame(
+        OwnerFrame().GetFrameView()->AbsoluteToRootFrame(
             EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
                 EphemeralRange(active_match_.Get())))));
   }
@@ -213,7 +224,7 @@ bool TextFinder::Find(int identifier,
       else if (active_match_index_ < 0)
         active_match_index_ = last_match_count_ - 1;
     }
-    WebRect selection_rect = OwnerFrame().GetFrameView()->ContentsToRootFrame(
+    WebRect selection_rect = OwnerFrame().GetFrameView()->AbsoluteToRootFrame(
         active_match_->BoundingBox());
     ReportFindInPageSelection(selection_rect, active_match_index_ + 1,
                               identifier);
@@ -476,7 +487,7 @@ void TextFinder::ScopeStringMatches(int identifier,
 
       // Notify browser of new location for the selected rectangle.
       ReportFindInPageSelection(
-          OwnerFrame().GetFrameView()->ContentsToRootFrame(result_bounds),
+          OwnerFrame().GetFrameView()->AbsoluteToRootFrame(result_bounds),
           active_match_index_ + 1, identifier);
     }
 
@@ -615,9 +626,9 @@ void TextFinder::ClearFindMatchesCache() {
 }
 
 void TextFinder::UpdateFindMatchRects() {
-  IntSize current_contents_size = OwnerFrame().ContentsSize();
-  if (contents_size_for_current_find_match_rects_ != current_contents_size) {
-    contents_size_for_current_find_match_rects_ = current_contents_size;
+  IntSize current_document_size = OwnerFrame().DocumentSize();
+  if (document_size_for_current_find_match_rects_ != current_document_size) {
+    document_size_for_current_find_match_rects_ = current_document_size;
     find_match_rects_are_valid_ = false;
   }
 
@@ -754,10 +765,25 @@ int TextFinder::SelectFindMatch(unsigned index, WebRect* selection_rect) {
           WebScrollIntoViewParams(ScrollAlignment::kAlignCenterIfNeeded,
                                   ScrollAlignment::kAlignCenterIfNeeded,
                                   kUserScroll));
+
+      if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
+        // If RLS is on, absolute coordinates are scroll-variant so the
+        // bounding box will change if the page is scrolled by
+        // ScrollRectToVisible above. Recompute the bounding box so we have the
+        // updated location for the zoom below.
+        // TODO(bokan): This should really use the return value from
+        // ScrollRectToVisible which returns the updated position of the
+        // scrolled rect. However, this was recently added and this is a fix
+        // that needs to be merged to a release branch.
+        // https://crbug.com/823365.
+        active_match_bounding_box =
+            EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
+                EphemeralRange(active_match_.Get())));
+      }
     }
 
     // Zoom to the active match.
-    active_match_rect = OwnerFrame().GetFrameView()->ContentsToRootFrame(
+    active_match_rect = OwnerFrame().GetFrameView()->AbsoluteToRootFrame(
         active_match_bounding_box);
     OwnerFrame().ViewImpl()->ZoomToFindInPageRect(active_match_rect);
   }

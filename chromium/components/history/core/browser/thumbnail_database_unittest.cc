@@ -290,6 +290,49 @@ TEST_F(ThumbnailDatabaseTest, AddFaviconBitmapCreatesCorrectTimestamps) {
   EXPECT_EQ(base::Time(), last_requested);
 }
 
+TEST_F(ThumbnailDatabaseTest,
+       GetFaviconLastUpdatedTimeReturnsFalseForNoBitmaps) {
+  ThumbnailDatabase db(nullptr);
+  ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
+  db.BeginTransaction();
+
+  GURL url("http://google.com");
+  favicon_base::FaviconID icon =
+      db.AddFavicon(url, favicon_base::IconType::kFavicon);
+  ASSERT_NE(0, icon);
+
+  base::Time last_updated;
+  ASSERT_FALSE(db.GetFaviconLastUpdatedTime(icon, &last_updated));
+}
+
+TEST_F(ThumbnailDatabaseTest, GetFaviconLastUpdatedTimeReturnsMaxTime) {
+  ThumbnailDatabase db(nullptr);
+  ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
+  db.BeginTransaction();
+
+  base::Time add_time1;
+  ASSERT_TRUE(
+      base::Time::FromUTCExploded({2017, 5, 0, 1, 0, 0, 0, 0}, &add_time1));
+  base::Time add_time2 = add_time1 - base::TimeDelta::FromSeconds(1);
+  std::vector<unsigned char> data(kBlob1, kBlob1 + sizeof(kBlob1));
+  scoped_refptr<base::RefCountedBytes> favicon(new base::RefCountedBytes(data));
+
+  GURL url("http://google.com");
+  favicon_base::FaviconID icon =
+      db.AddFavicon(url, favicon_base::IconType::kFavicon);
+  ASSERT_NE(0, icon);
+  FaviconBitmapID bitmap1 = db.AddFaviconBitmap(
+      icon, favicon, FaviconBitmapType::ON_VISIT, add_time1, gfx::Size());
+  ASSERT_NE(0, bitmap1);
+  FaviconBitmapID bitmap2 = db.AddFaviconBitmap(
+      icon, favicon, FaviconBitmapType::ON_VISIT, add_time2, gfx::Size());
+  ASSERT_NE(0, bitmap2);
+
+  base::Time last_updated;
+  ASSERT_TRUE(db.GetFaviconLastUpdatedTime(icon, &last_updated));
+  EXPECT_EQ(add_time1, last_updated);
+}
+
 TEST_F(ThumbnailDatabaseTest, TouchUpdatesOnDemandFavicons) {
   ThumbnailDatabase db(nullptr);
   ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
@@ -963,15 +1006,6 @@ TEST_F(ThumbnailDatabaseTest, Version8) {
 }
 
 TEST_F(ThumbnailDatabaseTest, Recovery) {
-  // This code tests the recovery module in concert with Chromium's
-  // custom recover virtual table.  Under USE_SYSTEM_SQLITE, this is
-  // not available.  This is detected dynamically because corrupt
-  // databases still need to be handled, perhaps by Raze(), and the
-  // recovery module is an obvious layer to abstract that to.
-  // TODO(shess): Handle that case for real!
-  if (!sql::Recovery::FullRecoverySupported())
-    return;
-
   // Create an example database.
   {
     EXPECT_TRUE(CreateDatabaseFromSQL(file_name_, "Favicons.v8.sql"));
@@ -1084,15 +1118,6 @@ TEST_F(ThumbnailDatabaseTest, Recovery) {
 }
 
 TEST_F(ThumbnailDatabaseTest, Recovery7) {
-  // This code tests the recovery module in concert with Chromium's
-  // custom recover virtual table.  Under USE_SYSTEM_SQLITE, this is
-  // not available.  This is detected dynamically because corrupt
-  // databases still need to be handled, perhaps by Raze(), and the
-  // recovery module is an obvious layer to abstract that to.
-  // TODO(shess): Handle that case for real!
-  if (!sql::Recovery::FullRecoverySupported())
-    return;
-
   // Create an example database without loading into ThumbnailDatabase
   // (which would upgrade it).
   EXPECT_TRUE(CreateDatabaseFromSQL(file_name_, "Favicons.v7.sql"));
@@ -1188,10 +1213,6 @@ TEST_F(ThumbnailDatabaseTest, Recovery7) {
 }
 
 TEST_F(ThumbnailDatabaseTest, Recovery6) {
-  // TODO(shess): See comment at top of Recovery test.
-  if (!sql::Recovery::FullRecoverySupported())
-    return;
-
   // Create an example database without loading into ThumbnailDatabase
   // (which would upgrade it).
   EXPECT_TRUE(CreateDatabaseFromSQL(file_name_, "Favicons.v6.sql"));
@@ -1236,10 +1257,6 @@ TEST_F(ThumbnailDatabaseTest, Recovery6) {
 }
 
 TEST_F(ThumbnailDatabaseTest, Recovery5) {
-  // TODO(shess): See comment at top of Recovery test.
-  if (!sql::Recovery::FullRecoverySupported())
-    return;
-
   // Create an example database without loading into ThumbnailDatabase
   // (which would upgrade it).
   EXPECT_TRUE(CreateDatabaseFromSQL(file_name_, "Favicons.v5.sql"));

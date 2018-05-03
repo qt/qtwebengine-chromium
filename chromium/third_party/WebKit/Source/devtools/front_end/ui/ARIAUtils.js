@@ -127,3 +127,22 @@ UI.ARIAUtils.setPressed = function(element, value) {
 UI.ARIAUtils.setAccessibleName = function(element, name) {
   element.setAttribute('aria-label', name);
 };
+
+/**
+ * @param {string} message
+ * @param {!Element} element
+ */
+UI.ARIAUtils.alert = function(message, element) {
+  const document = element.ownerDocument;
+  if (!document[UI.ARIAUtils.AlertElementSymbol]) {
+    const alertElement = document.body.createChild('div');
+    alertElement.style.position = 'absolute';
+    alertElement.style.left = '-999em';
+    alertElement.setAttribute('role', 'alert');
+    alertElement.setAttribute('aria-atomic', 'true');
+    document[UI.ARIAUtils.AlertElementSymbol] = alertElement;
+  }
+  document[UI.ARIAUtils.AlertElementSymbol].textContent = message;
+};
+
+UI.ARIAUtils.AlertElementSymbol = Symbol('AlertElementSybmol');

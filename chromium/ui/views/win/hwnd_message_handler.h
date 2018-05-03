@@ -20,7 +20,7 @@
 #include "base/strings/string16.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/win_util.h"
-#include "ui/accessibility/ax_enums.h"
+#include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/base/win/window_event_target.h"
@@ -34,9 +34,6 @@
 namespace gfx {
 class ImageSkia;
 class Insets;
-namespace win {
-class DirectManipulationHelper;
-}  // namespace win
 }  // namespace gfx
 
 namespace ui  {
@@ -44,7 +41,10 @@ class AXSystemCaretWin;
 class InputMethod;
 class TextInputClient;
 class ViewProp;
-}
+namespace win {
+class DirectManipulationHelper;
+}  // namespace win
+}  // namespace ui
 
 namespace views {
 
@@ -550,12 +550,6 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
       const POINTER_INFO& pointer_info,
       const gfx::Point& point,
       const ui::PointerDetails& pointer_details);
-  LRESULT GenerateTouchEventFromPointerEvent(
-      UINT message,
-      UINT32 pointer_id,
-      const POINTER_INFO& pointer_info,
-      const gfx::Point& point,
-      const ui::PointerDetails& pointer_details);
 
   // Returns true if the mouse message passed in is an OS synthesized mouse
   // message.
@@ -575,7 +569,7 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // |time_stamp| is the time stamp associated with the message.
   void GenerateTouchEvent(ui::EventType event_type,
                           const gfx::Point& point,
-                          unsigned int id,
+                          size_t id,
                           base::TimeTicks time_stamp,
                           TouchEvents* touch_events);
 
@@ -737,7 +731,7 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // This class provides functionality to register the legacy window as a
   // Direct Manipulation consumer. This allows us to support smooth scroll
   // in Chrome on Windows 10.
-  std::unique_ptr<gfx::win::DirectManipulationHelper>
+  std::unique_ptr<ui::win::DirectManipulationHelper>
       direct_manipulation_helper_;
 
   // The location where the user clicked on the caption. We cache this when we
@@ -758,6 +752,10 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // True if the window should have no border and its contents should be
   // partially or fully transparent.
   bool is_translucent_ = false;
+
+  // True if the window should process WM_POINTER for touch events and
+  // not WM_TOUCH events.
+  bool pointer_events_for_touch_;
 
   // This is a map of the HMONITOR to full screeen window instance. It is safe
   // to keep a raw pointer to the HWNDMessageHandler instance as we track the

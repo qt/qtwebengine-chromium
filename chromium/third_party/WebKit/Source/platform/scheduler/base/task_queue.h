@@ -34,7 +34,7 @@ class TaskQueueImpl;
 }
 
 class TimeDomain;
-class TaskQueueManager;
+class TaskQueueManagerImpl;
 
 class PLATFORM_EXPORT TaskQueue : public base::SingleThreadTaskRunner {
  public:
@@ -72,7 +72,7 @@ class PLATFORM_EXPORT TaskQueue : public base::SingleThreadTaskRunner {
   };
 
   // Unregisters the task queue after which no tasks posted to it will run and
-  // the TaskQueueManager's reference to it will be released soon.
+  // the TaskQueueManagerImpl's reference to it will be released soon.
   virtual void ShutdownTaskQueue();
 
   enum QueuePriority {
@@ -107,8 +107,7 @@ class PLATFORM_EXPORT TaskQueue : public base::SingleThreadTaskRunner {
         : name(name),
           should_monitor_quiescence(false),
           time_domain(nullptr),
-          should_notify_observers(true),
-          should_report_when_execution_blocked(false) {}
+          should_notify_observers(true) {}
 
     Spec SetShouldMonitorQuiescence(bool should_monitor) {
       should_monitor_quiescence = should_monitor;
@@ -125,17 +124,10 @@ class PLATFORM_EXPORT TaskQueue : public base::SingleThreadTaskRunner {
       return *this;
     }
 
-    // See TaskQueueManager::Observer::OnTriedToExecuteBlockedTask.
-    Spec SetShouldReportWhenExecutionBlocked(bool should_report) {
-      should_report_when_execution_blocked = should_report;
-      return *this;
-    }
-
     const char* name;
     bool should_monitor_quiescence;
     TimeDomain* time_domain;
     bool should_notify_observers;
-    bool should_report_when_execution_blocked;
   };
 
   // Interface to pass per-task metadata to RendererScheduler.
@@ -275,7 +267,7 @@ class PLATFORM_EXPORT TaskQueue : public base::SingleThreadTaskRunner {
 
  private:
   friend class internal::TaskQueueImpl;
-  friend class TaskQueueManager;
+  friend class TaskQueueManagerImpl;
 
   friend class task_queue_throttler_unittest::TaskQueueThrottlerTest;
 
@@ -296,7 +288,7 @@ class PLATFORM_EXPORT TaskQueue : public base::SingleThreadTaskRunner {
 
   const base::PlatformThreadId thread_id_;
 
-  const base::WeakPtr<TaskQueueManager> task_queue_manager_;
+  const base::WeakPtr<TaskQueueManagerImpl> task_queue_manager_;
 
   const scoped_refptr<internal::GracefulQueueShutdownHelper>
       graceful_queue_shutdown_helper_;

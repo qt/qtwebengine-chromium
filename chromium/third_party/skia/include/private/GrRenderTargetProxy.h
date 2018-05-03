@@ -26,7 +26,7 @@ public:
     bool instantiate(GrResourceProvider*) override;
 
     GrFSAAType fsaaType() const {
-        if (!fSampleCnt) {
+        if (fSampleCnt <= 1) {
             SkASSERT(!(fRenderTargetFlags & GrRenderTargetFlags::kMixedSampled));
             return GrFSAAType::kNone;
         }
@@ -42,15 +42,15 @@ public:
     bool needsStencil() const { return fNeedsStencil; }
 
     /**
-     * Returns the number of samples/pixel in the stencil buffer (Zero if non-MSAA).
+     * Returns the number of samples/pixel in the stencil buffer (One if non-MSAA).
      */
     int numStencilSamples() const { return fSampleCnt; }
 
     /**
-     * Returns the number of samples/pixel in the color buffer (Zero if non-MSAA or mixed sampled).
+     * Returns the number of samples/pixel in the color buffer (One if non-MSAA or mixed sampled).
      */
     int numColorSamples() const {
-        return GrFSAAType::kMixedSamples == this->fsaaType() ? 0 : fSampleCnt;
+        return GrFSAAType::kMixedSamples == this->fsaaType() ? 1 : fSampleCnt;
     }
 
     int maxWindowRectangles(const GrCaps& caps) const;
@@ -77,8 +77,9 @@ protected:
     //
     // The minimal knowledge version is used for CCPR where we are generating an atlas but we do not
     // know the final size until flush time.
-    GrRenderTargetProxy(LazyInstantiateCallback&&, const GrSurfaceDesc&, SkBackingFit, SkBudgeted,
-                        uint32_t flags);
+    GrRenderTargetProxy(LazyInstantiateCallback&&, LazyInstantiationType lazyType,
+                        const GrSurfaceDesc&, SkBackingFit, SkBudgeted, uint32_t flags,
+                        GrRenderTargetFlags renderTargetFlags);
 
     // Wrapped version
     GrRenderTargetProxy(sk_sp<GrSurface>, GrSurfaceOrigin);
@@ -87,7 +88,7 @@ protected:
 
 private:
     size_t onUninstantiatedGpuMemorySize() const override;
-    SkDEBUGCODE(void validateLazyTexture(const GrTexture*) override { SkASSERT(0); })
+    SkDEBUGCODE(void validateLazySurface(const GrSurface*) override;)
 
     int                 fSampleCnt;
     bool                fNeedsStencil;

@@ -30,12 +30,13 @@ declare_args() {
   skia_use_zlib = true
   skia_use_metal = false
   skia_use_libheif = is_skia_dev_build
-  skia_embed_resources = false
+  skia_use_skcms = is_skia_dev_build
 
   skia_android_serial = ""
   skia_enable_discrete_gpu = true
   skia_enable_effects = true
   skia_enable_flutter_defines = false
+  skia_enable_fontmgr_empty = false
   skia_enable_gpu = true
   skia_enable_pdf = true
   skia_enable_spirv_validation = is_skia_dev_build && is_debug
@@ -50,11 +51,16 @@ declare_args() {
   skia_jumper_clang = ""
   skia_jumper_objdump = ""
   skia_jumper_ccache = ""
+
+  skia_skqp_enable_driver_correctness_workarounds = false
+  skia_skqp_global_error_tolerance = 0
 }
 declare_args() {
   skia_use_dng_sdk = !is_fuchsia && skia_use_libjpeg_turbo && skia_use_zlib
   skia_use_sfntly = skia_use_icu
   skia_enable_atlas_text = is_skia_dev_build && skia_enable_gpu
+
+  skia_use_legacy_gpu_pixel_ops = is_skia_dev_build && is_win  # Arbitrary to keep old code path tested until deletion.
 
   if (is_android) {
     skia_use_vulkan = defined(ndk_api) && ndk_api >= 24
@@ -390,6 +396,13 @@ optional("fontmgr_custom") {
   ]
 }
 
+optional("fontmgr_empty") {
+  enabled = skia_enable_fontmgr_empty
+  sources = [
+    "src/ports/SkFontMgr_empty_factory.cpp",
+  ]
+}
+
 optional("fontmgr_fontconfig") {
   enabled = skia_use_freetype && skia_use_fontconfig
 
@@ -503,7 +516,7 @@ if (skia_compile_processors) {
     ]
     outputs = [
       "$target_out_dir/" +
-          rebase_path("src/sksl/sksl_enums.include", target_out_dir),
+          rebase_path("src/sksl/sksl_enums.inc", target_out_dir),
     ]
     args = [
       rebase_path(sources[0]),
@@ -593,6 +606,9 @@ optional("gpu") {
         public_defines += [ "SK_VULKAN_HEADER=\"GrVulkanDefines.h\"" ]
       }
     }
+  }
+  if (skia_use_legacy_gpu_pixel_ops) {
+    public_defines += [ "SK_LEGACY_GPU_PIXEL_OPS" ]
   }
   if (skia_enable_spirv_validation) {
     deps += [ "//third_party/spirv-tools" ]
@@ -689,6 +705,17 @@ optional("raw") {
   ]
 }
 
+optional("skcms") {
+  enabled = skia_use_skcms
+
+  deps = [
+    "//third_party/skcms",
+  ]
+  sources = [
+    # TODO
+  ]
+}
+
 optional("typeface_freetype") {
   enabled = skia_use_freetype
 
@@ -743,6 +770,7 @@ component("skia") {
     ":effects",
     ":fontmgr_android",
     ":fontmgr_custom",
+    ":fontmgr_empty",
     ":fontmgr_fontconfig",
     ":fontmgr_fuchsia",
     ":gpu",
@@ -752,6 +780,7 @@ component("skia") {
     ":pdf",
     ":png",
     ":raw",
+    ":skcms",
     ":sse2",
     ":sse41",
     ":sse42",
@@ -915,20 +944,6 @@ if (skia_enable_tools) {
     outputs = [
       skia_h,
     ]
-  }
-
-  if (skia_embed_resources) {
-    action("binary_resources.cpp") {
-      script = "gn/generate_binary_asset.py"
-      args = [
-        rebase_path("resources"),
-        "gResources",
-        rebase_path("$target_gen_dir/binary_resources.cpp", root_build_dir),
-      ]
-      outputs = [
-        "$target_gen_dir/binary_resources.cpp",
-      ]
-    }
   }
 
   if (skia_enable_gpu && target_cpu == "x64") {
@@ -1226,6 +1241,7 @@ if (skia_enable_tools) {
     public_include_dirs = [
       "tools",
       "tools/debugger",
+      "tools/fonts",
       "tools/timer",
       "tools/trace",
     ]
@@ -1235,17 +1251,18 @@ if (skia_enable_tools) {
       "tools/LsanSuppressions.cpp",
       "tools/ProcStats.cpp",
       "tools/Resources.cpp",
-      "tools/SkRandomScalerContext.cpp",
-      "tools/SkTestScalerContext.cpp",
       "tools/UrlDataManager.cpp",
       "tools/debugger/SkDebugCanvas.cpp",
       "tools/debugger/SkDrawCommand.cpp",
       "tools/debugger/SkJsonWriteBuffer.cpp",
       "tools/debugger/SkObjectParser.cpp",
+      "tools/fonts/SkRandomScalerContext.cpp",
+      "tools/fonts/SkTestFontMgr.cpp",
+      "tools/fonts/SkTestScalerContext.cpp",
+      "tools/fonts/sk_tool_utils_font.cpp",
       "tools/picture_utils.cpp",
       "tools/random_parse_path.cpp",
       "tools/sk_tool_utils.cpp",
-      "tools/sk_tool_utils_font.cpp",
       "tools/timer/Timer.cpp",
       "tools/trace/SkChromeTracingTracer.cpp",
       "tools/trace/SkChromeTracingTracer.h",
@@ -1267,11 +1284,6 @@ if (skia_enable_tools) {
     public_deps = [
       "//third_party/jsoncpp",
     ]
-    if (skia_embed_resources) {
-      defines = [ "SK_EMBED_RESOURCES" ]
-      sources += [ "$target_gen_dir/binary_resources.cpp" ]
-      deps += [ ":binary_resources.cpp" ]
-    }
   }
 
   import("gn/gm.gni")
@@ -1296,13 +1308,15 @@ if (skia_enable_tools) {
     }
     deps = [
       ":experimental_sksg",
-      ":experimental_svg_model",
       ":flags",
       ":skia",
       ":tool_utils",
       "//third_party/libpng",
       "//third_party/zlib",
     ]
+    if (skia_use_expat) {
+      deps += [ ":experimental_svg_model" ]
+    }
     public_deps = [
       ":gpu_tool_utils",  # Test.h #includes headers from this target.
     ]
@@ -1327,6 +1341,7 @@ if (skia_enable_tools) {
     sources = [
       "experimental/skottie/Skottie.cpp",
       "experimental/skottie/SkottieAnimator.cpp",
+      "experimental/skottie/SkottieParser.cpp",
       "experimental/skottie/SkottieProperties.cpp",
     ]
     deps = [
@@ -1385,12 +1400,17 @@ if (skia_enable_tools) {
       "experimental/sksg/SkSGNode.cpp",
       "experimental/sksg/SkSGPaintNode.cpp",
       "experimental/sksg/SkSGRenderNode.cpp",
+      "experimental/sksg/SkSGScene.cpp",
+      "experimental/sksg/effects/SkSGClipEffect.cpp",
       "experimental/sksg/effects/SkSGMaskEffect.cpp",
       "experimental/sksg/effects/SkSGOpacityEffect.cpp",
       "experimental/sksg/effects/SkSGTransform.cpp",
+      "experimental/sksg/geometry/SkSGGeometryTransform.cpp",
       "experimental/sksg/geometry/SkSGMerge.cpp",
       "experimental/sksg/geometry/SkSGPath.cpp",
+      "experimental/sksg/geometry/SkSGPlane.cpp",
       "experimental/sksg/geometry/SkSGRect.cpp",
+      "experimental/sksg/geometry/SkSGText.cpp",
       "experimental/sksg/geometry/SkSGTrimEffect.cpp",
       "experimental/sksg/paint/SkSGColor.cpp",
       "experimental/sksg/paint/SkSGGradient.cpp",
@@ -1475,18 +1495,13 @@ if (skia_enable_tools) {
     test_lib("samples") {
       public_include_dirs = [ "samplecode" ]
       include_dirs = [ "experimental" ]
-      sources = samples_sources + [
-                  # Relocating these files here, so that clients don't try to build them while they're
-                  # still in active development. Clang's thread safety analysis gets tripped up by
-                  # conditional locks.
-                  "src/core/SkThreadedBMPDevice.cpp",
-                  "src/core/SkThreadedBMPDevice.h",
-                ]
+      sources = samples_sources
       deps = [
         ":experimental_sksg",
         ":experimental_svg_model",
         ":flags",
         ":gm",
+        ":skshaper",
         ":tool_utils",
         ":views",
         ":xml",
@@ -1503,7 +1518,6 @@ if (skia_enable_tools) {
     test_app("dm") {
       sources = [
         "dm/DM.cpp",
-        "dm/DMFontMgr.cpp",
         "dm/DMGpuTestProcs.cpp",
         "dm/DMJsonWriter.cpp",
         "dm/DMSrcSink.cpp",
@@ -1526,24 +1540,17 @@ if (skia_enable_tools) {
     }
   }
 
-  test_app("ok") {
-    sources = [
-      "dm/DMFontMgr.cpp",
-      "tools/ok.cpp",
-      "tools/ok_dsts.cpp",
-      "tools/ok_engines.cpp",
-      "tools/ok_srcs.cpp",
-      "tools/ok_test.cpp",
-      "tools/ok_vias.cpp",
-    ]
-    deps = [
-      ":bench",
-      ":gm",
-      ":skia",
-      ":tests",
-      ":tool_utils",
-    ]
+  if (!is_win) {
+    test_app("remote_demo") {
+      sources = [
+        "tools/remote_demo.cpp",
+      ]
+      deps = [
+        ":skia",
+      ]
+    }
   }
+
   test_app("nanobench") {
     sources = [
       "bench/nanobench.cpp",
@@ -1586,15 +1593,21 @@ if (skia_enable_tools) {
     }
   }
 
-  # We can't yet build ICU on iOS or Windows.
-  if (!is_ios && !is_win && target_cpu != "wasm") {
-    test_app("sktexttopdf-hb") {
+  test_lib("skshaper") {
+    public_include_dirs = [ "tools/shape" ]
+    deps = [
+      ":skia",
+    ]
+
+    if (target_cpu == "wasm") {
+      sources = [
+        "tools/shape/SkShaper_primitive.cpp",
+      ]
+    } else {
       sources = [
         "tools/shape/SkShaper_harfbuzz.cpp",
-        "tools/shape/using_skia_and_harfbuzz.cpp",
       ]
-      deps = [
-        ":skia",
+      deps += [
         "//third_party/harfbuzz",
         "//third_party/icu",
       ]
@@ -1602,11 +1615,11 @@ if (skia_enable_tools) {
   }
   test_app("sktexttopdf") {
     sources = [
-      "tools/shape/SkShaper_primitive.cpp",
       "tools/shape/using_skia_and_harfbuzz.cpp",
     ]
     deps = [
       ":skia",
+      ":skshaper",
     ]
   }
 
@@ -1622,7 +1635,7 @@ if (skia_enable_tools) {
 
   test_app("create_test_font") {
     sources = [
-      "tools/create_test_font.cpp",
+      "tools/fonts/create_test_font.cpp",
     ]
     deps = [
       ":skia",
@@ -1700,10 +1713,14 @@ if (skia_enable_tools) {
       "fuzz/FuzzGradients.cpp",
       "fuzz/FuzzParsePath.cpp",
       "fuzz/FuzzPathop.cpp",
-      "fuzz/FuzzScaleToSides.cpp",
       "fuzz/fuzz.cpp",
+      "fuzz/oss_fuzz/FuzzAnimatedImage.cpp",
+      "fuzz/oss_fuzz/FuzzImage.cpp",
+      "fuzz/oss_fuzz/FuzzImageFilterDeserialize.cpp",
+      "fuzz/oss_fuzz/FuzzPathDeserialize.cpp",
       "fuzz/oss_fuzz/FuzzRegionDeserialize.cpp",
       "fuzz/oss_fuzz/FuzzRegionSetPath.cpp",
+      "fuzz/oss_fuzz/FuzzTextBlobDeserialize.cpp",
       "tools/UrlDataManager.cpp",
       "tools/debugger/SkDebugCanvas.cpp",
       "tools/debugger/SkDrawCommand.cpp",
@@ -1771,8 +1788,12 @@ if (skia_enable_tools) {
   if (!is_win && skia_enable_gpu) {
     test_lib("skqp_lib") {
       public_include_dirs = [ "tools/skqp" ]
+      defines =
+          [ "SK_SKQP_GLOBAL_ERROR_TOLERANCE=$skia_skqp_global_error_tolerance" ]
+      if (skia_skqp_enable_driver_correctness_workarounds) {
+        defines += [ "SK_SKQP_ENABLE_DRIVER_CORRECTNESS_WORKAROUNDS" ]
+      }
       sources = [
-        "dm/DMFontMgr.cpp",
         "dm/DMGpuTestProcs.cpp",
         "tools/skqp/gm_knowledge.cpp",
         "tools/skqp/gm_runner.cpp",
@@ -1792,6 +1813,7 @@ if (skia_enable_tools) {
       deps = [
         ":skia",
         ":skqp_lib",
+        ":tool_utils",
         "//third_party/googletest",
       ]
     }
@@ -1805,9 +1827,30 @@ if (skia_enable_tools) {
       deps = [
         ":skia",
         ":skqp_lib",
+        ":tool_utils",
       ]
       libs = [ "android" ]
     }
+  }
+
+  test_app("list_gms") {
+    sources = [
+      "tools/list_gms.cpp",
+    ]
+    deps = [
+      ":gm",
+      ":skia",
+    ]
+  }
+  test_app("list_gpu_unit_tests") {
+    sources = [
+      "dm/DMGpuTestProcs.cpp",
+      "tools/list_gpu_unit_tests.cpp",
+    ]
+    deps = [
+      ":skia",
+      ":tests",
+    ]
   }
 
   if (skia_enable_gpu) {
@@ -1908,13 +1951,14 @@ if (skia_enable_tools) {
         bundle_ios_data = true
       }
       sources = [
+        "tools/viewer/BisectSlide.cpp",
         "tools/viewer/GMSlide.cpp",
         "tools/viewer/ImGuiLayer.cpp",
         "tools/viewer/ImageSlide.cpp",
         "tools/viewer/SKPSlide.cpp",
         "tools/viewer/SampleSlide.cpp",
         "tools/viewer/SkottieSlide.cpp",
-        "tools/viewer/SkottieSlide2.cpp",
+        "tools/viewer/SlideDir.cpp",
         "tools/viewer/StatsLayer.cpp",
         "tools/viewer/Viewer.cpp",
       ]
@@ -1923,6 +1967,7 @@ if (skia_enable_tools) {
       include_dirs = []
       deps = [
         ":experimental_skottie",
+        ":experimental_sksg",
         ":flags",
         ":gm",
         ":gpu_tool_utils",

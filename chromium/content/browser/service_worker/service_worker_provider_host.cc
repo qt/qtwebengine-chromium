@@ -21,9 +21,8 @@
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
 #include "content/browser/service_worker/service_worker_controllee_request_handler.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
-#include "content/browser/service_worker/service_worker_handle.h"
 #include "content/browser/service_worker/service_worker_registration_object_host.h"
-#include "content/browser/service_worker/service_worker_script_url_loader_factory.h"
+#include "content/browser/service_worker/service_worker_script_loader_factory.h"
 #include "content/browser/service_worker/service_worker_type_converters.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/browser/url_loader_factory_getter.h"
@@ -43,10 +42,10 @@
 #include "net/base/url_util.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "storage/browser/blob/blob_storage_context.h"
-#include "third_party/WebKit/common/message_port/message_port_channel.h"
-#include "third_party/WebKit/common/service_worker/service_worker_client.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_client.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -100,7 +99,7 @@ class ServiceWorkerURLTrackingRequestHandler
     provider_host_->SetDocumentUrl(stripped_url);
     provider_host_->SetTopmostFrameUrl(resource_request.site_for_cookies);
     // Fall back to network.
-    std::move(callback).Run(StartLoaderCallback());
+    std::move(callback).Run({});
   }
 
  private:
@@ -351,7 +350,7 @@ void ServiceWorkerProviderHost::SetControllerVersionAttribute(
 
   // SetController message should be sent only for clients.
   DCHECK(IsProviderForClient());
-  SendSetControllerServiceWorker(version, notify_controllerchange);
+  SendSetControllerServiceWorker(notify_controllerchange);
 }
 
 bool ServiceWorkerProviderHost::IsProviderForClient() const {
@@ -508,32 +507,30 @@ blink::mojom::ServiceWorkerObjectInfoPtr
 ServiceWorkerProviderHost::GetOrCreateServiceWorkerHandle(
     ServiceWorkerVersion* version) {
   if (!context_ || !version)
-    return blink::mojom::ServiceWorkerObjectInfo::New();
+    return nullptr;
   if (!dispatcher_host_) {
     DCHECK(ServiceWorkerUtils::IsServicificationEnabled() ||
            IsNavigationMojoResponseEnabled());
+    blink::mojom::ServiceWorkerObjectInfoPtr info;
     // This is called before the dispatcher host is created.
-    auto info = blink::mojom::ServiceWorkerObjectInfo::New();
-    info->handle_id = context_->GetNewServiceWorkerHandleId();
-    info->url = version->script_url();
-    info->state =
-        mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version->status());
-    info->version_id = version->version_id();
-    precreated_controller_handle_id_ = info->handle_id;
+    // |precreated_controller_handle_| instance's lifetime is controlled by its
+    // own internal Mojo connections via |info|.
+    precreated_controller_handle_ = ServiceWorkerHandle::Create(
+        nullptr, context_, AsWeakPtr(), version, &info);
     return info;
   }
   ServiceWorkerHandle* handle = dispatcher_host_->FindServiceWorkerHandle(
       provider_id(), version->version_id());
   if (handle) {
-    handle->IncrementRefCount();
     return handle->CreateObjectInfo();
   }
 
-  std::unique_ptr<ServiceWorkerHandle> new_handle(
-      ServiceWorkerHandle::Create(context_, AsWeakPtr(), version));
-  handle = new_handle.get();
-  dispatcher_host_->RegisterServiceWorkerHandle(std::move(new_handle));
-  return handle->CreateObjectInfo();
+  blink::mojom::ServiceWorkerObjectInfoPtr info;
+  // ServiceWorkerHandle lifetime is controlled by |info| and is also owned by
+  // |dispatcher_host_|.
+  ServiceWorkerHandle::Create(dispatcher_host_.get(), context_, AsWeakPtr(),
+                              version, &info);
+  return info;
 }
 
 bool ServiceWorkerProviderHost::CanAssociateRegistration(
@@ -549,16 +546,13 @@ bool ServiceWorkerProviderHost::CanAssociateRegistration(
 
 void ServiceWorkerProviderHost::PostMessageToClient(
     ServiceWorkerVersion* version,
-    const base::string16& message,
-    const std::vector<blink::MessagePortChannel>& sent_message_ports) {
+    blink::TransferableMessage message) {
   DCHECK(IsProviderForClient());
   if (!dispatcher_host_)
     return;
 
-  auto message_pipes =
-      blink::MessagePortChannel::ReleaseHandles(sent_message_ports);
   container_->PostMessageToClient(GetOrCreateServiceWorkerHandle(version),
-                                  message, std::move(message_pipes));
+                                  std::move(message));
 }
 
 void ServiceWorkerProviderHost::CountFeature(uint32_t feature) {
@@ -617,17 +611,14 @@ void ServiceWorkerProviderHost::CompleteNavigationInitialized(
 
   if ((ServiceWorkerUtils::IsServicificationEnabled() ||
        IsNavigationMojoResponseEnabled()) &&
-      precreated_controller_handle_id_ !=
-          blink::mojom::kInvalidServiceWorkerHandleId) {
+      precreated_controller_handle_) {
     // S13nServiceWorker: register the pre-created handle for the controller
     // service worker with the dispatcher host, now that it exists.
     DCHECK_NE(blink::mojom::kInvalidServiceWorkerHandleId,
-              precreated_controller_handle_id_);
-    std::unique_ptr<ServiceWorkerHandle> new_handle(
-        ServiceWorkerHandle::CreateWithID(context_, AsWeakPtr(),
-                                          controller_.get(),
-                                          precreated_controller_handle_id_));
-    dispatcher_host_->RegisterServiceWorkerHandle(std::move(new_handle));
+              precreated_controller_handle_->handle_id());
+    precreated_controller_handle_->RegisterIntoDispatcherHost(
+        dispatcher_host_.get());
+    precreated_controller_handle_ = nullptr;
   }
 
   // In S13nServiceWorker/NavigationMojoResponse case the controller is already
@@ -636,8 +627,7 @@ void ServiceWorkerProviderHost::CompleteNavigationInitialized(
   // correctly.
   // TODO(kinuko): Stop doing this in S13nServiceWorker/NavigationMojoResponse
   // case.
-  SendSetControllerServiceWorker(controller_.get(),
-                                 false /* notify_controllerchange */);
+  SendSetControllerServiceWorker(false /* notify_controllerchange */);
 }
 
 mojom::ServiceWorkerProviderInfoForStartWorkerPtr
@@ -679,7 +669,7 @@ ServiceWorkerProviderHost::CompleteStartWorkerPreparation(
       script_loader_factory_ptr_info;
   if (ServiceWorkerUtils::IsServicificationEnabled()) {
     mojo::MakeStrongAssociatedBinding(
-        std::make_unique<ServiceWorkerScriptURLLoaderFactory>(
+        std::make_unique<ServiceWorkerScriptLoaderFactory>(
             context_, AsWeakPtr(), context_->loader_factory_getter()),
         mojo::MakeRequest(&script_loader_factory_ptr_info));
     provider_info->script_loader_factory_ptr_info =
@@ -784,32 +774,37 @@ void ServiceWorkerProviderHost::Send(IPC::Message* message) const {
 }
 
 void ServiceWorkerProviderHost::SendSetControllerServiceWorker(
-    ServiceWorkerVersion* version,
     bool notify_controllerchange) {
   if (!dispatcher_host_)
     return;
 
-  if (version) {
-    DCHECK(associated_registration_);
-    DCHECK_EQ(associated_registration_->active_version(), version);
-    DCHECK_EQ(controller_.get(), version);
-  }
-
-  std::vector<blink::mojom::WebFeature> used_features;
-  if (version) {
-    for (const uint32_t feature : version->used_features()) {
-      DCHECK_LT(feature, static_cast<uint32_t>(
-                             blink::mojom::WebFeature::kNumberOfFeatures));
-      used_features.push_back(static_cast<blink::mojom::WebFeature>(feature));
-    }
-  }
-
   auto controller_info = mojom::ControllerServiceWorkerInfo::New();
-  controller_info->object_info = GetOrCreateServiceWorkerHandle(version);
+  controller_info->client_id = client_uuid();
 
-  // S13nServiceWorker: Send the controller ptr too so that controller changes/
-  // lost are propagated with the new controller ptr.
-  if (version && ServiceWorkerUtils::IsServicificationEnabled())
+  if (!controller_) {
+    container_->SetController(std::move(controller_info),
+                              {} /* used_features */, notify_controllerchange);
+    return;
+  }
+
+  DCHECK(associated_registration_);
+  DCHECK_EQ(associated_registration_->active_version(), controller_.get());
+
+  // Set the info for the JavaScript ServiceWorkerContainer#controller object.
+  controller_info->object_info =
+      GetOrCreateServiceWorkerHandle(controller_.get());
+
+  // Populate used features for UseCounter purposes.
+  std::vector<blink::mojom::WebFeature> used_features;
+  for (const uint32_t feature : controller_->used_features()) {
+    DCHECK_LT(feature, static_cast<uint32_t>(
+                           blink::mojom::WebFeature::kNumberOfFeatures));
+    used_features.push_back(static_cast<blink::mojom::WebFeature>(feature));
+  }
+
+  // S13nServiceWorker: Pass an endpoint for the client to talk to this
+  // controller.
+  if (ServiceWorkerUtils::IsServicificationEnabled())
     controller_info->endpoint = GetControllerServiceWorkerPtr().PassInterface();
 
   container_->SetController(std::move(controller_info), used_features,

@@ -23,6 +23,7 @@
 #include "content/browser/devtools/protocol/input_handler.h"
 #include "content/browser/devtools/protocol/inspector_handler.h"
 #include "content/browser/devtools/protocol/io_handler.h"
+#include "content/browser/devtools/protocol/memory_handler.h"
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/protocol/page_handler.h"
 #include "content/browser/devtools/protocol/protocol.h"
@@ -47,15 +48,15 @@
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/browser_side_navigation_policy.h"
-#include "content/public/common/content_features.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
-#include "third_party/WebKit/common/associated_interfaces/associated_interface_provider.h"
+#include "services/network/public/cpp/features.h"
+#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
 
 #if defined(OS_ANDROID)
 #include "content/public/browser/render_widget_host_view.h"
-#include "services/device/public/interfaces/wake_lock_context.mojom.h"
+#include "services/device/public/mojom/wake_lock_context.mojom.h"
 #endif
 
 namespace content {
@@ -89,6 +90,27 @@ FrameTreeNode* GetFrameTreeNodeAncestor(FrameTreeNode* frame_tree_node) {
 }
 
 }  // namespace
+
+template <typename Handler, typename... MethodArgs, typename... Args>
+void DispatchToAgents(FrameTreeNode* frame_tree_node,
+                      void (Handler::*method)(MethodArgs...),
+                      Args&&... args) {
+  RenderFrameDevToolsAgentHost* agent_host =
+      FindAgentHost(GetFrameTreeNodeAncestor(frame_tree_node));
+  if (!agent_host)
+    return;
+  for (auto* h : Handler::ForAgentHost(agent_host))
+    (h->*method)(std::forward<Args>(args)...);
+}
+
+template <typename Handler, typename... MethodArgs, typename... Args>
+void DispatchToAgents(int frame_tree_node_id,
+                      void (Handler::*method)(MethodArgs...),
+                      Args&&... args) {
+  FrameTreeNode* ftn = FrameTreeNode::GloballyFindByID(frame_tree_node_id);
+  if (ftn)
+    DispatchToAgents(ftn, method, std::forward<Args>(args)...);
+}
 
 // static
 scoped_refptr<DevToolsAgentHost>
@@ -165,25 +187,45 @@ void RenderFrameDevToolsAgentHost::AddAllAgentHosts(
 // static
 void RenderFrameDevToolsAgentHost::OnResetNavigationRequest(
     NavigationRequest* navigation_request) {
-  RenderFrameDevToolsAgentHost* agent_host =
-      FindAgentHost(navigation_request->frame_tree_node());
-  if (!agent_host)
-    return;
-  if (navigation_request->net_error() != net::OK) {
-    for (auto* network : protocol::NetworkHandler::ForAgentHost(agent_host))
-      network->NavigationFailed(navigation_request);
+  // Traverse frame chain all the way to the top and report to all
+  // page handlers that the navigation completed.
+  for (FrameTreeNode* node = navigation_request->frame_tree_node(); node;
+       node = node->parent()) {
+    DispatchToAgents(node, &protocol::PageHandler::NavigationReset,
+                     navigation_request);
   }
-  for (auto* page : protocol::PageHandler::ForAgentHost(agent_host))
-    page->NavigationReset(navigation_request);
+}
+
+// static
+void RenderFrameDevToolsAgentHost::OnNavigationResponseReceived(
+    const NavigationRequest& nav_request,
+    const network::ResourceResponse& response) {
+  FrameTreeNode* ftn = nav_request.frame_tree_node();
+  std::string id = nav_request.devtools_navigation_token().ToString();
+  std::string frame_id = ftn->devtools_frame_token().ToString();
+  GURL url = nav_request.common_params().url;
+  DispatchToAgents(ftn, &protocol::NetworkHandler::ResponseReceived, id, id,
+                   url, protocol::Page::ResourceTypeEnum::Document,
+                   response.head, frame_id);
+}
+
+// static
+void RenderFrameDevToolsAgentHost::OnNavigationRequestFailed(
+    const NavigationRequest& nav_request,
+    int error_code) {
+  FrameTreeNode* ftn = nav_request.frame_tree_node();
+  std::string id = nav_request.devtools_navigation_token().ToString();
+  DispatchToAgents(ftn, &protocol::NetworkHandler::LoadingComplete, id,
+                   protocol::Page::ResourceTypeEnum::Document,
+                   network::URLLoaderCompletionStatus(error_code));
 }
 
 // static
 std::vector<std::unique_ptr<NavigationThrottle>>
 RenderFrameDevToolsAgentHost::CreateNavigationThrottles(
-    NavigationHandle* navigation_handle) {
+    NavigationHandleImpl* navigation_handle) {
   std::vector<std::unique_ptr<NavigationThrottle>> result;
-  FrameTreeNode* frame_tree_node =
-      static_cast<NavigationHandleImpl*>(navigation_handle)->frame_tree_node();
+  FrameTreeNode* frame_tree_node = navigation_handle->frame_tree_node();
 
   // Interception might throttle navigations in inspected frames.
   RenderFrameDevToolsAgentHost* agent_host = FindAgentHost(frame_tree_node);
@@ -218,7 +260,7 @@ RenderFrameDevToolsAgentHost::CreateNavigationThrottles(
 }
 
 // static
-void RenderFrameDevToolsAgentHost::OnWillSendNavigationRequest(
+void RenderFrameDevToolsAgentHost::ApplyOverrides(
     FrameTreeNode* frame_tree_node,
     mojom::BeginNavigationParams* begin_params,
     bool* report_raw_headers) {
@@ -233,8 +275,8 @@ void RenderFrameDevToolsAgentHost::OnWillSendNavigationRequest(
     if (!network->enabled())
       continue;
     *report_raw_headers = true;
-    network->WillSendNavigationRequest(
-        &headers, &begin_params->skip_service_worker, &disable_cache);
+    network->ApplyOverrides(&headers, &begin_params->skip_service_worker,
+                            &disable_cache);
   }
   if (disable_cache) {
     begin_params->load_flags &=
@@ -247,17 +289,11 @@ void RenderFrameDevToolsAgentHost::OnWillSendNavigationRequest(
 }
 
 // static
-bool RenderFrameDevToolsAgentHost::IsNetworkHandlerEnabled(
-    FrameTreeNode* frame_tree_node) {
-  frame_tree_node = GetFrameTreeNodeAncestor(frame_tree_node);
-  RenderFrameDevToolsAgentHost* agent_host = FindAgentHost(frame_tree_node);
-  if (!agent_host)
-    return false;
-  for (auto* network : protocol::NetworkHandler::ForAgentHost(agent_host)) {
-    if (network->enabled())
-      return true;
-  }
-  return false;
+void RenderFrameDevToolsAgentHost::OnNavigationRequestWillBeSent(
+    const NavigationRequest& navigation_request) {
+  DispatchToAgents(navigation_request.frame_tree_node(),
+                   &protocol::NetworkHandler::NavigationRequestWillBeSent,
+                   navigation_request);
 }
 
 // static
@@ -307,8 +343,8 @@ WebContents* RenderFrameDevToolsAgentHost::GetWebContents() {
 }
 
 void RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
-  session->SetFallThroughForNotFound(true);
-  session->SetRenderer(frame_host_ ? frame_host_->GetProcess() : nullptr,
+  session->SetRenderer(frame_host_ ? frame_host_->GetProcess()->GetID()
+                                   : ChildProcessHost::kInvalidUniqueID,
                        frame_host_);
 
   protocol::EmulationHandler* emulation_handler =
@@ -320,20 +356,20 @@ void RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   session->AddHandler(base::WrapUnique(new protocol::InspectorHandler()));
   session->AddHandler(base::WrapUnique(new protocol::IOHandler(
       GetIOContext())));
+  session->AddHandler(base::WrapUnique(new protocol::MemoryHandler()));
   session->AddHandler(base::WrapUnique(new protocol::NetworkHandler(GetId())));
   session->AddHandler(base::WrapUnique(new protocol::SchemaHandler()));
   session->AddHandler(base::WrapUnique(new protocol::ServiceWorkerHandler()));
   session->AddHandler(base::WrapUnique(new protocol::StorageHandler()));
-  session->AddHandler(base::WrapUnique(new protocol::TargetHandler()));
+  session->AddHandler(
+      base::WrapUnique(new protocol::TargetHandler(false /* browser_only */)));
   session->AddHandler(base::WrapUnique(new protocol::TracingHandler(
       protocol::TracingHandler::Renderer,
       frame_tree_node_ ? frame_tree_node_->frame_tree_node_id() : 0,
       GetIOContext())));
-  if (frame_tree_node_ && !frame_tree_node_->parent()) {
-    session->AddHandler(
-        base::WrapUnique(new protocol::PageHandler(emulation_handler)));
-    session->AddHandler(base::WrapUnique(new protocol::SecurityHandler()));
-  }
+  session->AddHandler(
+      base::WrapUnique(new protocol::PageHandler(emulation_handler)));
+  session->AddHandler(base::WrapUnique(new protocol::SecurityHandler()));
 
   if (EnsureAgent())
     session->AttachToAgent(agent_ptr_);
@@ -349,7 +385,6 @@ void RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
 
 void RenderFrameDevToolsAgentHost::DetachSession(DevToolsSession* session) {
   // Destroying session automatically detaches in renderer.
-  suspended_messages_by_session_.erase(session);
   if (sessions().empty()) {
     frame_trace_recorder_.reset();
     RevokePolicy();
@@ -359,46 +394,33 @@ void RenderFrameDevToolsAgentHost::DetachSession(DevToolsSession* session) {
   }
 }
 
-bool RenderFrameDevToolsAgentHost::DispatchProtocolMessage(
+void RenderFrameDevToolsAgentHost::DispatchProtocolMessage(
     DevToolsSession* session,
     const std::string& message) {
-  int call_id = 0;
-  std::string method;
-  if (session->Dispatch(message, &call_id, &method) !=
-      protocol::Response::kFallThrough) {
-    return true;
-  }
-
-  if (!navigation_handles_.empty()) {
-    suspended_messages_by_session_[session].push_back(
-        {call_id, method, message});
-    return true;
-  }
-
-  session->DispatchProtocolMessageToAgent(call_id, method, message);
-  session->waiting_messages()[call_id] = {method, message};
-  return true;
+  session->DispatchProtocolMessage(message);
 }
 
-void RenderFrameDevToolsAgentHost::InspectElement(
-    DevToolsSession* session,
-    int x,
-    int y) {
-  // When there are nested WebContents, the renderer expects coordinates
-  // relative to the main frame, so we need to transform the coordinates from
-  // the root space to the current WebContents' main frame space.
+void RenderFrameDevToolsAgentHost::InspectElement(RenderFrameHost* frame_host,
+                                                  int x,
+                                                  int y) {
+  FrameTreeNode* ftn =
+      static_cast<RenderFrameHostImpl*>(frame_host)->frame_tree_node();
+  RenderFrameDevToolsAgentHost* host =
+      static_cast<RenderFrameDevToolsAgentHost*>(GetOrCreateFor(ftn).get());
 
-  if (frame_tree_node_) {
-    if (auto* main_view =
-            frame_tree_node_->frame_tree()->GetMainFrame()->GetView()) {
-      gfx::Point transformed_point = gfx::ToRoundedPoint(
-          main_view->TransformRootPointToViewCoordSpace(gfx::PointF(x, y)));
-      x = transformed_point.x();
-      y = transformed_point.y();
+  gfx::Point point(x, y);
+  // The renderer expects coordinates relative to the local frame root,
+  // so we need to transform the coordinates from the root space
+  // to the local frame root widget's space.
+  if (host->frame_host_) {
+    if (RenderWidgetHostView* view = host->frame_host_->GetView()) {
+      point = gfx::ToRoundedPoint(
+          view->TransformRootPointToViewCoordSpace(gfx::PointF(point)));
     }
   }
 
-  session->InspectElement(gfx::Point(x, y));
+  if (host->EnsureAgent())
+    host->agent_ptr_->InspectElement(point);
 }
 
 RenderFrameDevToolsAgentHost::~RenderFrameDevToolsAgentHost() {
@@ -409,8 +431,14 @@ void RenderFrameDevToolsAgentHost::ReadyToCommitNavigation(
     NavigationHandle* navigation_handle) {
   NavigationHandleImpl* handle =
       static_cast<NavigationHandleImpl*>(navigation_handle);
-  if (handle->frame_tree_node() != frame_tree_node_)
+  if (handle->frame_tree_node() != frame_tree_node_) {
+    if (ShouldForceCreation() && handle->GetRenderFrameHost() &&
+        handle->GetRenderFrameHost()->IsCrossProcessSubframe()) {
+      RenderFrameDevToolsAgentHost::GetOrCreateForDangling(
+          handle->frame_tree_node());
+    }
     return;
+  }
 
   UpdateFrameHost(handle->GetRenderFrameHost());
   // UpdateFrameHost may destruct |this|.
@@ -430,16 +458,8 @@ void RenderFrameDevToolsAgentHost::DidFinishNavigation(
   UpdateFrameHost(frame_tree_node_->current_frame_host());
 
   if (navigation_handles_.empty()) {
-    for (auto& pair : suspended_messages_by_session_) {
-      DevToolsSession* session = pair.first;
-      for (const Message& message : pair.second) {
-        session->DispatchProtocolMessageToAgent(message.call_id, message.method,
-                                                message.message);
-        session->waiting_messages()[message.call_id] = {message.method,
-                                                        message.message};
-      }
-    }
-    suspended_messages_by_session_.clear();
+    for (DevToolsSession* session : sessions())
+      session->ResumeSendingMessagesToAgent();
   }
   if (handle->HasCommitted()) {
     for (auto* target : protocol::TargetHandler::ForAgentHost(this))
@@ -452,6 +472,8 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
   if (frame_host == frame_host_) {
     if (frame_host && !render_frame_alive_) {
       render_frame_alive_ = true;
+      for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
+        inspector->TargetReloadedAfterCrash();
       MaybeReattachToRenderFrame();
     }
     return;
@@ -467,11 +489,15 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
     RevokePolicy();
   frame_host_ = frame_host;
   agent_ptr_.reset();
-  render_frame_alive_ = true;
+  if (!render_frame_alive_) {
+    render_frame_alive_ = true;
+    for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
+      inspector->TargetReloadedAfterCrash();
+  }
   if (IsAttached()) {
     GrantPolicy();
     for (DevToolsSession* session : sessions()) {
-      session->SetRenderer(frame_host ? frame_host->GetProcess() : nullptr,
+      session->SetRenderer(frame_host ? frame_host->GetProcess()->GetID() : -1,
                            frame_host);
     }
     MaybeReattachToRenderFrame();
@@ -481,22 +507,15 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
 void RenderFrameDevToolsAgentHost::MaybeReattachToRenderFrame() {
   if (!EnsureAgent())
     return;
-  for (DevToolsSession* session : sessions()) {
-    session->ReattachToAgent(agent_ptr_);
-    for (const auto& pair : session->waiting_messages()) {
-      int call_id = pair.first;
-      const DevToolsSession::Message& message = pair.second;
-      session->DispatchProtocolMessageToAgent(call_id, message.method,
-                                              message.message);
-    }
-  }
+  for (DevToolsSession* session : sessions())
+    session->AttachToAgent(agent_ptr_);
 }
 
 void RenderFrameDevToolsAgentHost::GrantPolicy() {
   if (!frame_host_)
     return;
   uint32_t process_id = frame_host_->GetProcess()->GetID();
-  if (base::FeatureList::IsEnabled(features::kNetworkService))
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
     GetNetworkService()->SetRawHeadersAccess(process_id, true);
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadRawCookies(
       process_id);
@@ -520,7 +539,7 @@ void RenderFrameDevToolsAgentHost::RevokePolicy() {
 
   // We are the last to disconnect from the renderer -> revoke permissions.
   if (!process_has_agents) {
-    if (base::FeatureList::IsEnabled(features::kNetworkService))
+    if (base::FeatureList::IsEnabled(network::features::kNetworkService))
       GetNetworkService()->SetRawHeadersAccess(process_host->GetID(), false);
     ChildProcessSecurityPolicyImpl::GetInstance()->RevokeReadRawCookies(
         process_host->GetID());
@@ -533,6 +552,10 @@ void RenderFrameDevToolsAgentHost::DidStartNavigation(
       static_cast<NavigationHandleImpl*>(navigation_handle);
   if (handle->frame_tree_node() != frame_tree_node_)
     return;
+  if (navigation_handles_.empty()) {
+    for (DevToolsSession* session : sessions())
+      session->SuspendSendingMessagesToAgent();
+  }
   navigation_handles_.insert(handle);
 }
 
@@ -622,15 +645,13 @@ void RenderFrameDevToolsAgentHost::DidDetachInterstitialPage() {
     page->DidDetachInterstitialPage();
 }
 
-void RenderFrameDevToolsAgentHost::WasShown() {
+void RenderFrameDevToolsAgentHost::OnVisibilityChanged(
+    content::Visibility visibility) {
 #if defined(OS_ANDROID)
-  GetWakeLock()->RequestWakeLock();
-#endif
-}
-
-void RenderFrameDevToolsAgentHost::WasHidden() {
-#if defined(OS_ANDROID)
-  GetWakeLock()->CancelWakeLock();
+  if (visibility == content::Visibility::HIDDEN)
+    GetWakeLock()->CancelWakeLock();
+  else
+    GetWakeLock()->RequestWakeLock();
 #endif
 }
 
@@ -656,8 +677,11 @@ void RenderFrameDevToolsAgentHost::DidReceiveCompositorFrame() {
 void RenderFrameDevToolsAgentHost::DisconnectWebContents() {
   navigation_handles_.clear();
   SetFrameTreeNode(nullptr);
-  UpdateFrameHost(nullptr);
   // UpdateFrameHost may destruct |this|.
+  scoped_refptr<RenderFrameDevToolsAgentHost> protect(this);
+  UpdateFrameHost(nullptr);
+  for (DevToolsSession* session : sessions())
+    session->ResumeSendingMessagesToAgent();
 }
 
 void RenderFrameDevToolsAgentHost::ConnectWebContents(WebContents* wc) {
@@ -790,7 +814,7 @@ void RenderFrameDevToolsAgentHost::SignalSynchronousSwapCompositorFrame(
         BrowserThread::UI, FROM_HERE,
         base::BindOnce(
             &RenderFrameDevToolsAgentHost::SynchronousSwapCompositorFrame,
-            dtah.get(), base::Passed(std::move(frame_metadata))));
+            dtah.get(), std::move(frame_metadata)));
   }
 }
 

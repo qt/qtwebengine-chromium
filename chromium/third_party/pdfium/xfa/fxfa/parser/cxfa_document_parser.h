@@ -26,12 +26,13 @@ class CXFA_DocumentParser {
                      XFA_PacketType ePacketID);
   int32_t DoParse();
 
-  CFX_XMLDoc* GetXMLDoc() const;
   CXFA_FFNotify* GetNotify() const;
   CXFA_Document* GetDocument() const;
 
  private:
   UnownedPtr<CXFA_FFNotify> const m_pNotify;
+  // Note, the |m_nodeParser| has an unowned pointer to the |m_pDocument| so
+  // the |m_nodeParser| must be cleaned up first.
   std::unique_ptr<CXFA_Document> m_pDocument;
   CXFA_SimpleParser m_nodeParser;
 };

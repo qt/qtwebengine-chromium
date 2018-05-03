@@ -11,7 +11,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace storage {
 class BlobDataHandle;
@@ -22,6 +22,11 @@ namespace content {
 
 // A class for creating URLLoaderFactory for blob scheme.
 // There should be one owned per StoragePartition.
+//
+// This class is deprecated, as it's impossible to use this to load blob URLs
+// without running into various race conditions between revoking blob URLs and
+// fetching them. Ultimately usage of this class will somehow be replaced with
+// usage of storage::BlobURLLoaderFactory.
 class BlobURLLoaderFactory
     : public base::RefCountedThreadSafe<BlobURLLoaderFactory,
                                         BrowserThread::DeleteOnIOThread>,

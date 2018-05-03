@@ -19,6 +19,7 @@ MediaControlPictureInPictureButtonElement::
   setType(InputTypeNames::button);
   SetShadowPseudoId(
       AtomicString("-internal-media-controls-picture-in-picture-button"));
+  SetIsWanted(false);
 }
 
 bool MediaControlPictureInPictureButtonElement::
@@ -43,7 +44,9 @@ const char* MediaControlPictureInPictureButtonElement::GetNameForHistograms()
 
 void MediaControlPictureInPictureButtonElement::DefaultEventHandler(
     Event* event) {
-  // TODO(apacible): On click, trigger picture in picture.
+  if (event->type() == EventTypeNames::click)
+    MediaElement().enterPictureInPicture();
+
   MediaControlInputElement::DefaultEventHandler(event);
 }
 

@@ -33,7 +33,6 @@
 #include "content/common/edit_command.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 #include "content/public/browser/guest_host.h"
-#include "content/public/browser/readback_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/input_event_ack_state.h"
 #include "content/public/common/screen_info.h"
@@ -59,9 +58,7 @@ class Range;
 
 namespace viz {
 class LocalSurfaceId;
-class SurfaceId;
 class SurfaceInfo;
-struct SurfaceSequence;
 }  // namespace viz
 
 namespace content {
@@ -127,9 +124,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
                 bool focused,
                 blink::WebFocusType focus_type);
 
-  // Sets the tooltip text.
-  void SetTooltipText(const base::string16& tooltip_text);
-
   // Sets the lock state of the pointer. Returns true if |allowed| is true and
   // the mouse has been successfully locked.
   bool LockMouse(bool allowed);
@@ -138,7 +132,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   bool mouse_locked() const { return mouse_locked_; }
 
   // Called when the embedder WebContents changes visibility.
-  void EmbedderVisibilityChanged(bool visible);
+  void EmbedderVisibilityChanged(Visibility visibility);
 
   // Creates a new guest WebContentsImpl with the provided |params| with |this|
   // as the |opener|.
@@ -207,17 +201,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   gfx::Point GetScreenCoordinates(const gfx::Point& relative_position) const;
 
-  // This method is called by the RenderWidgetHostViewGuest to inform the
-  // BrowserPlugin of the potential location of the context menu event (to
-  // come). The need for this (hack) is that the input events when passed on to
-  // the BrowserPlugin are modified by any CSS transforms applied on the plugin.
-  // Therefore, the coordinates of the context menu event with respect to the
-  // container window are modifed with the guest renderer process beiung unaware
-  // of the change. Then eventually, when the context menu event arrives at the
-  // browser, it contains the wrong coordinates (BUG=470087).
-  // TODO(ekaramad): Find a more fundamental solution and remove this later.
-  void SetContextMenuPosition(const gfx::Point& position);
-
   // Helper to send messages to embedder. If this guest is not yet attached,
   // then IPCs will be queued until attachment.
   void SendMessageToEmbedder(std::unique_ptr<IPC::Message> msg);
@@ -260,8 +243,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void PointerLockPermissionResponse(bool allow);
 
   // The next function is virtual for test purposes.
-  virtual void SetChildFrameSurface(const viz::SurfaceInfo& surface_info,
-                                    const viz::SurfaceSequence& sequence);
+  virtual void SetChildFrameSurface(const viz::SurfaceInfo& surface_info);
 
   void ResendEventToEmbedder(const blink::WebInputEvent& event);
 
@@ -300,10 +282,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void InitInternal(const BrowserPluginHostMsg_Attach_Params& params,
                     WebContentsImpl* owner_web_contents);
 
-  void OnSatisfySequence(int instance_id, const viz::SurfaceSequence& sequence);
-  void OnRequireSequence(int instance_id,
-                         const viz::SurfaceId& id,
-                         const viz::SurfaceSequence& sequence);
   // Message handlers for messages from embedder.
   void OnDetach(int instance_id);
   // Handles drag events from the embedder.
@@ -429,7 +407,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   bool mouse_locked_;
   bool pending_lock_request_;
   bool guest_visible_;
-  bool embedder_visible_;
+  Visibility embedder_visibility_;
   // Whether the browser plugin is inside a plugin document.
   bool is_full_page_plugin_;
 

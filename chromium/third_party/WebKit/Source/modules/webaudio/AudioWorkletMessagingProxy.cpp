@@ -4,6 +4,7 @@
 
 #include "modules/webaudio/AudioWorkletMessagingProxy.h"
 
+#include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "core/messaging/MessagePort.h"
 #include "modules/webaudio/AudioWorklet.h"
 #include "modules/webaudio/AudioWorkletGlobalScope.h"
@@ -23,7 +24,8 @@ AudioWorkletMessagingProxy::AudioWorkletMessagingProxy(
 
 void AudioWorkletMessagingProxy::CreateProcessor(
     AudioWorkletHandler* handler,
-    MessagePortChannel message_port_channel) {
+    MessagePortChannel message_port_channel,
+    scoped_refptr<SerializedScriptValue> node_options) {
   DCHECK(IsMainThread());
   PostCrossThreadTask(
       *GetWorkerThread()->GetTaskRunner(TaskType::kMiscPlatformAPI), FROM_HERE,
@@ -31,21 +33,23 @@ void AudioWorkletMessagingProxy::CreateProcessor(
           &AudioWorkletMessagingProxy::CreateProcessorOnRenderingThread,
           WrapCrossThreadPersistent(this),
           CrossThreadUnretained(GetWorkerThread()),
-          CrossThreadUnretained(handler), handler->Name(),
-          handler->Context()->sampleRate(), std::move(message_port_channel)));
+          CrossThreadUnretained(handler),
+          handler->Name(),
+          std::move(message_port_channel),
+          std::move(node_options)));
 }
 
 void AudioWorkletMessagingProxy::CreateProcessorOnRenderingThread(
     WorkerThread* worker_thread,
     AudioWorkletHandler* handler,
     const String& name,
-    float sample_rate,
-    MessagePortChannel message_port_channel) {
+    MessagePortChannel message_port_channel,
+    scoped_refptr<SerializedScriptValue> node_options) {
   DCHECK(worker_thread->IsCurrentThread());
   AudioWorkletGlobalScope* global_scope =
       ToAudioWorkletGlobalScope(worker_thread->GlobalScope());
   AudioWorkletProcessor* processor =
-      global_scope->CreateProcessor(name, sample_rate, message_port_channel);
+      global_scope->CreateProcessor(name, message_port_channel, node_options);
   handler->SetProcessorOnRenderThread(processor);
 }
 
@@ -74,9 +78,13 @@ AudioWorkletMessagingProxy::GetParamInfoListForProcessor(
   return processor_info_map_.at(name);
 }
 
-WebThread* AudioWorkletMessagingProxy::GetWorkletBackingThread() {
+WebThread* AudioWorkletMessagingProxy::GetBackingWebThread() {
   auto worklet_thread = static_cast<AudioWorkletThread*>(GetWorkerThread());
   return worklet_thread->GetSharedBackingThread();
+}
+
+WorkerThread* AudioWorkletMessagingProxy::GetBackingWorkerThread() {
+  return GetWorkerThread();
 }
 
 std::unique_ptr<ThreadedWorkletObjectProxy>
@@ -85,7 +93,8 @@ AudioWorkletMessagingProxy::CreateObjectProxy(
     ParentFrameTaskRunners* parent_frame_task_runners) {
   return std::make_unique<AudioWorkletObjectProxy>(
       static_cast<AudioWorkletMessagingProxy*>(messaging_proxy),
-      parent_frame_task_runners);
+      parent_frame_task_runners,
+      worklet_->GetBaseAudioContext()->sampleRate());
 }
 
 std::unique_ptr<WorkerThread> AudioWorkletMessagingProxy::CreateWorkerThread() {

@@ -60,6 +60,7 @@ int32_t BytesPerElement(gfx::BufferFormat format, int plane) {
     case gfx::BufferFormat::BGR_565:
     case gfx::BufferFormat::RGBA_4444:
     case gfx::BufferFormat::RGBX_8888:
+    case gfx::BufferFormat::RGBX_1010102:
     case gfx::BufferFormat::YVU_420:
       NOTREACHED();
       return 0;
@@ -74,7 +75,7 @@ int32_t PixelFormat(gfx::BufferFormat format) {
     case gfx::BufferFormat::R_8:
       return 'L008';
     case gfx::BufferFormat::BGRX_1010102:
-      return 'R10k';
+      return 'l10r';  // little-endian ARGB2101010 full-range ARGB
     case gfx::BufferFormat::BGRA_8888:
     case gfx::BufferFormat::BGRX_8888:
     case gfx::BufferFormat::RGBA_8888:
@@ -95,6 +96,9 @@ int32_t PixelFormat(gfx::BufferFormat format) {
     case gfx::BufferFormat::BGR_565:
     case gfx::BufferFormat::RGBA_4444:
     case gfx::BufferFormat::RGBX_8888:
+    case gfx::BufferFormat::RGBX_1010102:
+    // Technically RGBX_1010102 should be accepted as 'R10k', but then it won't
+    // be supported by CGLTexImageIOSurface2D(), so it's best to reject it here.
     case gfx::BufferFormat::YVU_420:
       NOTREACHED();
       return 0;
@@ -209,7 +213,7 @@ IOSurfaceRef CreateIOSurface(const gfx::Size& size,
 }
 
 void IOSurfaceSetColorSpace(IOSurfaceRef io_surface,
-                            const gfx::ColorSpace& color_space) {
+                            const ColorSpace& color_space) {
   // Retrieve the ICC profile data that created this profile, if it exists.
   ICCProfile icc_profile = ICCProfile::FromCacheMac(color_space);
 
@@ -218,9 +222,25 @@ void IOSurfaceSetColorSpace(IOSurfaceRef io_surface,
     icc_profile =
         ICCProfile::FromParametricColorSpace(color_space.GetAsFullRangeRGB());
   }
-
-  // If that fails, we can't use this color space.
   if (!icc_profile.IsValid()) {
+    if (__builtin_available(macos 10.12, *)) {
+      static const ColorSpace kBt2020(ColorSpace::PrimaryID::BT2020,
+                                      ColorSpace::TransferID::SMPTEST2084,
+                                      ColorSpace::MatrixID::BT2020_NCL,
+                                      ColorSpace::RangeID::LIMITED);
+      if (color_space == kBt2020) {
+        base::ScopedCFTypeRef<CGColorSpaceRef> cg_color_space(
+            CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020));
+        DCHECK(cg_color_space);
+
+        base::ScopedCFTypeRef<CFDataRef> cf_data_icc_profile(
+            CGColorSpaceCopyICCData(cg_color_space));
+        DCHECK(cf_data_icc_profile);
+        IOSurfaceSetValue(io_surface, CFSTR("IOSurfaceColorSpace"),
+                          cf_data_icc_profile);
+        return;
+      }
+    }
     DLOG(ERROR) << "Failed to set color space for IOSurface: no ICC profile: "
                 << color_space.ToString();
     return;

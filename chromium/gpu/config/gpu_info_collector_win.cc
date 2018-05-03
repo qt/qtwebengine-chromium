@@ -68,8 +68,7 @@ void GetAMDVideocardInfo(GPUInfo* gpu_info) {
 }
 #endif
 
-CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
-                                       GPUInfo* gpu_info) {
+bool CollectDriverInfoD3D(const std::wstring& device_id, GPUInfo* gpu_info) {
   TRACE_EVENT0("gpu", "CollectDriverInfoD3D");
 
   // Display adapter class GUID from
@@ -84,7 +83,7 @@ CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
       ::SetupDiGetClassDevs(&display_class, NULL, NULL, DIGCF_PRESENT);
   if (device_info == INVALID_HANDLE_VALUE) {
     LOG(ERROR) << "Creating device info failed";
-    return kCollectInfoNonFatalFailure;
+    return false;
   }
 
   struct GPUDriver {
@@ -224,19 +223,16 @@ CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
     }
   }
 
-  return found ? kCollectInfoSuccess : kCollectInfoNonFatalFailure;
+  return found;
 }
 
-CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
+bool CollectContextGraphicsInfo(GPUInfo* gpu_info) {
   TRACE_EVENT0("gpu", "CollectGraphicsInfo");
 
   DCHECK(gpu_info);
 
-  CollectInfoResult result = CollectGraphicsInfoGL(gpu_info);
-  if (result != kCollectInfoSuccess) {
-    gpu_info->context_info_state = result;
-    return result;
-  }
+  if (!CollectGraphicsInfoGL(gpu_info))
+    return false;
 
   // ANGLE's renderer strings are of the form:
   // ANGLE (<adapter_identifier> Direct3D<version> vs_x_x ps_x_x)
@@ -267,17 +263,39 @@ CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
                            pixel_shader_major_version,
                            pixel_shader_minor_version);
 
+    DCHECK(!gpu_info->vertex_shader_version.empty());
+    // Note: do not reorder, used by UMA_HISTOGRAM below
+    enum ShaderModel {
+      SHADER_MODEL_UNKNOWN,
+      SHADER_MODEL_2_0,
+      SHADER_MODEL_3_0,
+      SHADER_MODEL_4_0,
+      SHADER_MODEL_4_1,
+      SHADER_MODEL_5_0,
+      NUM_SHADER_MODELS
+    };
+    ShaderModel shader_model = SHADER_MODEL_UNKNOWN;
+    if (gpu_info->vertex_shader_version == "5.0") {
+      shader_model = SHADER_MODEL_5_0;
+    } else if (gpu_info->vertex_shader_version == "4.1") {
+      shader_model = SHADER_MODEL_4_1;
+    } else if (gpu_info->vertex_shader_version == "4.0") {
+      shader_model = SHADER_MODEL_4_0;
+    } else if (gpu_info->vertex_shader_version == "3.0") {
+      shader_model = SHADER_MODEL_3_0;
+    } else if (gpu_info->vertex_shader_version == "2.0") {
+      shader_model = SHADER_MODEL_2_0;
+    }
+    UMA_HISTOGRAM_ENUMERATION("GPU.D3DShaderModel", shader_model,
+                              NUM_SHADER_MODELS);
+
     // DirectX diagnostics are collected asynchronously because it takes a
     // couple of seconds.
-  } else {
-    gpu_info->dx_diagnostics_info_state = kCollectInfoNonFatalFailure;
   }
-
-  gpu_info->context_info_state = kCollectInfoSuccess;
-  return kCollectInfoSuccess;
+  return true;
 }
 
-CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
+bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
   TRACE_EVENT0("gpu", "CollectPreliminaryGraphicsInfo");
 
   DCHECK(gpu_info);
@@ -306,82 +324,24 @@ CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
     // Chained DD" or the citrix display driver.
     if (wcscmp(dd.DeviceString, L"RDPUDD Chained DD") != 0 &&
         wcscmp(dd.DeviceString, L"Citrix Systems Inc. Display Driver") != 0) {
-      gpu_info->basic_info_state = kCollectInfoNonFatalFailure;
-      return kCollectInfoNonFatalFailure;
+      return false;
     }
   }
 
   DeviceIDToVendorAndDevice(id, &gpu_info->gpu.vendor_id,
                             &gpu_info->gpu.device_id);
   // TODO(zmo): we only need to call CollectDriverInfoD3D() if we use ANGLE.
-  if (!CollectDriverInfoD3D(id, gpu_info)) {
-    gpu_info->basic_info_state = kCollectInfoNonFatalFailure;
-    return kCollectInfoNonFatalFailure;
-  }
-
-  gpu_info->basic_info_state = kCollectInfoSuccess;
-  return kCollectInfoSuccess;
+  return CollectDriverInfoD3D(id, gpu_info);
 }
 
-CollectInfoResult CollectDriverInfoGL(GPUInfo* gpu_info) {
+void CollectDriverInfoGL(GPUInfo* gpu_info) {
   TRACE_EVENT0("gpu", "CollectDriverInfoGL");
 
   if (!gpu_info->driver_version.empty())
-    return kCollectInfoSuccess;
+    return;
 
-  bool parsed = RE2::PartialMatch(
-      gpu_info->gl_version, "([\\d\\.]+)$", &gpu_info->driver_version);
-  return parsed ? kCollectInfoSuccess : kCollectInfoNonFatalFailure;
-}
-
-void MergeGPUInfo(GPUInfo* basic_gpu_info,
-                  const GPUInfo& context_gpu_info) {
-  DCHECK(basic_gpu_info);
-
-  // Track D3D Shader Model (if available)
-  const std::string& shader_version =
-      context_gpu_info.vertex_shader_version;
-
-  // Only gather if this is the first time we're seeing
-  // a non-empty shader version string.
-  if (!shader_version.empty() &&
-      basic_gpu_info->vertex_shader_version.empty()) {
-
-    // Note: do not reorder, used by UMA_HISTOGRAM below
-    enum ShaderModel {
-      SHADER_MODEL_UNKNOWN,
-      SHADER_MODEL_2_0,
-      SHADER_MODEL_3_0,
-      SHADER_MODEL_4_0,
-      SHADER_MODEL_4_1,
-      SHADER_MODEL_5_0,
-      NUM_SHADER_MODELS
-    };
-
-    ShaderModel shader_model = SHADER_MODEL_UNKNOWN;
-
-    if (shader_version == "5.0") {
-      shader_model = SHADER_MODEL_5_0;
-    } else if (shader_version == "4.1") {
-      shader_model = SHADER_MODEL_4_1;
-    } else if (shader_version == "4.0") {
-      shader_model = SHADER_MODEL_4_0;
-    } else if (shader_version == "3.0") {
-      shader_model = SHADER_MODEL_3_0;
-    } else if (shader_version == "2.0") {
-      shader_model = SHADER_MODEL_2_0;
-    }
-
-    UMA_HISTOGRAM_ENUMERATION("GPU.D3DShaderModel",
-                              shader_model,
-                              NUM_SHADER_MODELS);
-  }
-
-  MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
-
-  basic_gpu_info->dx_diagnostics_info_state =
-      context_gpu_info.dx_diagnostics_info_state;
-  basic_gpu_info->dx_diagnostics = context_gpu_info.dx_diagnostics;
+  RE2::PartialMatch(gpu_info->gl_version, "([\\d\\.]+)$",
+                    &gpu_info->driver_version);
 }
 
 }  // namespace gpu

@@ -19,6 +19,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
+#include "base/process/process_metrics_iocounters.h"
 
 namespace base {
 
@@ -236,7 +237,7 @@ bool ProcessMetrics::GetMemoryBytes(size_t* private_bytes,
         break;
       case SM_COW:
         private_pages_count += info.private_pages_resident;
-        // Fall through
+        FALLTHROUGH;
       case SM_SHARED:
       case SM_PRIVATE_ALIASED:
       case SM_TRUESHARED:

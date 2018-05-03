@@ -34,7 +34,6 @@ js2gtest("browser_tests_js_webui") {
   # and are handled by a rule, but in the GN build they're in a separate
   # action so need to be separated out.
   sources = [
-    "../../../browser/ui/webui/app_list/start_page_browsertest.js",
     "../../../browser/ui/webui/chromeos/bluetooth_pairing_dialog_browsertest.js",
     "../../../browser/ui/webui/chromeos/certificate_manager_dialog_browsertest.js",
     "../../../browser/ui/webui/chromeos/set_time_ui_browsertest.js",
@@ -93,7 +92,6 @@ js2gtest("browser_tests_js_webui") {
     "settings/basic_page_browsertest.js",
     "settings/cr_settings_browsertest.js",
     "settings/help_page_browsertest.js",
-    "settings/on_startup_browsertest.js",
     "settings/passwords_and_autofill_fake_data.js",
     "settings/passwords_and_forms_browsertest.js",
     "settings/settings_autofill_section_browsertest.js",
@@ -106,7 +104,10 @@ js2gtest("browser_tests_js_webui") {
     "webui_resource_async_browsertest.js",
   ]
 
-  extra_js_files = [ "//chrome/browser/resources/md_downloads/constants.js" ]
+  extra_js_files = [
+    "//chrome/browser/resources/md_downloads/constants.js",
+    "//chrome/browser/resources/signin/dice_sync_confirmation/sync_confirmation_browser_proxy.js",
+  ]
 
   if (is_win || is_mac || is_desktop_linux || is_chromeos) {
     sources += [ "discards/discards_browsertest.js" ]
@@ -118,9 +119,7 @@ js2gtest("browser_tests_js_webui") {
       "sys_internals/sys_internals_browsertest.js",
     ]
   } else {
-    sources += [
-      "signin/signin_browsertest.js",
-    ]
+    sources += [ "signin/signin_browsertest.js" ]
   }
 
   if (is_chrome_branded) {
@@ -131,10 +130,6 @@ js2gtest("browser_tests_js_webui") {
     sources -= [ "certificate_viewer_dialog_test.js" ]
   } else {
     sources -= [ "md_user_manager/user_manager_browsertest.js" ]
-  }
-  if (!enable_app_list) {
-    sources -=
-        [ "../../../browser/ui/webui/app_list/start_page_browsertest.js" ]
   }
   if (enable_print_preview) {
     sources += [
@@ -170,14 +165,20 @@ js2gtest("unit_tests_js") {
   if (is_chromeos) {
     sources += [
       "../../../browser/resources/chromeos/braille_ime/braille_ime_unittest.gtestjs",
+      "../../../browser/resources/chromeos/select_to_speak/node_utils_unittest.gtestjs",
       "../../../browser/resources/chromeos/select_to_speak/paragraph_utils_unittest.gtestjs",
+      "../../../browser/resources/chromeos/select_to_speak/rect_utils_unittest.gtestjs",
       "../../../browser/resources/chromeos/select_to_speak/select_to_speak_unittest.gtestjs",
+      "../../../browser/resources/chromeos/select_to_speak/word_utils_unittest.gtestjs",
     ]
     extra_js_files += [
       "../../../browser/resources/chromeos/braille_ime/braille_ime.js",
       "../../../browser/resources/chromeos/select_to_speak/paragraph_utils.js",
+      "../../../browser/resources/chromeos/select_to_speak/rect_utils.js",
       "../../../browser/resources/chromeos/select_to_speak/select_to_speak.js",
       "../../../browser/resources/chromeos/select_to_speak/test_support.js",
+      "../../../browser/resources/chromeos/select_to_speak/word_utils.js",
+      "../../../browser/resources/chromeos/select_to_speak/node_utils.js",
     ]
   }
 }

@@ -12,12 +12,11 @@
 #include "net/quic/core/quic_socket_address_coder.h"
 #include "net/quic/core/quic_utils.h"
 #include "net/quic/platform/api/quic_endian.h"
-#include "net/quic/platform/api/quic_flag_utils.h"
 #include "net/quic/platform/api/quic_map_util.h"
 #include "net/quic/platform/api/quic_str_cat.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_text_utils.h"
 
-using std::string;
 
 namespace net {
 
@@ -242,7 +241,7 @@ size_t CryptoHandshakeMessage::minimum_size() const {
   return minimum_size_;
 }
 
-string CryptoHandshakeMessage::DebugString(Perspective perspective) const {
+QuicString CryptoHandshakeMessage::DebugString(Perspective perspective) const {
   return DebugStringInternal(0, perspective);
 }
 
@@ -267,14 +266,14 @@ QuicErrorCode CryptoHandshakeMessage::GetPOD(QuicTag tag,
   return ret;
 }
 
-string CryptoHandshakeMessage::DebugStringInternal(
+QuicString CryptoHandshakeMessage::DebugStringInternal(
     size_t indent,
     Perspective perspective) const {
-  string ret = string(2 * indent, ' ') + QuicTagToString(tag_) + "<\n";
+  QuicString ret = QuicString(2 * indent, ' ') + QuicTagToString(tag_) + "<\n";
   ++indent;
   for (QuicTagValueMap::const_iterator it = tag_value_map_.begin();
        it != tag_value_map_.end(); ++it) {
-    ret += string(2 * indent, ' ') + QuicTagToString(it->first) + ": ";
+    ret += QuicString(2 * indent, ' ') + QuicTagToString(it->first) + ": ";
 
     bool done = false;
     switch (it->first) {
@@ -355,7 +354,7 @@ string CryptoHandshakeMessage::DebugStringInternal(
         if (!it->second.empty()) {
           std::unique_ptr<CryptoHandshakeMessage> msg(
               CryptoFramer::ParseMessage(it->second, perspective));
-          if (msg.get()) {
+          if (msg) {
             ret += "\n";
             ret += msg->DebugStringInternal(indent + 1, perspective);
 
@@ -383,7 +382,7 @@ string CryptoHandshakeMessage::DebugStringInternal(
     ret += "\n";
   }
   --indent;
-  ret += string(2 * indent, ' ') + ">";
+  ret += QuicString(2 * indent, ' ') + ">";
   return ret;
 }
 

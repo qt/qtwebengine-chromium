@@ -112,6 +112,7 @@
 #include "third_party/WebKit/public/web/WebScopedUserGesture.h"
 #include "third_party/WebKit/public/web/WebScriptController.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -163,8 +164,11 @@ void CallModuleMethod(const std::string& module_name,
 class ChromeNativeHandler : public ObjectBackedNativeHandler {
  public:
   explicit ChromeNativeHandler(ScriptContext* context)
-      : ObjectBackedNativeHandler(context) {
-    RouteFunction(
+      : ObjectBackedNativeHandler(context) {}
+
+  // ObjectBackedNativeHandler:
+  void AddRoutes() override {
+    RouteHandlerFunction(
         "GetChrome",
         base::Bind(&ChromeNativeHandler::GetChrome, base::Unretained(this)));
   }
@@ -295,7 +299,7 @@ void Dispatcher::DidCreateScriptContext(
   {
     std::unique_ptr<ModuleSystem> module_system(
         new ModuleSystem(context, &source_map_));
-    context->set_module_system(std::move(module_system));
+    context->SetModuleSystem(std::move(module_system));
   }
   ModuleSystem* module_system = context->module_system();
 
@@ -415,7 +419,7 @@ void Dispatcher::DidInitializeServiceWorkerContextOnWorkerThread(
 
     // TODO(lazyboy): Make sure accessing |source_map_| in worker thread is
     // safe.
-    context->set_module_system(
+    context->SetModuleSystem(
         std::make_unique<ModuleSystem>(context, &source_map_));
 
     ModuleSystem* module_system = context->module_system();
@@ -460,6 +464,7 @@ void Dispatcher::DidInitializeServiceWorkerContextOnWorkerThread(
   // LoggingNativeHandler. Admire the neat base::Bind trick to both Invalidate
   // and delete the native handler.
   LoggingNativeHandler* logging = new LoggingNativeHandler(context);
+  logging->Initialize();
   context->AddInvalidationObserver(
       base::Bind(&NativeHandler::Invalidate, base::Owned(logging)));
 
@@ -663,8 +668,6 @@ std::vector<Dispatcher::JsResourceInfo> Dispatcher::GetJsResources() {
       {"guestViewEvents", IDR_GUEST_VIEW_EVENTS_JS},
       {"imageUtil", IDR_IMAGE_UTIL_JS},
       {"json_schema", IDR_JSON_SCHEMA_JS},
-      {"messaging", IDR_MESSAGING_JS},
-      {"messaging_utils", IDR_MESSAGING_UTILS_JS},
       {kSchemaUtils, IDR_SCHEMA_UTILS_JS},
       {"setIcon", IDR_SET_ICON_JS},
       {"test", IDR_TEST_CUSTOM_BINDINGS_JS},
@@ -695,14 +698,11 @@ std::vector<Dispatcher::JsResourceInfo> Dispatcher::GetJsResources() {
       {"displaySource", IDR_DISPLAY_SOURCE_CUSTOM_BINDINGS_JS},
       {"contextMenus", IDR_CONTEXT_MENUS_CUSTOM_BINDINGS_JS},
       {"contextMenusHandlers", IDR_CONTEXT_MENUS_HANDLERS_JS},
-      {"extension", IDR_EXTENSION_CUSTOM_BINDINGS_JS},
-      {"i18n", IDR_I18N_CUSTOM_BINDINGS_JS},
       {"mimeHandlerPrivate", IDR_MIME_HANDLER_PRIVATE_CUSTOM_BINDINGS_JS},
       {"extensions/common/api/mime_handler.mojom", IDR_MIME_HANDLER_MOJOM_JS},
       {"mojoPrivate", IDR_MOJO_PRIVATE_CUSTOM_BINDINGS_JS},
       {"permissions", IDR_PERMISSIONS_CUSTOM_BINDINGS_JS},
       {"printerProvider", IDR_PRINTER_PROVIDER_CUSTOM_BINDINGS_JS},
-      {"runtime", IDR_RUNTIME_CUSTOM_BINDINGS_JS},
       {"webViewRequest", IDR_WEB_VIEW_REQUEST_CUSTOM_BINDINGS_JS},
 
       // Platform app sources that are not API-specific..
@@ -714,6 +714,12 @@ std::vector<Dispatcher::JsResourceInfo> Dispatcher::GetJsResources() {
     resources.push_back({kEventBindings, IDR_EVENT_BINDINGS_JS});
     resources.push_back({"lastError", IDR_LAST_ERROR_JS});
     resources.push_back({"sendRequest", IDR_SEND_REQUEST_JS});
+
+    resources.push_back({"messaging", IDR_MESSAGING_JS});
+    resources.push_back({"messaging_utils", IDR_MESSAGING_UTILS_JS});
+    resources.push_back({"extension", IDR_EXTENSION_CUSTOM_BINDINGS_JS});
+    resources.push_back({"i18n", IDR_I18N_CUSTOM_BINDINGS_JS});
+    resources.push_back({"runtime", IDR_RUNTIME_CUSTOM_BINDINGS_JS});
 
     // Custom types sources.
     resources.push_back({"StorageArea", IDR_STORAGE_AREA_JS});
@@ -778,8 +784,7 @@ void Dispatcher::RegisterNativeHandlers(
   module_system->RegisterNativeHandler(
       "setIcon", std::unique_ptr<NativeHandler>(new SetIconNatives(context)));
   module_system->RegisterNativeHandler(
-      "activityLogger", std::unique_ptr<NativeHandler>(
-                            new APIActivityLogger(context, dispatcher)));
+      "activityLogger", std::make_unique<APIActivityLogger>(context));
   module_system->RegisterNativeHandler(
       "renderFrameObserverNatives",
       std::unique_ptr<NativeHandler>(new RenderFrameObserverNatives(context)));
@@ -1176,10 +1181,9 @@ void Dispatcher::OnUpdateTabSpecificPermissions(const GURL& visible_url,
   URLPatternSet old_effective =
       extension->permissions_data()->GetEffectiveHostPermissions();
   extension->permissions_data()->UpdateTabSpecificPermissions(
-      tab_id,
-      extensions::PermissionSet(extensions::APIPermissionSet(),
-                                extensions::ManifestPermissionSet(), new_hosts,
-                                extensions::URLPatternSet()));
+      tab_id, extensions::PermissionSet(extensions::APIPermissionSet(),
+                                        extensions::ManifestPermissionSet(),
+                                        new_hosts, new_hosts));
 
   if (update_origin_whitelist) {
     UpdateOriginPermissions(
@@ -1408,6 +1412,17 @@ void Dispatcher::RequireGuestViewModules(ScriptContext* context) {
     module_system->Require("guestViewIframeContainer");
   }
 
+  if (requires_guest_view_module) {
+    // If a frame has guest view custom elements defined, we need to make sure
+    // the custom elements are also defined in subframes. The subframes will
+    // need a scripting context which we will need to forcefully create if
+    // the subframe doesn't otherwise have any scripts.
+    context->web_frame()
+        ->View()
+        ->GetSettings()
+        ->SetForceMainWorldInitialization(true);
+  }
+
   // The "guestViewDeny" module must always be loaded last. It registers
   // error-providing custom elements for the GuestView types that are not
   // available, and thus all of those types must have been checked and loaded
@@ -1423,7 +1438,7 @@ std::unique_ptr<ExtensionBindingsSystem> Dispatcher::CreateBindingsSystem(
   if (base::FeatureList::IsEnabled(features::kNativeCrxBindings)) {
     auto system =
         std::make_unique<NativeExtensionBindingsSystem>(std::move(ipc_sender));
-    delegate_->InitializeBindingsSystem(this, system->api_system());
+    delegate_->InitializeBindingsSystem(this, system.get());
     bindings_system = std::move(system);
   } else {
     bindings_system = std::make_unique<JsExtensionBindingsSystem>(

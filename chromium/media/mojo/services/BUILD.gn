@@ -12,8 +12,6 @@ import("//testing/test.gni")
 component("services") {
   output_name = "media_mojo_services"
   sources = [
-    "cdm_service.cc",
-    "cdm_service.h",
     "gpu_mojo_media_client.cc",
     "gpu_mojo_media_client.h",
     "interface_factory_impl.cc",
@@ -103,7 +101,7 @@ component("services") {
     "//mojo/common",
     "//services/metrics/public/cpp:metrics_cpp",
     "//services/metrics/public/cpp:ukm_builders",
-    "//services/service_manager/public/interfaces",
+    "//services/service_manager/public/mojom",
   ]
 
   if (is_android) {
@@ -117,6 +115,8 @@ component("services") {
 
   if (enable_library_cdms) {
     sources += [
+      "cdm_service.cc",
+      "cdm_service.h",
       "mojo_cdm_allocator.cc",
       "mojo_cdm_allocator.h",
       "mojo_cdm_file_io.cc",
@@ -259,6 +259,7 @@ source_set("unit_tests") {
       "mojo_cdm_allocator_unittest.cc",
       "mojo_cdm_file_io_unittest.cc",
       "mojo_cdm_helper_unittest.cc",
+      "mojo_cdm_proxy_unittest.cc",
     ]
 
     deps += [ "//media/cdm:cdm_api" ]

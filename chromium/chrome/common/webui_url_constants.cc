@@ -5,7 +5,7 @@
 #include "chrome/common/webui_url_constants.h"
 
 #include "base/macros.h"
-#include "components/nacl/common/features.h"
+#include "components/nacl/common/buildflags.h"
 #include "components/safe_browsing/web_ui/constants.h"
 #include "extensions/features/features.h"
 
@@ -19,13 +19,11 @@ namespace chrome {
 const char kChromeUIAboutHost[] = "about";
 const char kChromeUIAboutURL[] = "chrome://about/";
 const char kChromeUIAppLauncherPageHost[] = "apps";
-const char kChromeUIAppListStartPageHost[] = "app-list";
 const char kChromeUIAppListStartPageURL[] = "chrome://app-list/";
 const char kChromeUIAppsURL[] = "chrome://apps/";
 const char kChromeUIBluetoothInternalsHost[] = "bluetooth-internals";
 const char kChromeUIBookmarksHost[] = "bookmarks";
 const char kChromeUIBookmarksURL[] = "chrome://bookmarks/";
-const char kChromeUICacheHost[] = "cache";
 const char kChromeUICertificateViewerDialogHost[] = "view-cert-dialog";
 const char kChromeUICertificateViewerDialogURL[] = "chrome://view-cert-dialog/";
 const char kChromeUICertificateViewerHost[] = "view-cert";
@@ -37,6 +35,8 @@ const char kChromeUIChromeURLsURL[] = "chrome://chrome-urls/";
 const char kChromeUIComponentsHost[] = "components";
 const char kChromeUIConflictsHost[] = "conflicts";
 const char kChromeUIConflictsURL[] = "chrome://conflicts/";
+const char kChromeUIConnectionHelpHost[] = "connection-help";
+const char kChromeUIConnectionHelpURL[] = "chrome://connection-help";
 const char kChromeUIConstrainedHTMLTestURL[] = "chrome://constrained-test/";
 const char kChromeUIContentSettingsURL[] = "chrome://settings/content";
 const char kChromeUICrashHost[] = "crash";
@@ -298,7 +298,6 @@ const char kExtensionConfigureCommandsSubPage[] = "configureCommands";
 const char* const kChromeHostURLs[] = {
     kChromeUIAboutHost,
     kChromeUIBluetoothInternalsHost,
-    kChromeUICacheHost,
     kChromeUIChromeURLsHost,
     kChromeUIComponentsHost,
     kChromeUICrashesHost,
@@ -332,8 +331,10 @@ const char* const kChromeHostURLs[] = {
     kChromeUISupervisedUserInternalsHost,
     kChromeUISyncInternalsHost,
     kChromeUITaskSchedulerInternalsHost,
+#if !defined(OS_ANDROID)
     kChromeUITermsHost,
     kChromeUIThumbnailListHost,
+#endif
     kChromeUITranslateInternalsHost,
     kChromeUIUsbInternalsHost,
     kChromeUIUserActionsHost,
@@ -348,9 +349,10 @@ const char* const kChromeHostURLs[] = {
     content::kChromeUIMediaInternalsHost,
     content::kChromeUINetworkErrorHost,
     content::kChromeUINetworkErrorsListingHost,
-    content::kChromeUINetworkViewCacheHost,
     content::kChromeUIServiceWorkerInternalsHost,
+#if !defined(OS_ANDROID)
     content::kChromeUITracingHost,
+#endif
     content::kChromeUIWebRTCInternalsHost,
 #if !defined(OS_ANDROID)
 #if !defined(OS_CHROMEOS)

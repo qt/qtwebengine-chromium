@@ -46,6 +46,7 @@
 #include "platform/mediastream/MediaStreamCenter.h"
 #include "platform/mediastream/MediaStreamComponent.h"
 #include "platform/wtf/Assertions.h"
+#include "platform/wtf/Vector.h"
 #include "public/platform/WebMediaStreamTrack.h"
 
 namespace blink {
@@ -307,6 +308,61 @@ void MediaStreamTrack::SetConstraints(const WebMediaConstraints& constraints) {
 void MediaStreamTrack::getCapabilities(MediaTrackCapabilities& capabilities) {
   if (image_capture_)
     capabilities = image_capture_->GetMediaTrackCapabilities();
+
+  auto platform_capabilities = component_->Source()->GetCapabilities();
+  capabilities.setDeviceId(platform_capabilities.device_id);
+
+  if (component_->Source()->GetType() == MediaStreamSource::kTypeAudio) {
+    Vector<bool> echo_cancellation;
+    for (bool value : platform_capabilities.echo_cancellation)
+      echo_cancellation.push_back(value);
+    capabilities.setEchoCancellation(echo_cancellation);
+  }
+
+  if (component_->Source()->GetType() == MediaStreamSource::kTypeVideo) {
+    if (platform_capabilities.width.size() == 2) {
+      LongRange width;
+      width.setMin(platform_capabilities.width[0]);
+      width.setMax(platform_capabilities.width[1]);
+      capabilities.setWidth(width);
+    }
+    if (platform_capabilities.height.size() == 2) {
+      LongRange height;
+      height.setMin(platform_capabilities.height[0]);
+      height.setMax(platform_capabilities.height[1]);
+      capabilities.setHeight(height);
+    }
+    if (platform_capabilities.aspect_ratio.size() == 2) {
+      DoubleRange aspect_ratio;
+      aspect_ratio.setMin(platform_capabilities.aspect_ratio[0]);
+      aspect_ratio.setMax(platform_capabilities.aspect_ratio[1]);
+      capabilities.setAspectRatio(aspect_ratio);
+    }
+    if (platform_capabilities.frame_rate.size() == 2) {
+      DoubleRange frame_rate;
+      frame_rate.setMin(platform_capabilities.frame_rate[0]);
+      frame_rate.setMax(platform_capabilities.frame_rate[1]);
+      capabilities.setFrameRate(frame_rate);
+    }
+    Vector<String> facing_mode;
+    switch (platform_capabilities.facing_mode) {
+      case WebMediaStreamTrack::FacingMode::kUser:
+        facing_mode.push_back("user");
+        break;
+      case WebMediaStreamTrack::FacingMode::kEnvironment:
+        facing_mode.push_back("environment");
+        break;
+      case WebMediaStreamTrack::FacingMode::kLeft:
+        facing_mode.push_back("left");
+        break;
+      case WebMediaStreamTrack::FacingMode::kRight:
+        facing_mode.push_back("right");
+        break;
+      default:
+        break;
+    }
+    capabilities.setFacingMode(facing_mode);
+  }
 }
 
 void MediaStreamTrack::getConstraints(MediaTrackConstraints& constraints) {

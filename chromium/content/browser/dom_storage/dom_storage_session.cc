@@ -7,45 +7,98 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
+#include "base/memory/ptr_util.h"
+#include "base/single_thread_task_runner.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
+#include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/dom_storage_task_runner.h"
 #include "content/browser/dom_storage/session_storage_context_mojo.h"
+#include "content/common/dom_storage/dom_storage_namespace_ids.h"
+#include "content/public/common/content_features.h"
 
 namespace content {
 
-DOMStorageSession::DOMStorageSession(
-    DOMStorageContextImpl* context,
-    base::WeakPtr<SessionStorageContextMojo> mojo_context)
-    : context_(context),
-      mojo_context_(mojo_context),
-      namespace_id_(context->AllocateSessionId()),
-      persistent_namespace_id_(context->AllocatePersistentSessionId()),
-      should_persist_(false) {
-  context->task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&DOMStorageContextImpl::CreateSessionNamespace, context_,
-                     namespace_id_, persistent_namespace_id_));
-  if (mojo_context_)
-    mojo_context_->CreateSessionNamespace(namespace_id_,
-                                          persistent_namespace_id_);
+// Constructed on thread that constructs DOMStorageSession. Used & destroyed on
+// the mojo task runner that the |mojo_context_| runs on.
+class DOMStorageSession::SequenceHelper {
+ public:
+  SequenceHelper(SessionStorageContextMojo* context_wrapper)
+      : context_wrapper_(context_wrapper) {}
+  ~SequenceHelper() = default;
+
+  void CreateSessionNamespace(const std::string& namespace_id) {
+    context_wrapper_->CreateSessionNamespace(namespace_id);
+  }
+
+  void CloneSessionNamespace(const std::string& namespace_id_to_clone,
+                             const std::string& clone_namespace_id) {
+    context_wrapper_->CloneSessionNamespace(namespace_id_to_clone,
+                                            clone_namespace_id);
+  }
+
+  void DeleteSessionNamespace(const std::string& namespace_id,
+                              bool should_persist) {
+    context_wrapper_->DeleteSessionNamespace(namespace_id, should_persist);
+  }
+
+ private:
+  SessionStorageContextMojo* context_wrapper_;
+};
+
+// static
+std::unique_ptr<DOMStorageSession> DOMStorageSession::Create(
+    scoped_refptr<DOMStorageContextWrapper> context) {
+  return DOMStorageSession::CreateWithNamespace(
+      std::move(context), AllocateSessionStorageNamespaceId());
 }
 
-DOMStorageSession::DOMStorageSession(
-    DOMStorageContextImpl* context,
-    base::WeakPtr<SessionStorageContextMojo> mojo_context,
-    const std::string& persistent_namespace_id)
-    : context_(context),
-      mojo_context_(mojo_context),
-      namespace_id_(context->AllocateSessionId()),
-      persistent_namespace_id_(persistent_namespace_id),
-      should_persist_(false) {
-  context->task_runner()->PostTask(
+// static
+std::unique_ptr<DOMStorageSession> DOMStorageSession::CreateWithNamespace(
+    scoped_refptr<DOMStorageContextWrapper> context,
+    const std::string& namespace_id) {
+  if (context->mojo_session_state()) {
+    DCHECK(base::FeatureList::IsEnabled(features::kMojoSessionStorage));
+    std::unique_ptr<DOMStorageSession> result = base::WrapUnique(
+        new DOMStorageSession(std::move(context), namespace_id));
+    result->mojo_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&SequenceHelper::CreateSessionNamespace,
+                       base::Unretained(result->sequence_helper_.get()),
+                       result->namespace_id_));
+    return result;
+  }
+  scoped_refptr<DOMStorageContextImpl> context_impl = context->context();
+  context_impl->task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(&DOMStorageContextImpl::CreateSessionNamespace,
+                                context_impl, namespace_id));
+  return std::unique_ptr<DOMStorageSession>(new DOMStorageSession(
+      std::move(context), std::move(context_impl), namespace_id));
+}
+
+// static
+std::unique_ptr<DOMStorageSession> DOMStorageSession::CloneFrom(
+    scoped_refptr<DOMStorageContextWrapper> context,
+    std::string namepace_id,
+    const std::string& namespace_id_to_clone) {
+  if (context->mojo_session_state()) {
+    DCHECK(base::FeatureList::IsEnabled(features::kMojoSessionStorage));
+    std::unique_ptr<DOMStorageSession> result = base::WrapUnique(
+        new DOMStorageSession(std::move(context), std::move(namepace_id)));
+
+    result->mojo_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&SequenceHelper::CloneSessionNamespace,
+                       base::Unretained(result->sequence_helper_.get()),
+                       namespace_id_to_clone, result->namespace_id_));
+    return result;
+  }
+  scoped_refptr<DOMStorageContextImpl> context_impl = context->context();
+  context_impl->task_runner()->PostTask(
       FROM_HERE,
-      base::BindOnce(&DOMStorageContextImpl::CreateSessionNamespace, context_,
-                     namespace_id_, persistent_namespace_id_));
-  if (mojo_context_)
-    mojo_context_->CreateSessionNamespace(namespace_id_,
-                                          persistent_namespace_id_);
+      base::BindOnce(&DOMStorageContextImpl::CloneSessionNamespace,
+                     context_impl, namespace_id_to_clone, namepace_id));
+  return std::unique_ptr<DOMStorageSession>(new DOMStorageSession(
+      std::move(context), std::move(context_impl), std::move(namepace_id)));
 }
 
 void DOMStorageSession::SetShouldPersist(bool should_persist) {
@@ -56,51 +109,56 @@ bool DOMStorageSession::should_persist() const {
   return should_persist_;
 }
 
-bool DOMStorageSession::IsFromContext(DOMStorageContextImpl* context) {
-  return context_.get() == context;
+bool DOMStorageSession::IsFromContext(DOMStorageContextWrapper* context) {
+  return context_wrapper_.get() == context;
 }
 
-DOMStorageSession* DOMStorageSession::Clone() {
-  return CloneFrom(context_.get(), mojo_context_, namespace_id_);
-}
-
-// static
-DOMStorageSession* DOMStorageSession::CloneFrom(
-    DOMStorageContextImpl* context,
-    base::WeakPtr<SessionStorageContextMojo> mojo_context,
-    int64_t namespace_id_to_clone) {
-  int64_t clone_id = context->AllocateSessionId();
-  std::string persistent_clone_id = context->AllocatePersistentSessionId();
-  context->task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&DOMStorageContextImpl::CloneSessionNamespace, context,
-                     namespace_id_to_clone, clone_id, persistent_clone_id));
-  if (mojo_context)
-    mojo_context->CloneSessionNamespace(namespace_id_to_clone, clone_id,
-                                        persistent_clone_id);
-  return new DOMStorageSession(context, std::move(mojo_context), clone_id,
-                               persistent_clone_id);
+std::unique_ptr<DOMStorageSession> DOMStorageSession::Clone() {
+  return CloneFrom(context_wrapper_, AllocateSessionStorageNamespaceId(),
+                   namespace_id_);
 }
 
 DOMStorageSession::DOMStorageSession(
-    DOMStorageContextImpl* context,
-    base::WeakPtr<SessionStorageContextMojo> mojo_context,
-    int64_t namespace_id,
-    const std::string& persistent_namespace_id)
-    : context_(context),
-      mojo_context_(mojo_context),
-      namespace_id_(namespace_id),
-      persistent_namespace_id_(persistent_namespace_id),
+    scoped_refptr<DOMStorageContextWrapper> context_wrapper,
+    scoped_refptr<DOMStorageContextImpl> context,
+    std::string namespace_id)
+    : context_(std::move(context)),
+      context_wrapper_(std::move(context_wrapper)),
+      namespace_id_(std::move(namespace_id)),
       should_persist_(false) {
-  // This ctor is intended for use by the Clone() method.
+  DCHECK(!base::FeatureList::IsEnabled(features::kMojoSessionStorage));
+}
+
+DOMStorageSession::DOMStorageSession(
+    scoped_refptr<DOMStorageContextWrapper> context,
+    std::string namespace_id)
+    : context_wrapper_(std::move(context)),
+      mojo_task_runner_(context_wrapper_->mojo_task_runner()),
+      namespace_id_(std::move(namespace_id)),
+      should_persist_(false),
+      sequence_helper_(std::make_unique<SequenceHelper>(
+          context_wrapper_->mojo_session_state())) {
+  DCHECK(base::FeatureList::IsEnabled(features::kMojoSessionStorage));
 }
 
 DOMStorageSession::~DOMStorageSession() {
-  context_->task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&DOMStorageContextImpl::DeleteSessionNamespace,
-                                context_, namespace_id_, should_persist_));
-  if (mojo_context_)
-    mojo_context_->DeleteSessionNamespace(namespace_id_, should_persist_);
+  DCHECK(!!context_ || !!sequence_helper_);
+  if (context_) {
+    context_->task_runner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&DOMStorageContextImpl::DeleteSessionNamespace, context_,
+                       namespace_id_, should_persist_));
+  }
+  if (sequence_helper_) {
+    mojo_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&SequenceHelper::DeleteSessionNamespace,
+                                  base::Unretained(sequence_helper_.get()),
+                                  namespace_id_, should_persist_));
+    mojo_task_runner_->DeleteSoon(FROM_HERE, std::move(sequence_helper_));
+    context_wrapper_->AddRef();
+    if (!mojo_task_runner_->ReleaseSoon(FROM_HERE, context_wrapper_.get()))
+      context_wrapper_->Release();
+  }
 }
 
 }  // namespace content

@@ -29,9 +29,9 @@
 #include "net/base/net_errors.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
-#include "third_party/WebKit/common/quota/quota_types.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/web_feature.mojom.h"
 
 using std::swap;
@@ -80,6 +80,7 @@ ServiceWorkerStatusCode DatabaseStatusToStatusCode(
       return SERVICE_WORKER_ERROR_NOT_FOUND;
     case ServiceWorkerDatabase::STATUS_ERROR_MAX:
       NOTREACHED();
+      FALLTHROUGH;
     default:
       return SERVICE_WORKER_ERROR_FAILED;
   }
@@ -420,6 +421,7 @@ void ServiceWorkerStorage::StoreRegistration(
   ServiceWorkerDatabase::RegistrationData data;
   data.registration_id = registration->id();
   data.scope = registration->pattern();
+  data.update_via_cache = registration->update_via_cache();
   data.script = version->script_url();
   data.has_fetch_handler = version->fetch_handler_existence() ==
                            ServiceWorkerVersion::FetchHandlerExistence::EXISTS;
@@ -1312,6 +1314,7 @@ void ServiceWorkerStorage::DidGetAllRegistrationsInfos(
 
     ServiceWorkerRegistrationInfo info;
     info.pattern = registration_data.scope;
+    info.update_via_cache = registration_data.update_via_cache;
     info.registration_id = registration_data.registration_id;
     info.stored_version_size_bytes =
         registration_data.resources_total_size_bytes;
@@ -1379,7 +1382,7 @@ void ServiceWorkerStorage::DidStoreRegistration(
   if (quota_manager_proxy_) {
     // Can be nullptr in tests.
     quota_manager_proxy_->NotifyStorageModified(
-        storage::QuotaClient::kServiceWorker, origin,
+        storage::QuotaClient::kServiceWorker, url::Origin::Create(origin),
         blink::mojom::StorageType::kTemporary,
         new_version.resources_total_size_bytes -
             deleted_version.resources_total_size_bytes);
@@ -1416,7 +1419,8 @@ void ServiceWorkerStorage::DidDeleteRegistration(
   if (quota_manager_proxy_) {
     // Can be nullptr in tests.
     quota_manager_proxy_->NotifyStorageModified(
-        storage::QuotaClient::kServiceWorker, params->origin,
+        storage::QuotaClient::kServiceWorker,
+        url::Origin::Create(params->origin),
         blink::mojom::StorageType::kTemporary,
         -deleted_version.resources_total_size_bytes);
   }
@@ -1505,8 +1509,8 @@ ServiceWorkerStorage::GetOrCreateRegistration(
   if (registration)
     return registration;
 
-  blink::mojom::ServiceWorkerRegistrationOptions options;
-  options.scope = data.scope;
+  blink::mojom::ServiceWorkerRegistrationOptions options(data.scope,
+                                                         data.update_via_cache);
   registration =
       new ServiceWorkerRegistration(options, data.registration_id, context_);
   registration->set_resources_total_size_bytes(data.resources_total_size_bytes);

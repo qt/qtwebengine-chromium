@@ -5,6 +5,8 @@
  * found in the LICENSE file.
  */
 
+#include <sys/stat.h>
+
 #include "gm_knowledge.h"
 #include "gm_runner.h"
 
@@ -19,6 +21,7 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "Resources.h"
 #include "SkStream.h"
 #include "SkString.h"
 
@@ -92,7 +95,7 @@ static void reg_test(const char* test, const char* testCase,
 
 
 void register_skia_tests() {
-    gm_runner::InitSkia();
+    gm_runner::InitSkia(gm_runner::Mode::kCompatibilityTestMode, gAssetMgr.get());
 
     // Rendering Tests
     std::vector<gm_runner::SkiaBackend> backends = gm_runner::GetSupportedBackends();
@@ -132,9 +135,11 @@ int main(int argc, char** argv) {
                   << " [GTEST_ARGUMENTS] GMKB_DIRECTORY_PATH GMKB_REPORT_PATH\n\n";
         return 1;
     }
+    SetResourcePath((std::string(argv[1]) + "/resources").c_str());
     gAssetMgr.reset(new StdAssetManager(argv[1]));
     if (argc > 2) {
         gReportDirectoryPath = argv[2];
+        (void)mkdir(gReportDirectoryPath.c_str(), 0777);
     }
     register_skia_tests();
     int ret = RUN_ALL_TESTS();

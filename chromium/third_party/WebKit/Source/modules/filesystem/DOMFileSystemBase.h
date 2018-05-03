@@ -48,14 +48,11 @@ class WebFileSystem;
 namespace blink {
 
 class DirectoryReaderBase;
-class DirectoryReaderOnDidReadCallback;
 class EntryBase;
 class ExecutionContext;
 class File;
 class FileMetadata;
-class MetadataCallback;
 class SecurityOrigin;
-class VoidCallback;
 
 // A common base class for DOMFileSystem and DOMFileSystemSync.
 class MODULES_EXPORT DOMFileSystemBase : public ScriptWrappable {
@@ -114,7 +111,7 @@ class MODULES_EXPORT DOMFileSystemBase : public ScriptWrappable {
   // Actual FileSystem API implementations. All the validity checks on virtual
   // paths are done at this level.
   void GetMetadata(const EntryBase*,
-                   MetadataCallback*,
+                   MetadataCallbacks::OnDidReadMetadataCallback*,
                    ErrorCallbackBase*,
                    SynchronousType = kAsynchronous);
   void Move(const EntryBase* source,
@@ -130,11 +127,11 @@ class MODULES_EXPORT DOMFileSystemBase : public ScriptWrappable {
             ErrorCallbackBase*,
             SynchronousType = kAsynchronous);
   void Remove(const EntryBase*,
-              VoidCallback*,
+              VoidCallbacks::OnDidSucceedCallback*,
               ErrorCallbackBase*,
               SynchronousType = kAsynchronous);
   void RemoveRecursively(const EntryBase*,
-                         VoidCallback*,
+                         VoidCallbacks::OnDidSucceedCallback*,
                          ErrorCallbackBase*,
                          SynchronousType = kAsynchronous);
   void GetParent(const EntryBase*,
@@ -154,7 +151,7 @@ class MODULES_EXPORT DOMFileSystemBase : public ScriptWrappable {
                     SynchronousType = kAsynchronous);
   int ReadDirectory(DirectoryReaderBase*,
                     const String& path,
-                    DirectoryReaderOnDidReadCallback*,
+                    EntriesCallbacks::OnDidGetEntriesCallback*,
                     ErrorCallbackBase*,
                     SynchronousType = kAsynchronous);
   bool WaitForAdditionalResult(int callbacks_id);

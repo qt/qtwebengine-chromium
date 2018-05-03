@@ -29,6 +29,7 @@
 namespace blink {
 
 class ComputedStyle;
+class Element;
 class LayoutObject;
 class LayoutSVGResourceClipper;
 class LayoutSVGResourceContainer;
@@ -45,8 +46,12 @@ class SVGResources {
  public:
   SVGResources();
 
-  static std::unique_ptr<SVGResources> BuildResources(const LayoutObject*,
+  static std::unique_ptr<SVGResources> BuildResources(const LayoutObject&,
                                                       const ComputedStyle&);
+
+  static void RemoveWatchesForElement(Element&);
+  static void RemoveUnreferencedResources(const LayoutObject&);
+
   void LayoutIfNeeded();
 
   static bool SupportsMarkers(const SVGElement&);
@@ -92,11 +97,9 @@ class SVGResources {
   void BuildSetOfResources(HashSet<LayoutSVGResourceContainer*>&);
 
   // Methods operating on all cached resources
-  void RemoveClientFromCache(LayoutObject*,
+  void RemoveClientFromCache(LayoutObject&,
                              bool mark_for_invalidation = true) const;
-  void RemoveClientFromCacheAffectingObjectBounds(
-      LayoutObject*,
-      bool mark_for_invalidation = true) const;
+  unsigned RemoveClientFromCacheAffectingObjectBounds(LayoutObject&) const;
   void ResourceDestroyed(LayoutSVGResourceContainer*);
   void ClearReferencesTo(LayoutSVGResourceContainer*);
 

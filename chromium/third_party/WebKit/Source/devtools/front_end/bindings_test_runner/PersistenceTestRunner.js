@@ -8,7 +8,13 @@
  */
 
 Persistence.PersistenceBinding.prototype.toString = function() {
-  var lines = [
+  const lines = ['{', '       network: ' + this.network.url(), '    fileSystem: ' + this.fileSystem.url(), '}'];
+
+  return lines.join('\n');
+};
+
+Persistence.AutomappingStatus.prototype.toString = function() {
+  const lines = [
     '{', '       network: ' + this.network.url(), '    fileSystem: ' + this.fileSystem.url(),
     '    exactMatch: ' + this.exactMatch, '}'
   ];
@@ -16,11 +22,12 @@ Persistence.PersistenceBinding.prototype.toString = function() {
   return lines.join('\n');
 };
 
-BindingsTestRunner.waitForBinding = function(fileName) {
-  var uiSourceCodes = Workspace.workspace.uiSourceCodes();
 
-  for (var uiSourceCode of uiSourceCodes) {
-    var binding = Persistence.persistence.binding(uiSourceCode);
+BindingsTestRunner.waitForBinding = function(fileName) {
+  const uiSourceCodes = Workspace.workspace.uiSourceCodes();
+
+  for (const uiSourceCode of uiSourceCodes) {
+    const binding = Persistence.persistence.binding(uiSourceCode);
 
     if (!binding)
       continue;
@@ -38,31 +45,17 @@ BindingsTestRunner.addFooJSFile = function(fs) {
   return fs.root.mkdir('devtools')
       .mkdir('persistence')
       .mkdir('resources')
-      .addFile('foo.js', '\n\nwindow.foo = ()=>\'foo\';');
-};
-
-BindingsTestRunner.forceUseDefaultMapping = function() {
-  Persistence.persistence._setMappingForTest((bindingCreated, bindingRemoved) => {
-    return new Persistence.DefaultMapping(
-        Workspace.workspace, Persistence.fileSystemMapping, bindingCreated, bindingRemoved);
-  });
+      .addFile('foo.js', '\n\nwindow.foo = ()=>\'foo\';\n');
 };
 
 BindingsTestRunner.initializeTestMapping = function() {
-  var testMapping;
-
-  Persistence.persistence._setMappingForTest((bindingCreated, bindingRemoved) => {
-    testMapping = new TestMapping(bindingCreated, bindingRemoved);
-    return testMapping;
-  });
-
-  return testMapping;
+  return new TestMapping(Persistence.persistence);
 };
 
 class TestMapping {
-  constructor(onBindingAdded, onBindingRemoved) {
-    this._onBindingAdded = onBindingAdded;
-    this._onBindingRemoved = onBindingRemoved;
+  constructor(persistence) {
+    this._persistence = persistence;
+    persistence.setAutomappingEnabled(false);
     this._bindings = new Set();
   }
 
@@ -73,15 +66,15 @@ class TestMapping {
       return;
     }
 
-    var networkUISourceCode = await TestRunner.waitForUISourceCode(urlSuffix, Workspace.projectTypes.Network);
-    var fileSystemUISourceCode = await TestRunner.waitForUISourceCode(urlSuffix, Workspace.projectTypes.FileSystem);
-    var binding = new Persistence.PersistenceBinding(networkUISourceCode, fileSystemUISourceCode, false);
+    const networkUISourceCode = await TestRunner.waitForUISourceCode(urlSuffix, Workspace.projectTypes.Network);
+    const fileSystemUISourceCode = await TestRunner.waitForUISourceCode(urlSuffix, Workspace.projectTypes.FileSystem);
+    const binding = new Persistence.PersistenceBinding(networkUISourceCode, fileSystemUISourceCode);
     this._bindings.add(binding);
-    this._onBindingAdded.call(null, binding);
+    this._persistence.addBindingForTest(binding);
   }
 
   _findBinding(urlSuffix) {
-    for (var binding of this._bindings) {
+    for (const binding of this._bindings) {
       if (binding.network.url().endsWith(urlSuffix))
         return binding;
     }
@@ -90,7 +83,7 @@ class TestMapping {
   }
 
   async removeBinding(urlSuffix) {
-    var binding = this._findBinding(urlSuffix);
+    const binding = this._findBinding(urlSuffix);
 
     if (!binding) {
       TestRunner.addResult(`FAILED TO REMOVE BINDING: binding does not exist for ${urlSuffix}`);
@@ -99,12 +92,12 @@ class TestMapping {
     }
 
     this._bindings.delete(binding);
-    this._onBindingRemoved.call(null, binding);
+    this._persistence.removeBindingForTest(binding);
   }
 
   dispose() {
-    for (var binding of this._bindings)
-      this._onBindingRemoved.call(null, binding);
+    for (const binding of this._bindings)
+      this._persistence.removeBindingForTest(binding);
 
     this._bindings.clear();
   }

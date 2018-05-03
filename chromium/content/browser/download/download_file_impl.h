@@ -22,12 +22,12 @@
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_save_info.h"
+#include "components/download/public/common/download_stream.mojom.h"
+#include "components/download/public/common/rate_estimator.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/base_file.h"
-#include "content/browser/download/rate_estimator.h"
-#include "content/public/browser/download_item.h"
-#include "content/public/browser/download_save_info.h"
-#include "content/public/common/download_stream.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
 
@@ -45,7 +45,7 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
   // Note that the DownloadFileImpl automatically reads from the passed in
   // |stream|, and sends updates and status of those reads to the
   // DownloadDestinationObserver.
-  DownloadFileImpl(std::unique_ptr<DownloadSaveInfo> save_info,
+  DownloadFileImpl(std::unique_ptr<download::DownloadSaveInfo> save_info,
                    const base::FilePath& default_downloads_directory,
                    std::unique_ptr<DownloadManager::InputStream> stream,
                    uint32_t download_id,
@@ -56,13 +56,13 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
   // DownloadFile functions.
   void Initialize(const InitializeCallback& initialize_callback,
                   const CancelRequestCallback& cancel_request_callback,
-                  const DownloadItem::ReceivedSlices& received_slices,
+                  const download::DownloadItem::ReceivedSlices& received_slices,
                   bool is_parallelizable) override;
   void AddInputStream(std::unique_ptr<DownloadManager::InputStream> stream,
                       int64_t offset,
                       int64_t length) override;
   void OnResponseCompleted(int64_t offset,
-                           DownloadInterruptReason status) override;
+                           download::DownloadInterruptReason status) override;
   void RenameAndUniquify(const base::FilePath& full_path,
                          const RenameCompletionCallback& callback) override;
   void RenameAndAnnotate(const base::FilePath& full_path,
@@ -78,7 +78,6 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
   void Pause() override;
   void Resume() override;
 
- protected:
   // Wrapper of a ByteStreamReader or ScopedDataPipeConsumerHandle, and the meta
   // data needed to write to a slice of the target file.
   //
@@ -87,7 +86,8 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
   // is handled.
   //
   // Multiple SourceStreams can concurrently write to the same file sink.
-  class CONTENT_EXPORT SourceStream : public mojom::DownloadStreamClient {
+  class CONTENT_EXPORT SourceStream
+      : public download::mojom::DownloadStreamClient {
    public:
     SourceStream(int64_t offset,
                  int64_t length,
@@ -96,11 +96,12 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
 
     void Initialize();
 
-    // mojom::DownloadStreamClient
-    void OnStreamCompleted(mojom::NetworkRequestStatus status) override;
+    // download::mojom::DownloadStreamClient
+    void OnStreamCompleted(
+        download::mojom::NetworkRequestStatus status) override;
 
     // Called when response is completed.
-    void OnResponseCompleted(DownloadInterruptReason reason);
+    void OnResponseCompleted(download::DownloadInterruptReason reason);
 
     // Called after successfully writing a buffer to disk.
     void OnWriteBytesToDisk(int64_t bytes_write);
@@ -121,10 +122,11 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
     // abort status at the end. The best way to do this is to add a separate
     // mojo interface for control messages when creating this object. See
     // http://crbug.com/748240. An alternative strategy is to let the
-    // DownloadManager pass the status code to DownloadItem or DownloadFile.
-    // However, a DownloadFile can have multiple SourceStreams, so we have to
-    // maintain a map between data pipe and DownloadItem/DownloadFile somewhere.
-    DownloadInterruptReason GetCompletionStatus();
+    // DownloadManager pass the status code to download::DownloadItem or
+    // DownloadFile. However, a DownloadFile can have multiple SourceStreams, so
+    // we have to maintain a map between data pipe and
+    // download::DownloadItem/DownloadFile somewhere.
+    download::DownloadInterruptReason GetCompletionStatus() const;
 
     using CompletionCallback = base::OnceCallback<void(SourceStream*)>;
     // Register an callback to be called when download completes.
@@ -171,7 +173,7 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
     std::unique_ptr<ByteStreamReader> stream_reader_;
 
     // Status when the response completes, used by data pipe.
-    DownloadInterruptReason completion_status_;
+    download::DownloadInterruptReason completion_status_;
 
     // Whether the producer has completed handling the response.
     bool is_response_completed_;
@@ -179,31 +181,34 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
     CompletionCallback completion_callback_;
 
     // Objects for consuming a mojo data pipe.
-    mojom::DownloadStreamHandlePtr stream_handle_;
+    download::mojom::DownloadStreamHandlePtr stream_handle_;
     std::unique_ptr<mojo::SimpleWatcher> handle_watcher_;
-    std::unique_ptr<mojo::Binding<mojom::DownloadStreamClient>> binding_;
+    std::unique_ptr<mojo::Binding<download::mojom::DownloadStreamClient>>
+        binding_;
 
     DISALLOW_COPY_AND_ASSIGN(SourceStream);
   };
 
+ protected:
   // For test class overrides.
   // Write data from the offset to the file.
   // On OS level, it will seek to the |offset| and write from there.
-  virtual DownloadInterruptReason WriteDataToFile(int64_t offset,
-                                                  const char* data,
-                                                  size_t data_len);
+  virtual download::DownloadInterruptReason WriteDataToFile(int64_t offset,
+                                                            const char* data,
+                                                            size_t data_len);
 
   virtual base::TimeDelta GetRetryDelayForFailedRename(int attempt_number);
 
-  virtual bool ShouldRetryFailedRename(DownloadInterruptReason reason);
+  virtual bool ShouldRetryFailedRename(
+      download::DownloadInterruptReason reason);
 
-  virtual DownloadInterruptReason HandleStreamCompletionStatus(
+  virtual download::DownloadInterruptReason HandleStreamCompletionStatus(
       SourceStream* source_stream);
 
  private:
   friend class DownloadFileTest;
 
-  DownloadFileImpl(std::unique_ptr<DownloadSaveInfo> save_info,
+  DownloadFileImpl(std::unique_ptr<download::DownloadSaveInfo> save_info,
                    const base::FilePath& default_downloads_directory,
                    uint32_t download_id,
                    base::WeakPtr<DownloadDestinationObserver> observer);
@@ -271,7 +276,7 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
 
   // Notify |observer_| about the download status.
   void NotifyObserver(SourceStream* source_stream,
-                      DownloadInterruptReason reason,
+                      download::DownloadInterruptReason reason,
                       SourceStream::StreamState stream_state,
                       bool should_terminate);
 
@@ -290,13 +295,13 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
 
   // Helper method to handle stream error
   void HandleStreamError(SourceStream* source_stream,
-                         DownloadInterruptReason reason);
+                         download::DownloadInterruptReason reason);
 
   // Check whether this file is potentially sparse.
   bool IsSparseFile() const;
 
-  // Given a SourceStream object, returns its neighbor that preceds it if
-  // SourceStreams are ordered by their offsets
+  // Given a SourceStream object, returns its neighbor that precedes it if
+  // SourceStreams are ordered by their offsets.
   SourceStream* FindPrecedingNeighbor(SourceStream* source_stream);
 
   // See |cancel_request_callback_|.
@@ -311,7 +316,7 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
   // DownloadSaveInfo provided during construction. Since the DownloadFileImpl
   // can be created on any thread, this holds the save_info_ until it can be
   // used to initialize file_ on the download sequence.
-  std::unique_ptr<DownloadSaveInfo> save_info_;
+  std::unique_ptr<download::DownloadSaveInfo> save_info_;
 
   // The default directory for creating the download file.
   base::FilePath default_download_directory_;
@@ -337,7 +342,7 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
   size_t bytes_seen_;
   base::TimeDelta disk_writes_time_;
   base::TimeTicks download_start_;
-  RateEstimator rate_estimator_;
+  download::RateEstimator rate_estimator_;
   int num_active_streams_;
   bool record_stream_bandwidth_;
   base::TimeTicks last_update_time_;
@@ -346,7 +351,7 @@ class CONTENT_EXPORT DownloadFileImpl : public DownloadFile {
   base::TimeDelta download_time_with_parallel_streams_;
   base::TimeDelta download_time_without_parallel_streams_;
 
-  std::vector<DownloadItem::ReceivedSlice> received_slices_;
+  std::vector<download::DownloadItem::ReceivedSlice> received_slices_;
 
   // Used to track whether the download is paused or not. This value is ignored
   // when network service is disabled as download pause/resumption is handled

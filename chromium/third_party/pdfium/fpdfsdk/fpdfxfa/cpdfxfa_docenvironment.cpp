@@ -21,7 +21,8 @@
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
-#include "xfa/fxfa/cxfa_widgetacciterator.h"
+#include "xfa/fxfa/cxfa_readynodeiterator.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_submit.h"
 
 #define IDS_XFA_Validate_Input                                          \
@@ -288,8 +289,7 @@ void CPDFXFA_DocEnvironment::PageViewEvent(CXFA_FFPageView* pPageView,
   pFormFillEnv->PageEvent(count, flag);
 }
 
-void CPDFXFA_DocEnvironment::WidgetPostAdd(CXFA_FFWidget* hWidget,
-                                           CXFA_WidgetAcc* pWidgetAcc) {
+void CPDFXFA_DocEnvironment::WidgetPostAdd(CXFA_FFWidget* hWidget) {
   if (m_pContext->GetFormType() != FormType::kXFAFull || !hWidget)
     return;
 
@@ -306,8 +306,7 @@ void CPDFXFA_DocEnvironment::WidgetPostAdd(CXFA_FFWidget* hWidget,
       ->AddAnnot(hWidget);
 }
 
-void CPDFXFA_DocEnvironment::WidgetPreRemove(CXFA_FFWidget* hWidget,
-                                             CXFA_WidgetAcc* pWidgetAcc) {
+void CPDFXFA_DocEnvironment::WidgetPreRemove(CXFA_FFWidget* hWidget) {
   if (m_pContext->GetFormType() != FormType::kXFAFull || !hWidget)
     return;
 
@@ -621,23 +620,23 @@ bool CPDFXFA_DocEnvironment::OnBeforeNotifySubmit() {
   if (!pWidgetHandler)
     return true;
 
-  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator =
-      docView->CreateWidgetAccIterator();
-  if (pWidgetAccIterator) {
+  auto it = docView->CreateReadyNodeIterator();
+  if (it) {
     CXFA_EventParam Param;
     Param.m_eType = XFA_EVENT_PreSubmit;
-    while (CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext())
-      pWidgetHandler->ProcessEvent(pWidgetAcc, &Param);
+    while (CXFA_Node* pNode = it->MoveToNext())
+      pWidgetHandler->ProcessEvent(pNode, &Param);
   }
 
-  pWidgetAccIterator = docView->CreateWidgetAccIterator();
-  if (!pWidgetAccIterator)
+  it = docView->CreateReadyNodeIterator();
+  if (!it)
     return true;
 
-  CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext();
-  pWidgetAcc = pWidgetAccIterator->MoveToNext();
-  while (pWidgetAcc) {
-    int fRet = pWidgetAcc->GetNode()->ProcessValidate(docView, -1);
+  (void)it->MoveToNext();
+  CXFA_Node* pNode = it->MoveToNext();
+
+  while (pNode) {
+    int fRet = pNode->ProcessValidate(docView, -1);
     if (fRet == XFA_EVENTERROR_Error) {
       CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
       if (!pFormFillEnv)
@@ -651,7 +650,7 @@ bool CPDFXFA_DocEnvironment::OnBeforeNotifySubmit() {
       bs.ReleaseBuffer(len);
       return false;
     }
-    pWidgetAcc = pWidgetAccIterator->MoveToNext();
+    pNode = it->MoveToNext();
   }
   docView->UpdateDocView();
 
@@ -670,17 +669,16 @@ void CPDFXFA_DocEnvironment::OnAfterNotifySubmit() {
   if (!pWidgetHandler)
     return;
 
-  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator =
-      m_pContext->GetXFADocView()->CreateWidgetAccIterator();
-  if (!pWidgetAccIterator)
+  auto it = m_pContext->GetXFADocView()->CreateReadyNodeIterator();
+  if (!it)
     return;
 
   CXFA_EventParam Param;
   Param.m_eType = XFA_EVENT_PostSubmit;
-  CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext();
-  while (pWidgetAcc) {
-    pWidgetHandler->ProcessEvent(pWidgetAcc, &Param);
-    pWidgetAcc = pWidgetAccIterator->MoveToNext();
+  CXFA_Node* pNode = it->MoveToNext();
+  while (pNode) {
+    pWidgetHandler->ProcessEvent(pNode, &Param);
+    pNode = it->MoveToNext();
   }
   m_pContext->GetXFADocView()->UpdateDocView();
 }
@@ -986,34 +984,44 @@ bool CPDFXFA_DocEnvironment::SubmitInternal(CXFA_FFDoc* hDoc,
   return true;
 }
 
-bool CPDFXFA_DocEnvironment::SetGlobalProperty(CXFA_FFDoc* hDoc,
-                                               const ByteStringView& szPropName,
-                                               CFXJSE_Value* pValue) {
+bool CPDFXFA_DocEnvironment::SetPropertyInNonXFAGlobalObject(
+    CXFA_FFDoc* hDoc,
+    const ByteStringView& szPropName,
+    CFXJSE_Value* pValue) {
   if (hDoc != m_pContext->GetXFADoc())
     return false;
-  if (!m_pContext->GetFormFillEnv() ||
-      !m_pContext->GetFormFillEnv()->GetJSRuntime()) {
-    return false;
-  }
+
   CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
-  IJS_EventContext* pContext = pFormFillEnv->GetJSRuntime()->NewEventContext();
-  bool bRet = pFormFillEnv->GetJSRuntime()->SetValueByName(szPropName, pValue);
-  pFormFillEnv->GetJSRuntime()->ReleaseEventContext(pContext);
+  if (!pFormFillEnv)
+    return false;
+
+  IJS_Runtime* pIJSRuntime = pFormFillEnv->GetIJSRuntime();
+  if (!pIJSRuntime)
+    return false;
+
+  IJS_EventContext* pContext = pIJSRuntime->NewEventContext();
+  bool bRet = pIJSRuntime->SetValueByNameInGlobalObject(szPropName, pValue);
+  pIJSRuntime->ReleaseEventContext(pContext);
   return bRet;
 }
 
-bool CPDFXFA_DocEnvironment::GetGlobalProperty(CXFA_FFDoc* hDoc,
-                                               const ByteStringView& szPropName,
-                                               CFXJSE_Value* pValue) {
+bool CPDFXFA_DocEnvironment::GetPropertyFromNonXFAGlobalObject(
+    CXFA_FFDoc* hDoc,
+    const ByteStringView& szPropName,
+    CFXJSE_Value* pValue) {
   if (hDoc != m_pContext->GetXFADoc())
     return false;
-  if (!m_pContext->GetFormFillEnv() ||
-      !m_pContext->GetFormFillEnv()->GetJSRuntime()) {
-    return false;
-  }
+
   CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
-  IJS_EventContext* pContext = pFormFillEnv->GetJSRuntime()->NewEventContext();
-  bool bRet = pFormFillEnv->GetJSRuntime()->GetValueByName(szPropName, pValue);
-  pFormFillEnv->GetJSRuntime()->ReleaseEventContext(pContext);
+  if (!pFormFillEnv)
+    return false;
+
+  IJS_Runtime* pIJSRuntime = pFormFillEnv->GetIJSRuntime();
+  if (!pIJSRuntime)
+    return false;
+
+  IJS_EventContext* pContext = pIJSRuntime->NewEventContext();
+  bool bRet = pIJSRuntime->GetValueByNameFromGlobalObject(szPropName, pValue);
+  pIJSRuntime->ReleaseEventContext(pContext);
   return bRet;
 }

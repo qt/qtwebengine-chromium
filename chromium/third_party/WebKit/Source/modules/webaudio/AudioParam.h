@@ -165,9 +165,6 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
 
   float IntrinsicValue() const { return NoBarrierLoad(&intrinsic_value_); }
 
-  // TODO(crbug.com/764396): remove this when fixed.
-  void WarnSetterOverlapsEvent(int event_index, BaseAudioContext&) const;
-
  private:
   AudioParamHandler(BaseAudioContext&,
                     AudioParamType,
@@ -234,15 +231,9 @@ class AudioParam final : public ScriptWrappable {
   String GetParamName() const;
 
   float value() const;
+  void setValue(float, ExceptionState&);
   void setValue(float);
   float defaultValue() const;
-  // Use when setting the initial value of an AudioParam when creating
-  // the AudioParam.  This bypasses any deprecation messages about
-  // using the value setter that has dezippering.
-  //
-  // TODO(rtoy): Replace all calls to this with just setValue() when
-  // dezippering deprecation messages are removed.
-  void setInitialValue(float);
 
   float minValue() const;
   float maxValue() const;
@@ -278,9 +269,6 @@ class AudioParam final : public ScriptWrappable {
   scoped_refptr<AudioParamHandler> handler_;
   Member<BaseAudioContext> context_;
 
-  // TODO(crbug.com/764396): Remove this method and attribute when fixed.
-  void WarnIfSetterOverlapsEvent();
-  static bool s_value_setter_warning_done_;
 };
 
 }  // namespace blink

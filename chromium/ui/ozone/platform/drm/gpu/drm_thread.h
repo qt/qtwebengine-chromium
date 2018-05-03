@@ -62,7 +62,7 @@ class DrmThread : public base::Thread,
   DrmThread();
   ~DrmThread() override;
 
-  void Start();
+  void Start(base::OnceClosure binding_completer);
 
   // Must be called on the DRM thread. All methods for use from the GPU thread.
   // DrmThreadProxy (on GPU)thread) is the client for these methods.
@@ -150,12 +150,16 @@ class DrmThread : public base::Thread,
   std::unique_ptr<ScreenManager> screen_manager_;
   std::unique_ptr<DrmGpuDisplayManager> display_manager_;
 
+  base::OnceClosure complete_early_binding_requests_;
+
   // The mojo implementation requires a BindingSet because the DrmThread serves
   // requests from two different client threads.
-  mojo::BindingSet<ozone::mojom::DeviceCursor> bindings_;
+  mojo::BindingSet<ozone::mojom::DeviceCursor> cursor_bindings_;
 
-  // The mojo implementation of DrmDevice can use a simple binding.
-  mojo::Binding<ozone::mojom::DrmDevice> binding_;
+  // The mojo implementation of DrmDevice requires a BindingSet because the
+  // DrmThread services requests from different client threads when operating in
+  // mus mode
+  mojo::BindingSet<ozone::mojom::DrmDevice> drm_bindings_;
 
   base::WeakPtrFactory<DrmThread> weak_ptr_factory_;
 

@@ -122,7 +122,6 @@ rtc_source_set("field_trial") {
 
 rtc_source_set("perf_test") {
   visibility = [ "*" ]
-  testonly = true
   sources = [
     "testsupport/perf_test.cc",
     "testsupport/perf_test.h",
@@ -149,15 +148,30 @@ if (is_ios) {
   }
 }
 
+config("suppress_warning_4373") {
+  if (is_win) {
+    cflags = [
+      # MSVC has a bug which generates this warning when using mocks; see the
+      # section on warning 4373 in he googlemock FAQ. This warning isn't the
+      # least relevant for us, anyway.
+      "/wd4373",
+    ]
+  }
+}
+
 rtc_source_set("test_support") {
   visibility = [ "*" ]
   testonly = true
 
+  all_dependent_configs = [
+    ":suppress_warning_4373",
+    "//third_party/googletest:gmock_config",
+    "//third_party/googletest:gtest_config",
+  ]
+
   sources = [
     "gmock.h",
     "gtest.h",
-    "testsupport/packet_reader.cc",
-    "testsupport/packet_reader.h",
     "testsupport/unittest_utils.h",
   ]
 
@@ -213,9 +227,9 @@ if (rtc_include_tests) {
       ":field_trial",
       ":perf_test",
       "../rtc_base:rtc_base_approved",
+      "../system_wrappers:field_trial_default",
       "../system_wrappers:metrics_default",
       "../system_wrappers:runtime_enabled_features_default",
-      "//testing/gmock",
       "//testing/gtest",
     ]
   }
@@ -245,7 +259,6 @@ if (rtc_include_tests) {
       "../rtc_base:checks",
       "../rtc_base:rtc_base_approved",
       "../system_wrappers",
-      "//testing/gmock",
       "//testing/gtest",
       "//third_party/libyuv",
     ]
@@ -333,7 +346,6 @@ if (rtc_include_tests) {
       "single_threaded_task_queue_unittest.cc",
       "testsupport/always_passing_unittest.cc",
       "testsupport/metrics/video_metrics_unittest.cc",
-      "testsupport/packet_reader_unittest.cc",
       "testsupport/perf_test_unittest.cc",
       "testsupport/test_artifacts_unittest.cc",
       "testsupport/y4m_frame_writer_unittest.cc",
@@ -343,11 +355,6 @@ if (rtc_include_tests) {
 
     # TODO(jschuh): Bug 1348: fix this warning.
     configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
-    if (is_win) {
-      # virtual override w/different const/volatile signature.
-      cflags = [ "/wd4373" ]
-    }
 
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
@@ -374,7 +381,6 @@ if (rtc_include_tests) {
       ":video_test_support",
       "../modules/video_capture",
       "../rtc_base:rtc_base_approved",
-      "//testing/gmock",
       "//testing/gtest",
     ]
   }
@@ -478,7 +484,6 @@ rtc_source_set("fileutils_unittests") {
     "../api:optional",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
-    "//testing/gmock",
     "//testing/gtest",
   ]
 }
@@ -568,7 +573,6 @@ rtc_source_set("test_common") {
     "layer_filtering_transport.cc",
     "layer_filtering_transport.h",
     "mock_transport.h",
-    "mock_voe_channel_proxy.h",
     "null_transport.cc",
     "null_transport.h",
     "rtp_rtcp_observer.h",
@@ -610,6 +614,7 @@ rtc_source_set("test_common") {
     "../call:video_stream_api",
     "../common_video",
     "../logging:rtc_event_log_api",
+    "../logging:rtc_event_log_impl_base",
     "../media:rtc_media_base",
     "../modules/audio_device:mock_audio_device",
     "../modules/audio_mixer:audio_mixer_impl",
@@ -630,8 +635,6 @@ rtc_source_set("test_common") {
     "../system_wrappers:field_trial_api",
     "../system_wrappers:runtime_enabled_features_api",
     "../video",
-    "../voice_engine",
-    "//testing/gmock",
     "//testing/gtest",
   ]
   if (!is_android && !build_with_chromium) {
@@ -703,10 +706,9 @@ rtc_source_set("test_renderer_generic") {
     ":test_support",
     "..:webrtc_common",
     "../:typedefs",
-    "../api:libjingle_peerconnection_api",
+    "../api:video_frame_api",
     "../common_video",
     "../media:rtc_media_base",
-    "../modules/media_file",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
     "//testing/gtest",
@@ -765,7 +767,6 @@ rtc_source_set("audio_codec_mocks") {
     "../api/audio_codecs:audio_codecs_api",
     "../api/audio_codecs:builtin_audio_decoder_factory",
     "../rtc_base:rtc_base_approved",
-    "//testing/gmock",
   ]
 }
 

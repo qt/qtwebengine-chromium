@@ -9,7 +9,7 @@
 #include <functional>
 #include <limits>
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_FUCHSIA)
 #include <sys/resource.h>
 #endif
 
@@ -20,6 +20,7 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
@@ -31,6 +32,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/memory_usage_estimator.h"
 #include "base/trace_event/process_memory_dump.h"
+#include "build/build_config.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/backend_cleanup_tracker.h"
 #include "net/disk_cache/cache_util.h"
@@ -56,17 +58,21 @@ namespace disk_cache {
 
 namespace {
 
+const base::FeatureParam<base::TaskPriority>::Option prio_modes[] = {
+    {base::TaskPriority::USER_BLOCKING, "default"},
+    {base::TaskPriority::USER_VISIBLE, "user_visible"}};
+const base::Feature kSimpleCachePriorityExperiment = {
+    "SimpleCachePriorityExperiment", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::FeatureParam<base::TaskPriority> priority_mode{
+    &kSimpleCachePriorityExperiment, "mode", base::TaskPriority::USER_BLOCKING,
+    &prio_modes};
+
+base::TaskPriority PriorityToUse() {
+  return priority_mode.Get();
+}
+
 // Maximum fraction of the cache that one entry can consume.
 const int kMaxFileRatio = 8;
-
-scoped_refptr<base::SequencedTaskRunner> FallbackToInternalIfNull(
-    const scoped_refptr<base::SequencedTaskRunner>& cache_runner) {
-  if (cache_runner)
-    return cache_runner;
-  return base::CreateSequencedTaskRunnerWithTraits(
-      {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
-       base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
-}
 
 bool g_fd_limit_histogram_has_been_populated = false;
 
@@ -85,7 +91,7 @@ void MaybeHistogramFdLimit() {
   int soft_fd_limit = 0;
   int hard_fd_limit = 0;
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_FUCHSIA)
   struct rlimit nofile;
   if (!getrlimit(RLIMIT_NOFILE, &nofile)) {
     soft_fd_limit = nofile.rlim_cur;
@@ -228,14 +234,15 @@ SimpleBackendImpl::SimpleBackendImpl(
     SimpleFileTracker* file_tracker,
     int max_bytes,
     net::CacheType cache_type,
-    const scoped_refptr<base::SequencedTaskRunner>& cache_runner,
     net::NetLog* net_log)
     : cleanup_tracker_(std::move(cleanup_tracker)),
       file_tracker_(file_tracker ? file_tracker
                                  : g_simple_file_tracker.Pointer()),
       path_(path),
       cache_type_(cache_type),
-      cache_runner_(FallbackToInternalIfNull(cache_runner)),
+      cache_runner_(base::CreateSequencedTaskRunnerWithTraits(
+          {base::MayBlock(), PriorityToUse(),
+           base::TaskShutdownBehavior::BLOCK_SHUTDOWN})),
       orig_max_size_(max_bytes),
       entry_operations_mode_(cache_type == net::DISK_CACHE
                                  ? SimpleEntryImpl::OPTIMISTIC_OPERATIONS
@@ -254,8 +261,7 @@ SimpleBackendImpl::~SimpleBackendImpl() {
 
 int SimpleBackendImpl::Init(const CompletionCallback& completion_callback) {
   worker_pool_ = base::TaskScheduler::GetInstance()->CreateTaskRunnerWithTraits(
-      {base::MayBlock(), base::WithBaseSyncPrimitives(),
-       base::TaskPriority::USER_BLOCKING,
+      {base::MayBlock(), base::WithBaseSyncPrimitives(), PriorityToUse(),
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN});
 
   index_ = std::make_unique<SimpleIndex>(
@@ -323,7 +329,8 @@ void SimpleBackendImpl::DoomEntries(std::vector<uint64_t>* entry_hashes,
   // 1. There are corresponding entries in active set, pending doom, or both
   //    sets, and so the hash should be doomed individually to avoid flakes.
   // 2. The hash is not in active use at all, so we can call
-  //    SimpleSynchronousEntry::DoomEntrySet and delete the files en masse.
+  //    SimpleSynchronousEntry::DeleteEntrySetFiles and delete the files en
+  //    masse.
   for (int i = mass_doom_entry_hashes->size() - 1; i >= 0; --i) {
     const uint64_t entry_hash = (*mass_doom_entry_hashes)[i];
     if (!active_entries_.count(entry_hash) &&
@@ -361,15 +368,12 @@ void SimpleBackendImpl::DoomEntries(std::vector<uint64_t>* entry_hashes,
   // base::Passed before mass_doom_entry_hashes.get().
   std::vector<uint64_t>* mass_doom_entry_hashes_ptr =
       mass_doom_entry_hashes.get();
-  PostTaskAndReplyWithResult(worker_pool_.get(),
-                             FROM_HERE,
-                             base::Bind(&SimpleSynchronousEntry::DoomEntrySet,
-                                        mass_doom_entry_hashes_ptr,
-                                        path_),
-                             base::Bind(&SimpleBackendImpl::DoomEntriesComplete,
-                                        AsWeakPtr(),
-                                        base::Passed(&mass_doom_entry_hashes),
-                                        barrier_callback));
+  PostTaskAndReplyWithResult(
+      worker_pool_.get(), FROM_HERE,
+      base::Bind(&SimpleSynchronousEntry::DeleteEntrySetFiles,
+                 mass_doom_entry_hashes_ptr, path_),
+      base::Bind(&SimpleBackendImpl::DoomEntriesComplete, AsWeakPtr(),
+                 base::Passed(&mass_doom_entry_hashes), barrier_callback));
 }
 
 net::CacheType SimpleBackendImpl::GetCacheType() const {
@@ -390,6 +394,19 @@ int SimpleBackendImpl::OpenEntry(const std::string& key,
   scoped_refptr<SimpleEntryImpl> simple_entry =
       CreateOrFindActiveOrDoomedEntry(entry_hash, key, &post_doom);
   if (!simple_entry) {
+    if (post_doom->empty() &&
+        entry_operations_mode_ == SimpleEntryImpl::OPTIMISTIC_OPERATIONS) {
+      // The entry is doomed, and no other backend operations are queued for the
+      // entry, thus the open must fail and it's safe to return synchronously.
+      net::NetLogWithSource log_for_entry(net::NetLogWithSource::Make(
+          net_log_, net::NetLogSourceType::DISK_CACHE_ENTRY));
+      log_for_entry.AddEvent(
+          net::NetLogEventType::SIMPLE_CACHE_ENTRY_OPEN_CALL);
+      log_for_entry.AddEventWithNetErrorCode(
+          net::NetLogEventType::SIMPLE_CACHE_ENTRY_OPEN_END, net::ERR_FAILED);
+      return net::ERR_FAILED;
+    }
+
     Callback<int(const net::CompletionCallback&)> operation =
         base::Bind(&SimpleBackendImpl::OpenEntry,
                    base::Unretained(this), key, entry);

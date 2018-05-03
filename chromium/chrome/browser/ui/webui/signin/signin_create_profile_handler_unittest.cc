@@ -15,14 +15,13 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/ui/webui/signin/signin_utils.h"
-#include "chrome/common/features.h"
+#include "chrome/common/buildflags.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/signin/core/browser/fake_auth_status_provider.h"
-#include "components/sync/model/attachments/attachment_service_proxy_for_test.h"
 #include "components/sync/model/fake_sync_change_processor.h"
 #include "components/sync/model/sync_data.h"
 #include "components/sync/model/sync_error_factory_mock.h"
@@ -73,12 +72,7 @@ syncer::SyncData CreateSyncData(const std::string& id,
   specifics.mutable_managed_user()->set_acknowledged(true);
   specifics.mutable_managed_user()->set_chrome_avatar(chrome_avatar);
 
-  return syncer::SyncData::CreateRemoteData(
-      1,
-      specifics,
-      base::Time(),
-      syncer::AttachmentIdList(),
-      syncer::AttachmentServiceProxyForTest::Create());
+  return syncer::SyncData::CreateRemoteData(1, specifics, base::Time());
 }
 #endif
 

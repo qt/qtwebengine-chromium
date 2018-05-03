@@ -13,7 +13,7 @@
 #include "modules/serviceworkers/ServiceWorkerGlobalScope.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
-#include "services/network/public/interfaces/restricted_cookie_manager.mojom-blink.h"
+#include "services/network/public/mojom/restricted_cookie_manager.mojom-blink.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 
 namespace blink {
@@ -27,12 +27,14 @@ class GlobalCookieStoreImpl final
   USING_GARBAGE_COLLECTED_MIXIN(GlobalCookieStoreImpl);
 
  public:
+  static const char kSupplementName[];
+
   static GlobalCookieStoreImpl& From(T& supplementable) {
-    GlobalCookieStoreImpl* supplement = static_cast<GlobalCookieStoreImpl*>(
-        Supplement<T>::From(supplementable, GetName()));
+    GlobalCookieStoreImpl* supplement =
+        Supplement<T>::template From<GlobalCookieStoreImpl>(supplementable);
     if (!supplement) {
       supplement = new GlobalCookieStoreImpl(supplementable);
-      Supplement<T>::ProvideTo(supplementable, GetName(), supplement);
+      Supplement<T>::ProvideTo(supplementable, supplement);
     }
     return *supplement;
   }
@@ -62,10 +64,13 @@ class GlobalCookieStoreImpl final
   explicit GlobalCookieStoreImpl(T& supplementable)
       : Supplement<T>(supplementable) {}
 
-  static const char* GetName() { return "CookieStore"; }
-
   Member<CookieStore> cookie_store_;
 };
+
+// static
+template <typename T>
+const char GlobalCookieStoreImpl<T>::kSupplementName[] =
+    "GlobalCookieStoreImpl";
 
 }  // namespace
 

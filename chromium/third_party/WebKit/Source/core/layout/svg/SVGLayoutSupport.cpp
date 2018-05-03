@@ -260,7 +260,7 @@ void SVGLayoutSupport::ComputeContainerBoundingBoxes(
   }
 
   local_visual_rect = stroke_bounding_box;
-  AdjustVisualRectWithResources(container, local_visual_rect);
+  AdjustVisualRectWithResources(*container, local_visual_rect);
 }
 
 const LayoutSVGRoot* SVGLayoutSupport::FindTreeRootObject(
@@ -348,7 +348,7 @@ void SVGLayoutSupport::LayoutChildren(LayoutObject* first_child,
     // it causes assertions if we use a SubTreeLayoutScope for them.
     if (child->IsSVGResourceContainer()) {
       // Lay out any referenced resources before the child.
-      LayoutResourcesIfNeeded(child);
+      LayoutResourcesIfNeeded(*child);
       child->LayoutIfNeeded();
     } else {
       SubtreeLayoutScope layout_scope(*child);
@@ -357,54 +357,54 @@ void SVGLayoutSupport::LayoutChildren(LayoutObject* first_child,
                                     LayoutInvalidationReason::kSvgChanged);
 
       // Lay out any referenced resources before the child.
-      LayoutResourcesIfNeeded(child);
+      LayoutResourcesIfNeeded(*child);
       child->LayoutIfNeeded();
     }
   }
 }
 
-void SVGLayoutSupport::LayoutResourcesIfNeeded(const LayoutObject* object) {
-  DCHECK(object);
-
+void SVGLayoutSupport::LayoutResourcesIfNeeded(const LayoutObject& object) {
   SVGResources* resources =
       SVGResourcesCache::CachedResourcesForLayoutObject(object);
   if (resources)
     resources->LayoutIfNeeded();
 }
 
-bool SVGLayoutSupport::IsOverflowHidden(const LayoutObject* object) {
+bool SVGLayoutSupport::IsOverflowHidden(const LayoutObject& object) {
   // LayoutSVGRoot should never query for overflow state - it should always clip
   // itself to the initial viewport size.
-  DCHECK(!object->IsDocumentElement());
+  DCHECK(!object.IsDocumentElement());
+  return IsOverflowHidden(object.StyleRef());
+}
 
-  return object->Style()->OverflowX() == EOverflow::kHidden ||
-         object->Style()->OverflowX() == EOverflow::kScroll;
+bool SVGLayoutSupport::IsOverflowHidden(const ComputedStyle& style) {
+  return style.OverflowX() == EOverflow::kHidden ||
+         style.OverflowX() == EOverflow::kScroll;
 }
 
 void SVGLayoutSupport::AdjustVisualRectWithResources(
-    const LayoutObject* layout_object,
+    const LayoutObject& layout_object,
     FloatRect& visual_rect) {
-  DCHECK(layout_object);
-
   SVGResources* resources =
       SVGResourcesCache::CachedResourcesForLayoutObject(layout_object);
   if (!resources)
     return;
 
   if (LayoutSVGResourceFilter* filter = resources->Filter())
-    visual_rect = filter->ResourceBoundingBox(layout_object);
+    visual_rect = filter->ResourceBoundingBox(&layout_object);
 
-  if (LayoutSVGResourceClipper* clipper = resources->Clipper())
+  if (LayoutSVGResourceClipper* clipper = resources->Clipper()) {
     visual_rect.Intersect(
-        clipper->ResourceBoundingBox(layout_object->ObjectBoundingBox()));
+        clipper->ResourceBoundingBox(layout_object.ObjectBoundingBox()));
+  }
 
   if (LayoutSVGResourceMasker* masker = resources->Masker())
-    visual_rect.Intersect(masker->ResourceBoundingBox(layout_object));
+    visual_rect.Intersect(masker->ResourceBoundingBox(&layout_object));
 }
 
 bool SVGLayoutSupport::HasFilterResource(const LayoutObject& object) {
   SVGResources* resources =
-      SVGResourcesCache::CachedResourcesForLayoutObject(&object);
+      SVGResourcesCache::CachedResourcesForLayoutObject(object);
   return resources && resources->Filter();
 }
 
@@ -420,7 +420,7 @@ bool SVGLayoutSupport::PointInClippingArea(const LayoutObject& object,
   }
   DCHECK_EQ(clip_path_operation->GetType(), ClipPathOperation::REFERENCE);
   SVGResources* resources =
-      SVGResourcesCache::CachedResourcesForLayoutObject(&object);
+      SVGResourcesCache::CachedResourcesForLayoutObject(object);
   if (!resources || !resources->Clipper())
     return true;
   return resources->Clipper()->HitTestClipContent(object.ObjectBoundingBox(),
@@ -591,7 +591,7 @@ static inline float DistanceToChildLayoutObject(LayoutObject* child,
 }
 
 static SearchCandidate SearchTreeForFindClosestLayoutSVGText(
-    LayoutObject* layout_object,
+    const LayoutObject* layout_object,
     const FloatPoint& point) {
   // Try to find the closest LayoutSVGText.
   SearchCandidate closest_text;
@@ -650,7 +650,7 @@ static SearchCandidate SearchTreeForFindClosestLayoutSVGText(
 }
 
 LayoutObject* SVGLayoutSupport::FindClosestLayoutSVGText(
-    LayoutObject* layout_object,
+    const LayoutObject* layout_object,
     const FloatPoint& point) {
   return SearchTreeForFindClosestLayoutSVGText(layout_object, point)
       .candidate_layout_object;

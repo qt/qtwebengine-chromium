@@ -452,7 +452,6 @@ AuditorResult AnnotationInstance::CreateCompleteAnnotation(
   traffic_annotation::NetworkTrafficAnnotation_TrafficPolicy* dst_policy =
       combination->proto.mutable_policy();
 
-  MERGE_STRING_FIELDS(src_policy, dst_policy, empty_policy_justification);
   MERGE_STRING_FIELDS(src_policy, dst_policy, cookies_store);
   MERGE_STRING_FIELDS(src_policy, dst_policy, setting);
 
@@ -614,6 +613,42 @@ AnnotationInstance AnnotationInstance::LoadFromArchive(
   }
 
   return annotation;
+}
+
+std::string AnnotationInstance::Serialize() const {
+  std::string text;
+  std::set<int> fields;
+
+  text = base::StringPrintf(
+      "{\tType: %i\n"
+      "\tID: %s\n"
+      "\tHashcode 1: %i\n"
+      "\tHashcode 2: %i\n"
+      "\tFrom Archive: %i\n"
+      "\tSource File: %s\n",
+      static_cast<int>(type), proto.unique_id().c_str(), unique_id_hash_code,
+      second_id_hash_code, is_loaded_from_archive,
+      proto.source().file().c_str());
+
+  GetSemanticsFieldNumbers(&fields);
+  text += "\tSemantics: ";
+  for (int i : fields)
+    text += base::StringPrintf("%s,", kSemanticsFields[i].c_str());
+
+  GetPolicyFieldNumbers(&fields);
+  text += "\n\tPolicies: ";
+  for (int i : fields) {
+    text += base::StringPrintf("%s%s,", i < 0 ? "-" : "",
+                               kPolicyFields[abs(i)].c_str());
+  }
+  text += "\n}";
+
+  return text;
+}
+
+std::ostream& operator<<(std::ostream& out,
+                         const AnnotationInstance& instance) {
+  return out << instance.Serialize();
 }
 
 CallInstance::CallInstance() : line_number(0), is_annotated(false) {}

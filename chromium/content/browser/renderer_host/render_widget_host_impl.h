@@ -30,6 +30,7 @@
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/service/display_embedder/shared_bitmap_allocation_notifier_impl.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
+#include "content/browser/renderer_host/frame_token_message_queue.h"
 #include "content/browser/renderer_host/input/input_disposition_handler.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/input/legacy_ipc_widget_input_handler.h"
@@ -41,6 +42,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/input/input_handler.mojom.h"
+#include "content/common/render_frame_metadata.mojom.h"
 #include "content/common/render_widget_surface_properties.h"
 #include "content/common/view_message_enums.h"
 #include "content/common/widget.mojom.h"
@@ -64,7 +66,7 @@
 #endif
 
 #if defined(OS_MACOSX)
-#include "services/device/public/interfaces/wake_lock.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
 #endif
 
 class SkBitmap;
@@ -79,7 +81,6 @@ class WebMouseEvent;
 
 namespace cc {
 struct BeginFrameAck;
-class RenderFrameMetadata;
 }  // namespace cc
 
 namespace gfx {
@@ -93,6 +94,7 @@ namespace content {
 class BrowserAccessibilityManager;
 class InputRouter;
 class MockRenderWidgetHost;
+class RenderFrameMetadataProvider;
 class RenderWidgetHostOwnerDelegate;
 class SyntheticGestureController;
 class TimeoutMonitor;
@@ -107,6 +109,7 @@ struct TextInputState;
 // embedders of content, and adds things only visible to content.
 class CONTENT_EXPORT RenderWidgetHostImpl
     : public RenderWidgetHost,
+      public FrameTokenMessageQueue::Client,
       public InputRouterImplClient,
       public InputDispositionHandler,
       public TouchEmulatorClient,
@@ -159,7 +162,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   RenderWidgetHostOwnerDelegate* owner_delegate() { return owner_delegate_; }
 
-  viz::FrameSinkId AllocateFrameSinkId(bool is_guest_view_hack);
+  // Returns the viz::FrameSinkId that this object uses to put things on screen.
+  // This value is constant throughout the lifetime of this object. Note that
+  // until a RenderWidgetHostView is created, initialized, and assigned to this
+  // object, viz may not be aware of this FrameSinkId.
+  const viz::FrameSinkId& GetFrameSinkId() const;
 
   // RenderWidgetHost implementation.
   void UpdateTextDirection(blink::WebTextDirection direction) override;
@@ -337,13 +344,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // the renderer to arrive. If pending resize messages are for an old window
   // size, then also pump through a new resize message if there is time.
   void PauseForPendingResizeOrRepaints();
-
-  // Whether pausing may be useful.
-  bool CanPauseForPendingResizeOrRepaints();
-
-  // Wait for a surface matching the size of the widget's view, possibly
-  // blocking until the renderer sends a new frame.
-  void WaitForSurface();
 #endif
 
   bool resize_ack_pending_for_testing() { return resize_ack_pending_; }
@@ -357,11 +357,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // changed its state of ignoring input events.
   void ProcessIgnoreInputEventsChanged(bool ignore_input_events);
 
-  // Starts the rendering timeout, which will clear displayed graphics if
-  // a new compositor frame is not received before it expires. This also causes
-  // any new compositor frames received with content_source_id less than
-  // |next_source_id| to be discarded.
-  void StartNewContentRenderingTimeout(uint32_t next_source_id);
+  // Called after every cross-document navigation. If Surface Synchronizaton is
+  // on, we send a new LocalSurfaceId to RenderWidget to be used after
+  // navigation. If Surface Synchronization is off, we block CompositorFrames
+  // that have smaller content_source_id than |next_source_id|. In either case,
+  // we will clear the displayed graphics of the renderer after a certain
+  // timeout if it does not produce a new CompositorFrame after navigation.
+  void DidNavigate(uint32_t next_source_id);
 
   // Forwards the keyboard event with optional commands to the renderer. If
   // |key_event| is not forwarded for any reason, then |commands| are ignored.
@@ -585,8 +587,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void RequestCompositionUpdates(bool immediate_request, bool monitor_updates);
 
   void RequestCompositorFrameSink(
-      viz::mojom::CompositorFrameSinkRequest request,
-      viz::mojom::CompositorFrameSinkClientPtr client);
+      viz::mojom::CompositorFrameSinkRequest compositor_frame_sink_request,
+      viz::mojom::CompositorFrameSinkClientPtr compositor_frame_sink_client,
+      mojom::RenderFrameMetadataObserverClientRequest
+          render_frame_metadata_observer_client_request,
+      mojom::RenderFrameMetadataObserverPtr render_frame_metadata_observer);
 
   const viz::CompositorFrameMetadata& last_frame_metadata() {
     return last_frame_metadata_;
@@ -594,6 +599,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   uint64_t last_auto_resize_request_number() const {
     return last_auto_resize_request_number_;
+  }
+
+  RenderFrameMetadataProvider* render_frame_metadata_provider() {
+    return render_frame_metadata_provider_.get();
   }
 
   bool HasGestureStopped() override;
@@ -607,6 +616,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       viz::mojom::HitTestRegionListPtr hit_test_region_list,
       uint64_t submit_time) override;
   void DidNotProduceFrame(const viz::BeginFrameAck& ack) override;
+  void DidAllocateSharedBitmap(mojo::ScopedSharedBufferHandle buffer,
+                               const viz::SharedBitmapId& id) override;
+  void DidDeleteSharedBitmap(const viz::SharedBitmapId& id) override;
 
   // Signals that a frame with token |frame_token| was finished processing. If
   // there are any queued messages belonging to it, they will be processed.
@@ -635,8 +647,20 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const std::vector<gfx::Rect>& character_bounds) override;
   void OnImeCancelComposition() override;
 
+  // FrameTokenMessageQueue::Client:
+  void OnInvalidFrameToken(uint32_t frame_token) override;
+  void OnMessageDispatchError(const IPC::Message& message) override;
+  void OnProcessSwapMessage(const IPC::Message& message) override;
+
   void ProgressFling(base::TimeTicks current_time);
   void StopFling();
+
+  void DidReceiveFirstFrameAfterNavigation();
+
+  uint32_t current_content_source_id() { return current_content_source_id_; }
+
+  void SetScreenOrientationForTesting(uint16_t angle,
+                                      ScreenOrientationValues type);
 
  protected:
   // ---------------------------------------------------------------------------
@@ -781,8 +805,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   void OnSnapshotFromSurfaceReceived(int snapshot_id,
                                      int retry_count,
-                                     const SkBitmap& bitmap,
-                                     ReadbackResponse response);
+                                     const SkBitmap& bitmap);
 
   void OnSnapshotReceived(int snapshot_id, gfx::Image image);
 
@@ -801,16 +824,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // responsive.
   void StopHangMonitorTimeout();
 
-  // Once both the frame and its swap messages arrive, we call this method to
-  // process the messages. Virtual for tests.
-  virtual void ProcessSwapMessages(std::vector<IPC::Message> messages);
-
   // viz::SharedBitmapAllocationObserver implementation.
-  void DidAllocateSharedBitmap(
+  void OnSharedBitmapAllocatedByChild(
       uint32_t last_shared_bitmap_sequence_number) override;
   void SetupInputRouter();
-
-  void OnRenderFrameMetadata(const cc::RenderFrameMetadata& metadata);
 
   bool SurfacePropertiesMismatch(
       const RenderWidgetSurfaceProperties& first,
@@ -864,7 +881,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // The current size of the RenderWidget.
   gfx::Size current_size_;
 
-  // Resize information that was previously sent to the renderer.
+  // Resize information that was most recently sent to the renderer.
   std::unique_ptr<ResizeParams> old_resize_params_;
 
   // The next auto resize to send.
@@ -1033,16 +1050,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   mojo::Binding<viz::mojom::CompositorFrameSink> compositor_frame_sink_binding_;
   viz::mojom::CompositorFrameSinkClientPtr renderer_compositor_frame_sink_;
 
+  // Stash a request to create a CompositorFrameSink if it arrives before
+  // we have a view. This is only used if |enable_viz_| is true.
+  base::OnceCallback<void(const viz::FrameSinkId&)> create_frame_sink_callback_;
+
   viz::CompositorFrameMetadata last_frame_metadata_;
-  cc::RenderFrameMetadata last_render_frame_metadata_;
 
-  // Last non-zero frame token received from the renderer. Any swap messsages
-  // having a token less than or equal to this value will be processed.
-  uint32_t last_received_frame_token_ = 0;
-
-  // List of all swap messages that their corresponding frames have not arrived.
-  // Sorted by frame token.
-  base::queue<std::pair<uint32_t, std::vector<IPC::Message>>> queued_messages_;
+  std::unique_ptr<FrameTokenMessageQueue> frame_token_message_queue_;
 
   // If a CompositorFrame is submitted that references SharedBitmaps that don't
   // exist yet, we keep it here until they are available.
@@ -1065,6 +1079,20 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   mojom::WidgetInputHandlerPtr widget_input_handler_;
   std::unique_ptr<mojom::WidgetInputHandler> legacy_widget_input_handler_;
   viz::mojom::InputTargetClientPtr input_target_client_;
+
+  base::Optional<uint16_t> screen_orientation_angle_for_testing_;
+  base::Optional<ScreenOrientationValues> screen_orientation_type_for_testing_;
+
+  // The set of SharedBitmapIds that have been reported as allocated to this
+  // interface. On closing this interface, the display compositor should drop
+  // ownership of the bitmaps with these ids to avoid leaking them.
+  std::set<viz::SharedBitmapId> owned_bitmaps_;
+
+  bool next_resize_needs_resize_ack_ = false;
+
+  std::unique_ptr<RenderFrameMetadataProvider> render_frame_metadata_provider_;
+
+  const viz::FrameSinkId frame_sink_id_;
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 

@@ -34,14 +34,12 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
-#include "core/html/VoidCallback.h"
 #include "modules/filesystem/DOMFilePath.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/DirectoryReaderBase.h"
 #include "modules/filesystem/Entry.h"
 #include "modules/filesystem/EntryBase.h"
 #include "modules/filesystem/FileSystemCallbacks.h"
-#include "modules/filesystem/MetadataCallback.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -209,10 +207,11 @@ File* DOMFileSystemBase::CreateFile(const FileMetadata& metadata,
   }
 }
 
-void DOMFileSystemBase::GetMetadata(const EntryBase* entry,
-                                    MetadataCallback* success_callback,
-                                    ErrorCallbackBase* error_callback,
-                                    SynchronousType synchronous_type) {
+void DOMFileSystemBase::GetMetadata(
+    const EntryBase* entry,
+    MetadataCallbacks::OnDidReadMetadataCallback* success_callback,
+    ErrorCallbackBase* error_callback,
+    SynchronousType synchronous_type) {
   if (!FileSystem()) {
     ReportError(error_callback, FileError::kAbortErr);
     return;
@@ -321,10 +320,11 @@ void DOMFileSystemBase::Copy(
       std::move(callbacks));
 }
 
-void DOMFileSystemBase::Remove(const EntryBase* entry,
-                               VoidCallback* success_callback,
-                               ErrorCallbackBase* error_callback,
-                               SynchronousType synchronous_type) {
+void DOMFileSystemBase::Remove(
+    const EntryBase* entry,
+    VoidCallbacks::OnDidSucceedCallback* success_callback,
+    ErrorCallbackBase* error_callback,
+    SynchronousType synchronous_type) {
   if (!FileSystem()) {
     ReportError(error_callback, FileError::kAbortErr);
     return;
@@ -344,10 +344,11 @@ void DOMFileSystemBase::Remove(const EntryBase* entry,
   FileSystem()->Remove(CreateFileSystemURL(entry), std::move(callbacks));
 }
 
-void DOMFileSystemBase::RemoveRecursively(const EntryBase* entry,
-                                          VoidCallback* success_callback,
-                                          ErrorCallbackBase* error_callback,
-                                          SynchronousType synchronous_type) {
+void DOMFileSystemBase::RemoveRecursively(
+    const EntryBase* entry,
+    VoidCallbacks::OnDidSucceedCallback* success_callback,
+    ErrorCallbackBase* error_callback,
+    SynchronousType synchronous_type) {
   if (!FileSystem()) {
     ReportError(error_callback, FileError::kAbortErr);
     return;
@@ -450,7 +451,7 @@ void DOMFileSystemBase::GetDirectory(
 int DOMFileSystemBase::ReadDirectory(
     DirectoryReaderBase* reader,
     const String& path,
-    DirectoryReaderOnDidReadCallback* success_callback,
+    EntriesCallbacks::OnDidGetEntriesCallback* success_callback,
     ErrorCallbackBase* error_callback,
     SynchronousType synchronous_type) {
   if (!FileSystem()) {

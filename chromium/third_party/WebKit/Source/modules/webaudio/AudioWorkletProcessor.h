@@ -6,6 +6,7 @@
 #define AudioWorkletProcessor_h
 
 #include "modules/ModulesExport.h"
+#include "modules/webaudio/AudioWorkletProcessorErrorState.h"
 #include "platform/audio/AudioArray.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperV8Reference.h"
@@ -43,16 +44,13 @@ class MODULES_EXPORT AudioWorkletProcessor : public ScriptWrappable {
   bool Process(
       Vector<AudioBus*>* input_buses,
       Vector<AudioBus*>* output_buses,
-      HashMap<String, std::unique_ptr<AudioFloatArray>>* param_value_map,
-      double current_time);
+      HashMap<String, std::unique_ptr<AudioFloatArray>>* param_value_map);
 
   const String& Name() const { return name_; }
 
-  // Mark this processor as "not runnable" so it does not execute the
-  // user-supplied code even after the associated node is connected to the
-  // graph.
-  void MarkNonRunnable() { is_runnable_ = false; }
-  bool IsRunnable() { return is_runnable_; }
+  void SetErrorState(AudioWorkletProcessorErrorState);
+  AudioWorkletProcessorErrorState GetErrorState() const;
+  bool hasErrorOccured() const;
 
   // IDL
   MessagePort* port() const;
@@ -69,9 +67,8 @@ class MODULES_EXPORT AudioWorkletProcessor : public ScriptWrappable {
 
   const String name_;
 
-  // Becomes |false| when Process() method throws an exception from the the
-  // user-supplied code. It is an irreversible transition.
-  bool is_runnable_ = true;
+  AudioWorkletProcessorErrorState error_state_ =
+      AudioWorkletProcessorErrorState::kNoError;
 };
 
 }  // namespace blink

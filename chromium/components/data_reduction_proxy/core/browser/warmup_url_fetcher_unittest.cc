@@ -16,11 +16,11 @@
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/platform_thread.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_util.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_util.h"
+#include "net/base/proxy_server.h"
 #include "net/http/http_status_code.h"
 #include "net/nqe/network_quality_estimator_test_util.h"
-#include "net/proxy/proxy_server.h"
 #include "net/socket/socket_test_util.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -401,7 +401,7 @@ TEST(WarmupURLFetcherTest, TestFetchTimesout) {
   success_reads[2] = net::MockRead(net::SYNCHRONOUS, net::OK);
 
   socket_data_providers.push_back(
-      (base::MakeUnique<net::StaticSocketDataProvider>(
+      (std::make_unique<net::StaticSocketDataProvider>(
           success_reads, arraysize(success_reads), nullptr, 0)));
   mock_socket_factory.AddSocketDataProvider(socket_data_providers.back().get());
 
@@ -461,7 +461,7 @@ TEST(WarmupURLFetcherTest, TestSuccessfulFetchWarmupURLWithDelay) {
   success_reads[2] = net::MockRead(net::SYNCHRONOUS, net::OK);
 
   socket_data_providers.push_back(
-      (base::MakeUnique<net::StaticSocketDataProvider>(
+      (std::make_unique<net::StaticSocketDataProvider>(
           success_reads, arraysize(success_reads), nullptr, 0)));
   mock_socket_factory.AddSocketDataProvider(socket_data_providers.back().get());
 

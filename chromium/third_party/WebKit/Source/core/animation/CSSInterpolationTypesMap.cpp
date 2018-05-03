@@ -134,6 +134,7 @@ const InterpolationTypes& CSSInterpolationTypesMap::Get(
     case CSSPropertyWebkitBorderHorizontalSpacing:
     case CSSPropertyWebkitBorderVerticalSpacing:
     case CSSPropertyColumnGap:
+    case CSSPropertyRowGap:
     case CSSPropertyColumnRuleWidth:
     case CSSPropertyColumnWidth:
     case CSSPropertyWebkitPerspectiveOriginX:
@@ -197,7 +198,7 @@ const InterpolationTypes& CSSInterpolationTypesMap::Get(
     case CSSPropertyOffsetPath:
       applicable_types->push_back(
           std::make_unique<CSSRayInterpolationType>(used_property));
-    // Fall through.
+      FALLTHROUGH;
     case CSSPropertyD:
       applicable_types->push_back(
           std::make_unique<CSSPathInterpolationType>(used_property));
@@ -396,6 +397,7 @@ CSSInterpolationTypesMap::CreateInterpolationTypesForCSSSyntax(
       case CSSSyntaxType::kInteger:
         result.push_back(std::make_unique<CSSNumberInterpolationType>(
             property, &registration, true));
+        break;
       case CSSSyntaxType::kTransformList:
         // TODO(alancutter): Support smooth interpolation of these types.
         break;

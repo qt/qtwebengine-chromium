@@ -28,13 +28,13 @@
 
 #include "modules/webdatabase/SQLStatement.h"
 
+#include "bindings/modules/v8/V8SQLStatementCallback.h"
+#include "bindings/modules/v8/V8SQLStatementErrorCallback.h"
 #include "core/probe/CoreProbes.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLStatementBackend.h"
-#include "modules/webdatabase/SQLStatementCallback.h"
-#include "modules/webdatabase/SQLStatementErrorCallback.h"
 #include "modules/webdatabase/SQLTransaction.h"
 #include "modules/webdatabase/sqlite/SQLiteDatabase.h"
 #include "modules/webdatabase/sqlite/SQLiteStatement.h"
@@ -42,16 +42,57 @@
 
 namespace blink {
 
+void SQLStatement::OnSuccessV8Impl::Trace(blink::Visitor* visitor) {
+  visitor->Trace(callback_);
+  OnSuccessCallback::Trace(visitor);
+}
+
+bool SQLStatement::OnSuccessV8Impl::OnSuccess(SQLTransaction* transaction,
+                                              SQLResultSet* result_set) {
+  v8::TryCatch try_catch(callback_->GetIsolate());
+  try_catch.SetVerbose(true);
+
+  // An exception if any is killed with the v8::TryCatch above and reported
+  // to the global exception handler.
+  return callback_->handleEvent(nullptr, transaction, result_set).IsJust();
+}
+
+void SQLStatement::OnErrorV8Impl::Trace(blink::Visitor* visitor) {
+  visitor->Trace(callback_);
+  OnErrorCallback::Trace(visitor);
+}
+
+bool SQLStatement::OnErrorV8Impl::OnError(SQLTransaction* transaction,
+                                          SQLError* error) {
+  v8::TryCatch try_catch(callback_->GetIsolate());
+  try_catch.SetVerbose(true);
+
+  // 4.3.2 Processing model
+  // https://www.w3.org/TR/webdatabase/#sqlstatementcallback
+  // step 6.(In case of error).2. If the error callback returns false, then move
+  // on to the next statement, if any, or onto the next overall step otherwise.
+  // step 6.(In case of error).3. Otherwise, the error callback did not return
+  // false, or there was no error callback. Jump to the last step in the overall
+  // steps.
+  bool return_value;
+  // An exception if any is killed with the v8::TryCatch above and reported
+  // to the global exception handler.
+  if (!callback_->handleEvent(nullptr, transaction, error).To(&return_value)) {
+    return true;
+  }
+  return return_value;
+}
+
 SQLStatement* SQLStatement::Create(Database* database,
-                                   SQLStatementCallback* callback,
-                                   SQLStatementErrorCallback* error_callback) {
+                                   OnSuccessCallback* callback,
+                                   OnErrorCallback* error_callback) {
   return new SQLStatement(database, callback, error_callback);
 }
 
 SQLStatement::SQLStatement(Database* database,
-                           SQLStatementCallback* callback,
-                           SQLStatementErrorCallback* error_callback)
-    : statement_callback_(callback), statement_error_callback_(error_callback) {
+                           OnSuccessCallback* callback,
+                           OnErrorCallback* error_callback)
+    : success_callback_(callback), error_callback_(error_callback) {
   DCHECK(IsMainThread());
 
   if (HasCallback() || HasErrorCallback()) {
@@ -62,8 +103,8 @@ SQLStatement::SQLStatement(Database* database,
 
 void SQLStatement::Trace(blink::Visitor* visitor) {
   visitor->Trace(backend_);
-  visitor->Trace(statement_callback_);
-  visitor->Trace(statement_error_callback_);
+  visitor->Trace(success_callback_);
+  visitor->Trace(error_callback_);
 }
 
 void SQLStatement::SetBackend(SQLStatementBackend* backend) {
@@ -71,11 +112,11 @@ void SQLStatement::SetBackend(SQLStatementBackend* backend) {
 }
 
 bool SQLStatement::HasCallback() {
-  return statement_callback_;
+  return success_callback_;
 }
 
 bool SQLStatement::HasErrorCallback() {
-  return statement_error_callback_;
+  return error_callback_;
 }
 
 bool SQLStatement::PerformCallback(SQLTransaction* transaction) {
@@ -84,9 +125,8 @@ bool SQLStatement::PerformCallback(SQLTransaction* transaction) {
 
   bool callback_error = false;
 
-  SQLStatementCallback* callback = statement_callback_.Release();
-  SQLStatementErrorCallback* error_callback =
-      statement_error_callback_.Release();
+  OnSuccessCallback* callback = success_callback_.Release();
+  OnErrorCallback* error_callback = error_callback_.Release();
   SQLErrorData* error = backend_->SqlError();
 
   probe::AsyncTask async_task(transaction->GetDatabase()->GetExecutionContext(),
@@ -95,12 +135,13 @@ bool SQLStatement::PerformCallback(SQLTransaction* transaction) {
   // Call the appropriate statement callback and track if it resulted in an
   // error, because then we need to jump to the transaction error callback.
   if (error) {
-    if (error_callback)
+    if (error_callback) {
       callback_error =
-          error_callback->handleEvent(transaction, SQLError::Create(*error));
+          error_callback->OnError(transaction, SQLError::Create(*error));
+    }
   } else if (callback) {
     callback_error =
-        !callback->handleEvent(transaction, backend_->SqlResultSet());
+        !callback->OnSuccess(transaction, backend_->SqlResultSet());
   }
 
   return callback_error;

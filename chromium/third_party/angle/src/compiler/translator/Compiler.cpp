@@ -336,7 +336,8 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
     // We preserve symbols at the built-in level from compile-to-compile.
     // Start pushing the user-defined symbols at global level.
-    TScopedSymbolTableLevel scopedSymbolLevel(&symbolTable);
+    TScopedSymbolTableLevel globalLevel(&symbolTable);
+    ASSERT(symbolTable.atGlobalLevel());
 
     // Parse shader.
     if (PaParseStrings(numStrings - firstSource, &shaderStrings[firstSource], nullptr,
@@ -352,9 +353,8 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
     setASTMetadata(parseContext);
 
-    if (MapSpecToShaderVersion(shaderSpec) < shaderVersion)
+    if (!checkShaderVersion(&parseContext))
     {
-        mDiagnostics.globalError("unsupported shader version");
         return nullptr;
     }
 
@@ -365,6 +365,50 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
     }
 
     return root;
+}
+
+bool TCompiler::checkShaderVersion(TParseContext *parseContext)
+{
+    if (MapSpecToShaderVersion(shaderSpec) < shaderVersion)
+    {
+        mDiagnostics.globalError("unsupported shader version");
+        return false;
+    }
+
+    ASSERT(parseContext);
+    switch (shaderType)
+    {
+        case GL_COMPUTE_SHADER:
+            if (shaderVersion < 310)
+            {
+                mDiagnostics.globalError("Compute shader is not supported in this shader version.");
+                return false;
+            }
+            break;
+
+        case GL_GEOMETRY_SHADER_EXT:
+            if (shaderVersion < 310)
+            {
+                mDiagnostics.globalError(
+                    "Geometry shader is not supported in this shader version.");
+                return false;
+            }
+            else
+            {
+                ASSERT(shaderVersion == 310);
+                if (!parseContext->checkCanUseExtension(sh::TSourceLoc(),
+                                                        TExtension::EXT_geometry_shader))
+                {
+                    return false;
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    return true;
 }
 
 void TCompiler::setASTMetadata(const TParseContext &parseContext)
@@ -402,7 +446,7 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     }
 
     if (shouldRunLoopAndIndexingValidation(compileOptions) &&
-        !ValidateLimitations(root, shaderType, &symbolTable, shaderVersion, &mDiagnostics))
+        !ValidateLimitations(root, shaderType, &symbolTable, &mDiagnostics))
     {
         return false;
     }
@@ -495,13 +539,11 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         RewriteDoWhile(root, &symbolTable);
 
     if (compileOptions & SH_ADD_AND_TRUE_TO_LOOP_CONDITION)
-        sh::AddAndTrueToLoopCondition(root);
+        AddAndTrueToLoopCondition(root);
 
     if (compileOptions & SH_UNFOLD_SHORT_CIRCUIT)
     {
-        UnfoldShortCircuitAST unfoldShortCircuit;
-        root->traverse(&unfoldShortCircuit);
-        unfoldShortCircuit.updateTree();
+        UnfoldShortCircuitAST(root);
     }
 
     if (compileOptions & SH_REMOVE_POW_WITH_CONSTANT_EXPONENT)
@@ -533,14 +575,14 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     SimplifyLoopConditions(root,
                            IntermNodePatternMatcher::kMultiDeclaration |
                                IntermNodePatternMatcher::kArrayLengthMethod | simplifyScalarized,
-                           &getSymbolTable(), getShaderVersion());
+                           &getSymbolTable());
 
     // Note that separate declarations need to be run before other AST transformations that
     // generate new statements from expressions.
     SeparateDeclarations(root);
 
     SplitSequenceOperator(root, IntermNodePatternMatcher::kArrayLengthMethod | simplifyScalarized,
-                          &getSymbolTable(), getShaderVersion());
+                          &getSymbolTable());
 
     RemoveArrayLengthMethod(root);
 
@@ -630,7 +672,7 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
             SimplifyLoopConditions(root,
                                    IntermNodePatternMatcher::kArrayDeclaration |
                                        IntermNodePatternMatcher::kNamelessStructDeclaration,
-                                   &getSymbolTable(), getShaderVersion());
+                                   &getSymbolTable());
         }
 
         InitializeUninitializedLocals(root, getShaderVersion(), canUseLoopsToInitialize,
@@ -710,54 +752,9 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
     compileResources = resources;
     setResourceString();
 
-    ASSERT(symbolTable.isEmpty());
-    symbolTable.push();  // COMMON_BUILTINS
-    symbolTable.push();  // ESSL1_BUILTINS
-    symbolTable.push();  // ESSL3_BUILTINS
-    symbolTable.push();  // ESSL3_1_BUILTINS
-    symbolTable.push();  // GLSL_BUILTINS
-
-    switch (shaderType)
-    {
-        case GL_FRAGMENT_SHADER:
-            symbolTable.setDefaultPrecision(EbtInt, EbpMedium);
-            break;
-        case GL_VERTEX_SHADER:
-        case GL_COMPUTE_SHADER:
-        case GL_GEOMETRY_SHADER_EXT:
-            symbolTable.setDefaultPrecision(EbtInt, EbpHigh);
-            symbolTable.setDefaultPrecision(EbtFloat, EbpHigh);
-            break;
-        default:
-            UNREACHABLE();
-    }
-    // Set defaults for sampler types that have default precision, even those that are
-    // only available if an extension exists.
-    // New sampler types in ESSL3 don't have default precision. ESSL1 types do.
-    initSamplerDefaultPrecision(EbtSampler2D);
-    initSamplerDefaultPrecision(EbtSamplerCube);
-    // SamplerExternalOES is specified in the extension to have default precision.
-    initSamplerDefaultPrecision(EbtSamplerExternalOES);
-    // SamplerExternal2DY2YEXT is specified in the extension to have default precision.
-    initSamplerDefaultPrecision(EbtSamplerExternal2DY2YEXT);
-    // It isn't specified whether Sampler2DRect has default precision.
-    initSamplerDefaultPrecision(EbtSampler2DRect);
-
-    symbolTable.setDefaultPrecision(EbtAtomicCounter, EbpHigh);
-
-    InsertBuiltInFunctions(shaderType, shaderSpec, resources, symbolTable);
-
-    IdentifyBuiltIns(shaderType, shaderSpec, resources, symbolTable);
-
-    symbolTable.markBuiltInInitializationFinished();
+    symbolTable.initializeBuiltIns(shaderType, shaderSpec, resources);
 
     return true;
-}
-
-void TCompiler::initSamplerDefaultPrecision(TBasicType samplerType)
-{
-    ASSERT(samplerType > EbtGuardSamplerBegin && samplerType < EbtGuardSamplerEnd);
-    symbolTable.setDefaultPrecision(samplerType, EbpLow);
 }
 
 void TCompiler::setResourceString()

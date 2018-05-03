@@ -382,7 +382,7 @@ void TouchSelectionControllerClientAura::OnSelectionEvent(
   switch (event) {
     case ui::SELECTION_HANDLES_SHOWN:
       quick_menu_requested_ = true;
-      // Fall through.
+      FALLTHROUGH;
     case ui::INSERTION_HANDLE_SHOWN:
       UpdateQuickMenu();
       env_pre_target_handler_.reset(new EnvPreTargetHandler(
@@ -417,6 +417,14 @@ void TouchSelectionControllerClientAura::OnSelectionEvent(
 
 void TouchSelectionControllerClientAura::InternalClient::OnSelectionEvent(
     ui::SelectionEventType event) {
+  NOTREACHED();
+}
+
+void TouchSelectionControllerClientAura::OnDragUpdate(
+    const gfx::PointF& position) {}
+
+void TouchSelectionControllerClientAura::InternalClient::OnDragUpdate(
+    const gfx::PointF& position) {
   NOTREACHED();
 }
 

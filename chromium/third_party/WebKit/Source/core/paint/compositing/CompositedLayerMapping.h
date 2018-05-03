@@ -101,7 +101,10 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
       Vector<PaintLayer*>& layers_needing_paint_invalidation);
 
   // Update whether background paints onto scrolling contents layer.
-  void UpdateBackgroundPaintsOntoScrollingContentsLayer();
+  // Returns (through the reference params) what invalidations are needed.
+  void UpdateBackgroundPaintsOntoScrollingContentsLayer(
+      bool& invalidate_graphics_layer,
+      bool& invalidate_scrolling_contents_layer);
 
   // Update whether layer needs blending.
   void UpdateContentsOpaque();
@@ -188,6 +191,10 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
                                              PaintInvalidationReason,
                                              const DisplayItemClient&);
 
+  // Let all DrawsContent GraphicsLayers check raster invalidations after
+  // a no-change paint.
+  void SetNeedsCheckRasterInvalidation();
+
   // Notification from the layoutObject that its content changed.
   void ContentChanged(ContentChangeType);
 
@@ -223,7 +230,7 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
                      GraphicsContext&,
                      GraphicsLayerPaintingPhase,
                      const IntRect& interest_rect) const override;
-
+  bool ShouldThrottleRendering() const override;
   bool IsTrackingRasterInvalidations() const override;
 
 #if DCHECK_IS_ON()
@@ -414,7 +421,7 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
   bool UpdateBackgroundLayer(bool needs_background_layer);
   bool UpdateDecorationOutlineLayer(bool needs_decoration_outline_layer);
   bool UpdateMaskLayer(bool needs_mask_layer);
-  void UpdateChildClippingMaskLayer(bool needs_child_clipping_mask_layer);
+  bool UpdateChildClippingMaskLayer(bool needs_child_clipping_mask_layer);
   bool RequiresHorizontalScrollbarLayer() const {
     return owning_layer_.GetScrollableArea() &&
            owning_layer_.GetScrollableArea()->HorizontalScrollbar();

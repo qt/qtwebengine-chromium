@@ -156,7 +156,6 @@ class OnDemandUpdater {
   friend class OnDemandTester;
   friend class policy::ComponentUpdaterPolicyTest;
   friend class SupervisedUserWhitelistInstaller;
-  friend class DownloadableStringsComponentInstallerPolicy;
   friend class ::ComponentsUI;
   friend class ::PluginObserver;
   friend class SwReporterOnDemandFetcher;
@@ -176,7 +175,7 @@ class OnDemandUpdater {
 
 // Creates the component updater.
 std::unique_ptr<ComponentUpdateService> ComponentUpdateServiceFactory(
-    const scoped_refptr<Configurator>& config);
+    scoped_refptr<Configurator> config);
 
 }  // namespace component_updater
 

@@ -15,7 +15,7 @@
 #include "modules/shapedetection/Landmark.h"
 #include "public/platform/Platform.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "services/shape_detection/public/interfaces/facedetection_provider.mojom-blink.h"
+#include "services/shape_detection/public/mojom/facedetection_provider.mojom-blink.h"
 
 namespace blink {
 
@@ -45,7 +45,7 @@ FaceDetector::FaceDetector(ExecutionContext* context,
 }
 
 ScriptPromise FaceDetector::DoDetect(ScriptPromiseResolver* resolver,
-                                     skia::mojom::blink::BitmapPtr bitmap) {
+                                     SkBitmap bitmap) {
   ScriptPromise promise = resolver->Promise();
   if (!face_service_) {
     resolver->Reject(DOMException::Create(

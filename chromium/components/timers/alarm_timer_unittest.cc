@@ -11,7 +11,6 @@
 #include "base/files/file_descriptor_watcher_posix.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -253,9 +252,9 @@ TEST(AlarmTimerTest, MessageLoopShutdown) {
   // if debug heap checking is enabled.
   bool did_run = false;
   {
-    auto loop = base::MakeUnique<base::MessageLoopForIO>();
+    auto loop = std::make_unique<base::MessageLoopForIO>();
     auto file_descriptor_watcher =
-        base::MakeUnique<base::FileDescriptorWatcher>(loop.get());
+        std::make_unique<base::FileDescriptorWatcher>(loop.get());
     OneShotAlarmTimerTester a(&did_run, kTenMilliseconds);
     OneShotAlarmTimerTester b(&did_run, kTenMilliseconds);
     OneShotAlarmTimerTester c(&did_run, kTenMilliseconds);
@@ -282,8 +281,7 @@ TEST(AlarmTimerTest, NonRepeatIsRunning) {
     base::FileDescriptorWatcher file_descriptor_watcher(&loop);
     timers::OneShotAlarmTimer timer;
     EXPECT_FALSE(timer.IsRunning());
-    timer.Start(FROM_HERE, base::TimeDelta::FromDays(1),
-                base::Bind(&base::DoNothing));
+    timer.Start(FROM_HERE, base::TimeDelta::FromDays(1), base::DoNothing());
 
     // Allow FileDescriptorWatcher to start watching the timer. Without this, a
     // task posted by FileDescriptorWatcher::WatchReadable() is leaked.
@@ -300,8 +298,7 @@ TEST(AlarmTimerTest, NonRepeatIsRunning) {
     base::FileDescriptorWatcher file_descriptor_watcher(&loop);
     timers::SimpleAlarmTimer timer;
     EXPECT_FALSE(timer.IsRunning());
-    timer.Start(FROM_HERE, base::TimeDelta::FromDays(1),
-                base::Bind(&base::DoNothing));
+    timer.Start(FROM_HERE, base::TimeDelta::FromDays(1), base::DoNothing());
 
     // Allow FileDescriptorWatcher to start watching the timer. Without this, a
     // task posted by FileDescriptorWatcher::WatchReadable() is leaked.
@@ -322,8 +319,7 @@ TEST(AlarmTimerTest, RetainRepeatIsRunning) {
   base::FileDescriptorWatcher file_descriptor_watcher(&loop);
   timers::RepeatingAlarmTimer timer;
   EXPECT_FALSE(timer.IsRunning());
-  timer.Start(FROM_HERE, base::TimeDelta::FromDays(1),
-              base::Bind(&base::DoNothing));
+  timer.Start(FROM_HERE, base::TimeDelta::FromDays(1), base::DoNothing());
 
   // Allow FileDescriptorWatcher to start watching the timer. Without this, a
   // task posted by FileDescriptorWatcher::WatchReadable() is leaked.
@@ -345,8 +341,7 @@ TEST(AlarmTimerTest, RetainNonRepeatIsRunning) {
   base::FileDescriptorWatcher file_descriptor_watcher(&loop);
   timers::SimpleAlarmTimer timer;
   EXPECT_FALSE(timer.IsRunning());
-  timer.Start(FROM_HERE, base::TimeDelta::FromDays(1),
-              base::Bind(&base::DoNothing));
+  timer.Start(FROM_HERE, base::TimeDelta::FromDays(1), base::DoNothing());
 
   // Allow FileDescriptorWatcher to start watching the timer. Without this, a
   // task posted by FileDescriptorWatcher::WatchReadable() is leaked.

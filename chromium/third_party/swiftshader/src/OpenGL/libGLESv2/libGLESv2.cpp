@@ -54,70 +54,6 @@ static bool validImageSize(GLint level, GLsizei width, GLsizei height)
 	return true;
 }
 
-static bool validateColorBufferFormat(GLenum textureFormat, GLenum colorbufferFormat)
-{
-	GLenum validationError = ValidateCompressedFormat(textureFormat, egl::getClientVersion(), false);
-	if(validationError != GL_NONE)
-	{
-		return error(validationError, false);
-	}
-
-	// [OpenGL ES 2.0.24] table 3.9
-	switch(textureFormat)
-	{
-	case GL_ALPHA:
-		if(colorbufferFormat != GL_ALPHA &&
-		   colorbufferFormat != GL_RGBA &&
-		   colorbufferFormat != GL_RGBA4 &&
-		   colorbufferFormat != GL_RGB5_A1 &&
-		   colorbufferFormat != GL_RGBA8_OES &&
-		   colorbufferFormat != GL_BGRA8_EXT &&
-		   colorbufferFormat != GL_RGBA16F_EXT &&
-		   colorbufferFormat != GL_RGBA32F_EXT)
-		{
-			return error(GL_INVALID_OPERATION, false);
-		}
-		break;
-	case GL_LUMINANCE:
-	case GL_RGB:
-		if(colorbufferFormat != GL_RGB &&
-		   colorbufferFormat != GL_RGB565 &&
-		   colorbufferFormat != GL_RGB8_OES &&
-		   colorbufferFormat != GL_RGBA &&
-		   colorbufferFormat != GL_RGBA4 &&
-		   colorbufferFormat != GL_RGB5_A1 &&
-		   colorbufferFormat != GL_RGBA8_OES &&
-		   colorbufferFormat != GL_RGB16F_EXT &&
-		   colorbufferFormat != GL_RGB32F_EXT &&
-		   colorbufferFormat != GL_BGRA8_EXT &&
-		   colorbufferFormat != GL_RGBA16F_EXT &&
-		   colorbufferFormat != GL_RGBA32F_EXT)
-		{
-			return error(GL_INVALID_OPERATION, false);
-		}
-		break;
-	case GL_LUMINANCE_ALPHA:
-	case GL_RGBA:
-		if(colorbufferFormat != GL_RGBA &&
-		   colorbufferFormat != GL_RGBA4 &&
-		   colorbufferFormat != GL_RGB5_A1 &&
-		   colorbufferFormat != GL_RGBA8_OES &&
-		   colorbufferFormat != GL_BGRA8_EXT &&
-		   colorbufferFormat != GL_RGBA16F_EXT &&
-		   colorbufferFormat != GL_RGBA32F_EXT)
-		{
-			return error(GL_INVALID_OPERATION, false);
-		}
-		break;
-	case GL_DEPTH_COMPONENT:
-	case GL_DEPTH_STENCIL_OES:
-		return error(GL_INVALID_OPERATION, false);
-	default:
-		return error(GL_INVALID_ENUM, false);
-	}
-	return true;
-}
-
 void ActiveTexture(GLenum texture)
 {
 	TRACE("(GLenum texture = 0x%X)", texture);
@@ -309,7 +245,7 @@ void BindFramebuffer(GLenum target, GLuint framebuffer)
 {
 	TRACE("(GLenum target = 0x%X, GLuint framebuffer = %d)", target, framebuffer);
 
-	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER_ANGLE && target != GL_READ_FRAMEBUFFER_ANGLE)
+	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER && target != GL_READ_FRAMEBUFFER)
 	{
 		return error(GL_INVALID_ENUM);
 	}
@@ -318,12 +254,12 @@ void BindFramebuffer(GLenum target, GLuint framebuffer)
 
 	if(context)
 	{
-		if(target == GL_READ_FRAMEBUFFER_ANGLE || target == GL_FRAMEBUFFER)
+		if(target == GL_READ_FRAMEBUFFER || target == GL_FRAMEBUFFER)
 		{
 			context->bindReadFramebuffer(framebuffer);
 		}
 
-		if(target == GL_DRAW_FRAMEBUFFER_ANGLE || target == GL_FRAMEBUFFER)
+		if(target == GL_DRAW_FRAMEBUFFER || target == GL_FRAMEBUFFER)
 		{
 			context->bindDrawFramebuffer(framebuffer);
 		}
@@ -371,23 +307,26 @@ void BindTexture(GLenum target, GLuint texture)
 		switch(target)
 		{
 		case GL_TEXTURE_2D:
-			context->bindTexture2D(texture);
+			context->bindTexture(TEXTURE_2D, texture);
 			break;
 		case GL_TEXTURE_CUBE_MAP:
-			context->bindTextureCubeMap(texture);
+			context->bindTexture(TEXTURE_CUBE, texture);
 			break;
 		case GL_TEXTURE_EXTERNAL_OES:
-			context->bindTextureExternal(texture);
+			context->bindTexture(TEXTURE_EXTERNAL, texture);
 			break;
 		case GL_TEXTURE_2D_ARRAY:
 			if(clientVersion < 3)
 			{
 				return error(GL_INVALID_ENUM);
 			}
-			context->bindTexture2DArray(texture);
+			context->bindTexture(TEXTURE_2D_ARRAY, texture);
 			break;
 		case GL_TEXTURE_3D:
-			context->bindTexture3D(texture);
+			context->bindTexture(TEXTURE_3D, texture);
+			break;
+		case GL_TEXTURE_RECTANGLE_ARB:
+			context->bindTexture(TEXTURE_2D_RECT, texture);
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -670,7 +609,7 @@ GLenum CheckFramebufferStatus(GLenum target)
 {
 	TRACE("(GLenum target = 0x%X)", target);
 
-	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER_ANGLE && target != GL_READ_FRAMEBUFFER_ANGLE)
+	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER && target != GL_READ_FRAMEBUFFER)
 	{
 		return error(GL_INVALID_ENUM, 0);
 	}
@@ -680,7 +619,7 @@ GLenum CheckFramebufferStatus(GLenum target)
 	if(context)
 	{
 		es2::Framebuffer *framebuffer = nullptr;
-		if(target == GL_READ_FRAMEBUFFER_ANGLE)
+		if(target == GL_READ_FRAMEBUFFER)
 		{
 			framebuffer = context->getReadFramebuffer();
 		}
@@ -800,23 +739,9 @@ void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLs
 		return error(GL_INVALID_VALUE);
 	}
 
-	switch(internalformat)
+	if(!IsCompressed(internalformat, egl::getClientVersion()))
 	{
-	case GL_DEPTH_COMPONENT:
-	case GL_DEPTH_COMPONENT16:
-	case GL_DEPTH_COMPONENT32_OES:
-	case GL_DEPTH_STENCIL_OES:
-	case GL_DEPTH24_STENCIL8_OES:
-		return error(GL_INVALID_OPERATION);
-	default:
-		{
-			GLenum validationError = ValidateCompressedFormat(internalformat, egl::getClientVersion(), true);
-			if(validationError != GL_NONE)
-			{
-				return error(validationError);
-			}
-		}
-		break;
+		return error(GL_INVALID_ENUM);
 	}
 
 	if(border != 0)
@@ -859,33 +784,34 @@ void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLs
 				return error(GL_INVALID_VALUE);
 			}
 			break;
+		case GL_TEXTURE_RECTANGLE_ARB: // Rectangle textures cannot be compressed
 		default:
 			return error(GL_INVALID_ENUM);
 		}
 
-		if(imageSize != egl::ComputeCompressedSize(width, height, internalformat))
+		if(imageSize != gl::ComputeCompressedSize(width, height, internalformat))
 		{
 			return error(GL_INVALID_VALUE);
 		}
 
-		if(target == GL_TEXTURE_2D)
+		GLenum validationError = context->getPixels(&data, GL_UNSIGNED_BYTE, imageSize);
+		if(validationError != GL_NO_ERROR)
 		{
-			es2::Texture2D *texture = context->getTexture2D();
+			return error(validationError);
+		}
+
+		if(target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE_ARB)
+		{
+			es2::Texture2D *texture = context->getTexture2D(target);
 
 			if(!texture)
 			{
 				return error(GL_INVALID_OPERATION);
 			}
 
-			GLenum validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
-			if(validationError != GL_NONE)
-			{
-				return error(validationError);
-			}
-
 			texture->setCompressedImage(level, internalformat, width, height, imageSize, data);
 		}
-		else
+		else if(es2::IsCubemapTextureTarget(target))
 		{
 			es2::TextureCubeMap *texture = context->getTextureCubeMap();
 
@@ -894,27 +820,9 @@ void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLs
 				return error(GL_INVALID_OPERATION);
 			}
 
-			switch(target)
-			{
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
-				{
-					GLenum validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
-					if(validationError != GL_NONE)
-					{
-						return error(validationError);
-					}
-
-					texture->setCompressedImage(target, level, internalformat, width, height, imageSize, data);
-				}
-				break;
-			default: UNREACHABLE(target);
-			}
+			texture->setCompressedImage(target, level, internalformat, width, height, imageSize, data);
 		}
+		else UNREACHABLE(target);
 	}
 }
 
@@ -941,7 +849,7 @@ void CompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yo
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(imageSize != egl::ComputeCompressedSize(width, height, format))
+	if(imageSize != gl::ComputeCompressedSize(width, height, format))
 	{
 		return error(GL_INVALID_VALUE);
 	}
@@ -956,43 +864,35 @@ void CompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yo
 			return error(GL_INVALID_OPERATION);
 		}
 
-		GLenum sizedInternalFormat = GetSizedInternalFormat(format, GL_NONE);
-
-		if(target == GL_TEXTURE_2D)
+		GLenum validationError = context->getPixels(&data, GL_UNSIGNED_BYTE, imageSize);
+		if(validationError != GL_NO_ERROR)
 		{
-			es2::Texture2D *texture = context->getTexture2D();
+			return error(validationError);
+		}
+
+		if(target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE_ARB)
+		{
+			es2::Texture2D *texture = context->getTexture2D(target);
 
 			GLenum validationError = ValidateSubImageParams(true, false, target, level, xoffset, yoffset, width, height, format, GL_NONE, texture, context->getClientVersion());
-			if(validationError != GL_NONE)
+			if(validationError != GL_NO_ERROR)
 			{
 				return error(validationError);
 			}
 
-			validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
-			if(validationError != GL_NONE)
-			{
-				return error(validationError);
-			}
-
-			texture->subImageCompressed(level, xoffset, yoffset, width, height, sizedInternalFormat, imageSize, data);
+			texture->subImageCompressed(level, xoffset, yoffset, width, height, format, imageSize, data);
 		}
 		else if(es2::IsCubemapTextureTarget(target))
 		{
 			es2::TextureCubeMap *texture = context->getTextureCubeMap();
 
 			GLenum validationError = ValidateSubImageParams(true, false, target, level, xoffset, yoffset, width, height, format, GL_NONE, texture, context->getClientVersion());
-			if(validationError != GL_NONE)
+			if(validationError != GL_NO_ERROR)
 			{
 				return error(validationError);
 			}
 
-			validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
-			if(validationError != GL_NONE)
-			{
-				return error(validationError);
-			}
-
-			texture->subImageCompressed(target, level, xoffset, yoffset, width, height, sizedInternalFormat, imageSize, data);
+			texture->subImageCompressed(target, level, xoffset, yoffset, width, height, format, imageSize, data);
 		}
 		else UNREACHABLE(target);
 	}
@@ -1020,6 +920,12 @@ void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, 
 	{
 		switch(target)
 		{
+		case GL_TEXTURE_RECTANGLE_ARB:
+			if(level != 0)
+			{
+				return error(GL_INVALID_VALUE);
+			}
+			// Fall through
 		case GL_TEXTURE_2D:
 			if(width > (es2::IMPLEMENTATION_MAX_TEXTURE_SIZE >> level) ||
 			   height > (es2::IMPLEMENTATION_MAX_TEXTURE_SIZE >> level))
@@ -1064,21 +970,40 @@ void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, 
 
 		GLenum colorbufferFormat = source->getFormat();
 
-		if(!validateColorBufferFormat(internalformat, colorbufferFormat))
+		// Determine the sized internal format.
+		if(gl::IsUnsizedInternalFormat(internalformat))
+		{
+			if(gl::GetBaseInternalFormat(colorbufferFormat) == internalformat)
+			{
+				internalformat = colorbufferFormat;
+			}
+			else if(GetRedSize(colorbufferFormat) == 8)
+			{
+				internalformat = gl::GetSizedInternalFormat(internalformat, GL_UNSIGNED_BYTE);
+			}
+			else
+			{
+				UNIMPLEMENTED();
+
+				return error(GL_INVALID_OPERATION);
+			}
+		}
+
+		if(!ValidateCopyFormats(internalformat, colorbufferFormat))
 		{
 			return;
 		}
 
-		if(target == GL_TEXTURE_2D)
+		if(target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE_ARB)
 		{
-			es2::Texture2D *texture = context->getTexture2D();
+			es2::Texture2D *texture = context->getTexture2D(target);
 
 			if(!texture)
 			{
 				return error(GL_INVALID_OPERATION);
 			}
 
-			texture->copyImage(level, internalformat, x, y, width, height, framebuffer);
+			texture->copyImage(level, internalformat, x, y, width, height, source);
 		}
 		else if(es2::IsCubemapTextureTarget(target))
 		{
@@ -1089,7 +1014,7 @@ void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, 
 				return error(GL_INVALID_OPERATION);
 			}
 
-			texture->copyImage(target, level, internalformat, x, y, width, height, framebuffer);
+			texture->copyImage(target, level, internalformat, x, y, width, height, source);
 		}
 		else UNREACHABLE(target);
 	}
@@ -1141,9 +1066,9 @@ void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
 
 		es2::Texture *texture = nullptr;
 
-		if(target == GL_TEXTURE_2D)
+		if(target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE_ARB)
 		{
-			texture = context->getTexture2D();
+			texture = context->getTexture2D(target);
 		}
 		else if(es2::IsCubemapTextureTarget(target))
 		{
@@ -1152,12 +1077,12 @@ void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
 		else UNREACHABLE(target);
 
 		GLenum validationError = ValidateSubImageParams(false, true, target, level, xoffset, yoffset, width, height, GL_NONE, GL_NONE, texture, context->getClientVersion());
-		if(validationError != GL_NONE)
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
 
-		texture->copySubImage(target, level, xoffset, yoffset, 0, x, y, width, height, framebuffer);
+		texture->copySubImage(target, level, xoffset, yoffset, 0, x, y, width, height, source);
 	}
 }
 
@@ -1958,7 +1883,7 @@ void FramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuff
 	TRACE("(GLenum target = 0x%X, GLenum attachment = 0x%X, GLenum renderbuffertarget = 0x%X, "
 	      "GLuint renderbuffer = %d)", target, attachment, renderbuffertarget, renderbuffer);
 
-	if((target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER_ANGLE && target != GL_READ_FRAMEBUFFER_ANGLE) ||
+	if((target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER && target != GL_READ_FRAMEBUFFER) ||
 	   (renderbuffertarget != GL_RENDERBUFFER && renderbuffer != 0))
 	{
 		return error(GL_INVALID_ENUM);
@@ -1970,7 +1895,7 @@ void FramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuff
 	{
 		es2::Framebuffer *framebuffer = nullptr;
 		GLuint framebufferName = 0;
-		if(target == GL_READ_FRAMEBUFFER_ANGLE)
+		if(target == GL_READ_FRAMEBUFFER)
 		{
 			framebuffer = context->getReadFramebuffer();
 			framebufferName = context->getReadFramebufferName();
@@ -2065,7 +1990,7 @@ void FramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GL
 	TRACE("(GLenum target = 0x%X, GLenum attachment = 0x%X, GLenum textarget = 0x%X, "
 	      "GLuint texture = %d, GLint level = %d)", target, attachment, textarget, texture, level);
 
-	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER_ANGLE && target != GL_READ_FRAMEBUFFER_ANGLE)
+	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER && target != GL_READ_FRAMEBUFFER)
 	{
 		return error(GL_INVALID_ENUM);
 	}
@@ -2097,6 +2022,12 @@ void FramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GL
 					return error(GL_INVALID_OPERATION);
 				}
 				break;
+			case GL_TEXTURE_RECTANGLE_ARB:
+				if(tex->getTarget() != GL_TEXTURE_RECTANGLE_ARB)
+				{
+					return error(GL_INVALID_OPERATION);
+				}
+				break;
 			case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
 			case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
 			case GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
@@ -2112,7 +2043,7 @@ void FramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GL
 				return error(GL_INVALID_ENUM);
 			}
 
-			if((level != 0) && (clientVersion < 3))
+			if((level != 0) && ((clientVersion < 3) || (textarget == GL_TEXTURE_RECTANGLE_ARB)))
 			{
 				return error(GL_INVALID_VALUE);
 			}
@@ -2130,7 +2061,7 @@ void FramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GL
 
 		es2::Framebuffer *framebuffer = nullptr;
 		GLuint framebufferName = 0;
-		if(target == GL_READ_FRAMEBUFFER_ANGLE)
+		if(target == GL_READ_FRAMEBUFFER)
 		{
 			framebuffer = context->getReadFramebuffer();
 			framebufferName = context->getReadFramebufferName();
@@ -2284,6 +2215,9 @@ void GenerateMipmap(GLenum target)
 			break;
 		case GL_TEXTURE_3D:
 			texture = context->getTexture3D();
+			break;
+		case GL_TEXTURE_RECTANGLE_ARB:
+			texture = context->getTexture2DRect();
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -3588,6 +3522,9 @@ void GetTexParameterfv(GLenum target, GLenum pname, GLfloat* params)
 		case GL_TEXTURE_3D:
 			texture = context->getTexture3D();
 			break;
+		case GL_TEXTURE_RECTANGLE_ARB:
+			texture = context->getTexture2DRect();
+			break;
 		default:
 			return error(GL_INVALID_ENUM);
 		}
@@ -3740,6 +3677,9 @@ void GetTexParameteriv(GLenum target, GLenum pname, GLint* params)
 			break;
 		case GL_TEXTURE_3D:
 			texture = context->getTexture3D();
+			break;
+		case GL_TEXTURE_RECTANGLE_ARB:
+			texture = context->getTexture2DRect();
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -5013,23 +4953,26 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 
 	if(context)
 	{
+		// Core OpenGL ES 2.0 requires format and internalformat to be equal (checked below),
+		// but GL_APPLE_texture_format_BGRA8888 allows (only) GL_BGRA_EXT / GL_RGBA, while
+		// GL_EXT_texture_format_BGRA8888 also allows GL_BGRA_EXT / GL_BGRA_EXT.
+		if(format == GL_BGRA_EXT && internalformat == GL_RGBA)
+		{
+			internalformat = GL_BGRA_EXT;
+		}
+
 		GLint clientVersion = context->getClientVersion();
 		if(clientVersion < 3)
 		{
-			if(internalformat != (GLint)format)
+			if((internalformat != (GLint)format) &&
+			   !((type == GL_FLOAT) && (format == GL_RGBA) && (internalformat == GL_RGBA32F))) // CHROMIUM_color_buffer_float_rgba
 			{
 				return error(GL_INVALID_OPERATION);
 			}
 		}
 
-		GLenum validationError = ValidateCompressedFormat(format, clientVersion, false);
-		if(validationError != GL_NONE)
-		{
-			return error(validationError);
-		}
-
-		validationError = ValidateTextureFormatType(format, type, internalformat, context->getClientVersion());
-		if(validationError != GL_NONE)
+		GLenum validationError = ValidateTextureFormatType(format, type, internalformat, target, context->getClientVersion());
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
@@ -5041,6 +4984,12 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 
 		switch(target)
 		{
+		case GL_TEXTURE_RECTANGLE_ARB:
+			if(level != 0)
+			{
+				return error(GL_INVALID_VALUE); // Defining level other than 0 is not allowed
+			}
+			// Fall through
 		case GL_TEXTURE_2D:
 			if(width > (es2::IMPLEMENTATION_MAX_TEXTURE_SIZE >> level) ||
 			   height > (es2::IMPLEMENTATION_MAX_TEXTURE_SIZE >> level))
@@ -5069,24 +5018,24 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 			return error(GL_INVALID_ENUM);
 		}
 
-		GLenum sizedInternalFormat = GetSizedInternalFormat(internalformat, type);
+		GLenum sizedInternalFormat = gl::GetSizedInternalFormat(internalformat, type);
 
 		validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, 1, format, type));
-		if(validationError != GL_NONE)
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
 
-		if(target == GL_TEXTURE_2D)
+		if(target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE_ARB)
 		{
-			es2::Texture2D *texture = context->getTexture2D();
+			es2::Texture2D *texture = context->getTexture2D(target);
 
 			if(!texture)
 			{
 				return error(GL_INVALID_OPERATION);
 			}
 
-			texture->setImage(context, level, width, height, sizedInternalFormat, type, context->getUnpackInfo(), data);
+			texture->setImage(level, width, height, sizedInternalFormat, format, type, context->getUnpackParameters(), data);
 		}
 		else
 		{
@@ -5097,7 +5046,7 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 				return error(GL_INVALID_OPERATION);
 			}
 
-			texture->setImage(context, target, level, width, height, sizedInternalFormat, type, context->getUnpackInfo(), data);
+			texture->setImage(target, level, width, height, sizedInternalFormat, format, type, context->getUnpackParameters(), data);
 		}
 	}
 }
@@ -5137,6 +5086,9 @@ void TexParameterf(GLenum target, GLenum pname, GLfloat param)
 			break;
 		case GL_TEXTURE_EXTERNAL_OES:
 			texture = context->getTextureExternal();
+			break;
+		case GL_TEXTURE_RECTANGLE_ARB:
+			texture = context->getTexture2DRect();
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -5287,6 +5239,9 @@ void TexParameteri(GLenum target, GLenum pname, GLint param)
 		case GL_TEXTURE_EXTERNAL_OES:
 			texture = context->getTextureExternal();
 			break;
+		case GL_TEXTURE_RECTANGLE_ARB:
+			texture = context->getTexture2DRect();
+			break;
 		default:
 			return error(GL_INVALID_ENUM);
 		}
@@ -5330,6 +5285,10 @@ void TexParameteri(GLenum target, GLenum pname, GLint param)
 			}
 			break;
 		case GL_TEXTURE_BASE_LEVEL:
+			if((texture->getTarget() == GL_TEXTURE_RECTANGLE_ARB) && (param != 0))
+			{
+				return error(GL_INVALID_OPERATION); // Base level has to be 0
+			}
 			if(clientVersion < 3 || !texture->setBaseLevel(param))
 			{
 				return error(GL_INVALID_VALUE);
@@ -5432,41 +5391,41 @@ void TexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLs
 
 	if(context)
 	{
-		if(target == GL_TEXTURE_2D)
+		if(target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE_ARB)
 		{
-			es2::Texture2D *texture = context->getTexture2D();
+			es2::Texture2D *texture = context->getTexture2D(target);
 
 			GLenum validationError = ValidateSubImageParams(false, false, target, level, xoffset, yoffset, width, height, format, type, texture, context->getClientVersion());
-			if(validationError != GL_NONE)
+			if(validationError != GL_NO_ERROR)
 			{
 				return error(validationError);
 			}
 
 			validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, 1, format, type));
-			if(validationError != GL_NONE)
+			if(validationError != GL_NO_ERROR)
 			{
 				return error(validationError);
 			}
 
-			texture->subImage(context, level, xoffset, yoffset, width, height, format, type, context->getUnpackInfo(), data);
+			texture->subImage(level, xoffset, yoffset, width, height, format, type, context->getUnpackParameters(), data);
 		}
 		else if(es2::IsCubemapTextureTarget(target))
 		{
 			es2::TextureCubeMap *texture = context->getTextureCubeMap();
 
 			GLenum validationError = ValidateSubImageParams(false, false, target, level, xoffset, yoffset, width, height, format, type, texture, context->getClientVersion());
-			if(validationError != GL_NONE)
+			if(validationError != GL_NO_ERROR)
 			{
 				return error(validationError);
 			}
 
 			validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, 1, format, type));
-			if(validationError != GL_NONE)
+			if(validationError != GL_NO_ERROR)
 			{
 				return error(validationError);
 			}
 
-			texture->subImage(context, target, level, xoffset, yoffset, width, height, format, type, context->getUnpackInfo(), data);
+			texture->subImage(target, level, xoffset, yoffset, width, height, format, type, context->getUnpackParameters(), data);
 		}
 		else UNREACHABLE(target);
 	}
@@ -6269,8 +6228,8 @@ void TexImage3DOES(GLenum target, GLint level, GLenum internalformat, GLsizei wi
 		return error(GL_INVALID_OPERATION);
 	}
 
-	GLenum validationError = ValidateTextureFormatType(format, type, internalformat, egl::getClientVersion());
-	if(validationError != GL_NONE)
+	GLenum validationError = ValidateTextureFormatType(format, type, internalformat, target, egl::getClientVersion());
+	if(validationError != GL_NO_ERROR)
 	{
 		return error(validationError);
 	}
@@ -6302,14 +6261,14 @@ void TexImage3DOES(GLenum target, GLint level, GLenum internalformat, GLsizei wi
 			return error(GL_INVALID_OPERATION);
 		}
 
-		GLenum sizedInternalFormat = GetSizedInternalFormat(internalformat, type);
-		GLenum validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, depth, sizedInternalFormat, type));
-		if(validationError != GL_NONE)
+		GLenum validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, depth, format, type));
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
 
-		texture->setImage(context, level, width, height, depth, sizedInternalFormat, type, context->getUnpackInfo(), data);
+		GLenum sizedInternalFormat = gl::GetSizedInternalFormat(internalformat, type);
+		texture->setImage(level, width, height, depth, sizedInternalFormat, format, type, context->getUnpackParameters(), data);
 	}
 }
 
@@ -6326,11 +6285,6 @@ void TexSubImage3DOES(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
 		break;
 	default:
 		return error(GL_INVALID_ENUM);
-	}
-
-	if(!ValidateTextureFormatType(format, type, format, egl::getClientVersion()))
-	{
-		return;
 	}
 
 	if((level < 0) || (level >= es2::IMPLEMENTATION_MAX_TEXTURE_LEVELS))
@@ -6350,18 +6304,18 @@ void TexSubImage3DOES(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
 		es2::Texture3D *texture = context->getTexture3D();
 
 		GLenum validationError = ValidateSubImageParams(false, false, target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, texture, context->getClientVersion());
-		if(validationError != GL_NONE)
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
 
 		validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, depth, format, type));
-		if(validationError != GL_NONE)
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
 
-		texture->subImage(context, level, xoffset, yoffset, zoffset, width, height, depth, format, type, context->getUnpackInfo(), data);
+		texture->subImage(level, xoffset, yoffset, zoffset, width, height, depth, format, type, context->getUnpackParameters(), data);
 	}
 }
 
@@ -6405,12 +6359,12 @@ void CopyTexSubImage3DOES(GLenum target, GLint level, GLint xoffset, GLint yoffs
 		es2::Texture3D *texture = context->getTexture3D();
 
 		GLenum validationError = ValidateSubImageParams(false, true, target, level, xoffset, yoffset, zoffset, width, height, 1, GL_NONE, GL_NONE, texture, context->getClientVersion());
-		if(validationError != GL_NONE)
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
 
-		texture->copySubImage(target, level, xoffset, yoffset, zoffset, x, y, width, height, framebuffer);
+		texture->copySubImage(target, level, xoffset, yoffset, zoffset, x, y, width, height, source);
 	}
 }
 
@@ -6439,25 +6393,12 @@ void CompressedTexImage3DOES(GLenum target, GLint level, GLenum internalformat, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	switch(internalformat)
+	if(!IsCompressed(internalformat, egl::getClientVersion()))
 	{
-	case GL_DEPTH_COMPONENT:
-	case GL_DEPTH_COMPONENT16:
-	case GL_DEPTH_COMPONENT32_OES:
-	case GL_DEPTH_STENCIL_OES:
-	case GL_DEPTH24_STENCIL8_OES:
-		return error(GL_INVALID_OPERATION);
-	default:
-		{
-			GLenum validationError = ValidateCompressedFormat(internalformat, egl::getClientVersion(), true);
-			if(validationError != GL_NONE)
-			{
-				return error(validationError);
-			}
-		}
+		return error(GL_INVALID_ENUM);
 	}
 
-	if(imageSize != egl::ComputeCompressedSize(width, height, internalformat) * depth)
+	if(imageSize != gl::ComputeCompressedSize(width, height, internalformat) * depth)
 	{
 		return error(GL_INVALID_VALUE);
 	}
@@ -6473,9 +6414,9 @@ void CompressedTexImage3DOES(GLenum target, GLint level, GLenum internalformat, 
 			return error(GL_INVALID_OPERATION);
 		}
 
-		GLenum validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
+		GLenum validationError = context->getPixels(&data, GL_UNSIGNED_BYTE, imageSize);
 
-		if(validationError != GL_NONE)
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
@@ -6509,13 +6450,12 @@ void CompressedTexSubImage3DOES(GLenum target, GLint level, GLint xoffset, GLint
 		return error(GL_INVALID_VALUE);
 	}
 
-	GLenum validationError = ValidateCompressedFormat(format, egl::getClientVersion(), true);
-	if(validationError != GL_NONE)
+	if(!IsCompressed(format, egl::getClientVersion()))
 	{
-		return error(validationError);
+		return error(GL_INVALID_ENUM);
 	}
 
-	if(imageSize != egl::ComputeCompressedSize(width, height, format) * depth)
+	if(imageSize != gl::ComputeCompressedSize(width, height, format) * depth)
 	{
 		return error(GL_INVALID_VALUE);
 	}
@@ -6531,8 +6471,8 @@ void CompressedTexSubImage3DOES(GLenum target, GLint level, GLint xoffset, GLint
 			return error(GL_INVALID_OPERATION);
 		}
 
-		GLenum validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
-		if(validationError != GL_NONE)
+		GLenum validationError = context->getPixels(&data, GL_UNSIGNED_BYTE, imageSize);
+		if(validationError != GL_NO_ERROR)
 		{
 			return error(validationError);
 		}
@@ -6546,7 +6486,7 @@ void FramebufferTexture3DOES(GLenum target, GLenum attachment, GLenum textarget,
 	TRACE("(GLenum target = 0x%X, GLenum attachment = 0x%X, GLenum textarget = 0x%X, "
 	      "GLuint texture = %d, GLint level = %d, GLint zoffset = %d)", target, attachment, textarget, texture, level, zoffset);
 
-	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER_ANGLE && target != GL_READ_FRAMEBUFFER_ANGLE)
+	if(target != GL_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER && target != GL_READ_FRAMEBUFFER)
 	{
 		return error(GL_INVALID_ENUM);
 	}
@@ -6593,7 +6533,7 @@ void FramebufferTexture3DOES(GLenum target, GLenum attachment, GLenum textarget,
 
 		es2::Framebuffer *framebuffer = nullptr;
 		GLuint framebufferName = 0;
-		if(target == GL_READ_FRAMEBUFFER_ANGLE)
+		if(target == GL_READ_FRAMEBUFFER)
 		{
 			framebuffer = context->getReadFramebuffer();
 			framebufferName = context->getReadFramebufferName();
@@ -6676,6 +6616,7 @@ void EGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image)
 	switch(target)
 	{
 	case GL_TEXTURE_2D:
+	case GL_TEXTURE_RECTANGLE_ARB:
 	case GL_TEXTURE_EXTERNAL_OES:
 		break;
 	default:
@@ -6686,14 +6627,7 @@ void EGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image)
 
 	if(context)
 	{
-		es2::Texture2D *texture = nullptr;
-
-		switch(target)
-		{
-		case GL_TEXTURE_2D:           texture = context->getTexture2D();       break;
-		case GL_TEXTURE_EXTERNAL_OES: texture = context->getTextureExternal(); break;
-		default:                      UNREACHABLE(target);
-		}
+		es2::Texture2D *texture = context->getTexture2D(target);
 
 		if(!texture)
 		{

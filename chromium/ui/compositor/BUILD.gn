@@ -151,8 +151,8 @@ static_library("test_support") {
     "//components/viz/host",
     "//components/viz/service",
     "//components/viz/test:test_support",
-    "//gpu/command_buffer/client:gles2_c_lib",
     "//gpu/command_buffer/client:gles2_implementation",
+    "//gpu/command_buffer/client:raster",
     "//gpu/command_buffer/common",
     "//gpu/ipc:gl_in_process_context",
     "//gpu/skia_bindings",
@@ -182,6 +182,7 @@ static_library("test_support") {
 test("compositor_unittests") {
   sources = [
     "callback_layer_animation_observer_unittest.cc",
+    "canvas_painter_unittest.cc",
     "compositor_lock_unittest.cc",
     "compositor_unittest.cc",
     "layer_animation_element_unittest.cc",

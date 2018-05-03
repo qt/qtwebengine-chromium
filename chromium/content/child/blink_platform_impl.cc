@@ -46,6 +46,7 @@
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
 #include "net/base/net_errors.h"
+#include "services/network/public/cpp/features.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebGestureCurve.h"
@@ -192,6 +193,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return -1;  // This string name is used only to indicate an empty string.
     case WebLocalizedString::kMediaRemotingStopText:
       return IDS_MEDIA_REMOTING_STOP_TEXT;
+    case WebLocalizedString::kMediaScrubbingMessageText:
+      return IDS_MEDIA_SCRUBBING_MESSAGE_TEXT;
     case WebLocalizedString::kMultipleFileUploadText:
       return IDS_FORM_FILE_MULTIPLE_UPLOAD;
     case WebLocalizedString::kOtherColorLabel:
@@ -224,6 +227,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_MEDIA_OVERFLOW_MENU_DOWNLOAD;
     case WebLocalizedString::kOverflowMenuPictureInPicture:
       return IDS_MEDIA_OVERFLOW_MENU_PICTURE_IN_PICTURE;
+    case WebLocalizedString::kPictureInPictureInterstitialText:
+      return IDS_MEDIA_PICTURE_IN_PICTURE_INTERSTITIAL_TEXT;
     case WebLocalizedString::kPlaceholderForDayOfMonthField:
       return IDS_FORM_PLACEHOLDER_FOR_DAY_OF_MONTH_FIELD;
     case WebLocalizedString::kPlaceholderForMonthField:
@@ -344,7 +349,7 @@ void BlinkPlatformImpl::WaitUntilWebThreadTLSUpdate(
     blink::scheduler::WebThreadBase* thread) {
   base::WaitableEvent event(base::WaitableEvent::ResetPolicy::AUTOMATIC,
                             base::WaitableEvent::InitialState::NOT_SIGNALED);
-  thread->GetSingleThreadTaskRunner()->PostTask(
+  thread->GetTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&BlinkPlatformImpl::UpdateWebThreadTLS,
                      base::Unretained(this), base::Unretained(thread),
@@ -367,10 +372,10 @@ WebString BlinkPlatformImpl::UserAgent() {
 }
 
 std::unique_ptr<blink::WebThread> BlinkPlatformImpl::CreateThread(
-    const char* name) {
+    const blink::WebThreadCreationParams& params) {
   std::unique_ptr<blink::scheduler::WebThreadBase> thread =
       blink::scheduler::WebThreadBase::CreateWorkerThread(
-          name, base::Thread::Options());
+          params.name, base::Thread::Options());
   thread->Init();
   WaitUntilWebThreadTLSUpdate(thread.get());
   return std::move(thread);
@@ -655,7 +660,15 @@ WebString BlinkPlatformImpl::QueryLocalizedString(WebLocalizedString::Name name,
 }
 
 bool BlinkPlatformImpl::IsRendererSideResourceSchedulerEnabled() const {
-  return base::FeatureList::IsEnabled(features::kRendererSideResourceScheduler);
+  // We are assuming that kRendererSideResourceScheduler will be shipped when
+  // launching Network Service, so let's act as if
+  // kRendererSideResourceScheduler is enabled when kNetworkService is enabled.
+  // Note: This is identical to
+  // ResourceScheduler::IsRendererSideResourceSchedulerEnabled but we duplicate
+  // the logic in order to avoid a DEPS issue.
+  return base::FeatureList::IsEnabled(
+             network::features::kRendererSideResourceScheduler) ||
+         base::FeatureList::IsEnabled(network::features::kNetworkService);
 }
 
 std::unique_ptr<blink::WebGestureCurve>

@@ -68,9 +68,9 @@ void UnpackSource(const std::string& source,
 }
 
 LocalStorageCachedArea::LocalStorageCachedArea(
-    int64_t namespace_id,
+    const std::string& namespace_id,
     const url::Origin& origin,
-    mojom::StoragePartitionService* storage_partition_service,
+    mojom::SessionStorageNamespace* session_namespace,
     LocalStorageCachedAreas* cached_areas,
     blink::scheduler::RendererScheduler* renderer_scheduler)
     : namespace_id_(namespace_id),
@@ -79,9 +79,11 @@ LocalStorageCachedArea::LocalStorageCachedArea(
       cached_areas_(cached_areas),
       renderer_scheduler_(renderer_scheduler),
       weak_factory_(this) {
-  DCHECK_NE(namespace_id, kInvalidSessionStorageNamespaceId);
-  storage_partition_service->OpenSessionStorage(namespace_id, origin_,
-                                                mojo::MakeRequest(&leveldb_));
+  DCHECK(!namespace_id_.empty());
+
+  mojom::LevelDBWrapperAssociatedPtrInfo wrapper_ptr_info;
+  session_namespace->OpenArea(origin_, mojo::MakeRequest(&wrapper_ptr_info));
+  leveldb_.Bind(std::move(wrapper_ptr_info));
   mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
   binding_.Bind(mojo::MakeRequest(&ptr_info));
   leveldb_->AddObserver(std::move(ptr_info));
@@ -92,14 +94,16 @@ LocalStorageCachedArea::LocalStorageCachedArea(
     mojom::StoragePartitionService* storage_partition_service,
     LocalStorageCachedAreas* cached_areas,
     blink::scheduler::RendererScheduler* renderer_scheduler)
-    : namespace_id_(kLocalStorageNamespaceId),
-      origin_(origin),
+    : origin_(origin),
       binding_(this),
       cached_areas_(cached_areas),
       renderer_scheduler_(renderer_scheduler),
       weak_factory_(this) {
-  storage_partition_service->OpenLocalStorage(origin_,
-                                              mojo::MakeRequest(&leveldb_));
+  DCHECK(namespace_id_.empty());
+  mojom::LevelDBWrapperPtrInfo wrapper_ptr_info;
+  storage_partition_service->OpenLocalStorage(
+      origin_, mojo::MakeRequest(&wrapper_ptr_info));
+  leveldb_.Bind(std::move(wrapper_ptr_info));
   mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
   binding_.Bind(mojo::MakeRequest(&ptr_info));
   leveldb_->AddObserver(std::move(ptr_info));
@@ -146,13 +150,16 @@ bool LocalStorageCachedArea::SetItem(const base::string16& key,
   // Ignore mutations to |key| until OnSetItemComplete.
   ignore_key_mutations_[key]++;
   base::Optional<std::vector<uint8_t>> optional_old_value;
+  bool is_session_storage = IsSessionStorage();
   if (!old_nullable_value.is_null())
-    optional_old_value = String16ToUint8Vector(old_nullable_value.string());
+    optional_old_value =
+        String16ToUint8Vector(old_nullable_value.string(), is_session_storage);
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
       renderer_scheduler_->CreateWebScopedVirtualTimePauser();
   virtual_time_pauser.PauseVirtualTime(true);
-  leveldb_->Put(String16ToUint8Vector(key), String16ToUint8Vector(value),
+  leveldb_->Put(String16ToUint8Vector(key, is_session_storage),
+                String16ToUint8Vector(value, is_session_storage),
                 optional_old_value, PackSource(page_url, storage_area_id),
                 base::BindOnce(&LocalStorageCachedArea::OnSetItemComplete,
                                weak_factory_.GetWeakPtr(), key,
@@ -176,14 +183,15 @@ void LocalStorageCachedArea::RemoveItem(const base::string16& key,
   // Ignore mutations to |key| until OnRemoveItemComplete.
   ignore_key_mutations_[key]++;
   base::Optional<std::vector<uint8_t>> optional_old_value;
+  bool is_session_storage = IsSessionStorage();
   if (should_send_old_value_on_mutations_)
-    optional_old_value = String16ToUint8Vector(old_value);
+    optional_old_value = String16ToUint8Vector(old_value, is_session_storage);
 
   blink::WebScopedVirtualTimePauser virtual_time_pauser =
       renderer_scheduler_->CreateWebScopedVirtualTimePauser();
   virtual_time_pauser.PauseVirtualTime(true);
-  leveldb_->Delete(String16ToUint8Vector(key), optional_old_value,
-                   PackSource(page_url, storage_area_id),
+  leveldb_->Delete(String16ToUint8Vector(key, is_session_storage),
+                   optional_old_value, PackSource(page_url, storage_area_id),
                    base::BindOnce(&LocalStorageCachedArea::OnRemoveItemComplete,
                                   weak_factory_.GetWeakPtr(), key,
                                   std::move(virtual_time_pauser)));
@@ -215,12 +223,26 @@ void LocalStorageCachedArea::AreaDestroyed(LocalStorageArea* area) {
 
 // static
 base::string16 LocalStorageCachedArea::Uint8VectorToString16(
-    const std::vector<uint8_t>& input) {
+    const std::vector<uint8_t>& input,
+    bool force_plain_utf16) {
   if (input.empty())
     return base::string16();
-  StorageFormat format = static_cast<StorageFormat>(input[0]);
-  const size_t payload_size = input.size() - 1;
+  size_t input_size = input.size();
   base::string16 result;
+  if (force_plain_utf16) {
+    if (input_size % sizeof(base::char16) != 0) {
+      // TODO(mek): Better error recovery when corrupt (or otherwise invalid)
+      // data is detected.
+      LOCAL_HISTOGRAM_BOOLEAN("LocalStorageCachedArea.CorruptData", true);
+      LOG(ERROR) << "Corrupt data in domstorage";
+      return base::string16();
+    }
+    result.resize(input_size / sizeof(base::char16));
+    std::memcpy(&result[0], input.data(), input_size);
+    return result;
+  }
+  StorageFormat format = static_cast<StorageFormat>(input[0]);
+  const size_t payload_size = input_size - 1;
   bool corrupt = false;
   switch (format) {
     case StorageFormat::UTF16:
@@ -241,7 +263,8 @@ base::string16 LocalStorageCachedArea::Uint8VectorToString16(
   if (corrupt) {
     // TODO(mek): Better error recovery when corrupt (or otherwise invalid) data
     // is detected.
-    VLOG(1) << "Corrupt data in localstorage";
+    LOCAL_HISTOGRAM_BOOLEAN("LocalStorageCachedArea.CorruptData", true);
+    LOG(ERROR) << "Corrupt data in localstorage";
     return base::string16();
   }
   return result;
@@ -249,7 +272,16 @@ base::string16 LocalStorageCachedArea::Uint8VectorToString16(
 
 // static
 std::vector<uint8_t> LocalStorageCachedArea::String16ToUint8Vector(
-    const base::string16& input) {
+    const base::string16& input,
+    bool force_plain_utf16) {
+  if (force_plain_utf16) {
+    std::vector<uint8_t> result;
+    result.reserve(input.size() * sizeof(base::char16));
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(input.data());
+    result.insert(result.begin(), data,
+                  data + input.size() * sizeof(base::char16));
+    return result;
+  }
   bool is_8bit = true;
   for (const auto& c : input) {
     if (c & 0xff00) {
@@ -282,7 +314,8 @@ void LocalStorageCachedArea::KeyChanged(const std::vector<uint8_t>& key,
                                         const std::vector<uint8_t>& new_value,
                                         const std::vector<uint8_t>& old_value,
                                         const std::string& source) {
-  base::NullableString16 old_value_str(Uint8VectorToString16(old_value), false);
+  base::NullableString16 old_value_str(
+      Uint8VectorToString16(old_value, IsSessionStorage()), false);
   KeyAddedOrChanged(key, new_value, old_value_str, source);
 }
 
@@ -293,7 +326,7 @@ void LocalStorageCachedArea::KeyDeleted(const std::vector<uint8_t>& key,
   std::string storage_area_id;
   UnpackSource(source, &page_url, &storage_area_id);
 
-  base::string16 key_string = Uint8VectorToString16(key);
+  base::string16 key_string = Uint8VectorToString16(key, IsSessionStorage());
 
   blink::WebStorageArea* originating_area = nullptr;
   if (areas_.find(storage_area_id) != areas_.end()) {
@@ -310,7 +343,8 @@ void LocalStorageCachedArea::KeyDeleted(const std::vector<uint8_t>& key,
 
   blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
       blink::WebString::FromUTF16(key_string),
-      blink::WebString::FromUTF16(Uint8VectorToString16(old_value)),
+      blink::WebString::FromUTF16(
+          Uint8VectorToString16(old_value, IsSessionStorage())),
       blink::WebString(), origin_.GetURL(), page_url, originating_area);
 }
 
@@ -356,8 +390,9 @@ void LocalStorageCachedArea::KeyAddedOrChanged(
   std::string storage_area_id;
   UnpackSource(source, &page_url, &storage_area_id);
 
-  base::string16 key_string = Uint8VectorToString16(key);
-  base::string16 new_value_string = Uint8VectorToString16(new_value);
+  base::string16 key_string = Uint8VectorToString16(key, IsSessionStorage());
+  base::string16 new_value_string =
+      Uint8VectorToString16(new_value, IsSessionStorage());
 
   blink::WebStorageArea* originating_area = nullptr;
   if (areas_.find(storage_area_id) != areas_.end()) {
@@ -398,9 +433,11 @@ void LocalStorageCachedArea::EnsureLoaded() {
                    &status, &data);
 
   DOMStorageValuesMap values;
+  bool is_session_storage = IsSessionStorage();
   for (size_t i = 0; i < data.size(); ++i) {
-    values[Uint8VectorToString16(data[i]->key)] =
-        base::NullableString16(Uint8VectorToString16(data[i]->value), false);
+    values[Uint8VectorToString16(data[i]->key, is_session_storage)] =
+        base::NullableString16(
+            Uint8VectorToString16(data[i]->value, is_session_storage), false);
   }
 
   map_ = new DOMStorageMap(kPerStorageAreaQuota);

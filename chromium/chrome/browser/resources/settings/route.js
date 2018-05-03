@@ -36,6 +36,7 @@
  *   FONTS: (undefined|!settings.Route),
  *   GOOGLE_ASSISTANT: (undefined|!settings.Route),
  *   IMPORT_DATA: (undefined|!settings.Route),
+ *   INCOMPATIBLE_APPLICATIONS: (undefined|!settings.Route),
  *   INPUT_METHODS: (undefined|!settings.Route),
  *   INTERNET: (undefined|!settings.Route),
  *   INTERNET_NETWORKS: (undefined|!settings.Route),
@@ -73,6 +74,7 @@
  *   SITE_SETTINGS_HANDLERS: (undefined|!settings.Route),
  *   SITE_SETTINGS_IMAGES: (undefined|!settings.Route),
  *   SITE_SETTINGS_JAVASCRIPT: (undefined|!settings.Route),
+ *   SITE_SETTINGS_SENSORS: (undefined|!settings.Route),
  *   SITE_SETTINGS_SOUND: (undefined|!settings.Route),
  *   SITE_SETTINGS_LOCATION: (undefined|!settings.Route),
  *   SITE_SETTINGS_MICROPHONE: (undefined|!settings.Route),
@@ -317,6 +319,7 @@ cr.define('settings', function() {
       r.SITE_SETTINGS_IMAGES = r.SITE_SETTINGS.createChild('images');
       r.SITE_SETTINGS_JAVASCRIPT = r.SITE_SETTINGS.createChild('javascript');
       r.SITE_SETTINGS_SOUND = r.SITE_SETTINGS.createChild('sound');
+      r.SITE_SETTINGS_SENSORS = r.SITE_SETTINGS.createChild('sensors');
       r.SITE_SETTINGS_LOCATION = r.SITE_SETTINGS.createChild('location');
       r.SITE_SETTINGS_MICROPHONE = r.SITE_SETTINGS.createChild('microphone');
       r.SITE_SETTINGS_NOTIFICATIONS =
@@ -387,6 +390,10 @@ cr.define('settings', function() {
         // This should only be added if the feature is enabled.
         if (loadTimeData.getBoolean('userInitiatedCleanupsEnabled')) {
           r.CHROME_CLEANUP = r.RESET.createChild('/cleanup');
+        }
+        if (loadTimeData.getBoolean('showIncompatibleApplications')) {
+          r.INCOMPATIBLE_APPLICATIONS =
+              r.RESET.createChild('/incompatibleApplications');
         }
         // </if>
       }

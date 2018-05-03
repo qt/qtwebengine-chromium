@@ -5,7 +5,7 @@
 module webauth.mojom;
 
 import "mojo/common/time.mojom";
-import "url/mojo/url.mojom";
+import "url/mojom/url.mojom";
 
 // This file describes the communication between the WebAuthentication renderer
 // implementation and browser-side implementations to create public key
@@ -18,14 +18,13 @@ enum AuthenticatorStatus {
   NOT_ALLOWED_ERROR,
   NOT_SUPPORTED_ERROR,
   INVALID_DOMAIN,
-  TIMED_OUT,
   NOT_IMPLEMENTED,
   UNKNOWN_ERROR,
 };
 
-// Credential information returned by both Authenticator::MakeCredential 
+// Credential information returned by both Authenticator::MakeCredential
 // and Authenticator::GetAssertion.
- struct CommonCredentialInfo {
+struct CommonCredentialInfo {
   // The base64url encoding of |raw_id|.
   string id;
 
@@ -113,10 +112,21 @@ struct PublicKeyCredentialRequestOptions {
   // A list of credentials the relying party knows about and would
   // accept as the signing credential.
   array<PublicKeyCredentialDescriptor> allow_credentials;
+
+  // The contents of the appid extension, if any. See
+  // https://w3c.github.io/webauthn/#sctn-appid-extension
+  string? appid;
+};
+
+// See https://w3c.github.io/webauthn/#enumdef-attestationconveyancepreference
+enum AttestationConveyancePreference {
+  NONE,
+  INDIRECT,
+  DIRECT,
 };
 
 // Parameters passed into calls to MakeCredential.
-struct MakePublicKeyCredentialOptions {
+struct PublicKeyCredentialCreationOptions {
   // Information about the relying party and user entities, respectively.
   // Used by the authenticator to create or retrieve an appropriate public key
   // credential for the requested account.
@@ -139,6 +149,10 @@ struct MakePublicKeyCredentialOptions {
   // authenticator has one of these credentials, it should not
   // create a new one.
   array<PublicKeyCredentialDescriptor> exclude_credentials;
+
+  // Specifies whether the RP wants attestation information for the created
+  // credential.
+  AttestationConveyancePreference attestation;
 
   // TODO(kpaulhamus): add AuthenticatorSelectionCriteria
 };
@@ -169,9 +183,9 @@ enum AuthenticatorTransport {
 // Interface to direct authenticators to create or use a public key credential.
 interface Authenticator {
   // Gets the credential info for a new public key credential created by an
-  // authenticator for the given |MakePublicKeyCredentialOptions|
+  // authenticator for the given |PublicKeyCredentialCreationOptions|
   // [MakeCredentialAuthenticatorResponse] will be set if and only if status == SUCCESS.
-  MakeCredential(MakePublicKeyCredentialOptions options)
+  MakeCredential(PublicKeyCredentialCreationOptions options)
       => (AuthenticatorStatus status, MakeCredentialAuthenticatorResponse? credential);
 
   // Uses an existing credential to produce an assertion for the given

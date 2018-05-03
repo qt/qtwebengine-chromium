@@ -28,7 +28,7 @@
 #include "content/common/content_switches_internal.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/common/input_messages.h"
-#include "third_party/WebKit/common/frame_policy.h"
+#include "third_party/WebKit/public/common/frame/frame_policy.h"
 
 namespace content {
 
@@ -418,43 +418,7 @@ void FrameTree::FrameRemoved(FrameTreeNode* frame) {
     on_frame_removed_.Run(frame->current_frame_host());
 }
 
-void FrameTree::UpdateLoadProgress() {
-  double progress = 0.0;
-  ProgressBarCompletion completion = GetProgressBarCompletionPolicy();
-  int frame_count = 0;
-  switch (completion) {
-    case ProgressBarCompletion::DOM_CONTENT_LOADED:
-    case ProgressBarCompletion::RESOURCES_BEFORE_DCL:
-      if (root_->has_started_loading())
-        progress = root_->loading_progress();
-      break;
-    case ProgressBarCompletion::LOAD_EVENT:
-      for (FrameTreeNode* node : Nodes()) {
-        // Ignore the current frame if it has not started loading.
-        if (!node->has_started_loading())
-          continue;
-        progress += node->loading_progress();
-        frame_count++;
-      }
-      break;
-    case ProgressBarCompletion::RESOURCES_BEFORE_DCL_AND_SAME_ORIGIN_IFRAMES:
-      for (FrameTreeNode* node : Nodes()) {
-        // Ignore the current frame if it has not started loading,
-        // if the frame is cross-origin, or about:blank.
-        if (!node->has_started_loading() || !node->HasSameOrigin(*root_) ||
-            node->current_url() == url::kAboutBlankURL)
-          continue;
-        progress += node->loading_progress();
-        frame_count++;
-      }
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  if (frame_count != 0)
-    progress /= frame_count;
-
+void FrameTree::UpdateLoadProgress(double progress) {
   if (progress <= load_progress_)
     return;
   load_progress_ = progress;
@@ -464,8 +428,6 @@ void FrameTree::UpdateLoadProgress() {
 }
 
 void FrameTree::ResetLoadProgress() {
-  for (FrameTreeNode* node : Nodes())
-    node->reset_loading_progress();
   load_progress_ = 0.0;
 }
 

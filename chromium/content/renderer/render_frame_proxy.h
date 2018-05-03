@@ -9,10 +9,13 @@
 #include "base/memory/ref_counted.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/common/content_export.h"
+#include "content/common/frame_messages.h"
 #include "content/public/common/screen_info.h"
+#include "content/renderer/child_frame_compositor.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "third_party/WebKit/public/platform/WebFocusType.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
 #include "third_party/WebKit/public/web/WebRemoteFrame.h"
@@ -31,7 +34,6 @@ struct WebScrollIntoViewParams;
 
 namespace viz {
 class SurfaceInfo;
-struct SurfaceSequence;
 }
 
 namespace content {
@@ -74,6 +76,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
 #if defined(USE_AURA)
                                         public MusEmbeddedFrameDelegate,
 #endif
+                                        public ChildFrameCompositor,
                                         public blink::WebRemoteFrameClient {
  public:
   // This method should be used to create a RenderFrameProxy, which will replace
@@ -104,7 +107,8 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
       int render_view_routing_id,
       blink::WebFrame* opener,
       int parent_routing_id,
-      const FrameReplicationState& replicated_state);
+      const FrameReplicationState& replicated_state,
+      const base::UnguessableToken& devtools_frame_token);
 
   // Returns the RenderFrameProxy for the given routing ID.
   static RenderFrameProxy* FromRoutingID(int routing_id);
@@ -171,10 +175,12 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
 
   // blink::WebRemoteFrameClient implementation:
   void FrameDetached(DetachType type) override;
+  void CheckCompleted() override;
   void ForwardPostMessage(blink::WebLocalFrame* sourceFrame,
                           blink::WebRemoteFrame* targetFrame,
                           blink::WebSecurityOrigin target,
-                          blink::WebDOMMessageEvent event) override;
+                          blink::WebDOMMessageEvent event,
+                          bool has_user_gesture) override;
   void Navigate(const blink::WebURLRequest& request,
                 bool should_replace_current_entry) override;
   void FrameRectsChanged(const blink::WebRect& local_frame_rect,
@@ -189,7 +195,8 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   void AdvanceFocus(blink::WebFocusType type,
                     blink::WebLocalFrame* source) override;
   void FrameFocused() override;
-  blink::WebString GetDevToolsFrameToken() override;
+  base::UnguessableToken GetDevToolsFrameToken() override;
+  uint32_t Print(const blink::WebRect& rect, blink::WebCanvas* canvas) override;
 
   // IPC handlers
   void OnDidStartLoading();
@@ -203,8 +210,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
 
   void ResendResizeParams();
 
-  void SetChildFrameSurface(const viz::SurfaceInfo& surface_info,
-                            const viz::SurfaceSequence& sequence);
+  void SetChildFrameSurface(const viz::SurfaceInfo& surface_info);
 
   // IPC::Listener
   bool OnMessageReceived(const IPC::Message& msg) override;
@@ -213,13 +219,17 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   void OnDeleteProxy();
   void OnChildFrameProcessGone();
   void OnCompositorFrameSwapped(const IPC::Message& message);
-  void OnSetChildFrameSurface(const viz::SurfaceInfo& surface_info,
-                              const viz::SurfaceSequence& sequence);
+  // TODO(fsamuel): Rename OnFirstSurfaceActivation().
+  void OnSetChildFrameSurface(const viz::SurfaceInfo& surface_info);
+  void OnIntrinsicSizingInfoOfChildChanged(
+      blink::WebIntrinsicSizingInfo sizing_info);
   void OnUpdateOpener(int opener_routing_id);
-  void OnViewChanged(const viz::FrameSinkId& frame_sink_id);
+  void OnViewChanged(const FrameMsg_ViewChanged_Params& params);
   void OnDidStopLoading();
   void OnDidUpdateFramePolicy(const blink::FramePolicy& frame_policy);
-  void OnDidSetActiveSandboxFlags(blink::WebSandboxFlags active_sandbox_flags);
+  void OnDidSetFramePolicyHeaders(
+      blink::WebSandboxFlags active_sandbox_flags,
+      blink::ParsedFeaturePolicy parsed_feature_policy);
   void OnForwardResourceTimingToParent(
       const ResourceTimingInfo& resource_timing);
   void OnDispatchLoad();
@@ -250,6 +260,11 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
       const viz::FrameSinkId& frame_sink_id) override;
 #endif
 
+  // ChildFrameCompositor:
+  blink::WebLayer* GetLayer() override;
+  void SetLayer(std::unique_ptr<blink::WebLayer> web_layer) override;
+  SkBitmap* GetSadPageBitmap() override;
+
   // The routing ID by which this RenderFrameProxy is known.
   const int routing_id_;
 
@@ -265,10 +280,10 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   RenderViewImpl* render_view_;
   RenderWidget* render_widget_;
 
-  // Contains string to be used as a frame id in the devtools protocol.
+  // Contains token to be used as a frame id in the devtools protocol.
   // It is derived from the content's devtools_frame_token, is
   // defined by the browser and passed into Blink upon frame creation.
-  blink::WebString devtools_frame_token_;
+  base::UnguessableToken devtools_frame_token_;
 
   // TODO(fsamuel): We might want to unify this with content::ResizeParams.
   // TODO(fsamuel): Most RenderFrameProxys don't host viz::Surfaces and
@@ -288,6 +303,8 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   // |sent_resize_params_|.
   ResizeParams pending_resize_params_;
 
+  bool crashed_ = false;
+
   viz::FrameSinkId frame_sink_id_;
   viz::LocalSurfaceId local_surface_id_;
   viz::ParentLocalSurfaceIdAllocator parent_local_surface_id_allocator_;
@@ -298,9 +315,12 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   std::unique_ptr<MusEmbeddedFrame> mus_embedded_frame_;
 #endif
 
+  // The layer used to embed the out-of-process content.
+  std::unique_ptr<blink::WebLayer> web_layer_;
+
   DISALLOW_COPY_AND_ASSIGN(RenderFrameProxy);
 };
 
-}  // namespace
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_RENDER_FRAME_PROXY_H_

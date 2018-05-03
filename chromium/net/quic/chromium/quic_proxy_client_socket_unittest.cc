@@ -198,7 +198,8 @@ class QuicProxyClientSocketTest
         /*stream_factory=*/nullptr, &crypto_client_stream_factory_, &clock_,
         &transport_security_state_,
         base::WrapUnique(static_cast<QuicServerInfo*>(nullptr)),
-        QuicServerId("mail.example.org", 80, PRIVACY_MODE_DISABLED),
+        QuicSessionKey("mail.example.org", 80, PRIVACY_MODE_DISABLED,
+                       SocketTag()),
         /*require_confirmation=*/false, /*migrate_session_early*/ false,
         /*migrate_session_on_network_change*/ false,
         /*migrate_session_early_v2*/ false,
@@ -223,7 +224,8 @@ class QuicProxyClientSocketTest
     EXPECT_THAT(session_->CryptoConnect(callback.callback()), IsOk());
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
 
-    EXPECT_THAT(session_handle_->RequestStream(true, callback.callback()),
+    EXPECT_THAT(session_handle_->RequestStream(true, callback.callback(),
+                                               TRAFFIC_ANNOTATION_FOR_TESTS),
                 IsOk());
     std::unique_ptr<QuicChromiumClientStream::Handle> stream_handle =
         session_handle_->ReleaseStream();
@@ -1360,8 +1362,13 @@ TEST_P(QuicProxyClientSocketTest, RstWithReadAndWritePending) {
   mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddAsyncWrite(
       ConstructAckAndDataPacket(3, 1, 1, 1, 0, kMsg2, kLen2));
-  mock_quic_data_.AddWrite(
-      ConstructRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, kLen2));
+  if (FLAGS_quic_reloadable_flag_quic_use_control_frame_manager) {
+    mock_quic_data_.AddWrite(
+        ConstructAckAndRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, 2, 2, 1, kLen2));
+  } else {
+    mock_quic_data_.AddWrite(
+        ConstructRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, kLen2));
+  }
 
   Initialize();
 
@@ -1478,8 +1485,13 @@ TEST_P(QuicProxyClientSocketTest, RstWithReadAndWritePendingDelete) {
   mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddAsyncWrite(
       ConstructAckAndDataPacket(3, 1, 1, 1, 0, kMsg1, kLen1));
-  mock_quic_data_.AddWrite(
-      ConstructRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, kLen1));
+  if (FLAGS_quic_reloadable_flag_quic_use_control_frame_manager) {
+    mock_quic_data_.AddWrite(
+        ConstructAckAndRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, 2, 2, 1, kLen1));
+  } else {
+    mock_quic_data_.AddWrite(
+        ConstructRstPacket(4, QUIC_RST_ACKNOWLEDGEMENT, kLen1));
+  }
 
   Initialize();
 

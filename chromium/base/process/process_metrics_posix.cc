@@ -7,12 +7,15 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/resource.h>
 #include <sys/time.h>
 #include <unistd.h>
 
 #include "base/logging.h"
 #include "build/build_config.h"
+
+#if !defined(OS_FUCHSIA)
+#include <sys/resource.h>
+#endif
 
 #if defined(OS_MACOSX)
 #include <malloc/malloc.h>
@@ -31,6 +34,8 @@ int64_t TimeValToMicroseconds(const struct timeval& tv) {
 
 ProcessMetrics::~ProcessMetrics() = default;
 
+#if !defined(OS_FUCHSIA)
+
 #if defined(OS_LINUX)
 static const rlim_t kSystemDefaultMaxFds = 8192;
 #elif defined(OS_MACOSX)
@@ -38,8 +43,6 @@ static const rlim_t kSystemDefaultMaxFds = 256;
 #elif defined(OS_SOLARIS)
 static const rlim_t kSystemDefaultMaxFds = 8192;
 #elif defined(OS_FREEBSD)
-static const rlim_t kSystemDefaultMaxFds = 8192;
-#elif defined(OS_FUCHSIA)
 static const rlim_t kSystemDefaultMaxFds = 8192;
 #elif defined(OS_NETBSD)
 static const rlim_t kSystemDefaultMaxFds = 1024;
@@ -84,6 +87,8 @@ void SetFdLimit(unsigned int max_descriptors) {
     PLOG(INFO) << "Failed to get file descriptor limit";
   }
 }
+
+#endif  // !defined(OS_FUCHSIA)
 
 size_t GetPageSize() {
   return getpagesize();

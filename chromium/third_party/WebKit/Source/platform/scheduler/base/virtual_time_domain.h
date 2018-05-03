@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/threading/thread_checker.h"
 #include "platform/scheduler/base/time_domain.h"
 
 namespace blink {
@@ -14,7 +15,7 @@ namespace scheduler {
 
 class PLATFORM_EXPORT VirtualTimeDomain : public TimeDomain {
  public:
-  VirtualTimeDomain(base::TimeTicks initial_time);
+  explicit VirtualTimeDomain(base::TimeTicks initial_time_ticks);
   ~VirtualTimeDomain() override;
 
   // TimeDomain implementation:
@@ -26,11 +27,11 @@ class PLATFORM_EXPORT VirtualTimeDomain : public TimeDomain {
   // Advances this time domain to |now|. NOTE |now| is supposed to be
   // monotonically increasing.  NOTE it's the responsibility of the caller to
   // call TaskQueueManager::MaybeScheduleImmediateWork if needed.
-  void AdvanceTo(base::TimeTicks now);
+  void AdvanceNowTo(base::TimeTicks now);
 
  protected:
   void OnRegisterWithTaskQueueManager(
-      TaskQueueManager* task_queue_manager) override;
+      TaskQueueManagerImpl* task_queue_manager) override;
   void RequestWakeUpAt(base::TimeTicks now, base::TimeTicks run_time) override;
   void CancelWakeUpAt(base::TimeTicks run_time) override;
   void AsValueIntoInternal(
@@ -39,10 +40,10 @@ class PLATFORM_EXPORT VirtualTimeDomain : public TimeDomain {
   void RequestDoWork();
 
  private:
-  mutable base::Lock lock_;  // Protects |now_|.
-  base::TimeTicks now_;
+  mutable base::Lock lock_;  // Protects |now_ticks_|
+  base::TimeTicks now_ticks_;
 
-  TaskQueueManager* task_queue_manager_;  // NOT OWNED
+  TaskQueueManagerImpl* task_queue_manager_;  // NOT OWNED
   base::Closure do_work_closure_;
 
   DISALLOW_COPY_AND_ASSIGN(VirtualTimeDomain);

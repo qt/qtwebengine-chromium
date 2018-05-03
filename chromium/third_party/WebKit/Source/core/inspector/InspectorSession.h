@@ -27,10 +27,12 @@ class CORE_EXPORT InspectorSession
  public:
   class Client {
    public:
-    virtual void SendProtocolMessage(int session_id,
-                                     int call_id,
-                                     const String& response,
-                                     const String& state) = 0;
+    virtual void SendProtocolResponse(int session_id,
+                                      int call_id,
+                                      const String& response,
+                                      const String& state) = 0;
+    virtual void SendProtocolNotification(int session_id,
+                                          const String& message) = 0;
     virtual ~Client() = default;
   };
 
@@ -39,7 +41,7 @@ class CORE_EXPORT InspectorSession
                    int session_id,
                    v8_inspector::V8Inspector*,
                    int context_group_id,
-                   const String* saved_state);
+                   const String& reattach_state);
   ~InspectorSession() override;
   // TODO(dgozman): remove session id once WokrerInspectorController
   // does not use it anymore.

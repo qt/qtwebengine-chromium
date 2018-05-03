@@ -112,18 +112,11 @@ TaskHandle::TaskHandle(scoped_refptr<Runner> runner)
   DCHECK(runner_);
 }
 
-void WebTaskRunner::PostTask(const base::Location& location,
-                             base::OnceClosure task) {
-  PostDelayedTask(location, std::move(task), base::TimeDelta());
-}
-
-WebTaskRunner::~WebTaskRunner() = default;
-
 // Use a custom function for base::Bind instead of WTF::Bind to
 // avoid copying the closure later in the call chain. Copying the bound state
 // can lead to data races with ref counted objects like StringImpl. See
 // crbug.com/679915 for more details.
-void PostCrossThreadTask(WebTaskRunner& task_runner,
+void PostCrossThreadTask(base::SingleThreadTaskRunner& task_runner,
                          const base::Location& location,
                          CrossThreadClosure task) {
   task_runner.PostDelayedTask(
@@ -131,7 +124,7 @@ void PostCrossThreadTask(WebTaskRunner& task_runner,
       base::TimeDelta());
 }
 
-void PostDelayedCrossThreadTask(WebTaskRunner& task_runner,
+void PostDelayedCrossThreadTask(base::SingleThreadTaskRunner& task_runner,
                                 const base::Location& location,
                                 CrossThreadClosure task,
                                 TimeDelta delay) {
@@ -139,7 +132,7 @@ void PostDelayedCrossThreadTask(WebTaskRunner& task_runner,
       location, base::BindOnce(&RunCrossThreadClosure, std::move(task)), delay);
 }
 
-TaskHandle PostCancellableTask(WebTaskRunner& task_runner,
+TaskHandle PostCancellableTask(base::SingleThreadTaskRunner& task_runner,
                                const base::Location& location,
                                base::OnceClosure task) {
   DCHECK(task_runner.RunsTasksInCurrentSequence());
@@ -151,7 +144,7 @@ TaskHandle PostCancellableTask(WebTaskRunner& task_runner,
   return TaskHandle(runner);
 }
 
-TaskHandle PostDelayedCancellableTask(WebTaskRunner& task_runner,
+TaskHandle PostDelayedCancellableTask(base::SingleThreadTaskRunner& task_runner,
                                       const base::Location& location,
                                       base::OnceClosure task,
                                       TimeDelta delay) {

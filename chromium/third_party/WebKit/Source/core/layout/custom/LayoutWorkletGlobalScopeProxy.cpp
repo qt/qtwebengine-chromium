@@ -15,8 +15,14 @@
 
 namespace blink {
 
+LayoutWorkletGlobalScopeProxy* LayoutWorkletGlobalScopeProxy::From(
+    WorkletGlobalScopeProxy* proxy) {
+  return static_cast<LayoutWorkletGlobalScopeProxy*>(proxy);
+}
+
 LayoutWorkletGlobalScopeProxy::LayoutWorkletGlobalScopeProxy(
     LocalFrame* frame,
+    PendingLayoutRegistry* pending_layout_registry,
     size_t global_scope_number) {
   DCHECK(IsMainThread());
   Document* document = frame->GetDocument();
@@ -27,19 +33,20 @@ LayoutWorkletGlobalScopeProxy::LayoutWorkletGlobalScopeProxy(
       document->Url(), document->UserAgent(),
       document->GetContentSecurityPolicy()->Headers().get(),
       document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-      nullptr /* worker_clients */, document->AddressSpace(),
-      OriginTrialContext::GetTokens(document).get(),
-      nullptr /* worker_settings */, kV8CacheOptionsDefault);
-  global_scope_ =
-      LayoutWorkletGlobalScope::Create(frame, std::move(creation_params),
-                                       *reporting_proxy_, global_scope_number);
+      document->IsSecureContext(), nullptr /* worker_clients */,
+      document->AddressSpace(), OriginTrialContext::GetTokens(document).get(),
+      base::UnguessableToken::Create(), nullptr /* worker_settings */,
+      kV8CacheOptionsDefault);
+  global_scope_ = LayoutWorkletGlobalScope::Create(
+      frame, std::move(creation_params), *reporting_proxy_,
+      pending_layout_registry, global_scope_number);
 }
 
 void LayoutWorkletGlobalScopeProxy::FetchAndInvokeScript(
     const KURL& module_url_record,
     WorkletModuleResponsesMap* module_responses_map,
     network::mojom::FetchCredentialsMode credentials_mode,
-    scoped_refptr<WebTaskRunner> outside_settings_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
     WorkletPendingTasks* pending_tasks) {
   DCHECK(IsMainThread());
   global_scope_->FetchAndInvokeScript(
@@ -58,6 +65,12 @@ void LayoutWorkletGlobalScopeProxy::TerminateWorkletGlobalScope() {
   // Nullify these fields to cut a potential reference cycle.
   global_scope_ = nullptr;
   reporting_proxy_.reset();
+}
+
+CSSLayoutDefinition* LayoutWorkletGlobalScopeProxy::FindDefinition(
+    const AtomicString& name) {
+  DCHECK(IsMainThread());
+  return global_scope_->FindDefinition(name);
 }
 
 void LayoutWorkletGlobalScopeProxy::Trace(blink::Visitor* visitor) {

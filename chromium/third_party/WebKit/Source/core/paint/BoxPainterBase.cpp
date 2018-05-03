@@ -11,6 +11,7 @@
 #include "core/paint/BoxBorderPainter.h"
 #include "core/paint/NinePieceImagePainter.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/RoundedInnerRectClipper.h"
 #include "core/style/BorderEdge.h"
 #include "core/style/ComputedStyle.h"
@@ -530,6 +531,9 @@ void BoxPainterBase::PaintFillLayer(const PaintInfo& paint_info,
     return;
 
   const FillLayerInfo info = GetFillLayerInfo(color, bg_layer, bleed_avoidance);
+  // If we're not actually going to paint anything, abort early.
+  if (!info.should_paint_image && !info.should_paint_color)
+    return;
 
   GraphicsContextStateSaver clip_with_scrolling_state_saver(
       context, info.is_clipped_with_local_scrolling);
@@ -543,9 +547,9 @@ void BoxPainterBase::PaintFillLayer(const PaintInfo& paint_info,
     geometry.Calculate(paint_info.PaintContainer(), paint_info.phase,
                        paint_info.GetGlobalPaintFlags(), bg_layer,
                        scrolled_paint_rect);
-    image =
-        info.image->GetImage(geometry.ImageClient(), geometry.ImageDocument(),
-                             geometry.ImageStyle(), geometry.TileSize());
+    image = info.image->GetImage(
+        geometry.ImageClient(), geometry.ImageDocument(), geometry.ImageStyle(),
+        FloatSize(geometry.TileSize()));
     interpolation_quality_context.emplace(
         context, geometry.ImageStyle().GetInterpolationQuality());
 
@@ -608,6 +612,40 @@ void BoxPainterBase::PaintFillLayer(const PaintInfo& paint_info,
                            scrolled_paint_rect);
 }
 
+void BoxPainterBase::PaintFillLayerTextFillBox(
+    GraphicsContext& context,
+    const BoxPainterBase::FillLayerInfo& info,
+    Image* image,
+    SkBlendMode composite_op,
+    const BackgroundImageGeometry& geometry,
+    const LayoutRect& rect,
+    const LayoutRect& scrolled_paint_rect) {
+  // First figure out how big the mask has to be. It should be no bigger
+  // than what we need to actually render, so we should intersect the dirty
+  // rect with the border box of the background.
+  IntRect mask_rect = PixelSnappedIntRect(rect);
+
+  // We draw the background into a separate layer, to be later masked with
+  // yet another layer holding the text content.
+  GraphicsContextStateSaver background_clip_state_saver(context, false);
+  background_clip_state_saver.Save();
+  context.Clip(mask_rect);
+  context.BeginLayer(1, composite_op);
+
+  PaintFillLayerBackground(context, info, image, SkBlendMode::kSrcOver,
+                           geometry, scrolled_paint_rect);
+
+  // Create the text mask layer and draw the text into the mask. We do this by
+  // painting using a special paint phase that signals to InlineTextBoxes that
+  // they should just add their contents to the clip.
+  context.BeginLayer(1, SkBlendMode::kDstIn);
+
+  PaintTextClipMask(context, mask_rect, scrolled_paint_rect.Location());
+
+  context.EndLayer();  // Text mask layer.
+  context.EndLayer();  // Background layer.
+}
+
 FloatRoundedRect BoxPainterBase::RoundedBorderRectForClip(
     const BoxPainterBase::FillLayerInfo& info,
     const FillLayer& bg_layer,
@@ -657,6 +695,44 @@ void BoxPainterBase::PaintBorder(const ImageResourceObserver& obj,
                                         include_logical_left_edge,
                                         include_logical_right_edge);
   border_painter.PaintBorder(info, rect);
+}
+
+void BoxPainterBase::PaintMaskImages(const PaintInfo& paint_info,
+                                     const LayoutRect& paint_rect,
+                                     const ImageResourceObserver& obj,
+                                     BackgroundImageGeometry& geometry) {
+  // Figure out if we need to push a transparency layer to render our mask.
+  bool push_transparency_layer = false;
+  bool all_mask_images_loaded = true;
+
+  if (!style_.HasMask() || style_.Visibility() != EVisibility::kVisible)
+    return;
+
+  DCHECK(paint_layer_);
+  if (!paint_layer_->MaskBlendingAppliedByCompositor(paint_info)) {
+    push_transparency_layer = true;
+    StyleImage* mask_box_image = style_.MaskBoxImage().GetImage();
+    const FillLayer& mask_layers = style_.MaskLayers();
+
+    // Don't render a masked element until all the mask images have loaded, to
+    // prevent a flash of unmasked content.
+    if (mask_box_image)
+      all_mask_images_loaded &= mask_box_image->IsLoaded();
+
+    all_mask_images_loaded &= mask_layers.ImagesAreLoaded();
+
+    paint_info.context.BeginLayer(1, SkBlendMode::kDstIn);
+  }
+
+  if (all_mask_images_loaded) {
+    PaintFillLayers(paint_info, Color::kTransparent, style_.MaskLayers(),
+                    paint_rect, geometry);
+    NinePieceImagePainter::Paint(paint_info.context, obj, *document_, node_,
+                                 paint_rect, style_, style_.MaskBoxImage());
+  }
+
+  if (push_transparency_layer)
+    paint_info.context.EndLayer();
 }
 
 }  // namespace blink

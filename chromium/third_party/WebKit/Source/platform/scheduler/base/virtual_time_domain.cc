@@ -6,36 +6,36 @@
 
 #include "base/bind.h"
 #include "platform/scheduler/base/task_queue_impl.h"
-#include "platform/scheduler/base/task_queue_manager.h"
+#include "platform/scheduler/base/task_queue_manager_impl.h"
 
 namespace blink {
 namespace scheduler {
 
-VirtualTimeDomain::VirtualTimeDomain(base::TimeTicks initial_time)
-    : now_(initial_time), task_queue_manager_(nullptr) {}
+VirtualTimeDomain::VirtualTimeDomain(base::TimeTicks initial_time_ticks)
+    : now_ticks_(initial_time_ticks), task_queue_manager_(nullptr) {}
 
 VirtualTimeDomain::~VirtualTimeDomain() = default;
 
 void VirtualTimeDomain::OnRegisterWithTaskQueueManager(
-    TaskQueueManager* task_queue_manager) {
+    TaskQueueManagerImpl* task_queue_manager) {
   task_queue_manager_ = task_queue_manager;
   DCHECK(task_queue_manager_);
 }
 
 LazyNow VirtualTimeDomain::CreateLazyNow() const {
   base::AutoLock lock(lock_);
-  return LazyNow(now_);
+  return LazyNow(now_ticks_);
 }
 
 base::TimeTicks VirtualTimeDomain::Now() const {
   base::AutoLock lock(lock_);
-  return now_;
+  return now_ticks_;
 }
 
 void VirtualTimeDomain::RequestWakeUpAt(base::TimeTicks now,
                                         base::TimeTicks run_time) {
   // We don't need to do anything here because the caller of AdvanceTo is
-  // responsible for calling TaskQueueManager::MaybeScheduleImmediateWork if
+  // responsible for calling TaskQueueManagerImpl::MaybeScheduleImmediateWork if
   // needed.
 }
 
@@ -51,10 +51,10 @@ base::Optional<base::TimeDelta> VirtualTimeDomain::DelayTillNextTask(
 void VirtualTimeDomain::AsValueIntoInternal(
     base::trace_event::TracedValue* state) const {}
 
-void VirtualTimeDomain::AdvanceTo(base::TimeTicks now) {
+void VirtualTimeDomain::AdvanceNowTo(base::TimeTicks now) {
   base::AutoLock lock(lock_);
-  DCHECK_GE(now, now_);
-  now_ = now;
+  DCHECK_GE(now, now_ticks_);
+  now_ticks_ = now;
 }
 
 void VirtualTimeDomain::RequestDoWork() {

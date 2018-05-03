@@ -20,6 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "components/crx_file/id_util.h"
 #include "components/data_use_measurement/core/data_use_user_data.h"
@@ -40,9 +41,10 @@ namespace update_client {
 
 std::unique_ptr<net::URLFetcher> SendProtocolRequest(
     const GURL& url,
+    const std::map<std::string, std::string>& protocol_request_extra_headers,
     const std::string& protocol_request,
     net::URLFetcherDelegate* url_fetcher_delegate,
-    net::URLRequestContextGetter* url_request_context_getter) {
+    scoped_refptr<net::URLRequestContextGetter> url_request_context_getter) {
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("component_updater_utils", R"(
         semantics {
@@ -79,13 +81,16 @@ std::unique_ptr<net::URLFetcher> SendProtocolRequest(
   data_use_measurement::DataUseUserData::AttachToFetcher(
       url_fetcher.get(), data_use_measurement::DataUseUserData::UPDATE_CLIENT);
   url_fetcher->SetUploadData("application/xml", protocol_request);
-  url_fetcher->SetRequestContext(url_request_context_getter);
+  url_fetcher->SetRequestContext(url_request_context_getter.get());
   url_fetcher->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
                             net::LOAD_DO_NOT_SAVE_COOKIES |
                             net::LOAD_DISABLE_CACHE);
   url_fetcher->SetAutomaticallyRetryOn5xx(false);
-  url_fetcher->Start();
+  for (const auto& header : protocol_request_extra_headers)
+    url_fetcher->AddExtraRequestHeader(base::StringPrintf(
+        "%s: %s", header.first.c_str(), header.second.c_str()));
 
+  url_fetcher->Start();
   return url_fetcher;
 }
 

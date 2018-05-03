@@ -9,6 +9,8 @@
 #include "base/win/scoped_variant.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
 #include "ui/views/accessibility/native_view_accessibility_base.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/test/views_test_base.h"
 
@@ -99,6 +101,56 @@ TEST_F(NativeViewAccessibilityWinTest, TextfieldAccessibility) {
   ASSERT_EQ(S_OK, textfield_accessible->put_accValue(childid_self, new_value));
 
   ASSERT_STREQ(L"New value", textfield->text().c_str());
+}
+
+TEST_F(NativeViewAccessibilityWinTest, TextfieldAssociatedLabel) {
+  Widget widget;
+  Widget::InitParams init_params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget.Init(init_params);
+
+  View* content = new View;
+  widget.SetContentsView(content);
+
+  Label* label = new Label(L"Label");
+  content->AddChildView(label);
+  Textfield* textfield = new Textfield;
+  textfield->SetAssociatedLabel(label);
+  content->AddChildView(textfield);
+
+  ComPtr<IAccessible> content_accessible(content->GetNativeViewAccessible());
+  LONG child_count = 0;
+  ASSERT_EQ(S_OK, content_accessible->get_accChildCount(&child_count));
+  ASSERT_EQ(2L, child_count);
+
+  ComPtr<IDispatch> textfield_dispatch;
+  ComPtr<IAccessible> textfield_accessible;
+  ScopedVariant child_index(2);
+  ASSERT_EQ(S_OK, content_accessible->get_accChild(
+                      child_index, textfield_dispatch.GetAddressOf()));
+  ASSERT_EQ(S_OK,
+            textfield_dispatch.CopyTo(textfield_accessible.GetAddressOf()));
+
+  ScopedBstr name;
+  ScopedVariant childid_self(CHILDID_SELF);
+  ASSERT_EQ(S_OK,
+            textfield_accessible->get_accName(childid_self, name.Receive()));
+  ASSERT_STREQ(L"Label", name);
+
+  ComPtr<IAccessible2_2> textfield_ia2;
+  EXPECT_EQ(S_OK, textfield_accessible.CopyTo(textfield_ia2.GetAddressOf()));
+  ScopedBstr type(IA2_RELATION_LABELLED_BY);
+  IUnknown** targets;
+  LONG n_targets;
+  EXPECT_EQ(S_OK, textfield_ia2->get_relationTargetsOfType(type, 0, &targets,
+                                                           &n_targets));
+  ASSERT_EQ(1, n_targets);
+  ComPtr<IUnknown> label_unknown(targets[0]);
+  ComPtr<IAccessible> label_accessible;
+  ASSERT_EQ(S_OK, label_unknown.CopyTo(label_accessible.GetAddressOf()));
+  ScopedVariant role;
+  EXPECT_EQ(S_OK, label_accessible->get_accRole(childid_self, role.Receive()));
+  EXPECT_EQ(ROLE_SYSTEM_STATICTEXT, V_I4(role.ptr()));
 }
 
 // A subclass of NativeViewAccessibilityWinTest that we run twice,
@@ -237,8 +289,8 @@ TEST_F(NativeViewAccessibilityWinTest, DISABLED_RetrieveAllAlerts) {
   ASSERT_EQ(0, n_targets);
 
   // Fire alert events on the infobars.
-  infobar->NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
-  infobar2->NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
+  infobar->NotifyAccessibilityEvent(ax::mojom::Event::kAlert, true);
+  infobar2->NotifyAccessibilityEvent(ax::mojom::Event::kAlert, true);
 
   // Now calling get_relationTargetsOfType should retrieve the alerts.
   ASSERT_EQ(S_OK, root_view_accessible->get_relationTargetsOfType(
@@ -282,7 +334,7 @@ TEST_F(NativeViewAccessibilityWinTest, GetAllOwnedWidgetsCrash) {
 
 TEST_F(NativeViewAccessibilityWinTest, WindowHasRoleApplication) {
   // We expect that our internal window object does not expose
-  // ROLE_SYSTEM_WINDOW, but ROLE_SYSTEM_APPLICATION instead.
+  // ROLE_SYSTEM_WINDOW, but ROLE_SYSTEM_PANE instead.
   Widget widget;
   Widget::InitParams init_params =
       CreateParams(Widget::InitParams::TYPE_WINDOW);
@@ -294,8 +346,69 @@ TEST_F(NativeViewAccessibilityWinTest, WindowHasRoleApplication) {
   ScopedVariant childid_self(CHILDID_SELF);
   ScopedVariant role;
   EXPECT_EQ(S_OK, accessible->get_accRole(childid_self, role.Receive()));
-  EXPECT_EQ(role.type(), VT_I4);
-  EXPECT_EQ(V_I4(role.ptr()), ROLE_SYSTEM_APPLICATION);
+  EXPECT_EQ(VT_I4, role.type());
+  EXPECT_EQ(ROLE_SYSTEM_PANE, V_I4(role.ptr()));
+}
+
+TEST_F(NativeViewAccessibilityWinTest, Overrides) {
+  // We expect that our internal window object does not expose
+  // ROLE_SYSTEM_WINDOW, but ROLE_SYSTEM_PANE instead.
+  Widget widget;
+  Widget::InitParams init_params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget.Init(init_params);
+
+  View* contents_view = new View;
+  widget.SetContentsView(contents_view);
+
+  View* alert_view = new ScrollView;
+  alert_view->GetViewAccessibility().OverrideRole(ax::mojom::Role::kAlert);
+  alert_view->GetViewAccessibility().OverrideName(L"Name");
+  alert_view->GetViewAccessibility().OverrideDescription("Description");
+  alert_view->GetViewAccessibility().OverrideIsLeaf();
+  contents_view->AddChildView(alert_view);
+
+  // Descendant should be ignored because the parent uses OverrideIsLeaf().
+  View* ignored_descendant = new View;
+  alert_view->AddChildView(ignored_descendant);
+
+  ComPtr<IAccessible> content_accessible(
+      contents_view->GetNativeViewAccessible());
+  ScopedVariant child_index(1);
+
+  // Role.
+  ScopedVariant role;
+  EXPECT_EQ(S_OK, content_accessible->get_accRole(child_index, role.Receive()));
+  EXPECT_EQ(VT_I4, role.type());
+  EXPECT_EQ(ROLE_SYSTEM_ALERT, V_I4(role.ptr()));
+
+  // Name.
+  ScopedBstr name;
+  ASSERT_EQ(S_OK, content_accessible->get_accName(child_index, name.Receive()));
+  ASSERT_STREQ(L"Name", name);
+
+  // Description.
+  ScopedBstr description;
+  ASSERT_EQ(S_OK, content_accessible->get_accDescription(
+                      child_index, description.Receive()));
+  ASSERT_STREQ(L"Description", description);
+
+  // Get the child accessible.
+  ComPtr<IDispatch> alert_dispatch;
+  ComPtr<IAccessible> alert_accessible;
+  ASSERT_EQ(S_OK, content_accessible->get_accChild(
+                      child_index, alert_dispatch.GetAddressOf()));
+  ASSERT_EQ(S_OK, alert_dispatch.CopyTo(alert_accessible.GetAddressOf()));
+
+  // Child accessible is a leaf.
+  LONG child_count = 0;
+  ASSERT_EQ(S_OK, alert_accessible->get_accChildCount(&child_count));
+  ASSERT_EQ(0, child_count);
+
+  ComPtr<IDispatch> child_dispatch;
+  ASSERT_EQ(E_INVALIDARG, alert_accessible->get_accChild(
+                              child_index, child_dispatch.GetAddressOf()));
+  ASSERT_EQ(child_dispatch.Get(), nullptr);
 }
 }  // namespace test
 }  // namespace views

@@ -8,7 +8,10 @@
 #include "net/quic/core/quic_data_reader.h"
 #include "net/quic/core/quic_data_writer.h"
 #include "net/quic/core/quic_packets.h"
+#include "net/quic/platform/api/quic_fallthrough.h"
+#include "net/quic/platform/api/quic_ptr_util.h"
 #include "net/quic/platform/api/quic_str_cat.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
 namespace net {
@@ -27,7 +30,7 @@ class OneShotVisitor : public CryptoFramerVisitorInterface {
   void OnError(CryptoFramer* framer) override { error_ = true; }
 
   void OnHandshakeMessage(const CryptoHandshakeMessage& message) override {
-    out_.reset(new CryptoHandshakeMessage(message));
+    out_ = QuicMakeUnique<CryptoHandshakeMessage>(message);
   }
 
   bool error() const { return error_; }
@@ -68,7 +71,7 @@ QuicErrorCode CryptoFramer::error() const {
   return error_;
 }
 
-const std::string& CryptoFramer::error_detail() const {
+const QuicString& CryptoFramer::error_detail() const {
   return error_detail_;
 }
 
@@ -90,6 +93,31 @@ bool CryptoFramer::ProcessInput(QuicStringPiece input,
 
 size_t CryptoFramer::InputBytesRemaining() const {
   return buffer_.length();
+}
+
+bool CryptoFramer::HasTag(QuicTag tag) const {
+  if (state_ != STATE_READING_VALUES) {
+    return false;
+  }
+  for (const auto& it : tags_and_lengths_) {
+    if (it.first == tag) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void CryptoFramer::ForceHandshake() {
+  QuicDataReader reader(buffer_.data(), buffer_.length(), HOST_BYTE_ORDER);
+  for (const std::pair<QuicTag, size_t>& item : tags_and_lengths_) {
+    QuicStringPiece value;
+    if (reader.BytesRemaining() < item.second) {
+      break;
+    }
+    reader.ReadStringPiece(&value, item.second);
+    message_.SetStringPiece(item.first, value);
+  }
+  visitor_->OnHandshakeMessage(message_);
 }
 
 // static
@@ -220,6 +248,7 @@ QuicErrorCode CryptoFramer::Process(QuicStringPiece input,
       reader.ReadTag(&message_tag);
       message_.set_tag(message_tag);
       state_ = STATE_READING_NUM_ENTRIES;
+      QUIC_FALLTHROUGH_INTENDED;
     case STATE_READING_NUM_ENTRIES:
       if (reader.BytesRemaining() < kNumEntriesSize + sizeof(uint16_t)) {
         break;
@@ -235,6 +264,7 @@ QuicErrorCode CryptoFramer::Process(QuicStringPiece input,
       tags_and_lengths_.reserve(num_entries_);
       state_ = STATE_READING_TAGS_AND_LENGTHS;
       values_len_ = 0;
+      QUIC_FALLTHROUGH_INTENDED;
     case STATE_READING_TAGS_AND_LENGTHS: {
       if (reader.BytesRemaining() <
           num_entries_ * (kQuicTagSize + kCryptoEndOffsetSize)) {
@@ -268,6 +298,7 @@ QuicErrorCode CryptoFramer::Process(QuicStringPiece input,
       }
       values_len_ = last_end_offset;
       state_ = STATE_READING_VALUES;
+      QUIC_FALLTHROUGH_INTENDED;
     }
     case STATE_READING_VALUES:
       if (reader.BytesRemaining() < values_len_) {

@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
@@ -372,8 +373,8 @@ TEST(ProtoDatabaseImplLevelDBTest, TestDBSaveAndLoadKeys) {
   ProtoDatabase<TestProto>::KeyEntryVector data_set(
           {{"0", test_proto}, {"1", test_proto}, {"2", test_proto}});
   db->UpdateEntries(
-      base::MakeUnique<ProtoDatabase<TestProto>::KeyEntryVector>(data_set),
-      base::MakeUnique<std::vector<std::string>>(), expect_update_success);
+      std::make_unique<ProtoDatabase<TestProto>::KeyEntryVector>(data_set),
+      std::make_unique<std::vector<std::string>>(), expect_update_success);
   run_update_entries.Run();
 
   base::RunLoop run_load_keys;
@@ -391,8 +392,8 @@ TEST(ProtoDatabaseImplLevelDBTest, TestDBSaveAndLoadKeys) {
   // Shutdown database.
   db.reset();
   base::RunLoop run_destruction;
-  db_thread.task_runner()->PostTaskAndReply(
-      FROM_HERE, base::Bind(base::DoNothing), run_destruction.QuitClosure());
+  db_thread.task_runner()->PostTaskAndReply(FROM_HERE, base::DoNothing(),
+                                            run_destruction.QuitClosure());
   run_destruction.Run();
 }
 
@@ -596,8 +597,8 @@ TEST(ProtoDatabaseImplThreadingTest, TestDBDestruction) {
   db.reset();
 
   base::RunLoop run_loop;
-  db_thread.task_runner()->PostTaskAndReply(
-      FROM_HERE, base::Bind(base::DoNothing), run_loop.QuitClosure());
+  db_thread.task_runner()->PostTaskAndReply(FROM_HERE, base::DoNothing(),
+                                            run_loop.QuitClosure());
   run_loop.Run();
 }
 
@@ -628,8 +629,8 @@ TEST(ProtoDatabaseImplThreadingTest, TestDBDestroy) {
   db.reset();
 
   base::RunLoop run_loop;
-  db_thread.task_runner()->PostTaskAndReply(
-      FROM_HERE, base::Bind(base::DoNothing), run_loop.QuitClosure());
+  db_thread.task_runner()->PostTaskAndReply(FROM_HERE, base::DoNothing(),
+                                            run_loop.QuitClosure());
   run_loop.Run();
 
   // Verify the db is actually destroyed.

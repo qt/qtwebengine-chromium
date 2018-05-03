@@ -6,6 +6,7 @@
 
 #include <math.h>
 #include <algorithm>
+#include <utility>
 
 #include "base/memory/ptr_util.h"
 #include "base/time/time.h"
@@ -163,9 +164,9 @@ void GvrDevice::RequestPresent(
   delegate_provider->RequestWebVRPresent(
       std::move(submit_client), std::move(request), GetVRDisplayInfo(),
       std::move(present_options),
-      base::Bind(&GvrDevice::OnRequestPresentResult,
-                 weak_ptr_factory_.GetWeakPtr(), base::Passed(&callback),
-                 base::Unretained(display)));
+      base::BindOnce(&GvrDevice::OnRequestPresentResult,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback),
+                     base::Unretained(display)));
 }
 
 void GvrDevice::OnRequestPresentResult(
@@ -200,10 +201,14 @@ void GvrDevice::OnListeningForActivate(bool listening) {
 
 void GvrDevice::PauseTracking() {
   gvr_api_->PauseTracking();
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_NonPresentingGvrContext_pause(env, non_presenting_context_);
 }
 
 void GvrDevice::ResumeTracking() {
   gvr_api_->ResumeTracking();
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_NonPresentingGvrContext_resume(env, non_presenting_context_);
 }
 
 GvrDelegateProvider* GvrDevice::GetGvrDelegateProvider() {
@@ -215,7 +220,8 @@ GvrDelegateProvider* GvrDevice::GetGvrDelegateProvider() {
   return delegate_provider;
 }
 
-void GvrDevice::OnDIPScaleChanged(JNIEnv* env, const JavaRef<jobject>& obj) {
+void GvrDevice::OnDisplayConfigurationChanged(JNIEnv* env,
+                                              const JavaRef<jobject>& obj) {
   SetVRDisplayInfo(CreateVRDisplayInfo(gvr_api_.get(), GetId()));
 }
 

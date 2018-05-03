@@ -416,6 +416,11 @@ void WebPagePopupImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
       *page_, *page_->DeprecatedLocalMainFrame(), requested_update);
 }
 
+void WebPagePopupImpl::UpdateAllLifecyclePhasesAndCompositeForTesting() {
+  if (layer_tree_view_)
+    layer_tree_view_->SynchronouslyCompositeNoRasterForTesting();
+}
+
 void WebPagePopupImpl::Paint(WebCanvas* canvas, const WebRect& rect) {
   if (!closing_) {
     PageWidgetDelegate::Paint(*page_, canvas, rect,
@@ -510,11 +515,6 @@ WebInputEventResult WebPagePopupImpl::DispatchBufferedTouchEvents() {
 }
 
 WebInputEventResult WebPagePopupImpl::HandleInputEvent(
-    const WebCoalescedInputEvent& coalesced_event) {
-  return HandleInputEventIncludingTouch(coalesced_event);
-}
-
-WebInputEventResult WebPagePopupImpl::HandleInputEventInternal(
     const WebCoalescedInputEvent& event) {
   if (closing_)
     return WebInputEventResult::kNotHandled;
@@ -526,9 +526,9 @@ WebInputEventResult WebPagePopupImpl::HandleInputEventInternal(
 void WebPagePopupImpl::SetFocus(bool enable) {
   if (!page_)
     return;
-  page_->GetFocusController().SetFocused(enable);
   if (enable)
     page_->GetFocusController().SetActive(true);
+  page_->GetFocusController().SetFocused(enable);
 }
 
 void WebPagePopupImpl::Close() {

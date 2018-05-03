@@ -27,6 +27,7 @@
 #define FilterOperation_h
 
 #include "base/macros.h"
+#include "base/single_thread_task_runner.h"
 #include "core/CoreExport.h"
 #include "core/style/ShadowData.h"
 #include "platform/Length.h"
@@ -146,7 +147,7 @@ class CORE_EXPORT ReferenceFilterOperation : public FilterOperation {
 
   SVGElementProxy& ElementProxy() const { return *element_proxy_; }
 
-  void AddClient(SVGResourceClient*, WebTaskRunner*);
+  void AddClient(SVGResourceClient*, base::SingleThreadTaskRunner*);
   void RemoveClient(SVGResourceClient*);
 
   virtual void Trace(blink::Visitor*);

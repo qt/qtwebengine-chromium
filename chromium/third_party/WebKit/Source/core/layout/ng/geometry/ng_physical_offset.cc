@@ -7,6 +7,7 @@
 #include "core/layout/ng/geometry/ng_logical_offset.h"
 #include "core/layout/ng/geometry/ng_physical_size.h"
 #include "platform/geometry/LayoutPoint.h"
+#include "platform/geometry/LayoutSize.h"
 #include "platform/wtf/text/WTFString.h"
 
 namespace blink {
@@ -71,10 +72,20 @@ bool NGPhysicalOffset::operator==(const NGPhysicalOffset& other) const {
   return other.left == left && other.top == top;
 }
 
-NGPhysicalOffset::NGPhysicalOffset(const LayoutPoint& source)
-    : left(source.X()), top(source.Y()) {}
+NGPhysicalOffset::NGPhysicalOffset(const LayoutPoint& point) {
+  left = point.X();
+  top = point.Y();
+}
+NGPhysicalOffset::NGPhysicalOffset(const LayoutSize& size) {
+  left = size.Width();
+  top = size.Height();
+}
 
 LayoutPoint NGPhysicalOffset::ToLayoutPoint() const {
+  return {left, top};
+}
+
+LayoutSize NGPhysicalOffset::ToLayoutSize() const {
   return {left, top};
 }
 

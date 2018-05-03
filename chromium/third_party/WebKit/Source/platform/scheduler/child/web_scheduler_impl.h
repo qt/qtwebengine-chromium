@@ -20,13 +20,12 @@ namespace scheduler {
 
 class ChildScheduler;
 class SingleThreadIdleTaskRunner;
-class WebTaskRunnerImpl;
+class TaskRunnerImpl;
 
 class PLATFORM_EXPORT WebSchedulerImpl : public WebScheduler {
  public:
   WebSchedulerImpl(ChildScheduler* child_scheduler,
                    scoped_refptr<SingleThreadIdleTaskRunner> idle_task_runner,
-                   scoped_refptr<TaskQueue> timer_task_runner,
                    scoped_refptr<TaskQueue> v8_task_runner);
   ~WebSchedulerImpl() override;
 
@@ -38,9 +37,8 @@ class PLATFORM_EXPORT WebSchedulerImpl : public WebScheduler {
                     WebThread::IdleTask task) override;
   void PostNonNestableIdleTask(const base::Location& location,
                                WebThread::IdleTask task) override;
-  WebTaskRunner* TimerTaskRunner() override;
-  WebTaskRunner* V8TaskRunner() override;
-  WebTaskRunner* CompositorTaskRunner() override;
+  base::SingleThreadTaskRunner* V8TaskRunner() override;
+  base::SingleThreadTaskRunner* CompositorTaskRunner() override;
   std::unique_ptr<WebViewScheduler> CreateWebViewScheduler(
       InterventionReporter*,
       WebViewScheduler::WebViewSchedulerDelegate*) override;
@@ -51,13 +49,15 @@ class PLATFORM_EXPORT WebSchedulerImpl : public WebScheduler {
   void RemovePendingNavigation(
       scheduler::RendererScheduler::NavigatingFrameType type) override {}
 
+  // Returns TimeTicks::Now() by default.
+  base::TimeTicks MonotonicallyIncreasingVirtualTime() const override;
+
  private:
   static void RunIdleTask(WebThread::IdleTask task, base::TimeTicks deadline);
 
   ChildScheduler* child_scheduler_;  // NOT OWNED
   scoped_refptr<SingleThreadIdleTaskRunner> idle_task_runner_;
-  scoped_refptr<WebTaskRunnerImpl> timer_web_task_runner_;
-  scoped_refptr<WebTaskRunnerImpl> v8_web_task_runner_;
+  scoped_refptr<TaskRunnerImpl> v8_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSchedulerImpl);
 };

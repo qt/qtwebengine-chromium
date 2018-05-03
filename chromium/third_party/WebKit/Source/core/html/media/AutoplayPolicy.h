@@ -5,10 +5,10 @@
 #ifndef AutoplayPolicy_h
 #define AutoplayPolicy_h
 
-#include "bindings/core/v8/Nullable.h"
 #include "core/CoreExport.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/heap/Handle.h"
+#include "platform/wtf/Optional.h"
 
 namespace blink {
 
@@ -34,6 +34,13 @@ class AutoplayPolicy final : public GarbageCollected<AutoplayPolicy> {
   };
 
   CORE_EXPORT static Type GetAutoplayPolicyForDocument(const Document&);
+
+  // Return true if the given |document| is allowed to play.
+  // This method may check parent frames if allow=autoplay (Feature Policy) was
+  // used, in which case, the frame will be allowed to play if its parents are,
+  // and so on.
+  // Otherwise, frames are allowed to play if they have been activated or, for
+  // the main frame, if it has a high MEI.
   CORE_EXPORT static bool IsDocumentAllowedToPlay(const Document&);
 
   explicit AutoplayPolicy(HTMLMediaElement*);
@@ -55,7 +62,7 @@ class AutoplayPolicy final : public GarbageCollected<AutoplayPolicy> {
   // Request the playback via play() method. This method will check the autoplay
   // restrictions and record metrics. This method can only be called once
   // per call of play().
-  Nullable<ExceptionCode> RequestPlay();
+  Optional<ExceptionCode> RequestPlay();
 
   // Returns whether an umute action should pause an autoplaying element. The
   // method will check autoplay restrictions and record metrics. This method can
@@ -77,6 +84,17 @@ class AutoplayPolicy final : public GarbageCollected<AutoplayPolicy> {
   // the requirement is currently overridden.  This does not check if a user
   // gesture is currently being processed.
   bool IsGestureNeededForPlayback() const;
+
+  // Returns an error string to be used by the HTMLMediaElement when the play()
+  // method fails because of autoplay restrictions.
+  String GetPlayErrorMessage() const;
+
+  // Returns whether the media element was initiated via autoplay.
+  // In this context, autoplay means that it was initiated before any user
+  // activation was received on the page and before a user initiated same-domain
+  // navigation. In other words, with the unified autoplay policy applied, it
+  // should only return `true` when MEI allowed autoplay.
+  bool WasAutoplayInitiated() const;
 
   virtual void Trace(blink::Visitor*);
 
@@ -120,6 +138,13 @@ class AutoplayPolicy final : public GarbageCollected<AutoplayPolicy> {
   // pause the video when invisible and resume the video when visible.
   void OnVisibilityChangedForAutoplay(bool is_visible);
 
+  // Returns whether the current autoplay policy is
+  // kDocumentUserActivationRequired. This is a helper method for readability.
+  bool IsUsingDocumentUserActivationRequiredPolicy() const;
+
+  // Sets `autoplay_initiated_` if it wasn't already set.
+  void MaybeSetAutoplayInitiated();
+
   bool locked_pending_user_gesture_ : 1;
   bool locked_pending_user_gesture_if_cross_origin_experiment_enabled_ : 1;
 
@@ -127,6 +152,8 @@ class AutoplayPolicy final : public GarbageCollected<AutoplayPolicy> {
   Member<ElementVisibilityObserver> autoplay_visibility_observer_;
 
   Member<AutoplayUmaHelper> autoplay_uma_helper_;
+
+  Optional<bool> autoplay_initiated_;
 
   DISALLOW_COPY_AND_ASSIGN(AutoplayPolicy);
 };

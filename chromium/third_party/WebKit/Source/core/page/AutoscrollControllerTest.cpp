@@ -6,7 +6,6 @@
 #include "core/input/EventHandler.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Page.h"
-#include "core/testing/sim/SimDisplayItemList.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -60,7 +59,7 @@ TEST_F(AutoscrollControllerTest,
   WebMouseEvent event(WebInputEvent::kMouseDown, WebFloatPoint(5, 5),
                       WebFloatPoint(5, 5), WebPointerProperties::Button::kLeft,
                       0, WebInputEvent::Modifiers::kLeftButtonDown,
-                      CurrentTimeTicks().InSeconds());
+                      CurrentTimeTicksInSeconds());
   event.SetFrameScale(1);
 
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(event);

@@ -14,7 +14,7 @@ namespace blink {
 Vector<double> OrientationSensor::quaternion(bool& is_null) {
   reading_dirty_ = false;
   INIT_IS_NULL_AND_RETURN(is_null, Vector<double>());
-  const auto& quat = proxy()->reading().orientation_quat;
+  const auto& quat = GetReading().orientation_quat;
   return Vector<double>({quat.x, quat.y, quat.z, quat.w});
 }
 
@@ -92,7 +92,7 @@ void OrientationSensor::PopulateMatrixInternal(
     return;
   }
 
-  const auto& quat = proxy()->reading().orientation_quat;
+  const auto& quat = GetReading().orientation_quat;
 
   DoPopulateMatrix(target_matrix, quat.x, quat.y, quat.z, quat.w);
 }
@@ -116,10 +116,10 @@ bool OrientationSensor::isReadingDirty() const {
 
 OrientationSensor::OrientationSensor(
     ExecutionContext* execution_context,
-    const SensorOptions& options,
+    const SpatialSensorOptions& options,
     ExceptionState& exception_state,
     device::mojom::blink::SensorType type,
-    const Vector<FeaturePolicyFeature>& features)
+    const Vector<mojom::FeaturePolicyFeature>& features)
     : Sensor(execution_context, options, exception_state, type, features),
       reading_dirty_(true) {}
 

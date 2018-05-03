@@ -20,7 +20,8 @@
 #include "content/public/common/content_client.h"
 #include "content/public/renderer/url_loader_throttle_provider.h"
 #include "media/base/decode_capabilities.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/WebContentSettingsClient.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
@@ -177,6 +178,11 @@ class CONTENT_EXPORT ContentRendererClient {
   // If it returns NULL the content layer will provide an engine.
   virtual std::unique_ptr<blink::WebSpeechSynthesizer>
   OverrideSpeechSynthesizer(blink::WebSpeechSynthesizerClient* client);
+
+  // Called on the main-thread immediately after the compositor thread is
+  // created.
+  virtual void PostCompositorThreadCreated(
+      base::SingleThreadTaskRunner* compositor_thread_task_runner);
 
   // Returns true if the renderer process should schedule the idle handler when
   // all widgets are hidden.
@@ -377,8 +383,12 @@ class CONTENT_EXPORT ContentRendererClient {
   // generic mesage will be used.
   virtual bool OverrideLegacySymantecCertConsoleMessage(
       const GURL& url,
-      base::Time cert_validity_start,
       std::string* console_messsage);
+
+  // Asks the embedder to bind |service_request| to its renderer-side service
+  // implementation.
+  virtual void CreateRendererService(
+      service_manager::mojom::ServiceRequest service_request) {}
 
   virtual std::unique_ptr<URLLoaderThrottleProvider>
   CreateURLLoaderThrottleProvider(URLLoaderThrottleProviderType provider_type);

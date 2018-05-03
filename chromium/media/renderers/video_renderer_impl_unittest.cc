@@ -410,15 +410,14 @@ class VideoRendererImplTest : public testing::Test {
       WaitableMessageLoopEvent event;
       EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_NOTHING))
           .WillOnce(RunClosure(event.GetClosure()));
-      EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(20))).Times(1);
+      EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(60))).Times(1);
       EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_)).Times(AnyNumber());
-      AdvanceTimeInMs(20);
+      AdvanceTimeInMs(79);
       event.RunAndWait();
       Mock::VerifyAndClearExpectations(&mock_cb_);
     }
 
-    AdvanceTimeInMs(59);
-    EXPECT_EQ(3u, renderer_->frames_queued_for_testing());
+    EXPECT_EQ(1u, renderer_->frames_queued_for_testing());
     time_source_.StopTicking();
     renderer_->OnTimeStopped();
     EXPECT_EQ(0u, renderer_->frames_queued_for_testing());
@@ -1479,7 +1478,7 @@ class VideoRendererImplAsyncAddFrameReadyTest : public VideoRendererImplTest {
   }
 
  protected:
-  std::vector<base::Closure> frame_ready_cbs_;
+  std::vector<base::OnceClosure> frame_ready_cbs_;
 };
 
 TEST_F(VideoRendererImplAsyncAddFrameReadyTest, InitializeAndStartPlayingFrom) {
@@ -1495,7 +1494,7 @@ TEST_F(VideoRendererImplAsyncAddFrameReadyTest, InitializeAndStartPlayingFrom) {
 
   uint32_t frame_ready_index = 0;
   while (frame_ready_index < frame_ready_cbs_.size()) {
-    frame_ready_cbs_[frame_ready_index++].Run();
+    std::move(frame_ready_cbs_[frame_ready_index++]).Run();
     base::RunLoop().RunUntilIdle();
   }
   Destroy();
@@ -1508,7 +1507,7 @@ TEST_F(VideoRendererImplAsyncAddFrameReadyTest, WeakFactoryDiscardsOneFrame) {
   Flush();
   ASSERT_EQ(1u, frame_ready_cbs_.size());
   // This frame will be discarded.
-  frame_ready_cbs_.front().Run();
+  std::move(frame_ready_cbs_.front()).Run();
   Destroy();
 }
 

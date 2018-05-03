@@ -25,44 +25,6 @@ using gpu::gles2::GLES2Interface;
 
 namespace cc {
 
-class TextureIdAllocator {
- public:
-  TextureIdAllocator(GLES2Interface* gl,
-                     size_t texture_id_allocation_chunk_size)
-      : gl_(gl),
-        id_allocation_chunk_size_(texture_id_allocation_chunk_size),
-        ids_(new GLuint[texture_id_allocation_chunk_size]),
-        next_id_index_(texture_id_allocation_chunk_size) {
-    DCHECK(id_allocation_chunk_size_);
-    DCHECK_LE(id_allocation_chunk_size_,
-              static_cast<size_t>(std::numeric_limits<int>::max()));
-  }
-
-  ~TextureIdAllocator() {
-    if (gl_)
-      gl_->DeleteTextures(
-          static_cast<int>(id_allocation_chunk_size_ - next_id_index_),
-          ids_.get() + next_id_index_);
-  }
-
-  GLuint NextId() {
-    if (next_id_index_ == id_allocation_chunk_size_) {
-      gl_->GenTextures(static_cast<int>(id_allocation_chunk_size_), ids_.get());
-      next_id_index_ = 0;
-    }
-
-    return ids_[next_id_index_++];
-  }
-
- private:
-  GLES2Interface* gl_;
-  const size_t id_allocation_chunk_size_;
-  std::unique_ptr<GLuint[]> ids_;
-  size_t next_id_index_;
-
-  DISALLOW_COPY_AND_ASSIGN(TextureIdAllocator);
-};
-
 LayerTreeResourceProvider::Settings::Settings(
     viz::ContextProvider* compositor_context_provider,
     bool delegated_sync_points_required,
@@ -125,7 +87,12 @@ struct LayerTreeResourceProvider::ImportedResource {
   ImportedResource(viz::ResourceId id,
                    const viz::TransferableResource& resource,
                    std::unique_ptr<viz::SingleReleaseCallback> release_callback)
-      : resource(resource), release_callback(std::move(release_callback)) {
+      : resource(resource),
+        release_callback(std::move(release_callback)),
+        // If the resource is immediately deleted, it returns the same SyncToken
+        // it came with. The client may need to wait on that before deleting the
+        // backing or reusing it.
+        returned_sync_token(resource.mailbox_holder.sync_token) {
     // Replace the |resource| id with the local id from this
     // LayerTreeResourceProvider.
     this->resource.id = id;
@@ -149,10 +116,6 @@ LayerTreeResourceProvider::LayerTreeResourceProvider(
       shared_bitmap_manager_(shared_bitmap_manager),
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
       next_id_(kLayerTreeInitialResourceId) {
-  DCHECK(resource_settings.texture_id_allocation_chunk_size);
-  GLES2Interface* gl = ContextGL();
-  texture_id_allocator_ = std::make_unique<TextureIdAllocator>(
-      gl, resource_settings.texture_id_allocation_chunk_size);
 }
 
 LayerTreeResourceProvider::~LayerTreeResourceProvider() {
@@ -163,7 +126,6 @@ LayerTreeResourceProvider::~LayerTreeResourceProvider() {
     bool is_lost = imported.exported_count || imported.returned_lost;
     imported.release_callback->Run(imported.returned_sync_token, is_lost);
   }
-  texture_id_allocator_ = nullptr;
   GLES2Interface* gl = ContextGL();
   if (gl)
     gl->Finish();
@@ -398,7 +360,7 @@ viz::ResourceId LayerTreeResourceProvider::CreateGpuTextureResource(
                              size, viz::internal::Resource::INTERNAL, hint,
                              viz::ResourceType::kTexture, format, color_space));
   if (use_overlay && settings_.use_texture_storage_image &&
-      IsGpuMemoryBufferFormatSupported(format, gfx::BufferUsage::SCANOUT)) {
+      viz::IsGpuMemoryBufferFormatSupported(format)) {
     resource->usage = gfx::BufferUsage::SCANOUT;
     resource->target = GetImageTextureTarget(
         compositor_context_provider_->ContextCapabilities(), resource->usage,
@@ -569,13 +531,12 @@ void LayerTreeResourceProvider::CreateTexture(
   DCHECK_EQ(resource->origin, viz::internal::Resource::INTERNAL);
   DCHECK(resource->mailbox.IsZero());
 
-  resource->gl_id = texture_id_allocator_->NextId();
-  DCHECK(resource->gl_id);
-
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
 
-  // Create and set texture properties. Allocation is delayed until needed.
+  // Create and set texture properties. Allocation of the texture backing is
+  // delayed until needed.
+  gl->GenTextures(1, &resource->gl_id);
   gl->BindTexture(resource->target, resource->gl_id);
   gl->TexParameteri(resource->target, GL_TEXTURE_MIN_FILTER,
                     resource->original_filter);
@@ -786,29 +747,6 @@ bool LayerTreeResourceProvider::IsRenderBufferFormatSupported(
   return false;
 }
 
-bool LayerTreeResourceProvider::IsGpuMemoryBufferFormatSupported(
-    viz::ResourceFormat format,
-    gfx::BufferUsage usage) const {
-  switch (format) {
-    case viz::BGRA_8888:
-    case viz::RED_8:
-    case viz::R16_EXT:
-    case viz::RGBA_4444:
-    case viz::RGBA_8888:
-    case viz::ETC1:
-    case viz::RGBA_F16:
-      return true;
-    // These formats have no BufferFormat equivalent.
-    case viz::ALPHA_8:
-    case viz::LUMINANCE_8:
-    case viz::RGB_565:
-    case viz::LUMINANCE_F16:
-      return false;
-  }
-  NOTREACHED();
-  return false;
-}
-
 viz::ResourceFormat LayerTreeResourceProvider::YuvResourceFormat(
     int bits) const {
   if (bits > 8) {
@@ -816,6 +754,31 @@ viz::ResourceFormat LayerTreeResourceProvider::YuvResourceFormat(
   } else {
     return settings_.yuv_resource_format;
   }
+}
+
+bool LayerTreeResourceProvider::IsLost(viz::ResourceId id) {
+  viz::internal::Resource* resource = GetResource(id);
+  return resource->lost;
+}
+
+void LayerTreeResourceProvider::LoseResourceForTesting(viz::ResourceId id) {
+  auto it = imported_resources_.find(id);
+  if (it != imported_resources_.end()) {
+    ImportedResource& imported = it->second;
+    imported.returned_lost = true;
+    return;
+  }
+
+  viz::internal::Resource* resource = GetResource(id);
+  DCHECK(resource);
+  resource->lost = true;
+}
+
+void LayerTreeResourceProvider::EnableReadLockFencesForTesting(
+    viz::ResourceId id) {
+  viz::internal::Resource* resource = GetResource(id);
+  DCHECK(resource);
+  resource->read_lock_fences_enabled = true;
 }
 
 LayerTreeResourceProvider::ScopedWriteLockGpu::ScopedWriteLockGpu(
@@ -853,9 +816,8 @@ LayerTreeResourceProvider::ScopedWriteLockGpu::~ScopedWriteLockGpu() {
   resource_provider_->UnlockForWrite(resource);
 }
 
-GrPixelConfig LayerTreeResourceProvider::ScopedWriteLockGpu::PixelConfig()
-    const {
-  return ToGrPixelConfig(format_);
+SkColorType LayerTreeResourceProvider::ScopedWriteLockGpu::ColorType() const {
+  return ResourceFormatToClosestSkColorType(format_);
 }
 
 void LayerTreeResourceProvider::ScopedWriteLockGpu::CreateMailbox() {
@@ -1031,8 +993,9 @@ LayerTreeResourceProvider::ScopedSkSurface::ScopedSkSurface(
   GrGLTextureInfo texture_info;
   texture_info.fID = texture_id;
   texture_info.fTarget = texture_target;
+  texture_info.fFormat = TextureStorageFormat(format);
   GrBackendTexture backend_texture(size.width(), size.height(),
-                                   ToGrPixelConfig(format), texture_info);
+                                   GrMipMapped::kNo, texture_info);
   uint32_t flags =
       use_distance_field_text ? SkSurfaceProps::kUseDistanceFieldFonts_Flag : 0;
   // Use unknown pixel geometry to disable LCD text.
@@ -1044,7 +1007,7 @@ LayerTreeResourceProvider::ScopedSkSurface::ScopedSkSurface(
   }
   surface_ = SkSurface::MakeFromBackendTextureAsRenderTarget(
       gr_context, backend_texture, kTopLeft_GrSurfaceOrigin, msaa_sample_count,
-      nullptr, &surface_props);
+      ResourceFormatToClosestSkColorType(format), nullptr, &surface_props);
 }
 
 LayerTreeResourceProvider::ScopedSkSurface::~ScopedSkSurface() {

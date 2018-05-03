@@ -8,6 +8,7 @@
 <translation id="1243314992276662751">Prenesi</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">PREPORUČENE APLIKACIJE</translation>
+<translation id="1368832886055348810">Slijeva udesno</translation>
 <translation id="1398853756734560583">Maksimiziraj</translation>
 <translation id="1413622004203049571">Onemogući obavijesti pošiljatelja <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 minuta i }one{# minuta i }few{# minute i }other{# minuta i }}</translation>
@@ -21,6 +22,7 @@
 <translation id="1812519734428420144">Broj zvjezdica: <ph name="RATING_SCORE" /></translation>
 <translation id="1830179671306812954">{HOURS,plural, =1{1 sat i }one{# sat i }few{# sata i }other{# sati i }}</translation>
 <translation id="1842960171412779397">odaberi</translation>
+<translation id="1859234291848436338">Smjer pisanja</translation>
 <translation id="1860796786778352021">Zatvaranje obavijesti</translation>
 <translation id="1871244248791675517">Ins</translation>
 <translation id="1884435127456172652"><ph name="NUMBER" />%</translation>
@@ -30,6 +32,7 @@
 <translation id="2168039046890040389">Stranica prema gore</translation>
 <translation id="2190355936436201913">(prazno)</translation>
 <translation id="219905428774326614">Pokretač, sve aplikacije</translation>
+<translation id="2267918077332197517">Blokiraj sve obavijesti te web-lokacije</translation>
 <translation id="2289052229480071835">Dodirnite ciljeve dodira na zaslonu.</translation>
 <translation id="2295140143284145483">Anketa</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
@@ -50,7 +53,9 @@
 <translation id="3183922693828471536">Pomakni ovdje</translation>
 <translation id="3234408098842461169">Strelica dolje</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{1 dan}one{# dan}few{# dana}other{# dana}}</translation>
+<translation id="335581015389089642">Govor</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{Još 1 dan}one{Još # dan}few{Još # dana}other{Još # dana}}</translation>
+<translation id="3618849550573277856">Potraži "<ph name="LOOKUP_STRING" />"</translation>
 <translation id="364720409959344976">Odabir mape za prijenos</translation>
 <translation id="3660179305079774227">Strelica prema gore</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> GB/s</translation>
@@ -63,8 +68,8 @@
 <translation id="4202807286478387388">skoči</translation>
 <translation id="4250229828105606438">Snimka zaslona</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{Prije mjesec dana}one{Prije # mjeseca}few{Prije # mjeseca}other{Prije # mjeseci}}</translation>
+<translation id="4289300219472526559">Počni govoriti</translation>
 <translation id="4316910396681052118">SVE APLIKACIJE</translation>
-<translation id="4320177379694898372">Nema internetske veze</translation>
 <translation id="4588090240171750605">Pomakni se desno</translation>
 <translation id="4724120544754982507">Centar za obavijesti, nepročitanih obavijesti: <ph name="UNREAD_NOTIFICATION_COUNT" /></translation>
 <translation id="4730374152663651037">ČESTO KORIŠTENO</translation>
@@ -102,7 +107,9 @@
 <translation id="6351032674660237738">PRIJEDLOZI APLIKACIJA</translation>
 <translation id="6364916375976753737">Pomakni se lijevo</translation>
 <translation id="6394627529324717982">Zarez</translation>
+<translation id="6397363302884558537">Prestani govoriti</translation>
 <translation id="6404817160109697034">{SECONDS,plural, =1{Prije 1 s}one{Prije # s}few{Prije # s}other{Prije # s}}</translation>
+<translation id="6430678249303439055">Blokiraj sve obavijesti te aplikacije</translation>
 <translation id="6483402905448010557">{SECONDS,plural, =1{Prije 1 sekunde}one{Prije # sekunde}few{Prije # sekunde}other{Prije # sekundi}}</translation>
 <translation id="654149438358937226">Blokiraj sve obavijesti</translation>
 <translation id="6567071839949112727">klikni nadređeni element</translation>
@@ -119,6 +126,7 @@
 <translation id="6917971086528278418">{YEARS,plural, =1{Još godinu dana}one{Još # godinu}few{Još # godine}other{Još # godina}}</translation>
 <translation id="6945221475159498467">Odaberi</translation>
 <translation id="6965382102122355670">U redu</translation>
+<translation id="6974053822202609517">Zdesna ulijevo</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">NAJVJEROJATNIJE</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -142,7 +150,6 @@
 <translation id="8328145009876646418">Lijevi rub</translation>
 <translation id="8331626408530291785">Pomakni se gore</translation>
 <translation id="8352146631962686268">{YEARS,plural, =1{1 godina}one{# godina}few{# godine}other{# godina}}</translation>
-<translation id="8371695176452482769">Govorite sad</translation>
 <translation id="838869780401515933">označi</translation>
 <translation id="8393700583063109961">Pošaljite poruku</translation>
 <translation id="8394908167088220973">Reproduciraj/pauziraj Medije</translation>
@@ -153,6 +160,7 @@
 <translation id="8725488761726303204">Još <ph name="NUMBER" /></translation>
 <translation id="8730621377337864115">Gotovo</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 h}one{# h}few{# h}other{# h}}</translation>
+<translation id="8798099450830957504">Zadano</translation>
 <translation id="8806053966018712535">Mapa <ph name="FOLDER_NAME" /></translation>
 <translation id="883911313571074303">Dodaj napomenu slici</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KB</translation>

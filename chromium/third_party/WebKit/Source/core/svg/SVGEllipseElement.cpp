@@ -20,7 +20,6 @@
 
 #include "core/svg/SVGEllipseElement.h"
 
-#include "core/css/StyleChangeReason.h"
 #include "core/layout/svg/LayoutSVGEllipse.h"
 #include "core/svg/SVGLength.h"
 
@@ -87,16 +86,16 @@ void SVGEllipseElement::CollectStyleForPresentationAttribute(
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == cx_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &cx_->CssValue());
+                                            cx_->CssValue());
   } else if (property == cy_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &cy_->CssValue());
+                                            cy_->CssValue());
   } else if (property == rx_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &rx_->CssValue());
+                                            rx_->CssValue());
   } else if (property == ry_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &ry_->CssValue());
+                                            ry_->CssValue());
   } else {
     SVGGeometryElement::CollectStyleForPresentationAttribute(name, value,
                                                              style);
@@ -106,19 +105,8 @@ void SVGEllipseElement::CollectStyleForPresentationAttribute(
 void SVGEllipseElement::SvgAttributeChanged(const QualifiedName& attr_name) {
   if (attr_name == SVGNames::cxAttr || attr_name == SVGNames::cyAttr ||
       attr_name == SVGNames::rxAttr || attr_name == SVGNames::ryAttr) {
-    SVGElement::InvalidationGuard invalidation_guard(this);
-
-    InvalidateSVGPresentationAttributeStyle();
-    SetNeedsStyleRecalc(kLocalStyleChange,
-                        StyleChangeReasonForTracing::FromAttribute(attr_name));
     UpdateRelativeLengthsInformation();
-
-    LayoutSVGShape* layout_object = ToLayoutSVGShape(this->GetLayoutObject());
-    if (!layout_object)
-      return;
-
-    layout_object->SetNeedsShapeUpdate();
-    MarkForLayoutAndParentResourceInvalidation(layout_object);
+    GeometryPresentationAttributeChanged(attr_name);
     return;
   }
 

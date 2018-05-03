@@ -46,10 +46,10 @@ class UpdateEngine {
                           const std::string& id)>;
   using CrxDataCallback = UpdateClient::CrxDataCallback;
 
-  UpdateEngine(const scoped_refptr<Configurator>& config,
+  UpdateEngine(scoped_refptr<Configurator> config,
                UpdateChecker::Factory update_checker_factory,
                CrxDownloader::Factory crx_downloader_factory,
-               PingManager* ping_manager,
+               scoped_refptr<PingManager> ping_manager,
                const NotifyObserversCallback& notify_observers_callback);
   ~UpdateEngine();
 
@@ -88,18 +88,11 @@ class UpdateEngine {
   // occurs too soon.
   bool IsThrottled(bool is_foreground) const;
 
-  // base::TimeDelta GetNextUpdateDelay(const Component& component) const;
-
   base::ThreadChecker thread_checker_;
-
   scoped_refptr<Configurator> config_;
-
   UpdateChecker::Factory update_checker_factory_;
   CrxDownloader::Factory crx_downloader_factory_;
-
-  // TODO(sorin): refactor as a ref counted class.
-  PingManager* ping_manager_;  // Not owned by this class.
-
+  scoped_refptr<PingManager> ping_manager_;
   std::unique_ptr<PersistedData> metadata_;
 
   // Called when CRX state changes occur.
@@ -118,9 +111,10 @@ class UpdateEngine {
 };
 
 // TODO(sorin): consider making this a ref counted type.
+// Describes a group of components which are installed or updated together.
 struct UpdateContext {
   UpdateContext(
-      const scoped_refptr<Configurator>& config,
+      scoped_refptr<Configurator> config,
       bool is_foreground,
       const std::vector<std::string>& ids,
       UpdateClient::CrxDataCallback crx_data_callback,
@@ -172,6 +166,9 @@ struct UpdateContext {
   // update for the current component, the longer the wait until the engine
   // is handling the next component in the queue.
   base::TimeDelta next_update_delay;
+
+  // The session id this context is associated with.
+  const std::string session_id;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(UpdateContext);

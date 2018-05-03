@@ -21,6 +21,7 @@
 #include "api/mediastreaminterface.h"
 #include "api/mediatypes.h"
 #include "api/proxy.h"
+#include "api/rtcerror.h"
 #include "api/rtpparameters.h"
 #include "rtc_base/refcount.h"
 #include "rtc_base/scoped_ref_ptr.h"
@@ -54,17 +55,10 @@ class RtpSenderInterface : public rtc::RefCountInterface {
   virtual RtpParameters GetParameters() const = 0;
   // Note that only a subset of the parameters can currently be changed. See
   // rtpparameters.h
-  virtual bool SetParameters(const RtpParameters& parameters) = 0;
+  virtual RTCError SetParameters(const RtpParameters& parameters) = 0;
 
   // Returns null for a video sender.
   virtual rtc::scoped_refptr<DtmfSenderInterface> GetDtmfSender() const = 0;
-
-  // Returns an ID that changes every time SetTrack() is called, but
-  // otherwise remains constant. Used to generate IDs for stats.
-  // The special value zero means that no track is attached.
-  // TODO(hta): Remove default implementation when callers have updated,
-  // or move function to an internal interface.
-  virtual int AttachmentId() const { return 0; }
 
  protected:
   virtual ~RtpSenderInterface() {}
@@ -82,9 +76,8 @@ BEGIN_SIGNALING_PROXY_MAP(RtpSender)
   PROXY_CONSTMETHOD0(std::string, id)
   PROXY_CONSTMETHOD0(std::vector<std::string>, stream_ids)
   PROXY_CONSTMETHOD0(RtpParameters, GetParameters);
-  PROXY_METHOD1(bool, SetParameters, const RtpParameters&)
+  PROXY_METHOD1(RTCError, SetParameters, const RtpParameters&)
   PROXY_CONSTMETHOD0(rtc::scoped_refptr<DtmfSenderInterface>, GetDtmfSender);
-  PROXY_CONSTMETHOD0(int, AttachmentId);
   END_PROXY_MAP()
 
 }  // namespace webrtc

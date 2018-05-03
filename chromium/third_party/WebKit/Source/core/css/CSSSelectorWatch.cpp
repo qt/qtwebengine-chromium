@@ -41,8 +41,8 @@
 
 namespace blink {
 
-// The address of this string is important; its value is just documentation.
-static const char kSupplementNameWatch[] = "CSSSelectorWatch";
+// static
+const char CSSSelectorWatch::kSupplementName[] = "CSSSelectorWatch";
 
 CSSSelectorWatch::CSSSelectorWatch(Document& document)
     : Supplement<Document>(document),
@@ -56,14 +56,13 @@ CSSSelectorWatch& CSSSelectorWatch::From(Document& document) {
   CSSSelectorWatch* watch = FromIfExists(document);
   if (!watch) {
     watch = new CSSSelectorWatch(document);
-    Supplement<Document>::ProvideTo(document, kSupplementNameWatch, watch);
+    ProvideTo(document, watch);
   }
   return *watch;
 }
 
 CSSSelectorWatch* CSSSelectorWatch::FromIfExists(Document& document) {
-  return static_cast<CSSSelectorWatch*>(
-      Supplement<Document>::From(document, kSupplementNameWatch));
+  return Supplement<Document>::From<CSSSelectorWatch>(document);
 }
 
 void CSSSelectorWatch::CallbackSelectorChangeTimerFired(TimerBase*) {
@@ -137,7 +136,7 @@ void CSSSelectorWatch::UpdateSelectorMatches(
 }
 
 static bool AllCompound(const CSSSelectorList& selector_list) {
-  for (const CSSSelector* selector = selector_list.First(); selector;
+  for (const CSSSelector* selector = selector_list.FirstForCSSOM(); selector;
        selector = selector_list.Next(*selector)) {
     if (!selector->IsCompound())
       return false;

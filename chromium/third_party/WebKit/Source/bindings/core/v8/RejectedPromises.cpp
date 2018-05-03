@@ -13,7 +13,6 @@
 #include "core/dom/events/EventTarget.h"
 #include "core/events/PromiseRejectionEvent.h"
 #include "core/inspector/ThreadDebugger.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/bindings/ScopedPersistent.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8PerIsolateData.h"
@@ -148,6 +147,10 @@ class RejectedPromises::Message final {
     return v8::Local<v8::Promise>::Cast(value)->HasHandler();
   }
 
+  ExecutionContext* GetContext() {
+    return ExecutionContext::From(script_state_);
+  }
+
  private:
   Message(ScriptState* script_state,
           v8::Local<v8::Promise> promise,
@@ -217,10 +220,8 @@ void RejectedPromises::HandlerAdded(v8::PromiseRejectMessage data) {
     std::unique_ptr<Message>& message = reported_as_errors_.at(i);
     if (!message->IsCollected() && message->HasPromise(data.GetPromise())) {
       message->MakePromiseStrong();
-      Platform::Current()
-          ->CurrentThread()
-          ->Scheduler()
-          ->TimerTaskRunner()
+      message->GetContext()
+          ->GetTaskRunner(TaskType::kDOMManipulation)
           ->PostTask(FROM_HERE, WTF::Bind(&RejectedPromises::RevokeNow,
                                           scoped_refptr<RejectedPromises>(this),
                                           WTF::Passed(std::move(message))));
@@ -230,16 +231,11 @@ void RejectedPromises::HandlerAdded(v8::PromiseRejectMessage data) {
   }
 }
 
-std::unique_ptr<RejectedPromises::MessageQueue>
-RejectedPromises::CreateMessageQueue() {
-  return std::make_unique<MessageQueue>();
-}
-
 void RejectedPromises::Dispose() {
   if (queue_.IsEmpty())
     return;
 
-  std::unique_ptr<MessageQueue> queue = CreateMessageQueue();
+  std::unique_ptr<MessageQueue> queue = std::make_unique<MessageQueue>();
   queue->Swap(queue_);
   ProcessQueueNow(std::move(queue));
 }
@@ -248,15 +244,24 @@ void RejectedPromises::ProcessQueue() {
   if (queue_.IsEmpty())
     return;
 
-  std::unique_ptr<MessageQueue> queue = CreateMessageQueue();
-  queue->Swap(queue_);
-  Platform::Current()
-      ->CurrentThread()
-      ->Scheduler()
-      ->TimerTaskRunner()
-      ->PostTask(FROM_HERE, WTF::Bind(&RejectedPromises::ProcessQueueNow,
-                                      scoped_refptr<RejectedPromises>(this),
-                                      WTF::Passed(std::move(queue))));
+  std::map<ExecutionContext*, std::unique_ptr<MessageQueue>> queues;
+  while (!queue_.IsEmpty()) {
+    std::unique_ptr<Message> message = queue_.TakeFirst();
+    ExecutionContext* context = message->GetContext();
+    if (queues.find(context) == queues.end()) {
+      queues.emplace(context, std::make_unique<MessageQueue>());
+    }
+    queues[context]->emplace_back(std::move(message));
+  }
+
+  for (auto& kv : queues) {
+    std::unique_ptr<MessageQueue> queue = std::make_unique<MessageQueue>();
+    queue->Swap(*kv.second);
+    kv.first->GetTaskRunner(blink::TaskType::kDOMManipulation)
+        ->PostTask(FROM_HERE, WTF::Bind(&RejectedPromises::ProcessQueueNow,
+                                        scoped_refptr<RejectedPromises>(this),
+                                        WTF::Passed(std::move(queue))));
+  }
 }
 
 void RejectedPromises::ProcessQueueNow(std::unique_ptr<MessageQueue> queue) {

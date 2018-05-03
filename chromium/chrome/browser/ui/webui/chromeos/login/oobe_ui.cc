@@ -96,7 +96,8 @@ const char* kKnownDisplayTypes[] = {OobeUI::kOobeDisplay,
                                     OobeUI::kLockDisplay,
                                     OobeUI::kUserAddingDisplay,
                                     OobeUI::kAppLaunchSplashDisplay,
-                                    OobeUI::kArcKioskSplashDisplay};
+                                    OobeUI::kArcKioskSplashDisplay,
+                                    OobeUI::kGaiaSigninDisplay};
 
 const char kStringsJSPath[] = "strings.js";
 const char kLockJSPath[] = "lock.js";
@@ -108,10 +109,6 @@ const char kCustomElementsJSPath[] = "custom_elements.js";
 const char kCustomElementsUserPodHTMLPath[] = "custom_elements_user_pod.html";
 
 // Paths for deferred resource loading.
-const char kCustomElementsPinKeyboardHTMLPath[] =
-    "custom_elements/pin_keyboard.html";
-const char kCustomElementsPinKeyboardJSPath[] =
-    "custom_elements/pin_keyboard.js";
 const char kEnrollmentHTMLPath[] = "enrollment.html";
 const char kEnrollmentCSSPath[] = "enrollment.css";
 const char kEnrollmentJSPath[] = "enrollment.js";
@@ -143,42 +140,23 @@ content::WebUIDataSource* CreateOobeUIDataSource(
                             IDR_CUSTOM_ELEMENTS_OOBE_HTML);
     source->AddResourcePath(kCustomElementsJSPath, IDR_CUSTOM_ELEMENTS_OOBE_JS);
   } else if (display_type == OobeUI::kLockDisplay) {
-    if (command_line->HasSwitch(chromeos::switches::kShowNonMdLogin)) {
-      source->SetDefaultResource(IDR_LOCK_HTML);
-      source->AddResourcePath(kLockJSPath, IDR_LOCK_JS);
-      source->AddResourcePath(kCustomElementsPinKeyboardHTMLPath,
-                              IDR_CUSTOM_ELEMENTS_PIN_KEYBOARD_HTML);
-      source->AddResourcePath(kCustomElementsPinKeyboardJSPath,
-                              IDR_CUSTOM_ELEMENTS_PIN_KEYBOARD_JS);
-    } else {
-      source->SetDefaultResource(IDR_MD_LOCK_HTML);
-      source->AddResourcePath(kLockJSPath, IDR_MD_LOCK_JS);
-      source->AddResourcePath(kCustomElementsPinKeyboardHTMLPath,
-                              IDR_MD_CUSTOM_ELEMENTS_PIN_KEYBOARD_HTML);
-      source->AddResourcePath(kCustomElementsPinKeyboardJSPath,
-                              IDR_MD_CUSTOM_ELEMENTS_PIN_KEYBOARD_JS);
-    }
+    // TODO(crbug.com/810170): Remove the resource files associated with
+    // kShowNonMdLogin switch (IDR_LOCK_HTML/JS and IDR_LOGIN_HTML/JS and the
+    // files those use).
+    source->SetDefaultResource(IDR_MD_LOCK_HTML);
+    source->AddResourcePath(kLockJSPath, IDR_MD_LOCK_JS);
     source->AddResourcePath(kCustomElementsHTMLPath,
                             IDR_CUSTOM_ELEMENTS_LOCK_HTML);
     source->AddResourcePath(kCustomElementsJSPath, IDR_CUSTOM_ELEMENTS_LOCK_JS);
     source->AddResourcePath(kCustomElementsUserPodHTMLPath,
                             IDR_CUSTOM_ELEMENTS_USER_POD_HTML);
   } else {
-    if (command_line->HasSwitch(chromeos::switches::kShowNonMdLogin)) {
-      source->SetDefaultResource(IDR_LOGIN_HTML);
-      source->AddResourcePath(kLoginJSPath, IDR_LOGIN_JS);
-    } else {
-      source->SetDefaultResource(IDR_MD_LOGIN_HTML);
-      source->AddResourcePath(kLoginJSPath, IDR_MD_LOGIN_JS);
-    }
+    source->SetDefaultResource(IDR_MD_LOGIN_HTML);
+    source->AddResourcePath(kLoginJSPath, IDR_MD_LOGIN_JS);
     source->AddResourcePath(kCustomElementsHTMLPath,
                             IDR_CUSTOM_ELEMENTS_LOGIN_HTML);
     source->AddResourcePath(kCustomElementsJSPath,
                             IDR_CUSTOM_ELEMENTS_LOGIN_JS);
-    source->AddResourcePath(kCustomElementsPinKeyboardHTMLPath,
-                            IDR_CUSTOM_ELEMENTS_PIN_KEYBOARD_HTML);
-    source->AddResourcePath(kCustomElementsPinKeyboardJSPath,
-                            IDR_CUSTOM_ELEMENTS_PIN_KEYBOARD_JS);
     source->AddResourcePath(kCustomElementsUserPodHTMLPath,
                             IDR_CUSTOM_ELEMENTS_USER_POD_HTML);
   }
@@ -245,6 +223,7 @@ const char OobeUI::kLockDisplay[] = "lock";
 const char OobeUI::kUserAddingDisplay[] = "user-adding";
 const char OobeUI::kAppLaunchSplashDisplay[] = "app-launch-splash";
 const char OobeUI::kArcKioskSplashDisplay[] = "arc-kiosk-splash";
+const char OobeUI::kGaiaSigninDisplay[] = "gaia-signin";
 
 OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
     : WebUIController(web_ui) {

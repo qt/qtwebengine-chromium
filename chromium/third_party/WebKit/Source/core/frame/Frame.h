@@ -29,6 +29,7 @@
 #ifndef Frame_h
 #define Frame_h
 
+#include "base/unguessable_token.h"
 #include "core/CoreExport.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "core/frame/FrameLifecycle.h"
@@ -39,7 +40,7 @@
 #include "core/page/FrameTree.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Forward.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 
 namespace blink {
 
@@ -131,6 +132,10 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   void SetIsLoading(bool is_loading) { is_loading_ = is_loading; }
   bool IsLoading() const { return is_loading_; }
 
+  // Tells the frame to check whether its load has completed, based on the state
+  // of its subframes, etc.
+  virtual void CheckCompleted() = 0;
+
   WindowProxyManager* GetWindowProxyManager() const {
     return window_proxy_manager_;
   }
@@ -187,7 +192,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
 
   // Tests whether the feature-policy controlled feature is enabled by policy in
   // the given frame.
-  bool IsFeatureEnabled(FeaturePolicyFeature) const;
+  bool IsFeatureEnabled(mojom::FeaturePolicyFeature) const;
 
   // Called to make a frame inert or non-inert. A frame is inert when there
   // is a modal dialog displayed within an ancestor frame, and this frame
@@ -195,7 +200,9 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   virtual void SetIsInert(bool) = 0;
   void UpdateInertIfPossible();
 
-  String GetDevToolsFrameToken() const { return devtools_frame_token_; }
+  const base::UnguessableToken& GetDevToolsFrameToken() const {
+    return devtools_frame_token_;
+  }
 
  protected:
   Frame(FrameClient*, Page&, FrameOwner*, WindowProxyManager*);
@@ -232,7 +239,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   const Member<WindowProxyManager> window_proxy_manager_;
   // TODO(sashab): Investigate if this can be represented with m_lifecycle.
   bool is_loading_;
-  String devtools_frame_token_;
+  base::UnguessableToken devtools_frame_token_;
 };
 
 inline FrameClient* Frame::Client() const {

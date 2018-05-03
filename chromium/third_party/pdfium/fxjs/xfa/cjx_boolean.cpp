@@ -7,7 +7,6 @@
 #include "fxjs/xfa/cjx_boolean.h"
 
 #include "fxjs/cfxjse_value.h"
-#include "xfa/fxfa/cxfa_widgetacc.h"
 #include "xfa/fxfa/parser/cxfa_boolean.h"
 
 CJX_Boolean::CJX_Boolean(CXFA_Boolean* node) : CJX_Content(node) {}
@@ -36,10 +35,9 @@ void CJX_Boolean::defaultValue(CFXJSE_Value* pValue,
   int32_t iValue = FXSYS_atoi(newValue.c_str());
   WideString wsNewValue(iValue == 0 ? L"0" : L"1");
   WideString wsFormatValue(wsNewValue);
-  CXFA_WidgetAcc* pContainerWidgetAcc =
-      ToNode(GetXFAObject())->GetContainerWidgetAcc();
-  if (pContainerWidgetAcc)
-    wsFormatValue = pContainerWidgetAcc->GetFormatDataValue(wsNewValue);
+  CXFA_Node* pContainerNode = ToNode(GetXFAObject())->GetContainerNode();
+  if (pContainerNode)
+    wsFormatValue = pContainerNode->GetFormatDataValue(wsNewValue);
 
   SetContent(wsNewValue, wsFormatValue, true, true, true);
 }

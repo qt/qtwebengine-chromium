@@ -9,7 +9,7 @@
 #include "core/dom/SandboxFlags.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 
 namespace blink {
 
@@ -27,6 +27,7 @@ class CORE_EXPORT FrameOwner : public GarbageCollectedMixin {
 
   virtual bool IsLocal() const = 0;
   virtual bool IsRemote() const = 0;
+  virtual bool IsPlugin() { return false; }
 
   virtual Frame* ContentFrame() const = 0;
   virtual void SetContentFrame(Frame&) = 0;
@@ -46,7 +47,7 @@ class CORE_EXPORT FrameOwner : public GarbageCollectedMixin {
 
   // The intrinsic dimensions of the embedded object changed. This is relevant
   // for SVG documents that are embedded via <object> or <embed>.
-  virtual void IntrinsicDimensionsChanged() = 0;
+  virtual void IntrinsicSizingInfoChanged() = 0;
 
   // Returns the 'name' content attribute value of the browsing context
   // container.
@@ -58,7 +59,7 @@ class CORE_EXPORT FrameOwner : public GarbageCollectedMixin {
   virtual bool AllowFullscreen() const = 0;
   virtual bool AllowPaymentRequest() const = 0;
   virtual bool IsDisplayNone() const = 0;
-  virtual AtomicString Csp() const = 0;
+  virtual AtomicString RequiredCsp() const = 0;
   virtual const ParsedFeaturePolicy& ContainerPolicy() const = 0;
 };
 
@@ -84,7 +85,7 @@ class CORE_EXPORT DummyFrameOwner final
   void DispatchLoad() override {}
   bool CanRenderFallbackContent() const override { return false; }
   void RenderFallbackContent() override {}
-  void IntrinsicDimensionsChanged() override {}
+  void IntrinsicSizingInfoChanged() override {}
   AtomicString BrowsingContextContainerName() const override {
     return AtomicString();
   }
@@ -94,7 +95,7 @@ class CORE_EXPORT DummyFrameOwner final
   bool AllowFullscreen() const override { return false; }
   bool AllowPaymentRequest() const override { return false; }
   bool IsDisplayNone() const override { return false; }
-  AtomicString Csp() const override { return g_null_atom; }
+  AtomicString RequiredCsp() const override { return g_null_atom; }
   const ParsedFeaturePolicy& ContainerPolicy() const override {
     DEFINE_STATIC_LOCAL(ParsedFeaturePolicy, container_policy, ());
     return container_policy;

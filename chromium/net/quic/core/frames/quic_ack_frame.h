@@ -7,7 +7,6 @@
 
 #include <deque>
 #include <ostream>
-#include <string>
 
 #include "net/quic/core/quic_types.h"
 #include "net/quic/platform/api/quic_containers.h"
@@ -46,6 +45,9 @@ class QUIC_EXPORT_PRIVATE PacketNumberQueue {
 
   // Removes the smallest interval in the queue.
   void RemoveSmallestInterval();
+
+  // Clear this packet number queue.
+  void Clear();
 
   // Returns true if the queue contains |packet_number|.
   bool Contains(QuicPacketNumber packet_number) const;
@@ -90,6 +92,8 @@ struct QUIC_EXPORT_PRIVATE QuicAckFrame {
   QuicAckFrame();
   QuicAckFrame(const QuicAckFrame& other);
   ~QuicAckFrame();
+
+  void Clear();
 
   friend QUIC_EXPORT_PRIVATE std::ostream& operator<<(
       std::ostream& os,

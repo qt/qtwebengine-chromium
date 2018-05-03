@@ -39,7 +39,6 @@ enum EditingBehavior {
 enum V8CacheOptions {
   V8_CACHE_OPTIONS_DEFAULT,
   V8_CACHE_OPTIONS_NONE,
-  V8_CACHE_OPTIONS_PARSE,
   V8_CACHE_OPTIONS_CODE,
   V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_CODE
 };
@@ -55,17 +54,6 @@ enum ImageAnimationPolicy {
 };
 
 enum class ViewportStyle { DEFAULT, MOBILE, TELEVISION, LAST = TELEVISION };
-
-// Controls when the progress bar reports itself as complete. See
-// third_party/WebKit/Source/core/loader/ProgressTracker.cpp for most of its
-// effects.
-enum class ProgressBarCompletion {
-  LOAD_EVENT,
-  RESOURCES_BEFORE_DCL,
-  DOM_CONTENT_LOADED,
-  RESOURCES_BEFORE_DCL_AND_SAME_ORIGIN_IFRAMES,
-  LAST = RESOURCES_BEFORE_DCL_AND_SAME_ORIGIN_IFRAMES
-};
 
 enum class SavePreviousDocumentResources {
   NEVER,
@@ -222,7 +210,7 @@ struct CONTENT_EXPORT WebPreferences {
   // Cues will not be placed in this margin area.
   float text_track_margin_percentage;
 
-  bool page_popups_suppressed;
+  bool immersive_mode_enabled;
 
 #if defined(OS_ANDROID)
   bool text_autosizing_enabled;
@@ -231,6 +219,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool force_enable_zoom;
   bool fullscreen_supported;
   bool double_tap_to_zoom_enabled;
+  bool picture_in_picture_enabled;
   std::string media_playback_gesture_whitelist_scope;
   GURL default_video_poster_url;
   bool support_deprecated_target_density_dpi;
@@ -248,7 +237,6 @@ struct CONTENT_EXPORT WebPreferences {
   // Used by Android_WebView only to support legacy apps that inject script into
   // a top-level initial empty document and expect it to persist on navigation.
   bool resue_global_for_unowned_main_frame;
-  ProgressBarCompletion progress_bar_completion;
   // Specifies default setting for spellcheck when the spellcheck attribute is
   // not explicitly specified.
   bool spellcheck_enabled_by_default;

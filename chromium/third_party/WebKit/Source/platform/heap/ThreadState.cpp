@@ -46,7 +46,7 @@
 #include "platform/heap/Handle.h"
 #include "platform/heap/Heap.h"
 #include "platform/heap/HeapCompact.h"
-#include "platform/heap/IncrementalMarkingFlag.h"
+#include "platform/heap/HeapFlags.h"
 #include "platform/heap/PagePool.h"
 #include "platform/heap/SafePoint.h"
 #include "platform/heap/Visitor.h"
@@ -132,6 +132,7 @@ const char* StackStateString(BlinkGC::StackState state) {
 ThreadState::ThreadState()
     : thread_(CurrentThread()),
       persistent_region_(std::make_unique<PersistentRegion>()),
+      weak_persistent_region_(std::make_unique<PersistentRegion>()),
       start_of_stack_(reinterpret_cast<intptr_t*>(WTF::GetStackStart())),
       end_of_stack_(reinterpret_cast<intptr_t*>(WTF::GetStackStart())),
       safe_point_scope_marker_(nullptr),
@@ -197,6 +198,8 @@ void ThreadState::RunTerminationGC() {
 
   ReleaseStaticPersistentNodes();
 
+  // PrepareForThreadStateTermination removes strong references so no need to
+  // call it on CrossThreadWeakPersistentRegion.
   ProcessHeap::GetCrossThreadPersistentRegion()
       .PrepareForThreadStateTermination(this);
 
@@ -225,7 +228,8 @@ void ThreadState::RunTerminationGC() {
 }
 
 NO_SANITIZE_ADDRESS
-void ThreadState::VisitAsanFakeStackForPointer(Visitor* visitor, Address ptr) {
+void ThreadState::VisitAsanFakeStackForPointer(MarkingVisitor* visitor,
+                                               Address ptr) {
 #if defined(ADDRESS_SANITIZER)
   Address* start = reinterpret_cast<Address*>(start_of_stack_);
   Address* end = reinterpret_cast<Address*>(end_of_stack_);
@@ -253,7 +257,7 @@ void ThreadState::VisitAsanFakeStackForPointer(Visitor* visitor, Address ptr) {
 // other threads that use this stack.
 NO_SANITIZE_ADDRESS
 NO_SANITIZE_THREAD
-void ThreadState::VisitStack(Visitor* visitor) {
+void ThreadState::VisitStack(MarkingVisitor* visitor) {
   if (stack_state_ == BlinkGC::kNoHeapPointersOnStack)
     return;
 
@@ -298,11 +302,18 @@ void ThreadState::VisitStack(Visitor* visitor) {
 }
 
 void ThreadState::VisitPersistents(Visitor* visitor) {
+  ProcessHeap::GetCrossThreadPersistentRegion().TracePersistentNodes(visitor);
   persistent_region_->TracePersistentNodes(visitor);
   if (trace_dom_wrappers_) {
     TRACE_EVENT0("blink_gc", "V8GCController::traceDOMWrappers");
     trace_dom_wrappers_(isolate_, visitor);
   }
+}
+
+void ThreadState::VisitWeakPersistents(Visitor* visitor) {
+  ProcessHeap::GetCrossThreadWeakPersistentRegion().TracePersistentNodes(
+      visitor);
+  weak_persistent_region_->TracePersistentNodes(visitor);
 }
 
 ThreadState::GCSnapshotInfo::GCSnapshotInfo(size_t num_object_types)
@@ -1162,15 +1173,16 @@ void ThreadState::ReleaseStaticPersistentNodes() {
     persistent_region->ReleasePersistentNode(it.key, it.value);
 }
 
-void ThreadState::FreePersistentNode(PersistentNode* persistent_node) {
-  PersistentRegion* persistent_region = GetPersistentRegion();
+void ThreadState::FreePersistentNode(PersistentRegion* persistent_region,
+                                     PersistentNode* persistent_node) {
   persistent_region->FreePersistentNode(persistent_node);
   // Do not allow static persistents to be freed before
   // they're all released in releaseStaticPersistentNodes().
   //
   // There's no fundamental reason why this couldn't be supported,
   // but no known use for it.
-  DCHECK(!static_persistents_.Contains(persistent_node));
+  if (persistent_region == GetPersistentRegion())
+    DCHECK(!static_persistents_.Contains(persistent_node));
 }
 
 #if defined(LEAK_SANITIZER)
@@ -1196,23 +1208,23 @@ void ThreadState::InvokePreFinalizers() {
   ObjectResurrectionForbiddenScope object_resurrection_forbidden(this);
 
   double start_time = WTF::CurrentTimeTicksInMilliseconds();
-  if (!ordered_pre_finalizers_.IsEmpty()) {
-    // Call the prefinalizers in the opposite order to their registration.
-    //
-    // The prefinalizer callback wrapper returns |true| when its associated
-    // object is unreachable garbage and the prefinalizer callback has run.
-    // The registered prefinalizer entry must then be removed and deleted.
-    //
-    auto it = --ordered_pre_finalizers_.end();
-    bool done;
-    do {
-      auto entry = it;
-      done = it == ordered_pre_finalizers_.begin();
-      if (!done)
-        --it;
-      if ((entry->second)(entry->first))
-        ordered_pre_finalizers_.erase(entry);
-    } while (!done);
+
+  // Call the prefinalizers in the opposite order to their registration.
+  //
+  // LinkedHashSet does not support modification during iteration, so
+  // copy items first.
+  //
+  // The prefinalizer callback wrapper returns |true| when its associated
+  // object is unreachable garbage and the prefinalizer callback has run.
+  // The registered prefinalizer entry must then be removed and deleted.
+  Vector<PreFinalizer> reversed;
+  for (auto rit = ordered_pre_finalizers_.rbegin();
+       rit != ordered_pre_finalizers_.rend(); ++rit) {
+    reversed.push_back(*rit);
+  }
+  for (PreFinalizer pre_finalizer : reversed) {
+    if ((pre_finalizer.second)(pre_finalizer.first))
+      ordered_pre_finalizers_.erase(pre_finalizer);
   }
   if (IsMainThread()) {
     double time_for_invoking_pre_finalizers =
@@ -1270,8 +1282,8 @@ void ThreadState::CollectGarbage(BlinkGC::StackState stack_state,
     // allocate or free PersistentNodes and we can't handle
     // that. Grabbing this lock also prevents non-attached threads
     // from accessing any GCed heap while a GC runs.
-    CrossThreadPersistentRegion::LockScope persistent_lock(
-        ProcessHeap::GetCrossThreadPersistentRegion());
+    RecursiveMutexLocker persistent_lock(
+        ProcessHeap::CrossThreadPersistentMutex());
 
     {
       TRACE_EVENT2("blink_gc,devtools.timeline", "BlinkGCMarking",
@@ -1309,17 +1321,19 @@ void ThreadState::MarkPhasePrologue(BlinkGC::StackState stack_state,
   current_gc_data_.marking_time_in_milliseconds = 0;
 
   if (gc_type == BlinkGC::kTakeSnapshot) {
-    current_gc_data_.visitor = Visitor::Create(this, Visitor::kSnapshotMarking);
+    current_gc_data_.visitor =
+        MarkingVisitor::Create(this, MarkingVisitor::kSnapshotMarking);
   } else {
     DCHECK(gc_type == BlinkGC::kGCWithSweep ||
            gc_type == BlinkGC::kGCWithoutSweep);
     if (Heap().Compaction()->ShouldCompact(&Heap(), stack_state, gc_type,
                                            reason)) {
       Heap().Compaction()->Initialize(this);
-      current_gc_data_.visitor =
-          Visitor::Create(this, Visitor::kGlobalMarkingWithCompaction);
+      current_gc_data_.visitor = MarkingVisitor::Create(
+          this, MarkingVisitor::kGlobalMarkingWithCompaction);
     } else {
-      current_gc_data_.visitor = Visitor::Create(this, Visitor::kGlobalMarking);
+      current_gc_data_.visitor =
+          MarkingVisitor::Create(this, MarkingVisitor::kGlobalMarking);
     }
   }
 
@@ -1350,7 +1364,9 @@ void ThreadState::MarkPhaseVisitRoots() {
   // Disallow allocation during garbage collection (but not during the
   // finalization that happens when the visitorScope is torn down).
   NoAllocationScope no_allocation_scope(this);
-  StackFrameDepthScope stack_depth_scope(&Heap().GetStackFrameDepth());
+  // StackFrameDepth should be disabled so we don't trace most of the object
+  // graph in one incremental marking step.
+  DCHECK(!Heap().GetStackFrameDepth().IsEnabled());
 
   // 1. Trace persistent roots.
   Heap().VisitPersistentRoots(current_gc_data_.visitor.get());
@@ -1383,6 +1399,7 @@ bool ThreadState::MarkPhaseAdvanceMarking(double deadline_seconds) {
 }
 
 void ThreadState::MarkPhaseEpilogue() {
+  VisitWeakPersistents(current_gc_data_.visitor.get());
   Heap().PostMarkingProcessing(current_gc_data_.visitor.get());
   Heap().WeakProcessing(current_gc_data_.visitor.get());
   Heap().DecommitCallbackStacks();
@@ -1429,6 +1446,15 @@ void ThreadState::CollectAllGarbage() {
       break;
     previous_live_objects = live_objects;
   }
+}
+
+void ThreadState::CheckObjectNotInCallbackStacks(const void* object) {
+#if DCHECK_IS_ON()
+  DCHECK(!Heap().MarkingStack()->HasCallbackForObject(object));
+  DCHECK(!Heap().PostMarkingCallbackStack()->HasCallbackForObject(object));
+  DCHECK(!Heap().WeakCallbackStack()->HasCallbackForObject(object));
+  DCHECK(!Heap().EphemeronStack()->HasCallbackForObject(object));
+#endif
 }
 
 }  // namespace blink

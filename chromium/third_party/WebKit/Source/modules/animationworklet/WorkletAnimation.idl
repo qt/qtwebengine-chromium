@@ -11,7 +11,8 @@
                 (DocumentTimeline or ScrollTimeline) timeline,
                 SerializedScriptValue options),
     RaisesException=Constructor,
-    RuntimeEnabled=AnimationWorklet
+    MeasureAs=WorkletAnimationConstructor,
+    OriginTrialEnabled=AnimationWorklet
 ] interface WorkletAnimation {
   readonly attribute AnimationPlayState playState;
   void play();

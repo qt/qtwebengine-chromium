@@ -9,6 +9,7 @@
 #define SkRectPriv_DEFINED
 
 #include "SkRect.h"
+#include "SkMathPriv.h"
 
 class SkRectPriv {
 public:
@@ -44,6 +45,13 @@ public:
         r->fRight =  SkMaxScalar(pt.fX, r->fRight);
         r->fTop    = SkMinScalar(pt.fY, r->fTop);
         r->fBottom = SkMaxScalar(pt.fY, r->fBottom);
+    }
+
+    // Conservative check if r can be expressed in fixed-point.
+    // Will return false for very large values that might have fit
+    static bool FitsInFixed(const SkRect& r) {
+        return SkFitsInFixed(r.fLeft) && SkFitsInFixed(r.fTop) &&
+               SkFitsInFixed(r.fRight) && SkFitsInFixed(r.fBottom);
     }
 };
 

@@ -869,7 +869,7 @@ pipes.
 A **strong binding** exists as a standalone object which owns its interface
 implementation and automatically cleans itself up when its bound interface
 endpoint detects an error. The
-[**`MakeStrongBinding`**](https://cs.chromim.org/chromium/src/mojo/public/cpp/bindings/strong_binding.h)
+[**`MakeStrongBinding`**](https://cs.chromium.org/chromium/src/mojo/public/cpp/bindings/strong_binding.h)
 function is used to create such a binding.
 .
 
@@ -1205,6 +1205,10 @@ Let's look at each of the variables above:
       `StructTraits` definition for this type mapping must define additional
       `IsNull` and `SetToNull` methods. See
       [Specializing Nullability](#Specializing-Nullability) below.
+    * `force_serialize`: The typemap is incompatible with lazy serialization
+      (e.g. consider a typemap to a `base::StringPiece`, where retaining a
+      copy is unsafe). Any messages carrying the type will be forced down the
+      eager serailization path.
 
 
 Now that we have the typemap file we need to add it to a local list of typemaps

@@ -40,6 +40,9 @@ namespace {
 // TODO(b/68242551): Do not hardcode these paths.
 const char kTracingPath[] = "/sys/kernel/debug/tracing/";
 
+// TODO(hjd): Expose this as a configurable variable.
+const int kDrainPeriodMs = 100;
+
 }  // namespace
 
 // static
@@ -47,8 +50,8 @@ std::unique_ptr<FtraceController> FtraceController::Create(
     base::TaskRunner* runner) {
   auto ftrace_procfs =
       std::unique_ptr<FtraceProcfs>(new FtraceProcfs(kTracingPath));
-  auto table =
-      ProtoTranslationTable::Create(ftrace_procfs.get(), GetStaticEventInfo());
+  auto table = ProtoTranslationTable::Create(
+      ftrace_procfs.get(), GetStaticEventInfo(), GetStaticCommonFieldsInfo());
   return std::unique_ptr<FtraceController>(
       new FtraceController(std::move(ftrace_procfs), runner, std::move(table)));
 }
@@ -58,9 +61,9 @@ FtraceController::FtraceController(std::unique_ptr<FtraceProcfs> ftrace_procfs,
                                    std::unique_ptr<ProtoTranslationTable> table)
     : ftrace_procfs_(std::move(ftrace_procfs)),
       task_runner_(task_runner),
-      weak_factory_(this),
       enabled_count_(table->largest_id() + 1),
-      table_(std::move(table)) {}
+      table_(std::move(table)),
+      weak_factory_(this) {}
 
 FtraceController::~FtraceController() {
   for (size_t id = 1; id <= table_->largest_id(); id++) {
@@ -75,6 +78,29 @@ FtraceController::~FtraceController() {
   }
 }
 
+// static
+void FtraceController::PeriodicDrainCPU(
+    base::WeakPtr<FtraceController> weak_this,
+    size_t generation,
+    int cpu) {
+  // The controller might be gone.
+  if (!weak_this)
+    return;
+  // We might have stopped caring about events.
+  if (!weak_this->listening_for_raw_trace_data_)
+    return;
+  // We might have stopped tracing then quickly re-enabled it, in this case
+  // we don't want to end up with two periodic tasks for each CPU:
+  if (weak_this->generation_ != generation)
+    return;
+
+  bool has_more = weak_this->OnRawFtraceDataAvailable(cpu);
+  weak_this->task_runner_->PostDelayedTask(
+      std::bind(&FtraceController::PeriodicDrainCPU, weak_this, generation,
+                cpu),
+      has_more ? 0 : kDrainPeriodMs);
+}
+
 void FtraceController::StartIfNeeded() {
   if (sinks_.size() > 1)
     return;
@@ -82,18 +108,25 @@ void FtraceController::StartIfNeeded() {
   PERFETTO_CHECK(!listening_for_raw_trace_data_);
   listening_for_raw_trace_data_ = true;
   ftrace_procfs_->EnableTracing();
+  generation_++;
   for (size_t cpu = 0; cpu < ftrace_procfs_->NumberOfCpus(); cpu++) {
-    CpuReader* reader = GetCpuReader(cpu);
-    int fd = reader->GetFileDescriptor();
     base::WeakPtr<FtraceController> weak_this = weak_factory_.GetWeakPtr();
-    task_runner_->AddFileDescriptorWatch(fd, [weak_this, cpu]() {
-      if (!weak_this) {
-        // The controller might be gone.
-        return;
-      }
-      weak_this->OnRawFtraceDataAvailable(cpu);
-    });
+    task_runner_->PostDelayedTask(std::bind(&FtraceController::PeriodicDrainCPU,
+                                            weak_this, generation_, cpu),
+                                  kDrainPeriodMs);
   }
+}
+
+void FtraceController::ClearTrace() {
+  ftrace_procfs_->ClearTrace();
+}
+
+void FtraceController::DisableAllEvents() {
+  ftrace_procfs_->DisableAllEvents();
+}
+
+void FtraceController::WriteTraceMarker(const std::string& s) {
+  ftrace_procfs_->WriteTraceMarker(s);
 }
 
 void FtraceController::StopIfNeeded() {
@@ -101,16 +134,11 @@ void FtraceController::StopIfNeeded() {
     return;
   PERFETTO_CHECK(listening_for_raw_trace_data_);
   listening_for_raw_trace_data_ = false;
-  for (size_t cpu = 0; cpu < ftrace_procfs_->NumberOfCpus(); cpu++) {
-    CpuReader* reader = GetCpuReader(cpu);
-    int fd = reader->GetFileDescriptor();
-    task_runner_->RemoveFileDescriptorWatch(fd);
-  }
   readers_.clear();
   ftrace_procfs_->DisableTracing();
 }
 
-void FtraceController::OnRawFtraceDataAvailable(size_t cpu) {
+bool FtraceController::OnRawFtraceDataAvailable(size_t cpu) {
   CpuReader* reader = GetCpuReader(cpu);
   using BundleHandle =
       protozero::ProtoZeroMessageHandle<protos::pbzero::FtraceEventBundle>;
@@ -122,11 +150,12 @@ void FtraceController::OnRawFtraceDataAvailable(size_t cpu) {
     filters[i] = sink->get_event_filter();
     bundles[i++] = sink->GetBundleForCpu(cpu);
   }
-  reader->Drain(filters, bundles);
+  bool res = reader->Drain(filters, bundles);
   i = 0;
   for (FtraceSink* sink : sinks_)
     sink->OnBundleComplete(cpu, std::move(bundles[i++]));
   PERFETTO_DCHECK(sinks_.size() == sink_count);
+  return res;
 }
 
 CpuReader* FtraceController::GetCpuReader(size_t cpu) {

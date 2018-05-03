@@ -1,8 +1,13 @@
+# Please consult components/viz/README.md about allowable dependencies.
+
 include_rules = [
   "+cc/base",
   "+cc/ipc",
   "+cc/scheduler",
+  "+components/viz/service/display",
+  "+components/viz/service/display_embedder",
+  "+components/viz/service/hit_test",
   "+components/viz/service/surfaces",
   "+gpu/ipc/common",
-  "+mojo/public/cpp/bindings",
+  "+mojo/public",
 ]

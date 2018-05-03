@@ -87,7 +87,6 @@ bool SpdyHeadersToHttpResponse(const SpdyHeaderBlock& headers,
 
 void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
                                       const HttpRequestHeaders& request_headers,
-                                      bool direct,
                                       SpdyHeaderBlock* headers) {
   (*headers)[kHttp2MethodHeader] = info.method;
   if (info.method == "CONNECT") {
@@ -104,6 +103,28 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
     if (name.empty() || name[0] == ':' || name == "connection" ||
         name == "proxy-connection" || name == "transfer-encoding" ||
         name == "host") {
+      continue;
+    }
+    AddSpdyHeader(name, it.value(), headers);
+  }
+}
+
+void CreateSpdyHeadersFromHttpRequestForWebSocket(
+    const GURL& url,
+    const HttpRequestHeaders& request_headers,
+    SpdyHeaderBlock* headers) {
+  (*headers)[kHttp2MethodHeader] = "CONNECT";
+  (*headers)[kHttp2AuthorityHeader] = GetHostAndPort(url);
+  (*headers)[kHttp2SchemeHeader] = "https";
+  (*headers)[kHttp2PathHeader] = url.PathForRequest();
+  (*headers)[kHttp2ProtocolHeader] = "websocket";
+
+  HttpRequestHeaders::Iterator it(request_headers);
+  while (it.GetNext()) {
+    SpdyString name = base::ToLowerASCII(it.name());
+    if (name.empty() || name[0] == ':' || name == "upgrade" ||
+        name == "connection" || name == "proxy-connection" ||
+        name == "transfer-encoding" || name == "host") {
       continue;
     }
     AddSpdyHeader(name, it.value(), headers);

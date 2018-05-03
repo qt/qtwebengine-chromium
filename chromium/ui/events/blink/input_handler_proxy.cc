@@ -161,7 +161,7 @@ InputHandlerProxy::InputHandlerProxy(
       current_overscroll_params_(nullptr),
       has_ongoing_compositor_scroll_fling_pinch_(false),
       is_first_gesture_scroll_update_(false),
-      tick_clock_(std::make_unique<base::DefaultTickClock>()) {
+      tick_clock_(base::DefaultTickClock::GetInstance()) {
   DCHECK(client);
   input_handler_->BindToClient(this,
                                touchpad_and_wheel_scroll_latching_enabled_);
@@ -299,6 +299,7 @@ void InputHandlerProxy::DispatchSingleInputEvent(
   switch (event_with_callback->event().GetType()) {
     case blink::WebGestureEvent::kGestureScrollBegin:
       is_first_gesture_scroll_update_ = true;
+      FALLTHROUGH;
     case blink::WebGestureEvent::kGestureFlingStart:
     case blink::WebGestureEvent::kGesturePinchBegin:
     case blink::WebGestureEvent::kGestureScrollUpdate:
@@ -736,6 +737,12 @@ InputHandlerProxy::HandleGestureScrollUpdate(
   DCHECK(expect_scroll_update_end_);
 #endif
 
+  gfx::Vector2dF scroll_delta(-gesture_event.data.scroll_update.delta_x,
+                              -gesture_event.data.scroll_update.delta_y);
+  TRACE_EVENT_INSTANT2("input", "InputHandlerProxy::HandleGestureScrollUpdate",
+                       TRACE_EVENT_SCOPE_THREAD, "dx", scroll_delta.x(), "dy",
+                       scroll_delta.y());
+
   if (scroll_sequence_ignored_)
     return DROP_EVENT;
 
@@ -744,8 +751,6 @@ InputHandlerProxy::HandleGestureScrollUpdate(
 
   cc::ScrollState scroll_state = CreateScrollStateForGesture(gesture_event);
   gfx::Point scroll_point(gesture_event.x, gesture_event.y);
-  gfx::Vector2dF scroll_delta(-gesture_event.data.scroll_update.delta_x,
-                              -gesture_event.data.scroll_update.delta_y);
 
   if (ShouldAnimate(gesture_event.data.scroll_update.delta_units !=
                     blink::WebGestureEvent::ScrollUnits::kPixels)) {
@@ -760,7 +765,12 @@ InputHandlerProxy::HandleGestureScrollUpdate(
         return DID_HANDLE;
       case cc::InputHandler::SCROLL_IGNORED:
         return DROP_EVENT;
-      default:
+      case cc::InputHandler::SCROLL_ON_MAIN_THREAD:
+      case cc::InputHandler::SCROLL_UNKNOWN:
+        if (input_handler_->ScrollingShouldSwitchtoMainThread()) {
+          gesture_scroll_on_impl_thread_ = false;
+          client_->GenerateScrollBeginAndSendToMainThread(gesture_event);
+        }
         return DID_NOT_HANDLE;
     }
   }
@@ -1325,9 +1335,8 @@ void InputHandlerProxy::HandleScrollElasticityOverscroll(
                  scroll_result));
 }
 
-void InputHandlerProxy::SetTickClockForTesting(
-    std::unique_ptr<base::TickClock> tick_clock) {
-  tick_clock_ = std::move(tick_clock);
+void InputHandlerProxy::SetTickClockForTesting(base::TickClock* tick_clock) {
+  tick_clock_ = tick_clock;
 }
 
 void InputHandlerProxy::UpdateCurrentFlingState(

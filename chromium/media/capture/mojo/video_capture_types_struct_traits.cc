@@ -122,8 +122,6 @@ EnumTraits<media::mojom::VideoCaptureApi, media::VideoCaptureApi>::ToMojom(
       return media::mojom::VideoCaptureApi::ANDROID_API2_FULL;
     case media::VideoCaptureApi::ANDROID_API2_LIMITED:
       return media::mojom::VideoCaptureApi::ANDROID_API2_LIMITED;
-    case media::VideoCaptureApi::ANDROID_TANGO:
-      return media::mojom::VideoCaptureApi::ANDROID_TANGO;
     case media::VideoCaptureApi::UNKNOWN:
       return media::mojom::VideoCaptureApi::UNKNOWN;
   }
@@ -162,9 +160,6 @@ bool EnumTraits<media::mojom::VideoCaptureApi, media::VideoCaptureApi>::
       return true;
     case media::mojom::VideoCaptureApi::ANDROID_API2_LIMITED:
       *output = media::VideoCaptureApi::ANDROID_API2_LIMITED;
-      return true;
-    case media::mojom::VideoCaptureApi::ANDROID_TANGO:
-      *output = media::VideoCaptureApi::ANDROID_TANGO;
       return true;
     case media::mojom::VideoCaptureApi::UNKNOWN:
       *output = media::VideoCaptureApi::UNKNOWN;
@@ -254,8 +249,10 @@ bool StructTraits<media::mojom::VideoCaptureDeviceDescriptorDataView,
                   media::VideoCaptureDeviceDescriptor>::
     Read(media::mojom::VideoCaptureDeviceDescriptorDataView data,
          media::VideoCaptureDeviceDescriptor* output) {
-  if (!data.ReadDisplayName(&(output->display_name)))
+  std::string display_name;
+  if (!data.ReadDisplayName(&display_name))
     return false;
+  output->set_display_name(display_name);
   if (!data.ReadDeviceId(&(output->device_id)))
     return false;
   if (!data.ReadModelId(&(output->model_id)))

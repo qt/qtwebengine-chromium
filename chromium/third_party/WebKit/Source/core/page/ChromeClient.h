@@ -103,7 +103,7 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
 
   virtual IntRect PageRect() = 0;
 
-  virtual void Focus() = 0;
+  virtual void Focus(LocalFrame*) = 0;
 
   virtual bool CanTakeFocus(WebFocusType) = 0;
   virtual void TakeFocus(WebFocusType) = 0;
@@ -267,7 +267,6 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
   virtual WebEventListenerProperties EventListenerProperties(
       LocalFrame*,
       WebEventListenerClass) const = 0;
-  virtual void UpdateEventRectsForSubframeIfNecessary(LocalFrame*) = 0;
   virtual void SetHasScrollEventHandlers(LocalFrame*, bool) = 0;
   virtual void SetNeedsLowLatencyInput(LocalFrame*, bool) = 0;
   virtual void RequestUnbufferedInputEvents(LocalFrame*) = 0;
@@ -317,6 +316,7 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
   virtual void HandleKeyboardEventOnTextField(HTMLInputElement&,
                                               KeyboardEvent&) {}
   virtual void TextFieldDataListChanged(HTMLInputElement&) {}
+  virtual void DidChangeSelectionInSelectControl(HTMLFormControlElement&) {}
   virtual void AjaxSucceeded(LocalFrame*) {}
 
   // Input method editor related functions.

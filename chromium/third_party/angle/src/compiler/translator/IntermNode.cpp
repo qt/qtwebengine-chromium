@@ -18,6 +18,7 @@
 #include "common/mathutil.h"
 #include "common/matrix_utils.h"
 #include "compiler/translator/Diagnostics.h"
+#include "compiler/translator/ImmutableString.h"
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/util.h"
@@ -150,7 +151,7 @@ bool CanFoldAggregateBuiltInOp(TOperator op)
         case EOpClamp:
         case EOpMix:
         case EOpStep:
-        case EOpSmoothStep:
+        case EOpSmoothstep:
         case EOpLdexp:
         case EOpMulMatrixComponentWise:
         case EOpOuterProduct:
@@ -326,7 +327,7 @@ const TSymbolUniqueId &TIntermSymbol::uniqueId() const
     return mVariable->uniqueId();
 }
 
-const TString &TIntermSymbol::getName() const
+ImmutableString TIntermSymbol::getName() const
 {
     return mVariable->name();
 }
@@ -351,11 +352,9 @@ TIntermAggregate *TIntermAggregate::CreateRawFunctionCall(const TFunction &func,
 TIntermAggregate *TIntermAggregate::CreateBuiltInFunctionCall(const TFunction &func,
                                                               TIntermSequence *arguments)
 {
-    TIntermAggregate *callNode =
-        new TIntermAggregate(&func, func.getReturnType(), EOpCallBuiltInFunction, arguments);
-    // Note that name needs to be set before texture function type is determined.
-    callNode->setBuiltInFunctionPrecision();
-    return callNode;
+    // op should be either EOpCallBuiltInFunction or a specific math op.
+    ASSERT(func.getBuiltInOp() != EOpNull);
+    return new TIntermAggregate(&func, func.getReturnType(), func.getBuiltInOp(), arguments);
 }
 
 TIntermAggregate *TIntermAggregate::CreateConstructor(const TType &type,
@@ -364,22 +363,11 @@ TIntermAggregate *TIntermAggregate::CreateConstructor(const TType &type,
     return new TIntermAggregate(nullptr, type, EOpConstruct, arguments);
 }
 
-TIntermAggregate *TIntermAggregate::Create(const TType &type,
-                                           TOperator op,
-                                           TIntermSequence *arguments)
-{
-    ASSERT(op != EOpCallFunctionInAST);    // Should use CreateFunctionCall
-    ASSERT(op != EOpCallInternalRawFunction);  // Should use CreateRawFunctionCall
-    ASSERT(op != EOpCallBuiltInFunction);  // Should use CreateBuiltInFunctionCall
-    ASSERT(op != EOpConstruct);            // Should use CreateConstructor
-    return new TIntermAggregate(nullptr, type, op, arguments);
-}
-
 TIntermAggregate::TIntermAggregate(const TFunction *func,
                                    const TType &type,
                                    TOperator op,
                                    TIntermSequence *arguments)
-    : TIntermOperator(op),
+    : TIntermOperator(op, type),
       mUseEmulatedFunction(false),
       mGotPrecisionFromChildren(false),
       mFunction(func)
@@ -389,14 +377,17 @@ TIntermAggregate::TIntermAggregate(const TFunction *func,
         mArguments.swap(*arguments);
     }
     ASSERT(mFunction == nullptr || mFunction->symbolType() != SymbolType::Empty);
-    setTypePrecisionAndQualifier(type);
+    setPrecisionAndQualifier();
 }
 
-void TIntermAggregate::setTypePrecisionAndQualifier(const TType &type)
+void TIntermAggregate::setPrecisionAndQualifier()
 {
-    setType(type);
     mType.setQualifier(EvqTemporary);
-    if (!isFunctionCall())
+    if (mOp == EOpCallBuiltInFunction)
+    {
+        setBuiltInFunctionPrecision();
+    }
+    else if (!isFunctionCall())
     {
         if (isConstructor())
         {
@@ -503,25 +494,10 @@ void TIntermAggregate::setBuiltInFunctionPrecision()
     }
     // ESSL 3.0 spec section 8: textureSize always gets highp precision.
     // All other functions that take a sampler are assumed to be texture functions.
-    if (mFunction->name().find("textureSize") == 0)
+    if (mFunction->name() == "textureSize")
         mType.setPrecision(EbpHigh);
     else
         mType.setPrecision(precision);
-}
-
-TString TIntermAggregate::getSymbolTableMangledName() const
-{
-    ASSERT(!isConstructor());
-    switch (mOp)
-    {
-        case EOpCallInternalRawFunction:
-        case EOpCallBuiltInFunction:
-        case EOpCallFunctionInAST:
-            return TFunction::GetMangledNameFromCall(mFunction->name(), mArguments);
-        default:
-            TString opString = GetOperatorString(mOp);
-            return TFunction::GetMangledNameFromCall(opString, mArguments);
-    }
 }
 
 const char *TIntermAggregate::functionName() const
@@ -532,7 +508,7 @@ const char *TIntermAggregate::functionName() const
         case EOpCallInternalRawFunction:
         case EOpCallBuiltInFunction:
         case EOpCallFunctionInAST:
-            return mFunction->name().c_str();
+            return mFunction->name().data();
         default:
             return GetOperatorString(mOp);
     }
@@ -1045,8 +1021,8 @@ void TIntermUnary::promote()
                           static_cast<unsigned char>(mOperand->getType().getRows()),
                           static_cast<unsigned char>(mOperand->getType().getCols())));
             break;
-        case EOpIsInf:
-        case EOpIsNan:
+        case EOpIsinf:
+        case EOpIsnan:
             setType(TType(EbtBool, EbpUndefined, resultQualifier, operandPrimarySize));
             break;
         case EOpBitfieldReverse:
@@ -1087,6 +1063,15 @@ TIntermBinary::TIntermBinary(TOperator op, TIntermTyped *left, TIntermTyped *rig
     : TIntermOperator(op), mLeft(left), mRight(right), mAddIndexClamp(false)
 {
     promote();
+}
+
+TIntermBinary *TIntermBinary::CreateComma(TIntermTyped *left,
+                                          TIntermTyped *right,
+                                          int shaderVersion)
+{
+    TIntermBinary *node = new TIntermBinary(EOpComma, left, right);
+    node->getTypePointer()->setQualifier(GetCommaQualifier(shaderVersion, left, right));
+    return node;
 }
 
 TIntermInvariantDeclaration::TIntermInvariantDeclaration(TIntermSymbol *symbol, const TSourceLoc &line)
@@ -1593,6 +1578,7 @@ bool TIntermBinary::hasConstantValue() const
             {
                 return true;
             }
+            break;
         }
         default:
             break;
@@ -2551,12 +2537,12 @@ TConstantUnion *TIntermConstantUnion::foldUnaryComponentWise(TOperator op,
                 break;
             }
 
-            case EOpIsNan:
+            case EOpIsnan:
                 ASSERT(getType().getBasicType() == EbtFloat);
                 resultArray[i].setBConst(gl::isNaN(operandArray[0].getFConst()));
                 break;
 
-            case EOpIsInf:
+            case EOpIsinf:
                 ASSERT(getType().getBasicType() == EbtFloat);
                 resultArray[i].setBConst(gl::isInf(operandArray[0].getFConst()));
                 break;
@@ -2621,7 +2607,7 @@ TConstantUnion *TIntermConstantUnion::foldUnaryComponentWise(TOperator op,
                     foldFloatTypeUnary(operandArray[i], &sqrtf, &resultArray[i]);
                 break;
 
-            case EOpInverseSqrt:
+            case EOpInversesqrt:
                 // There is no stdlib built-in function equavalent for GLES built-in inversesqrt(),
                 // so getting the square root first using builtin function sqrt() and then taking
                 // its inverse.
@@ -3244,7 +3230,7 @@ TConstantUnion *TIntermConstantUnion::FoldAggregateBuiltIn(TIntermAggregate *agg
             break;
         }
 
-        case EOpSmoothStep:
+        case EOpSmoothstep:
         {
             ASSERT(basicType == EbtFloat);
             resultArray = new TConstantUnion[maxObjectSize];

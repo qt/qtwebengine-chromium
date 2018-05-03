@@ -21,10 +21,6 @@ namespace sync_preferences {
 class PrefServiceSyncable;
 }
 
-namespace content {
-class BrowserTestBase;
-}
-
 namespace display {
 class ForwardingDisplayDelegate;
 }
@@ -37,12 +33,12 @@ namespace prefs {
 class PersistentPrefStoreClient;
 }
 
-namespace ui {
-class Gpu;
-}
-
 namespace views {
 class ClipboardMus;
+}
+
+namespace viz {
+class HostFrameSinkManager;
 }
 
 namespace mojo {
@@ -74,8 +70,8 @@ class MOJO_CPP_BINDINGS_EXPORT SyncCallRestrictions {
  private:
   // DO NOT ADD ANY OTHER FRIEND STATEMENTS, talk to mojo/OWNERS first.
   // BEGIN ALLOWED USAGE.
-  friend class content::BrowserTestBase;  // Test-only.
-  friend class ui::Gpu;  // http://crbug.com/620058
+  // SynchronousCompositorHost is used for Android webview.
+  friend class content::SynchronousCompositorHost;
   // LevelDBMojoProxy makes same-process sync calls from the DB thread.
   friend class leveldb::LevelDBMojoProxy;
   // Pref service connection is sync at startup.
@@ -85,6 +81,9 @@ class MOJO_CPP_BINDINGS_EXPORT SyncCallRestrictions {
   friend class mojo::ScopedAllowSyncCallForTesting;
   // For file open and save dialogs created synchronously.
   friend class ::ChromeSelectFileDialogFactory;
+  // For destroying the GL context/surface that draw to a platform window before
+  // the platform window is destroyed.
+  friend class viz::HostFrameSinkManager;
   // END ALLOWED USAGE.
 
   // BEGIN USAGE THAT NEEDS TO BE FIXED.

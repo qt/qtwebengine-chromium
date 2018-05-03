@@ -7,7 +7,6 @@
 #include "fxjs/xfa/cjx_draw.h"
 
 #include "fxjs/cfxjse_value.h"
-#include "xfa/fxfa/cxfa_widgetacc.h"
 #include "xfa/fxfa/parser/cxfa_draw.h"
 
 CJX_Draw::CJX_Draw(CXFA_Draw* node) : CJX_Container(node) {}
@@ -120,8 +119,8 @@ void CJX_Draw::defaultValue(CFXJSE_Value* pValue,
   if (!pValue || !pValue->IsString())
     return;
 
-  XFA_Element uiType = GetXFANode()->GetWidgetAcc()->GetUIType();
-  if (uiType != XFA_Element::Text)
+  ASSERT(GetXFANode()->IsWidgetReady());
+  if (GetXFANode()->GetFFWidgetType() != XFA_FFWidgetType::kText)
     return;
 
   WideString wsNewValue = pValue->ToWideString();

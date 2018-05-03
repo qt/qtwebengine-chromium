@@ -99,10 +99,10 @@ class DomStorageDispatcher::ProxyImpl : public DOMStorageProxy {
   explicit ProxyImpl(RenderThreadImpl* sender);
 
   // Methods for use by DomStorageDispatcher directly.
-  DOMStorageCachedArea* OpenCachedArea(int64_t namespace_id,
+  DOMStorageCachedArea* OpenCachedArea(const std::string& namespace_id,
                                        const GURL& origin);
   void CloseCachedArea(DOMStorageCachedArea* area);
-  DOMStorageCachedArea* LookupCachedArea(int64_t namespace_id,
+  DOMStorageCachedArea* LookupCachedArea(const std::string& namespace_id,
                                          const GURL& origin);
   void CompleteOnePendingCallback(bool success);
   void Shutdown();
@@ -165,8 +165,9 @@ class DomStorageDispatcher::ProxyImpl : public DOMStorageProxy {
     return callback;
   }
 
-  std::string GetCachedAreaKey(int64_t namespace_id, const GURL& origin) {
-    return base::Int64ToString(namespace_id) + origin.spec();
+  std::string GetCachedAreaKey(const std::string& namespace_id,
+                               const GURL& origin) {
+    return namespace_id + origin.spec();
   }
 
   CachedAreaHolder* GetAreaHolder(const std::string& key) {
@@ -189,7 +190,7 @@ DomStorageDispatcher::ProxyImpl::ProxyImpl(RenderThreadImpl* sender)
 }
 
 DOMStorageCachedArea* DomStorageDispatcher::ProxyImpl::OpenCachedArea(
-    int64_t namespace_id,
+    const std::string& namespace_id,
     const GURL& origin) {
   std::string key = GetCachedAreaKey(namespace_id, origin);
   if (CachedAreaHolder* holder = GetAreaHolder(key)) {
@@ -216,7 +217,7 @@ void DomStorageDispatcher::ProxyImpl::CloseCachedArea(
 }
 
 DOMStorageCachedArea* DomStorageDispatcher::ProxyImpl::LookupCachedArea(
-    int64_t namespace_id,
+    const std::string& namespace_id,
     const GURL& origin) {
   std::string key = GetCachedAreaKey(namespace_id, origin);
   CachedAreaHolder* holder = GetAreaHolder(key);
@@ -288,7 +289,7 @@ DomStorageDispatcher::~DomStorageDispatcher() {
 
 scoped_refptr<DOMStorageCachedArea> DomStorageDispatcher::OpenCachedArea(
     int connection_id,
-    int64_t namespace_id,
+    const std::string& namespace_id,
     const GURL& origin) {
   RenderThreadImpl::current()->Send(
       new DOMStorageHostMsg_OpenStorageArea(
@@ -327,22 +328,14 @@ void DomStorageDispatcher::OnStorageEvent(
       cached_area->ApplyMutation(params.key, params.new_value);
   }
 
-  if (params.namespace_id == kLocalStorageNamespaceId) {
-    blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
-        blink::WebString::FromUTF16(params.key),
-        blink::WebString::FromUTF16(params.old_value),
-        blink::WebString::FromUTF16(params.new_value), params.origin,
-        params.page_url, originating_area);
-  } else {
-    WebStorageNamespaceImpl
-        session_namespace_for_event_dispatch(params.namespace_id);
-    blink::WebStorageEventDispatcher::DispatchSessionStorageEvent(
-        blink::WebString::FromUTF16(params.key),
-        blink::WebString::FromUTF16(params.old_value),
-        blink::WebString::FromUTF16(params.new_value), params.origin,
-        params.page_url, session_namespace_for_event_dispatch,
-        originating_area);
-  }
+  DCHECK(!params.namespace_id.empty());
+  WebStorageNamespaceImpl session_namespace_for_event_dispatch(
+      params.namespace_id);
+  blink::WebStorageEventDispatcher::DispatchSessionStorageEvent(
+      blink::WebString::FromUTF16(params.key),
+      blink::WebString::FromUTF16(params.old_value),
+      blink::WebString::FromUTF16(params.new_value), params.origin,
+      params.page_url, session_namespace_for_event_dispatch, originating_area);
 }
 
 void DomStorageDispatcher::OnAsyncOperationComplete(bool success) {

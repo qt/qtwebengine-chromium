@@ -13,7 +13,7 @@
 #include "content/common/navigation_params.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "content/renderer/loader/web_url_loader_impl.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "ui/base/page_transition_types.h"
@@ -98,16 +98,29 @@ class CONTENT_EXPORT RequestExtraData : public blink::WebURLRequest::ExtraData {
     stream_override_ = std::move(stream_override);
   }
 
+  // NavigationMojoResponse: |continue_navigation| is used to continue a
+  // navigation on the renderer process that has already been started on the
+  // browser process.
+  base::OnceClosure TakeContinueNavigationFunctionOwnerShip() {
+    return std::move(continue_navigation_function_);
+  }
+  void set_continue_navigation_function(base::OnceClosure continue_navigation) {
+    continue_navigation_function_ = std::move(continue_navigation);
+  }
+
   void set_initiated_in_secure_context(bool secure) {
     initiated_in_secure_context_ = secure;
   }
 
-  // The request is a prefetch and should use LOAD_PREFETCH network flags.
-  bool is_prefetch() const { return is_prefetch_; }
-  void set_is_prefetch(bool prefetch) { is_prefetch_ = prefetch; }
+  // The request is for a prefetch-only client (i.e. running NoStatePrefetch)
+  // and should use LOAD_PREFETCH network flags.
+  bool is_for_no_state_prefetch() const { return is_for_no_state_prefetch_; }
+  void set_is_for_no_state_prefetch(bool prefetch) {
+    is_for_no_state_prefetch_ = prefetch;
+  }
 
   // The request is downloaded to the network cache, but not rendered or
-  // executed. The renderer will see this as an aborted request.
+  // executed.
   bool download_to_network_cache_only() const {
     return download_to_network_cache_only_;
   }
@@ -155,8 +168,11 @@ class CONTENT_EXPORT RequestExtraData : public blink::WebURLRequest::ExtraData {
   blink::WebString custom_user_agent_;
   blink::WebString requested_with_;
   std::unique_ptr<StreamOverrideParameters> stream_override_;
+  // TODO(arthursonzogni): Once NavigationMojoResponse is launched, move most of
+  // the |stream_override_| content as parameters of this function.
+  base::OnceClosure continue_navigation_function_;
   bool initiated_in_secure_context_;
-  bool is_prefetch_;
+  bool is_for_no_state_prefetch_;
   bool download_to_network_cache_only_;
   bool block_mixed_plugin_content_;
   bool navigation_initiated_by_renderer_;

@@ -18,7 +18,7 @@
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/URLConversion.h"
 #include "public/platform/WebString.h"
-#include "third_party/WebKit/common/mime_util/mime_util.h"
+#include "third_party/WebKit/public/common/mime_util/mime_util.h"
 #include "url/gurl.h"
 
 namespace {
@@ -121,6 +121,10 @@ bool IsRedirectResponseCode(int response_code) {
 
 bool IsCertificateTransparencyRequiredError(int error_code) {
   return error_code == net::ERR_CERTIFICATE_TRANSPARENCY_REQUIRED;
+}
+
+bool IsLegacySymantecCertError(int error_code) {
+  return error_code == net::ERR_CERT_SYMANTEC_LEGACY;
 }
 
 }  // NetworkUtils

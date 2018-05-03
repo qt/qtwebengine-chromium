@@ -10,20 +10,22 @@
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 
 // Placing this first seems to solve an intellisense bug.
-#include "libANGLE/renderer/vulkan/renderervk_utils.h"
+#include "libANGLE/renderer/vulkan/vk_utils.h"
 
 #include <EGL/eglext.h>
 
 #include "common/debug.h"
 #include "common/system_utils.h"
 #include "libANGLE/renderer/driver_utils.h"
-#include "libANGLE/renderer/vulkan/CommandBufferNode.h"
+#include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/CompilerVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
 #include "libANGLE/renderer/vulkan/GlslangWrapper.h"
+#include "libANGLE/renderer/vulkan/ProgramVk.h"
 #include "libANGLE/renderer/vulkan/TextureVk.h"
 #include "libANGLE/renderer/vulkan/VertexArrayVk.h"
-#include "libANGLE/renderer/vulkan/formatutilsvk.h"
+#include "libANGLE/renderer/vulkan/vk_caps_utils.h"
+#include "libANGLE/renderer/vulkan/vk_format_utils.h"
 #include "platform/Platform.h"
 
 namespace rx
@@ -53,14 +55,14 @@ VkResult VerifyExtensionsPresent(const std::vector<VkExtensionProperties> &exten
     return VK_SUCCESS;
 }
 
-VkBool32 VKAPI_CALL DebugReportCallback(VkDebugReportFlagsEXT flags,
-                                        VkDebugReportObjectTypeEXT objectType,
-                                        uint64_t object,
-                                        size_t location,
-                                        int32_t messageCode,
-                                        const char *layerPrefix,
-                                        const char *message,
-                                        void *userData)
+VKAPI_ATTR VkBool32 VKAPI_CALL DebugReportCallback(VkDebugReportFlagsEXT flags,
+                                                   VkDebugReportObjectTypeEXT objectType,
+                                                   uint64_t object,
+                                                   size_t location,
+                                                   int32_t messageCode,
+                                                   const char *layerPrefix,
+                                                   const char *message,
+                                                   void *userData)
 {
     if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) != 0)
     {
@@ -83,102 +85,72 @@ VkBool32 VKAPI_CALL DebugReportCallback(VkDebugReportFlagsEXT flags,
     return VK_FALSE;
 }
 
+// If we're loading the validation layers, we could be running from any random directory.
+// Change to the executable directory so we can find the layers, then change back to the
+// previous directory to be safe we don't disrupt the application.
+class ScopedVkLoaderEnvironment : angle::NonCopyable
+{
+  public:
+    ScopedVkLoaderEnvironment(bool enableValidationLayers)
+        : mEnableValidationLayers(enableValidationLayers), mChangedCWD(false)
+    {
+// Changing CWD and setting environment variables makes no sense on Android,
+// since this code is a part of Java application there.
+// Android Vulkan loader doesn't need this either.
+#if !defined(ANGLE_PLATFORM_ANDROID)
+        if (mEnableValidationLayers)
+        {
+            const auto &cwd = angle::GetCWD();
+            if (!cwd.valid())
+            {
+                ERR() << "Error getting CWD for Vulkan layers init.";
+                mEnableValidationLayers = false;
+            }
+            else
+            {
+                mPreviousCWD       = cwd.value();
+                const char *exeDir = angle::GetExecutableDirectory();
+                mChangedCWD        = angle::SetCWD(exeDir);
+                if (!mChangedCWD)
+                {
+                    ERR() << "Error setting CWD for Vulkan layers init.";
+                    mEnableValidationLayers = false;
+                }
+            }
+        }
+
+        // Override environment variable to use the ANGLE layers.
+        if (mEnableValidationLayers)
+        {
+            if (!angle::PrependPathToEnvironmentVar(g_VkLoaderLayersPathEnv, ANGLE_VK_LAYERS_DIR))
+            {
+                ERR() << "Error setting environment for Vulkan layers init.";
+                mEnableValidationLayers = false;
+            }
+        }
+#endif  // !defined(ANGLE_PLATFORM_ANDROID)
+    }
+
+    ~ScopedVkLoaderEnvironment()
+    {
+        if (mChangedCWD)
+        {
+#if !defined(ANGLE_PLATFORM_ANDROID)
+            ASSERT(mPreviousCWD.valid());
+            angle::SetCWD(mPreviousCWD.value().c_str());
+#endif  // !defined(ANGLE_PLATFORM_ANDROID)
+        }
+    }
+
+    bool canEnableValidationLayers() { return mEnableValidationLayers; }
+
+  private:
+    bool mEnableValidationLayers;
+    bool mChangedCWD;
+    Optional<std::string> mPreviousCWD;
+};
+
 }  // anonymous namespace
-
-// RenderPassCache implementation.
-RenderPassCache::RenderPassCache()
-{
-}
-
-RenderPassCache::~RenderPassCache()
-{
-    ASSERT(mPayload.empty());
-}
-
-void RenderPassCache::destroy(VkDevice device)
-{
-    for (auto &outerIt : mPayload)
-    {
-        for (auto &innerIt : outerIt.second)
-        {
-            innerIt.second.get().destroy(device);
-        }
-    }
-    mPayload.clear();
-}
-
-vk::Error RenderPassCache::getCompatibleRenderPass(VkDevice device,
-                                                   Serial serial,
-                                                   const vk::RenderPassDesc &desc,
-                                                   vk::RenderPass **renderPassOut)
-{
-    auto outerIt = mPayload.find(desc);
-    if (outerIt != mPayload.end())
-    {
-        InnerCache &innerCache = outerIt->second;
-        ASSERT(!innerCache.empty());
-
-        // Find the first element and return it.
-        *renderPassOut = &innerCache.begin()->second.get();
-        return vk::NoError();
-    }
-
-    // Insert some dummy attachment ops.
-    // TODO(jmadill): Pre-populate the cache in the Renderer so we rarely miss here.
-    vk::AttachmentOpsArray ops;
-    for (uint32_t colorIndex = 0; colorIndex < desc.colorAttachmentCount(); ++colorIndex)
-    {
-        ops.initDummyOp(colorIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    }
-
-    if (desc.depthStencilAttachmentCount() > 0)
-    {
-        ops.initDummyOp(desc.colorAttachmentCount(),
-                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-    }
-
-    return getRenderPassWithOps(device, serial, desc, ops, renderPassOut);
-}
-
-vk::Error RenderPassCache::getRenderPassWithOps(VkDevice device,
-                                                Serial serial,
-                                                const vk::RenderPassDesc &desc,
-                                                const vk::AttachmentOpsArray &attachmentOps,
-                                                vk::RenderPass **renderPassOut)
-{
-    auto outerIt = mPayload.find(desc);
-    if (outerIt != mPayload.end())
-    {
-        InnerCache &innerCache = outerIt->second;
-
-        auto innerIt = innerCache.find(attachmentOps);
-        if (innerIt != innerCache.end())
-        {
-            // Update the serial before we return.
-            // TODO(jmadill): Could possibly use an MRU cache here.
-            innerIt->second.updateSerial(serial);
-            *renderPassOut = &innerIt->second.get();
-            return vk::NoError();
-        }
-    }
-    else
-    {
-        auto emplaceResult = mPayload.emplace(desc, InnerCache());
-        outerIt            = emplaceResult.first;
-    }
-
-    vk::RenderPass newRenderPass;
-    ANGLE_TRY(vk::InitializeRenderPassFromDesc(device, desc, attachmentOps, &newRenderPass));
-
-    vk::RenderPassAndSerial withSerial(std::move(newRenderPass), serial);
-
-    InnerCache &innerCache = outerIt->second;
-    auto insertPos         = innerCache.emplace(attachmentOps, std::move(withSerial));
-    *renderPassOut = &insertPos.first->second.get();
-
-    // TODO(jmadill): Trim cache, and pre-populate with the most common RPs on startup.
-    return vk::NoError();
-}
 
 // CommandBatch implementation.
 RendererVk::CommandBatch::CommandBatch()
@@ -239,6 +211,7 @@ RendererVk::~RendererVk()
     mGraphicsPipelineLayout.destroy(mDevice);
 
     mRenderPassCache.destroy(mDevice);
+    mPipelineCache.destroy(mDevice);
 
     if (mGlslangWrapper)
     {
@@ -277,42 +250,8 @@ RendererVk::~RendererVk()
 
 vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *wsiName)
 {
-    mEnableValidationLayers = ShouldUseDebugLayers(attribs);
-
-    // If we're loading the validation layers, we could be running from any random directory.
-    // Change to the executable directory so we can find the layers, then change back to the
-    // previous directory to be safe we don't disrupt the application.
-    std::string previousCWD;
-
-    if (mEnableValidationLayers)
-    {
-        const auto &cwd = angle::GetCWD();
-        if (!cwd.valid())
-        {
-            ERR() << "Error getting CWD for Vulkan layers init.";
-            mEnableValidationLayers = false;
-        }
-        else
-        {
-            previousCWD = cwd.value();
-            const char *exeDir = angle::GetExecutableDirectory();
-            if (!angle::SetCWD(exeDir))
-            {
-                ERR() << "Error setting CWD for Vulkan layers init.";
-                mEnableValidationLayers = false;
-            }
-        }
-    }
-
-    // Override environment variable to use the ANGLE layers.
-    if (mEnableValidationLayers)
-    {
-        if (!angle::SetEnvironmentVar(g_VkLoaderLayersPathEnv, ANGLE_VK_LAYERS_DIR))
-        {
-            ERR() << "Error setting environment for Vulkan layers init.";
-            mEnableValidationLayers = false;
-        }
-    }
+    ScopedVkLoaderEnvironment scopedEnvironment(ShouldUseDebugLayers(attribs));
+    mEnableValidationLayers = scopedEnvironment.canEnableValidationLayers();
 
     // Gather global layer properties.
     uint32_t instanceLayerCount = 0;
@@ -335,23 +274,14 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *w
                                                             instanceExtensionProps.data()));
     }
 
+    const char *const *enabledLayerNames = nullptr;
+    uint32_t enabledLayerCount           = 0;
     if (mEnableValidationLayers)
     {
-        // Verify the standard validation layers are available.
-        if (!HasStandardValidationLayer(instanceLayerProps))
-        {
-            // Generate an error if the attribute was requested, warning otherwise.
-            if (attribs.get(EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE, EGL_DONT_CARE) ==
-                EGL_TRUE)
-            {
-                ERR() << "Vulkan standard validation layers are missing.";
-            }
-            else
-            {
-                WARN() << "Vulkan standard validation layers are missing.";
-            }
-            mEnableValidationLayers = false;
-        }
+        bool layersRequested =
+            (attribs.get(EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE, EGL_DONT_CARE) == EGL_TRUE);
+        mEnableValidationLayers = GetAvailableValidationLayers(
+            instanceLayerProps, layersRequested, &enabledLayerNames, &enabledLayerCount);
     }
 
     std::vector<const char *> enabledInstanceExtensions;
@@ -386,18 +316,13 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *w
     instanceInfo.enabledExtensionCount = static_cast<uint32_t>(enabledInstanceExtensions.size());
     instanceInfo.ppEnabledExtensionNames =
         enabledInstanceExtensions.empty() ? nullptr : enabledInstanceExtensions.data();
-    instanceInfo.enabledLayerCount = mEnableValidationLayers ? 1u : 0u;
-    instanceInfo.ppEnabledLayerNames =
-        mEnableValidationLayers ? &g_VkStdValidationLayerName : nullptr;
+    instanceInfo.enabledLayerCount   = enabledLayerCount;
+    instanceInfo.ppEnabledLayerNames = enabledLayerNames;
 
     ANGLE_VK_TRY(vkCreateInstance(&instanceInfo, nullptr, &mInstance));
 
     if (mEnableValidationLayers)
     {
-        // Change back to the previous working directory now that we've loaded the instance -
-        // the validation layers should be loaded at this point.
-        angle::SetCWD(previousCWD.c_str());
-
         VkDebugReportCallbackCreateInfoEXT debugReportInfo;
 
         debugReportInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
@@ -467,7 +392,8 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *w
     mGlslangWrapper = GlslangWrapper::GetReference();
 
     // Initialize the format table.
-    mFormatTable.initialize(mPhysicalDevice, &mNativeTextureCaps);
+    mFormatTable.initialize(mPhysicalDevice, &mNativeTextureCaps,
+                            &mNativeCaps.compressedTextureFormats);
 
     // Initialize the pipeline layout for GL programs.
     ANGLE_TRY(initGraphicsPipelineLayout());
@@ -498,13 +424,12 @@ vk::Error RendererVk::initializeDevice(uint32_t queueFamilyIndex)
             mPhysicalDevice, nullptr, &deviceExtensionCount, deviceExtensionProps.data()));
     }
 
+    const char *const *enabledLayerNames = nullptr;
+    uint32_t enabledLayerCount           = 0;
     if (mEnableValidationLayers)
     {
-        if (!HasStandardValidationLayer(deviceLayerProps))
-        {
-            WARN() << "Vulkan standard validation layer is missing.";
-            mEnableValidationLayers = false;
-        }
+        mEnableValidationLayers = GetAvailableValidationLayers(
+            deviceLayerProps, false, &enabledLayerNames, &enabledLayerCount);
     }
 
     std::vector<const char *> enabledDeviceExtensions;
@@ -531,9 +456,8 @@ vk::Error RendererVk::initializeDevice(uint32_t queueFamilyIndex)
     createInfo.flags                = 0;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos    = &queueCreateInfo;
-    createInfo.enabledLayerCount    = mEnableValidationLayers ? 1u : 0u;
-    createInfo.ppEnabledLayerNames =
-        mEnableValidationLayers ? &g_VkStdValidationLayerName : nullptr;
+    createInfo.enabledLayerCount     = enabledLayerCount;
+    createInfo.ppEnabledLayerNames   = enabledLayerNames;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(enabledDeviceExtensions.size());
     createInfo.ppEnabledExtensionNames =
         enabledDeviceExtensions.empty() ? nullptr : enabledDeviceExtensions.data();
@@ -639,33 +563,10 @@ void RendererVk::ensureCapsInitialized() const
 {
     if (!mCapsInitialized)
     {
-        generateCaps(&mNativeCaps, &mNativeTextureCaps, &mNativeExtensions, &mNativeLimitations);
+        vk::GenerateCaps(mPhysicalDeviceProperties, mNativeTextureCaps, &mNativeCaps,
+                         &mNativeExtensions, &mNativeLimitations);
         mCapsInitialized = true;
     }
-}
-
-void RendererVk::generateCaps(gl::Caps *outCaps,
-                              gl::TextureCapsMap * /*outTextureCaps*/,
-                              gl::Extensions *outExtensions,
-                              gl::Limitations * /* outLimitations */) const
-{
-    // TODO(jmadill): Caps.
-    outCaps->maxDrawBuffers      = 1;
-    outCaps->maxVertexAttributes     = gl::MAX_VERTEX_ATTRIBS;
-    outCaps->maxVertexAttribBindings = gl::MAX_VERTEX_ATTRIB_BINDINGS;
-    outCaps->maxVaryingVectors            = 16;
-    outCaps->maxTextureImageUnits         = 1;
-    outCaps->maxCombinedTextureImageUnits = 1;
-    outCaps->max2DTextureSize             = 1024;
-    outCaps->maxElementIndex              = std::numeric_limits<GLuint>::max() - 1;
-    outCaps->maxFragmentUniformVectors    = 8;
-    outCaps->maxVertexUniformVectors      = 8;
-    outCaps->maxColorAttachments          = 1;
-
-    // Enable this for simple buffer readback testing, but some functionality is missing.
-    // TODO(jmadill): Support full mapBufferRange extension.
-    outExtensions->mapBuffer      = true;
-    outExtensions->mapBufferRange = true;
 }
 
 const gl::Caps &RendererVk::getNativeCaps() const
@@ -699,7 +600,7 @@ const vk::CommandPool &RendererVk::getCommandPool() const
 
 vk::Error RendererVk::finish(const gl::Context *context)
 {
-    if (!mOpenCommandGraph.empty())
+    if (!mCommandGraph.empty())
     {
         vk::CommandBuffer commandBatch;
         ANGLE_TRY(flushCommandGraph(context, &commandBatch));
@@ -820,17 +721,6 @@ vk::Error RendererVk::submitFrame(const VkSubmitInfo &submitInfo, vk::CommandBuf
     return vk::NoError();
 }
 
-vk::Error RendererVk::createStagingImage(TextureDimension dimension,
-                                         const vk::Format &format,
-                                         const gl::Extents &extent,
-                                         vk::StagingUsage usage,
-                                         vk::StagingImage *imageOut)
-{
-    ANGLE_TRY(imageOut->init(mDevice, mCurrentQueueFamilyIndex, mMemoryProperties, dimension,
-                             format.vkTextureFormat, extent, usage));
-    return vk::NoError();
-}
-
 GlslangWrapper *RendererVk::getGlslangWrapper()
 {
     return mGlslangWrapper;
@@ -866,86 +756,15 @@ vk::Error RendererVk::getRenderPassWithOps(const vk::RenderPassDesc &desc,
                                                  renderPassOut);
 }
 
-vk::CommandBufferNode *RendererVk::allocateCommandNode()
+vk::CommandGraphNode *RendererVk::allocateCommandNode()
 {
-    // TODO(jmadill): Use a pool allocator for the CPU node allocations.
-    vk::CommandBufferNode *newCommands = new vk::CommandBufferNode();
-    mOpenCommandGraph.emplace_back(newCommands);
-    return newCommands;
+    return mCommandGraph.allocateNode();
 }
 
 vk::Error RendererVk::flushCommandGraph(const gl::Context *context, vk::CommandBuffer *commandBatch)
 {
-    VkCommandBufferAllocateInfo primaryInfo;
-    primaryInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    primaryInfo.pNext              = nullptr;
-    primaryInfo.commandPool        = mCommandPool.getHandle();
-    primaryInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    primaryInfo.commandBufferCount = 1;
-
-    ANGLE_TRY(commandBatch->init(mDevice, primaryInfo));
-
-    if (mOpenCommandGraph.empty())
-    {
-        return vk::NoError();
-    }
-
-    std::vector<vk::CommandBufferNode *> nodeStack;
-
-    VkCommandBufferBeginInfo beginInfo;
-    beginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.pNext            = nullptr;
-    beginInfo.flags            = 0;
-    beginInfo.pInheritanceInfo = nullptr;
-
-    ANGLE_TRY(commandBatch->begin(beginInfo));
-
-    for (vk::CommandBufferNode *topLevelNode : mOpenCommandGraph)
-    {
-        // Only process commands that don't have child commands. The others will be pulled in
-        // automatically. Also skip commands that have already been visited.
-        if (topLevelNode->isDependency() ||
-            topLevelNode->visitedState() != vk::VisitedState::Unvisited)
-            continue;
-
-        nodeStack.push_back(topLevelNode);
-
-        while (!nodeStack.empty())
-        {
-            vk::CommandBufferNode *node = nodeStack.back();
-
-            switch (node->visitedState())
-            {
-                case vk::VisitedState::Unvisited:
-                    node->visitDependencies(&nodeStack);
-                    break;
-                case vk::VisitedState::Ready:
-                    ANGLE_TRY(node->visitAndExecute(this, commandBatch));
-                    nodeStack.pop_back();
-                    break;
-                case vk::VisitedState::Visited:
-                    nodeStack.pop_back();
-                    break;
-                default:
-                    UNREACHABLE();
-                    break;
-            }
-        }
-    }
-
-    ANGLE_TRY(commandBatch->end());
-    resetCommandGraph();
-    return vk::NoError();
-}
-
-void RendererVk::resetCommandGraph()
-{
-    // TODO(jmadill): Use pool allocation so we don't need to deallocate command graph.
-    for (vk::CommandBufferNode *node : mOpenCommandGraph)
-    {
-        delete node;
-    }
-    mOpenCommandGraph.clear();
+    return mCommandGraph.submitCommands(mDevice, mCurrentQueueSerial, &mRenderPassCache,
+                                        &mCommandPool, commandBatch);
 }
 
 vk::Error RendererVk::flush(const gl::Context *context,
@@ -1028,12 +847,13 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
         mGraphicsDescriptorSetLayouts.push_back(std::move(uniformLayout));
     }
 
-    std::array<VkDescriptorSetLayoutBinding, gl::IMPLEMENTATION_MAX_ACTIVE_TEXTURES>
-        textureBindings;
+    // TODO(lucferron): expose this limitation to GL in Context Caps
+    std::vector<VkDescriptorSetLayoutBinding> textureBindings(
+        std::min<size_t>(mPhysicalDeviceProperties.limits.maxPerStageDescriptorSamplers,
+                         gl::IMPLEMENTATION_MAX_ACTIVE_TEXTURES));
 
     // TODO(jmadill): This approach might not work well for texture arrays.
-    for (uint32_t textureIndex = 0; textureIndex < gl::IMPLEMENTATION_MAX_ACTIVE_TEXTURES;
-         ++textureIndex)
+    for (uint32_t textureIndex = 0; textureIndex < textureBindings.size(); ++textureIndex)
     {
         VkDescriptorSetLayoutBinding &layoutBinding = textureBindings[textureIndex];
 
@@ -1074,6 +894,23 @@ vk::Error RendererVk::initGraphicsPipelineLayout()
 Serial RendererVk::issueProgramSerial()
 {
     return mProgramSerialFactory.generate();
+}
+
+vk::Error RendererVk::getPipeline(const ProgramVk *programVk,
+                                  const vk::PipelineDesc &desc,
+                                  const gl::AttributesMask &activeAttribLocationsMask,
+                                  vk::PipelineAndSerial **pipelineOut)
+{
+    ASSERT(programVk->getVertexModuleSerial() == desc.getShaderStageInfo()[0].moduleSerial);
+    ASSERT(programVk->getFragmentModuleSerial() == desc.getShaderStageInfo()[1].moduleSerial);
+
+    // Pull in a compatible RenderPass.
+    vk::RenderPass *compatibleRenderPass = nullptr;
+    ANGLE_TRY(getCompatibleRenderPass(desc.getRenderPassDesc(), &compatibleRenderPass));
+
+    return mPipelineCache.getPipeline(mDevice, *compatibleRenderPass, mGraphicsPipelineLayout,
+                                      activeAttribLocationsMask, programVk->getLinkedVertexModule(),
+                                      programVk->getLinkedFragmentModule(), desc, pipelineOut);
 }
 
 }  // namespace rx

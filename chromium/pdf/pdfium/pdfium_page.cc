@@ -358,21 +358,22 @@ PDFiumPage::Area PDFiumPage::GetLinkTarget(FPDF_LINK link, LinkTarget* target) {
 PDFiumPage::Area PDFiumPage::GetDestinationTarget(FPDF_DEST destination,
                                                   LinkTarget* target) {
   if (!target)
-    return DOCLINK_AREA;
+    return NONSELECTABLE_AREA;
 
-  target->page = FPDFDest_GetPageIndex(engine_->doc(), destination);
+  int page_index = FPDFDest_GetDestPageIndex(engine_->doc(), destination);
+  if (page_index < 0)
+    return NONSELECTABLE_AREA;
 
-  base::Optional<std::pair<float, float>> xy = GetPageXYTarget(destination);
-  if (!xy)
-    return DOCLINK_AREA;
+  target->page = page_index;
 
-  target->y_in_pixels = TransformPageToScreenXY(xy.value()).second;
+  base::Optional<gfx::PointF> xy = GetPageXYTarget(destination);
+  if (xy)
+    target->y_in_pixels = TransformPageToScreenXY(xy.value()).y();
 
   return DOCLINK_AREA;
 }
 
-base::Optional<std::pair<float, float>> PDFiumPage::GetPageXYTarget(
-    FPDF_DEST destination) {
+base::Optional<gfx::PointF> PDFiumPage::GetPageXYTarget(FPDF_DEST destination) {
   if (!available_)
     return {};
 
@@ -388,18 +389,16 @@ base::Optional<std::pair<float, float>> PDFiumPage::GetPageXYTarget(
   if (!success || !has_x_coord || !has_y_coord)
     return {};
 
-  return {{x, y}};
+  return {gfx::PointF(x, y)};
 }
 
-std::pair<float, float> PDFiumPage::TransformPageToScreenXY(
-    std::pair<float, float> xy) {
-  if (!available_) {
-    return {0, 0};
-  }
+gfx::PointF PDFiumPage::TransformPageToScreenXY(const gfx::PointF& xy) {
+  if (!available_)
+    return gfx::PointF();
 
-  pp::FloatRect page_rect(xy.first, xy.second, 0, 0);
+  pp::FloatRect page_rect(xy.x(), xy.y(), 0, 0);
   pp::FloatRect pixel_rect(FloatPageRectToPixelRect(GetPage(), page_rect));
-  return {pixel_rect.x(), pixel_rect.y()};
+  return gfx::PointF(pixel_rect.x(), pixel_rect.y());
 }
 
 PDFiumPage::Area PDFiumPage::GetURITarget(FPDF_ACTION uri_action,
@@ -600,6 +599,7 @@ const PDFEngine::PageFeatures* PDFiumPage::GetPageFeatures() {
     FPDF_ANNOTATION annotation = FPDFPage_GetAnnot(page, i);
     FPDF_ANNOTATION_SUBTYPE subtype = FPDFAnnot_GetSubtype(annotation);
     page_features_.annotation_types.insert(subtype);
+    FPDFPage_CloseAnnot(annotation);
   }
 
   return &page_features_;

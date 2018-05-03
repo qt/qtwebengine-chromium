@@ -86,7 +86,7 @@ void UpdateWebMouseEventFromCoreMouseEvent(const MouseEvent& event,
                                            const LocalFrameView* plugin_parent,
                                            const LayoutObject* layout_object,
                                            WebMouseEvent& web_event) {
-  web_event.SetTimeStampSeconds(event.PlatformTimeStamp().InSeconds());
+  web_event.SetTimeStampSeconds(TimeTicksInSeconds(event.PlatformTimeStamp()));
   web_event.SetModifiers(event.GetModifiers());
 
   // TODO(bokan): If plugin_parent == nullptr, pointInRootFrame will really be
@@ -209,7 +209,7 @@ WebMouseEventBuilder::WebMouseEventBuilder(const LocalFrameView* plugin_parent,
   else
     return;  // Skip all other mouse events.
 
-  time_stamp_seconds_ = event.PlatformTimeStamp().InSeconds();
+  time_stamp_seconds_ = TimeTicksInSeconds(event.PlatformTimeStamp());
   modifiers_ = event.GetModifiers();
   UpdateWebMouseEventFromCoreMouseEvent(event, plugin_parent, layout_object,
                                         *this);
@@ -287,7 +287,7 @@ WebMouseEventBuilder::WebMouseEventBuilder(const LocalFrameView* plugin_parent,
   else
     return;
 
-  time_stamp_seconds_ = event.PlatformTimeStamp().InSeconds();
+  time_stamp_seconds_ = TimeTicksInSeconds(event.PlatformTimeStamp());
   modifiers_ = event.GetModifiers();
   frame_scale_ = 1;
   frame_translate_ = WebFloatPoint();
@@ -331,7 +331,7 @@ WebKeyboardEventBuilder::WebKeyboardEventBuilder(const KeyboardEvent& event) {
     return;  // Skip all other keyboard events.
 
   modifiers_ = event.GetModifiers();
-  time_stamp_seconds_ = event.PlatformTimeStamp().InSeconds();
+  time_stamp_seconds_ = TimeTicksInSeconds(event.PlatformTimeStamp());
   windows_key_code = event.keyCode();
 }
 
@@ -359,25 +359,6 @@ Vector<WebPointerEvent> TransformWebPointerEventVector(
         scale, translation, static_cast<const WebPointerEvent&>(*event)));
   }
   return result;
-}
-
-WebCoalescedInputEvent GetCoalescedWebPointerEventForTouch(
-    const WebPointerEvent& pointer_event,
-    std::vector<const WebInputEvent*> coalesced_events) {
-  std::vector<WebPointerEvent> related_pointer_events;
-  for (const auto& event : coalesced_events) {
-    DCHECK(WebInputEvent::IsTouchEventType(event->GetType()));
-    const WebTouchEvent& touch_event =
-        static_cast<const WebTouchEvent&>(*event);
-    for (unsigned i = 0; i < touch_event.touches_length; ++i) {
-      if (touch_event.touches[i].id == pointer_event.id &&
-          touch_event.touches[i].state != WebTouchPoint::kStateStationary) {
-        related_pointer_events.push_back(
-            WebPointerEvent(touch_event, touch_event.touches[i]));
-      }
-    }
-  }
-  return WebCoalescedInputEvent(pointer_event, related_pointer_events);
 }
 
 }  // namespace blink

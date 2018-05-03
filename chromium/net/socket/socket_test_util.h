@@ -19,6 +19,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -275,9 +276,9 @@ class AsyncSocket {
 // StaticSocketDataHelper manages a list of reads and writes.
 class StaticSocketDataHelper {
  public:
-  StaticSocketDataHelper(MockRead* reads,
+  StaticSocketDataHelper(const MockRead* reads,
                          size_t reads_count,
-                         MockWrite* writes,
+                         const MockWrite* writes,
                          size_t writes_count);
   ~StaticSocketDataHelper();
 
@@ -311,12 +312,12 @@ class StaticSocketDataHelper {
   // fails if no data is available.
   const MockWrite& PeekRealWrite() const;
 
-  MockRead* reads_;
+  const MockRead* const reads_;
   size_t read_index_;
-  size_t read_count_;
-  MockWrite* writes_;
+  const size_t read_count_;
+  const MockWrite* const writes_;
   size_t write_index_;
-  size_t write_count_;
+  const size_t write_count_;
 
   DISALLOW_COPY_AND_ASSIGN(StaticSocketDataHelper);
 };
@@ -326,13 +327,11 @@ class StaticSocketDataHelper {
 class StaticSocketDataProvider : public SocketDataProvider {
  public:
   StaticSocketDataProvider();
-  StaticSocketDataProvider(MockRead* reads,
+  StaticSocketDataProvider(const MockRead* reads,
                            size_t reads_count,
-                           MockWrite* writes,
+                           const MockWrite* writes,
                            size_t writes_count);
   ~StaticSocketDataProvider() override;
-
-  virtual void CompleteRead() {}
 
   // From SocketDataProvider:
   MockRead OnRead() override;
@@ -374,7 +373,7 @@ struct SSLSocketDataProvider {
   SSLCertRequestInfo* cert_request_info;
 
   ChannelIDService* channel_id_service;
-  NextProtoVector next_protos_expected_in_ssl_config;
+  base::Optional<NextProtoVector> next_protos_expected_in_ssl_config;
 };
 
 // Uses the sequence_number field in the mock reads and writes to
@@ -383,18 +382,18 @@ class SequencedSocketData : public SocketDataProvider {
  public:
   // |reads| is the list of MockRead completions.
   // |writes| is the list of MockWrite completions.
-  SequencedSocketData(MockRead* reads,
+  SequencedSocketData(const MockRead* reads,
                       size_t reads_count,
-                      MockWrite* writes,
+                      const MockWrite* writes,
                       size_t writes_count);
 
   // |connect| is the result for the connect phase.
   // |reads| is the list of MockRead completions.
   // |writes| is the list of MockWrite completions.
   SequencedSocketData(const MockConnect& connect,
-                      MockRead* reads,
+                      const MockRead* reads,
                       size_t reads_count,
-                      MockWrite* writes,
+                      const MockWrite* writes,
                       size_t writes_count);
 
   ~SequencedSocketData() override;
@@ -810,6 +809,15 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   void set_source_port(uint16_t port) { source_port_ = port; }
   uint16_t source_port() const { return source_port_; }
 
+  // Returns last tag applied to socket.
+  SocketTag tag() const { return tag_; }
+
+  // Returns false if socket's tag was changed after the socket was used for
+  // data transfer (e.g. Read/Write() called), otherwise returns true.
+  bool tagged_before_data_transferred() const {
+    return tagged_before_data_transferred_;
+  }
+
  private:
   int CompleteRead();
 
@@ -836,6 +844,10 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   CompletionCallback pending_write_callback_;
 
   NetLogWithSource net_log_;
+
+  SocketTag tag_;
+  bool data_transferred_ = false;
+  bool tagged_before_data_transferred_ = true;
 
   base::WeakPtrFactory<MockUDPClientSocket> weak_factory_;
 
@@ -1088,8 +1100,7 @@ class WrappedStreamSocket : public StreamSocket {
   int Write(IOBuffer* buf,
             int buf_len,
             const CompletionCallback& callback,
-            const NetworkTrafficAnnotationTag& traffic_annotation =
-                NO_TRAFFIC_ANNOTATION_BUG_656607) override;
+            const NetworkTrafficAnnotationTag& traffic_annotation) override;
   int SetReceiveBufferSize(int32_t size) override;
   int SetSendBufferSize(int32_t size) override;
 
@@ -1130,18 +1141,28 @@ class MockTaggingClientSocketFactory : public MockClientSocketFactory {
  public:
   MockTaggingClientSocketFactory() = default;
 
+  // ClientSocketFactory implementation.
+  std::unique_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+      DatagramSocket::BindType bind_type,
+      const RandIntCallback& rand_int_cb,
+      NetLog* net_log,
+      const NetLogSource& source) override;
   std::unique_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       std::unique_ptr<SocketPerformanceWatcher> socket_performance_watcher,
       NetLog* net_log,
       const NetLogSource& source) override;
 
-  // Returns a pointer to last socket produced by this factory.
-  // NOTE: Socket must still exist, or pointer will be to freed memory.
-  MockTaggingStreamSocket* GetLastProducedSocket() { return socket_; }
+  // These methods return pointers to last TCP and UDP sockets produced by this
+  // factory. NOTE: Socket must still exist, or pointer will be to freed memory.
+  MockTaggingStreamSocket* GetLastProducedTCPSocket() const {
+    return tcp_socket_;
+  }
+  MockUDPClientSocket* GetLastProducedUDPSocket() const { return udp_socket_; }
 
  private:
-  MockTaggingStreamSocket* socket_ = nullptr;
+  MockTaggingStreamSocket* tcp_socket_ = nullptr;
+  MockUDPClientSocket* udp_socket_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(MockTaggingClientSocketFactory);
 };

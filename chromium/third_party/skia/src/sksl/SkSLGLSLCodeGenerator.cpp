@@ -505,12 +505,14 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
         fHeader.writeText(" : require\n");
         fFoundDerivatives = true;
     }
+    bool isTextureFunctionWithBias = false;
     if (c.fFunction.fName == "texture" && c.fFunction.fBuiltin) {
         const char* dim = "";
         bool proj = false;
         switch (c.fArguments[0]->fType.dimensions()) {
             case SpvDim1D:
                 dim = "1D";
+                isTextureFunctionWithBias = true;
                 if (c.fArguments[1]->fType == *fContext.fFloat_Type) {
                     proj = false;
                 } else {
@@ -520,6 +522,9 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                 break;
             case SpvDim2D:
                 dim = "2D";
+                if (c.fArguments[0]->fType != *fContext.fSamplerExternalOES_Type) {
+                    isTextureFunctionWithBias = true;
+                }
                 if (c.fArguments[1]->fType == *fContext.fFloat2_Type) {
                     proj = false;
                 } else {
@@ -529,6 +534,7 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                 break;
             case SpvDim3D:
                 dim = "3D";
+                isTextureFunctionWithBias = true;
                 if (c.fArguments[1]->fType == *fContext.fFloat3_Type) {
                     proj = false;
                 } else {
@@ -538,6 +544,7 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                 break;
             case SpvDimCube:
                 dim = "Cube";
+                isTextureFunctionWithBias = true;
                 proj = false;
                 break;
             case SpvDimRect:
@@ -573,6 +580,9 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
         separator = ", ";
         this->writeExpression(*arg, kSequence_Precedence);
     }
+    if (fProgram.fSettings.fSharpenTextures && isTextureFunctionWithBias) {
+        this->write(", -0.5");
+    }
     this->write(")");
 }
 
@@ -598,8 +608,19 @@ void GLSLCodeGenerator::writeConstructor(const Constructor& c, Precedence parent
 
 void GLSLCodeGenerator::writeFragCoord() {
     if (!fProgram.fSettings.fCaps->canUseFragCoord()) {
-        this->write("vec4(sk_FragCoord_Workaround.xyz / sk_FragCoord_Workaround.w, "
-                    "1.0 / sk_FragCoord_Workaround.w)");
+        if (!fSetupFragCoordWorkaround) {
+            const char* precision = usesPrecisionModifiers() ? "highp " : "";
+            fFunctionHeader += precision;
+            fFunctionHeader += "    float sk_FragCoord_InvW = 1. / sk_FragCoord_Workaround.w;\n";
+            fFunctionHeader += precision;
+            fFunctionHeader += "    vec4 sk_FragCoord_Resolved = "
+                "vec4(sk_FragCoord_Workaround.xyz * sk_FragCoord_InvW, sk_FragCoord_InvW);\n";
+            // Ensure that we get exact .5 values for x and y.
+            fFunctionHeader += "    sk_FragCoord_Resolved.xy = floor(sk_FragCoord_Resolved.xy) + "
+                               "vec2(.5);\n";
+            fSetupFragCoordWorkaround = true;
+        }
+        this->write("sk_FragCoord_Resolved");
         return;
     }
 

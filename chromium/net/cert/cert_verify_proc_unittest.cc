@@ -24,7 +24,6 @@
 #include "net/cert/cert_verify_proc_builtin.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/crl_set.h"
-#include "net/cert/crl_set_storage.h"
 #include "net/cert/ev_root_ca_metadata.h"
 #include "net/cert/internal/signature_algorithm.h"
 #include "net/cert/test_root_certs.h"
@@ -370,10 +369,7 @@ TEST_P(CertVerifyProcInternalTest, TrustedTargetCertWithEVPolicy) {
   int flags = CertVerifier::VERIFY_EV_CERT;
   int error = Verify(cert.get(), "policy_test.example", flags,
                      nullptr /*crl_set*/, CertificateList(), &verify_result);
-  // TODO(eroman): builtin verifier cannot verify a chain of length 1.
-  if (verify_proc_type() == CERT_VERIFY_PROC_BUILTIN) {
-    EXPECT_THAT(error, IsError(ERR_CERT_INVALID));
-  } else if (ScopedTestRootCanTrustTargetCert(verify_proc_type())) {
+  if (ScopedTestRootCanTrustTargetCert(verify_proc_type())) {
     EXPECT_THAT(error, IsOk());
     ASSERT_TRUE(verify_result.verified_cert);
     EXPECT_TRUE(verify_result.verified_cert->intermediate_buffers().empty());
@@ -410,10 +406,7 @@ TEST_P(CertVerifyProcInternalTest,
   int flags = CertVerifier::VERIFY_EV_CERT;
   int error = Verify(cert.get(), "policy_test.example", flags,
                      nullptr /*crl_set*/, CertificateList(), &verify_result);
-  // TODO(eroman): builtin verifier cannot verify a chain of length 1.
-  if (verify_proc_type() == CERT_VERIFY_PROC_BUILTIN) {
-    EXPECT_THAT(error, IsError(ERR_CERT_INVALID));
-  } else if (ScopedTestRootCanTrustTargetCert(verify_proc_type())) {
+  if (ScopedTestRootCanTrustTargetCert(verify_proc_type())) {
     EXPECT_THAT(error, IsOk());
     ASSERT_TRUE(verify_result.verified_cert);
     EXPECT_TRUE(verify_result.verified_cert->intermediate_buffers().empty());
@@ -1241,6 +1234,9 @@ TEST(CertVerifyProcTest, TestHasTooLongValidity) {
       {"40_months_after_2015_04.pem", true},
       {"60_months_after_2012_07.pem", false},
       {"61_months_after_2012_07.pem", true},
+      {"825_days_after_2018_03_01.pem", false},
+      {"826_days_after_2018_03_01.pem", true},
+      {"825_days_1_second_after_2018_03_01.pem", true},
   };
 
   base::FilePath certs_dir = GetTestCertsDirectory();
@@ -1475,47 +1471,83 @@ TEST(CertVerifyProcTest, SymantecCertsRejected) {
        0x68, 0xac, 0x53, 0x8e, 0x40, 0xab, 0xab, 0x5b, 0x19, 0xa6, 0x48,
        0x56, 0x61, 0x04, 0x2a, 0x10, 0x61, 0xc4, 0x61, 0x27, 0x76}};
 
-  scoped_refptr<X509Certificate> cert = CreateCertificateChainFromFile(
-      GetTestCertsDirectory(), "dec_2017.pem", X509Certificate::FORMAT_AUTO);
-  ASSERT_TRUE(cert);
+  // Test that certificates from the legacy Symantec infrastructure are
+  // rejected:
+  // - dec_2017.pem : A certificate issued after 2017-12-01, which is rejected
+  //                  as of M65
+  // - pre_june_2016.pem : A certificate issued prior to 2016-06-01, which is
+  //                       rejected as of M66.
+  for (const char* rejected_cert : {"dec_2017.pem", "pre_june_2016.pem"}) {
+    scoped_refptr<X509Certificate> cert = CreateCertificateChainFromFile(
+        GetTestCertsDirectory(), rejected_cert, X509Certificate::FORMAT_AUTO);
+    ASSERT_TRUE(cert);
 
-  scoped_refptr<CertVerifyProc> verify_proc;
-  int error = 0;
+    scoped_refptr<CertVerifyProc> verify_proc;
+    int error = 0;
 
-  // Test that a Symantec certificate is rejected if issued after 2017-12-01.
-  CertVerifyResult symantec_result;
-  symantec_result.verified_cert = cert;
-  symantec_result.public_key_hashes.push_back(HashValue(kSymantecHashValue));
-  symantec_result.is_issued_by_known_root = true;
-  verify_proc = base::MakeRefCounted<MockCertVerifyProc>(symantec_result);
+    // Test that a legacy Symantec certificate is rejected.
+    CertVerifyResult symantec_result;
+    symantec_result.verified_cert = cert;
+    symantec_result.public_key_hashes.push_back(HashValue(kSymantecHashValue));
+    symantec_result.is_issued_by_known_root = true;
+    verify_proc = base::MakeRefCounted<MockCertVerifyProc>(symantec_result);
 
-  CertVerifyResult test_result_1;
-  error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(), 0,
-                              nullptr, CertificateList(), &test_result_1);
-  EXPECT_THAT(error, IsError(ERR_CERT_AUTHORITY_INVALID));
-  EXPECT_TRUE(test_result_1.cert_status & CERT_STATUS_AUTHORITY_INVALID);
+    CertVerifyResult test_result_1;
+    error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(), 0,
+                                nullptr, CertificateList(), &test_result_1);
+    EXPECT_THAT(error, IsError(ERR_CERT_SYMANTEC_LEGACY));
+    EXPECT_TRUE(test_result_1.cert_status & CERT_STATUS_SYMANTEC_LEGACY);
 
-  // ... Unless the Symantec cert chains through a whitelisted intermediate.
-  CertVerifyResult whitelisted_result;
-  whitelisted_result.verified_cert = cert;
-  whitelisted_result.public_key_hashes.push_back(HashValue(kSymantecHashValue));
-  whitelisted_result.public_key_hashes.push_back(HashValue(kGoogleHashValue));
-  whitelisted_result.is_issued_by_known_root = true;
-  verify_proc = base::MakeRefCounted<MockCertVerifyProc>(whitelisted_result);
+    // ... Unless the Symantec cert chains through a whitelisted intermediate.
+    CertVerifyResult whitelisted_result;
+    whitelisted_result.verified_cert = cert;
+    whitelisted_result.public_key_hashes.push_back(
+        HashValue(kSymantecHashValue));
+    whitelisted_result.public_key_hashes.push_back(HashValue(kGoogleHashValue));
+    whitelisted_result.is_issued_by_known_root = true;
+    verify_proc = base::MakeRefCounted<MockCertVerifyProc>(whitelisted_result);
 
-  CertVerifyResult test_result_2;
-  error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(), 0,
-                              nullptr, CertificateList(), &test_result_2);
-  EXPECT_THAT(error, IsOk());
-  EXPECT_FALSE(test_result_2.cert_status & CERT_STATUS_AUTHORITY_INVALID);
+    CertVerifyResult test_result_2;
+    error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(), 0,
+                                nullptr, CertificateList(), &test_result_2);
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(test_result_2.cert_status & CERT_STATUS_AUTHORITY_INVALID);
 
-  // ... Or the caller disabled enforcement of Symantec policies.
-  CertVerifyResult test_result_3;
-  error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(),
-                              CertVerifier::VERIFY_DISABLE_SYMANTEC_ENFORCEMENT,
-                              nullptr, CertificateList(), &test_result_3);
-  EXPECT_THAT(error, IsOk());
-  EXPECT_FALSE(test_result_3.cert_status & CERT_STATUS_AUTHORITY_INVALID);
+    // ... Or the caller disabled enforcement of Symantec policies.
+    CertVerifyResult test_result_3;
+    error =
+        verify_proc->Verify(cert.get(), "127.0.0.1", std::string(),
+                            CertVerifier::VERIFY_DISABLE_SYMANTEC_ENFORCEMENT,
+                            nullptr, CertificateList(), &test_result_3);
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(test_result_3.cert_status & CERT_STATUS_SYMANTEC_LEGACY);
+  }
+
+  // Test that certificates from the legacy Symantec infrastructure that
+  // should still be accepted (for now) are accepted.
+  // - post_june_2016.pem : A certificate issued after 2016-06-01, which is
+  //                        not scheduled for distrust until M70.
+  for (const char* accepted_cert : {"post_june_2016.pem"}) {
+    scoped_refptr<X509Certificate> cert = CreateCertificateChainFromFile(
+        GetTestCertsDirectory(), accepted_cert, X509Certificate::FORMAT_AUTO);
+    ASSERT_TRUE(cert);
+
+    scoped_refptr<CertVerifyProc> verify_proc;
+    int error = 0;
+
+    // Test that a Symantec certificate is accepted.
+    CertVerifyResult symantec_result;
+    symantec_result.verified_cert = cert;
+    symantec_result.public_key_hashes.push_back(HashValue(kSymantecHashValue));
+    symantec_result.is_issued_by_known_root = true;
+    verify_proc = base::MakeRefCounted<MockCertVerifyProc>(symantec_result);
+
+    CertVerifyResult test_result_1;
+    error = verify_proc->Verify(cert.get(), "127.0.0.1", std::string(), 0,
+                                nullptr, CertificateList(), &test_result_1);
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(test_result_1.cert_status & CERT_STATUS_SYMANTEC_LEGACY);
+  }
 }
 
 // While all SHA-1 certificates should be rejected, in the event that there
@@ -1811,7 +1843,7 @@ TEST_P(CertVerifyProcInternalTest, CRLSet) {
   EXPECT_TRUE(base::ReadFileToString(
       GetTestCertsDirectory().AppendASCII("crlset_by_leaf_spki.raw"),
       &crl_set_bytes));
-  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(cert.get(), "127.0.0.1", flags, crl_set.get(),
                  CertificateList(), &verify_result);
@@ -1823,7 +1855,7 @@ TEST_P(CertVerifyProcInternalTest, CRLSet) {
   EXPECT_TRUE(base::ReadFileToString(
       GetTestCertsDirectory().AppendASCII("crlset_by_root_serial.raw"),
       &crl_set_bytes));
-  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(cert.get(), "127.0.0.1", flags, crl_set.get(),
                  CertificateList(), &verify_result);
@@ -1872,7 +1904,7 @@ TEST_P(CertVerifyProcInternalTest, CRLSetLeafSerial) {
   ASSERT_TRUE(base::ReadFileToString(
       GetTestCertsDirectory().AppendASCII("crlset_by_intermediate_serial.raw"),
       &crl_set_bytes));
-  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(leaf.get(), "127.0.0.1", flags, crl_set.get(),
                  CertificateList(), &verify_result);
@@ -1912,7 +1944,7 @@ TEST_P(CertVerifyProcInternalTest, CRLSetRevokedBySubject) {
   ASSERT_TRUE(base::ReadFileToString(
       GetTestCertsDirectory().AppendASCII("crlset_by_leaf_subject_no_spki.raw"),
       &crl_set_bytes));
-  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(leaf.get(), "127.0.0.1", flags, crl_set.get(),
                  CertificateList(), &verify_result);
@@ -1922,7 +1954,7 @@ TEST_P(CertVerifyProcInternalTest, CRLSetRevokedBySubject) {
   ASSERT_TRUE(base::ReadFileToString(
       GetTestCertsDirectory().AppendASCII("crlset_by_root_subject_no_spki.raw"),
       &crl_set_bytes));
-  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(leaf.get(), "127.0.0.1", flags, crl_set.get(),
                  CertificateList(), &verify_result);
@@ -1933,7 +1965,7 @@ TEST_P(CertVerifyProcInternalTest, CRLSetRevokedBySubject) {
   ASSERT_TRUE(base::ReadFileToString(
       GetTestCertsDirectory().AppendASCII("crlset_by_root_subject.raw"),
       &crl_set_bytes));
-  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(leaf.get(), "127.0.0.1", flags, crl_set.get(),
                  CertificateList(), &verify_result);
@@ -2021,7 +2053,7 @@ TEST_P(CertVerifyProcInternalTest, CRLSetDuringPathBuilding) {
     std::string crl_set_bytes;
     EXPECT_TRUE(base::ReadFileToString(
         GetTestCertsDirectory().AppendASCII(testcase.crlset), &crl_set_bytes));
-    ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+    ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
     int flags = 0;
     CertVerifyResult verify_result;
@@ -2488,73 +2520,6 @@ TEST_F(CertVerifyProcNameTest, DoesntMatchDnsSanLeadingAndTrailingDot) {
 // Should not match the dNSName SAN
 TEST_F(CertVerifyProcNameTest, DoesntMatchDnsSanTrailingDot) {
   VerifyCertName(".test.example", false);
-}
-
-// Tests that commonName-fallback is handled correctly:
-// - If it's a publicly trusted certificate, the commonName should never
-//   match.
-// - If it chains to a private root, the commonName should not match if
-//   the subjectAltName is absent, and the flags don't allow fallback.
-// - If it chains to a private root, the commonName SHOULD match iff the
-//   subjectAltName is absent and the flags allow a fallback.
-TEST_F(CertVerifyProcNameTest, HandlesCommonNameFallbackLocalAnchors) {
-  scoped_refptr<X509Certificate> cert(
-      ImportCertFromFile(GetTestCertsDirectory(), "salesforce_com_test.pem"));
-  ASSERT_TRUE(cert);
-
-  CertVerifyResult result;
-  scoped_refptr<CertVerifyProc> verify_proc;
-  CertVerifyResult verify_result;
-  int error;
-
-  // Publicly trusted: Always ignores commonName, regardless of flags.
-  result = CertVerifyResult();
-  verify_result = CertVerifyResult();
-  error = 0;
-  result.is_issued_by_known_root = true;
-  verify_proc = new MockCertVerifyProc(result);
-  error = verify_proc->Verify(cert.get(), "prerelna1.pre.salesforce.com",
-                              std::string(), 0, nullptr, CertificateList(),
-                              &verify_result);
-  EXPECT_THAT(error, IsError(ERR_CERT_COMMON_NAME_INVALID));
-  EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_COMMON_NAME_INVALID);
-
-  result = CertVerifyResult();
-  verify_result = CertVerifyResult();
-  error = 0;
-  result.is_issued_by_known_root = true;
-  verify_proc = new MockCertVerifyProc(result);
-  error = verify_proc->Verify(
-      cert.get(), "prerelna1.pre.salesforce.com", std::string(),
-      CertVerifier::VERIFY_ENABLE_COMMON_NAME_FALLBACK_LOCAL_ANCHORS, nullptr,
-      CertificateList(), &verify_result);
-  EXPECT_THAT(error, IsError(ERR_CERT_COMMON_NAME_INVALID));
-  EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_COMMON_NAME_INVALID);
-
-  // Privately trusted: Ignores commonName by default.
-  result = CertVerifyResult();
-  verify_result = CertVerifyResult();
-  error = 0;
-  result.is_issued_by_known_root = false;
-  verify_proc = new MockCertVerifyProc(result);
-  error = verify_proc->Verify(cert.get(), "prerelna1.pre.salesforce.com",
-                              std::string(), 0, nullptr, CertificateList(),
-                              &verify_result);
-  EXPECT_THAT(error, IsError(ERR_CERT_COMMON_NAME_INVALID));
-  EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_COMMON_NAME_INVALID);
-
-  // Privately trusted: Falls back to common name if flags allow.
-  result = CertVerifyResult();
-  verify_result = CertVerifyResult();
-  error = 0;
-  result.is_issued_by_known_root = false;
-  verify_proc = new MockCertVerifyProc(result);
-  error = verify_proc->Verify(
-      cert.get(), "prerelna1.pre.salesforce.com", std::string(),
-      CertVerifier::VERIFY_ENABLE_COMMON_NAME_FALLBACK_LOCAL_ANCHORS, nullptr,
-      CertificateList(), &verify_result);
-  EXPECT_THAT(error, IsOk());
-  EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_COMMON_NAME_INVALID);
 }
 
 // Tests that CertVerifyProc records a histogram correctly when a

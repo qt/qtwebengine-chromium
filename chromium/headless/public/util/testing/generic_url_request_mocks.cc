@@ -33,6 +33,25 @@ void MockGenericURLRequestJobDelegate::OnResourceLoadComplete(
     const char* body,
     size_t body_size) {}
 
+// MockCookieChangeDelegate
+MockCookieChangeDispatcher::MockCookieChangeDispatcher() = default;
+MockCookieChangeDispatcher::~MockCookieChangeDispatcher() = default;
+
+std::unique_ptr<net::CookieChangeSubscription>
+MockCookieChangeDispatcher::AddCallbackForCookie(
+    const GURL& url,
+    const std::string& name,
+    net::CookieChangeCallback callback) {
+  CHECK(false);
+  return nullptr;
+}
+std::unique_ptr<net::CookieChangeSubscription>
+MockCookieChangeDispatcher::AddCallbackForAllChanges(
+    net::CookieChangeCallback callback) {
+  CHECK(false);
+  return nullptr;
+}
+
 // MockCookieStore
 MockCookieStore::MockCookieStore() = default;
 MockCookieStore::~MockCookieStore() = default;
@@ -51,13 +70,6 @@ void MockCookieStore::SetCanonicalCookieAsync(
     bool can_modify_httponly,
     SetCookiesCallback callback) {
   cookies_.push_back(std::move(*cookie));
-}
-
-void MockCookieStore::GetCookiesWithOptionsAsync(
-    const GURL& url,
-    const net::CookieOptions& options,
-    GetCookiesCallback callback) {
-  CHECK(false);
 }
 
 void MockCookieStore::GetCookieListWithOptionsAsync(
@@ -113,19 +125,8 @@ void MockCookieStore::SetForceKeepSessionState() {
   CHECK(false);
 }
 
-std::unique_ptr<net::CookieStore::CookieChangedSubscription>
-MockCookieStore::AddCallbackForCookie(const GURL& url,
-                                      const std::string& name,
-                                      const CookieChangedCallback& callback) {
-  CHECK(false);
-  return nullptr;
-}
-
-std::unique_ptr<net::CookieStore::CookieChangedSubscription>
-MockCookieStore::AddCallbackForAllChanges(
-    const CookieChangedCallback& callback) {
-  CHECK(false);
-  return nullptr;
+net::CookieChangeDispatcher& MockCookieStore::GetChangeDispatcher() {
+  return change_dispatcher_;
 }
 
 bool MockCookieStore::IsEphemeral() {

@@ -260,7 +260,7 @@ void TOutputGLSLBase::writeVariableType(const TType &type)
     }
     if (type.getBasicType() == EbtInterfaceBlock)
     {
-        TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
+        const TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
         declareInterfaceBlockLayout(interfaceBlock);
     }
     if (qualifier != EvqTemporary && qualifier != EvqGlobal)
@@ -317,7 +317,7 @@ void TOutputGLSLBase::writeVariableType(const TType &type)
     }
     else if (type.getBasicType() == EbtInterfaceBlock)
     {
-        TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
+        const TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
         declareInterfaceBlock(interfaceBlock);
     }
     else
@@ -678,8 +678,8 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
 
 bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
 {
-    TString preString;
-    TString postString = ")";
+    const char *preString  = "";
+    const char *postString = ")";
 
     switch (node->getOp())
     {
@@ -734,7 +734,7 @@ bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
         case EOpExp2:
         case EOpLog2:
         case EOpSqrt:
-        case EOpInverseSqrt:
+        case EOpInversesqrt:
         case EOpAbs:
         case EOpSign:
         case EOpFloor:
@@ -743,8 +743,8 @@ bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
         case EOpRoundEven:
         case EOpCeil:
         case EOpFract:
-        case EOpIsNan:
-        case EOpIsInf:
+        case EOpIsnan:
+        case EOpIsinf:
         case EOpFloatBitsToInt:
         case EOpFloatBitsToUint:
         case EOpIntBitsToFloat:
@@ -780,7 +780,7 @@ bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
             UNREACHABLE();
     }
 
-    writeTriplet(visit, preString.c_str(), nullptr, postString.c_str());
+    writeTriplet(visit, preString, nullptr, postString);
 
     return true;
 }
@@ -955,7 +955,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpClamp:
         case EOpMix:
         case EOpStep:
-        case EOpSmoothStep:
+        case EOpSmoothstep:
         case EOpFrexp:
         case EOpLdexp:
         case EOpDistance:
@@ -1108,17 +1108,18 @@ void TOutputGLSLBase::visitCodeBlock(TIntermBlock *node)
     }
 }
 
-TString TOutputGLSLBase::getTypeName(const TType &type)
+ImmutableString TOutputGLSLBase::getTypeName(const TType &type)
 {
     return GetTypeName(type, mHashFunction, &mNameMap);
 }
 
-TString TOutputGLSLBase::hashName(const TSymbol *symbol)
+ImmutableString TOutputGLSLBase::hashName(const TSymbol *symbol)
 {
     return HashName(symbol, mHashFunction, &mNameMap);
 }
 
-TString TOutputGLSLBase::hashFieldName(const TSymbol *containingStruct, const TString &fieldName)
+ImmutableString TOutputGLSLBase::hashFieldName(const TSymbol *containingStruct,
+                                               const ImmutableString &fieldName)
 {
     if (containingStruct->symbolType() == SymbolType::UserDefined ||
         containingStruct->symbolType() == SymbolType::Empty)
@@ -1131,7 +1132,7 @@ TString TOutputGLSLBase::hashFieldName(const TSymbol *containingStruct, const TS
     }
 }
 
-TString TOutputGLSLBase::hashFunctionNameIfNeeded(const TFunction *func)
+ImmutableString TOutputGLSLBase::hashFunctionNameIfNeeded(const TFunction *func)
 {
     if (func->isMain())
     {

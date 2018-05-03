@@ -98,9 +98,6 @@ class AudioReceiveStream {
 
     Transport* rtcp_send_transport = nullptr;
 
-    // TODO(solenberg): Remove once clients don't use it anymore.
-    int voe_channel_id = -1;
-
     // NetEq settings.
     size_t jitter_buffer_max_packets = 50;
     bool jitter_buffer_fast_accelerate = false;
@@ -127,8 +124,6 @@ class AudioReceiveStream {
   virtual void Stop() = 0;
 
   virtual Stats GetStats() const = 0;
-  // TODO(solenberg): Remove, once AudioMonitor is gone.
-  virtual int GetOutputLevel() const = 0;
 
   // Sets an audio sink that receives unmixed audio from the receive stream.
   // Ownership of the sink is managed by the caller.

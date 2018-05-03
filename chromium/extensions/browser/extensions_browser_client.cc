@@ -13,7 +13,7 @@ namespace extensions {
 
 namespace {
 
-ExtensionsBrowserClient* g_client = NULL;
+ExtensionsBrowserClient* g_extension_browser_client = NULL;
 
 }  // namespace
 
@@ -52,6 +52,14 @@ ExtensionsBrowserClient::GetExtensionNavigationUIData(
   return nullptr;
 }
 
+void ExtensionsBrowserClient::GetTabAndWindowIdForWebContents(
+    content::WebContents* web_contents,
+    int* tab_id,
+    int* window_id) {
+  *tab_id = -1;
+  *window_id = -1;
+}
+
 bool ExtensionsBrowserClient::IsExtensionEnabled(
     const std::string& extension_id,
     content::BrowserContext* context) const {
@@ -59,11 +67,11 @@ bool ExtensionsBrowserClient::IsExtensionEnabled(
 }
 
 ExtensionsBrowserClient* ExtensionsBrowserClient::Get() {
-  return g_client;
+  return g_extension_browser_client;
 }
 
 void ExtensionsBrowserClient::Set(ExtensionsBrowserClient* client) {
-  g_client = client;
+  g_extension_browser_client = client;
 }
 
 }  // namespace extensions

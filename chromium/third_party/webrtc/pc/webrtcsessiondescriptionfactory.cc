@@ -18,7 +18,6 @@
 #include "api/jsep.h"
 #include "api/jsepsessiondescription.h"
 #include "api/mediaconstraintsinterface.h"
-#include "pc/peerconnection.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ptr_util.h"
 #include "rtc_base/sslidentity.h"
@@ -122,7 +121,7 @@ void WebRtcSessionDescriptionFactory::CopyCandidatesFromSessionDescription(
 WebRtcSessionDescriptionFactory::WebRtcSessionDescriptionFactory(
     rtc::Thread* signaling_thread,
     cricket::ChannelManager* channel_manager,
-    PeerConnection* pc,
+    PeerConnectionInternal* pc,
     const std::string& session_id,
     std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
     const rtc::scoped_refptr<rtc::RTCCertificate>& certificate)
@@ -171,8 +170,8 @@ WebRtcSessionDescriptionFactory::WebRtcSessionDescriptionFactory(
 
     rtc::KeyParams key_params = rtc::KeyParams();
     RTC_LOG(LS_VERBOSE)
-        << "DTLS-SRTP enabled; sending DTLS identity request (key "
-        << "type: " << key_params.type() << ").";
+        << "DTLS-SRTP enabled; sending DTLS identity request (key type: "
+        << key_params.type() << ").";
 
     // Request certificate. This happens asynchronously, so that the caller gets
     // a chance to connect to |SignalCertificateReady|.

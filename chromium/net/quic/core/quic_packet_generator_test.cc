@@ -6,7 +6,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
 
 #include "base/macros.h"
 #include "net/quic/core/crypto/crypto_protocol.h"
@@ -16,6 +15,7 @@
 #include "net/quic/core/quic_simple_buffer_allocator.h"
 #include "net/quic/core/quic_utils.h"
 #include "net/quic/platform/api/quic_socket_address.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 #include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/mock_random.h"
@@ -26,11 +26,10 @@
 #include "net/quic/test_tools/simple_data_producer.h"
 #include "net/quic/test_tools/simple_quic_framer.h"
 
-using std::string;
+using testing::_;
 using testing::InSequence;
 using testing::Return;
 using testing::StrictMock;
-using testing::_;
 
 namespace net {
 namespace test {
@@ -48,7 +47,7 @@ class MockDelegate : public QuicPacketGenerator::DelegateInterface {
   MOCK_METHOD1(PopulateStopWaitingFrame, void(QuicStopWaitingFrame*));
   MOCK_METHOD1(OnSerializedPacket, void(SerializedPacket* packet));
   MOCK_METHOD3(OnUnrecoverableError,
-               void(QuicErrorCode, const string&, ConnectionCloseSource));
+               void(QuicErrorCode, const QuicString&, ConnectionCloseSource));
 
   void SetCanWriteAnything() {
     EXPECT_CALL(*this, ShouldGeneratePacket(_, _)).WillRepeatedly(Return(true));
@@ -110,10 +109,7 @@ class TestPacketGenerator : public QuicPacketGenerator {
                       QuicRandom* random_generator,
                       DelegateInterface* delegate,
                       SimpleDataProducer* producer)
-      : QuicPacketGenerator(connection_id,
-                            framer,
-                            random_generator,
-                            delegate),
+      : QuicPacketGenerator(connection_id, framer, random_generator, delegate),
         producer_(producer) {}
 
   QuicConsumedData ConsumeDataFastPath(QuicStreamId id,
@@ -181,7 +177,7 @@ class QuicPacketGeneratorTest : public QuicTest {
   }
 
   QuicGoAwayFrame* CreateGoAwayFrame() {
-    return new QuicGoAwayFrame(2, QUIC_NO_ERROR, 1, string());
+    return new QuicGoAwayFrame(2, QUIC_NO_ERROR, 1, QuicString());
   }
 
   void CheckPacketContains(const PacketContents& contents,
@@ -938,10 +934,11 @@ TEST_F(QuicPacketGeneratorTest, SetMaxPacketLength_MidpacketFlush) {
 TEST_F(QuicPacketGeneratorTest, GenerateConnectivityProbingPacket) {
   delegate_.SetCanWriteAnything();
 
-  std::unique_ptr<QuicEncryptedPacket> probing_packet(
+  OwningSerializedPacketPointer probing_packet(
       generator_.SerializeConnectivityProbingPacket());
 
-  ASSERT_TRUE(simple_framer_.ProcessPacket(*probing_packet));
+  ASSERT_TRUE(simple_framer_.ProcessPacket(QuicEncryptedPacket(
+      probing_packet->encrypted_buffer, probing_packet->encrypted_length)));
 
   EXPECT_EQ(2u, simple_framer_.num_frames());
   EXPECT_EQ(1u, simple_framer_.ping_frames().size());

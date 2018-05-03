@@ -9,9 +9,9 @@
 #include <assert.h>
 #include <sys/mman.h>
 
-cros_gralloc_buffer::cros_gralloc_buffer(uint32_t id, struct bo *acquirebo_,
+cros_gralloc_buffer::cros_gralloc_buffer(uint32_t id, struct bo *acquire_bo,
 					 struct cros_gralloc_handle *acquire_handle)
-    : id_(id), bo_(acquirebo_), hnd_(acquire_handle), refcount_(1), lockcount_(0)
+    : id_(id), bo_(acquire_bo), hnd_(acquire_handle), refcount_(1), lockcount_(0)
 {
 	assert(bo_);
 	num_planes_ = drv_bo_get_num_planes(bo_);
@@ -44,7 +44,8 @@ int32_t cros_gralloc_buffer::decrease_refcount()
 	return --refcount_;
 }
 
-int32_t cros_gralloc_buffer::lock(uint64_t flags, uint8_t *addr[DRV_MAX_PLANES])
+int32_t cros_gralloc_buffer::lock(const struct rectangle *rect, uint32_t map_flags,
+				  uint8_t *addr[DRV_MAX_PLANES])
 {
 	void *vaddr = nullptr;
 
@@ -59,12 +60,12 @@ int32_t cros_gralloc_buffer::lock(uint64_t flags, uint8_t *addr[DRV_MAX_PLANES])
 		return -EINVAL;
 	}
 
-	if (flags) {
+	if (map_flags) {
 		if (lock_data_[0]) {
-			vaddr = lock_data_[0]->addr;
+			drv_bo_invalidate(bo_, lock_data_[0]);
+			vaddr = lock_data_[0]->vma->addr;
 		} else {
-			vaddr = drv_bo_map(bo_, 0, 0, drv_bo_get_width(bo_), drv_bo_get_height(bo_),
-					   BO_TRANSFER_READ_WRITE, &lock_data_[0], 0);
+			vaddr = drv_bo_map(bo_, rect, map_flags, &lock_data_[0], 0);
 		}
 
 		if (vaddr == MAP_FAILED) {
@@ -89,7 +90,7 @@ int32_t cros_gralloc_buffer::unlock()
 
 	if (!--lockcount_) {
 		if (lock_data_[0]) {
-			drv_bo_unmap(bo_, lock_data_[0]);
+			drv_bo_flush(bo_, lock_data_[0]);
 			lock_data_[0] = nullptr;
 		}
 	}

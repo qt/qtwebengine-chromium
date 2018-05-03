@@ -347,13 +347,6 @@ void MarkupFormatter::AppendCloseTag(StringBuilder& result,
   result.Append('>');
 }
 
-static inline bool AttributeIsInSerializedNamespace(
-    const Attribute& attribute) {
-  return attribute.NamespaceURI() == XMLNames::xmlNamespaceURI ||
-         attribute.NamespaceURI() == XLinkNames::xlinkNamespaceURI ||
-         attribute.NamespaceURI() == XMLNSNames::xmlnsNamespaceURI;
-}
-
 void MarkupFormatter::AppendAttribute(StringBuilder& result,
                                       const Element& element,
                                       const Attribute& attribute,
@@ -361,7 +354,15 @@ void MarkupFormatter::AppendAttribute(StringBuilder& result,
   bool document_is_html = SerializeAsHTMLDocument(element);
 
   QualifiedName prefixed_name = attribute.GetName();
-  if (document_is_html && !AttributeIsInSerializedNamespace(attribute)) {
+  if (document_is_html) {
+    if (attribute.NamespaceURI() == XMLNSNames::xmlnsNamespaceURI) {
+      if (!attribute.Prefix() && attribute.LocalName() != g_xmlns_atom)
+        prefixed_name.SetPrefix(g_xmlns_atom);
+    } else if (attribute.NamespaceURI() == XMLNames::xmlNamespaceURI) {
+      prefixed_name.SetPrefix(g_xml_atom);
+    } else if (attribute.NamespaceURI() == XLinkNames::xlinkNamespaceURI) {
+      prefixed_name.SetPrefix(g_xlink_atom);
+    }
     result.Append(' ');
     result.Append(prefixed_name.ToString());
   } else {
@@ -473,8 +474,13 @@ EntityMask MarkupFormatter::EntityMaskForText(const Text& text) const {
   if (text.parentElement())
     parent_name = &(text.parentElement())->TagQName();
 
-  if (parent_name && (*parent_name == scriptTag || *parent_name == styleTag ||
-                      *parent_name == xmpTag))
+  if (parent_name &&
+      (*parent_name == scriptTag || *parent_name == styleTag ||
+       *parent_name == xmpTag || *parent_name == iframeTag ||
+       *parent_name == plaintextTag || *parent_name == noembedTag ||
+       *parent_name == noframesTag ||
+       (*parent_name == noscriptTag && text.GetDocument().GetFrame() &&
+        text.GetDocument().CanExecuteScripts(kNotAboutToExecuteScript))))
     return kEntityMaskInCDATA;
   return kEntityMaskInHTMLPCDATA;
 }

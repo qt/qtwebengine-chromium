@@ -387,10 +387,6 @@ void BrowserChildProcessHostImpl::TerminateOnBadMessageReceived(
   child_process_->GetProcess().Terminate(RESULT_CODE_KILLED_BAD_MESSAGE, false);
 }
 
-bool BrowserChildProcessHostImpl::CanShutdown() {
-  return delegate_->CanShutdown();
-}
-
 void BrowserChildProcessHostImpl::OnChannelInitialized(IPC::Channel* channel) {
   channel_ = channel;
 }
@@ -439,6 +435,7 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
         UMA_HISTOGRAM_ENUMERATION("ChildProcess.DisconnectedAlive2",
                                   static_cast<ProcessType>(data_.process_type),
                                   PROCESS_TYPE_MAX);
+        break;
       }
       default:
         break;

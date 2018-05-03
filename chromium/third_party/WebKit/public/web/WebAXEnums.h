@@ -125,6 +125,10 @@ enum WebAXRole {
   kWebAXRoleInlineTextBox,
   kWebAXRoleInputTime,
   kWebAXRoleLabel,
+  kWebAXRoleLayoutTable,
+  kWebAXRoleLayoutTableCell,
+  kWebAXRoleLayoutTableColumn,
+  kWebAXRoleLayoutTableRow,
   kWebAXRoleLegend,
   kWebAXRoleLineBreak,
   kWebAXRoleLink,
@@ -243,6 +247,14 @@ enum WebAXExpanded {
   kWebAXExpandedUndefined = 0,
   kWebAXExpandedCollapsed,
   kWebAXExpandedExpanded
+};
+
+// Selected State.
+// These values must match blink::AccessibilitySelectedState values.
+enum WebAXSelectedState {
+  kWebAXSelectedStateUndefined = 0,
+  kWebAXSelectedStateFalse,
+  kWebAXSelectedStateTrue
 };
 
 // These values must match blink::AccessibilityOrientation values.

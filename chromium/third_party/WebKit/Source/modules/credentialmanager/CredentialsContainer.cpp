@@ -28,9 +28,9 @@
 #include "modules/credentialmanager/CredentialRequestOptions.h"
 #include "modules/credentialmanager/FederatedCredential.h"
 #include "modules/credentialmanager/FederatedCredentialRequestOptions.h"
-#include "modules/credentialmanager/MakePublicKeyCredentialOptions.h"
 #include "modules/credentialmanager/PasswordCredential.h"
 #include "modules/credentialmanager/PublicKeyCredential.h"
+#include "modules/credentialmanager/PublicKeyCredentialCreationOptions.h"
 #include "modules/credentialmanager/PublicKeyCredentialRequestOptions.h"
 #include "platform/weborigin/OriginAccessEntry.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -46,8 +46,8 @@ using ::password_manager::mojom::blink::CredentialInfo;
 using ::password_manager::mojom::blink::CredentialInfoPtr;
 using ::password_manager::mojom::blink::CredentialMediationRequirement;
 using ::webauth::mojom::blink::AuthenticatorStatus;
-using MojoMakePublicKeyCredentialOptions =
-    ::webauth::mojom::blink::MakePublicKeyCredentialOptions;
+using MojoPublicKeyCredentialCreationOptions =
+    ::webauth::mojom::blink::PublicKeyCredentialCreationOptions;
 using ::webauth::mojom::blink::MakeCredentialAuthenticatorResponsePtr;
 using MojoPublicKeyCredentialRequestOptions =
     ::webauth::mojom::blink::PublicKeyCredentialRequestOptions;
@@ -237,16 +237,16 @@ DOMException* CredentialManagerErrorToDOMException(
       return DOMException::Create(kNotSupportedError,
                                   "The password store is unavailable.");
     case CredentialManagerError::NOT_ALLOWED:
-      return DOMException::Create(kNotAllowedError,
-                                  "The operation is not allowed.");
+      return DOMException::Create(
+          kNotAllowedError,
+          "The operation either timed out or was not allowed. See: "
+          "https://w3c.github.io/webauthn/#sec-assertion-privacy.");
     case CredentialManagerError::NOT_SUPPORTED:
       return DOMException::Create(
           kNotSupportedError,
           "Parameters for this operation are not supported.");
     case CredentialManagerError::INVALID_DOMAIN:
       return DOMException::Create(kSecurityError, "This is an invalid domain.");
-    case CredentialManagerError::TIMED_OUT:
-      return DOMException::Create(kNotAllowedError, "Operation timed out.");
     case CredentialManagerError::NOT_IMPLEMENTED:
       return DOMException::Create(kNotSupportedError, "Not implemented");
     case CredentialManagerError::UNKNOWN:
@@ -395,6 +395,21 @@ ScriptPromise CredentialsContainer::get(
     if (!CheckPublicKeySecurityRequirements(resolver, relying_party_id))
       return promise;
 
+    if (options.publicKey().hasExtensions() &&
+        options.publicKey().extensions().hasAppid()) {
+      const auto& appid = options.publicKey().extensions().appid();
+      if (!appid.IsEmpty()) {
+        KURL appid_url(appid);
+        if (!appid_url.IsValid()) {
+          resolver->Reject(
+              DOMException::Create(kSyntaxError,
+                                   "The `appid` extension value is neither "
+                                   "empty/null nor a valid URL"));
+          return promise;
+        }
+      }
+    }
+
     auto mojo_options =
         MojoPublicKeyCredentialRequestOptions::From(options.publicKey());
     if (mojo_options) {
@@ -528,8 +543,18 @@ ScriptPromise CredentialsContainer::create(
     if (!CheckPublicKeySecurityRequirements(resolver, relying_party_id))
       return promise;
 
+    if (options.publicKey().hasExtensions() &&
+        options.publicKey().extensions().hasAppid()) {
+      resolver->Reject(DOMException::Create(
+          kNotSupportedError,
+          "The 'appid' extension is only valid when requesting an assertion "
+          "for a pre-existing credential that was registered using the "
+          "legacy FIDO U2F API."));
+      return promise;
+    }
+
     auto mojo_options =
-        MojoMakePublicKeyCredentialOptions::From(options.publicKey());
+        MojoPublicKeyCredentialCreationOptions::From(options.publicKey());
     if (mojo_options) {
       if (!mojo_options->relying_party->id) {
         mojo_options->relying_party->id = resolver->GetFrame()

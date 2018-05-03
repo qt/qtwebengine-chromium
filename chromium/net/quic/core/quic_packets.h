@@ -10,7 +10,6 @@
 #include <list>
 #include <memory>
 #include <ostream>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -246,6 +245,21 @@ QUIC_EXPORT_PRIVATE void ClearSerializedPacket(
 // Allocates a new char[] of size |packet.encrypted_length| and copies in
 // |packet.encrypted_buffer|.
 QUIC_EXPORT_PRIVATE char* CopyBuffer(const SerializedPacket& packet);
+
+struct QUIC_EXPORT_PRIVATE SerializedPacketDeleter {
+  void operator()(SerializedPacket* packet) {
+    if (packet->encrypted_buffer != nullptr) {
+      delete[] packet->encrypted_buffer;
+    }
+    delete packet;
+  }
+};
+
+// On destruction, OwningSerializedPacketPointer deletes a packet's (on-heap)
+// encrypted_buffer before deleting the (also on-heap) packet itself.
+// TODO(wub): Maybe delete retransmittable_frames too?
+typedef std::unique_ptr<SerializedPacket, SerializedPacketDeleter>
+    OwningSerializedPacketPointer;
 
 }  // namespace net
 

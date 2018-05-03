@@ -54,6 +54,11 @@ class NotificationTestDelegate : public NotificationDelegate {
     submitted_reply_string_ = reply;
   }
 
+  void Reset() {
+    clicked_button_index_ = -1;
+    submitted_reply_string_ = base::EmptyString16();
+  }
+
   void DisableNotification() override { disable_notification_called_ = true; }
 
   int clicked_button_index() const { return clicked_button_index_; }
@@ -142,7 +147,7 @@ void NotificationViewMDTest::SetUp() {
   // Create a dummy notification.
   delegate_ = new NotificationTestDelegate();
   data_.reset(new RichNotificationData());
-  data_->settings_button_handler = SettingsButtonHandler::TRAY;
+  data_->settings_button_handler = SettingsButtonHandler::INLINE;
   notification_.reset(new Notification(
       NOTIFICATION_TYPE_BASE_FORMAT, std::string("notification id"),
       base::UTF8ToUTF16("title"), base::UTF8ToUTF16("message"),
@@ -173,6 +178,7 @@ void NotificationViewMDTest::SetUp() {
 }
 
 void NotificationViewMDTest::TearDown() {
+  notification_view_->SetInkDropMode(MessageView::InkDropMode::OFF);
   notification_view_->RemoveObserver(this);
   widget()->Close();
   notification_view_.reset();
@@ -308,8 +314,7 @@ TEST_F(NotificationViewMDTest, CreateOrUpdateTest) {
   EXPECT_EQ(nullptr, notification_view()->title_view_);
   EXPECT_EQ(nullptr, notification_view()->message_view_);
   EXPECT_EQ(nullptr, notification_view()->image_container_view_);
-  // We still expect an icon view for all layouts.
-  EXPECT_NE(nullptr, notification_view()->icon_view_);
+  EXPECT_EQ(nullptr, notification_view()->icon_view_);
 }
 
 TEST_F(NotificationViewMDTest, TestIconSizing) {
@@ -468,7 +473,7 @@ TEST_F(NotificationViewMDTest, TestInlineReply) {
   delegate_->set_expecting_reply_submission(true);
 
   std::vector<ButtonInfo> buttons = CreateButtons(2);
-  buttons[1].type = ButtonType::TEXT;
+  buttons[1].placeholder = base::string16();
   notification()->set_buttons(buttons);
   UpdateNotificationViews();
   widget()->Show();
@@ -501,17 +506,53 @@ TEST_F(NotificationViewMDTest, TestInlineReply) {
   generator.ClickLeftButton();
   generator.ClickLeftButton();
   EXPECT_TRUE(notification_view()->inline_reply_->visible());
-  EXPECT_TRUE(notification_view()->inline_reply_->HasFocus());
+  EXPECT_TRUE(notification_view()->inline_reply_->textfield()->visible());
+  EXPECT_TRUE(notification_view()->inline_reply_->textfield()->HasFocus());
 
-  // Type the text and submit.
-  ui::KeyboardCode keycodes[] = {ui::VKEY_T, ui::VKEY_E, ui::VKEY_S, ui::VKEY_T,
-                                 ui::VKEY_RETURN};
-
+  // Type the text.
+  ui::KeyboardCode keycodes[] = {ui::VKEY_T, ui::VKEY_E, ui::VKEY_S,
+                                 ui::VKEY_T};
   for (ui::KeyboardCode keycode : keycodes) {
     generator.PressKey(keycode, ui::EF_NONE);
     generator.ReleaseKey(keycode, ui::EF_NONE);
   }
 
+  // Submit by typing RETURN key.
+  generator.PressKey(ui::VKEY_RETURN, ui::EF_NONE);
+  generator.ReleaseKey(ui::VKEY_RETURN, ui::EF_NONE);
+  EXPECT_EQ(1, delegate_->clicked_button_index());
+  EXPECT_EQ(base::ASCIIToUTF16("test"), delegate_->submitted_reply_string());
+
+  // Reset values.
+  delegate_->Reset();
+
+  // Now construct a mouse click event 1 pixel inside the boundary of the action
+  // button.
+  cursor_location = gfx::Point(1, 1);
+  views::View::ConvertPointToScreen(notification_view()->action_buttons_[1],
+                                    &cursor_location);
+  generator.MoveMouseTo(cursor_location);
+  generator.ClickLeftButton();
+
+  // Nothing should be submitted at this point.
+  EXPECT_EQ(-1, delegate_->clicked_button_index());
+  EXPECT_EQ(base::EmptyString16(), delegate_->submitted_reply_string());
+
+  // Click the button again and focus on the inline textfield.
+  generator.ClickLeftButton();
+
+  // Type the text.
+  for (ui::KeyboardCode keycode : keycodes) {
+    generator.PressKey(keycode, ui::EF_NONE);
+    generator.ReleaseKey(keycode, ui::EF_NONE);
+  }
+
+  // Submit by clicking the reply button.
+  cursor_location = gfx::Point(1, 1);
+  views::View::ConvertPointToScreen(
+      notification_view()->inline_reply_->button(), &cursor_location);
+  generator.MoveMouseTo(cursor_location);
+  generator.ClickLeftButton();
   EXPECT_EQ(1, delegate_->clicked_button_index());
   EXPECT_EQ(base::ASCIIToUTF16("test"), delegate_->submitted_reply_string());
 }
@@ -637,11 +678,25 @@ TEST_F(NotificationViewMDTest, ExpandLongMessage) {
   EXPECT_EQ(collapsed_height, notification_view()->message_view_->height());
   EXPECT_EQ(collapsed_preferred_height,
             notification_view()->GetPreferredSize().height());
+
+  // Test |manually_expanded_or_collapsed| being set when the toggle is done by
+  // user interaction.
+  EXPECT_FALSE(notification_view()->IsManuallyExpandedOrCollapsed());
+
+  // Construct a mouse click event 1 pixel inside the header.
+  gfx::Point done_cursor_location(1, 1);
+  views::View::ConvertPointToScreen(notification_view()->header_row_,
+                                    &done_cursor_location);
+  ui::test::EventGenerator generator(widget()->GetNativeWindow());
+  generator.MoveMouseTo(done_cursor_location);
+  generator.ClickLeftButton();
+
+  EXPECT_TRUE(notification_view()->IsManuallyExpandedOrCollapsed());
 }
 
 TEST_F(NotificationViewMDTest, TestAccentColor) {
-  const SkColor kActionButtonTextColor = SkColorSetRGB(0x33, 0x67, 0xD6);
-  const SkColor kCustomAccentColor = SkColorSetRGB(0xea, 0x61, 0x0);
+  constexpr SkColor kActionButtonTextColor = gfx::kGoogleBlue700;
+  constexpr SkColor kCustomAccentColor = gfx::kGoogleYellow900;
 
   notification()->set_buttons(CreateButtons(2));
   UpdateNotificationViews();
@@ -654,7 +709,7 @@ TEST_F(NotificationViewMDTest, TestAccentColor) {
 
   // By default, header does not have accent color (default grey), and
   // buttons have default accent color.
-  EXPECT_EQ(message_center::kNotificationDefaultAccentColor,
+  EXPECT_EQ(kNotificationDefaultAccentColor,
             notification_view()->header_row_->accent_color_for_testing());
   EXPECT_EQ(
       kActionButtonTextColor,
@@ -689,24 +744,43 @@ TEST_F(NotificationViewMDTest, UseImageAsIcon) {
   UpdateNotificationViews();
   EXPECT_FALSE(notification_view()->expanded_);
   EXPECT_TRUE(notification_view()->icon_view_->visible());
+  EXPECT_TRUE(notification_view()->right_content_->visible());
 
   // Icon on the right side is still visible when expanded.
   notification_view()->ToggleExpanded();
   EXPECT_TRUE(notification_view()->expanded_);
   EXPECT_TRUE(notification_view()->icon_view_->visible());
+  EXPECT_TRUE(notification_view()->right_content_->visible());
 
   notification_view()->ToggleExpanded();
   EXPECT_FALSE(notification_view()->expanded_);
 
-  // Test notification with use_image_as_icon e.g. screenshot preview.
+  // Test notification with |use_image_for_icon| e.g. screenshot preview.
   notification()->set_icon(gfx::Image());
   UpdateNotificationViews();
   EXPECT_TRUE(notification_view()->icon_view_->visible());
+  EXPECT_TRUE(notification_view()->right_content_->visible());
 
   // Icon on the right side is not visible when expanded.
   notification_view()->ToggleExpanded();
   EXPECT_TRUE(notification_view()->expanded_);
-  EXPECT_FALSE(notification_view()->icon_view_->visible());
+  EXPECT_TRUE(notification_view()->icon_view_->visible());
+  EXPECT_FALSE(notification_view()->right_content_->visible());
+}
+
+TEST_F(NotificationViewMDTest, NotificationWithoutIcon) {
+  notification()->set_icon(gfx::Image());
+  notification()->set_image(gfx::Image());
+  UpdateNotificationViews();
+
+  // If the notification has no icon, |icon_view_| shouldn't be created.
+  EXPECT_FALSE(notification_view()->icon_view_);
+  EXPECT_FALSE(notification_view()->right_content_->visible());
+
+  // Toggling should not affect the icon.
+  notification_view()->ToggleExpanded();
+  EXPECT_FALSE(notification_view()->icon_view_);
+  EXPECT_FALSE(notification_view()->right_content_->visible());
 }
 
 TEST_F(NotificationViewMDTest, InlineSettings) {
@@ -715,22 +789,27 @@ TEST_F(NotificationViewMDTest, InlineSettings) {
 
   // Inline settings will be shown by clicking settings button.
   EXPECT_FALSE(notification_view()->settings_row_->visible());
-  notification_view()->OnSettingsButtonPressed();
+  gfx::Point settings_cursor_location(1, 1);
+  views::View::ConvertPointToScreen(
+      notification_view()->control_buttons_view_.get()->settings_button(),
+      &settings_cursor_location);
+  ui::test::EventGenerator generator(widget()->GetNativeWindow());
+  generator.MoveMouseTo(settings_cursor_location);
+  generator.ClickLeftButton();
   EXPECT_TRUE(notification_view()->settings_row_->visible());
 
   // By clicking settings button again, it will toggle.
-  notification_view()->OnSettingsButtonPressed();
+  generator.ClickLeftButton();
   EXPECT_FALSE(notification_view()->settings_row_->visible());
 
   // Show inline settings again.
-  notification_view()->OnSettingsButtonPressed();
+  generator.ClickLeftButton();
   EXPECT_TRUE(notification_view()->settings_row_->visible());
 
   // Construct a mouse click event 1 pixel inside the done button.
   gfx::Point done_cursor_location(1, 1);
   views::View::ConvertPointToScreen(notification_view()->settings_done_button_,
                                     &done_cursor_location);
-  ui::test::EventGenerator generator(widget()->GetNativeWindow());
   generator.MoveMouseTo(done_cursor_location);
   generator.ClickLeftButton();
 
@@ -738,7 +817,8 @@ TEST_F(NotificationViewMDTest, InlineSettings) {
   EXPECT_FALSE(notification_view()->settings_row_->visible());
   EXPECT_FALSE(delegate_->disable_notification_called());
 
-  notification_view()->OnSettingsButtonPressed();
+  generator.MoveMouseTo(settings_cursor_location);
+  generator.ClickLeftButton();
   EXPECT_TRUE(notification_view()->settings_row_->visible());
 
   // Construct a mouse click event 1 pixel inside the block all button.

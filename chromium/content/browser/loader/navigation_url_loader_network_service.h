@@ -12,8 +12,8 @@
 #include "content/browser/loader/navigation_url_loader.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/ssl_status.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace net {
 struct RedirectInfo;
@@ -29,7 +29,7 @@ class URLLoaderRequestHandler;
 struct GlobalRequestID;
 
 // This is an implementation of NavigationURLLoader used when
-// --enable-network-service is used.
+// --enable-features=NetworkService is used.
 class CONTENT_EXPORT NavigationURLLoaderNetworkService
     : public NavigationURLLoader {
  public:
@@ -68,6 +68,7 @@ class CONTENT_EXPORT NavigationURLLoaderNetworkService
   void OnRequestStarted(base::TimeTicks timestamp);
 
   void BindNonNetworkURLLoaderFactoryRequest(
+      int frame_tree_node_id,
       const GURL& url,
       network::mojom::URLLoaderFactoryRequest factory);
 

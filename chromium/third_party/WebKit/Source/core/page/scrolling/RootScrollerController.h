@@ -74,6 +74,11 @@ class CORE_EXPORT RootScrollerController
   // rely on DidUpdateLayout.
   void DidResizeFrameView();
 
+  // Called when an iframe in this document has an updated FrameView (e.g.
+  // FrameView removed, swapped, etc.) so that we can recompute the effective
+  // root scroller and set the appropriate properties on the view.
+  void DidUpdateIFrameFrameView(HTMLFrameOwnerElement&);
+
   // Returns the PaintLayer associated with the currently effective root
   // scroller.
   PaintLayer* RootScrollerPaintLayer() const;
@@ -87,6 +92,14 @@ class CORE_EXPORT RootScrollerController
 
   void ElementRemoved(const Element&);
 
+  // In the "implicit root scroller" mode, we might promote an element to
+  // become the effective root scroller even if the page doesn't set it as so
+  // to improve the user experience.  In this mode, as elements layout they'll
+  // call this method and, if they meet the root scroller restrictions, will be
+  // added to the implicit candidate set. After layout is done we'll go
+  // through that set and select the best candidate.
+  void ConsiderForImplicit(Node&);
+
  private:
   RootScrollerController(Document&);
 
@@ -98,11 +111,20 @@ class CORE_EXPORT RootScrollerController
   // effective root scroller.
   bool IsValidRootScroller(const Element&) const;
 
+  // Determines whether the given element meets the criteria to be implicitly
+  // set as the root scroller (in addition to being a valid root scroller).
+  bool IsValidImplicit(const Element&) const;
+
   // Set certain properties to the effective root scroller. Called when a Node
   // becomes or unbecomes the effective root scroller.
-  void ApplyRootScrollerProperties(Node&) const;
+  void ApplyRootScrollerProperties(Node&);
 
   void UpdateIFrameGeometryAndLayoutSize(HTMLFrameOwnerElement&) const;
+
+  // Called after layout, runs through implicit candidates, removing ones that
+  // are no longer meet the root scroller restrictions. Of the remaining ones,
+  // will choose the best and set it as the implicit_root_scroller_.
+  void ProcessImplicitCandidates();
 
   // The owning Document whose root scroller this object manages.
   WeakMember<Document> document_;
@@ -119,7 +141,19 @@ class CORE_EXPORT RootScrollerController
   // RootScrollerController.
   Member<Node> effective_root_scroller_;
 
+  // Candidate Elements that we should examine after layout to determine which
+  // should be root scroller. This is used when "implicit root scroller" is
+  // enabled, where a valid Element can become the root scroller without being
+  // explicitly set using document.setRootScroller.
+  HeapHashSet<WeakMember<Element>> implicit_candidates_;
+
+  WeakMember<Element> implicit_root_scroller_;
+
   bool document_has_document_element_;
+
+  // This flag is used to force applicationn of rootScroller properties even if
+  // the effective rootScroller doesn't change.
+  bool needs_apply_properties_;
 };
 
 }  // namespace blink

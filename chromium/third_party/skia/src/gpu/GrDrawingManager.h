@@ -8,7 +8,6 @@
 #ifndef GrDrawingManager_DEFINED
 #define GrDrawingManager_DEFINED
 
-#include "GrOpFlushState.h"
 #include "GrPathRenderer.h"
 #include "GrPathRendererChain.h"
 #include "GrRenderTargetOpList.h"
@@ -65,7 +64,8 @@ public:
     GrCoverageCountingPathRenderer* getCoverageCountingPathRenderer();
 
     void flushIfNecessary() {
-        if (fContext->contextPriv().getResourceCache()->requestsFlush()) {
+        GrResourceCache* resourceCache = fContext->contextPriv().getResourceCache();
+        if (resourceCache && resourceCache->requestsFlush()) {
             this->internalFlush(nullptr, GrResourceCache::kCacheRequested, 0, nullptr);
         }
     }
@@ -79,21 +79,13 @@ public:
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
     void testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
+    void moveOpListsToDDL(SkDeferredDisplayList* ddl);
+    void copyOpListsFromDDL(const SkDeferredDisplayList*, GrRenderTargetProxy* newDest);
+
 private:
-    GrDrawingManager(GrContext* context,
-                     const GrPathRendererChain::Options& optionsForPathRendererChain,
-                     const GrAtlasTextContext::Options& optionsForAtlasTextContext,
-                     GrSingleOwner* singleOwner)
-            : fContext(context)
-            , fOptionsForPathRendererChain(optionsForPathRendererChain)
-            , fOptionsForAtlasTextContext(optionsForAtlasTextContext)
-            , fSingleOwner(singleOwner)
-            , fAbandoned(false)
-            , fAtlasTextContext(nullptr)
-            , fPathRendererChain(nullptr)
-            , fSoftwarePathRenderer(nullptr)
-            , fFlushState(context->getGpu(), context->contextPriv().resourceProvider())
-            , fFlushing(false) {}
+    GrDrawingManager(GrContext*, const GrPathRendererChain::Options&,
+                     const GrAtlasTextContext::Options&, GrSingleOwner*,
+                     GrContextOptions::Enable sortRenderTargets);
 
     void abandon();
     void cleanup();
@@ -138,8 +130,9 @@ private:
     GrPathRendererChain*              fPathRendererChain;
     GrSoftwarePathRenderer*           fSoftwarePathRenderer;
 
-    GrOpFlushState                    fFlushState;
+    GrTokenTracker                    fTokenTracker;
     bool                              fFlushing;
+    bool                              fSortRenderTargets;
 
     SkTArray<GrOnFlushCallbackObject*> fOnFlushCBObjects;
 };

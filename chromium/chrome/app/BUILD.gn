@@ -4,6 +4,7 @@
 
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
+import("//chromeos/assistant/assistant.gni")
 import("//components/nacl/features.gni")
 import("//ppapi/features/features.gni")
 import("//printing/features/features.gni")
@@ -37,6 +38,11 @@ source_set("chrome_dll_resources") {
   sources = [
     "chrome_dll_resource.h",
   ]
+
+  deps = [
+    ":command_ids",
+  ]
+
   if (is_win) {
     sources += [ "chrome_dll.rc" ]
     if (enable_basic_printing) {
@@ -45,9 +51,7 @@ source_set("chrome_dll_resources") {
       # toggle off of the enable-basic-printing flag in the .rc file.
       defines = [ "ENABLE_BASIC_PRINTING_FOR_RC" ]
     }
-    deps = [
-      "//printing/features",
-    ]
+    deps += [ "//printing/features" ]
   }
 }
 
@@ -324,7 +328,7 @@ static_library("test_support") {
     "//chrome/gpu",
     "//chrome/renderer",
     "//chrome/utility",
-    "//components/nacl/common:features",
+    "//components/nacl/common:buildflags",
     "//components/startup_metric_utils/browser:lib",
     "//content/public/app:both",
     "//content/public/common",
@@ -376,8 +380,8 @@ static_library("test_support") {
 
   if (enable_mus) {
     deps += [
+      "//ash/components/quick_launch/public/mojom:constants",
       "//mash/common",
-      "//mash/quick_launch/public/interfaces:constants",
       "//services/ui/public/interfaces:constants",
     ]
   }
@@ -387,6 +391,7 @@ chrome_packaged_services = [
   ":chrome_manifest",
   "//chrome/profiling:manifest",
   "//components/patch_service:manifest",
+  "//components/unzip_service:manifest",
   "//chrome/services/file_util:manifest",
   "//services/proxy_resolver:proxy_resolver_manifest",
   "//services/preferences:local_state_manifest",
@@ -428,18 +433,20 @@ service_manifest("chrome_manifest") {
   source = "chrome_manifest.json"
 }
 
+service_manifest("chrome_renderer_manifest") {
+  source = "chrome_renderer_manifest.json"
+}
+
 service_manifest("chrome_content_packaged_services_manifest_overlay") {
   source =
       "//chrome/browser/chrome_content_packaged_services_manifest_overlay.json"
   packaged_services = chrome_packaged_services
-  if (enable_mus) {
-    packaged_services += [ "//mash/quick_launch:manifest" ]
-  }
   if (is_chromeos) {
     packaged_services += [
-      "//ash/autoclick/mus:manifest",
+      "//ash/components/autoclick:manifest",
+      "//ash/components/quick_launch:manifest",
+      "//ash/components/touch_hud:manifest",
       "//ash:manifest",
-      "//ash/touch_hud/mus:manifest",
       "//components/font_service:manifest",
     ]
   }
@@ -451,6 +458,9 @@ service_manifest("chrome_content_browser_manifest_overlay") {
     "//services/identity:manifest",
     "//services/preferences:manifest",
   ]
+  if (enable_cros_assistant) {
+    packaged_services += [ "//chromeos/services/assistant:manifest" ]
+  }
 }
 
 service_manifest("chrome_test_browser_overlay") {
@@ -542,6 +552,7 @@ if (use_aura) {
     ":chrome_content_plugin_manifest",
     ":chrome_content_renderer_manifest",
     ":chrome_content_utility_manifest",
+    ":chrome_renderer_manifest",
   ]
 
   catalog("catalog") {

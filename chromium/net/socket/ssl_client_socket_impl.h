@@ -233,10 +233,6 @@ class SSLClientSocketImpl : public SSLClientSocket,
   // in a UMA histogram.
   void RecordNegotiatedProtocol() const;
 
-  // Records histograms for channel id support during full handshakes - resumed
-  // handshakes are ignored.
-  void RecordChannelIDSupport() const;
-
   // Returns whether TLS channel ID is enabled.
   bool IsChannelIDEnabled() const;
 
@@ -292,8 +288,6 @@ class SSLClientSocketImpl : public SSLClientSocket,
 
   // The service for retrieving Channel ID keys.  May be NULL.
   ChannelIDService* channel_id_service_;
-  bool tb_was_negotiated_;
-  TokenBindingParam tb_negotiated_param_;
   TokenBindingSignatureMap tb_signature_map_;
 
   // OpenSSL stuff

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//android_webview/system_webview_apk_tmpl.gni")
+import("//android_webview/variables.gni")
 import("//build/config/android/config.gni")
 import("//build/config/android/rules.gni")
 import("generate_resource_rewriter.gni")
@@ -31,10 +33,12 @@ android_library("glue") {
   alternative_android_sdk_ijar = "$_ijar_dir/$_ijar"
   alternative_android_sdk_jar = webview_public_framework_jar
   java_files = [
+    "java/src/com/android/webview/chromium/SharedStatics.java",
     "java/src/com/android/webview/chromium/CallbackConverter.java",
     "java/src/com/android/webview/chromium/ContentSettingsAdapter.java",
     "java/src/com/android/webview/chromium/CookieManagerAdapter.java",
     "java/src/com/android/webview/chromium/DrawGLFunctor.java",
+    "java/src/com/android/webview/chromium/FontPreloadingWorkaround.java",
     "java/src/com/android/webview/chromium/GeolocationPermissionsAdapter.java",
     "java/src/com/android/webview/chromium/GraphicsUtils.java",
     "java/src/com/android/webview/chromium/MonochromeLibraryPreloader.java",
@@ -46,13 +50,20 @@ android_library("glue") {
     "java/src/com/android/webview/chromium/WebHistoryItemChromium.java",
     "java/src/com/android/webview/chromium/WebIconDatabaseAdapter.java",
     "java/src/com/android/webview/chromium/WebMessagePortAdapter.java",
+    "java/src/com/android/webview/chromium/WebResourceRequestAdapter.java",
     "java/src/com/android/webview/chromium/WebStorageAdapter.java",
+    "java/src/com/android/webview/chromium/WebkitToSharedGlueConverter.java",
+    "java/src/com/android/webview/chromium/WebViewApplication.java",
+    "java/src/com/android/webview/chromium/WebViewChromiumAwInit.java",
+    "java/src/com/android/webview/chromium/WebViewChromium.java",
     "java/src/com/android/webview/chromium/WebViewChromiumFactoryProvider.java",
     "java/src/com/android/webview/chromium/WebViewChromiumFactoryProviderForO.java",
     "java/src/com/android/webview/chromium/WebViewChromiumFactoryProviderForOMR1.java",
-    "java/src/com/android/webview/chromium/WebViewChromium.java",
+    "java/src/com/android/webview/chromium/SharedWebViewChromium.java",
     "java/src/com/android/webview/chromium/WebViewContentsClientAdapter.java",
     "java/src/com/android/webview/chromium/WebViewDatabaseAdapter.java",
     "java/src/com/android/webview/chromium/WebViewDelegateFactory.java",
   ]
+
+  android_manifest_for_lint = system_webview_android_manifest
 }

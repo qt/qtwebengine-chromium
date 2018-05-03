@@ -4,7 +4,7 @@
 
 #include "content/browser/service_worker/service_worker_url_job_wrapper.h"
 
-#include "content/browser/service_worker/service_worker_url_loader_job.h"
+#include "content/browser/service_worker/service_worker_navigation_loader.h"
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/content_switches.h"
@@ -16,7 +16,7 @@ ServiceWorkerURLJobWrapper::ServiceWorkerURLJobWrapper(
     : url_request_job_(std::move(url_request_job)) {}
 
 ServiceWorkerURLJobWrapper::ServiceWorkerURLJobWrapper(
-    std::unique_ptr<ServiceWorkerURLLoaderJob> url_loader_job)
+    std::unique_ptr<ServiceWorkerNavigationLoader> url_loader_job)
     : url_loader_job_(std::move(url_loader_job)) {}
 
 ServiceWorkerURLJobWrapper::~ServiceWorkerURLJobWrapper() {
@@ -58,27 +58,6 @@ bool ServiceWorkerURLJobWrapper::ShouldFallbackToNetwork() {
     return url_loader_job_->ShouldFallbackToNetwork();
   } else {
     return url_request_job_->ShouldFallbackToNetwork();
-  }
-}
-
-ui::PageTransition ServiceWorkerURLJobWrapper::GetPageTransition() {
-  if (url_loader_job_) {
-    return url_loader_job_->GetPageTransition();
-  } else {
-    const ResourceRequestInfo* info =
-        ResourceRequestInfo::ForRequest(url_request_job_->request());
-    // ResourceRequestInfo may not be set in some tests.
-    if (!info)
-      return ui::PAGE_TRANSITION_LINK;
-    return info->GetPageTransition();
-  }
-}
-
-size_t ServiceWorkerURLJobWrapper::GetURLChainSize() const {
-  if (url_loader_job_) {
-    return url_loader_job_->GetURLChainSize();
-  } else {
-    return url_request_job_->request()->url_chain().size();
   }
 }
 

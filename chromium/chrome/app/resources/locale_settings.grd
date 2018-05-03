@@ -124,11 +124,6 @@
         en-US
       </message>
 
-      <!-- The width of the Crucial Notification bubble in characters (See above). -->
-      <message name="IDS_CRUCIAL_NOTIFICATION_BUBBLE_WIDTH_CHARS" use_name_for_id="true">
-        55
-      </message>
-
       <!-- The width of the Extension Wipeout bubble in characters (See above). -->
       <message name="IDS_EXTENSION_WIPEOUT_BUBBLE_WIDTH_CHARS" use_name_for_id="true">
         55
@@ -143,16 +138,6 @@
         <!-- The width of the Conflicting Module bubble in characters (See above). -->
         <message name="IDS_CONFLICTING_MODULE_BUBBLE_WIDTH_CHARS" use_name_for_id="true">
           46
-        </message>
-
-        <!-- The width of the Text on the save password Desktop iOS promotion bubble. -->
-        <message name="IDS_DESKTOP_IOS_PROMOTION_SAVE_PASSWORDS_BUBBLE_TEXT_WIDTH_CHARS" use_name_for_id="true">
-          55
-        </message>
-
-        <!-- The width of the Text on the Desktop iOS promotion bubble. -->
-        <message name="IDS_DESKTOP_IOS_PROMOTION_TEXT_WIDTH_CHARS" use_name_for_id="true">
-          41
         </message>
       </if>
 
@@ -276,14 +261,6 @@
       </if>
 
       <!-- Links from the Clear Browsing Data dialog. -->
-      <message name="IDS_SETTINGS_CLEAR_DATA_LEARN_MORE_URL" translateable="false">
-        https://support.google.com/chrome/?p=settings_clear_browsing_data
-      </message>
-
-      <message name="IDS_SETTINGS_CLEAR_DATA_WEB_HISTORY_URL_IN_FOOTER" translateable="false">
-        https://history.google.com/history/?utm_source=chrome_cbd
-      </message>
-
       <message name="IDS_SETTINGS_CLEAR_DATA_MYACTIVITY_URL_IN_DIALOG" translateable="false">
         https://myactivity.google.com/myactivity/?utm_source=chrome_n
       </message>

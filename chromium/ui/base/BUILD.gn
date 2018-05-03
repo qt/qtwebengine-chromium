@@ -65,6 +65,8 @@ component("base") {
   output_name = "ui_base"
 
   sources = [
+    "accelerators/media_keys_listener.cc",
+    "accelerators/media_keys_listener.h",
     "accelerators/menu_label_accelerator_util_linux.cc",
     "accelerators/menu_label_accelerator_util_linux.h",
     "accelerators/platform_accelerator.h",
@@ -141,6 +143,8 @@ component("base") {
     "cocoa/remote_layer_api.mm",
     "cocoa/scoped_cg_context_smooth_fonts.h",
     "cocoa/scoped_cg_context_smooth_fonts.mm",
+    "cocoa/text_services_context_menu.cc",
+    "cocoa/text_services_context_menu.h",
     "cocoa/three_part_image.h",
     "cocoa/three_part_image.mm",
     "cocoa/tool_tip_base_view.h",
@@ -213,7 +217,6 @@ component("base") {
     "l10n/time_format.h",
     "layout.cc",
     "layout.h",
-    "layout_mac.mm",
     "material_design/material_design_controller.cc",
     "material_design/material_design_controller.h",
     "models/button_menu_item_model.cc",
@@ -291,6 +294,8 @@ component("base") {
     "win/accessibility_misc_utils.cc",
     "win/accessibility_misc_utils.h",
     "win/atl_module.h",
+    "win/direct_manipulation.cc",
+    "win/direct_manipulation.h",
     "win/foreground_helper.cc",
     "win/foreground_helper.h",
     "win/hidden_window.cc",
@@ -367,6 +372,12 @@ component("base") {
       "touch/touch_editing_controller.cc",
       "touch/touch_editing_controller.h",
     ]
+  }
+
+  if (is_mac) {
+    sources += [ "accelerators/media_keys_listener_mac.mm" ]
+  } else {
+    sources += [ "accelerators/media_keys_listener_stub.cc" ]
   }
 
   if (is_win) {
@@ -874,10 +885,6 @@ test("ui_base_unittests") {
     }
     if (use_x11) {
       sources += [ "ime/composition_text_util_pango_unittest.cc" ]
-    }
-    if (is_chromeos) {
-      # These were already removed in the non-chromeos case.
-      sources -= [ "ime/input_method_chromeos_unittest.cc" ]
     }
   }
 

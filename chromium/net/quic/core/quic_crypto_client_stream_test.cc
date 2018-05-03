@@ -16,6 +16,8 @@
 #include "net/quic/core/tls_server_handshaker.h"
 #include "net/quic/platform/api/quic_arraysize.h"
 #include "net/quic/platform/api/quic_flags.h"
+#include "net/quic/platform/api/quic_ptr_util.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_stream_peer.h"
@@ -23,7 +25,6 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/simple_quic_framer.h"
 
-using std::string;
 
 using testing::_;
 
@@ -51,8 +52,8 @@ class QuicCryptoClientStreamTest : public QuicTest {
     // Advance the time, because timers do not like uninitialized times.
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
 
-    session_.reset(new TestQuicSpdyClientSession(
-        connection_, DefaultQuicConfig(), server_id_, &crypto_config_));
+    session_ = QuicMakeUnique<TestQuicSpdyClientSession>(
+        connection_, DefaultQuicConfig(), server_id_, &crypto_config_);
   }
 
   void CompleteCryptoHandshake() {
@@ -188,10 +189,10 @@ TEST_F(QuicCryptoClientStreamTest, InvalidCachedServerConfig) {
   QuicCryptoClientConfig::CachedState* state =
       crypto_config_.LookupOrCreate(server_id_);
 
-  std::vector<string> certs = state->certs();
-  string cert_sct = state->cert_sct();
-  string signature = state->signature();
-  string chlo_hash = state->chlo_hash();
+  std::vector<QuicString> certs = state->certs();
+  QuicString cert_sct = state->cert_sct();
+  QuicString signature = state->signature();
+  QuicString chlo_hash = state->chlo_hash();
   state->SetProof(certs, cert_sct, chlo_hash, signature + signature);
 
   EXPECT_CALL(*session_, OnProofVerifyDetailsAvailable(testing::_))
@@ -243,7 +244,7 @@ TEST_F(QuicCryptoClientStreamTest, ServerConfigUpdate) {
   // Make sure that the STK and SCFG are cached correctly.
   EXPECT_EQ("xstk", state->source_address_token());
 
-  const string& cached_scfg = state->server_config();
+  const QuicString& cached_scfg = state->server_config();
   test::CompareCharArraysWithHexError(
       "scfg", cached_scfg.data(), cached_scfg.length(),
       reinterpret_cast<char*>(scfg), QUIC_ARRAYSIZE(scfg));
@@ -425,6 +426,8 @@ class QuicCryptoClientStreamStatelessTest : public QuicTest {
                                &server_connection_, &server_session);
     CHECK(server_session);
     server_session_.reset(server_session);
+    server_session_->OnSuccessfulVersionNegotiation(
+        AllSupportedVersions().front());
     crypto_test_utils::FakeServerOptions options;
     crypto_test_utils::SetupCryptoServerConfigForTest(
         server_connection_->clock(), server_connection_->random_generator(),

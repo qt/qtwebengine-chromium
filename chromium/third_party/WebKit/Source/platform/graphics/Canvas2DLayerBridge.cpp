@@ -28,10 +28,10 @@
 #include <memory>
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
+#include "base/single_thread_task_runner.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "platform/Histogram.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/graphics/CanvasHeuristicParameters.h"
 #include "platform/graphics/CanvasMetrics.h"
 #include "platform/graphics/CanvasResource.h"
@@ -321,7 +321,7 @@ CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider(
     cc::PaintFlags copy_paint;
     copy_paint.setBlendMode(SkBlendMode::kSrc);
     PaintImageBuilder builder = PaintImageBuilder::WithDefault();
-    builder.set_image(hibernation_image_);
+    builder.set_image(hibernation_image_, PaintImage::GetNextContentId());
     builder.set_id(PaintImage::GetNextId());
     resource_provider_->Canvas()->drawImage(builder.TakePaintImage(), 0, 0,
                                             &copy_paint);
@@ -431,7 +431,7 @@ void Canvas2DLayerBridge::SetIsHidden(bool hidden) {
     logger_->ReportHibernationEvent(kHibernationScheduled);
     hibernation_scheduled_ = true;
     if (dont_use_idle_scheduling_for_testing_) {
-      Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+      Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
           FROM_HERE, WTF::Bind(&HibernateWrapperForTesting,
                                weak_ptr_factory_.GetWeakPtr()));
     } else {
@@ -470,6 +470,10 @@ void Canvas2DLayerBridge::SetIsHidden(bool hidden) {
   if (!IsHidden() && IsHibernating()) {
     GetOrCreateResourceProvider();  // Rude awakening
   }
+}
+
+void Canvas2DLayerBridge::DrawFullImage(const cc::PaintImage& image) {
+  Canvas()->drawImage(image, 0, 0);
 }
 
 bool Canvas2DLayerBridge::WritePixels(const SkImageInfo& orig_info,
@@ -517,6 +521,11 @@ void Canvas2DLayerBridge::FlushRecording() {
       sk_sp<PaintRecord> recording = recorder_->finishRecordingAsPicture();
       canvas->drawPicture(recording);
     }
+
+    // Rastering the recording would have locked images, since we've flushed
+    // all recorded ops, we should relase all locked images as well.
+    GetOrCreateResourceProvider()->ReleaseLockedImages();
+
     if (is_deferral_enabled_)
       StartRecording();
     have_recorded_draw_commands_ = false;

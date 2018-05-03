@@ -36,11 +36,9 @@ void GrResourceAllocator::markEndOfOpList(int opListIndex) {
 }
 
 GrResourceAllocator::~GrResourceAllocator() {
-#ifndef SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
     SkASSERT(fIntvlList.empty());
     SkASSERT(fActiveIntvls.empty());
     SkASSERT(!fIntvlHash.count());
-#endif
 }
 
 void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start, unsigned int end
@@ -79,12 +77,12 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
     fIntvlList.insertByIncreasingStart(newIntvl);
     fIntvlHash.add(newIntvl);
 
-#ifdef SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
-    // FIXME: remove this once we can do the lazy instantiation from assign instead.
-    if (GrSurfaceProxy::LazyState::kNot != proxy->lazyInstantiationState()) {
-        proxy->priv().doLazyInstantiation(fResourceProvider);
+    if (!fResourceProvider->explicitlyAllocateGPUResources()) {
+        // FIXME: remove this once we can do the lazy instantiation from assign instead.
+        if (GrSurfaceProxy::LazyState::kNot != proxy->lazyInstantiationState()) {
+            proxy->priv().doLazyInstantiation(fResourceProvider);
+        }
     }
-#endif
 }
 
 GrResourceAllocator::Interval* GrResourceAllocator::IntervalList::popHead() {
@@ -129,6 +127,13 @@ void GrResourceAllocator::IntervalList::insertByIncreasingEnd(Interval* intvl) {
         intvl->setNext(next);
         prev->setNext(intvl);
     }
+}
+
+
+ GrResourceAllocator::Interval* GrResourceAllocator::IntervalList::detachAll() {
+    Interval* tmp = fHead;
+    fHead = nullptr;
+    return tmp;
 }
 
 // 'surface' can be reused. Add it back to the free pool.
@@ -195,7 +200,10 @@ void GrResourceAllocator::expire(unsigned int curIndex) {
     }
 }
 
-bool GrResourceAllocator::assign(int* startIndex, int* stopIndex) {
+bool GrResourceAllocator::assign(int* startIndex, int* stopIndex, AssignError* outError) {
+    SkASSERT(outError);
+    *outError = AssignError::kNoError;
+
     fIntvlHash.reset(); // we don't need the interval hash anymore
     if (fIntvlList.empty()) {
         return false;          // nothing to render
@@ -203,6 +211,11 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex) {
 
     *startIndex = fCurOpListIndex;
     *stopIndex = fEndOfOpListOpIndices.count();
+
+    if (!fResourceProvider->explicitlyAllocateGPUResources()) {
+        fIntvlList.detachAll(); // arena allocator will clean these up for us
+        return true;
+    }
 
     SkDEBUGCODE(fAssigned = true;)
 
@@ -237,7 +250,9 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex) {
         }
 
         if (GrSurfaceProxy::LazyState::kNot != cur->proxy()->lazyInstantiationState()) {
-            cur->proxy()->priv().doLazyInstantiation(fResourceProvider);
+            if (!cur->proxy()->priv().doLazyInstantiation(fResourceProvider)) {
+                *outError = AssignError::kFailedProxyInstantiation;
+            }
         } else if (sk_sp<GrSurface> surface = this->findSurfaceFor(cur->proxy(), needsStencil)) {
             // TODO: make getUniqueKey virtual on GrSurfaceProxy
             GrTextureProxy* tex = cur->proxy()->asTextureProxy();
@@ -247,9 +262,11 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex) {
             }
 
             cur->assign(std::move(surface));
+        } else {
+            SkASSERT(!cur->proxy()->priv().isInstantiated());
+            *outError = AssignError::kFailedProxyInstantiation;
         }
 
-        // TODO: handle resource allocation failure upstack
         fActiveIntvls.insertByIncreasingEnd(cur);
 
         if (fResourceProvider->overBudget()) {

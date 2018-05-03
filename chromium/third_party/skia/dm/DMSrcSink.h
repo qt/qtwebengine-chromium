@@ -274,11 +274,11 @@ public:
 
 private:
     // Generates a kTileCount x kTileCount filmstrip with evenly distributed frames.
-    static constexpr int               kTileCount = 5;
+    static constexpr int      kTileCount = 5;
 
-    Name                               fName;
-    SkISize                            fTileSize = SkISize::MakeEmpty();
-    std::unique_ptr<skottie::Animation> fAnimation;
+    Name                      fName;
+    SkISize                   fTileSize = SkISize::MakeEmpty();
+    sk_sp<skottie::Animation> fAnimation;
 };
 #endif
 
@@ -350,7 +350,7 @@ public:
     bool serial() const override { return !fThreaded; }
     const char* fileExtension() const override { return "png"; }
     SinkFlags flags() const override {
-        SinkFlags::Multisampled ms = fSampleCount > 0 ? SinkFlags::kMultisampled
+        SinkFlags::Multisampled ms = fSampleCount > 1 ? SinkFlags::kMultisampled
                                                       : SinkFlags::kNotMultisampled;
         return SinkFlags{ SinkFlags::kGPU, SinkFlags::kDirect, ms };
     }
@@ -424,9 +424,20 @@ public:
     Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     const char* fileExtension() const override { return "png"; }
     SinkFlags flags() const override { return SinkFlags{ SinkFlags::kRaster, SinkFlags::kDirect }; }
-private:
+protected:
+    void allocPixels(const Src& src, SkBitmap*) const;
+
     SkColorType         fColorType;
     sk_sp<SkColorSpace> fColorSpace;
+};
+
+class ThreadedSink : public RasterSink {
+public:
+    explicit ThreadedSink(SkColorType, sk_sp<SkColorSpace> = nullptr);
+    Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+
+private:
+    std::unique_ptr<SkExecutor> fExecutor;
 };
 
 class SKPSink : public Sink {
@@ -514,33 +525,9 @@ private:
     std::unique_ptr<SkBBHFactory> fFactory;
 };
 
-class ViaSecondPicture : public Via {
-public:
-    explicit ViaSecondPicture(Sink* sink) : Via(sink) {}
-    Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
-};
-
-class ViaSingletonPictures : public Via {
-public:
-    explicit ViaSingletonPictures(Sink* sink) : Via(sink) {}
-    Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
-};
-
-class ViaTwice : public Via {
-public:
-    explicit ViaTwice(Sink* sink) : Via(sink) {}
-    Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
-};
-
 class ViaSVG : public Via {
 public:
     explicit ViaSVG(Sink* sink) : Via(sink) {}
-    Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
-};
-
-class ViaMojo : public Via {
-public:
-    explicit ViaMojo(Sink* sink) : Via(sink) {}
     Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
 };
 

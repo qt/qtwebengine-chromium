@@ -13,7 +13,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/wtf/HashMap.h"
-#include "services/device/public/interfaces/nfc.mojom-blink.h"
+#include "services/device/public/mojom/nfc.mojom-blink.h"
 
 namespace blink {
 
@@ -75,7 +75,7 @@ class NFC final : public ScriptWrappable,
   void OnRequestCompleted(ScriptPromiseResolver*,
                           device::mojom::blink::NFCErrorPtr);
   void OnConnectionError();
-  void OnWatchRegistered(V8MessageCallback*,
+  void OnWatchRegistered(V8PersistentCallbackFunction<V8MessageCallback>*,
                          ScriptPromiseResolver*,
                          uint32_t id,
                          device::mojom::blink::NFCErrorPtr);

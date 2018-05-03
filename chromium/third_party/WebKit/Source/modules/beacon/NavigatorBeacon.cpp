@@ -16,7 +16,7 @@
 #include "core/loader/PingLoader.h"
 #include "core/typed_arrays/DOMArrayBufferView.h"
 #include "platform/bindings/ScriptState.h"
-#include "platform/loader/fetch/FetchUtils.h"
+#include "platform/loader/cors/CORS.h"
 
 namespace blink {
 
@@ -29,16 +29,14 @@ void NavigatorBeacon::Trace(blink::Visitor* visitor) {
   Supplement<Navigator>::Trace(visitor);
 }
 
-const char* NavigatorBeacon::SupplementName() {
-  return "NavigatorBeacon";
-}
+const char NavigatorBeacon::kSupplementName[] = "NavigatorBeacon";
 
 NavigatorBeacon& NavigatorBeacon::From(Navigator& navigator) {
-  NavigatorBeacon* supplement = static_cast<NavigatorBeacon*>(
-      Supplement<Navigator>::From(navigator, SupplementName()));
+  NavigatorBeacon* supplement =
+      Supplement<Navigator>::From<NavigatorBeacon>(navigator);
   if (!supplement) {
     supplement = new NavigatorBeacon(navigator);
-    ProvideTo(navigator, SupplementName(), supplement);
+    ProvideTo(navigator, supplement);
   }
   return *supplement;
 }
@@ -91,7 +89,7 @@ bool NavigatorBeacon::SendBeaconImpl(
                                      data.GetAsArrayBufferView().View());
   } else if (data.IsBlob()) {
     Blob* blob = data.GetAsBlob();
-    if (!FetchUtils::IsCORSSafelistedContentType(AtomicString(blob->type()))) {
+    if (!CORS::IsCORSSafelistedContentType(blob->type())) {
       UseCounter::Count(context,
                         WebFeature::kSendBeaconWithNonSimpleContentType);
       if (RuntimeEnabledFeatures::

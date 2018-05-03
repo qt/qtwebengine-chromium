@@ -27,11 +27,12 @@ TEST(BrowserMainLoopTest, CreateThreadsInSingleProcess) {
         *scoped_command_line.GetProcessCommandLine());
     BrowserMainLoop browser_main_loop(main_function_params);
     browser_main_loop.MainMessageLoopStart();
+    browser_main_loop.InitializeIOThreadForTesting();
     browser_main_loop.CreateThreads();
     EXPECT_GE(base::TaskScheduler::GetInstance()
                   ->GetMaxConcurrentNonBlockedTasksWithTraitsDeprecated(
                       {base::TaskPriority::USER_VISIBLE}),
-              base::SysInfo::NumberOfProcessors());
+              base::SysInfo::NumberOfProcessors() - 1);
     browser_main_loop.ShutdownThreadsAndCleanUp();
   }
   for (int id = BrowserThread::UI; id < BrowserThread::ID_COUNT; ++id) {

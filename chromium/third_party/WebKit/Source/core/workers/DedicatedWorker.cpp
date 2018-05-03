@@ -24,9 +24,9 @@
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/WebContentSettingsClient.h"
 #include "public/web/WebFrameClient.h"
-#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
+#include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom-blink.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
 #include "third_party/WebKit/public/platform/dedicated_worker_factory.mojom-blink.h"
 
 namespace blink {
@@ -216,11 +216,15 @@ std::unique_ptr<GlobalScopeCreationParams>
 DedicatedWorker::CreateGlobalScopeCreationParams() {
   Document* document = ToDocument(GetExecutionContext());
   const SecurityOrigin* starter_origin = document->GetSecurityOrigin();
+  base::UnguessableToken devtools_worker_token =
+      document->GetFrame() ? document->GetFrame()->GetDevToolsFrameToken()
+                           : base::UnguessableToken::Create();
   return std::make_unique<GlobalScopeCreationParams>(
       script_url_, GetExecutionContext()->UserAgent(),
       document->GetContentSecurityPolicy()->Headers().get(),
-      kReferrerPolicyDefault, starter_origin, CreateWorkerClients(),
-      document->AddressSpace(), OriginTrialContext::GetTokens(document).get(),
+      kReferrerPolicyDefault, starter_origin, document->IsSecureContext(),
+      CreateWorkerClients(), document->AddressSpace(),
+      OriginTrialContext::GetTokens(document).get(), devtools_worker_token,
       std::make_unique<WorkerSettings>(document->GetSettings()),
       kV8CacheOptionsDefault,
       ConnectToWorkerInterfaceProvider(document,

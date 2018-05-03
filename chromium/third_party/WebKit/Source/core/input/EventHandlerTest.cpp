@@ -24,7 +24,6 @@
 #include "core/page/AutoscrollController.h"
 #include "core/page/Page.h"
 #include "core/testing/PageTestBase.h"
-#include "core/testing/sim/SimDisplayItemList.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -45,7 +44,7 @@ class TapEventBuilder : public WebGestureEvent {
   TapEventBuilder(IntPoint position, int tap_count)
       : WebGestureEvent(WebInputEvent::kGestureTap,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicks().InSeconds()) {
+                        CurrentTimeTicksInSeconds()) {
     x = global_x = position.X();
     y = global_y = position.Y();
     source_device = kWebGestureDeviceTouchscreen;
@@ -76,7 +75,7 @@ class MousePressEventBuilder : public WebMouseEvent {
                          WebMouseEvent::Button button_param)
       : WebMouseEvent(WebInputEvent::kMouseDown,
                       WebInputEvent::kNoModifiers,
-                      CurrentTimeTicks().InSeconds()) {
+                      CurrentTimeTicksInSeconds()) {
     click_count = click_count_param;
     button = button_param;
     SetPositionInWidget(position_param.X(), position_param.Y());
@@ -126,7 +125,7 @@ TEST_F(EventHandlerTest, dragSelectionAfterScroll) {
                                  WebFloatPoint(100, 200),
                                  WebPointerProperties::Button::kLeft, 1,
                                  WebInputEvent::Modifiers::kLeftButtonDown,
-                                 WebInputEvent::kTimeStampForTesting);
+                                 WebInputEvent::GetStaticTimeStampForTests());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
@@ -141,7 +140,7 @@ TEST_F(EventHandlerTest, dragSelectionAfterScroll) {
       WebInputEvent::kMouseMove, WebFloatPoint(100, 50),
       WebFloatPoint(200, 250), WebPointerProperties::Button::kLeft, 1,
       WebInputEvent::Modifiers::kLeftButtonDown,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
@@ -153,7 +152,7 @@ TEST_F(EventHandlerTest, dragSelectionAfterScroll) {
   WebMouseEvent mouse_up_event(
       WebMouseEvent::kMouseUp, WebFloatPoint(100, 50), WebFloatPoint(200, 250),
       WebPointerProperties::Button::kLeft, 1, WebInputEvent::kNoModifiers,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_up_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_up_event);
@@ -256,7 +255,7 @@ TEST_F(EventHandlerTest, draggedInlinePositionTest) {
                                  WebFloatPoint(262, 29), WebFloatPoint(329, 67),
                                  WebPointerProperties::Button::kLeft, 1,
                                  WebInputEvent::Modifiers::kLeftButtonDown,
-                                 WebInputEvent::kTimeStampForTesting);
+                                 WebInputEvent::GetStaticTimeStampForTests());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
@@ -265,7 +264,7 @@ TEST_F(EventHandlerTest, draggedInlinePositionTest) {
       WebMouseEvent::kMouseMove, WebFloatPoint(618, 298),
       WebFloatPoint(685, 436), WebPointerProperties::Button::kLeft, 1,
       WebInputEvent::Modifiers::kLeftButtonDown,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
@@ -294,7 +293,7 @@ TEST_F(EventHandlerTest, draggedSVGImagePositionTest) {
       WebMouseEvent::kMouseDown, WebFloatPoint(145, 144),
       WebFloatPoint(212, 282), WebPointerProperties::Button::kLeft, 1,
       WebInputEvent::Modifiers::kLeftButtonDown,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
@@ -303,7 +302,7 @@ TEST_F(EventHandlerTest, draggedSVGImagePositionTest) {
       WebMouseEvent::kMouseMove, WebFloatPoint(618, 298),
       WebFloatPoint(685, 436), WebPointerProperties::Button::kLeft, 1,
       WebInputEvent::Modifiers::kLeftButtonDown,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
@@ -352,23 +351,6 @@ TEST_F(EventHandlerTest, HitOnUserSelectNoneDoesNotShowIBeam) {
                                                                          hit));
 }
 
-TEST_F(EventHandlerTest, ChildCanOverrideUserSelectNone) {
-  SetHtmlInnerHTML(
-      "<div style='user-select: none'>"
-      "<span style='user-select: text'>blabla</span>"
-      "</div>");
-  Node* const text = GetDocument().body()->firstChild()->firstChild()->firstChild();
-  LayoutPoint location =
-      text->GetLayoutObject()->FirstFragment().VisualRect().Center();
-  HitTestResult hit =
-      GetDocument().GetFrame()->GetEventHandler().HitTestResultAtPoint(
-          location);
-  EXPECT_TRUE(text->CanStartSelection());
-  EXPECT_TRUE(
-      GetDocument().GetFrame()->GetEventHandler().ShouldShowIBeamForNode(text,
-                                                                         hit));
-}
-
 TEST_F(EventHandlerTest, ShadowChildCanOverrideUserSelectNone) {
   SetHtmlInnerHTML("<p style='user-select: none' id='host'></p>");
   ShadowRoot* const shadow_root = SetShadowContent(
@@ -386,7 +368,61 @@ TEST_F(EventHandlerTest, ShadowChildCanOverrideUserSelectNone) {
                                                                          hit));
 }
 
-TEST_F(EventHandlerTest, ChildCanOverrideUserSelectText) {
+TEST_F(EventHandlerTest, UserSelectAllCanOverrideUserSelectNone) {
+  SetHtmlInnerHTML(
+      "<div style='user-select: none'>"
+      "<span style='user-select: all'>blabla</span>"
+      "</div>");
+  Node* const text =
+      GetDocument().body()->firstChild()->firstChild()->firstChild();
+  LayoutPoint location =
+      text->GetLayoutObject()->FirstFragment().VisualRect().Center();
+  HitTestResult hit =
+      GetDocument().GetFrame()->GetEventHandler().HitTestResultAtPoint(
+          location);
+  EXPECT_TRUE(text->CanStartSelection());
+  EXPECT_TRUE(
+      GetDocument().GetFrame()->GetEventHandler().ShouldShowIBeamForNode(text,
+                                                                         hit));
+}
+
+TEST_F(EventHandlerTest, UserSelectNoneCanOverrideUserSelectAll) {
+  SetHtmlInnerHTML(
+      "<div style='user-select: all'>"
+      "<span style='user-select: none'>blabla</span>"
+      "</div>");
+  Node* const text =
+      GetDocument().body()->firstChild()->firstChild()->firstChild();
+  LayoutPoint location =
+      text->GetLayoutObject()->FirstFragment().VisualRect().Center();
+  HitTestResult hit =
+      GetDocument().GetFrame()->GetEventHandler().HitTestResultAtPoint(
+          location);
+  EXPECT_FALSE(text->CanStartSelection());
+  EXPECT_FALSE(
+      GetDocument().GetFrame()->GetEventHandler().ShouldShowIBeamForNode(text,
+                                                                         hit));
+}
+
+TEST_F(EventHandlerTest, UserSelectTextCanOverrideUserSelectNone) {
+  SetHtmlInnerHTML(
+      "<div style='user-select: none'>"
+      "<span style='user-select: text'>blabla</span>"
+      "</div>");
+  Node* const text =
+      GetDocument().body()->firstChild()->firstChild()->firstChild();
+  LayoutPoint location =
+      text->GetLayoutObject()->FirstFragment().VisualRect().Center();
+  HitTestResult hit =
+      GetDocument().GetFrame()->GetEventHandler().HitTestResultAtPoint(
+          location);
+  EXPECT_TRUE(text->CanStartSelection());
+  EXPECT_TRUE(
+      GetDocument().GetFrame()->GetEventHandler().ShouldShowIBeamForNode(text,
+                                                                         hit));
+}
+
+TEST_F(EventHandlerTest, UserSelectNoneCanOverrideUserSelectText) {
   SetHtmlInnerHTML(
       "<div style='user-select: text'>"
       "<span style='user-select: none'>blabla</span>"
@@ -525,7 +561,7 @@ TEST_F(EventHandlerTest, sendContextMenuEventWithHover) {
       "<style>*:hover { color: red; }</style>"
       "<div>foo</div>");
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.addEventListener('contextmenu', event => "
       "event.preventDefault());");
@@ -535,11 +571,10 @@ TEST_F(EventHandlerTest, sendContextMenuEventWithHover) {
       SelectionInDOMTree::Builder()
           .Collapse(Position(GetDocument().body(), 0))
           .Build());
-  WebMouseEvent mouse_down_event(WebMouseEvent::kMouseDown, WebFloatPoint(0, 0),
-                                 WebFloatPoint(100, 200),
-                                 WebPointerProperties::Button::kRight, 1,
-                                 WebInputEvent::Modifiers::kRightButtonDown,
-                                 CurrentTimeTicks().InSeconds());
+  WebMouseEvent mouse_down_event(
+      WebMouseEvent::kMouseDown, WebFloatPoint(0, 0), WebFloatPoint(100, 200),
+      WebPointerProperties::Button::kRight, 1,
+      WebInputEvent::Modifiers::kRightButtonDown, CurrentTimeTicksInSeconds());
   mouse_down_event.SetFrameScale(1);
   EXPECT_EQ(WebInputEventResult::kHandledApplication,
             GetDocument().GetFrame()->GetEventHandler().SendContextMenuEvent(
@@ -693,20 +728,18 @@ TEST_F(EventHandlerTest, dragEndInNewDrag) {
       "<style>.box { width: 100px; height: 100px; display: block; }</style>"
       "<a class='box' href=''>Drag me</a>");
 
-  WebMouseEvent mouse_down_event(WebInputEvent::kMouseDown,
-                                 WebFloatPoint(50, 50), WebFloatPoint(50, 50),
-                                 WebPointerProperties::Button::kLeft, 1,
-                                 WebInputEvent::Modifiers::kLeftButtonDown,
-                                 CurrentTimeTicks().InSeconds());
+  WebMouseEvent mouse_down_event(
+      WebInputEvent::kMouseDown, WebFloatPoint(50, 50), WebFloatPoint(50, 50),
+      WebPointerProperties::Button::kLeft, 1,
+      WebInputEvent::Modifiers::kLeftButtonDown, CurrentTimeTicksInSeconds());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
 
-  WebMouseEvent mouse_move_event(WebInputEvent::kMouseMove,
-                                 WebFloatPoint(51, 50), WebFloatPoint(51, 50),
-                                 WebPointerProperties::Button::kLeft, 1,
-                                 WebInputEvent::Modifiers::kLeftButtonDown,
-                                 CurrentTimeTicks().InSeconds());
+  WebMouseEvent mouse_move_event(
+      WebInputEvent::kMouseMove, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
+      WebPointerProperties::Button::kLeft, 1,
+      WebInputEvent::Modifiers::kLeftButtonDown, CurrentTimeTicksInSeconds());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
@@ -720,7 +753,7 @@ TEST_F(EventHandlerTest, dragEndInNewDrag) {
   WebMouseEvent mouse_up_event(
       WebInputEvent::kMouseUp, WebFloatPoint(100, 50), WebFloatPoint(200, 250),
       WebPointerProperties::Button::kLeft, 1, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_up_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().DragSourceEndedAt(
       mouse_up_event, kDragOperationNone);
@@ -744,7 +777,7 @@ TEST_F(EventHandlerTest, FakeMouseMoveNotStartDrag) {
                                  WebFloatPoint(262, 29), WebFloatPoint(329, 67),
                                  WebPointerProperties::Button::kLeft, 1,
                                  WebInputEvent::Modifiers::kLeftButtonDown,
-                                 WebInputEvent::kTimeStampForTesting);
+                                 WebInputEvent::GetStaticTimeStampForTests());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
@@ -754,7 +787,7 @@ TEST_F(EventHandlerTest, FakeMouseMoveNotStartDrag) {
       WebFloatPoint(685, 436), WebPointerProperties::Button::kLeft, 1,
       WebInputEvent::Modifiers::kLeftButtonDown |
           WebInputEvent::Modifiers::kRelativeMotionEvent,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   fake_mouse_move.SetFrameScale(1);
   EXPECT_EQ(WebInputEventResult::kHandledSuppressed,
             GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
@@ -809,7 +842,7 @@ TEST_F(EventHandlerTooltipTest, mouseLeaveClearsTooltip) {
   WebMouseEvent mouse_move_event(
       WebInputEvent::kMouseMove, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kNoButton, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, Vector<WebMouseEvent>());
@@ -819,7 +852,7 @@ TEST_F(EventHandlerTooltipTest, mouseLeaveClearsTooltip) {
   WebMouseEvent mouse_leave_event(
       WebInputEvent::kMouseLeave, WebFloatPoint(0, 0), WebFloatPoint(0, 0),
       WebPointerProperties::Button::kNoButton, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_leave_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseLeaveEvent(
       mouse_leave_event);
@@ -878,7 +911,7 @@ TEST_F(EventHandlerLatencyTest, NeedsUnbufferedInput) {
   WebMouseEvent mouse_press_event(
       WebInputEvent::kMouseDown, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kLeft, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_press_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_press_event);
@@ -936,7 +969,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsNavigate) {
   WebMouseEvent mouse_back_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kBack, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_back_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_back_event);
@@ -946,7 +979,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsNavigate) {
   WebMouseEvent mouse_forward_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kForward, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_forward_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_forward_event);
@@ -957,7 +990,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsNavigate) {
 TEST_F(EventHandlerNavigationTest, MouseButtonsDontNavigate) {
   SetHtmlInnerHTML("<div>");
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.addEventListener('mouseup', event => "
       "event.preventDefault());");
@@ -968,7 +1001,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsDontNavigate) {
   WebMouseEvent mouse_back_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kBack, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_back_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_back_event);
@@ -978,7 +1011,7 @@ TEST_F(EventHandlerNavigationTest, MouseButtonsDontNavigate) {
   WebMouseEvent mouse_forward_event(
       WebInputEvent::kMouseUp, WebFloatPoint(51, 50), WebFloatPoint(51, 50),
       WebPointerProperties::Button::kForward, 0, WebInputEvent::kNoModifiers,
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   mouse_forward_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_forward_event);
@@ -993,7 +1026,7 @@ TEST_F(EventHandlerTest, MouseLeaveResetsUnknownState) {
                                  WebFloatPoint(262, 29), WebFloatPoint(329, 67),
                                  WebPointerProperties::Button::kLeft, 1,
                                  WebInputEvent::Modifiers::kLeftButtonDown,
-                                 WebInputEvent::kTimeStampForTesting);
+                                 WebInputEvent::GetStaticTimeStampForTests());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
@@ -1004,7 +1037,7 @@ TEST_F(EventHandlerTest, MouseLeaveResetsUnknownState) {
       WebMouseEvent::kMouseLeave, WebFloatPoint(262, 29),
       WebFloatPoint(329, 67), WebPointerProperties::Button::kNoButton, 1,
       WebInputEvent::Modifiers::kNoModifiers,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_leave_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseLeaveEvent(
       mouse_leave_event);
@@ -1044,7 +1077,7 @@ TEST_F(EventHandlerIFrameTest, MouseLeaveResets) {
       WebMouseEvent::kMouseMove, WebFloatPoint(100, 229),
       WebFloatPoint(100, 229), WebPointerProperties::Button::kNoButton, 0,
       WebInputEvent::Modifiers::kNoModifiers,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_move_inside_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_inside_event, Vector<WebMouseEvent>());
@@ -1064,7 +1097,7 @@ TEST_F(EventHandlerIFrameTest, MouseLeaveResets) {
       WebMouseEvent::kMouseMove, WebFloatPoint(300, 29), WebFloatPoint(300, 29),
       WebPointerProperties::Button::kNoButton, 0,
       WebInputEvent::Modifiers::kNoModifiers,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_move_outside_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_outside_event, Vector<WebMouseEvent>());

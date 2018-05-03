@@ -13,12 +13,14 @@
 #include "base/values.h"
 #include "components/language/core/browser/url_language_histogram.h"
 #include "components/ntp_snippets/category.h"
+#include "components/ntp_snippets/features.h"
 #include "components/ntp_snippets/ntp_snippets_constants.h"
 #include "components/ntp_snippets/user_classifier.h"
-#include "components/signin/core/browser/signin_manager_base.h"
+#include "components/variations/variations_associated_data.h"
+#include "net/base/url_util.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
-#include "services/identity/public/cpp/primary_account_access_token_fetcher.h"
+#include "services/identity/public/cpp/identity_manager.h"
 
 using language::UrlLanguageHistogram;
 using net::HttpRequestHeaders;
@@ -33,10 +35,37 @@ using internal::JsonRequest;
 
 namespace {
 
-const char kSnippetsServerNonAuthorizedFormat[] = "%s?key=%s";
+const char kApiKeyQueryParam[] = "key";
+const char kPriorityQueryParam[] = "priority";
+const char kInteractivePriority[] = "user_action";
+const char kNonInteractivePriority[] = "background_prefetch";
 const char kAuthorizationRequestHeaderFormat[] = "Bearer %s";
 
 const int kFetchTimeHistogramResolution = 5;
+
+// Enables appending request priority as a query parameter to the fetch url,
+// when fetching article suggestions.
+const char kAppendRequestPriorityAsQueryParameterParamName[] =
+    "append_request_priority_as_query_parameter";
+const bool kAppendRequestPriorityAsQueryParameterParamDefault = true;
+
+bool IsAppendingRequestPriorityAsQueryParameterEnabled() {
+  return variations::GetVariationParamByFeatureAsBool(
+      ntp_snippets::kArticleSuggestionsFeature,
+      kAppendRequestPriorityAsQueryParameterParamName,
+      kAppendRequestPriorityAsQueryParameterParamDefault);
+}
+
+GURL AppendPriorityQueryParameterIfEnabled(const GURL& url,
+                                           bool is_interactive_request) {
+  if (IsAppendingRequestPriorityAsQueryParameterEnabled()) {
+    return net::AppendQueryParameter(url, kPriorityQueryParam,
+                                     is_interactive_request
+                                         ? kInteractivePriority
+                                         : kNonInteractivePriority);
+  }
+  return url;
+}
 
 std::string FetchResultToString(FetchResult result) {
   switch (result) {
@@ -124,8 +153,7 @@ void FilterCategories(FetchedCategoriesVector* categories,
 }  // namespace
 
 RemoteSuggestionsFetcherImpl::RemoteSuggestionsFetcherImpl(
-    SigninManagerBase* signin_manager,
-    OAuth2TokenService* token_service,
+    identity::IdentityManager* identity_manager,
     scoped_refptr<URLRequestContextGetter> url_request_context_getter,
     PrefService* pref_service,
     UrlLanguageHistogram* language_histogram,
@@ -133,15 +161,15 @@ RemoteSuggestionsFetcherImpl::RemoteSuggestionsFetcherImpl(
     const GURL& api_endpoint,
     const std::string& api_key,
     const UserClassifier* user_classifier)
-    : signin_manager_(signin_manager),
-      token_service_(token_service),
+    : identity_manager_(identity_manager),
       url_request_context_getter_(std::move(url_request_context_getter)),
       language_histogram_(language_histogram),
       parse_json_callback_(parse_json_callback),
       fetch_url_(api_endpoint),
       api_key_(api_key),
       clock_(base::DefaultClock::GetInstance()),
-      user_classifier_(user_classifier) {}
+      user_classifier_(user_classifier),
+      last_fetch_authenticated_(false) {}
 
 RemoteSuggestionsFetcherImpl::~RemoteSuggestionsFetcherImpl() = default;
 
@@ -152,6 +180,10 @@ const std::string& RemoteSuggestionsFetcherImpl::GetLastStatusForDebugging()
 const std::string& RemoteSuggestionsFetcherImpl::GetLastJsonForDebugging()
     const {
   return last_fetch_json_;
+}
+bool RemoteSuggestionsFetcherImpl::WasLastFetchAuthenticatedForDebugging()
+    const {
+  return last_fetch_authenticated_;
 }
 const GURL& RemoteSuggestionsFetcherImpl::GetFetchUrlForDebugging() const {
   return fetch_url_;
@@ -179,7 +211,7 @@ void RemoteSuggestionsFetcherImpl::FetchSnippets(
       .SetUrlRequestContextGetter(url_request_context_getter_)
       .SetUserClassifier(*user_classifier_);
 
-  if (signin_manager_->IsAuthenticated()) {
+  if (identity_manager_->HasPrimaryAccount()) {
     // Signed-in: get OAuth token --> fetch suggestions.
     pending_requests_.emplace(std::move(builder), std::move(callback));
     StartTokenRequest();
@@ -195,36 +227,44 @@ void RemoteSuggestionsFetcherImpl::FetchSnippetsNonAuthenticated(
   if (api_key_.empty()) {
     // If we don't have an API key, don't even try.
     FetchFinished(OptionalFetchedCategories(), std::move(callback),
-                  FetchResult::MISSING_API_KEY, std::string());
+                  FetchResult::MISSING_API_KEY, std::string(),
+                  /*is_authenticated=*/false);
     return;
   }
   // When not providing OAuth token, we need to pass the Google API key.
-  builder.SetUrl(
-      GURL(base::StringPrintf(kSnippetsServerNonAuthorizedFormat,
-                              fetch_url_.spec().c_str(), api_key_.c_str())));
-  StartRequest(std::move(builder), std::move(callback));
+  GURL url = net::AppendQueryParameter(fetch_url_, kApiKeyQueryParam, api_key_);
+  url = AppendPriorityQueryParameterIfEnabled(url,
+                                              builder.is_interactive_request());
+
+  builder.SetUrl(url);
+  StartRequest(std::move(builder), std::move(callback),
+               /*is_authenticated=*/false);
 }
 
 void RemoteSuggestionsFetcherImpl::FetchSnippetsAuthenticated(
     JsonRequest::Builder builder,
     SnippetsAvailableCallback callback,
     const std::string& oauth_access_token) {
-  // TODO(jkrcal, treib): Add unit-tests for authenticated fetches.
-  builder.SetUrl(fetch_url_)
-      .SetAuthentication(signin_manager_->GetAuthenticatedAccountId(),
-                         base::StringPrintf(kAuthorizationRequestHeaderFormat,
-                                            oauth_access_token.c_str()));
-  StartRequest(std::move(builder), std::move(callback));
+  GURL url = AppendPriorityQueryParameterIfEnabled(
+      fetch_url_, builder.is_interactive_request());
+
+  builder.SetUrl(url).SetAuthentication(
+      identity_manager_->GetPrimaryAccountInfo().account_id,
+      base::StringPrintf(kAuthorizationRequestHeaderFormat,
+                         oauth_access_token.c_str()));
+  StartRequest(std::move(builder), std::move(callback),
+               /*is_authenticated=*/true);
 }
 
 void RemoteSuggestionsFetcherImpl::StartRequest(
     JsonRequest::Builder builder,
-    SnippetsAvailableCallback callback) {
+    SnippetsAvailableCallback callback,
+    bool is_authenticated) {
   std::unique_ptr<JsonRequest> request = builder.Build();
   JsonRequest* raw_request = request.get();
   raw_request->Start(base::BindOnce(
       &RemoteSuggestionsFetcherImpl::JsonRequestDone, base::Unretained(this),
-      std::move(request), std::move(callback)));
+      std::move(request), std::move(callback), is_authenticated));
 }
 
 void RemoteSuggestionsFetcherImpl::StartTokenRequest() {
@@ -234,8 +274,8 @@ void RemoteSuggestionsFetcherImpl::StartTokenRequest() {
   }
 
   OAuth2TokenService::ScopeSet scopes{kContentSuggestionsApiScope};
-  token_fetcher_ = std::make_unique<identity::PrimaryAccountAccessTokenFetcher>(
-      "ntp_snippets", signin_manager_, token_service_, scopes,
+  token_fetcher_ = identity_manager_->CreateAccessTokenFetcherForPrimaryAccount(
+      "ntp_snippets", scopes,
       base::BindOnce(&RemoteSuggestionsFetcherImpl::AccessTokenFetchFinished,
                      base::Unretained(this)),
       identity::PrimaryAccountAccessTokenFetcher::Mode::kWaitUntilAvailable);
@@ -281,7 +321,8 @@ void RemoteSuggestionsFetcherImpl::AccessTokenError(
                   std::move(builder_and_callback.second),
                   FetchResult::OAUTH_TOKEN_ERROR,
                   /*error_details=*/
-                  base::StringPrintf(" (%s)", error.ToString().c_str()));
+                  base::StringPrintf(" (%s)", error.ToString().c_str()),
+                  /*is_authenticated=*/true);
     pending_requests_.pop();
   }
 }
@@ -289,6 +330,7 @@ void RemoteSuggestionsFetcherImpl::AccessTokenError(
 void RemoteSuggestionsFetcherImpl::JsonRequestDone(
     std::unique_ptr<JsonRequest> request,
     SnippetsAvailableCallback callback,
+    bool is_authenticated,
     std::unique_ptr<base::Value> result,
     FetchResult status_code,
     const std::string& error_details) {
@@ -303,7 +345,7 @@ void RemoteSuggestionsFetcherImpl::JsonRequestDone(
 
   if (!result) {
     FetchFinished(OptionalFetchedCategories(), std::move(callback), status_code,
-                  error_details);
+                  error_details, is_authenticated);
     return;
   }
 
@@ -311,7 +353,8 @@ void RemoteSuggestionsFetcherImpl::JsonRequestDone(
   if (!JsonToCategories(*result, &categories, fetch_time)) {
     LOG(WARNING) << "Received invalid snippets: " << last_fetch_json_;
     FetchFinished(OptionalFetchedCategories(), std::move(callback),
-                  FetchResult::INVALID_SNIPPET_CONTENT_ERROR, std::string());
+                  FetchResult::INVALID_SNIPPET_CONTENT_ERROR, std::string(),
+                  is_authenticated);
     return;
   }
   // Filter out unwanted categories if necessary.
@@ -320,17 +363,19 @@ void RemoteSuggestionsFetcherImpl::JsonRequestDone(
   FilterCategories(&categories, request->exclusive_category());
 
   FetchFinished(std::move(categories), std::move(callback),
-                FetchResult::SUCCESS, std::string());
+                FetchResult::SUCCESS, std::string(), is_authenticated);
 }
 
 void RemoteSuggestionsFetcherImpl::FetchFinished(
     OptionalFetchedCategories categories,
     SnippetsAvailableCallback callback,
     FetchResult fetch_result,
-    const std::string& error_details) {
+    const std::string& error_details,
+    bool is_authenticated) {
   DCHECK(fetch_result == FetchResult::SUCCESS || !categories.has_value());
 
   last_status_ = FetchResultToString(fetch_result) + error_details;
+  last_fetch_authenticated_ = is_authenticated;
 
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.Snippets.FetchResult",
                             static_cast<int>(fetch_result),

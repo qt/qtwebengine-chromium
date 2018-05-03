@@ -51,8 +51,8 @@ RTCVoidRequestImpl::RTCVoidRequestImpl(
     V8VoidFunction* success_callback,
     V8RTCPeerConnectionErrorCallback* error_callback)
     : ContextLifecycleObserver(context),
-      success_callback_(success_callback),
-      error_callback_(error_callback),
+      success_callback_(ToV8PersistentCallbackFunction(success_callback)),
+      error_callback_(ToV8PersistentCallbackFunction(error_callback)),
       requester_(requester) {
   DCHECK(requester_);
 }
@@ -92,6 +92,8 @@ void RTCVoidRequestImpl::Clear() {
 }
 
 void RTCVoidRequestImpl::Trace(blink::Visitor* visitor) {
+  visitor->Trace(success_callback_);
+  visitor->Trace(error_callback_);
   visitor->Trace(requester_);
   RTCVoidRequest::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);

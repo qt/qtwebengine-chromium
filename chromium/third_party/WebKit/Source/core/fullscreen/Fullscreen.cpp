@@ -65,7 +65,7 @@ bool AllowedToUseFullscreen(const Frame* frame) {
   if (!frame)
     return false;
 
-  if (!IsSupportedInFeaturePolicy(FeaturePolicyFeature::kFullscreen)) {
+  if (!IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kFullscreen)) {
     // 2. If |document|'s browsing context is a top-level browsing context, then
     // return true.
     if (frame->IsMainFrame())
@@ -84,7 +84,7 @@ bool AllowedToUseFullscreen(const Frame* frame) {
 
   // 2. If Feature Policy is enabled, return the policy for "fullscreen"
   // feature.
-  return frame->IsFeatureEnabled(FeaturePolicyFeature::kFullscreen);
+  return frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kFullscreen);
 }
 
 bool AllowedToRequestFullscreen(Document& document) {
@@ -340,23 +340,20 @@ void EnqueueEvent(const AtomicString& type,
 
 }  // anonymous namespace
 
-const char* Fullscreen::SupplementName() {
-  return "Fullscreen";
-}
+const char Fullscreen::kSupplementName[] = "Fullscreen";
 
 Fullscreen& Fullscreen::From(Document& document) {
   Fullscreen* fullscreen = FromIfExists(document);
   if (!fullscreen) {
     fullscreen = new Fullscreen(document);
-    Supplement<Document>::ProvideTo(document, SupplementName(), fullscreen);
+    ProvideTo(document, fullscreen);
   }
 
   return *fullscreen;
 }
 
 Fullscreen* Fullscreen::FromIfExistsSlow(Document& document) {
-  return static_cast<Fullscreen*>(
-      Supplement<Document>::From(document, SupplementName()));
+  return Supplement<Document>::From<Fullscreen>(document);
 }
 
 Element* Fullscreen::FullscreenElementFrom(Document& document) {

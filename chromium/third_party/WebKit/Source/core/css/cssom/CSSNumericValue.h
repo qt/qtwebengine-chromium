@@ -10,6 +10,7 @@
 #include "core/CoreExport.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/cssom/CSSNumericSumValue.h"
+#include "core/css/cssom/CSSNumericType.h"
 #include "core/css/cssom/CSSNumericValueType.h"
 #include "core/css/cssom/CSSStyleValue.h"
 #include "platform/bindings/ScriptWrappable.h"
@@ -49,6 +50,10 @@ class CORE_EXPORT CSSNumericValue : public CSSStyleValue {
   CSSUnitValue* to(const String&, ExceptionState&);
   CSSMathSum* toSum(const Vector<String>&, ExceptionState&);
 
+  void type(CSSNumericType&) const;
+
+  String toString() const final;
+
   // Internal methods.
   // Arithmetic
   virtual CSSNumericValue* Negate();
@@ -63,6 +68,10 @@ class CORE_EXPORT CSSNumericValue : public CSSStyleValue {
   const CSSNumericValueType& Type() const { return type_; }
 
   virtual CSSCalcExpressionNode* ToCalcExpressionNode() const = 0;
+
+  enum class Nested : bool { kYes, kNo };
+  enum class ParenLess : bool { kYes, kNo };
+  virtual void BuildCSSText(Nested, ParenLess, StringBuilder&) const = 0;
 
  protected:
   static bool IsValidUnit(CSSPrimitiveValue::UnitType);

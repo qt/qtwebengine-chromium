@@ -8,6 +8,7 @@
 <translation id="1243314992276662751">Загрузить</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">РЕКОМЕНДУЕМЫЕ ПРИЛОЖЕНИЯ</translation>
+<translation id="1368832886055348810">Слева направо</translation>
 <translation id="1398853756734560583">Развернуть</translation>
 <translation id="1413622004203049571">Отключить уведомления от <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 минута }one{# минута }few{# минуты }many{# минут }other{# минуты }}</translation>
@@ -21,6 +22,7 @@
 <translation id="1812519734428420144">Оценка: <ph name="RATING_SCORE" /></translation>
 <translation id="1830179671306812954">{HOURS,plural, =1{1 час }one{# час }few{# часа }many{# часов }other{# часа }}</translation>
 <translation id="1842960171412779397">выбрать</translation>
+<translation id="1859234291848436338">Направление письма</translation>
 <translation id="1860796786778352021">Закрыть уведомление</translation>
 <translation id="1871244248791675517">Ins</translation>
 <translation id="1884435127456172652"><ph name="NUMBER" />%</translation>
@@ -30,6 +32,7 @@
 <translation id="2168039046890040389">Вверх</translation>
 <translation id="2190355936436201913">(пусто)</translation>
 <translation id="219905428774326614">Панель запуска, все приложения</translation>
+<translation id="2267918077332197517">Блокировать все уведомления этого сайта</translation>
 <translation id="2289052229480071835">Коснитесь интерактивных элементов на экране.</translation>
 <translation id="2295140143284145483">Опрос</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> ТБ/с</translation>
@@ -50,7 +53,9 @@
 <translation id="3183922693828471536">Прокрутить до этого места</translation>
 <translation id="3234408098842461169">Стрелка вниз</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{1 день}one{# день}few{# дня}many{# дней}other{# дня}}</translation>
+<translation id="335581015389089642">Озвучить</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{Остался 1 день}one{Остался # день}few{Осталось # дня}many{Осталось # дней}other{Осталось # дня}}</translation>
+<translation id="3618849550573277856">Найти "<ph name="LOOKUP_STRING" />"</translation>
 <translation id="364720409959344976">Выберите папку для загрузки</translation>
 <translation id="3660179305079774227">Стрелка вверх</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> ГБ/с</translation>
@@ -63,8 +68,8 @@
 <translation id="4202807286478387388">перейти</translation>
 <translation id="4250229828105606438">Скриншот</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{месяц назад}one{# месяц назад}few{# месяца назад}many{# месяцев назад}other{# месяца назад}}</translation>
+<translation id="4289300219472526559">Начать голосовой ввод</translation>
 <translation id="4316910396681052118">ВСЕ ПРИЛОЖЕНИЯ</translation>
-<translation id="4320177379694898372">Нет подключения к Интернету</translation>
 <translation id="4588090240171750605">Прокрутка вправо</translation>
 <translation id="4724120544754982507">Центр уведомлений. Непрочитанных: <ph name="UNREAD_NOTIFICATION_COUNT" />.</translation>
 <translation id="4730374152663651037">ЧАСТО ИСПОЛЬЗУЕМЫЕ</translation>
@@ -102,7 +107,9 @@
 <translation id="6351032674660237738">ПРЕДЛАГАЕМЫЕ ПРИЛОЖЕНИЯ</translation>
 <translation id="6364916375976753737">Прокрутка влево</translation>
 <translation id="6394627529324717982">Запятая</translation>
+<translation id="6397363302884558537">Прекратить голосовой ввод</translation>
 <translation id="6404817160109697034">{SECONDS,plural, =1{1 сек. назад}one{# сек. назад}few{# сек. назад}many{# сек. назад}other{# сек. назад}}</translation>
+<translation id="6430678249303439055">Блокировать все уведомления этого приложения</translation>
 <translation id="6483402905448010557">{SECONDS,plural, =1{только что}one{# секунду назад}few{# секунды назад}many{# секунд назад}other{# секунды назад}}</translation>
 <translation id="654149438358937226">Блокировать все уведомления</translation>
 <translation id="6567071839949112727">нажмите на родительский элемент</translation>
@@ -119,6 +126,7 @@
 <translation id="6917971086528278418">{YEARS,plural, =1{остался 1 год}one{остался # год}few{осталось # года}many{осталось # лет}other{осталось # года}}</translation>
 <translation id="6945221475159498467">Выбрать</translation>
 <translation id="6965382102122355670">ОК</translation>
+<translation id="6974053822202609517">Справа налево</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">САМЫЕ ПОДХОДЯЩИЕ</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -142,7 +150,6 @@
 <translation id="8328145009876646418">Левый край</translation>
 <translation id="8331626408530291785">Прокрутка вверх</translation>
 <translation id="8352146631962686268">{YEARS,plural, =1{1 год}one{# год}few{# года}many{# лет}other{# года}}</translation>
-<translation id="8371695176452482769">Говорите</translation>
 <translation id="838869780401515933">поставить галочку</translation>
 <translation id="8393700583063109961">Отправить сообщение</translation>
 <translation id="8394908167088220973">Воспроизведение/пауза</translation>
@@ -153,6 +160,7 @@
 <translation id="8725488761726303204">Ещё <ph name="NUMBER" /></translation>
 <translation id="8730621377337864115">Готово</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 ч.}one{# ч.}few{# ч.}many{# ч.}other{# ч.}}</translation>
+<translation id="8798099450830957504">По умолчанию</translation>
 <translation id="8806053966018712535">Папка <ph name="FOLDER_NAME" />.</translation>
 <translation id="883911313571074303">Добавить примечание к изображению</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> КБ</translation>

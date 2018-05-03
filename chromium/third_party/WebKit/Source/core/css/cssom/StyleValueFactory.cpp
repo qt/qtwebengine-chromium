@@ -4,7 +4,9 @@
 
 #include "core/css/cssom/StyleValueFactory.h"
 
+#include "core/StylePropertyShorthand.h"
 #include "core/css/CSSCustomPropertyDeclaration.h"
+#include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSValue.h"
 #include "core/css/CSSVariableReferenceValue.h"
@@ -27,13 +29,61 @@ namespace blink {
 
 namespace {
 
+CSSStyleValue* CreateStyleValue(const CSSValue& value) {
+  if (value.IsIdentifierValue() || value.IsCustomIdentValue())
+    return CSSKeywordValue::FromCSSValue(value);
+  if (value.IsPrimitiveValue())
+    return CSSNumericValue::FromCSSValue(ToCSSPrimitiveValue(value));
+  if (value.IsImageValue()) {
+    return CSSURLImageValue::FromCSSValue(*ToCSSImageValue(value).Clone());
+  }
+  return nullptr;
+}
+
 CSSStyleValue* CreateStyleValueWithPropertyInternal(CSSPropertyID property_id,
                                                     const CSSValue& value) {
+  // FIXME: We should enforce/document what the possible CSSValue structures
+  // are for each property.
   switch (property_id) {
+    case CSSPropertyCaretColor:
+      // caret-color also supports 'auto'
+      if (value.IsIdentifierValue() &&
+          ToCSSIdentifierValue(value).GetValueID() == CSSValueAuto) {
+        return CSSKeywordValue::Create("auto");
+      }
+      FALLTHROUGH;
+    case CSSPropertyBackgroundColor:
+    case CSSPropertyBorderBottomColor:
+    case CSSPropertyBorderLeftColor:
+    case CSSPropertyBorderRightColor:
+    case CSSPropertyBorderTopColor:
+    case CSSPropertyColor:
+    case CSSPropertyColumnRuleColor:
+    case CSSPropertyOutlineColor:
+    case CSSPropertyTextDecorationColor:
+    case CSSPropertyWebkitTextEmphasisColor:
+      // Only 'currentcolor' is supported.
+      if (value.IsIdentifierValue() &&
+          ToCSSIdentifierValue(value).GetValueID() == CSSValueCurrentcolor) {
+        return CSSKeywordValue::Create("currentcolor");
+      }
+      return CSSUnsupportedStyleValue::Create(property_id, value);
     case CSSPropertyTransform:
       return CSSTransformValue::FromCSSValue(value);
     case CSSPropertyObjectPosition:
       return CSSPositionValue::FromCSSValue(value);
+    case CSSPropertyAlignItems: {
+      // Computed align-items is a ValueList of either length 1 or 2.
+      // Typed OM level 1 can't support "pairs", so we only return
+      // a Typed OM object for length 1 lists.
+      if (value.IsValueList()) {
+        const auto& value_list = ToCSSValueList(value);
+        if (value_list.length() != 1U)
+          return nullptr;
+        return CreateStyleValue(value_list.Item(0));
+      }
+      return CreateStyleValue(value);
+    }
     default:
       // TODO(meade): Implement other properties.
       break;
@@ -41,11 +91,85 @@ CSSStyleValue* CreateStyleValueWithPropertyInternal(CSSPropertyID property_id,
   return nullptr;
 }
 
-CSSStyleValue* CreateStyleValue(const CSSValue& value) {
-  if (value.IsIdentifierValue() || value.IsCustomIdentValue())
+bool IsPropertySupported(CSSPropertyID property_id) {
+  switch (property_id) {
+    case CSSPropertyVariable:
+    case CSSPropertyAnimationDirection:
+    case CSSPropertyTransitionDuration:
+    case CSSPropertyColor:
+    case CSSPropertyDirection:
+    case CSSPropertyFontStyle:
+    case CSSPropertyFontWeight:
+    case CSSPropertyBackfaceVisibility:
+    case CSSPropertyBackgroundColor:
+    case CSSPropertyBackgroundImage:
+    case CSSPropertyBorderBottomColor:
+    case CSSPropertyBorderBottomStyle:
+    case CSSPropertyBorderBottomWidth:
+    case CSSPropertyBorderCollapse:
+    case CSSPropertyBorderImageSource:
+    case CSSPropertyBorderLeftColor:
+    case CSSPropertyBorderLeftStyle:
+    case CSSPropertyBorderLeftWidth:
+    case CSSPropertyBorderRightColor:
+    case CSSPropertyBorderRightStyle:
+    case CSSPropertyBorderRightWidth:
+    case CSSPropertyBorderTopColor:
+    case CSSPropertyBorderTopStyle:
+    case CSSPropertyBorderTopWidth:
+    case CSSPropertyBottom:
+    case CSSPropertyBoxSizing:
+    case CSSPropertyCaretColor:
+    case CSSPropertyClear:
+    case CSSPropertyColumnRuleColor:
+    case CSSPropertyDisplay:
+    case CSSPropertyEmptyCells:
+    case CSSPropertyFloat:
+    case CSSPropertyHeight:
+    case CSSPropertyLeft:
+    case CSSPropertyLineHeight:
+    case CSSPropertyListStyleImage:
+    case CSSPropertyListStylePosition:
+    case CSSPropertyMarginBottom:
+    case CSSPropertyMarginLeft:
+    case CSSPropertyMarginRight:
+    case CSSPropertyMarginTop:
+    case CSSPropertyObjectPosition:
+    case CSSPropertyOpacity:
+    case CSSPropertyOutlineColor:
+    case CSSPropertyOutlineStyle:
+    case CSSPropertyOverflowAnchor:
+    case CSSPropertyOverflowX:
+    case CSSPropertyOverflowY:
+    case CSSPropertyPaddingBottom:
+    case CSSPropertyPaddingLeft:
+    case CSSPropertyPaddingRight:
+    case CSSPropertyPaddingTop:
+    case CSSPropertyPosition:
+    case CSSPropertyResize:
+    case CSSPropertyRight:
+    case CSSPropertyShapeOutside:
+    case CSSPropertyTextAlign:
+    case CSSPropertyTextDecorationColor:
+    case CSSPropertyTextDecorationStyle:
+    case CSSPropertyTextTransform:
+    case CSSPropertyTop:
+    case CSSPropertyTransform:
+    case CSSPropertyVerticalAlign:
+    case CSSPropertyVisibility:
+    case CSSPropertyWhiteSpace:
+    case CSSPropertyWidth:
+      return true;
+    default:
+      return false;
+  }
+}
+
+CSSStyleValue* CreateStyleValueWithProperty(CSSPropertyID property_id,
+                                            const CSSValue& value) {
+  // These cannot be overridden by individual properties.
+  if (value.IsCSSWideKeyword())
     return CSSKeywordValue::FromCSSValue(value);
-  if (value.IsPrimitiveValue())
-    return CSSNumericValue::FromCSSValue(ToCSSPrimitiveValue(value));
   if (value.IsVariableReferenceValue())
     return CSSUnparsedValue::FromCSSValue(ToCSSVariableReferenceValue(value));
   if (value.IsCustomPropertyDeclaration()) {
@@ -54,16 +178,9 @@ CSSStyleValue* CreateStyleValue(const CSSValue& value) {
     DCHECK(variable_data);
     return CSSUnparsedValue::FromCSSValue(*variable_data);
   }
-  if (value.IsImageValue()) {
-    return CSSURLImageValue::Create(ToCSSImageValue(value).Clone());
-  }
-  return nullptr;
-}
 
-CSSStyleValue* CreateStyleValueWithProperty(CSSPropertyID property_id,
-                                            const CSSValue& value) {
-  if (value.IsCSSWideKeyword())
-    return CSSKeywordValue::FromCSSValue(value);
+  if (!IsPropertySupported(property_id))
+    return CSSUnsupportedStyleValue::Create(property_id, value);
 
   CSSStyleValue* style_value =
       CreateStyleValueWithPropertyInternal(property_id, value);
@@ -80,31 +197,6 @@ CSSStyleValueVector UnsupportedCSSValue(CSSPropertyID property_id,
   return style_value_vector;
 }
 
-const CSSValue* ParseProperty(CSSPropertyID property_id,
-                              const String& css_text,
-                              const CSSParserContext* context) {
-  CSSTokenizer tokenizer(css_text);
-  const auto tokens = tokenizer.TokenizeToEOF();
-  const CSSParserTokenRange range(tokens);
-
-  if (property_id != CSSPropertyVariable) {
-    if (const CSSValue* value =
-            CSSPropertyParser::ParseSingleValue(property_id, range, context)) {
-      return value;
-    }
-  }
-
-  if (property_id == CSSPropertyVariable ||
-      CSSVariableParser::ContainsValidVariableReferences(range)) {
-    return CSSVariableReferenceValue::Create(
-        CSSVariableData::Create(range, false /* is_animation_tainted */,
-                                false /* needs variable resolution */),
-        *context);
-  }
-
-  return nullptr;
-}
-
 }  // namespace
 
 CSSStyleValueVector StyleValueFactory::FromString(
@@ -112,16 +204,52 @@ CSSStyleValueVector StyleValueFactory::FromString(
     const String& css_text,
     const CSSParserContext* parser_context) {
   DCHECK_NE(property_id, CSSPropertyInvalid);
-  DCHECK(!CSSProperty::Get(property_id).IsShorthand());
+  CSSTokenizer tokenizer(css_text);
+  const auto tokens = tokenizer.TokenizeToEOF();
+  const CSSParserTokenRange range(tokens);
 
-  const CSSValue* value = ParseProperty(property_id, css_text, parser_context);
-  if (!value)
-    return CSSStyleValueVector();
+  HeapVector<CSSPropertyValue, 256> parsed_properties;
+  if (property_id != CSSPropertyVariable &&
+      CSSPropertyParser::ParseValue(property_id, false, range, parser_context,
+                                    parsed_properties,
+                                    StyleRule::RuleType::kStyle)) {
+    if (parsed_properties.size() == 1) {
+      const auto result = StyleValueFactory::CssValueToStyleValueVector(
+          parsed_properties[0].Id(), *parsed_properties[0].Value());
+      // TODO(801935): Handle list-valued properties.
+      if (result.size() == 1U)
+        result[0]->SetCSSText(css_text);
+      return result;
+    }
 
-  CSSStyleValueVector style_value_vector =
-      StyleValueFactory::CssValueToStyleValueVector(property_id, *value);
-  DCHECK(!style_value_vector.IsEmpty());
-  return style_value_vector;
+    // Shorthands are not yet supported.
+    CSSStyleValueVector result;
+    result.push_back(CSSUnsupportedStyleValue::Create(property_id, css_text));
+    return result;
+  }
+
+  if (property_id == CSSPropertyVariable ||
+      CSSVariableParser::ContainsValidVariableReferences(range)) {
+    const auto variable_data =
+        CSSVariableData::Create(range, false /* is_animation_tainted */,
+                                false /* needs variable resolution */);
+    CSSStyleValueVector values;
+    values.push_back(CSSUnparsedValue::FromCSSValue(*variable_data));
+    return values;
+  }
+
+  return CSSStyleValueVector();
+}
+
+CSSStyleValue* StyleValueFactory::CssValueToStyleValue(
+    CSSPropertyID property_id,
+    const CSSValue& css_value) {
+  DCHECK(!CSSProperty::Get(property_id).IsRepeated());
+  CSSStyleValue* style_value =
+      CreateStyleValueWithProperty(property_id, css_value);
+  if (!style_value)
+    return CSSUnsupportedStyleValue::Create(property_id, css_value);
+  return style_value;
 }
 
 CSSStyleValueVector StyleValueFactory::CssValueToStyleValueVector(

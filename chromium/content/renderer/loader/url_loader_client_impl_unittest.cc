@@ -15,7 +15,7 @@
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/redirect_info.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 
@@ -24,8 +24,7 @@ namespace content {
 class URLLoaderClientImplTest : public ::testing::Test,
                                 public network::mojom::URLLoaderFactory {
  protected:
-  URLLoaderClientImplTest()
-      : dispatcher_(new ResourceDispatcher(message_loop_.task_runner())) {
+  URLLoaderClientImplTest() : dispatcher_(new ResourceDispatcher()) {
     request_id_ = dispatcher_->StartAsync(
         std::make_unique<network::ResourceRequest>(), 0,
         blink::scheduler::GetSingleThreadTaskRunnerForTesting(), url::Origin(),
@@ -34,7 +33,8 @@ class URLLoaderClientImplTest : public ::testing::Test,
                                           &request_peer_context_),
         base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(this),
         std::vector<std::unique_ptr<URLLoaderThrottle>>(),
-        network::mojom::URLLoaderClientEndpointsPtr());
+        network::mojom::URLLoaderClientEndpointsPtr(),
+        nullptr /* continue_navigation_function */);
     request_peer_context_.request_id = request_id_;
 
     base::RunLoop().RunUntilIdle();

@@ -65,9 +65,9 @@
       }
     </style>
     <settings-toggle-button id="autofillToggle"
-        class="first primary-toggle"
+        class="first"
         aria-label="$i18n{autofill}" no-extension-indicator
-        label="[[getOnOffLabel_(prefs.autofill.enabled.value)]]"
+        label="$i18n{autofillFormsLabel}"
         pref="{{prefs.autofill.enabled}}">
     </settings-toggle-button>
     <template is="dom-if" if="[[prefs.autofill.enabled.extensionId]]">
@@ -85,7 +85,7 @@
       <h2 class="start">$i18n{addresses}</h2>
       <paper-button id="addAddress"
           class="secondary-button header-aligned-button"
-          on-tap="onAddAddressTap_">
+          on-click="onAddAddressTap_">
         $i18n{add}
       </paper-button>
     </div>
@@ -108,13 +108,13 @@
             </div>
             <template is="dom-if" if="[[item.metadata.isLocal]]">
               <button is="paper-icon-button-light" id="addressMenu"
-                  class="icon-more-vert" on-tap="onAddressMenuTap_"
+                  class="icon-more-vert" on-click="onAddressMenuTap_"
                   title="$i18n{moreActions}">
               </button>
             </template>
             <template is="dom-if" if="[[!item.metadata.isLocal]]">
               <button is="paper-icon-button-light" class="icon-external"
-                  on-tap="onRemoteEditAddressTap_" actionable></button>
+                  on-click="onRemoteEditAddressTap_" actionable></button>
             </template>
           </div>
         </template>
@@ -125,10 +125,10 @@
       </div>
     </div>
     <dialog is="cr-action-menu" id="addressSharedMenu">
-      <button id="menuEditAddress" class="dropdown-item"
-          on-tap="onMenuEditAddressTap_">$i18n{edit}</button>
-      <button id="menuRemoveAddress" class="dropdown-item"
-          on-tap="onMenuRemoveAddressTap_">$i18n{removeAddress}</button>
+      <button id="menuEditAddress" slot="item" class="dropdown-item"
+          on-click="onMenuEditAddressTap_">$i18n{edit}</button>
+      <button id="menuRemoveAddress" slot="item" class="dropdown-item"
+          on-click="onMenuRemoveAddressTap_">$i18n{removeAddress}</button>
     </dialog>
     <template is="dom-if" if="[[showAddressDialog_]]" restamp>
       <settings-address-edit-dialog address="[[activeAddress]]"
@@ -139,7 +139,7 @@
       <h2 class="start">$i18n{creditCards}</h2>
       <paper-button id="addCreditCard"
           class="secondary-button header-aligned-button"
-          on-tap="onAddCreditCardTap_"
+          on-click="onAddCreditCardTap_"
           hidden$="[[isDisabled_(prefs.autofill.credit_card_enabled)]]">
         $i18n{add}
       </paper-button>
@@ -173,13 +173,13 @@
                 <template is="dom-if" if="[[showDots_(item.metadata)]]">
                   <button is="paper-icon-button-light" id="creditCardMenu"
                       class="icon-more-vert" title="$i18n{moreActions}"
-                      on-tap="onCreditCardMenuTap_">
+                      on-click="onCreditCardMenuTap_">
                   </button>
                 </template>
                 <template is="dom-if" if="[[!showDots_(item.metadata)]]">
                   <button is="paper-icon-button-light" id="remoteCreditCardLink"
                       class="icon-external"
-                      on-tap="onRemoteEditCreditCardTap_" actionable></button>
+                      on-click="onRemoteEditCreditCardTap_" actionable></button>
                 </template>
               </div>
             </div>
@@ -198,13 +198,13 @@
       </div>
     </div>
     <dialog is="cr-action-menu" id="creditCardSharedMenu">
-      <button id="menuEditCreditCard" class="dropdown-item"
-          on-tap="onMenuEditCreditCardTap_">$i18n{edit}</button>
-      <button id="menuRemoveCreditCard" class="dropdown-item"
+      <button id="menuEditCreditCard" slot="item" class="dropdown-item"
+          on-click="onMenuEditCreditCardTap_">$i18n{edit}</button>
+      <button id="menuRemoveCreditCard" slot="item" class="dropdown-item"
           hidden$="[[!activeCreditCard.metadata.isLocal]]"
-          on-tap="onMenuRemoveCreditCardTap_">$i18n{removeCreditCard}</button>
-      <button id="menuClearCreditCard" class="dropdown-item"
-          on-tap="onMenuClearCreditCardTap_"
+          on-click="onMenuRemoveCreditCardTap_">$i18n{removeCreditCard}</button>
+      <button id="menuClearCreditCard" slot="item" class="dropdown-item"
+          on-click="onMenuClearCreditCardTap_"
           hidden$="[[!activeCreditCard.metadata.isCached]]">
         $i18n{clearCreditCard}
       </button>

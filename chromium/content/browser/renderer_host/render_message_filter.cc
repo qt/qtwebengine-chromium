@@ -21,6 +21,7 @@
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
+#include "components/download/public/common/download_stats.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browser_main_loop.h"
@@ -30,7 +31,6 @@
 #include "content/browser/cache_storage/cache_storage_manager.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
-#include "content/browser/download/download_stats.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
@@ -282,7 +282,7 @@ void RenderMessageFilter::DidGenerateCacheableMetadataInCacheStorage(
     memcpy(buf->data(), &data.front(), data.size());
 
   cache_storage_context_->cache_manager()->OpenCache(
-      cache_storage_origin.GetURL(), cache_storage_cache_name,
+      cache_storage_origin, cache_storage_cache_name,
       base::BindOnce(&RenderMessageFilter::OnCacheStorageOpenCallback,
                      weak_ptr_factory_.GetWeakPtr(), url,
                      expected_response_time, buf, data.size()));
@@ -298,9 +298,9 @@ void RenderMessageFilter::OnCacheStorageOpenCallback(
   if (error != CacheStorageError::kSuccess || !cache_handle.value())
     return;
   CacheStorageCache* cache = cache_handle.value();
-  cache->WriteSideData(base::BindOnce(&NoOpCacheStorageErrorCallback,
-                                      base::Passed(std::move(cache_handle))),
-                       url, expected_response_time, buf, buf_len);
+  cache->WriteSideData(
+      base::BindOnce(&NoOpCacheStorageErrorCallback, std::move(cache_handle)),
+      url, expected_response_time, buf, buf_len);
 }
 
 void RenderMessageFilter::OnMediaLogEvents(

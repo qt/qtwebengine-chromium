@@ -11,6 +11,7 @@
 #include "core/events/PointerEventFactory.h"
 #include "core/input/BoundaryEventDispatcher.h"
 #include "core/input/TouchEventManager.h"
+#include "core/page/TouchAdjustment.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/HashMap.h"
 #include "public/platform/WebInputEventResult.h"
@@ -159,7 +160,9 @@ class CORE_EXPORT PointerEventManager
       const EventHandlingUtil::PointerEventTarget&);
 
   // Returns whether the event is consumed or not.
-  WebInputEventResult SendTouchPointerEvent(EventTarget*, PointerEvent*);
+  WebInputEventResult SendTouchPointerEvent(EventTarget*,
+                                            PointerEvent*,
+                                            bool hovering);
 
   void SendBoundaryEvents(EventTarget* exited_target,
                           EventTarget* entered_target,
@@ -197,6 +200,11 @@ class CORE_EXPORT PointerEventManager
                               EventTarget** pointer_capture_target,
                               EventTarget** pending_pointer_capture_target);
 
+  // Only adjust touch type primary pointer down.
+  bool ShouldAdjustPointerEvent(const WebPointerEvent&) const;
+  // Adjust coordinates so it can be used to find the best clickable target.
+  void AdjustTouchPointerEvent(WebPointerEvent&);
+
   // NOTE: If adding a new field to this class please ensure that it is
   // cleared in |PointerEventManager::clear()|.
 
@@ -210,8 +218,8 @@ class CORE_EXPORT PointerEventManager
       [static_cast<size_t>(WebPointerProperties::PointerType::kLastEntry) + 1];
 
   // Set upon scrolling starts when sending a pointercancel, prevents PE
-  // dispatches for scroll capable pointers  until all of them become inactive.
-  bool scroll_capable_pointers_canceled_;
+  // dispatches for non-hovering pointers until all of them become inactive.
+  bool non_hovering_pointers_canceled_;
 
   Deque<uint32_t> touch_ids_for_canceled_pointerdowns_;
 

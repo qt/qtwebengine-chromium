@@ -27,7 +27,6 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fDropsTileOnZeroDivide = false;
     fFBFetchSupport = false;
     fFBFetchNeedsCustomOutput = false;
-    fBindlessTextureSupport = false;
     fUsesPrecisionModifiers = false;
     fCanUseAnyFunctionInShader = true;
     fCanUseMinAndAbsTogether = true;
@@ -39,12 +38,10 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fMustObfuscateUniformColor = false;
     fMustGuardDivisionEvenAfterExplicitZeroCheck = false;
     fCanUseFragCoord = true;
+    fInterpolantsAreInaccurate = false;
     fFlatInterpolationSupport = false;
     fPreferFlatInterpolation = false;
     fNoPerspectiveInterpolationSupport = false;
-    fMultisampleInterpolationSupport = false;
-    fSampleVariablesSupport = false;
-    fSampleMaskOverrideCoverageSupport = false;
     fExternalTextureSupport = false;
     fTexelFetchSupport = false;
     fVertexIDSupport = false;
@@ -60,8 +57,6 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fExternalTextureExtensionString = nullptr;
     fTexelBufferExtensionString = nullptr;
     fNoPerspectiveInterpolationExtensionString = nullptr;
-    fMultisampleInterpolationExtensionString = nullptr;
-    fSampleVariablesExtensionString = nullptr;
     fFBFetchColorName = nullptr;
     fFBFetchExtensionString = nullptr;
     fImageLoadStoreExtensionString = nullptr;
@@ -103,7 +98,6 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
 
     writer->appendBool("FB Fetch Support", fFBFetchSupport);
     writer->appendBool("Drops tile on zero divide", fDropsTileOnZeroDivide);
-    writer->appendBool("Bindless texture support", fBindlessTextureSupport);
     writer->appendBool("Uses precision modifiers", fUsesPrecisionModifiers);
     writer->appendBool("Can use any() function", fCanUseAnyFunctionInShader);
     writer->appendBool("Can use min() and abs() together", fCanUseMinAndAbsTogether);
@@ -115,12 +109,10 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Must guard division even after explicit zero check",
                        fMustGuardDivisionEvenAfterExplicitZeroCheck);
     writer->appendBool("Can use gl_FragCoord", fCanUseFragCoord);
+    writer->appendBool("Interpolants are inaccurate", fInterpolantsAreInaccurate);
     writer->appendBool("Flat interpolation support", fFlatInterpolationSupport);
     writer->appendBool("Prefer flat interpolation", fPreferFlatInterpolation);
     writer->appendBool("No perspective interpolation support", fNoPerspectiveInterpolationSupport);
-    writer->appendBool("Multisample interpolation support", fMultisampleInterpolationSupport);
-    writer->appendBool("Sample variables support", fSampleVariablesSupport);
-    writer->appendBool("Sample mask override coverage support", fSampleMaskOverrideCoverageSupport);
     writer->appendBool("External texture support", fExternalTextureSupport);
     writer->appendBool("texelFetch support", fTexelFetchSupport);
     writer->appendBool("sk_VertexID support", fVertexIDSupport);
@@ -140,6 +132,19 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
 }
 
 void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
+    if (options.fDisableDriverCorrectnessWorkarounds) {
+        SkASSERT(fCanUseAnyFunctionInShader);
+        SkASSERT(fCanUseMinAndAbsTogether);
+        SkASSERT(fCanUseFractForNegativeValues);
+        SkASSERT(!fMustForceNegatedAtanParamToFloat);
+        SkASSERT(!fAtan2ImplementedAsAtanYOverX);
+        SkASSERT(!fMustDoOpBetweenFloorAndAbs);
+        SkASSERT(!fRequiresLocalOutputColorForFBFetch);
+        SkASSERT(!fMustObfuscateUniformColor);
+        SkASSERT(!fMustGuardDivisionEvenAfterExplicitZeroCheck);
+        SkASSERT(fCanUseFragCoord);
+        SkASSERT(!fInterpolantsAreInaccurate);
+    }
 #if GR_TEST_UTILS
     fDualSourceBlendingSupport = fDualSourceBlendingSupport && !options.fSuppressDualSourceBlending;
     if (options.fDisableImageMultitexturing) {

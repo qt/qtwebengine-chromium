@@ -8,6 +8,7 @@
 <translation id="1243314992276662751">Încărcați</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">APLICAȚII RECOMANDATE</translation>
+<translation id="1368832886055348810">De la stânga la dreapta</translation>
 <translation id="1398853756734560583">Maximizează</translation>
 <translation id="1413622004203049571">Dezactivați notificările de la <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{Un minut și  }few{# minute și  }other{# de minute și  }}</translation>
@@ -21,6 +22,7 @@
 <translation id="1812519734428420144">Evaluare cu stele: <ph name="RATING_SCORE" /></translation>
 <translation id="1830179671306812954">{HOURS,plural, =1{O oră și  }few{# ore și  }other{# de ore și  }}</translation>
 <translation id="1842960171412779397">selectează</translation>
+<translation id="1859234291848436338">Direcție de scriere</translation>
 <translation id="1860796786778352021">Buton de închidere a notificării</translation>
 <translation id="1871244248791675517">Ins</translation>
 <translation id="1884435127456172652"><ph name="NUMBER" />%</translation>
@@ -30,6 +32,7 @@
 <translation id="2168039046890040389">O pagină mai sus</translation>
 <translation id="2190355936436201913">(gol)</translation>
 <translation id="219905428774326614">Lansator, toate aplicațiile</translation>
+<translation id="2267918077332197517">Blochează toate notificările de la acest site</translation>
 <translation id="2289052229480071835">Atinge țintele de atingere de pe ecran.</translation>
 <translation id="2295140143284145483">Sondaj</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
@@ -50,7 +53,9 @@
 <translation id="3183922693828471536">Derulează până aici</translation>
 <translation id="3234408098842461169">Săgeată în jos</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{O zi}few{# zile}other{# de zile}}</translation>
+<translation id="335581015389089642">Voce</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{O zi rămasă}few{# zile rămase}other{# de zile rămase}}</translation>
+<translation id="3618849550573277856">Caută „<ph name="LOOKUP_STRING" />”</translation>
 <translation id="364720409959344976">Selectați un dosar de încărcat</translation>
 <translation id="3660179305079774227">Săgeată în sus</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> GB/s</translation>
@@ -63,8 +68,8 @@
 <translation id="4202807286478387388">accesează</translation>
 <translation id="4250229828105606438">Captură de ecran</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{Acum 1 lună}few{Acum # luni}other{Acum # de luni}}</translation>
+<translation id="4289300219472526559">Începeți să vorbiți</translation>
 <translation id="4316910396681052118">TOATE APLICAȚIILE</translation>
-<translation id="4320177379694898372">Fără conexiune la internet</translation>
 <translation id="4588090240171750605">Derulează spre dreapta</translation>
 <translation id="4724120544754982507">Centrul de notificări, <ph name="UNREAD_NOTIFICATION_COUNT" /> notificări necitite</translation>
 <translation id="4730374152663651037">FOLOSITE FRECVENT</translation>
@@ -102,7 +107,9 @@
 <translation id="6351032674660237738">SUGESTII DE APLICAȚII</translation>
 <translation id="6364916375976753737">Derulează spre stânga</translation>
 <translation id="6394627529324717982">Virgulă</translation>
+<translation id="6397363302884558537">Opriți-vă din vorbit</translation>
 <translation id="6404817160109697034">{SECONDS,plural, =1{Acum o sec.}few{Acum # sec}other{Acum # sec}}</translation>
+<translation id="6430678249303439055">Blochează toate notificările de la această aplicație</translation>
 <translation id="6483402905448010557">{SECONDS,plural, =1{Acum 1 secundă}few{Acum # secunde}other{Acum # de secunde}}</translation>
 <translation id="654149438358937226">Blochează toate notificările</translation>
 <translation id="6567071839949112727">dă clic pe predecesor</translation>
@@ -119,6 +126,7 @@
 <translation id="6917971086528278418">{YEARS,plural, =1{1 an rămas}few{# ani rămași}other{# de ani rămași}}</translation>
 <translation id="6945221475159498467">Selectează</translation>
 <translation id="6965382102122355670">OK</translation>
+<translation id="6974053822202609517">De la dreapta la stânga</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">CEL MAI PROBABIL DE ACCESAT</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -142,7 +150,6 @@
 <translation id="8328145009876646418">Marginea stângă</translation>
 <translation id="8331626408530291785">Derulează în sus</translation>
 <translation id="8352146631962686268">{YEARS,plural, =1{1 an}few{# ani}other{# de ani}}</translation>
-<translation id="8371695176452482769">Rostește acum</translation>
 <translation id="838869780401515933">bifează</translation>
 <translation id="8393700583063109961">Trimite un mesaj</translation>
 <translation id="8394908167088220973">Redați/întrerupeți conținutul media</translation>
@@ -153,6 +160,7 @@
 <translation id="8725488761726303204">Peste <ph name="NUMBER" /></translation>
 <translation id="8730621377337864115">Terminat</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 h}few{# h}other{# h}}</translation>
+<translation id="8798099450830957504">Prestabilit</translation>
 <translation id="8806053966018712535">Dosarul <ph name="FOLDER_NAME" /></translation>
 <translation id="883911313571074303">Adnotează imaginea</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KO</translation>

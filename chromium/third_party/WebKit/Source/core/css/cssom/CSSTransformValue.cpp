@@ -54,7 +54,7 @@ DOMMatrix* CSSTransformValue::toMatrix(ExceptionState& exception_state) const {
   DOMMatrix* matrix = DOMMatrix::Create();
   for (size_t i = 0; i < transform_components_.size(); i++) {
     const DOMMatrix* matrixComponent =
-        transform_components_[i]->AsMatrix(exception_state);
+        transform_components_[i]->toMatrix(exception_state);
     if (matrixComponent) {
       matrix->multiplySelf(*matrixComponent);
     }
@@ -72,6 +72,27 @@ const CSSValue* CSSTransformValue::ToCSSValue() const {
     transform_css_value->Append(*component);
   }
   return transform_css_value;
+}
+
+bool CSSTransformValue::AnonymousIndexedSetter(
+    unsigned index,
+    const Member<CSSTransformComponent> component,
+    ExceptionState& exception_state) {
+  if (index < transform_components_.size()) {
+    transform_components_[index] = component;
+    return true;
+  }
+
+  if (index == transform_components_.size()) {
+    transform_components_.push_back(component);
+    return true;
+  }
+
+  exception_state.ThrowRangeError(
+      ExceptionMessages::IndexOutsideRange<unsigned>(
+          "index", index, 0, ExceptionMessages::kInclusiveBound,
+          transform_components_.size(), ExceptionMessages::kInclusiveBound));
+  return false;
 }
 
 }  // namespace blink

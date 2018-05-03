@@ -34,7 +34,7 @@
 }
 
 - (void)setParameters:(RTCRtpParameters *)parameters {
-  if (!_nativeRtpSender->SetParameters(parameters.nativeParameters)) {
+  if (!_nativeRtpSender->SetParameters(parameters.nativeParameters).ok()) {
     RTCLogError(@"RTCRtpSender(%p): Failed to set parameters: %@", self,
         parameters);
   }
@@ -44,7 +44,7 @@
   rtc::scoped_refptr<webrtc::MediaStreamTrackInterface> nativeTrack(
     _nativeRtpSender->track());
   if (nativeTrack) {
-    return [[RTCMediaStreamTrack alloc] initWithNativeTrack:nativeTrack];
+    return [RTCMediaStreamTrack mediaTrackForNativeTrack:nativeTrack];
   }
   return nil;
 }

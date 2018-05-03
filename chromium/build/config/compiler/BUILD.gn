@@ -3,11 +3,14 @@
 # found in the LICENSE file.
 
 import("//build/config/android/config.gni")
+import("//build/config/c++/c++.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/chromecast_build.gni")
+import("//build/config/clang/clang.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/coverage/coverage.gni")
 import("//build/config/host_byteorder.gni")
+import("//build/config/ui.gni")
 import("//build/toolchain/cc_wrapper.gni")
 import("//build/toolchain/toolchain.gni")
 import("//build_overrides/build.gni")
@@ -104,21 +107,12 @@ declare_args() {
 
   # Path to an AFDO profile to use while building with clang, if any. Empty
   # implies none.
-  #
-  # Please note that you need to be very careful about changing your profile at
-  # the moment. See the `BUG(gbiv)` comment later in this file.
   clang_sample_profile_path = ""
 
   # Some configurations have default sample profiles. If this is true and
   # clang_sample_profile_path is empty, we'll fall back to the default.
   clang_use_default_sample_profile =
       is_official_build && defined(clang_default_afdo_profile)
-
-  # Whether to assert to the compiler that the AFDO profiles are accurate.
-  # True will cause the compiler to optimize uncovered functions for size
-  # (despite passing -O2 or -O3), which reduces binary size by quite a bit,
-  # potentially at the cost of some performance.
-  clang_sample_profile_is_accurate = true
 }
 
 declare_args() {
@@ -126,13 +120,25 @@ declare_args() {
   use_cxx11_on_android = use_cxx11
 }
 
-if (is_clang) {
-  update_args = [ "--print-revision" ]
-  if (llvm_force_head_revision) {
-    update_args += [ "--llvm-force-head-revision" ]
-  }
-  clang_revision =
-      exec_script("//tools/clang/scripts/update.py", update_args, "trim string")
+declare_args() {
+  # Set to true to use icf, Identical Code Folding.
+  #
+  # icf=all is broken in older golds, see
+  # https://sourceware.org/bugzilla/show_bug.cgi?id=17704
+  # See also https://crbug.com/663886
+  # `linux_use_bundled_binutils` is to avoid breaking Linux distros which may
+  # still have a buggy gold.
+  # chromeos binutils has been patched with the fix, so always use icf there.
+  # The bug only affects x86 and x64, so we can still use ICF when targeting
+  # other architectures.
+  #
+  # lld doesn't have the bug.
+  use_icf =
+      is_posix && !using_sanitizer && !(is_android && use_order_profiling) &&
+      ((use_lld && !is_nacl) ||
+       (use_gold &&
+        ((!is_android && linux_use_bundled_binutils) || is_chromeos ||
+         !(current_cpu == "x86" || current_cpu == "x64"))))
 }
 
 # Apply the default logic for these values if they were not set explicitly.
@@ -179,6 +185,7 @@ config("compiler") {
   ldflags = []
   defines = []
   configs = []
+  inputs = []
 
   # System-specific flags. If your compiler flags apply to one of the
   # categories here, add it to the associated file to keep this shared config
@@ -214,34 +221,6 @@ config("compiler") {
     # Common GCC compiler flags setup.
     # --------------------------------
     cflags += [ "-fno-strict-aliasing" ]  # See http://crbug.com/32204
-
-    # AFDO on clang. Clang doesn't seem to suffer from the bug that caused GCC's
-    # AFDO to be split into its own config, so this isn't part of that config.
-    #
-    # Since we only profile the browser, skip it if we're building host tools.
-    #
-    # XXX(gbiv): There is currently *no* dependency between the profile we use
-    # and the compilations/links that we do. So, if the profile gets updated,
-    # the user has to manually clean build artifacts. CL:827560 should fix this
-    # by allowing us to specify `inputs` here, but until then, the only "good"
-    # workaround is changing your profile name each time you update the profile.
-    if (is_clang && current_toolchain == default_toolchain) {
-      _sample_path = ""
-      if (clang_sample_profile_path != "") {
-        _sample_path = clang_sample_profile_path
-      } else if (clang_use_default_sample_profile) {
-        assert(defined(clang_default_afdo_profile),
-               "This platform has no default sample profiles")
-        _sample_path = clang_default_afdo_profile
-      }
-
-      if (_sample_path != "") {
-        cflags += [ "-fprofile-sample-use=${_sample_path}" ]
-        if (clang_sample_profile_is_accurate) {
-          cflags += [ "-fprofile-sample-accurate" ]
-        }
-      }
-    }
 
     # Stack protection.
     if (is_mac) {
@@ -433,20 +412,8 @@ config("compiler") {
     ldflags += [ "-fuse-ld=bfd" ]
   }
 
-  if (is_posix && (use_gold || (use_lld && !is_nacl)) && !using_sanitizer &&
-      !(is_android && use_order_profiling)) {
-    # TODO(thakis): Remove `!is_android` below once NDK gold has been rolled
-    # with the fix for https://sourceware.org/bugzilla/show_bug.cgi?id=17704
-    # merged.  See also https://crbug.com/663886
-    # `linux_use_bundled_binutils` is to avoid breaking Linux distros which may
-    # still have a buggy gold.
-    # chromeos binutils has been patched with the fix, so always use icf there.
-    # The bug only affects x86 and x64, so we can still use ICF when targeting
-    # other architectures.
-    if ((!is_android && linux_use_bundled_binutils) || is_chromeos ||
-        !(current_cpu == "x86" || current_cpu == "x64")) {
-      ldflags += [ "-Wl,--icf=all" ]
-    }
+  if (use_icf) {
+    ldflags += [ "-Wl,--icf=all" ]
   }
 
   if (linux_use_bundled_binutils) {
@@ -489,8 +456,17 @@ config("compiler") {
   # clang-cl (used if is_win) doesn't expose this flag.
   # Currently disabled for nacl since its toolchain lacks this flag (too old).
   # TODO(zforman): Once nacl's toolchain is updated, remove check.
-  if (is_clang && is_linux && strip_absolute_paths_from_debug_symbols) {
-    absolute_path = rebase_path("//.")
+  if (is_clang && !is_nacl && !is_win && !is_mac && !is_ios &&
+      strip_absolute_paths_from_debug_symbols) {
+    # This is resolved to path like "$HOME/chromium/src/out/Release".
+    # If debug option is given, clang includes $cwd in debug info.
+    # In such build, this flag generates reproducible obj files
+    # even we use build directory like "out/feature_a" and "out/feature_b" if
+    # we build same files with same compile flag other than this.
+    # Other paths are already givne in relative, no need to normalize it by
+    # using -fdebug-prefix-map.
+    absolute_path = rebase_path(root_out_dir)
+
     cflags += [ "-fdebug-prefix-map=$absolute_path=." ]
   }
 
@@ -562,6 +538,13 @@ config("compiler") {
            "gold plugin only supported with ChromeOS")
 
     cflags += [ "-flto=thin" ]
+
+    # Limit the size of the ThinLTO cache to the lesser of 10% of available disk
+    # space, 10GB and 100000 files.
+    if (use_lld) {
+      cache_policy =
+          "cache_size=10%:cache_size_bytes=10g:cache_size_files=100000"
+    }
     if (is_win) {
       # This is a straight translation of the non-Windows flags below.
       ldflags += [
@@ -569,7 +552,7 @@ config("compiler") {
         "/opt:lldltojobs=8",
         "/lldltocache:" +
             rebase_path("$root_out_dir/thinlto-cache", root_build_dir),
-        "/lldltocachepolicy:cache_size=10%",
+        "/lldltocachepolicy:$cache_policy",
       ]
     } else {
       ldflags += [ "-flto=thin" ]
@@ -582,20 +565,17 @@ config("compiler") {
           "-Wl,--thinlto-jobs=8",
           "-Wl,--thinlto-cache-dir=" +
               rebase_path("$root_out_dir/thinlto-cache", root_build_dir),
-
-          # Limit the size of the ThinLTO cache to 10% of available disk space
-          # TODO(pcc): Change the limit from a percentage to an absolute size
-          # (10-20GB) once that feature lands in LLVM.
-          "-Wl,--thinlto-cache-policy,cache_size=10%",
+          "-Wl,--thinlto-cache-policy,$cache_policy",
         ]
       } else {
         ldflags += [ "-Wl,-plugin-opt,jobs=8" ]
+        not_needed([ "cache_policy" ])
       }
     }
 
     # Disable optimization for now because they increase binary size by too
     # much.
-    if (use_lld && (is_android || is_linux)) {
+    if (use_lld && (is_android || (is_linux && !is_chromeos))) {
       ldflags += [ "-Wl,--lto-O0" ]
     }
 
@@ -607,6 +587,15 @@ config("compiler") {
     # Work-around for http://openradar.appspot.com/20356002
     if (is_mac) {
       ldflags += [ "-Wl,-all_load" ]
+    }
+
+    # This flag causes LTO to create an .ARM.attributes section with the correct
+    # architecture. This is necessary because LLD will refuse to link a program
+    # unless the architecture revision in .ARM.attributes is sufficiently new.
+    # TODO(pcc): The contents of .ARM.attributes should be based on the
+    # -march flag passed at compile time (see llvm.org/pr36291).
+    if (current_cpu == "arm") {
+      ldflags += [ "-march=$arm_arch" ]
     }
   }
 
@@ -841,11 +830,18 @@ config("compiler_cpu_abi") {
           ]
         }
       } else if (mips_arch_variant == "r2") {
-        cflags += [
-          "-mips64r2",
-          "-Wa,-mips64r2",
-        ]
         ldflags += [ "-mips64r2" ]
+        if (is_clang) {
+          cflags += [
+            "-march=mips64el",
+            "-mcpu=mips64r2",
+          ]
+        } else {
+          cflags += [
+            "-mips64r2",
+            "-Wa,-mips64r2",
+          ]
+        }
       } else if (mips_arch_variant == "loongson3") {
         defines += [ "_MIPS_ARCH_LOONGSON" ]
         cflags += [
@@ -923,8 +919,13 @@ config("compiler_cpu_abi") {
         cflags += [ "-m32" ]
         ldflags += [ "-m32" ]
       } else if (v8_current_cpu == "ppc64") {
-        cflags += [ "-m64" ]
-        ldflags += [ "-m64" ]
+        if (current_os == "aix") {
+          cflags += [ "-maix64" ]
+          ldflags += [ "-maix64" ]
+        } else {
+          cflags += [ "-m64" ]
+          ldflags += [ "-m64" ]
+        }
       }
     } else if (current_cpu == "s390x") {
       if (v8_current_cpu == "s390" && host_byteorder == "little") {
@@ -998,7 +999,18 @@ config("clang_stackrealign") {
 }
 
 config("clang_revision") {
-  if (is_clang) {
+  if (is_clang && clang_base_path == default_clang_base_path) {
+    update_args = [
+      "--print-revision",
+      "--verify-version=$clang_version",
+    ]
+    if (llvm_force_head_revision) {
+      update_args += [ "--llvm-force-head-revision" ]
+    }
+    clang_revision = exec_script("//tools/clang/scripts/update.py",
+                                 update_args,
+                                 "trim string")
+
     # This is here so that all files get recompiled after a clang roll and
     # when turning clang on or off. (defines are passed via the command line,
     # and build system rebuild things when their commandline changes). Nothing
@@ -1326,18 +1338,8 @@ config("default_warnings") {
         # TODO(thakis): https://crbug.com/753973
         "-Wno-enum-compare-switch",
 
-        # TODO(hans): https://crbug.com/763392
-        "-Wno-tautological-unsigned-zero-compare",
-
         # TODO(hans): https://crbug.com/766891
         "-Wno-null-pointer-arithmetic",
-
-        # TODO(hans): https://crbug.com/767059
-        # Disable -Wtautological-constant-compare (and implicitly also
-        # -Wtautological-unsigned-enum-zero-compare), but re-enable
-        # useful sub-diagnostics in that group.
-        "-Wno-tautological-constant-compare",
-        "-Wtautological-constant-out-of-range-compare",
       ]
     } else if (use_xcode_clang) {
       cflags += [
@@ -1370,7 +1372,7 @@ config("chromium_code") {
       ldflags = [ "-Werror" ]
     }
     if (is_clang) {
-      # Enable -Wextra for chromium_code when we control the compiler.
+      # Enable extra warnings for chromium_code when we control the compiler.
       cflags += [ "-Wextra" ]
     }
 
@@ -1401,6 +1403,19 @@ config("chromium_code") {
       cflags_objc = [ "-Wobjc-missing-property-synthesis" ]
       cflags_objcc = [ "-Wobjc-missing-property-synthesis" ]
     }
+  }
+
+  if (is_clang) {
+    cflags += [
+      # Warn on missing break statements at the end of switch cases.
+      # For intentional fallthrough, use FALLTHROUGH; from
+      # base/compiler_specific.h
+      "-Wimplicit-fallthrough",
+
+      # Thread safety analysis. See base/thread_annotations.h and
+      # https://clang.llvm.org/docs/ThreadSafetyAnalysis.html
+      "-Wthread-safety",
+    ]
   }
 
   configs = [ ":default_warnings" ]
@@ -1491,7 +1506,9 @@ config("no_rtti") {
 config("exceptions") {
   if (is_win) {
     # Enables exceptions in the STL.
-    defines = [ "_HAS_EXCEPTIONS=1" ]
+    if (!use_custom_libcxx) {
+      defines = [ "_HAS_EXCEPTIONS=1" ]
+    }
     cflags_cc = [ "/EHsc" ]
   } else {
     cflags_cc = [ "-fexceptions" ]
@@ -1502,7 +1519,14 @@ config("exceptions") {
 config("no_exceptions") {
   if (is_win) {
     # Disables exceptions in the STL.
-    defines = [ "_HAS_EXCEPTIONS=0" ]
+    # libc++ uses the __has_feature macro to control whether to use exceptions,
+    # so defining this macro is unnecessary. Defining _HAS_EXCEPTIONS to 0 also
+    # breaks libc++ because it depends on MSVC headers that only provide certain
+    # declarations if _HAS_EXCEPTIONS is 1. Those MSVC headers do not use
+    # exceptions, despite being conditional on _HAS_EXCEPTIONS.
+    if (!use_custom_libcxx) {
+      defines = [ "_HAS_EXCEPTIONS=0" ]
+    }
   } else {
     cflags_cc = [ "-fno-exceptions" ]
     cflags_objcc = cflags_cc
@@ -1571,7 +1595,6 @@ if (is_win) {
   common_optimize_on_cflags = [
     "/Ob2",  # Both explicit and auto inlining.
     "/Oy-",  # Disable omitting frame pointers, must be after /O2.
-    "/d2Zi+",  # Improve debugging of optimized code.
     "/Zc:inline",  # Remove unreferenced COMDAT (faster links).
   ]
   if (!is_asan) {
@@ -1656,7 +1679,8 @@ if (is_win) {
     common_optimize_on_ldflags += [
       # Specifically tell the linker to perform optimizations.
       # See http://lwn.net/Articles/192624/ .
-      "-Wl,-O1",
+      # -O2 enables string tail merge optimization in gold and lld.
+      "-Wl,-O2",
       "-Wl,--gc-sections",
     ]
   }
@@ -1877,15 +1901,44 @@ config("default_optimization") {
   }
 }
 
-# GCC supports a form of profile-guided optimization called AFDO, which
-# is used by ChromeOS in their official builds. However,
-# //base/allocator:tcmalloc currently doesn't work correctly with AFDO
-# so we provide separate config so that the flag can be disabled per-target.
-# TODO(crbug.com/633719): Remove this config once tcmalloc works with AFDO
-# or we remove tcmalloc or we stop using AFDO.
+_clang_sample_profile = ""
+if (is_clang && current_toolchain == default_toolchain) {
+  if (clang_sample_profile_path != "") {
+    _clang_sample_profile = clang_sample_profile_path
+  } else if (clang_use_default_sample_profile) {
+    assert(defined(clang_default_afdo_profile),
+           "This platform has no default sample profiles")
+    _clang_sample_profile = clang_default_afdo_profile
+  }
+}
+
+# Clang offers a way to assert that AFDO profiles are accurate, which causes it
+# to optimize functions not represented in a profile more aggressively for size.
+# This config can be toggled in cases where shaving off binary size hurts
+# performance too much.
+config("afdo_optimize_size") {
+  if (_clang_sample_profile != "" && sample_profile_is_accurate) {
+    cflags = [ "-fprofile-sample-accurate" ]
+  }
+}
+
+# GCC and clang support a form of profile-guided optimization called AFDO.
+# There are some targeted places that AFDO regresses (and an icky interaction
+# between //base/allocator:tcmalloc and AFDO on GCC), so we provide a separate
+# config to allow AFDO to be disabled per-target.
 config("afdo") {
-  if (auto_profile_path != "" && current_toolchain == default_toolchain) {
+  if (is_clang) {
+    if (_clang_sample_profile != "") {
+      cflags = [ "-fprofile-sample-use=${_clang_sample_profile}" ]
+      inputs = [
+        _clang_sample_profile,
+      ]
+    }
+  } else if (auto_profile_path != "" && current_toolchain == default_toolchain) {
     cflags = [ "-fauto-profile=${auto_profile_path}" ]
+    inputs = [
+      auto_profile_path,
+    ]
   }
 }
 
@@ -1911,6 +1964,8 @@ config("symbols") {
     }
 
     if (is_win_fastlink) {
+      assert(!use_lld, "is_win_fastlink=true cannot be used with use_lld=true.")
+
       # Tell VS 2015+ to create a PDB that references debug
       # information in .obj and .lib files instead of copying
       # it all. This flag is incompatible with /PROFILE
@@ -1980,6 +2035,8 @@ config("symbols") {
 }
 
 # Minimal symbols.
+# This config guarantees to hold symbol for stack trace which are shown to user
+# when crash happens in unittests running on buildbot.
 config("minimal_symbols") {
   if (is_win) {
     # Linker symbols for backtraces only.

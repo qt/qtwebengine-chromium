@@ -18,6 +18,7 @@
 #include "compiler/translator/RewriteElseBlocks.h"
 #include "compiler/translator/RewriteTexelFetchOffset.h"
 #include "compiler/translator/RewriteUnaryMinusOperatorInt.h"
+#include "compiler/translator/SeparateArrayConstructorStatements.h"
 #include "compiler/translator/SeparateArrayInitialization.h"
 #include "compiler/translator/SeparateDeclarations.h"
 #include "compiler/translator/SeparateExpressionsReturningArrays.h"
@@ -50,16 +51,18 @@ void TranslatorHLSL::translate(TIntermBlock *root,
                            IntermNodePatternMatcher::kExpressionReturningArray |
                                IntermNodePatternMatcher::kUnfoldedShortCircuitExpression |
                                IntermNodePatternMatcher::kDynamicIndexingOfVectorOrMatrixInLValue,
-                           &getSymbolTable(), getShaderVersion());
+                           &getSymbolTable());
 
     SplitSequenceOperator(root,
                           IntermNodePatternMatcher::kExpressionReturningArray |
                               IntermNodePatternMatcher::kUnfoldedShortCircuitExpression |
                               IntermNodePatternMatcher::kDynamicIndexingOfVectorOrMatrixInLValue,
-                          &getSymbolTable(), getShaderVersion());
+                          &getSymbolTable());
 
     // Note that SeparateDeclarations needs to be run before UnfoldShortCircuitToIf.
     UnfoldShortCircuitToIf(root, &getSymbolTable());
+
+    SeparateArrayConstructorStatements(root);
 
     SeparateExpressionsReturningArrays(root, &getSymbolTable());
 
@@ -73,7 +76,7 @@ void TranslatorHLSL::translate(TIntermBlock *root,
     if (!shouldRunLoopAndIndexingValidation(compileOptions))
     {
         // HLSL doesn't support dynamic indexing of vectors and matrices.
-        RemoveDynamicIndexing(root, &getSymbolTable(), getShaderVersion(), perfDiagnostics);
+        RemoveDynamicIndexing(root, &getSymbolTable(), perfDiagnostics);
     }
 
     // Work around D3D9 bug that would manifest in vertex shaders with selection blocks which
@@ -103,7 +106,7 @@ void TranslatorHLSL::translate(TIntermBlock *root,
 
     if (precisionEmulation)
     {
-        EmulatePrecision emulatePrecision(&getSymbolTable(), getShaderVersion());
+        EmulatePrecision emulatePrecision(&getSymbolTable());
         root->traverse(&emulatePrecision);
         emulatePrecision.updateTree();
         emulatePrecision.writeEmulationHelpers(getInfoSink().obj, getShaderVersion(),

@@ -184,10 +184,6 @@ class LayerTreeHostScrollTestScrollMultipleRedraw
         EXPECT_VECTOR_EQ(initial_scroll_, scroll_layer_->scroll_offset());
         break;
       case 1:
-        EXPECT_VECTOR_EQ(
-            gfx::ScrollOffsetWithDelta(initial_scroll_,
-                                       scroll_amount_ + scroll_amount_),
-            scroll_layer_->scroll_offset());
       case 2:
         EXPECT_VECTOR_EQ(
             gfx::ScrollOffsetWithDelta(initial_scroll_,
@@ -568,7 +564,7 @@ class LayerTreeHostScrollTestCaseWithChild : public LayerTreeHostScrollTest {
         num_scrolls_(0) {}
 
   void SetupTree() override {
-    layer_tree_host()->SetDeviceScaleFactor(device_scale_factor_);
+    SetInitialDeviceScaleFactor(device_scale_factor_);
 
     scoped_refptr<Layer> root_layer = Layer::Create();
     root_layer->SetBounds(gfx::Size(10, 10));

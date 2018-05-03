@@ -52,7 +52,6 @@ class InputTypeView;
 // An InputType object represents the type-specific part of an HTMLInputElement.
 // Do not expose instances of InputType and classes derived from it to classes
 // other than HTMLInputElement.
-// FIXME: InputType should not inherit InputTypeView. It's conceptually wrong.
 class CORE_EXPORT InputType : public GarbageCollectedFinalized<InputType> {
  public:
   static InputType* Create(HTMLInputElement&, const AtomicString&);
@@ -194,8 +193,6 @@ class CORE_EXPORT InputType : public GarbageCollectedFinalized<InputType> {
   virtual Decimal FindClosestTickMarkValue(const Decimal&);
   virtual bool HasLegalLinkAttribute(const QualifiedName&) const;
   virtual const QualifiedName& SubResourceAttributeName() const;
-  virtual bool SupportsAutocapitalize() const;
-  virtual const AtomicString& DefaultAutocapitalize() const;
   virtual void CopyNonAttributeProperties(const HTMLInputElement&);
   virtual void OnAttachWithLayoutObject();
   virtual void OnDetachWithLayoutObject();

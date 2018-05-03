@@ -4,10 +4,12 @@
 
 #include "components/ui_devtools/views/dom_agent.h"
 
-#include "base/memory/ptr_util.h"
+#include <memory>
+
 #include "base/strings/utf_string_conversions.h"
 #include "components/ui_devtools/devtools_server.h"
 #include "components/ui_devtools/views/overlay_agent.h"
+#include "components/ui_devtools/views/root_element.h"
 #include "components/ui_devtools/views/ui_element.h"
 #include "components/ui_devtools/views/view_element.h"
 #include "components/ui_devtools/views/widget_element.h"
@@ -53,41 +55,7 @@ std::unique_ptr<DOM::Node> BuildNode(
   return node;
 }
 
-// TODO(thanhph): Move this function to UIElement::GetAttributes().
-std::unique_ptr<Array<std::string>> GetAttributes(UIElement* ui_element) {
-  std::unique_ptr<Array<std::string>> attributes = Array<std::string>::create();
-  attributes->addItem("name");
-  switch (ui_element->type()) {
-    case UIElementType::WINDOW: {
-      aura::Window* window =
-          UIElement::GetBackingElement<aura::Window, WindowElement>(ui_element);
-      attributes->addItem(window->GetName());
-      attributes->addItem("active");
-      attributes->addItem(::wm::IsActiveWindow(window) ? "true" : "false");
-      break;
-    }
-    case UIElementType::WIDGET: {
-      views::Widget* widget =
-          UIElement::GetBackingElement<views::Widget, WidgetElement>(
-              ui_element);
-      attributes->addItem(widget->GetName());
-      attributes->addItem("active");
-      attributes->addItem(widget->IsActive() ? "true" : "false");
-      break;
-    }
-    case UIElementType::VIEW: {
-      attributes->addItem(
-          UIElement::GetBackingElement<views::View, ViewElement>(ui_element)
-              ->GetClassName());
-      break;
-    }
-    default:
-      DCHECK(false);
-  }
-  return attributes;
-}
-
-views::Widget* GetWidgetFromWindow(aura::Window* window) {
+views::Widget* GetWidgetFromWindow(gfx::NativeWindow window) {
   return views::Widget::GetWidgetForNativeView(window);
 }
 
@@ -96,7 +64,7 @@ std::unique_ptr<DOM::Node> BuildDomNodeFromUIElement(UIElement* root) {
   for (auto* it : root->children())
     children->addItem(BuildDomNodeFromUIElement(it));
 
-  return BuildNode(root->GetTypeName(), GetAttributes(root),
+  return BuildNode(root->GetTypeName(), root->GetAttributes(),
                    std::move(children), root->node_id());
 }
 
@@ -540,10 +508,10 @@ Response DOMAgent::HighlightNode(int node_id, bool show_size) {
     layer_for_highlighting_->set_delegate(this);
     layer_for_highlighting_->SetFillsBoundsOpaquely(false);
   }
-  std::pair<aura::Window*, gfx::Rect> window_and_bounds =
+  std::pair<gfx::NativeWindow, gfx::Rect> window_and_bounds =
       node_id_to_ui_element_.count(node_id)
           ? node_id_to_ui_element_[node_id]->GetNodeWindowAndBounds()
-          : std::make_pair<aura::Window*, gfx::Rect>(nullptr, gfx::Rect());
+          : std::make_pair<gfx::NativeWindow, gfx::Rect>(nullptr, gfx::Rect());
 
   if (!window_and_bounds.first)
     return Response::Error("No node found with that id");
@@ -558,36 +526,43 @@ Response DOMAgent::HighlightNode(int node_id, bool show_size) {
   return Response::OK();
 }
 
-int DOMAgent::FindElementIdTargetedByPoint(const gfx::Point& p,
-                                           aura::Window* root_window) const {
-  aura::Window* targeted_window = root_window->GetEventHandlerForPoint(p);
+int DOMAgent::FindElementIdTargetedByPoint(
+    const gfx::Point& p,
+    gfx::NativeWindow root_window) const {
+  gfx::NativeWindow targeted_window = root_window->GetEventHandlerForPoint(p);
   if (!targeted_window)
     return 0;
 
   views::Widget* targeted_widget =
       views::Widget::GetWidgetForNativeWindow(targeted_window);
   if (!targeted_widget) {
-    return window_element_root_->FindUIElementIdForBackendElement<aura::Window>(
+#if defined(USE_AURA)
+    return element_root_->FindUIElementIdForBackendElement<aura::Window>(
         targeted_window);
+#else
+    return 0;
+#endif  // defined(USE_AURA)
   }
 
   views::View* root_view = targeted_widget->GetRootView();
   DCHECK(root_view);
 
   gfx::Point point_in_targeted_window(p);
+#if defined(USE_AURA)
   aura::Window::ConvertPointToTarget(root_window, targeted_window,
                                      &point_in_targeted_window);
+#endif  // defined(USE_AURA)
   views::View* targeted_view =
       root_view->GetEventHandlerForPoint(point_in_targeted_window);
   DCHECK(targeted_view);
-  return window_element_root_->FindUIElementIdForBackendElement<views::View>(
+  return element_root_->FindUIElementIdForBackendElement<views::View>(
       targeted_view);
 }
 
 void DOMAgent::ShowDistancesInHighlightOverlay(int pinned_id, int element_id) {
-  const std::pair<aura::Window*, gfx::Rect> pair_r2(
+  const std::pair<gfx::NativeWindow, gfx::Rect> pair_r2(
       node_id_to_ui_element_[element_id]->GetNodeWindowAndBounds());
-  const std::pair<aura::Window*, gfx::Rect> pair_r1(
+  const std::pair<gfx::NativeWindow, gfx::Rect> pair_r1(
       node_id_to_ui_element_[pinned_id]->GetNodeWindowAndBounds());
   gfx::Rect r2(pair_r2.second);
   gfx::Rect r1(pair_r1.second);
@@ -633,7 +608,7 @@ void DOMAgent::ShowDistancesInHighlightOverlay(int pinned_id, int element_id) {
 int DOMAgent::GetParentIdOfNodeId(int node_id) const {
   DCHECK(node_id_to_ui_element_.count(node_id));
   const UIElement* element = node_id_to_ui_element_.at(node_id);
-  if (element->parent() && element->parent() != window_element_root_.get())
+  if (element->parent() && element->parent() != element_root_.get())
     return element->parent()->node_id();
   return 0;
 }
@@ -790,20 +765,17 @@ std::unique_ptr<DOM::Node> DOMAgent::BuildInitialTree() {
   is_building_tree_ = true;
   std::unique_ptr<Array<DOM::Node>> children = Array<DOM::Node>::create();
 
-  // TODO(thanhph): Root of UIElement tree shoudn't be WindowElement
-  // but maybe a new different element type.
-  window_element_root_ =
-      base::MakeUnique<WindowElement>(nullptr, this, nullptr);
+  element_root_ = std::make_unique<RootElement>(this);
 
   for (aura::Window* window : root_windows()) {
     UIElement* window_element =
-        new WindowElement(window, this, window_element_root_.get());
+        new WindowElement(window, this, element_root_.get());
 
     children->addItem(BuildTreeForUIElement(window_element));
-    window_element_root_->AddChild(window_element);
+    element_root_->AddChild(window_element);
   }
-  std::unique_ptr<DOM::Node> root_node = BuildNode(
-      "root", nullptr, std::move(children), window_element_root_->node_id());
+  std::unique_ptr<DOM::Node> root_node =
+      BuildNode("root", nullptr, std::move(children), element_root_->node_id());
   is_building_tree_ = false;
   return root_node;
 }
@@ -846,7 +818,7 @@ std::unique_ptr<DOM::Node> DOMAgent::BuildTreeForWindow(
     window_element_root->AddChild(window_element);
   }
   std::unique_ptr<DOM::Node> node =
-      BuildNode("Window", GetAttributes(window_element_root),
+      BuildNode("Window", window_element_root->GetAttributes(),
                 std::move(children), window_element_root->node_id());
   return node;
 }
@@ -863,7 +835,7 @@ std::unique_ptr<DOM::Node> DOMAgent::BuildTreeForRootWidget(
   widget_element->AddChild(view_element);
 
   std::unique_ptr<DOM::Node> node =
-      BuildNode("Widget", GetAttributes(widget_element), std::move(children),
+      BuildNode("Widget", widget_element->GetAttributes(), std::move(children),
                 widget_element->node_id());
   return node;
 }
@@ -879,7 +851,7 @@ std::unique_ptr<DOM::Node> DOMAgent::BuildTreeForView(UIElement* view_element,
     view_element->AddChild(view_element_child);
   }
   std::unique_ptr<DOM::Node> node =
-      BuildNode("View", GetAttributes(view_element), std::move(children),
+      BuildNode("View", view_element->GetAttributes(), std::move(children),
                 view_element->node_id());
   return node;
 }
@@ -895,17 +867,17 @@ void DOMAgent::Reset() {
   is_building_tree_ = false;
   render_text_.reset();
   layer_for_highlighting_.reset();
-  window_element_root_.reset();
+  element_root_.reset();
   node_id_to_ui_element_.clear();
   observers_.Clear();
 }
 
 void DOMAgent::UpdateHighlight(
-    const std::pair<aura::Window*, gfx::Rect>& window_and_bounds) {
+    const std::pair<gfx::NativeWindow, gfx::Rect>& window_and_bounds) {
   display::Display display =
       display::Screen::GetScreen()->GetDisplayNearestWindow(
           window_and_bounds.first);
-  aura::Window* root = window_and_bounds.first->GetRootWindow();
+  gfx::NativeWindow root = window_and_bounds.first->GetRootWindow();
   layer_for_highlighting_->SetBounds(root->bounds());
   layer_for_highlighting_->SchedulePaint(root->bounds());
 

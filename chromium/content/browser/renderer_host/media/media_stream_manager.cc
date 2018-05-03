@@ -28,6 +28,7 @@
 #include "build/build_config.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/renderer_host/media/audio_input_device_manager.h"
 #include "content/browser/renderer_host/media/in_process_video_capture_provider.h"
 #include "content/browser/renderer_host/media/media_capture_devices_impl.h"
@@ -44,6 +45,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents_media_capture_id.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "crypto/hmac.h"
 #include "media/audio/audio_device_description.h"
@@ -53,7 +55,6 @@
 #include "media/base/media_switches.h"
 #include "media/capture/video/video_capture_device_factory.h"
 #include "media/capture/video/video_capture_system_impl.h"
-#include "services/video_capture/public/cpp/constants.h"
 #include "services/video_capture/public/uma/video_capture_service_event.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -91,6 +92,24 @@ std::string RandomLabel() {
     DCHECK(std::isalnum(c)) << c;
   }
   return label;
+}
+
+void CreateJpegDecodeAcceleratorOnIOThread(
+    media::mojom::JpegDecodeAcceleratorRequest request) {
+  auto* host =
+      GpuProcessHost::Get(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED, false);
+  if (host) {
+    host->gpu_service()->CreateJpegDecodeAccelerator(std::move(request));
+  } else {
+    LOG(ERROR) << "No GpuProcessHost";
+  }
+}
+
+void CreateJpegDecodeAccelerator(
+    media::mojom::JpegDecodeAcceleratorRequest request) {
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                          base::BindOnce(&CreateJpegDecodeAcceleratorOnIOThread,
+                                         std::move(request)));
 }
 
 void ParseStreamType(const StreamControls& controls,
@@ -316,9 +335,18 @@ class MediaStreamManager::DeviceRequest {
     if (!media_observer)
       return;
 
-    media_observer->OnMediaRequestStateChanged(
-        target_process_id_, target_frame_id_, page_request_id,
-        security_origin.GetURL(), stream_type, new_state);
+    if (stream_type == NUM_MEDIA_TYPES) {
+      for (int i = MEDIA_NO_SERVICE + 1; i < NUM_MEDIA_TYPES; ++i) {
+        media_observer->OnMediaRequestStateChanged(
+            target_process_id_, target_frame_id_, page_request_id,
+            security_origin.GetURL(), static_cast<MediaStreamType>(i),
+            new_state);
+      }
+    } else {
+      media_observer->OnMediaRequestStateChanged(
+          target_process_id_, target_frame_id_, page_request_id,
+          security_origin.GetURL(), stream_type, new_state);
+    }
   }
 
   MediaRequestState state(MediaStreamType stream_type) const {
@@ -411,7 +439,7 @@ void MediaStreamManager::SendMessageToNativeLog(const std::string& message) {
 
   MediaStreamManager* msm = g_media_stream_manager_tls_ptr.Pointer()->Get();
   if (!msm) {
-    DLOG(ERROR) << "No MediaStreamManager on the IO thread. " << message;
+    // MediaStreamManager hasn't been initialized. This is allowed in tests.
     return;
   }
 
@@ -452,7 +480,7 @@ MediaStreamManager::MediaStreamManager(
     CHECK(video_capture_thread_.Start());
     device_task_runner = video_capture_thread_.task_runner();
 #endif
-    if (base::FeatureList::IsEnabled(video_capture::kMojoVideoCapture)) {
+    if (base::FeatureList::IsEnabled(features::kMojoVideoCapture)) {
       video_capture_provider = std::make_unique<VideoCaptureProviderSwitcher>(
           std::make_unique<ServiceVideoCaptureProvider>(
               base::BindRepeating(&SendVideoCaptureLogMessage)),
@@ -466,7 +494,8 @@ MediaStreamManager::MediaStreamManager(
           std::make_unique<media::VideoCaptureSystemImpl>(
               media::VideoCaptureDeviceFactory::CreateFactory(
                   BrowserThread::GetTaskRunnerForThread(BrowserThread::UI),
-                  BrowserGpuMemoryBufferManager::current())),
+                  BrowserGpuMemoryBufferManager::current(),
+                  base::BindRepeating(&CreateJpegDecodeAccelerator))),
           std::move(device_task_runner),
           base::BindRepeating(&SendVideoCaptureLogMessage));
     }
@@ -615,7 +644,6 @@ void MediaStreamManager::CancelRequest(int render_process_id,
       return;
     }
   }
-  NOTREACHED();
 }
 
 void MediaStreamManager::CancelRequest(const std::string& label) {
@@ -645,11 +673,13 @@ void MediaStreamManager::CancelRequest(const std::string& label) {
   DeleteRequest(label);
 }
 
-void MediaStreamManager::CancelAllRequests(int render_process_id) {
+void MediaStreamManager::CancelAllRequests(int render_process_id,
+                                           int render_frame_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DeviceRequests::iterator request_it = requests_.begin();
   while (request_it != requests_.end()) {
-    if (request_it->second->requesting_process_id != render_process_id) {
+    if (request_it->second->requesting_process_id != render_process_id ||
+        request_it->second->requesting_frame_id != render_frame_id) {
       ++request_it;
       continue;
     }
@@ -661,10 +691,12 @@ void MediaStreamManager::CancelAllRequests(int render_process_id) {
 
 void MediaStreamManager::StopStreamDevice(int render_process_id,
                                           int render_frame_id,
-                                          const std::string& device_id) {
+                                          const std::string& device_id,
+                                          int session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DVLOG(1) << "StopStreamDevice({render_frame_id = " << render_frame_id <<  "} "
-           << ", {device_id = " << device_id << "})";
+  DVLOG(1) << "StopStreamDevice({render_frame_id = " << render_frame_id << "} "
+           << ", {device_id = " << device_id << "}, session_id = " << session_id
+           << "})";
   // Find the first request for this |render_process_id| and |render_frame_id|
   // of type MEDIA_GENERATE_STREAM that has requested to use |device_id| and
   // stop it.
@@ -677,7 +709,7 @@ void MediaStreamManager::StopStreamDevice(int render_process_id,
     }
 
     for (const MediaStreamDevice& device : request->devices) {
-      if (device.id == device_id) {
+      if (device.id == device_id && device.session_id == session_id) {
         StopDevice(device.type, device.session_id);
         return;
       }
@@ -840,8 +872,7 @@ void MediaStreamManager::StopRemovedDevice(
       if (device.id == source_id && device.type == stream_type) {
         session_ids.push_back(device.session_id);
         if (request->device_stopped_cb) {
-          request->device_stopped_cb.Run(request->requesting_frame_id,
-                                         labeled_request.first, device);
+          request->device_stopped_cb.Run(labeled_request.first, device);
         }
       }
     }
@@ -1262,9 +1293,10 @@ void MediaStreamManager::FinalizeRequestFailed(
       break;
     }
     case MEDIA_OPEN_DEVICE_PEPPER_ONLY: {
-      DCHECK(request->open_device_cb);
-      std::move(request->open_device_cb)
-          .Run(false /* success */, std::string(), MediaStreamDevice());
+      if (request->open_device_cb) {
+        std::move(request->open_device_cb)
+            .Run(false /* success */, std::string(), MediaStreamDevice());
+      }
       break;
     }
     case MEDIA_DEVICE_ACCESS: {
@@ -1284,10 +1316,10 @@ void MediaStreamManager::FinalizeRequestFailed(
 void MediaStreamManager::FinalizeOpenDevice(const std::string& label,
                                             DeviceRequest* request) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(request->open_device_cb);
-
-  std::move(request->open_device_cb)
-      .Run(true /* success */, label, request->devices.front());
+  if (request->open_device_cb) {
+    std::move(request->open_device_cb)
+        .Run(true /* success */, label, request->devices.front());
+  }
 }
 
 void MediaStreamManager::FinalizeMediaAccessRequest(
@@ -1610,8 +1642,7 @@ void MediaStreamManager::StopMediaStreamFromBrowser(const std::string& label) {
   // Notify renderers that the devices in the stream will be stopped.
   if (request->device_stopped_cb) {
     for (const MediaStreamDevice& device : request->devices) {
-      request->device_stopped_cb.Run(request->requesting_frame_id, label,
-                                     device);
+      request->device_stopped_cb.Run(label, device);
     }
   }
 

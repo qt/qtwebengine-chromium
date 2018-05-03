@@ -10,7 +10,6 @@
 #include "base/memory/ptr_util.h"
 #include "components/viz/common/features.h"
 #include "components/viz/host/host_frame_sink_manager.h"
-#include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/compositor/surface_utils.h"
 
@@ -21,30 +20,23 @@ OffscreenCanvasSurfaceImpl::OffscreenCanvasSurfaceImpl(
     const viz::FrameSinkId& parent_frame_sink_id,
     const viz::FrameSinkId& frame_sink_id,
     blink::mojom::OffscreenCanvasSurfaceClientPtr client,
-    blink::mojom::OffscreenCanvasSurfaceRequest request,
     DestroyCallback destroy_callback)
     : host_frame_sink_manager_(host_frame_sink_manager),
       client_(std::move(client)),
-      binding_(this, std::move(request)),
-      destroy_callback_(std::move(destroy_callback)),
-      frame_sink_id_(frame_sink_id),
-      parent_frame_sink_id_(parent_frame_sink_id) {
-  binding_.set_connection_error_handler(
-      base::BindOnce(&OffscreenCanvasSurfaceImpl::OnSurfaceConnectionClosed,
-                     base::Unretained(this)));
+      parent_frame_sink_id_(parent_frame_sink_id),
+      frame_sink_id_(frame_sink_id) {
+  client_.set_connection_error_handler(std::move(destroy_callback));
   host_frame_sink_manager_->RegisterFrameSinkId(frame_sink_id_, this);
-#if DCHECK_IS_ON()
   host_frame_sink_manager_->SetFrameSinkDebugLabel(
       frame_sink_id_, "OffscreenCanvasSurfaceImpl");
-#endif
 }
 
 OffscreenCanvasSurfaceImpl::~OffscreenCanvasSurfaceImpl() {
   if (has_created_compositor_frame_sink_) {
     host_frame_sink_manager_->UnregisterFrameSinkHierarchy(
         parent_frame_sink_id_, frame_sink_id_);
-    host_frame_sink_manager_->InvalidateFrameSinkId(frame_sink_id_);
   }
+  host_frame_sink_manager_->InvalidateFrameSinkId(frame_sink_id_);
 }
 
 void OffscreenCanvasSurfaceImpl::CreateCompositorFrameSink(
@@ -75,33 +67,6 @@ void OffscreenCanvasSurfaceImpl::OnFirstSurfaceActivation(
 void OffscreenCanvasSurfaceImpl::OnFrameTokenChanged(uint32_t frame_token) {
   // TODO(yiyix, fsamuel): To complete plumbing of frame tokens for offscreen
   // canvas
-}
-
-void OffscreenCanvasSurfaceImpl::Require(const viz::SurfaceId& surface_id,
-                                         const viz::SurfaceSequence& sequence) {
-  // TODO(kylechar): This is a hacky workaround for https://crbug.com/796700
-  // to unblock video with surfaces work. Delete function M65 branch.
-  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor))
-    return;
-
-  auto* surface_manager = GetFrameSinkManager()->surface_manager();
-  if (!surface_manager->using_surface_references())
-    surface_manager->RequireSequence(surface_id, sequence);
-}
-
-void OffscreenCanvasSurfaceImpl::Satisfy(const viz::SurfaceSequence& sequence) {
-  // TODO(kylechar): This is a hacky workaround for https://crbug.com/796700
-  // to unblock video with surfaces work. Delete function after M65 branch.
-  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor))
-    return;
-
-  auto* surface_manager = GetFrameSinkManager()->surface_manager();
-  if (!surface_manager->using_surface_references())
-    surface_manager->SatisfySequence(sequence);
-}
-
-void OffscreenCanvasSurfaceImpl::OnSurfaceConnectionClosed() {
-  std::move(destroy_callback_).Run();
 }
 
 }  // namespace content

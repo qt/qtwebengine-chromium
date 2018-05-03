@@ -28,7 +28,7 @@
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLIFrameElementSandbox.h"
 #include "platform/Supplementable.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 
 namespace blink {
 class Policy;
@@ -76,10 +76,10 @@ class CORE_EXPORT HTMLIFrameElement final
   // FrameOwner overrides:
   bool AllowFullscreen() const override { return allow_fullscreen_; }
   bool AllowPaymentRequest() const override { return allow_payment_request_; }
-  AtomicString Csp() const override { return csp_; }
+  AtomicString RequiredCsp() const override { return required_csp_; }
 
   AtomicString name_;
-  AtomicString csp_;
+  AtomicString required_csp_;
   AtomicString allow_;
   bool allow_fullscreen_;
   bool allow_payment_request_;

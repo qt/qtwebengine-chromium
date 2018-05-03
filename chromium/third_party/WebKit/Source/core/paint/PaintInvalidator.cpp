@@ -12,13 +12,16 @@
 #include "core/layout/LayoutTable.h"
 #include "core/layout/LayoutTableSection.h"
 #include "core/layout/LayoutView.h"
+#include "core/layout/ng/geometry/ng_physical_offset_rect.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/paint/ClipPathClipper.h"
 #include "core/paint/FindPaintOffsetAndVisualRectNeedingUpdate.h"
 #include "core/paint/ObjectPaintProperties.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintLayerScrollableArea.h"
+#include "core/paint/PrePaintTreeWalk.h"
 #include "core/paint/ng/ng_paint_fragment.h"
+#include "platform/PlatformChromeClient.h"
 #include "platform/graphics/paint/GeometryMapper.h"
 #include "platform/wtf/Optional.h"
 
@@ -182,6 +185,13 @@ void PaintInvalidatorContext::MapLocalRectToVisualRectInBacking(
   rect = PaintInvalidator::MapLocalRectToVisualRectInBacking<LayoutRect,
                                                              LayoutPoint>(
       object, rect, *this);
+}
+
+const PaintInvalidatorContext*
+PaintInvalidatorContext::ParentContextAccessor::ParentContext() const {
+  return tree_walk_ ? &tree_walk_->ContextAt(parent_context_index_)
+                           .paint_invalidator_context
+                    : nullptr;
 }
 
 LayoutRect PaintInvalidator::ComputeVisualRectInBacking(
@@ -418,6 +428,47 @@ void PaintInvalidator::UpdateVisualRect(const LayoutObject& object,
 
   fragment_data.SetVisualRect(new_visual_rect);
   fragment_data.SetLocationInBacking(new_location);
+
+  // For LayoutNG, update NGPaintFragments.
+  if (!RuntimeEnabledFeatures::LayoutNGEnabled())
+    return;
+
+  // TODO(kojii): multi-col needs additional logic. What's needed is to be
+  // figured out.
+  if (object.IsLayoutNGMixin()) {
+    if (NGPaintFragment* fragment = ToLayoutBlockFlow(object).PaintFragment())
+      fragment->SetVisualRect(new_visual_rect);
+
+    // Also check IsInline below. Inline block is LayoutBlockFlow but is also in
+    // an inline formatting context.
+  }
+
+  if (object.IsInline()) {
+    // An inline LayoutObject can produce multiple NGPaintFragment. Compute
+    // VisualRect for each fragment from |new_visual_rect|.
+    auto fragments = NGPaintFragment::InlineFragmentsFor(&object);
+    if (fragments.IsEmpty())
+      return;
+    // Compute the offset of |new_visual_rect| from the local coordinate.
+    LayoutRect local_object_rect = object.LocalVisualRect();
+    NGPhysicalOffset object_offset = NGPhysicalOffset(
+        new_visual_rect.Location() - local_object_rect.Location());
+    // Compute VisualRect for each fragment, by mapping each local VisualRect to
+    // the coordinate space of |new_visual_rect|.
+    // TODO(kojii): This logic needs to incorporate writing-mode.
+    for (NGPaintFragment* fragment : fragments) {
+      const NGPhysicalFragment& physical_fragment =
+          fragment->PhysicalFragment();
+      NGPhysicalOffsetRect fragment_rect = physical_fragment.SelfVisualRect();
+      fragment_rect.offset += object_offset;
+      // LayoutBox::LocalVisualRect() is in its local coordinate space, not in
+      // its inline formatting context, and that |object_offset| includes the
+      // offset to the inline container box.
+      if (!object.IsBox())
+        fragment_rect.offset += fragment->InlineOffsetToContainerBox();
+      fragment->SetVisualRect(fragment_rect.ToLayoutRect());
+    }
+  }
 }
 
 void PaintInvalidator::InvalidatePaint(
@@ -446,6 +497,23 @@ void PaintInvalidator::InvalidatePaint(
     if (tree_builder_context)
       undo.emplace(frame_view, *context.tree_builder_context_);
     frame_view.InvalidatePaintOfScrollControlsIfNeeded(context);
+  }
+}
+
+static void InvalidateChromeClient(
+    const LayoutBoxModelObject& paint_invalidation_container) {
+  if (paint_invalidation_container.GetDocument().Printing() &&
+      !RuntimeEnabledFeatures::PrintBrowserEnabled())
+    return;
+
+  DCHECK(paint_invalidation_container.IsLayoutView());
+  DCHECK(!paint_invalidation_container.IsPaintInvalidationContainer());
+
+  auto* frame_view = paint_invalidation_container.GetFrameView();
+  DCHECK(!frame_view->GetFrame().OwnerLayoutObject());
+  if (auto* client = frame_view->GetChromeClient()) {
+    client->InvalidateRect(
+        frame_view->ContentsToFrame(frame_view->VisibleContentRect()));
   }
 }
 
@@ -489,8 +557,7 @@ void PaintInvalidator::InvalidatePaint(
 
   UpdatePaintingLayer(object, context);
 
-  if (object.GetDocument().Printing() &&
-      !RuntimeEnabledFeatures::PrintBrowserEnabled())
+  if (document_printing_ && !RuntimeEnabledFeatures::PrintBrowserEnabled())
     return;  // Don't invalidate paints if we're printing.
 
   // TODO(chrishtr): refactor to remove these slow paths by expanding their
@@ -566,36 +633,27 @@ void PaintInvalidator::InvalidatePaint(
     }
   }
 
-  if (RuntimeEnabledFeatures::LayoutNGEnabled() && object.IsLayoutNGMixin()) {
-    // If the LayoutObject has a paint fragment, it means this LayoutObject and
-    // its descendants are painted by NG painter.
-    // In the inline NG paint phase, this is a block flow with inline children.
-    if (NGPaintFragment* paint_fragment =
-            ToLayoutBlockFlow(object).PaintFragment()) {
-      // At this point, PaintInvalidator has updated VisualRect of the
-      // LayoutObject. Update NGPaintFragment from the LayoutObject.
-      //
-      // VisualRect of descendants are not updated yet, but this code does not
-      // rely on them.
-      //
-      // TODO(kojii): When we have NGPaintFragment, we should walk
-      // NGPaintFragment tree instead, computes VisualRect from fragments,
-      // and update LayoutObject from it if needed for compat.
-      paint_fragment->UpdateVisualRectFromLayoutObject();
-    }
-  }
-
   if (object.MayNeedPaintInvalidationSubtree()) {
     context.subtree_flags |=
         PaintInvalidatorContext::kSubtreeInvalidationChecking;
   }
-
 
   if (context.subtree_flags && context.NeedsVisualRectUpdate(object)) {
     // If any subtree flag is set, we also need to pass needsVisualRectUpdate
     // requirement to the subtree.
     context.subtree_flags |= PaintInvalidatorContext::kSubtreeVisualRectUpdate;
   }
+
+  // The object is under a frame for WebViewPlugin, SVG images etc. Need to
+  // inform the chrome client of the invalidation so that the client will
+  // initiate painting of the contents. For SPv1 this is done by
+  // ObjectPaintInvalidator::InvalidatePaintUsingContainer().
+  // TODO(wangxianzhu): Do we need this for SPv2?
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
+      !RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
+      !context.paint_invalidation_container->IsPaintInvalidationContainer() &&
+      object.GetPaintInvalidationReason() != PaintInvalidationReason::kNone)
+    InvalidateChromeClient(*context.paint_invalidation_container);
 }
 
 void PaintInvalidator::ProcessPendingDelayedPaintInvalidations() {

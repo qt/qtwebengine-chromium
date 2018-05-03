@@ -65,7 +65,8 @@ SoftwareImageDecodeCacheUtils::DoDecodeImage(const CacheKey& key,
   SkImageInfo target_info = CreateImageInfo(target_size, color_type);
   std::unique_ptr<base::DiscardableMemory> target_pixels =
       AllocateDiscardable(target_info);
-  DCHECK(target_pixels);
+  if (!target_pixels || !target_pixels->data())
+    return nullptr;
 
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
                "SoftwareImageDecodeCacheUtils::DoDecodeImage - "
@@ -148,6 +149,8 @@ SoftwareImageDecodeCacheUtils::GenerateCacheEntryFromCandidate(
 SoftwareImageDecodeCacheUtils::CacheKey
 SoftwareImageDecodeCacheUtils::CacheKey::FromDrawImage(const DrawImage& image,
                                                        SkColorType color_type) {
+  DCHECK(!image.paint_image().GetSkImage()->isTextureBacked());
+
   const PaintImage::FrameKey frame_key = image.frame_key();
 
   const SkSize& scale = image.scale();
@@ -167,7 +170,7 @@ SoftwareImageDecodeCacheUtils::CacheKey::FromDrawImage(const DrawImage& image,
   // If the target size is empty, then we'll be skipping the decode anyway, so
   // the filter quality doesn't matter. Early out instead.
   if (target_size.IsEmpty()) {
-    return CacheKey(frame_key, kOriginal, false, src_rect, target_size,
+    return CacheKey(frame_key, kSubrectAndScale, false, src_rect, target_size,
                     image.target_color_space());
   }
 

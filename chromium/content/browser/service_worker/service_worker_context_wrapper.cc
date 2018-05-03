@@ -18,7 +18,6 @@
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task_scheduler/post_task.h"
-#include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_process_manager.h"
@@ -33,7 +32,7 @@
 #include "net/base/url_util.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -80,7 +79,7 @@ void SkipWaitingWorkerOnIO(
   registration->ActivateWaitingVersionWhenReady();
 }
 
-void DidStartWorker(
+void DidStartActiveWorker(
     scoped_refptr<ServiceWorkerVersion> version,
     ServiceWorkerContext::StartActiveWorkerCallback info_callback,
     base::OnceClosure error_callback,
@@ -101,14 +100,15 @@ void FoundReadyRegistrationForStartActiveWorker(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (service_worker_status == SERVICE_WORKER_OK) {
     // Note: There might be a remote possibility that
-    // |service_worker_registration|'s active version might change between here
-    // and DidStartWorker, so bind |active_version| to RunAfterStartWorker.
+    // |service_worker_registration|'s active version might change
+    // between here and DidStartActiveWorker, so
+    // bind |active_version| to RunAfterStartWorker.
     scoped_refptr<ServiceWorkerVersion> active_version =
         service_worker_registration->active_version();
     DCHECK(active_version.get());
     active_version->RunAfterStartWorker(
         ServiceWorkerMetrics::EventType::EXTERNAL_REQUEST,
-        base::BindOnce(&DidStartWorker, active_version,
+        base::BindOnce(&DidStartActiveWorker, active_version,
                        std::move(info_callback), std::move(failure_callback)));
   } else {
     std::move(failure_callback).Run();
@@ -457,7 +457,7 @@ void ServiceWorkerContextWrapper::StopAllServiceWorkersForOrigin(
   for (const ServiceWorkerVersionInfo& info : live_versions) {
     ServiceWorkerVersion* version = GetLiveVersion(info.version_id);
     if (version && version->scope().GetOrigin() == origin)
-      version->StopWorker(base::BindOnce(&base::DoNothing));
+      version->StopWorker(base::DoNothing());
   }
 }
 
@@ -1043,7 +1043,7 @@ void ServiceWorkerContextWrapper::DidFindRegistrationForNavigationHint(
       ServiceWorkerMetrics::EventType::NAVIGATION_HINT,
       base::BindOnce(
           &ServiceWorkerContextWrapper::DidStartServiceWorkerForNavigationHint,
-          this, registration->pattern(), base::Passed(std::move(callback))));
+          this, registration->pattern(), std::move(callback)));
 }
 
 void ServiceWorkerContextWrapper::DidStartServiceWorkerForNavigationHint(

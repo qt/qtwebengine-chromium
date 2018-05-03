@@ -16,7 +16,7 @@
 #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/catalog/public/cpp/resource_loader.h"
-#include "services/catalog/public/interfaces/constants.mojom.h"
+#include "services/catalog/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/c/main.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/service_context.h"
@@ -59,7 +59,10 @@
 #include "services/ui/display/screen_manager_forwarding.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
+#include "ui/gfx/client_native_pixmap_factory.h"
+#include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
 #include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/ozone_switches.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -122,12 +125,6 @@ struct Service::PendingRequest {
   service_manager::BindSourceInfo source_info;
   std::unique_ptr<mojom::WindowTreeFactoryRequest> wtf_request;
   std::unique_ptr<mojom::DisplayManagerRequest> dm_request;
-};
-
-struct Service::UserState {
-  std::unique_ptr<clipboard::ClipboardImpl> clipboard;
-  std::unique_ptr<ws::AccessibilityManager> accessibility;
-  std::unique_ptr<ws::WindowTreeHostFactory> window_tree_host_factory;
 };
 
 Service::InitParams::InitParams() = default;
@@ -198,21 +195,6 @@ bool Service::InitializeResources(service_manager::Connector* connector) {
   return true;
 }
 
-Service::UserState* Service::GetUserState(
-    const service_manager::Identity& remote_identity) {
-  const ws::UserId& user_id = remote_identity.user_id();
-  auto it = user_id_to_user_state_.find(user_id);
-  if (it != user_id_to_user_state_.end())
-    return it->second.get();
-  user_id_to_user_state_[user_id] = base::WrapUnique(new UserState);
-  return user_id_to_user_state_[user_id].get();
-}
-
-void Service::AddUserIfNecessary(
-    const service_manager::Identity& remote_identity) {
-  window_server_->user_id_tracker()->AddUserId(remote_identity.user_id());
-}
-
 void Service::OnStart() {
   base::PlatformThread::SetName("mus");
   TRACE_EVENT0("mus", "Service::Initialize started");
@@ -242,9 +224,13 @@ void Service::OnStart() {
   if (should_host_viz_) {
     // If mus is hosting viz, then it needs to set up ozone so that it can
     // connect to the gpu service through the connector.
+    // Currently mus hosting viz (i.e. mash mode) only runs single-process.
     params.connector = context()->connector();
-    // TODO(crbug.com/620927): This should be false once ozone-mojo is done.
     params.single_process = true;
+    params.using_mojo = true;
+  } else {
+    params.using_mojo = base::CommandLine::ForCurrentProcess()->HasSwitch(
+        ::switches::kEnableDrmMojo);
   }
   ui::OzonePlatform::InitializeForUI(params);
 
@@ -252,12 +238,7 @@ void Service::OnStart() {
   ui::KeyboardLayoutEngineManager::GetKeyboardLayoutEngine()
       ->SetCurrentLayoutByName("us");
 
-  if (running_standalone_) {
-    client_native_pixmap_factory_ = ui::CreateClientNativePixmapFactoryOzone();
-    gfx::ClientNativePixmapFactory::SetInstance(
-        client_native_pixmap_factory_.get());
-  }
-
+  ui::CreateClientNativePixmapFactoryOzone();
   DCHECK(gfx::ClientNativePixmapFactory::GetInstance());
 #endif
 
@@ -275,11 +256,19 @@ void Service::OnStart() {
   // so keep this line below both of those.
   input_device_server_.RegisterAsObserver();
 
-  window_server_ = base::MakeUnique<ws::WindowServer>(this, should_host_viz_);
+  if (!discardable_shared_memory_manager_) {
+    owned_discardable_shared_memory_manager_ =
+        std::make_unique<discardable_memory::DiscardableSharedMemoryManager>();
+    discardable_shared_memory_manager_ =
+        owned_discardable_shared_memory_manager_.get();
+  }
+
+  window_server_ = std::make_unique<ws::WindowServer>(this, should_host_viz_);
   if (should_host_viz_) {
     std::unique_ptr<ws::GpuHost> gpu_host =
-        base::MakeUnique<ws::DefaultGpuHost>(window_server_.get(),
-                                             context()->connector());
+        std::make_unique<ws::DefaultGpuHost>(
+            window_server_.get(), context()->connector(),
+            discardable_shared_memory_manager_);
     window_server_->SetGpuHost(std::move(gpu_host));
 
     registry_.AddInterface<mojom::Gpu>(
@@ -294,12 +283,6 @@ void Service::OnStart() {
 
   ime_driver_.Init(context()->connector(), test_config_);
 
-  if (!discardable_shared_memory_manager_) {
-    owned_discardable_shared_memory_manager_ =
-        std::make_unique<discardable_memory::DiscardableSharedMemoryManager>();
-    discardable_shared_memory_manager_ =
-        owned_discardable_shared_memory_manager_.get();
-  }
   registry_with_source_info_.AddInterface<mojom::AccessibilityManager>(
       base::Bind(&Service::BindAccessibilityManagerRequest,
                  base::Unretained(this)));
@@ -311,8 +294,6 @@ void Service::OnStart() {
       base::Bind(&Service::BindIMERegistrarRequest, base::Unretained(this)));
   registry_.AddInterface<mojom::IMEDriver>(
       base::Bind(&Service::BindIMEDriverRequest, base::Unretained(this)));
-  registry_.AddInterface<mojom::UserAccessManager>(base::Bind(
-      &Service::BindUserAccessManagerRequest, base::Unretained(this)));
   registry_with_source_info_.AddInterface<mojom::UserActivityMonitor>(
       base::Bind(&Service::BindUserActivityMonitorRequest,
                  base::Unretained(this)));
@@ -383,7 +364,7 @@ void Service::OnNoMoreDisplays() {
     return;
 
   DCHECK(context());
-  context()->RequestQuit();
+  context()->CreateQuitClosure().Run();
 }
 
 bool Service::IsTestConfig() const {
@@ -429,22 +410,19 @@ ws::ThreadedImageCursorsFactory* Service::GetThreadedImageCursorsFactory() {
 void Service::BindAccessibilityManagerRequest(
     mojom::AccessibilityManagerRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  UserState* user_state = GetUserState(source_info.identity);
-  if (!user_state->accessibility) {
-    const ws::UserId& user_id = source_info.identity.user_id();
-    user_state->accessibility.reset(
-        new ws::AccessibilityManager(window_server_.get(), user_id));
+  if (!accessibility_) {
+    accessibility_ =
+        std::make_unique<ws::AccessibilityManager>(window_server_.get());
   }
-  user_state->accessibility->Bind(std::move(request));
+  accessibility_->Bind(std::move(request));
 }
 
 void Service::BindClipboardRequest(
     mojom::ClipboardRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  UserState* user_state = GetUserState(source_info.identity);
-  if (!user_state->clipboard)
-    user_state->clipboard.reset(new clipboard::ClipboardImpl);
-  user_state->clipboard->AddBinding(std::move(request));
+  if (!clipboard_)
+    clipboard_ = std::make_unique<clipboard::ClipboardImpl>();
+  clipboard_->AddBinding(std::move(request));
 }
 
 void Service::BindDisplayManagerRequest(
@@ -461,7 +439,7 @@ void Service::BindDisplayManagerRequest(
     return;
   }
   window_server_->display_manager()
-      ->GetUserDisplayManager(source_info.identity.user_id())
+      ->GetUserDisplayManager()
       ->AddDisplayManagerBinding(std::move(request));
 }
 
@@ -477,32 +455,21 @@ void Service::BindIMEDriverRequest(mojom::IMEDriverRequest request) {
   ime_driver_.AddBinding(std::move(request));
 }
 
-void Service::BindUserAccessManagerRequest(
-    mojom::UserAccessManagerRequest request) {
-  window_server_->user_id_tracker()->Bind(std::move(request));
-}
-
 void Service::BindUserActivityMonitorRequest(
     mojom::UserActivityMonitorRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  AddUserIfNecessary(source_info.identity);
-  const ws::UserId& user_id = source_info.identity.user_id();
-  window_server_->GetUserActivityMonitorForUser(user_id)->Add(
-      std::move(request));
+  window_server_->user_activity_monitor()->Add(std::move(request));
 }
 
 void Service::BindWindowManagerWindowTreeFactoryRequest(
     mojom::WindowManagerWindowTreeFactoryRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  AddUserIfNecessary(source_info.identity);
-  window_server_->window_manager_window_tree_factory_set()->Add(
-      source_info.identity.user_id(), std::move(request));
+  window_server_->BindWindowManagerWindowTreeFactory(std::move(request));
 }
 
 void Service::BindWindowTreeFactoryRequest(
     mojom::WindowTreeFactoryRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  AddUserIfNecessary(source_info.identity);
   if (!window_server_->display_manager()->IsReady()) {
     std::unique_ptr<PendingRequest> pending_request(new PendingRequest);
     pending_request->source_info = source_info;
@@ -511,10 +478,8 @@ void Service::BindWindowTreeFactoryRequest(
     pending_requests_.push_back(std::move(pending_request));
     return;
   }
-  AddUserIfNecessary(source_info.identity);
   mojo::MakeStrongBinding(
       std::make_unique<ws::WindowTreeFactory>(window_server_.get(),
-                                              source_info.identity.user_id(),
                                               source_info.identity.name()),
       std::move(request));
 }
@@ -522,12 +487,11 @@ void Service::BindWindowTreeFactoryRequest(
 void Service::BindWindowTreeHostFactoryRequest(
     mojom::WindowTreeHostFactoryRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  UserState* user_state = GetUserState(source_info.identity);
-  if (!user_state->window_tree_host_factory) {
-    user_state->window_tree_host_factory.reset(new ws::WindowTreeHostFactory(
-        window_server_.get(), source_info.identity.user_id()));
+  if (!window_tree_host_factory_) {
+    window_tree_host_factory_ =
+        std::make_unique<ws::WindowTreeHostFactory>(window_server_.get());
   }
-  user_state->window_tree_host_factory->AddBinding(std::move(request));
+  window_tree_host_factory_->AddBinding(std::move(request));
 }
 
 void Service::BindDiscardableSharedMemoryManagerRequest(

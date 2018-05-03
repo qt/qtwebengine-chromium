@@ -5,14 +5,12 @@
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/values_test_util.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
 #include "net/network_error_logging/network_error_logging_service.h"
-#include "net/reporting/reporting_feature.h"
 #include "net/reporting/reporting_policy.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -26,8 +24,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_LINUX) || defined(OS_ANDROID)
-#include "net/proxy/proxy_config.h"
-#include "net/proxy/proxy_config_service_fixed.h"
+#include "net/proxy_resolution/proxy_config.h"
+#include "net/proxy_resolution/proxy_config_service_fixed.h"
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
 namespace net {
@@ -57,9 +55,6 @@ class NetworkErrorLoggingEndToEndTest : public ::testing::Test {
       : test_server_(test_server::EmbeddedTestServer::TYPE_HTTPS),
         upload_should_hang_(false),
         upload_received_(false) {
-    scoped_feature_list_.InitWithFeatures(
-        {features::kReporting, features::kNetworkErrorLogging}, {});
-
     // Make report delivery happen instantly.
     auto policy = std::make_unique<ReportingPolicy>();
     policy->delivery_interval = base::TimeDelta::FromSeconds(0);
@@ -74,7 +69,7 @@ class NetworkErrorLoggingEndToEndTest : public ::testing::Test {
     url_request_context_ = builder.Build();
 
     EXPECT_TRUE(url_request_context_->reporting_service());
-    EXPECT_TRUE(url_request_context_->network_error_logging_delegate());
+    EXPECT_TRUE(url_request_context_->network_error_logging_service());
 
     test_server_.RegisterRequestHandler(base::BindRepeating(
         &NetworkErrorLoggingEndToEndTest::HandleConfigureRequest,
@@ -104,7 +99,8 @@ class NetworkErrorLoggingEndToEndTest : public ::testing::Test {
     auto response = std::make_unique<test_server::BasicHttpResponse>();
     response->AddCustomHeader(
         "Report-To",
-        base::StringPrintf("{\"url\":\"%s\",\"group\":\"%s\",\"max-age\":%d}",
+        base::StringPrintf("{\"endpoints\":[{\"url\":\"%s\"}],\"group\":\"%s\","
+                           "\"max-age\":%d}",
                            endpoint_url.spec().c_str(), kGroup, kMaxAgeSec));
     response->AddCustomHeader(
         "NEL", base::StringPrintf("{\"report-to\":\"%s\",\"max-age\":%d}",
@@ -145,7 +141,6 @@ class NetworkErrorLoggingEndToEndTest : public ::testing::Test {
     return std::move(response);
   }
 
-  base::test::ScopedFeatureList scoped_feature_list_;
   std::unique_ptr<URLRequestContext> url_request_context_;
   test_server::EmbeddedTestServer test_server_;
 

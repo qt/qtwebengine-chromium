@@ -105,16 +105,15 @@ void ConvertBuffer_1bppMask2Gray(uint8_t* dest_buf,
                                  const RetainPtr<CFX_DIBSource>& pSrcBitmap,
                                  int src_left,
                                  int src_top) {
-  uint8_t set_gray, reset_gray;
-  set_gray = 0xff;
-  reset_gray = 0x00;
+  static constexpr uint8_t kSetGray = 0xff;
+  static constexpr uint8_t kResetGray = 0x00;
   for (int row = 0; row < height; ++row) {
     uint8_t* dest_scan = dest_buf + row * dest_pitch;
-    memset(dest_scan, reset_gray, width);
+    memset(dest_scan, kResetGray, width);
     const uint8_t* src_scan = pSrcBitmap->GetScanline(src_top + row);
     for (int col = src_left; col < src_left + width; ++col) {
       if (src_scan[col / 8] & (1 << (7 - col % 8)))
-        *dest_scan = set_gray;
+        *dest_scan = kSetGray;
       ++dest_scan;
     }
   }
@@ -594,6 +593,128 @@ void ConvertBuffer_32bppCmyk2Rgb32(uint8_t* dest_buf,
   }
 }
 
+bool ConvertBuffer_8bppMask(int bpp,
+                            uint8_t* dest_buf,
+                            int dest_pitch,
+                            int width,
+                            int height,
+                            const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                            int src_left,
+                            int src_top) {
+  switch (bpp) {
+    case 1:
+      if (pSrcBitmap->GetPalette()) {
+        ConvertBuffer_1bppPlt2Gray(dest_buf, dest_pitch, width, height,
+                                   pSrcBitmap, src_left, src_top);
+      } else {
+        ConvertBuffer_1bppMask2Gray(dest_buf, dest_pitch, width, height,
+                                    pSrcBitmap, src_left, src_top);
+      }
+      return true;
+    case 8:
+      if (pSrcBitmap->GetPalette()) {
+        ConvertBuffer_8bppPlt2Gray(dest_buf, dest_pitch, width, height,
+                                   pSrcBitmap, src_left, src_top);
+      } else {
+        ConvertBuffer_8bppMask2Gray(dest_buf, dest_pitch, width, height,
+                                    pSrcBitmap, src_left, src_top);
+      }
+      return true;
+    case 24:
+    case 32:
+      ConvertBuffer_RgbOrCmyk2Gray(dest_buf, dest_pitch, width, height,
+                                   pSrcBitmap, src_left, src_top);
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool ConvertBuffer_Rgb(int bpp,
+                       FXDIB_Format dest_format,
+                       uint8_t* dest_buf,
+                       int dest_pitch,
+                       int width,
+                       int height,
+                       const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                       int src_left,
+                       int src_top) {
+  switch (bpp) {
+    case 1:
+      if (pSrcBitmap->GetPalette()) {
+        ConvertBuffer_1bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                  height, pSrcBitmap, src_left, src_top);
+      } else {
+        ConvertBuffer_1bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                   height, pSrcBitmap, src_left, src_top);
+      }
+      return true;
+    case 8:
+      if (pSrcBitmap->GetPalette()) {
+        ConvertBuffer_8bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                  height, pSrcBitmap, src_left, src_top);
+      } else {
+        ConvertBuffer_8bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                   height, pSrcBitmap, src_left, src_top);
+      }
+      return true;
+    case 24:
+      ConvertBuffer_24bppRgb2Rgb24(dest_buf, dest_pitch, width, height,
+                                   pSrcBitmap, src_left, src_top);
+      return true;
+    case 32:
+      ConvertBuffer_32bppRgb2Rgb24(dest_buf, dest_pitch, width, height,
+                                   pSrcBitmap, src_left, src_top);
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool ConvertBuffer_Argb(int bpp,
+                        bool cmyk,
+                        FXDIB_Format dest_format,
+                        uint8_t* dest_buf,
+                        int dest_pitch,
+                        int width,
+                        int height,
+                        const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                        int src_left,
+                        int src_top) {
+  switch (bpp) {
+    case 1:
+      if (pSrcBitmap->GetPalette()) {
+        ConvertBuffer_1bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                  height, pSrcBitmap, src_left, src_top);
+      } else {
+        ConvertBuffer_1bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                   height, pSrcBitmap, src_left, src_top);
+      }
+      return true;
+    case 8:
+      if (pSrcBitmap->GetPalette()) {
+        ConvertBuffer_8bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                  height, pSrcBitmap, src_left, src_top);
+      } else {
+        ConvertBuffer_8bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
+                                   height, pSrcBitmap, src_left, src_top);
+      }
+      return true;
+    case 24:
+    case 32:
+      if (cmyk) {
+        ConvertBuffer_32bppCmyk2Rgb32(dest_buf, dest_pitch, width, height,
+                                      pSrcBitmap, src_left, src_top);
+      } else {
+        ConvertBuffer_Rgb2Rgb32(dest_buf, dest_pitch, width, height, pSrcBitmap,
+                                src_left, src_top);
+      }
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace
 
 CFX_DIBSource::CFX_DIBSource()
@@ -931,25 +1052,21 @@ RetainPtr<CFX_DIBitmap> CFX_DIBSource::CloneConvert(FXDIB_Format dest_format) {
 
   RetainPtr<CFX_DIBitmap> pSrcAlpha;
   if (HasAlpha()) {
-    if (GetFormat() == FXDIB_Argb)
-      pSrcAlpha = CloneAlphaMask();
-    else
-      pSrcAlpha = m_pAlphaMask;
-
+    pSrcAlpha = (GetFormat() == FXDIB_Argb) ? CloneAlphaMask() : m_pAlphaMask;
     if (!pSrcAlpha)
       return nullptr;
   }
-  bool ret = true;
   if (dest_format & 0x0200) {
+    bool ret;
     if (dest_format == FXDIB_Argb) {
       ret = pSrcAlpha ? pClone->LoadChannel(FXDIB_Alpha, pSrcAlpha, FXDIB_Alpha)
                       : pClone->LoadChannel(FXDIB_Alpha, 0xff);
     } else {
       ret = pClone->SetAlphaMask(pSrcAlpha, nullptr);
     }
+    if (!ret)
+      return nullptr;
   }
-  if (!ret)
-    return nullptr;
 
   RetainPtr<CFX_DIBSource> holder(this);
   std::unique_ptr<uint32_t, FxFreeDeleter> pal_8bpp;
@@ -1100,55 +1217,25 @@ bool CFX_DIBSource::ConvertBuffer(
     int src_top,
     std::unique_ptr<uint32_t, FxFreeDeleter>* p_pal) {
   FXDIB_Format src_format = pSrcBitmap->GetFormat();
+  const int bpp = src_format & 0xff;
   switch (dest_format) {
-    case FXDIB_Invalid:
-    case FXDIB_1bppCmyk:
-    case FXDIB_1bppMask:
-    case FXDIB_1bppRgb:
-      NOTREACHED();
-      return false;
     case FXDIB_8bppMask: {
-      if ((src_format & 0xff) == 1) {
-        if (pSrcBitmap->GetPalette()) {
-          ConvertBuffer_1bppPlt2Gray(dest_buf, dest_pitch, width, height,
-                                     pSrcBitmap, src_left, src_top);
-          return true;
-        }
-        ConvertBuffer_1bppMask2Gray(dest_buf, dest_pitch, width, height,
+      return ConvertBuffer_8bppMask(bpp, dest_buf, dest_pitch, width, height,
                                     pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      if ((src_format & 0xff) == 8) {
-        if (pSrcBitmap->GetPalette()) {
-          ConvertBuffer_8bppPlt2Gray(dest_buf, dest_pitch, width, height,
-                                     pSrcBitmap, src_left, src_top);
-          return true;
-        }
-        ConvertBuffer_8bppMask2Gray(dest_buf, dest_pitch, width, height,
-                                    pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      if ((src_format & 0xff) >= 24) {
-        ConvertBuffer_RgbOrCmyk2Gray(dest_buf, dest_pitch, width, height,
-                                     pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      return false;
     }
     case FXDIB_8bppRgb:
     case FXDIB_8bppRgba: {
-      if ((src_format & 0xff) == 8 && !pSrcBitmap->GetPalette()) {
+      if (bpp == 8 && !pSrcBitmap->GetPalette()) {
         return ConvertBuffer(FXDIB_8bppMask, dest_buf, dest_pitch, width,
                              height, pSrcBitmap, src_left, src_top, p_pal);
       }
       p_pal->reset(FX_Alloc(uint32_t, 256));
-      if (((src_format & 0xff) == 1 || (src_format & 0xff) == 8) &&
-          pSrcBitmap->GetPalette()) {
+      if ((bpp == 1 || bpp == 8) && pSrcBitmap->GetPalette()) {
         ConvertBuffer_Plt2PltRgb8(dest_buf, dest_pitch, width, height,
                                   pSrcBitmap, src_left, src_top, p_pal->get());
         return true;
       }
-      if ((src_format & 0xff) >= 24) {
+      if (bpp >= 24) {
         ConvertBuffer_Rgb2PltRgb8(dest_buf, dest_pitch, width, height,
                                   pSrcBitmap, src_left, src_top, p_pal->get());
         return true;
@@ -1157,73 +1244,17 @@ bool CFX_DIBSource::ConvertBuffer(
     }
     case FXDIB_Rgb:
     case FXDIB_Rgba: {
-      if ((src_format & 0xff) == 1) {
-        if (pSrcBitmap->GetPalette()) {
-          ConvertBuffer_1bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                    height, pSrcBitmap, src_left, src_top);
-          return true;
-        }
-        ConvertBuffer_1bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                   height, pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      if ((src_format & 0xff) == 8) {
-        if (pSrcBitmap->GetPalette()) {
-          ConvertBuffer_8bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                    height, pSrcBitmap, src_left, src_top);
-          return true;
-        }
-        ConvertBuffer_8bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                   height, pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      if ((src_format & 0xff) == 24) {
-        ConvertBuffer_24bppRgb2Rgb24(dest_buf, dest_pitch, width, height,
-                                     pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      if ((src_format & 0xff) == 32) {
-        ConvertBuffer_32bppRgb2Rgb24(dest_buf, dest_pitch, width, height,
-                                     pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      return false;
+      return ConvertBuffer_Rgb(bpp, dest_format, dest_buf, dest_pitch, width,
+                               height, pSrcBitmap, src_left, src_top);
     }
     case FXDIB_Argb:
     case FXDIB_Rgb32: {
-      if ((src_format & 0xff) == 1) {
-        if (pSrcBitmap->GetPalette()) {
-          ConvertBuffer_1bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                    height, pSrcBitmap, src_left, src_top);
-          return true;
-        }
-        ConvertBuffer_1bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                   height, pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      if ((src_format & 0xff) == 8) {
-        if (pSrcBitmap->GetPalette()) {
-          ConvertBuffer_8bppPlt2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                    height, pSrcBitmap, src_left, src_top);
-          return true;
-        }
-        ConvertBuffer_8bppMask2Rgb(dest_format, dest_buf, dest_pitch, width,
-                                   height, pSrcBitmap, src_left, src_top);
-        return true;
-      }
-      if ((src_format & 0xff) >= 24) {
-        if (src_format & 0x0400) {
-          ConvertBuffer_32bppCmyk2Rgb32(dest_buf, dest_pitch, width, height,
-                                        pSrcBitmap, src_left, src_top);
-          return true;
-        }
-        ConvertBuffer_Rgb2Rgb32(dest_buf, dest_pitch, width, height, pSrcBitmap,
-                                src_left, src_top);
-        return true;
-      }
-      return false;
+      const bool cmyk = src_format & 0x0400;
+      return ConvertBuffer_Argb(bpp, cmyk, dest_format, dest_buf, dest_pitch,
+                                width, height, pSrcBitmap, src_left, src_top);
     }
     default:
+      NOTREACHED();
       return false;
   }
 }

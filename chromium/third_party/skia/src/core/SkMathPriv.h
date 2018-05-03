@@ -111,7 +111,7 @@ static inline float SkPinToUnitFloat(float x) {
 int SkCLZ_portable(uint32_t);
 
 #ifndef SkCLZ
-    #if defined(SK_BUILD_FOR_WIN32)
+    #if defined(SK_BUILD_FOR_WIN)
         #include <intrin.h>
 
         static inline int SkCLZ(uint32_t mask) {
@@ -213,6 +213,11 @@ static inline size_t GrNextSizePow2(size_t n) {
         shift <<= 1;
     }
     return n + 1;
+}
+
+// conservative check. will return false for very large values that "could" fit
+template <typename T> static inline bool SkFitsInFixed(T x) {
+    return SkTAbs(x) <= 32767.0f;
 }
 
 #endif

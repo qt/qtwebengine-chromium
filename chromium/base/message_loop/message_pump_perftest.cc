@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/format_macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
@@ -262,8 +263,8 @@ class PostTaskTest : public testing::Test {
     do {
       for (int i = 0; i < batch_size; ++i) {
         for (int j = 0; j < tasks_per_reload; ++j) {
-          queue->AddToIncomingQueue(FROM_HERE, base::BindOnce(&DoNothing),
-                                    base::TimeDelta(), Nestable::kNonNestable);
+          queue->AddToIncomingQueue(FROM_HERE, DoNothing(), base::TimeDelta(),
+                                    Nestable::kNonNestable);
           num_posted++;
         }
         TaskQueue loop_local_queue;

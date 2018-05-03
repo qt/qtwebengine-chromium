@@ -63,8 +63,8 @@
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "services/device/public/cpp/power_monitor/power_monitor_broadcast_source.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/client_process_impl.h"
-#include "services/resource_coordinator/public/interfaces/memory_instrumentation/memory_instrumentation.mojom.h"
-#include "services/resource_coordinator/public/interfaces/service_constants.mojom.h"
+#include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
+#include "services/resource_coordinator/public/mojom/service_constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/runner/common/client_util.h"
@@ -326,8 +326,9 @@ ChildThreadImpl::Options::Builder::AutoStartServiceManagerConnection(
 }
 
 ChildThreadImpl::Options::Builder&
-ChildThreadImpl::Options::Builder::ConnectToBrowser(bool connect_to_browser) {
-  options_.connect_to_browser = connect_to_browser;
+ChildThreadImpl::Options::Builder::ConnectToBrowser(
+    bool connect_to_browser_parms) {
+  options_.connect_to_browser = connect_to_browser_parms;
   return *this;
 }
 
@@ -340,8 +341,8 @@ ChildThreadImpl::Options::Builder::AddStartupFilter(
 
 ChildThreadImpl::Options::Builder&
 ChildThreadImpl::Options::Builder::IPCTaskRunner(
-    scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner) {
-  options_.ipc_task_runner = ipc_task_runner;
+    scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner_parms) {
+  options_.ipc_task_runner = ipc_task_runner_parms;
   return *this;
 }
 
@@ -795,7 +796,7 @@ void ChildThreadImpl::OnProcessFinalRelease() {
 
 void ChildThreadImpl::EnsureConnected() {
   VLOG(0) << "ChildThreadImpl::EnsureConnected()";
-  base::Process::Current().Terminate(0, false);
+  base::Process::TerminateCurrentProcessImmediately(0);
 }
 
 void ChildThreadImpl::GetRoute(

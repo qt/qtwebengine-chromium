@@ -12,6 +12,10 @@ namespace switches {
 // transparent.
 const char kDefaultBackgroundColor[] = "default-background-color";
 
+// Whether or not begin frames should be issued over DevToolsProtocol
+// (experimental).
+const char kEnableBeginFrameControl[] = "enable-begin-frame-control";
+
 // Enable crash reporter for headless.
 const char kEnableCrashReporter[] = "enable-crash-reporter";
 
@@ -48,8 +52,8 @@ const char kPrintToPDF[] = "print-to-pdf";
 
 // Specifies a list of hosts for whom we bypass proxy settings and use direct
 // connections. Ignored unless --proxy-server is also specified. This is a
-// comma-separated list of bypass rules. See: "net/proxy/proxy_bypass_rules.h"
-// for the format of these rules.
+// comma-separated list of bypass rules. See:
+// "net/proxy_resolution/proxy_bypass_rules.h" for the format of these rules.
 const char kProxyBypassList[] = "proxy-bypass-list";
 
 // Uses a specified proxy server, overrides system settings. This switch only
@@ -111,6 +115,11 @@ const char kWindowSize[] = "window-size";
 
 // Whitelist for Negotitate Auth servers.
 const char kAuthServerWhitelist[] = "auth-server-whitelist";
+
+// Sets font render hinting when running headless, affects Skia rendering and
+// whether glyph subpixel positioning is enabled.
+// Possible values: none|slight|medium|full|max. Default: full.
+const char kFontRenderHinting[] = "font-render-hinting";
 
 }  // namespace switches
 }  // namespace headless

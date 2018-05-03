@@ -151,8 +151,9 @@ CSSCrossfadeValue* CSSCrossfadeValue::ValueWithURLsMadeAbsolute() {
   return CSSCrossfadeValue::Create(from_value, to_value, percentage_value_);
 }
 
-FloatSize CSSCrossfadeValue::FixedSize(const Document& document,
-                                       const FloatSize& default_object_size) {
+FloatSize CSSCrossfadeValue::FixedSize(
+    const Document& document,
+    const FloatSize& default_object_size) const {
   Image* from_image = RenderableImageForCSSValue(from_value_.Get(), document);
   Image* to_image = RenderableImageForCSSValue(to_value_.Get(), document);
 
@@ -226,7 +227,7 @@ scoped_refptr<Image> CSSCrossfadeValue::GetImage(
     const ImageResourceObserver& client,
     const Document& document,
     const ComputedStyle&,
-    const LayoutSize& size) {
+    const FloatSize& size) const {
   if (size.IsEmpty())
     return nullptr;
 
@@ -247,9 +248,9 @@ scoped_refptr<Image> CSSCrossfadeValue::GetImage(
     to_image_ref = SVGImageForContainer::Create(
         ToSVGImage(to_image), size, 1, UrlForCSSValue(to_value_.Get()));
 
-  return CrossfadeGeneratedImage::Create(
-      from_image_ref, to_image_ref, percentage_value_->GetFloatValue(),
-      FixedSize(document, FloatSize(size)), FloatSize(size));
+  return CrossfadeGeneratedImage::Create(from_image_ref, to_image_ref,
+                                         percentage_value_->GetFloatValue(),
+                                         FixedSize(document, size), size);
 }
 
 void CSSCrossfadeValue::CrossfadeChanged(

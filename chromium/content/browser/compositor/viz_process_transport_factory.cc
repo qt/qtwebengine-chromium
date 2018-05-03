@@ -11,7 +11,6 @@
 #include "cc/raster/single_thread_task_graph_runner.h"
 #include "components/viz/client/client_layer_tree_frame_sink.h"
 #include "components/viz/client/local_surface_id_provider.h"
-#include "components/viz/common/features.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
 #include "components/viz/host/forwarding_compositing_mode_reporter_impl.h"
@@ -149,10 +148,15 @@ void VizProcessTransportFactory::ConnectHostFrameSinkManager() {
       [](viz::mojom::FrameSinkManagerRequest request,
          viz::mojom::FrameSinkManagerClientPtrInfo client,
          viz::mojom::CompositingModeWatcherPtrInfo mode_watcher) {
-        // TODO(kylechar): Check GpuProcessHost isn't null but don't enter a
-        // restart loop.
-        GpuProcessHost::Get()->ConnectFrameSinkManager(
-            std::move(request), std::move(client), std::move(mode_watcher));
+        // There should always be a GpuProcessHost instance, and GPU process,
+        // for running the compositor thread. The exception is during shutdown
+        // the GPU process won't be restarted and GpuProcessHost::Get() can
+        // return null.
+        auto* gpu_process_host = GpuProcessHost::Get();
+        if (gpu_process_host) {
+          gpu_process_host->ConnectFrameSinkManager(
+              std::move(request), std::move(client), std::move(mode_watcher));
+        }
       };
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
@@ -214,11 +218,6 @@ VizProcessTransportFactory::GetGpuMemoryBufferManager() {
 
 cc::TaskGraphRunner* VizProcessTransportFactory::GetTaskGraphRunner() {
   return task_graph_runner_.get();
-}
-
-const viz::ResourceSettings& VizProcessTransportFactory::GetResourceSettings()
-    const {
-  return renderer_settings_.resource_settings;
 }
 
 void VizProcessTransportFactory::AddObserver(
@@ -299,8 +298,10 @@ void VizProcessTransportFactory::SetDisplayVSyncParameters(
     ui::Compositor* compositor,
     base::TimeTicks timebase,
     base::TimeDelta interval) {
-  // TODO(crbug.com/772524): Deal with vsync later.
-  NOTIMPLEMENTED();
+  auto iter = compositor_data_map_.find(compositor);
+  if (iter == compositor_data_map_.end() || !iter->second.display_private)
+    return;
+  iter->second.display_private->SetDisplayVSyncParameters(timebase, interval);
 }
 
 void VizProcessTransportFactory::IssueExternalBeginFrame(
@@ -406,9 +407,6 @@ void VizProcessTransportFactory::CompositingModeFallbackToSoftware() {
 }
 
 void VizProcessTransportFactory::OnContextLost() {
-  // TODO(kylechar): If the context is lost but the GPU process hasn't crashed
-  // then CompositorFrameSink data in HostFrameSinkManager (browser process) and
-  // FrameSinkManagerImpl (GPU process) needs to be cleaned up.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&VizProcessTransportFactory::OnLostMainThreadSharedContext,
@@ -462,7 +460,8 @@ void VizProcessTransportFactory::OnEstablishedGpuChannel(
   compositor_data.display_client =
       std::make_unique<InProcessDisplayClient>(compositor->widget());
   root_params->display_client =
-      compositor_data.display_client->GetBoundPtr().PassInterface();
+      compositor_data.display_client->GetBoundPtr(resize_task_runner_)
+          .PassInterface();
 
 #if defined(GPU_SURFACE_HANDLE_IS_ACCELERATED_WINDOW)
   gpu::SurfaceHandle surface_handle = compositor->widget();
@@ -490,7 +489,9 @@ void VizProcessTransportFactory::OnEstablishedGpuChannel(
       compositor->force_software_compositor();
   root_params->renderer_settings = renderer_settings_;
 
-  // Creates the viz end of the root CompositorFrameSink.
+  // Connects the viz process end of CompositorFrameSink message pipes. The
+  // browser compositor may request a new CompositorFrameSink on context loss,
+  // which will destroy the existing CompositorFrameSink.
   GetHostFrameSinkManager()->CreateRootCompositorFrameSink(
       std::move(root_params));
 
@@ -507,8 +508,7 @@ void VizProcessTransportFactory::OnEstablishedGpuChannel(
   params.pipes.client_request = std::move(client_request);
   params.local_surface_id_provider =
       std::make_unique<viz::DefaultLocalSurfaceIdProvider>();
-  params.enable_surface_synchronization =
-      features::IsSurfaceSynchronizationEnabled();
+  params.enable_surface_synchronization = true;
 
   scoped_refptr<viz::ContextProvider> compositor_context;
   scoped_refptr<viz::RasterContextProvider> worker_context;

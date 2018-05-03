@@ -5,13 +5,17 @@
 #include "modules/sensor/SensorProxy.h"
 
 #include "core/frame/LocalFrame.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "modules/sensor/SensorProviderProxy.h"
+#include "modules/sensor/SensorReadingRemapper.h"
+#include "platform/LayoutTestSupport.h"
 #include "platform/mojo/MojoHelper.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
+#include "public/platform/WebScreenInfo.h"
 #include "services/device/public/cpp/generic_sensor/sensor_traits.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 
@@ -102,6 +106,18 @@ void SensorProxy::Resume() {
   UpdatePollingStatus();
 }
 
+const device::SensorReading& SensorProxy::GetReading(bool remapped) const {
+  if (remapped) {
+    if (remapped_reading_.timestamp() != reading_.timestamp()) {
+      remapped_reading_ = reading_;
+      SensorReadingRemapper::RemapToScreenCoords(
+          type_, GetScreenOrientationAngle(), &remapped_reading_);
+    }
+    return remapped_reading_;
+  }
+  return reading_;
+}
+
 const SensorConfiguration* SensorProxy::DefaultConfig() const {
   DCHECK(IsInitialized());
   return default_config_.get();
@@ -148,7 +164,7 @@ void SensorProxy::FocusedFrameChanged() {
   UpdateSuspendedStatus();
 }
 
-void SensorProxy::HandleSensorError() {
+void SensorProxy::HandleSensorError(SensorCreationResult error) {
   state_ = kUninitialized;
   active_frequencies_.clear();
   reading_ = device::SensorReading();
@@ -162,19 +178,28 @@ void SensorProxy::HandleSensorError() {
   default_config_.reset();
   client_binding_.Close();
 
+  ExceptionCode code = kNotReadableError;
+  String description = "Could not connect to a sensor";
+  if (error == SensorCreationResult::ERROR_NOT_ALLOWED) {
+    code = kNotAllowedError;
+    description = "Permissions to access sensor are not granted";
+  }
   auto copy = observers_;
   for (Observer* observer : copy) {
-    observer->OnSensorError(kNotReadableError, "Could not connect to a sensor",
-                            String());
+    observer->OnSensorError(code, description, String());
   }
 }
 
-void SensorProxy::OnSensorCreated(SensorInitParamsPtr params) {
+void SensorProxy::OnSensorCreated(SensorCreationResult result,
+                                  SensorInitParamsPtr params) {
   DCHECK_EQ(kInitializing, state_);
   if (!params) {
-    HandleSensorError();
+    DCHECK_NE(SensorCreationResult::SUCCESS, result);
+    HandleSensorError(result);
     return;
   }
+
+  DCHECK_EQ(SensorCreationResult::SUCCESS, result);
   const size_t kReadBufferSize = sizeof(ReadingBuffer);
 
   DCHECK_EQ(0u, params->buffer_offset % kReadBufferSize);
@@ -212,7 +237,8 @@ void SensorProxy::OnSensorCreated(SensorInitParamsPtr params) {
             frequency_limits_.second);
 
   auto error_callback =
-      WTF::Bind(&SensorProxy::HandleSensorError, WrapWeakPersistent(this));
+      WTF::Bind(&SensorProxy::HandleSensorError, WrapWeakPersistent(this),
+                SensorCreationResult::ERROR_NOT_AVAILABLE);
   sensor_.set_connection_error_handler(std::move(error_callback));
 
   state_ = kInitialized;
@@ -229,6 +255,17 @@ void SensorProxy::OnPollingTimer(TimerBase*) {
 
 bool SensorProxy::ShouldProcessReadings() const {
   return IsInitialized() && !suspended_ && !active_frequencies_.IsEmpty();
+}
+
+uint16_t SensorProxy::GetScreenOrientationAngle() const {
+  DCHECK(IsInitialized());
+  if (LayoutTestSupport::IsRunningLayoutTest()) {
+    // Simulate that the device is turned 90 degrees on the right.
+    // 'orientation_angle' must be 270 as per
+    // https://w3c.github.io/screen-orientation/#dfn-update-the-orientation-information.
+    return 270;
+  }
+  return GetPage()->GetChromeClient().GetScreenInfo().orientation_angle;
 }
 
 void SensorProxy::UpdatePollingStatus() {

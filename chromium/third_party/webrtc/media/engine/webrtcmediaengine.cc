@@ -27,6 +27,7 @@
 
 namespace cricket {
 
+#if defined(USE_BUILTIN_SW_CODECS)
 namespace {
 
 MediaEngineInterface* CreateWebRtcMediaEngine(
@@ -86,6 +87,7 @@ MediaEngineInterface* WebRtcMediaEngineFactory::Create(
       adm, audio_encoder_factory, audio_decoder_factory, video_encoder_factory,
       video_decoder_factory, audio_mixer, audio_processing);
 }
+#endif
 
 std::unique_ptr<MediaEngineInterface> WebRtcMediaEngineFactory::Create(
     rtc::scoped_refptr<webrtc::AudioDeviceModule> adm,
@@ -200,9 +202,8 @@ std::vector<webrtc::RtpExtension> FilterRtpExtensions(
   return result;
 }
 
-webrtc::Call::Config::BitrateConfig GetBitrateConfigForCodec(
-    const Codec& codec) {
-  webrtc::Call::Config::BitrateConfig config;
+webrtc::BitrateConstraints GetBitrateConfigForCodec(const Codec& codec) {
+  webrtc::BitrateConstraints config;
   int bitrate_kbps = 0;
   if (codec.GetParam(kCodecParamMinBitrate, &bitrate_kbps) &&
       bitrate_kbps > 0) {

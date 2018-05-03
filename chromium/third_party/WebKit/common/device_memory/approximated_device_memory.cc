@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "third_party/WebKit/common/device_memory/approximated_device_memory.h"
+#include "third_party/WebKit/public/common/device_memory/approximated_device_memory.h"
 
 #include "base/logging.h"
 #include "base/sys_info.h"
@@ -15,7 +15,8 @@ int64_t ApproximatedDeviceMemory::physical_memory_mb_ = 0;
 
 // static
 void ApproximatedDeviceMemory::Initialize() {
-  DCHECK_EQ(0.0, approximated_device_memory_gb_);
+  if (approximated_device_memory_gb_ > 0.0)
+    return;
   DCHECK_EQ(0, physical_memory_mb_);
   physical_memory_mb_ = ::base::SysInfo::AmountOfPhysicalMemoryMB();
   CalculateAndSetApproximatedDeviceMemory();

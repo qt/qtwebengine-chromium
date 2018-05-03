@@ -206,7 +206,7 @@ void SVGShapePainter::PaintMarkers(const PaintInfo& paint_info,
     return;
 
   SVGResources* resources =
-      SVGResourcesCache::CachedResourcesForLayoutObject(&layout_svg_shape_);
+      SVGResourcesCache::CachedResourcesForLayoutObject(layout_svg_shape_);
   if (!resources)
     return;
 
@@ -240,7 +240,7 @@ void SVGShapePainter::PaintMarker(const PaintInfo& paint_info,
 
   canvas->save();
   canvas->concat(AffineTransformToSkMatrix(transform));
-  if (SVGLayoutSupport::IsOverflowHidden(&marker))
+  if (SVGLayoutSupport::IsOverflowHidden(marker))
     canvas->clipRect(marker.Viewport());
 
   PaintRecordBuilder builder(nullptr, &paint_info.context);

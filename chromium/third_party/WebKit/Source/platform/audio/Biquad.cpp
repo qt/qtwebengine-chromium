@@ -46,6 +46,11 @@ namespace blink {
 const int kBufferSize = 1024;
 #endif
 
+// Compute 10^x = exp(x*log(10))
+static double pow10(double x) {
+  return expf(x * 2.30258509299404568402);
+}
+
 Biquad::Biquad() : has_sample_accurate_values_(false) {
 #if defined(OS_MACOSX)
   // Allocate two samples more for filter history
@@ -269,7 +274,8 @@ void Biquad::SetLowpassParams(int index, double cutoff, double resonance) {
   } else if (cutoff > 0) {
     // Compute biquad coefficients for lowpass filter
 
-    resonance = pow(10, resonance / 20);
+    resonance = pow10(resonance / 20);
+
     double theta = piDouble * cutoff;
     double alpha = sin(theta) / (2 * resonance);
     double cosw = cos(theta);
@@ -301,7 +307,7 @@ void Biquad::SetHighpassParams(int index, double cutoff, double resonance) {
   } else if (cutoff > 0) {
     // Compute biquad coefficients for highpass filter
 
-    resonance = pow(10, resonance / 20);
+    resonance = pow10(resonance / 20);
     double theta = piDouble * cutoff;
     double alpha = sin(theta) / (2 * resonance);
     double cosw = cos(theta);
@@ -345,7 +351,7 @@ void Biquad::SetLowShelfParams(int index, double frequency, double db_gain) {
   // Clip frequencies to between 0 and 1, inclusive.
   frequency = clampTo(frequency, 0.0, 1.0);
 
-  double a = pow(10.0, db_gain / 40);
+  double a = pow10(db_gain / 40);
 
   if (frequency == 1) {
     // The z-transform is a constant gain.
@@ -377,7 +383,7 @@ void Biquad::SetHighShelfParams(int index, double frequency, double db_gain) {
   // Clip frequencies to between 0 and 1, inclusive.
   frequency = clampTo(frequency, 0.0, 1.0);
 
-  double a = pow(10.0, db_gain / 40);
+  double a = pow10(db_gain / 40);
 
   if (frequency == 1) {
     // The z-transform is 1.
@@ -415,7 +421,7 @@ void Biquad::SetPeakingParams(int index,
   // Don't let Q go negative, which causes an unstable filter.
   q = std::max(0.0, q);
 
-  double a = pow(10.0, db_gain / 40);
+  double a = pow10(db_gain / 40);
 
   if (frequency > 0 && frequency < 1) {
     if (q > 0) {
@@ -840,7 +846,16 @@ double Biquad::TailFrame(int coef_index, double max_frame) {
       DCHECK(std::isfinite(c2));
 
       tail_frame = 1 + log(kMaxTailAmplitude / (c1 + c2)) / log(r);
-      DCHECK(std::isfinite(tail_frame));
+      if (c1 == 0 && c2 == 0) {
+        // If c1 = c2 = 0, then H(z) = b0.  Hence, there's no tail
+        // because this is just a wire from input to output.
+        tail_frame = 0;
+      } else {
+        // Otherwise, check that the tail has finite length.  Not
+        // strictly necessary, but we want to know if this ever
+        // happens.
+        DCHECK(std::isfinite(tail_frame));
+      }
     }
   } else {
     // Repeated roots.  This should be pretty rare because all the

@@ -68,6 +68,11 @@ void LayoutReplaced::StyleDidChange(StyleDifference diff,
                                     const ComputedStyle* old_style) {
   LayoutBox::StyleDidChange(diff, old_style);
 
+  // Replaced elements can have border-radius clips without clipping overflow;
+  // the overflow clipping case is already covered in LayoutBox::StyleDidChange
+  if (old_style && !old_style->RadiiEqual(StyleRef()))
+    SetNeedsPaintPropertyUpdate();
+
   bool had_style = !!old_style;
   float old_zoom = had_style ? old_style->EffectiveZoom()
                              : ComputedStyleInitialValues::InitialZoom();
@@ -608,7 +613,7 @@ LayoutRect LayoutReplaced::ComputeObjectFit(
       if (object_fit != EObjectFit::kScaleDown ||
           final_rect.Width() <= intrinsic_size.Width())
         break;
-    // fall through
+      FALLTHROUGH;
     case EObjectFit::kNone:
       final_rect.SetSize(intrinsic_size);
       break;
@@ -871,7 +876,7 @@ void LayoutReplaced::ComputePreferredLogicalWidths() {
 }
 
 PositionWithAffinity LayoutReplaced::PositionForPoint(
-    const LayoutPoint& point) {
+    const LayoutPoint& point) const {
   // FIXME: This code is buggy if the replaced element is relative positioned.
   InlineBox* box = InlineBoxWrapper();
   RootInlineBox* root_box = box ? &box->Root() : nullptr;
@@ -922,12 +927,6 @@ LayoutRect LayoutReplaced::LocalSelectionRect() const {
                       root.SelectionHeight());
   return LayoutRect(new_logical_top, LayoutUnit(), root.SelectionHeight(),
                     Size().Height());
-}
-
-void IntrinsicSizingInfo::Transpose() {
-  size = size.TransposedSize();
-  aspect_ratio = aspect_ratio.TransposedSize();
-  std::swap(has_width, has_height);
 }
 
 }  // namespace blink

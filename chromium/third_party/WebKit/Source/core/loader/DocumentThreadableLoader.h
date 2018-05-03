@@ -43,7 +43,7 @@
 #include "platform/weborigin/Referrer.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/text/WTFString.h"
-#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
+#include "services/network/public/mojom/fetch_api.mojom-blink.h"
 
 namespace blink {
 
@@ -66,6 +66,11 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
                                         ThreadableLoaderClient&,
                                         const ThreadableLoaderOptions&,
                                         const ResourceLoaderOptions&);
+
+  // Exposed for testing. Code outside this class should not call this function.
+  static WebURLRequest CreateAccessControlPreflightRequestForTesting(
+      const WebURLRequest&);
+
   static DocumentThreadableLoader* Create(ThreadableLoadingContext&,
                                           ThreadableLoaderClient*,
                                           const ThreadableLoaderOptions&,
@@ -84,6 +89,9 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
 
  private:
   enum BlockingBehavior { kLoadSynchronously, kLoadAsynchronously };
+
+  static WebURLRequest CreateAccessControlPreflightRequest(
+      const WebURLRequest&);
 
   DocumentThreadableLoader(ThreadableLoadingContext&,
                            ThreadableLoaderClient*,
@@ -224,7 +232,6 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader,
 
   // Corresponds to the CORS flag in the Fetch spec.
   bool cors_flag_;
-  bool suborigin_force_credentials_;
   scoped_refptr<const SecurityOrigin> security_origin_;
 
   // Set to true when the response data is given to a data consumer handle.

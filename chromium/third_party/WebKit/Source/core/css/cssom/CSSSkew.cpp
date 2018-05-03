@@ -52,31 +52,21 @@ void CSSSkew::setAy(CSSNumericValue* value, ExceptionState& exception_state) {
 CSSSkew* CSSSkew::FromCSSValue(const CSSFunctionValue& value) {
   DCHECK_GT(value.length(), 0U);
   const CSSPrimitiveValue& x_value = ToCSSPrimitiveValue(value.Item(0));
-  switch (value.FunctionType()) {
-    case CSSValueSkew:
-      if (value.length() == 2U) {
-        const CSSPrimitiveValue& y_value = ToCSSPrimitiveValue(value.Item(1));
-        return CSSSkew::Create(CSSNumericValue::FromCSSValue(x_value),
-                               CSSNumericValue::FromCSSValue(y_value));
-      }
-    // Else fall through; skew(ax) == skewX(ax).
-    case CSSValueSkewX:
-      DCHECK_EQ(value.length(), 1U);
-      return CSSSkew::Create(
-          CSSNumericValue::FromCSSValue(x_value),
-          CSSUnitValue::Create(0, CSSPrimitiveValue::UnitType::kDegrees));
-    case CSSValueSkewY:
-      DCHECK_EQ(value.length(), 1U);
-      return CSSSkew::Create(
-          CSSUnitValue::Create(0, CSSPrimitiveValue::UnitType::kDegrees),
-          CSSNumericValue::FromCSSValue(x_value));
-    default:
-      NOTREACHED();
-      return nullptr;
+  DCHECK_EQ(value.FunctionType(), CSSValueSkew);
+  if (value.length() == 1U) {
+    return CSSSkew::Create(
+        CSSNumericValue::FromCSSValue(x_value),
+        CSSUnitValue::Create(0, CSSPrimitiveValue::UnitType::kDegrees));
+  } else if (value.length() == 2U) {
+    const CSSPrimitiveValue& y_value = ToCSSPrimitiveValue(value.Item(1));
+    return CSSSkew::Create(CSSNumericValue::FromCSSValue(x_value),
+                           CSSNumericValue::FromCSSValue(y_value));
   }
+  NOTREACHED();
+  return nullptr;
 }
 
-const DOMMatrix* CSSSkew::AsMatrix(ExceptionState&) const {
+DOMMatrix* CSSSkew::toMatrix(ExceptionState&) const {
   CSSUnitValue* ax = ax_->to(CSSPrimitiveValue::UnitType::kRadians);
   CSSUnitValue* ay = ay_->to(CSSPrimitiveValue::UnitType::kRadians);
   DCHECK(ax);
@@ -95,7 +85,8 @@ const CSSFunctionValue* CSSSkew::ToCSSValue() const {
 
   CSSFunctionValue* result = CSSFunctionValue::Create(CSSValueSkew);
   result->Append(*ax);
-  result->Append(*ay);
+  if (!ay_->IsUnitValue() || ToCSSUnitValue(ay_)->value() != 0)
+    result->Append(*ay);
   return result;
 }
 

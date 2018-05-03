@@ -135,6 +135,8 @@ class VideoAnalyzer : public PacketReceiver,
         dropped_frames_before_first_encode_(0),
         dropped_frames_before_rendering_(0),
         last_render_time_(0),
+        last_render_delta_ms_(0),
+        last_unfreeze_time_ms_(0),
         rtp_timestamp_delta_(0),
         total_media_bytes_(0),
         first_sending_time_(0),
@@ -740,10 +742,15 @@ class VideoAnalyzer : public PacketReceiver,
   void PrintResults() {
     StopMeasuringCpuProcessTime();
     rtc::CritScope crit(&comparison_lock_);
+    // Record the time from the last freeze until the last rendered frame to
+    // ensure we cover the full timespan of the session. Otherwise the metric
+    // would penalize an early freeze followed by no freezes until the end.
+    time_between_freezes_.AddSample(last_render_time_ - last_unfreeze_time_ms_);
     PrintResult("psnr", psnr_, " dB");
     PrintResult("ssim", ssim_, " score");
     PrintResult("sender_time", sender_time_, " ms");
     PrintResult("receiver_time", receiver_time_, " ms");
+    PrintResult("network_time", network_time_, " ms");
     PrintResult("total_delay_incl_network", end_to_end_, " ms");
     PrintResult("time_between_rendered_frames", rendered_delta_, " ms");
     PrintResult("encode_frame_rate", encode_frame_rate_, " fps");
@@ -751,6 +758,7 @@ class VideoAnalyzer : public PacketReceiver,
     PrintResult("media_bitrate", media_bitrate_bps_, " bps");
     PrintResult("fec_bitrate", fec_bitrate_bps_, " bps");
     PrintResult("send_bandwidth", send_bandwidth_bps_, " bps");
+    PrintResult("time_between_freezes", time_between_freezes_, " ms");
 
     if (worst_frame_) {
       test::PrintResult("min_psnr", "", test_label_.c_str(), worst_frame_->psnr,
@@ -825,8 +833,20 @@ class VideoAnalyzer : public PacketReceiver,
       ++dropped_frames_;
       return;
     }
-    if (last_render_time_ != 0)
-      rendered_delta_.AddSample(comparison.render_time_ms - last_render_time_);
+    if (last_unfreeze_time_ms_ == 0)
+      last_unfreeze_time_ms_ = comparison.render_time_ms;
+    if (last_render_time_ != 0) {
+      const int64_t render_delta_ms =
+          comparison.render_time_ms - last_render_time_;
+      rendered_delta_.AddSample(render_delta_ms);
+      if (last_render_delta_ms_ != 0 &&
+          render_delta_ms - last_render_delta_ms_ > 150) {
+        time_between_freezes_.AddSample(last_render_time_ -
+                                        last_unfreeze_time_ms_);
+        last_unfreeze_time_ms_ = comparison.render_time_ms;
+      }
+      last_render_delta_ms_ = render_delta_ms;
+    }
     last_render_time_ = comparison.render_time_ms;
 
     sender_time_.AddSample(comparison.send_time_ms - comparison.input_time_ms);
@@ -845,6 +865,8 @@ class VideoAnalyzer : public PacketReceiver,
       // recv_time_ms != 0, even though the media packets were lost.
       receiver_time_.AddSample(comparison.render_time_ms -
                                comparison.recv_time_ms);
+      network_time_.AddSample(comparison.recv_time_ms -
+                              comparison.send_time_ms);
     }
     end_to_end_.AddSample(comparison.render_time_ms - comparison.input_time_ms);
     encoded_frame_size_.AddSample(comparison.encoded_frame_size);
@@ -980,6 +1002,7 @@ class VideoAnalyzer : public PacketReceiver,
   std::vector<Sample> samples_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics sender_time_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics receiver_time_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics network_time_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics psnr_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics ssim_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics end_to_end_ RTC_GUARDED_BY(comparison_lock_);
@@ -994,6 +1017,7 @@ class VideoAnalyzer : public PacketReceiver,
   test::Statistics fec_bitrate_bps_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics send_bandwidth_bps_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics memory_usage_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics time_between_freezes_ RTC_GUARDED_BY(comparison_lock_);
 
   struct FrameWithPsnr {
     double psnr;
@@ -1012,6 +1036,8 @@ class VideoAnalyzer : public PacketReceiver,
   int dropped_frames_before_first_encode_;
   int dropped_frames_before_rendering_;
   int64_t last_render_time_;
+  int64_t last_render_delta_ms_;
+  int64_t last_unfreeze_time_ms_;
   uint32_t rtp_timestamp_delta_;
   int64_t total_media_bytes_;
   int64_t first_sending_time_;
@@ -1060,8 +1086,14 @@ VideoQualityTest::VideoQualityTest()
   payload_type_map_[kPayloadTypeVP9] = webrtc::MediaType::VIDEO;
 }
 
+VideoQualityTest::VideoQualityTest(
+    std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory)
+    : VideoQualityTest() {
+  fec_controller_factory_ = std::move(fec_controller_factory);
+}
+
 VideoQualityTest::Params::Params()
-    : call({false, Call::Config::BitrateConfig(), 0}),
+    : call({false, BitrateConstraints(), 0}),
       video{{false, 640, 480, 30, 50, 800, 800, false, "VP8", 1, -1, 0, false,
              false, ""},
             {false, 640, 480, 30, 50, 800, 800, false, "VP8", 1, -1, 0, false,
@@ -1200,6 +1232,7 @@ VideoStream VideoQualityTest::DefaultVideoStream(const Params& params,
   stream.target_bitrate_bps = params.video[video_idx].target_bitrate_bps;
   stream.max_bitrate_bps = params.video[video_idx].max_bitrate_bps;
   stream.max_qp = kDefaultMaxQp;
+  stream.active = true;
   // TODO(sprang): Can we make this less of a hack?
   if (params.video[video_idx].num_temporal_layers == 2) {
     stream.temporal_layer_thresholds_bps.push_back(stream.target_bitrate_bps);
@@ -1252,6 +1285,7 @@ void VideoQualityTest::FillScalabilitySettings(
         params->video[video_idx].min_transmit_bps;
     encoder_config.number_of_streams = num_streams;
     encoder_config.spatial_layers = params->ss[video_idx].spatial_layers;
+    encoder_config.simulcast_layers = std::vector<VideoStream>(num_streams);
     encoder_config.video_stream_factory =
         new rtc::RefCountedObject<cricket::EncoderStreamFactory>(
             params->video[video_idx].codec, kDefaultMaxQp,
@@ -1405,6 +1439,8 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
           params_.ss[video_idx].streams[i].max_bitrate_bps;
     }
     if (params_.ss[video_idx].infer_streams) {
+      video_encoder_configs_[video_idx].simulcast_layers =
+          std::vector<VideoStream>(params_.ss[video_idx].streams.size());
       video_encoder_configs_[video_idx].video_stream_factory =
           new rtc::RefCountedObject<cricket::EncoderStreamFactory>(
               params_.video[video_idx].codec,
@@ -1606,6 +1642,7 @@ void VideoQualityTest::SetupThumbnails(Transport* send_transport,
       thumbnail_encoder_config.video_stream_factory =
           new rtc::RefCountedObject<VideoStreamFactory>(params_.ss[0].streams);
     } else {
+      thumbnail_encoder_config.simulcast_layers = std::vector<VideoStream>(1);
       thumbnail_encoder_config.video_stream_factory =
           new rtc::RefCountedObject<cricket::EncoderStreamFactory>(
               params_.video[0].codec, params_.ss[0].streams[0].max_qp,
@@ -1790,9 +1827,21 @@ void VideoQualityTest::CreateVideoStreams() {
   RTC_DCHECK(video_send_streams_.empty());
   RTC_DCHECK(video_receive_streams_.empty());
   RTC_DCHECK_EQ(video_send_configs_.size(), num_video_streams_);
+
+  // We currently only support testing external fec controllers with a single
+  // VideoSendStream.
+  if (fec_controller_factory_.get()) {
+    RTC_DCHECK_LE(video_send_configs_.size(), 1);
+  }
   for (size_t i = 0; i < video_send_configs_.size(); ++i) {
-    video_send_streams_.push_back(sender_call_->CreateVideoSendStream(
-        video_send_configs_[i].Copy(), video_encoder_configs_[i].Copy()));
+    if (fec_controller_factory_.get()) {
+      video_send_streams_.push_back(sender_call_->CreateVideoSendStream(
+          video_send_configs_[i].Copy(), video_encoder_configs_[i].Copy(),
+          fec_controller_factory_->CreateFecController()));
+    } else {
+      video_send_streams_.push_back(sender_call_->CreateVideoSendStream(
+          video_send_configs_[i].Copy(), video_encoder_configs_[i].Copy()));
+    }
   }
   for (size_t i = 0; i < video_receive_configs_.size(); ++i) {
     video_receive_streams_.push_back(receiver_call_->CreateVideoReceiveStream(
@@ -1810,6 +1859,7 @@ void VideoQualityTest::DestroyStreams() {
 }
 
 void VideoQualityTest::RunWithAnalyzer(const Params& params) {
+  rtc::LogMessage::SetLogToStderr(params.logging.logs);
   num_video_streams_ = params.call.dual_video ? 2 : 1;
   std::unique_ptr<test::LayerFilteringTransport> send_transport;
   std::unique_ptr<test::DirectTransport> recv_transport;
@@ -1832,10 +1882,8 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
   }
 
   if (!params.logging.rtc_event_log_name.empty()) {
-    send_event_log_ =
-        RtcEventLog::Create(clock_, RtcEventLog::EncodingType::Legacy);
-    recv_event_log_ =
-        RtcEventLog::Create(clock_, RtcEventLog::EncodingType::Legacy);
+    send_event_log_ = RtcEventLog::Create(RtcEventLog::EncodingType::Legacy);
+    recv_event_log_ = RtcEventLog::Create(RtcEventLog::EncodingType::Legacy);
     std::unique_ptr<RtcEventLogOutputFile> send_output(
         rtc::MakeUnique<RtcEventLogOutputFile>(
             params.logging.rtc_event_log_name + "_send",
@@ -2020,6 +2068,7 @@ void VideoQualityTest::SetupAudio(Transport* transport,
 }
 
 void VideoQualityTest::RunWithRenderers(const Params& params) {
+  rtc::LogMessage::SetLogToStderr(params.logging.logs);
   num_video_streams_ = params.call.dual_video ? 2 : 1;
   std::unique_ptr<test::LayerFilteringTransport> send_transport;
   std::unique_ptr<test::DirectTransport> recv_transport;

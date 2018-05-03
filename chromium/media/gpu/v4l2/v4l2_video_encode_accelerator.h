@@ -58,6 +58,7 @@ class MEDIA_GPU_EXPORT V4L2VideoEncodeAccelerator
   void RequestEncodingParametersChange(uint32_t bitrate,
                                        uint32_t framerate) override;
   void Destroy() override;
+  void Flush(FlushCallback flush_callback) override;
 
  private:
   // Auto-destroy reference for BitstreamBuffer, for tracking buffers passed to
@@ -82,9 +83,11 @@ class MEDIA_GPU_EXPORT V4L2VideoEncodeAccelerator
     size_t length;
   };
 
-  struct ImageProcessorInputRecord {
-    ImageProcessorInputRecord();
-    ~ImageProcessorInputRecord();
+  // Store all the information of input frame passed to Encode().
+  struct InputFrameInfo {
+    InputFrameInfo();
+    InputFrameInfo(scoped_refptr<VideoFrame> frame, bool force_keyframe);
+    ~InputFrameInfo();
     scoped_refptr<VideoFrame> frame;
     bool force_keyframe;
   };
@@ -103,6 +106,7 @@ class MEDIA_GPU_EXPORT V4L2VideoEncodeAccelerator
     kUninitialized,  // Initialize() not yet called.
     kInitialized,    // Initialize() returned true; ready to start encoding.
     kEncoding,       // Encoding frames.
+    kFlushing,       // Flushing frames.
     kError,          // Error in encoder state.
   };
 
@@ -131,6 +135,10 @@ class MEDIA_GPU_EXPORT V4L2VideoEncodeAccelerator
 
   // Device destruction task.
   void DestroyTask();
+
+  // Flush all the encoded frames. After all frames is flushed successfully or
+  // any error occurs, |flush_callback| will be called to notify client.
+  void FlushTask(FlushCallback flush_callback);
 
   // Service I/O on the V4L2 devices.  This task should only be scheduled from
   // DevicePollTask().
@@ -252,7 +260,7 @@ class MEDIA_GPU_EXPORT V4L2VideoEncodeAccelerator
   size_t cached_h264_header_size_ = 0;
 
   // Video frames ready to be encoded.
-  base::queue<scoped_refptr<VideoFrame>> encoder_input_queue_;
+  base::queue<InputFrameInfo> encoder_input_queue_;
 
   // Encoder device.
   scoped_refptr<V4L2Device> device_;
@@ -280,13 +288,16 @@ class MEDIA_GPU_EXPORT V4L2VideoEncodeAccelerator
   // since we don't care about ordering.
   std::vector<std::unique_ptr<BitstreamBufferRef>> encoder_output_queue_;
 
+  // The completion callback of the Flush() function.
+  FlushCallback flush_callback_;
+
   // Image processor, if one is in use.
   std::unique_ptr<V4L2ImageProcessor> image_processor_;
   // Indexes of free image processor output buffers. Only accessed on child
   // thread.
   std::vector<int> free_image_processor_output_buffers_;
   // Video frames ready to be processed. Only accessed on child thread.
-  base::queue<ImageProcessorInputRecord> image_processor_input_queue_;
+  base::queue<InputFrameInfo> image_processor_input_queue_;
   // Mapping of int index to fds of image processor output buffer.
   std::vector<std::vector<base::ScopedFD>> image_processor_output_buffer_map_;
 

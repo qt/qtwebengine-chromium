@@ -9,11 +9,11 @@
 
 #include <map>
 #include <memory>
-#include <set>
 #include <vector>
 
 #include "xfa/fxfa/fxfa.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
+#include "xfa/fxfa/parser/cxfa_nodeowner.h"
 
 enum XFA_VERSION {
   XFA_VERSION_UNKNOWN = 0,
@@ -40,47 +40,40 @@ enum XFA_DocFlag {
   XFA_DOCFLAG_Scripting = 0x0008
 };
 
-class CFX_XMLDoc;
 class CFXJSE_Engine;
+class CFXJS_Engine;
 class CScript_DataWindow;
 class CScript_EventPseudoModel;
 class CScript_HostPseudoModel;
-class CScript_LogPseudoModel;
 class CScript_LayoutPseudoModel;
+class CScript_LogPseudoModel;
 class CScript_SignaturePseudoModel;
-class CXFA_ContainerLayoutItem;
-class CXFA_DocumentParser;
 class CXFA_FFNotify;
-class CXFA_LayoutItem;
 class CXFA_LayoutProcessor;
 class CXFA_Node;
 class CXFA_Object;
 
-class CXFA_Document {
+class CXFA_Document : public CXFA_NodeOwner {
  public:
-  explicit CXFA_Document(CXFA_DocumentParser* pParser);
-  ~CXFA_Document();
+  explicit CXFA_Document(CXFA_FFNotify* notify);
+  ~CXFA_Document() override;
 
-  CFXJSE_Engine* InitScriptContext(v8::Isolate* pIsolate);
+  CFXJSE_Engine* InitScriptContext(CFXJS_Engine* fxjs_engine);
 
   CXFA_Node* GetRoot() const { return m_pRootNode; }
-
-  CFX_XMLDoc* GetXMLDoc() const;
-  CXFA_FFNotify* GetNotify() const;
+  CXFA_FFNotify* GetNotify() const { return notify_.Get(); }
   CXFA_LocaleMgr* GetLocalMgr();
   CXFA_Object* GetXFAObject(XFA_HashCode wsNodeNameHash);
-  CXFA_Node* GetNodeByID(CXFA_Node* pRoot, const WideStringView& wsID);
-  CXFA_Node* GetNotBindNode(const std::vector<CXFA_Object*>& arrayNodes);
+  CXFA_Node* GetNodeByID(CXFA_Node* pRoot, const WideStringView& wsID) const;
+  CXFA_Node* GetNotBindNode(const std::vector<CXFA_Object*>& arrayNodes) const;
   CXFA_LayoutProcessor* GetLayoutProcessor();
-  CXFA_LayoutProcessor* GetDocLayout();
-  CFXJSE_Engine* GetScriptContext();
+  CFXJSE_Engine* GetScriptContext() const;
 
-  void SetRoot(CXFA_Node* pNewRoot);
+  void SetRoot(CXFA_Node* pNewRoot) { m_pRootNode = pNewRoot; }
 
-  void AddPurgeNode(CXFA_Node* pNode);
-  bool RemovePurgeNode(CXFA_Node* pNode);
-
-  bool HasFlag(uint32_t dwFlag) { return (m_dwDocFlags & dwFlag) == dwFlag; }
+  bool HasFlag(uint32_t dwFlag) const {
+    return (m_dwDocFlags & dwFlag) == dwFlag;
+  }
   void SetFlag(uint32_t dwFlag, bool bOn);
 
   bool IsInteractive();
@@ -106,7 +99,7 @@ class CXFA_Document {
   std::vector<CXFA_Node*> m_pPendingPageSet;
 
  private:
-  CXFA_DocumentParser* m_pParser;
+  UnownedPtr<CXFA_FFNotify> notify_;
   CXFA_Node* m_pRootNode;
   std::unique_ptr<CFXJSE_Engine> m_pScriptContext;
   std::unique_ptr<CXFA_LayoutProcessor> m_pLayoutProcessor;
@@ -117,7 +110,6 @@ class CXFA_Document {
   std::unique_ptr<CScript_LogPseudoModel> m_pScriptLog;
   std::unique_ptr<CScript_LayoutPseudoModel> m_pScriptLayout;
   std::unique_ptr<CScript_SignaturePseudoModel> m_pScriptSignature;
-  std::set<CXFA_Node*> m_PurgeNodes;
   XFA_VERSION m_eCurVersionMode;
   uint32_t m_dwDocFlags;
 };

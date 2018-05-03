@@ -31,7 +31,9 @@
 #include "core/loader/resource/ImageResource.h"
 
 #include <memory>
+#include "core/loader/EmptyClients.h"
 #include "core/loader/resource/MockImageResourceObserver.h"
+#include "core/testing/DummyPageHolder.h"
 #include "platform/InstanceCounters.h"
 #include "platform/SharedBuffer.h"
 #include "platform/exported/WrappedResourceResponse.h"
@@ -48,7 +50,7 @@
 #include "platform/loader/testing/MockFetchContext.h"
 #include "platform/loader/testing/MockResourceClient.h"
 #include "platform/network/http_names.h"
-#include "platform/scheduler/test/fake_web_task_runner.h"
+#include "platform/scheduler/test/fake_task_runner.h"
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/ScopedMockedURL.h"
 #include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
@@ -469,8 +471,8 @@ TEST(ImageResourceTest, CancelOnRemoveObserver) {
   ScopedMockedURLLoad scoped_mocked_url_load(test_url, GetTestFilePath());
 
   ResourceFetcher* fetcher = CreateFetcher();
-  scheduler::FakeWebTaskRunner* task_runner =
-      static_cast<scheduler::FakeWebTaskRunner*>(
+  scheduler::FakeTaskRunner* task_runner =
+      static_cast<scheduler::FakeTaskRunner*>(
           fetcher->Context().GetLoadingTaskRunner().get());
   task_runner->SetTime(1);
 
@@ -1807,11 +1809,30 @@ TEST(ImageResourceTest,
 }
 
 TEST(ImageResourceTest, PeriodicFlushTest) {
+  EmptyChromeClient* chrome_client = new EmptyChromeClient();
+  Page::PageClients clients;
+  FillWithEmptyClients(clients);
+  clients.chrome_client = chrome_client;
+  std::unique_ptr<DummyPageHolder> page_holder = DummyPageHolder::Create(
+      IntSize(800, 600), &clients, EmptyLocalFrameClient::Create(), nullptr);
+
   ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
       platform;
   KURL test_url(kTestURL);
   ScopedMockedURLLoad scoped_mocked_url_load(test_url, GetTestFilePath());
+
+  MockFetchContext* context = MockFetchContext::Create(
+      MockFetchContext::LoadPolicy::kShouldLoadNewResource,
+      page_holder->GetFrame().GetTaskRunner(TaskType::kInternalTest));
+  ResourceFetcher* fetcher = ResourceFetcher::Create(context);
+  ResourceLoadScheduler* scheduler = ResourceLoadScheduler::Create();
   ImageResource* image_resource = ImageResource::CreateForTest(test_url);
+
+  // Ensure that |image_resource| has a loader.
+  ResourceLoader* loader =
+      ResourceLoader::Create(fetcher, scheduler, image_resource);
+  ALLOW_UNUSED_LOCAL(loader);
+
   image_resource->SetStatus(ResourceStatus::kPending);
   image_resource->NotifyStartLoad();
 
@@ -1927,8 +1948,8 @@ class ImageResourceCounterTest : public ::testing::Test {
     KURL test_url(url);
     ResourceRequest request = ResourceRequest(test_url);
     FetchParameters fetch_params(request);
-    scheduler::FakeWebTaskRunner* task_runner =
-        static_cast<scheduler::FakeWebTaskRunner*>(
+    scheduler::FakeTaskRunner* task_runner =
+        static_cast<scheduler::FakeTaskRunner*>(
             fetcher->Context().GetLoadingTaskRunner().get());
     task_runner->SetTime(1);
 

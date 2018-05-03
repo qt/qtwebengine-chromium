@@ -5,7 +5,7 @@
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/frame/UseCounter.h"
 #include "core/origin_trials/OriginTrialContext.h"
-#include "core/testing/DummyPageHolder.h"
+#include "core/testing/PageTestBase.h"
 #include "core/workers/GlobalScopeCreationParams.h"
 #include "core/workers/MainThreadWorkletGlobalScope.h"
 #include "core/workers/MainThreadWorkletReportingProxy.h"
@@ -40,11 +40,11 @@ class MainThreadWorkletReportingProxyForTest final
   BitVector reported_features_;
 };
 
-class MainThreadWorkletTest : public ::testing::Test {
+class MainThreadWorkletTest : public PageTestBase {
  public:
   void SetUp() override {
-    page_ = DummyPageHolder::Create();
-    Document* document = page_->GetFrame().GetDocument();
+    PageTestBase::SetUp(IntSize());
+    Document* document = &GetDocument();
     document->SetURL(KURL("https://example.com/"));
     document->UpdateSecurityOrigin(SecurityOrigin::Create(document->Url()));
 
@@ -62,17 +62,17 @@ class MainThreadWorkletTest : public ::testing::Test {
         document->Url(), document->UserAgent(),
         document->GetContentSecurityPolicy()->Headers().get(),
         document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-        nullptr /* worker_clients */, document->AddressSpace(),
-        OriginTrialContext::GetTokens(document).get(),
-        nullptr /* worker_settings */, kV8CacheOptionsDefault);
+        document->IsSecureContext(), nullptr /* worker_clients */,
+        document->AddressSpace(), OriginTrialContext::GetTokens(document).get(),
+        base::UnguessableToken::Create(), nullptr /* worker_settings */,
+        kV8CacheOptionsDefault);
     global_scope_ = new MainThreadWorkletGlobalScope(
-        &page_->GetFrame(), std::move(creation_params), *reporting_proxy_);
+        &GetFrame(), std::move(creation_params), *reporting_proxy_);
   }
 
   void TearDown() override { global_scope_->Terminate(); }
 
  protected:
-  std::unique_ptr<DummyPageHolder> page_;
   std::unique_ptr<MainThreadWorkletReportingProxyForTest> reporting_proxy_;
   Persistent<MainThreadWorkletGlobalScope> global_scope_;
 };
@@ -103,16 +103,14 @@ TEST_F(MainThreadWorkletTest, ContentSecurityPolicy) {
 }
 
 TEST_F(MainThreadWorkletTest, UseCounter) {
-  Document& document = *page_->GetFrame().GetDocument();
-
   // This feature is randomly selected.
   const WebFeature kFeature1 = WebFeature::kRequestFileSystem;
 
   // API use on the MainThreadWorkletGlobalScope should be recorded in
   // UseCounter on the Document.
-  EXPECT_FALSE(UseCounter::IsCounted(document, kFeature1));
+  EXPECT_FALSE(UseCounter::IsCounted(GetDocument(), kFeature1));
   UseCounter::Count(global_scope_, kFeature1);
-  EXPECT_TRUE(UseCounter::IsCounted(document, kFeature1));
+  EXPECT_TRUE(UseCounter::IsCounted(GetDocument(), kFeature1));
 
   // API use should be reported to the Document only one time. See comments in
   // MainThreadWorkletReportingProxyForTest::ReportFeature.
@@ -123,9 +121,9 @@ TEST_F(MainThreadWorkletTest, UseCounter) {
 
   // Deprecated API use on the MainThreadWorkletGlobalScope should be recorded
   // in UseCounter on the Document.
-  EXPECT_FALSE(UseCounter::IsCounted(document, kFeature2));
+  EXPECT_FALSE(UseCounter::IsCounted(GetDocument(), kFeature2));
   Deprecation::CountDeprecation(global_scope_, kFeature2);
-  EXPECT_TRUE(UseCounter::IsCounted(document, kFeature2));
+  EXPECT_TRUE(UseCounter::IsCounted(GetDocument(), kFeature2));
 
   // API use should be reported to the Document only one time. See comments in
   // MainThreadWorkletReportingProxyForTest::ReportDeprecation.
@@ -133,7 +131,7 @@ TEST_F(MainThreadWorkletTest, UseCounter) {
 }
 
 TEST_F(MainThreadWorkletTest, TaskRunner) {
-  scoped_refptr<WebTaskRunner> task_runner =
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
       global_scope_->GetTaskRunner(TaskType::kInternalTest);
   EXPECT_TRUE(task_runner->RunsTasksInCurrentSequence());
 }

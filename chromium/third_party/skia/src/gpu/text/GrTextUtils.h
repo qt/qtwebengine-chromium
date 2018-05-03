@@ -13,6 +13,7 @@
 #include "SkColorFilter.h"
 #include "SkPaint.h"
 #include "SkScalar.h"
+#include "SkTextToPathIter.h"
 #include "SkTLazy.h"
 
 class GrAtlasGlyphCache;
@@ -115,7 +116,7 @@ public:
             fFilteredPremulColor = fOriginalPaint->filteredPremulColor();
         }
 
-        bool modifyForRun(const SkTextBlobRunIterator&);
+        bool modifyForRun(std::function<void(SkPaint*)> paintModFunc);
 
     private:
         SkTLazy<SkPaint> fModifiedPaint;
@@ -128,18 +129,24 @@ public:
 
     static bool ShouldDisableLCD(const SkPaint& paint);
 
-    // Functions for drawing large text either as paths or (for color emoji) as scaled glyphs
-    static void DrawBigText(GrContext*, GrTextUtils::Target*, const GrClip& clip,
-                               const SkPaint& paint, const SkMatrix& viewMatrix, const char text[],
-                               size_t byteLength, SkScalar x, SkScalar y,
-                               const SkIRect& clipBounds);
+    class PathTextIter : SkTextBaseIter {
+    public:
+        PathTextIter(const char text[], size_t length, const SkPaint& paint,
+                     bool applyStrokeAndPathEffects)
+            : SkTextBaseIter(text, length, paint, applyStrokeAndPathEffects) {
+        }
 
-    static void DrawBigPosText(GrContext* context, GrTextUtils::Target*,
-                                  const SkSurfaceProps& props, const GrClip& clip,
-                                  const SkPaint& paint, const SkMatrix& viewMatrix,
-                                  const char text[], size_t byteLength, const SkScalar pos[],
-                                  int scalarsPerPosition, const SkPoint& offset,
-                                  const SkIRect& clipBounds);
+        const SkPaint&  getPaint() const { return fPaint; }
+        SkScalar        getPathScale() const { return fScale; }
+        const char*     getText() const { return fText; }
+
+        /**
+         *  Returns false when all of the text has been consumed
+         *  Will set skGlyph if the maskformat is ARGB, and path otherwise. The other will be null.
+         *  If the glyph is zero-width, both will be null.
+         */
+        bool next(const SkGlyph** skGlyph, const SkPath** path, SkScalar* xpos);
+    };
 };
 
 #endif

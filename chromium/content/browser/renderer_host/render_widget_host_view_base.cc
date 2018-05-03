@@ -13,16 +13,15 @@
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target_base.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base_observer.h"
-#include "content/browser/renderer_host/render_widget_host_view_frame_subscriber.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/common/content_features.h"
-#include "media/base/video_frame.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/display/screen.h"
@@ -96,10 +95,9 @@ void RenderWidgetHostViewBase::SetBackgroundColorToDefault() {
   SetBackgroundColor(SK_ColorWHITE);
 }
 
-gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
-  return gfx::ScaleToCeiledSize(
-      GetRequestedRendererSize(),
-      ui::GetScaleFactorForNativeView(GetNativeView()));
+gfx::Size RenderWidgetHostViewBase::GetCompositorViewportPixelSize() const {
+  return gfx::ScaleToCeiledSize(GetRequestedRendererSize(),
+                                GetDeviceScaleFactor());
 }
 
 bool RenderWidgetHostViewBase::DoBrowserControlsShrinkBlinkSize() const {
@@ -166,18 +164,9 @@ bool RenderWidgetHostViewBase::IsSurfaceAvailableForCopy() const {
 void RenderWidgetHostViewBase::CopyFromSurface(
     const gfx::Rect& src_rect,
     const gfx::Size& output_size,
-    const ReadbackRequestCallback& callback,
-    const SkColorType color_type) {
+    base::OnceCallback<void(const SkBitmap&)> callback) {
   NOTIMPLEMENTED();
-  callback.Run(SkBitmap(), READBACK_SURFACE_UNAVAILABLE);
-}
-
-void RenderWidgetHostViewBase::CopyFromSurfaceToVideoFrame(
-    const gfx::Rect& src_rect,
-    scoped_refptr<media::VideoFrame> target,
-    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
-  NOTIMPLEMENTED();
-  callback.Run(gfx::Rect(), false);
+  std::move(callback).Run(SkBitmap());
 }
 
 base::string16 RenderWidgetHostViewBase::GetSelectedText() {
@@ -248,6 +237,12 @@ gfx::NativeViewAccessible
   return nullptr;
 }
 
+void RenderWidgetHostViewBase::CreateCompositorFrameSink(
+    CreateCompositorFrameSinkCallback callback) {
+  DCHECK(GetFrameSinkId().is_valid());
+  std::move(callback).Run(GetFrameSinkId());
+}
+
 void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
   RenderWidgetHostImpl* impl = GetRenderWidgetHostImpl();
 
@@ -301,29 +296,20 @@ RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
       new SyntheticGestureTargetBase(host));
 }
 
-// Base implementation is unimplemented.
-void RenderWidgetHostViewBase::BeginFrameSubscription(
-    std::unique_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
-  NOTREACHED();
-}
-
-void RenderWidgetHostViewBase::EndFrameSubscription() {
-  NOTREACHED();
-}
-
 void RenderWidgetHostViewBase::FocusedNodeTouched(
     const gfx::Point& location_dips_screen,
     bool editable) {
   DVLOG(1) << "FocusedNodeTouched: " << editable;
 }
 
-void RenderWidgetHostViewBase::GetScreenInfo(ScreenInfo* screen_info) {
-  RenderWidgetHostImpl* host = GetRenderWidgetHostImpl();
-  if (!host || !host->delegate()) {
-    *screen_info = ScreenInfo();
-    return;
-  }
-  host->delegate()->GetScreenInfo(screen_info);
+void RenderWidgetHostViewBase::GetScreenInfo(ScreenInfo* screen_info) const {
+  DisplayUtil::GetNativeViewScreenInfo(screen_info, GetNativeView());
+}
+
+float RenderWidgetHostViewBase::GetDeviceScaleFactor() const {
+  ScreenInfo screen_info;
+  GetScreenInfo(&screen_info);
+  return screen_info.device_scale_factor;
 }
 
 uint32_t RenderWidgetHostViewBase::RendererFrameNumber() {
@@ -354,65 +340,6 @@ void RenderWidgetHostViewBase::DisplayCursor(const WebCursor& cursor) {
 
 CursorManager* RenderWidgetHostViewBase::GetCursorManager() {
   return nullptr;
-}
-
-// static
-ScreenOrientationValues RenderWidgetHostViewBase::GetOrientationTypeForMobile(
-    const display::Display& display) {
-  int angle = display.RotationAsDegree();
-  const gfx::Rect& bounds = display.bounds();
-
-  // Whether the device's natural orientation is portrait.
-  bool natural_portrait = false;
-  if (angle == 0 || angle == 180) // The device is in its natural orientation.
-    natural_portrait = bounds.height() >= bounds.width();
-  else
-    natural_portrait = bounds.height() <= bounds.width();
-
-  switch (angle) {
-  case 0:
-    return natural_portrait ? SCREEN_ORIENTATION_VALUES_PORTRAIT_PRIMARY
-                            : SCREEN_ORIENTATION_VALUES_LANDSCAPE_PRIMARY;
-  case 90:
-    return natural_portrait ? SCREEN_ORIENTATION_VALUES_LANDSCAPE_PRIMARY
-                            : SCREEN_ORIENTATION_VALUES_PORTRAIT_SECONDARY;
-  case 180:
-    return natural_portrait ? SCREEN_ORIENTATION_VALUES_PORTRAIT_SECONDARY
-                            : SCREEN_ORIENTATION_VALUES_LANDSCAPE_SECONDARY;
-  case 270:
-    return natural_portrait ? SCREEN_ORIENTATION_VALUES_LANDSCAPE_SECONDARY
-                            : SCREEN_ORIENTATION_VALUES_PORTRAIT_PRIMARY;
-  default:
-    NOTREACHED();
-    return SCREEN_ORIENTATION_VALUES_PORTRAIT_PRIMARY;
-  }
-}
-
-// static
-ScreenOrientationValues RenderWidgetHostViewBase::GetOrientationTypeForDesktop(
-    const display::Display& display) {
-  static int primary_landscape_angle = -1;
-  static int primary_portrait_angle = -1;
-
-  int angle = display.RotationAsDegree();
-  const gfx::Rect& bounds = display.bounds();
-  bool is_portrait = bounds.height() >= bounds.width();
-
-  if (is_portrait && primary_portrait_angle == -1)
-    primary_portrait_angle = angle;
-
-  if (!is_portrait && primary_landscape_angle == -1)
-    primary_landscape_angle = angle;
-
-  if (is_portrait) {
-    return primary_portrait_angle == angle
-        ? SCREEN_ORIENTATION_VALUES_PORTRAIT_PRIMARY
-        : SCREEN_ORIENTATION_VALUES_PORTRAIT_SECONDARY;
-  }
-
-  return primary_landscape_angle == angle
-      ? SCREEN_ORIENTATION_VALUES_LANDSCAPE_PRIMARY
-      : SCREEN_ORIENTATION_VALUES_LANDSCAPE_SECONDARY;
 }
 
 void RenderWidgetHostViewBase::OnDidNavigateMainFrameToNewPage() {
@@ -536,6 +463,10 @@ bool RenderWidgetHostViewBase::IsRenderWidgetHostViewChildFrame() {
   return false;
 }
 
+bool RenderWidgetHostViewBase::HasSize() const {
+  return true;
+}
+
 void RenderWidgetHostViewBase::TextInputStateChanged(
     const TextInputState& text_input_state) {
   if (GetTextInputManager())
@@ -649,6 +580,12 @@ RenderWidgetHostViewBase::GetWindowTreeClientFromRenderer() {
   return window_tree_client;
 }
 
+#endif
+
+#if defined(OS_MACOSX)
+bool RenderWidgetHostViewBase::ShouldContinueToPauseForFrame() {
+  return false;
+}
 #endif
 
 }  // namespace content

@@ -18,9 +18,9 @@
 #include "net/base/request_priority.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_response_headers.h"
-#include "net/proxy/proxy_config_service.h"
-#include "net/proxy/proxy_info.h"
-#include "net/proxy/proxy_retry_info.h"
+#include "net/proxy_resolution/proxy_config_service.h"
+#include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_retry_info.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
@@ -343,8 +343,8 @@ class TestLayeredNetworkDelegate : public LayeredNetworkDelegate {
     EXPECT_EQ(1, (*counters_)["on_can_queue_reporting_report_count"]);
   }
 
-  void OnCanSendReportingReportInternal(
-      const url::Origin& origin) const override {
+  void OnCanSendReportingReportsInternal(
+      const std::set<url::Origin>& origins) const override {
     ++(*counters_)["on_can_send_reporting_report_count"];
     EXPECT_EQ(1, (*counters_)["on_can_send_reporting_report_count"]);
   }

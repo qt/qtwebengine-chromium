@@ -113,69 +113,16 @@ KPTR_RESTRICT_PATH = '/proc/sys/kernel/kptr_restrict'
 # but we use a file-to-http feature to bridge the file request to host's http
 # server to get the real test files and corresponding resources.
 # See webkit/support/platform_support_android.cc for the other side of this bridge.
-PERF_TEST_PATH_PREFIX = '/all-perf-tests'
-LAYOUT_TEST_PATH_PREFIX = '/all-tests'
-
-# All ports the Android forwarder to forward.
-# 8000, 8080 and 8443 are for http/https tests;
-# 8880 is for websocket tests (see apache_http.py and pywebsocket.py).
-# 8001, 8081 and 8444 are for http/https WPT;
-# 9001 and 9444 are for websocket WPT (see wptserve.py).
-FORWARD_PORTS = '8000 8001 8080 8081 8443 8444 8880 9001 9444'
+PERF_TEST_PATH_PREFIX = '/PerformanceTests'
+LAYOUT_TEST_PATH_PREFIX = '/LayoutTests'
 
 # We start netcat processes for each of the three stdio streams. In doing so,
 # we attempt to use ports starting from 10201. This starting value is
 # completely arbitrary.
 FIRST_NETCAT_PORT = 10201
 
-MS_TRUETYPE_FONTS_DIR = '/usr/share/fonts/truetype/msttcorefonts/'
-MS_TRUETYPE_FONTS_PACKAGE = 'ttf-mscorefonts-installer'
-
 # Timeout in seconds to wait for starting/stopping the driver.
 DRIVER_START_STOP_TIMEOUT_SECS = 10
-
-HOST_FONT_FILES = [
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Impact.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Verdana.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Verdana_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Verdana_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    [[MS_TRUETYPE_FONTS_DIR], 'Verdana_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
-    # The Microsoft font EULA
-    [['/usr/share/doc/ttf-mscorefonts-installer/'], 'READ_ME!.gz', MS_TRUETYPE_FONTS_PACKAGE],
-    # Other fonts: Arabic, CJK, Indic, Thai, etc.
-    [['/usr/share/fonts/truetype/ttf-dejavu/'], 'DejaVuSans.ttf', 'ttf-dejavu'],
-    [['/usr/share/fonts/truetype/kochi/'], 'kochi-mincho.ttf', 'ttf-kochi-mincho'],
-    [['/usr/share/fonts/truetype/ttf-indic-fonts-core/'], 'lohit_hi.ttf', 'ttf-indic-fonts-core'],
-    [['/usr/share/fonts/truetype/ttf-indic-fonts-core/'], 'lohit_ta.ttf', 'ttf-indic-fonts-core'],
-    [['/usr/share/fonts/truetype/ttf-indic-fonts-core/'], 'MuktiNarrow.ttf', 'ttf-indic-fonts-core'],
-    [['/usr/share/fonts/truetype/thai/', '/usr/share/fonts/truetype/tlwg/'], 'Garuda.ttf', 'fonts-tlwg-garuda'],
-    [['/usr/share/fonts/truetype/ttf-indic-fonts-core/',
-      '/usr/share/fonts/truetype/ttf-punjabi-fonts/'],
-     'lohit_pa.ttf',
-     'ttf-indic-fonts-core'],
-]
 
 # Test resources that need to be accessed as files directly.
 # Each item can be the relative path of a directory or a file.
@@ -440,22 +387,17 @@ class AndroidPort(base.Port):
             host_device_tuples = []
 
             # - the custom font files
+            # TODO(sergeyu): Rename these files, they can be used on platforms
+            # other than Android.
             host_device_tuples.append(
-                (self._build_path('android_main_fonts.xml'),
+                (self._build_path('content_shell_test_fonts/android_main_fonts.xml'),
                  device_path('android_main_fonts.xml')))
             host_device_tuples.append(
-                (self._build_path('android_fallback_fonts.xml'),
+                (self._build_path('content_shell_test_fonts/android_fallback_fonts.xml'),
                  device_path('android_fallback_fonts.xml')))
-            host_device_tuples.append(
-                (self._build_path('AHEM____.TTF'),
-                 device_path('fonts', 'AHEM____.TTF')))
-            for (host_dirs, font_file, _) in HOST_FONT_FILES:
-                for host_dir in host_dirs:
-                    host_font_path = host_dir + font_file
-                    if self._check_file_exists(host_font_path, '', more_logging=False):
-                        host_device_tuples.append(
-                            (host_font_path,
-                             device_path('fonts', font_file)))
+            for font_file in self._get_font_files():
+                host_device_tuples.append(
+                    (font_file, device_path('fonts', os.path.basename(font_file))))
 
             # - the test resources
             host_device_tuples.extend(
@@ -516,17 +458,8 @@ class AndroidPort(base.Port):
         return min(len(self._options.prepared_devices), requested_num_workers)
 
     def check_sys_deps(self, needs_http):
-        for (font_dirs, font_file, package) in HOST_FONT_FILES:
-            exists = False
-            for font_dir in font_dirs:
-                font_path = font_dir + font_file
-                if self._check_file_exists(font_path, '', more_logging=False):
-                    exists = True
-                    break
-            if not exists:
-                _log.error('You are missing %s under %s. Try installing %s. See build instructions.',
-                           font_file, font_dirs, package)
-                return exit_codes.SYS_DEPS_EXIT_STATUS
+        # _get_font_files() will throw if any of the required fonts is missing.
+        self._get_font_files()
         return exit_codes.OK_EXIT_STATUS
 
     def requires_http_server(self):
@@ -950,7 +883,7 @@ class ChromiumAndroidDriver(driver.Driver):
 
         self._log_debug('Starting forwarder')
         forwarder.Forwarder.Map(
-            [(p, p) for p in FORWARD_PORTS.split()],
+            [(p, p) for p in base.Port.SERVER_PORTS],
             self._device)
         forwarder.Forwarder.Map(
             [(forwarder.DYNAMIC_DEVICE_PORT, p)
@@ -1106,10 +1039,8 @@ class ChromiumAndroidDriver(driver.Driver):
     def _command_from_driver_input(self, driver_input):
         command = super(ChromiumAndroidDriver, self)._command_from_driver_input(driver_input)
         if command.startswith('/'):
-            fs = self._port.host.filesystem
-            # FIXME: what happens if command lies outside of the layout_tests_dir on the host?
-            relative_test_filename = fs.relpath(command, fs.dirname(self._port.layout_tests_dir()))
-            command = DEVICE_WEBKIT_BASE_DIR + relative_test_filename
+            command = 'http://127.0.0.1:8000' + LAYOUT_TEST_PATH_PREFIX + \
+                '/' + self._port.relative_test_filename(command)
         return command
 
     def _read_prompt(self, deadline):

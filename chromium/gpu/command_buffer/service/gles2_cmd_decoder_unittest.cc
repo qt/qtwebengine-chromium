@@ -54,13 +54,9 @@ namespace gles2 {
 using namespace cmds;
 
 void GLES2DecoderRGBBackbufferTest::SetUp() {
-  // Test codepath with workaround clear_alpha_in_readpixels because
-  // ReadPixelsEmulator emulates the incorrect driver behavior.
-  gpu::GpuDriverBugWorkarounds workarounds;
-  workarounds.clear_alpha_in_readpixels = true;
   InitState init;
   init.bind_generates_resource = true;
-  InitDecoderWithWorkarounds(init, workarounds);
+  InitDecoder(init);
   SetupDefaultProgram();
 }
 
@@ -1581,7 +1577,11 @@ TEST_P(GLES2DecoderDoCommandsTest, DoCommandsBadArgSize) {
             decoder_->DoCommands(
                 2, &cmds_, entries_per_cmd_ * 2 + 1, &num_processed));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  EXPECT_EQ(entries_per_cmd_ + cmds_[1].header.size, num_processed);
+  // gpu::CommandHeader::size is a 21-bit field, so casting it to int is safe.
+  // Without the explicit cast, Visual Studio ends up promoting the left hand
+  // side to unsigned, and emits a sign mismatch warning.
+  EXPECT_EQ(entries_per_cmd_ + static_cast<int>(cmds_[1].header.size),
+            num_processed);
 }
 
 class GLES2DecoderDescheduleUntilFinishedTest : public GLES2DecoderTest {
@@ -1683,13 +1683,11 @@ void GLES3DecoderWithShaderTest::SetUp() {
 }
 
 void GLES3DecoderRGBBackbufferTest::SetUp() {
-  gpu::GpuDriverBugWorkarounds workarounds;
-  workarounds.clear_alpha_in_readpixels = true;
   InitState init;
   init.gl_version = "OpenGL ES 3.0";
   init.bind_generates_resource = true;
   init.context_type = CONTEXT_TYPE_OPENGLES3;
-  InitDecoderWithWorkarounds(init, workarounds);
+  InitDecoder(init);
   SetupDefaultProgram();
 }
 

@@ -31,7 +31,6 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "platform/SharedBuffer.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/text/StringUTF8Adaptor.h"
 #include "public/platform/FilePathConversion.h"
@@ -54,7 +53,7 @@ base::FilePath BlinkRootFilePath() {
 }  // namespace
 
 void RunPendingTasks() {
-  Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+  Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&ExitRunLoop));
 
   // We forbid GC in the tasks. Otherwise the registered GCTaskObserver tries
@@ -65,7 +64,7 @@ void RunPendingTasks() {
 }
 
 void RunDelayedTasks(TimeDelta delay) {
-  Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostDelayedTask(
+  Platform::Current()->CurrentThread()->GetTaskRunner()->PostDelayedTask(
       FROM_HERE, WTF::Bind(&ExitRunLoop), delay);
   EnterRunLoop();
 }
@@ -111,6 +110,25 @@ scoped_refptr<SharedBuffer> ReadFromFile(const String& path) {
   std::string buffer;
   base::ReadFileToString(file_path, &buffer);
   return SharedBuffer::Create(buffer.data(), buffer.size());
+}
+
+LineReader::LineReader(const std::string& text) : text_(text), index_(0) {}
+
+bool LineReader::GetNextLine(std::string* line) {
+  line->clear();
+  if (index_ >= text_.length())
+    return false;
+
+  size_t end_of_line_index = text_.find("\r\n", index_);
+  if (end_of_line_index == std::string::npos) {
+    *line = text_.substr(index_);
+    index_ = text_.length();
+    return true;
+  }
+
+  *line = text_.substr(index_, end_of_line_index - index_);
+  index_ = end_of_line_index + 2;
+  return true;
 }
 
 }  // namespace testing

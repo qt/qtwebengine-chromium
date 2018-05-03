@@ -11,6 +11,7 @@
 
 #include "base/optional.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
+#include "components/viz/common/quads/frame_deadline.h"
 #include "components/viz/common/quads/selection.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "components/viz/common/viz_common_export.h"
@@ -46,7 +47,6 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
   gfx::SizeF root_layer_size;
   float min_page_scale_factor = 0.f;
   float max_page_scale_factor = 0.f;
-  bool root_overflow_x_hidden = false;
   bool root_overflow_y_hidden = false;
   bool may_contain_video = false;
 
@@ -99,9 +99,11 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
   //       become available or a deadline hits.
   std::vector<SurfaceId> activation_dependencies;
 
-  // This indicates a non-default deadline until this CompositorFrame should
-  // be forcibly activated.
-  base::Optional<uint32_t> deadline_in_frames;
+  // This specifies a deadline for this CompositorFrame to synchronize with its
+  // activation dependencies. Once this deadline passes, this CompositorFrame
+  // should be forcibly activated. This deadline may be lower-bounded by the
+  // default synchronization deadline specified by the system.
+  FrameDeadline deadline;
 
   // This is a value that allows the browser to associate compositor frames
   // with the content that they represent -- typically top-level page loads.

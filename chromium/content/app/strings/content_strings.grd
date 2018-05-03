@@ -341,9 +341,6 @@ below:
         <message name="IDS_AX_ROLE_BUTTON" desc="Accessibility role description for a button">
           button
         </message>
-        <message name="IDS_AX_ROLE_BUTTON_DROP_DOWN" desc="Accessibility role description for a button that drops down">
-          drop down button
-        </message>
         <message name="IDS_AX_ROLE_CELL" desc="Accessibility role description for a cell, like in a table or grid">
           cell
         </message>
@@ -809,8 +806,11 @@ below:
       <message name="IDS_MEDIA_OVERFLOW_MENU_DOWNLOAD" desc="Media controls overflow menu item label for a download button.">
        Download
       </message>
-      <message name="IDS_MEDIA_OVERFLOW_MENU_PICTURE_IN_PICTURE" desc="Media controls overflow menu item label for a picture in picture button.">
-        Picture in Picture
+      <message name="IDS_MEDIA_OVERFLOW_MENU_PICTURE_IN_PICTURE" desc="Media controls overflow menu item label for a picture-in-picture button.">
+        Picture-in-Picture
+      </message>
+      <message name="IDS_MEDIA_PICTURE_IN_PICTURE_INTERSTITIAL_TEXT" desc="Text message shown to user when in picture in picture mode. When a video is in picture in picture mode, an interstitial with this text appears where the video player is positioned. The video continues to play back in another window that gives the experience that the video is 'popped out'.">
+        Now in Picture-in-Picture mode
       </message>
       <message name="IDS_MEDIA_REMOTING_CAST_TEXT" desc="Text message shown to the user when casting a video to a known remote device.">
        Now casting to <ph name="DEVICE_FRIENDLY_NAME">$1<ex>Living Room TV</ex></ph>
@@ -826,6 +826,9 @@ below:
       </message>
       <message name = "IDS_MEDIA_REMOTING_STOP_BY_ERROR_TEXT" desc="The transient text shown on top of the video when switching from media remoting to mirroring due to errors.">
         Video playback error
+      </message>
+      <message name="IDS_MEDIA_SCRUBBING_MESSAGE_TEXT" desc="Message informing the user that they can double tap to skip ten seconds. This should be no longer than twice the length of the English version.">
+        Double tap left or right to skip 10s
       </message>
       <message name="IDS_MEDIA_TRACKS_NO_LABEL" desc="Menu item label for a text track that has no name specified. The number represents the track number in the list of tracks.">
         Track <ph name="NUMBER">$1<ex>1</ex></ph>

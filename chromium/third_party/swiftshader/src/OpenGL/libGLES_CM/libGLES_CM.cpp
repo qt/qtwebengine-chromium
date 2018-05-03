@@ -48,41 +48,6 @@ static bool validImageSize(GLint level, GLsizei width, GLsizei height)
 	return true;
 }
 
-static bool validateSubImageParams(bool compressed, GLsizei width, GLsizei height, GLint xoffset, GLint yoffset, GLenum target, GLint level, GLenum format, es1::Texture *texture)
-{
-	if(!texture)
-	{
-		return error(GL_INVALID_OPERATION, false);
-	}
-
-	if(compressed != texture->isCompressed(target, level))
-	{
-		return error(GL_INVALID_OPERATION, false);
-	}
-
-	if(format != GL_NONE_OES && format != texture->getFormat(target, level))
-	{
-		return error(GL_INVALID_OPERATION, false);
-	}
-
-	if(compressed)
-	{
-		if((width % 4 != 0 && width != texture->getWidth(target, 0)) ||
-		   (height % 4 != 0 && height != texture->getHeight(target, 0)))
-		{
-			return error(GL_INVALID_OPERATION, false);
-		}
-	}
-
-	if(xoffset + width > texture->getWidth(target, level) ||
-	   yoffset + height > texture->getHeight(target, level))
-	{
-		return error(GL_INVALID_VALUE, false);
-	}
-
-	return true;
-}
-
 void ActiveTexture(GLenum texture)
 {
 	TRACE("(GLenum texture = 0x%X)", texture);
@@ -201,15 +166,9 @@ void BindRenderbufferOES(GLenum target, GLuint renderbuffer)
 
 	if(context)
 	{
-		if(renderbuffer != 0 && !context->getRenderbuffer(renderbuffer))
-		{
-			// [OpenGL ES 2.0.25] Section 4.4.3 page 112
-			// [OpenGL ES 3.0.2] Section 4.4.2 page 201
-			// 'renderbuffer' must be either zero or the name of an existing renderbuffer object of
-			// type 'renderbuffertarget', otherwise an INVALID_OPERATION error is generated.
-			return error(GL_INVALID_OPERATION);
-		}
-
+		// [GL_EXT_framebuffer_object]
+		// If <renderbuffer> is not zero, then the resulting renderbuffer object
+		// is a new state vector, initialized with a zero-sized memory buffer
 		context->bindRenderbuffer(renderbuffer);
 	}
 }
@@ -232,11 +191,11 @@ void BindTexture(GLenum target, GLuint texture)
 		switch(target)
 		{
 		case GL_TEXTURE_2D:
-			context->bindTexture2D(texture);
-			return;
+			context->bindTexture(TEXTURE_2D, texture);
+			break;
 		case GL_TEXTURE_EXTERNAL_OES:
-			context->bindTextureExternal(texture);
-			return;
+			context->bindTexture(TEXTURE_EXTERNAL, texture);
+			break;
 		default:
 			return error(GL_INVALID_ENUM);
 		}
@@ -721,16 +680,10 @@ void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLs
 	switch(internalformat)
 	{
 	case GL_ETC1_RGB8_OES:
-		break;
 	case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
 	case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-		if(!S3TC_SUPPORT)
-		{
-			return error(GL_INVALID_ENUM);
-		}
 		break;
 	case GL_DEPTH_COMPONENT16_OES:
-	case GL_DEPTH_COMPONENT32_OES:
 	case GL_DEPTH_STENCIL_OES:
 	case GL_DEPTH24_STENCIL8_OES:
 		return error(GL_INVALID_OPERATION);
@@ -760,7 +713,7 @@ void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLs
 			return error(GL_INVALID_ENUM);
 		}
 
-		if(imageSize != egl::ComputeCompressedSize(width, height, internalformat))
+		if(imageSize != gl::ComputeCompressedSize(width, height, internalformat))
 		{
 			return error(GL_INVALID_VALUE);
 		}
@@ -806,13 +759,8 @@ void CompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yo
 	switch(format)
 	{
 	case GL_ETC1_RGB8_OES:
-		break;
 	case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
 	case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-		if(!S3TC_SUPPORT)
-		{
-			return error(GL_INVALID_ENUM);
-		}
 		break;
 	default:
 		return error(GL_INVALID_ENUM);
@@ -827,7 +775,7 @@ void CompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yo
 
 	if(context)
 	{
-		if(imageSize != egl::ComputeCompressedSize(width, height, format))
+		if(imageSize != gl::ComputeCompressedSize(width, height, format))
 		{
 			return error(GL_INVALID_VALUE);
 		}
@@ -842,10 +790,13 @@ void CompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yo
 		{
 			es1::Texture2D *texture = context->getTexture2D();
 
-			if(validateSubImageParams(true, width, height, xoffset, yoffset, target, level, format, texture))
+			GLenum validationError = ValidateSubImageParams(true, false, target, level, xoffset, yoffset, width, height, format, GL_NONE_OES, texture);
+			if(validationError != GL_NO_ERROR)
 			{
-				texture->subImageCompressed(level, xoffset, yoffset, width, height, format, imageSize, data);
+				return error(validationError);
 			}
+
+			texture->subImageCompressed(level, xoffset, yoffset, width, height, format, imageSize, data);
 		}
 		else UNREACHABLE(target);
 	}
@@ -899,7 +850,7 @@ void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, 
 		es1::Renderbuffer *source = framebuffer->getColorbuffer();
 		GLenum colorbufferFormat = source->getFormat();
 
-		// [OpenGL ES 2.0.24] table 3.9
+		// [OpenGL ES 1.1.12] table 3.9
 		switch(internalformat)
 		{
 		case GL_ALPHA:
@@ -930,25 +881,36 @@ void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, 
 			if(colorbufferFormat != GL_RGBA &&
 			   colorbufferFormat != GL_RGBA4_OES &&
 			   colorbufferFormat != GL_RGB5_A1_OES &&
-			   colorbufferFormat != GL_RGBA8_OES)
+			   colorbufferFormat != GL_RGBA8_OES &&
+			   colorbufferFormat != GL_BGRA_EXT &&  // GL_EXT_texture_format_BGRA8888
+			   colorbufferFormat != GL_BGRA8_EXT)   // GL_EXT_texture_format_BGRA8888
 			{
 				return error(GL_INVALID_OPERATION);
 			}
 			break;
 		case GL_ETC1_RGB8_OES:
-			return error(GL_INVALID_OPERATION);
 		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
 		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-			if(S3TC_SUPPORT)
-			{
-				return error(GL_INVALID_OPERATION);
-			}
-			else
-			{
-				return error(GL_INVALID_ENUM);
-			}
+			return error(GL_INVALID_OPERATION);
+		case GL_BGRA_EXT:   // GL_EXT_texture_format_BGRA8888 doesn't mention the format to be accepted by glCopyTexImage2D.
 		default:
 			return error(GL_INVALID_ENUM);
+		}
+
+		// Determine the sized internal format.
+		if(gl::GetBaseInternalFormat(colorbufferFormat) == internalformat)
+		{
+			internalformat = colorbufferFormat;
+		}
+		else if(GetRedSize(colorbufferFormat) == 8)
+		{
+			internalformat = gl::GetSizedInternalFormat(internalformat, GL_UNSIGNED_BYTE);
+		}
+		else
+		{
+			UNIMPLEMENTED();
+
+			return error(GL_INVALID_OPERATION);
 		}
 
 		if(target == GL_TEXTURE_2D)
@@ -1024,9 +986,10 @@ void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
 		}
 		else UNREACHABLE(target);
 
-		if(!validateSubImageParams(false, width, height, xoffset, yoffset, target, level, GL_NONE_OES, texture))
+		GLenum validationError = ValidateSubImageParams(false, true, target, level, xoffset, yoffset, width, height, GL_NONE_OES, GL_NONE_OES, texture);
+		if(validationError != GL_NO_ERROR)
 		{
-			return;
+			return error(validationError);
 		}
 
 		texture->copySubImage(target, level, xoffset, yoffset, x, y, width, height, framebuffer);
@@ -1878,7 +1841,12 @@ void GetRenderbufferParameterivOES(GLenum target, GLenum pname, GLint* params)
 		{
 		case GL_RENDERBUFFER_WIDTH_OES:           *params = renderbuffer->getWidth();       break;
 		case GL_RENDERBUFFER_HEIGHT_OES:          *params = renderbuffer->getHeight();      break;
-		case GL_RENDERBUFFER_INTERNAL_FORMAT_OES: *params = renderbuffer->getFormat();      break;
+		case GL_RENDERBUFFER_INTERNAL_FORMAT_OES:
+			{
+				GLint internalformat = renderbuffer->getFormat();
+				*params = (internalformat == GL_NONE_OES) ? GL_RGBA4_OES : internalformat;
+			}
+			break;
 		case GL_RENDERBUFFER_RED_SIZE_OES:        *params = renderbuffer->getRedSize();     break;
 		case GL_RENDERBUFFER_GREEN_SIZE_OES:      *params = renderbuffer->getGreenSize();   break;
 		case GL_RENDERBUFFER_BLUE_SIZE_OES:       *params = renderbuffer->getBlueSize();    break;
@@ -2286,7 +2254,6 @@ const GLubyte* GetString(GLenum name)
 			"GL_OES_blend_func_separate "
 			"GL_OES_blend_subtract "
 			"GL_OES_compressed_ETC1_RGB8_texture "
-			"GL_OES_depth_texture "
 			"GL_OES_EGL_image "
 			"GL_OES_EGL_image_external "
 			"GL_OES_EGL_sync "
@@ -2301,11 +2268,9 @@ const GLubyte* GetString(GLenum name)
 			"GL_OES_texture_npot "
 			"GL_EXT_blend_minmax "
 			"GL_EXT_read_format_bgra "
-			#if (S3TC_SUPPORT)
 			"GL_EXT_texture_compression_dxt1 "
 			"GL_ANGLE_texture_compression_dxt3 "
 			"GL_ANGLE_texture_compression_dxt5 "
-			#endif
 			"GL_EXT_texture_filter_anisotropic "
 			"GL_EXT_texture_format_BGRA8888";
 	default:
@@ -3445,9 +3410,6 @@ void RenderbufferStorageOES(GLenum target, GLenum internalformat, GLsizei width,
 
 		switch(internalformat)
 		{
-		case GL_DEPTH_COMPONENT16_OES:
-			context->setRenderbufferStorage(new es1::Depthbuffer(width, height, 0));
-			break;
 		case GL_RGBA4_OES:
 		case GL_RGB5_A1_OES:
 		case GL_RGB565_OES:
@@ -3455,11 +3417,14 @@ void RenderbufferStorageOES(GLenum target, GLenum internalformat, GLsizei width,
 		case GL_RGBA8_OES:
 			context->setRenderbufferStorage(new es1::Colorbuffer(width, height, internalformat, 0));
 			break;
+		case GL_DEPTH_COMPONENT16_OES:
+			context->setRenderbufferStorage(new es1::Depthbuffer(width, height, internalformat,  0));
+			break;
 		case GL_STENCIL_INDEX8_OES:
 			context->setRenderbufferStorage(new es1::Stencilbuffer(width, height, 0));
 			break;
 		case GL_DEPTH24_STENCIL8_OES:
-			context->setRenderbufferStorage(new es1::DepthStencilbuffer(width, height, 0));
+			context->setRenderbufferStorage(new es1::DepthStencilbuffer(width, height, internalformat, 0));
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -4227,7 +4192,6 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 		switch(type)
 		{
 		case GL_UNSIGNED_BYTE:
-		case GL_FLOAT:
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -4238,7 +4202,6 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 		{
 		case GL_UNSIGNED_BYTE:
 		case GL_UNSIGNED_SHORT_5_6_5:
-		case GL_FLOAT:
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -4250,7 +4213,6 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 		case GL_UNSIGNED_BYTE:
 		case GL_UNSIGNED_SHORT_4_4_4_4:
 		case GL_UNSIGNED_SHORT_5_5_5_1:
-		case GL_FLOAT:
 			break;
 		default:
 			return error(GL_INVALID_ENUM);
@@ -4266,17 +4228,9 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 		}
 		break;
 	case GL_ETC1_RGB8_OES:
-		return error(GL_INVALID_OPERATION);
 	case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
 	case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-		if(S3TC_SUPPORT)
-		{
-			return error(GL_INVALID_OPERATION);
-		}
-		else
-		{
-			return error(GL_INVALID_ENUM);
-		}
+		return error(GL_INVALID_OPERATION);
 	case GL_DEPTH_STENCIL_OES:
 		switch(type)
 		{
@@ -4294,6 +4248,8 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 	{
 		return error(GL_INVALID_VALUE);
 	}
+
+	GLenum sizedInternalFormat = gl::GetSizedInternalFormat(internalformat, type);
 
 	es1::Context *context = es1::getContext();
 
@@ -4321,7 +4277,7 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 				return error(GL_INVALID_OPERATION);
 			}
 
-			texture->setImage(context, level, width, height, format, type, context->getUnpackAlignment(), pixels);
+			texture->setImage(level, width, height, sizedInternalFormat, format, type, context->getUnpackAlignment(), pixels);
 		}
 		else UNREACHABLE(target);
 	}
@@ -4538,11 +4494,6 @@ void TexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLs
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(!es1::CheckTextureFormatType(format, type))
-	{
-		return error(GL_INVALID_ENUM);
-	}
-
 	if(width == 0 || height == 0 || !pixels)
 	{
 		return;
@@ -4556,10 +4507,13 @@ void TexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLs
 		{
 			es1::Texture2D *texture = context->getTexture2D();
 
-			if(validateSubImageParams(false, width, height, xoffset, yoffset, target, level, format, texture))
+			GLenum validationError = ValidateSubImageParams(false, false, target, level, xoffset, yoffset, width, height, format, type, texture);
+			if(validationError != GL_NO_ERROR)
 			{
-				texture->subImage(context, level, xoffset, yoffset, width, height, format, type, context->getUnpackAlignment(), pixels);
+				return error(validationError);
 			}
+
+			texture->subImage(level, xoffset, yoffset, width, height, format, type, context->getUnpackAlignment(), pixels);
 		}
 		else UNREACHABLE(target);
 	}

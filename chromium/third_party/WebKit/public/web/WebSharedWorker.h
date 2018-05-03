@@ -31,11 +31,12 @@
 #ifndef WebSharedWorker_h
 #define WebSharedWorker_h
 
+#include "base/unguessable_token.h"
 #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebContentSecurityPolicy.h"
-#include "third_party/WebKit/common/net/ip_address_space.mojom-shared.h"
+#include "third_party/WebKit/public/mojom/net/ip_address_space.mojom-shared.h"
 
 namespace blink {
 
@@ -58,7 +59,7 @@ class BLINK_EXPORT WebSharedWorker {
       const WebString& content_security_policy,
       WebContentSecurityPolicyType,
       mojom::IPAddressSpace,
-      const WebString& instrumentation_token,
+      const base::UnguessableToken& devtools_worker_token,
       mojo::ScopedMessagePipeHandle content_settings_handle,
       mojo::ScopedMessagePipeHandle interface_provider) = 0;
 

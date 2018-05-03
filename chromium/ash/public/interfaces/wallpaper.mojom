@@ -9,7 +9,7 @@ import "components/signin/public/interfaces/account_id.mojom";
 import "mojo/common/file_path.mojom";
 import "mojo/common/time.mojom";
 import "skia/public/interfaces/bitmap.mojom";
-import "url/mojo/url.mojom";
+import "url/mojom/url.mojom";
 
 // These values match wallpaper::WallpaperLayout.
 enum WallpaperLayout {
@@ -17,28 +17,6 @@ enum WallpaperLayout {
   CENTER_CROPPED,
   STRETCH,
   TILE,
-};
-
-// These values match wallpaper::WallpaperType.
-enum WallpaperType {
-  DAILY,
-  CUSTOMIZED,
-  DEFAULT,
-  ONLINE,
-  POLICY,
-  THIRDPARTY,
-  DEVICE,
-};
-
-// TODO(crbug.com/776464): Remove this after WallpaperManager is removed.
-// WallpaperInfo will be an internal concept within WallpaperController.
-//
-// This corresponds to wallpaper::WallpaperInfo.
-struct WallpaperInfo {
-  string location;
-  WallpaperLayout layout;
-  WallpaperType type;
-  mojo.common.mojom.Time date;
 };
 
 // User info needed to set wallpapers. Clients must specify the user because
@@ -81,13 +59,12 @@ interface WallpaperController {
        mojo.common.mojom.FilePath chromeos_custom_wallpapers_path,
        bool is_device_wallpaper_policy_enforced);
 
-  // Sets wallpaper from policy or from a local file. Saves the custom wallpaper
-  // to file, posts task to generate thumbnail and updates local state.
+  // Sets wallpaper from a local file. Saves the custom wallpaper to file, posts
+  // task to generate thumbnail and updates local state.
   // |user_info|: The user's information related to wallpaper.
   // |wallpaper_files_id|: The file id for user_info.account_id.
   // |file_name|: The name of the wallpaper file.
   // |layout|: The layout of the wallpaper, used for wallpaper resizing.
-  // |type|: The type of the wallpaper, e.g., default, policy etc.
   // |image|: The wallpaper image.
   // |show_wallpaper|: If false, don't show the new wallpaper now but only
   //                   update cache.
@@ -95,7 +72,6 @@ interface WallpaperController {
                      string wallpaper_files_id,
                      string file_name,
                      WallpaperLayout layout,
-                     WallpaperType type,
                      skia.mojom.Bitmap image,
                      bool show_wallpaper);
 
@@ -123,16 +99,28 @@ interface WallpaperController {
                       string wallpaper_files_id,
                       bool show_wallpaper);
 
-  // Sets a customized default wallpaper to be used wherever a default wallpaper
-  // is needed. Note: it doesn't change the default wallpaper for guest and
-  // child accounts.
-  // |wallpaper_url|: The url corresponding to this wallpaper.
-  // |file_path|: The path of the wallpaper file.
-  // |resized_directory|: The directory where resized versions are stored. Must
-  //                      be writable.
-  SetCustomizedDefaultWallpaper(url.mojom.Url wallpaper_url,
-                                mojo.common.mojom.FilePath file_path,
-                                mojo.common.mojom.FilePath resized_directory);
+  // Sets the paths of the customized default wallpaper to be used wherever a
+  // default wallpaper is needed. If a default wallpaper is being shown, updates
+  // the screen to replace the old default wallpaper. Note: it doesn't change
+  // the default wallpaper for guest and child accounts.
+  // |customized_default_small_path|: The file path of the small-size customized
+  //                                  default wallpaper, if any.
+  // |customized_default_large_path|: The file path of the large-size customized
+  //                                  default wallpaper, if any.
+  SetCustomizedDefaultWallpaperPaths(
+      mojo.common.mojom.FilePath customized_default_small_path,
+      mojo.common.mojom.FilePath customized_default_large_path);
+
+  // Sets wallpaper from policy. If the user has logged in, show the policy
+  // wallpaper immediately, otherwise, the policy wallpaper will be shown the
+  // next time |ShowUserWallpaper| is called. Note: it is different from device
+  // policy.
+  // |user_info|: The user's information related to wallpaper.
+  // |wallpaper_files_id|: The file id for user_info.account_id.
+  // |data|: The data used to decode the image.
+  SetPolicyWallpaper(WallpaperUserInfo user_info,
+                     string wallpaper_files_id,
+                     string data);
 
   // Sets whether device wallpaper policy is enforced on this device. Updates/
   // clears the device policy controlled wallpaper if applicable.
@@ -161,14 +149,22 @@ interface WallpaperController {
   // |wallpaper_files_id|: The file id for user_info.account_id.
   RemoveUserWallpaper(WallpaperUserInfo user_info, string wallpaper_files_id);
 
-  // TODO(crbug.com/776464): This is only used by WallpaperManager. Remove this
-  // after WallpaperManager is removed.
-  //
-  // Set the wallpaper bitmap and info used for the ash desktop background.
-  // A null or empty |wallpaper| bitmap is treated as a no-op.
-  // TODO(crbug.com/655875): Optimize ash wallpaper transport; avoid sending
-  // large bitmaps over Mojo; use shared memory like BitmapUploader, etc.
-  SetWallpaper(skia.mojom.Bitmap? wallpaper, WallpaperInfo info);
+  // Removes all of the user's saved wallpapers and related info if the
+  // wallpaper was set by |SetPolicyWallpaper|. In addition, sets the user's
+  // wallpaper to be the default. If the user has logged in, show the default
+  // wallpaper immediately, otherwise, the default wallpaper will be shown the
+  // next time |ShowUserWallpaper| is called.
+  // |user_info|: The user's information related to wallpaper.
+  // |wallpaper_files_id|: The file id for user_info.account_id.
+  RemovePolicyWallpaper(WallpaperUserInfo user_info, string wallpaper_files_id);
+
+  // Sets wallpaper animation duration. Passing an empty value disables the
+  // animation.
+  SetAnimationDuration(mojo.common.mojom.TimeDelta animation_duration);
+
+  // Opens the wallpaper picker if the active user is not controlled by policy
+  // and it's allowed to change wallpaper per the user type and the login state.
+  OpenWallpaperPickerIfAllowed();
 
   // Calling this method triggers an initial notification of the wallpaper
   // state. Observers are automatically removed as their connections are closed.
@@ -176,12 +172,31 @@ interface WallpaperController {
 
   // Runs to get wallpaper prominent colors.
   GetWallpaperColors() => (array<uint32> prominent_colors);
+
+  // Returns true if the wallpaper of the currently active user (if any) is
+  // controlled by policy (excluding device policy). If there's no active user,
+  // returns false.
+  IsActiveUserWallpaperControlledByPolicy() => (bool controlled);
+
+  // Returns true if the wallpaper setting (used to open the wallpaper picker)
+  // should be visible.
+  ShouldShowWallpaperSetting() => (bool show);
 };
 
 // Used by ash to control a Chrome client.
 interface WallpaperControllerClient {
   // Opens the wallpaper picker window.
   OpenWallpaperPicker();
+
+  // Signals to the client that ash is ready to set wallpapers. The client is
+  // able to decide whatever the first wallpaper it wants to display.
+  OnReadyToSetWallpaper();
+
+  // TODO(crbug.com/784495, 776464): Consider removing this after views-based
+  // login is enabled.
+  // Notifies the client that the animation of the first wallpaper since
+  // the controller initialization has completed.
+  OnFirstWallpaperAnimationFinished();
 };
 
 // Used to listen for wallpaper state changed.

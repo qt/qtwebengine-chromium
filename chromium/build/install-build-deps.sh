@@ -124,7 +124,6 @@ if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
     echo -e "ERROR: The only supported distros are\n" \
       "\tUbuntu 14.04 (trusty)\n" \
       "\tUbuntu 16.04 (xenial)\n" \
-      "\tUbuntu 17.04 (zesty)\n" \
       "\tUbuntu 17.10 (artful)\n" \
       "\tDebian 8 (jessie) or later" >&2
     exit 1
@@ -143,13 +142,18 @@ if [ "x$(id -u)" != x0 ] && [ 0 -eq "${do_quick_check-0}" ]; then
 fi
 
 # Packages needed for chromeos only
-chromeos_dev_list="libbluetooth-dev libxkbcommon-dev realpath"
+chromeos_dev_list="libbluetooth-dev libxkbcommon-dev"
+
+if package_exists realpath; then
+  chromeos_dev_list="${chromeos_dev_list} realpath"
+fi
 
 # Packages needed for development
 dev_list="\
   bison
   cdbs
   curl
+  dbus-x11
   dpkg-dev
   elfutils
   devscripts
@@ -160,6 +164,8 @@ dev_list="\
   git-core
   git-svn
   gperf
+  libappindicator-dev
+  libappindicator3-dev
   libasound2-dev
   libbrlapi-dev
   libav-tools
@@ -171,6 +177,7 @@ dev_list="\
   libdrm-dev
   libelf-dev
   libffi-dev
+  libgbm-dev
   libglib2.0-dev
   libglu1-mesa-dev
   libgnome-keyring-dev
@@ -194,6 +201,7 @@ dev_list="\
   libxtst-dev
   locales
   openbox
+  p7zip
   patch
   perl
   pkg-config
@@ -227,9 +235,11 @@ chromeos_lib_list="libpulse0 libbz2-1.0"
 
 # Full list of required run-time libraries
 lib_list="\
+  libappindicator1
+  libappindicator3-1
+  libasound2
   libatk1.0-0
   libc6
-  libasound2
   libcairo2
   libcap2
   libcups2
@@ -293,61 +303,63 @@ else
   dbg_list="${dbg_list} libstdc++6-4.8-dbg"
 fi
 if package_exists libgtk-3-0-dbgsym; then
-  lib_list="${lib_list} libgtk-3-0-dbgsym"
+  dbg_list="${dbg_list} libgtk-3-0-dbgsym"
 elif package_exists libgtk-3-0-dbg; then
-  lib_list="${lib_list} libgtk-3-0-dbg"
+  dbg_list="${dbg_list} libgtk-3-0-dbg"
 fi
 if package_exists libatk1.0-0-dbgsym; then
-  lib_list="${lib_list} libatk1.0-0-dbgsym"
+  dbg_list="${dbg_list} libatk1.0-0-dbgsym"
 elif package_exists libatk1.0-dbg; then
-  lib_list="${lib_list} libatk1.0-dbg"
+  dbg_list="${dbg_list} libatk1.0-dbg"
 fi
 if package_exists libcairo2-dbgsym; then
-  lib_list="${lib_list} libcairo2-dbgsym"
+  dbg_list="${dbg_list} libcairo2-dbgsym"
 elif package_exists libcairo2-dbg; then
-  lib_list="${lib_list} libcairo2-dbg"
+  dbg_list="${dbg_list} libcairo2-dbg"
 fi
 if package_exists libfontconfig1-dbgsym; then
-  lib_list="${lib_list} libfontconfig1-dbgsym"
+  dbg_list="${dbg_list} libfontconfig1-dbgsym"
 else
-  lib_list="${lib_list} libfontconfig1-dbg"
+  dbg_list="${dbg_list} libfontconfig1-dbg"
 fi
 if package_exists libxdamage1-dbgsym; then
-  lib_list="${lib_list} libxdamage1-dbgsym"
+  dbg_list="${dbg_list} libxdamage1-dbgsym"
 elif package_exists libxdamage1-dbg; then
-  lib_list="${lib_list} libxdamage1-dbg"
+  dbg_list="${dbg_list} libxdamage1-dbg"
 fi
 if package_exists libpango1.0-dev-dbgsym; then
-  lib_list="${lib_list} libpango1.0-dev-dbgsym"
+  dbg_list="${dbg_list} libpango1.0-dev-dbgsym"
 elif package_exists libpango1.0-0-dbg; then
-  lib_list="${lib_list} libpango1.0-0-dbg"
+  dbg_list="${dbg_list} libpango1.0-0-dbg"
 fi
 if package_exists libx11-6-dbg; then
-    lib_list="${lib_list} libx11-6-dbg"
+  dbg_list="${dbg_list} libx11-6-dbg"
 fi
 if package_exists libx11-xcb1-dbg; then
-    lib_list="${lib_list} libx11-xcb1-dbg"
+  dbg_list="${dbg_list} libx11-xcb1-dbg"
 fi
 if package_exists libxfixes3-dbg; then
-    lib_list="${lib_list} libxfixes3-dbg"
+  dbg_list="${dbg_list} libxfixes3-dbg"
 fi
 if package_exists libxi6-dbg; then
-    lib_list="${lib_list} libxi6-dbg"
+  dbg_list="${dbg_list} libxi6-dbg"
 fi
 if package_exists libxrandr2-dbg; then
-    lib_list="${lib_list} libxrandr2-dbg"
+  dbg_list="${dbg_list} libxrandr2-dbg"
 fi
 if package_exists libxrender1-dbg; then
-    lib_list="${lib_list} libxrender1-dbg"
+  dbg_list="${dbg_list} libxrender1-dbg"
 fi
 if package_exists libxtst6-dbg; then
-    lib_list="${lib_list} libxtst6-dbg"
+  dbg_list="${dbg_list} libxtst6-dbg"
 fi
 if package_exists libglib2.0-0-dbg; then
-    lib_list="${lib_list} libglib2.0-0-dbg"
+  dbg_list="${dbg_list} libglib2.0-0-dbg"
 fi
-if package_exists libxcursor1-dbg; then
-    lib_list="${lib_list} libxcursor1-dbg"
+if package_exists libxcursor1-dbgsym; then
+  dbg_list="${dbg_list} libxcursor1-dbgsym"
+elif package_exists libxcursor1-dbg; then
+  dbg_list="${dbg_list} libxcursor1-dbg"
 fi
 
 # 32-bit libraries needed e.g. to compile V8 snapshot for Android or armhf
@@ -449,30 +461,6 @@ elif package_exists libssl1.0.2; then
 else
   nacl_list="${nacl_list} libssl1.0.0:i386"
 fi
-
-# Find the proper version of packages that depend on mesa. Only one -lts variant
-# of mesa can be installed and everything that depends on it must match.
-
-# Query for the name and status of all mesa LTS variants, filter for only
-# installed packages, extract just the name, and eliminate duplicates (there can
-# be more than one with the same name in the case of multiarch). Expand into an
-# array.
-mesa_packages=($(dpkg-query -Wf'${package} ${status}\n' \
-                            libgl1-mesa-glx-lts-\* 2>/dev/null | \
-                 grep " ok installed" | cut -d " " -f 1 | sort -u))
-if [ "${#mesa_packages[@]}" -eq 0 ]; then
-  mesa_variant=""
-elif [ "${#mesa_packages[@]}" -eq 1 ]; then
-  # Strip the base package name and leave just "-lts-whatever"
-  mesa_variant="${mesa_packages[0]#libgl1-mesa-glx}"
-else
-  echo "ERROR: unable to determine which libgl1-mesa-glx variant is installed."
-  exit 1
-fi
-dev_list="${dev_list} libgbm-dev${mesa_variant}
-          libgles2-mesa-dev${mesa_variant} libgl1-mesa-dev${mesa_variant}
-          mesa-common-dev${mesa_variant}"
-nacl_list="${nacl_list} libgl1-mesa-glx${mesa_variant}:i386"
 
 # Some package names have changed over time
 if package_exists libpng16-16; then

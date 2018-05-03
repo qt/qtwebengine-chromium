@@ -51,6 +51,7 @@ class PlatformChromeClient;
 class ProgrammaticScrollAnimator;
 class ScrollAnchor;
 class ScrollAnimatorBase;
+struct SerializedAnchor;
 class SmoothScrollSequencer;
 class CompositorAnimationTimeline;
 struct WebScrollIntoViewParams;
@@ -209,6 +210,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   virtual Scrollbar* HorizontalScrollbar() const { return nullptr; }
   virtual Scrollbar* VerticalScrollbar() const { return nullptr; }
+  virtual Scrollbar* CreateScrollbar(ScrollbarOrientation) { return nullptr; }
 
   virtual PaintLayer* Layer() const { return nullptr; }
 
@@ -239,6 +241,15 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual int VisibleHeight() const { return VisibleContentRect().Height(); }
   virtual int VisibleWidth() const { return VisibleContentRect().Width(); }
   virtual IntSize ContentsSize() const = 0;
+
+  // scroll snapport is the area of the scrollport that is used as the alignment
+  // container for the scroll snap areas when calculating snap positions. It's
+  // the box's scrollport contracted by its scroll-padding.
+  // https://drafts.csswg.org/css-scroll-snap-1/#scroll-padding
+  virtual LayoutRect VisibleScrollSnapportRect() const {
+    return LayoutRect(VisibleContentRect());
+  }
+
   virtual IntPoint LastKnownMousePosition() const { return IntPoint(); }
 
   virtual bool ShouldSuspendScrollAnimations() const { return true; }
@@ -364,13 +375,15 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   virtual void ClearScrollableArea();
 
+  virtual bool RestoreScrollAnchor(const SerializedAnchor&) { return false; }
   virtual ScrollAnchor* GetScrollAnchor() { return nullptr; }
 
   virtual void DidScrollWithScrollbar(ScrollbarPart, ScrollbarOrientation) {}
 
   // Returns the task runner to be used for scrollable area timers.
   // Ideally a frame-specific throttled one can be used.
-  virtual scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const = 0;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner()
+      const = 0;
 
   // Callback for compositor-side scrolling.
   virtual void DidScroll(const gfx::ScrollOffset&);
@@ -378,6 +391,10 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual void ScrollbarFrameRectChanged() {}
 
   virtual ScrollbarTheme& GetPageScrollbarTheme() const = 0;
+
+  // If either direction has a non-auto mode, the other must as well.
+  void SetAutosizeScrollbarModes(ScrollbarMode vertical,
+                                 ScrollbarMode horizontal);
 
  protected:
   // Deduces the ScrollBehavior based on the element style and the parameter set
@@ -421,6 +438,15 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // then reset to alpha, causing spurrious "visibilityChanged" calls.
   virtual void ScrollbarVisibilityChanged() {}
 
+  ScrollbarMode AutosizeVerticalScrollbarMode() const {
+    return autosize_vertical_scrollbar_mode_;
+  }
+  ScrollbarMode AutosizeHorizontalScrollbarMode() const {
+    return autosize_horizontal_scrollbar_mode_;
+  }
+
+  virtual bool HasBeenDisposed() const { return false; }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ScrollableAreaTest,
                            PopupOverlayScrollbarShouldNotFadeOut);
@@ -444,6 +470,13 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   std::unique_ptr<TaskRunnerTimer<ScrollableArea>>
       fade_overlay_scrollbars_timer_;
+
+  // FrameViewAutoSizeInfo controls scrollbar appearance manually rather than
+  // relying on layout. These members are used to override the
+  // ScrollableArea's ScrollbarModes as calculated from style. kScrollbarAuto
+  // disables the override.
+  ScrollbarMode autosize_vertical_scrollbar_mode_;
+  ScrollbarMode autosize_horizontal_scrollbar_mode_;
 
   unsigned scrollbar_overlay_color_theme_ : 2;
 

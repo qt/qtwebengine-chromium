@@ -126,13 +126,9 @@ static void fill_caps(const SKSL_CAPS_CLASS& caps,
                                   Program::Settings::Value(caps.name())));
     CAP(fbFetchSupport);
     CAP(fbFetchNeedsCustomOutput);
-    CAP(bindlessTextureSupport);
     CAP(dropsTileOnZeroDivide);
     CAP(flatInterpolationSupport);
     CAP(noperspectiveInterpolationSupport);
-    CAP(multisampleInterpolationSupport);
-    CAP(sampleVariablesSupport);
-    CAP(sampleMaskOverrideCoverageSupport);
     CAP(externalTextureSupport);
     CAP(texelFetchSupport);
     CAP(imageLoadStoreSupport);
@@ -291,6 +287,7 @@ std::unique_ptr<VarDeclarations> IRGenerator::convertVarDeclarations(const ASTVa
             }
             value = this->coerce(std::move(value), *type);
             var->fWriteCount = 1;
+            var->fInitialValue = value.get();
         }
         if (storage == Variable::kGlobal_Storage && varDecl.fName == "sk_FragColor" &&
             (*fSymbolTable)[varDecl.fName]) {
@@ -2093,6 +2090,12 @@ void IRGenerator::markWrittenTo(const Expression& expr, bool readWrite) {
         case Expression::kIndex_Kind:
             this->markWrittenTo(*((IndexExpression&) expr).fBase, readWrite);
             break;
+        case Expression::kTernary_Kind: {
+            TernaryExpression& t = (TernaryExpression&) expr;
+            this->markWrittenTo(*t.fIfTrue, readWrite);
+            this->markWrittenTo(*t.fIfFalse, readWrite);
+            break;
+        }
         default:
             fErrors.error(expr.fOffset, "cannot assign to '" + expr.description() + "'");
             break;

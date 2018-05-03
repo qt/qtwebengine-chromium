@@ -33,9 +33,9 @@
 #include "gpu/config/gpu_info.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/network_change_notifier.h"
-#include "services/resource_coordinator/public/cpp/tracing/chrome_trace_event_agent.h"
-#include "services/resource_coordinator/public/interfaces/service_constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "services/tracing/public/cpp/chrome_trace_event_agent.h"
+#include "services/tracing/public/mojom/constants.mojom.h"
 #include "v8/include/v8-version-string.h"
 
 #if (defined(OS_POSIX) && defined(USE_UDEV)) || defined(OS_WIN) || \
@@ -50,7 +50,6 @@
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
-#include "content/browser/tracing/arc_tracing_agent_impl.h"
 #include "content/browser/tracing/cros_tracing_agent.h"
 #endif
 
@@ -132,8 +131,7 @@ TracingControllerImpl::~TracingControllerImpl() = default;
 void TracingControllerImpl::AddAgents() {
   auto* connector =
       content::ServiceManagerConnection::GetForProcess()->GetConnector();
-  connector->BindInterface(resource_coordinator::mojom::kServiceName,
-                           &coordinator_);
+  connector->BindInterface(tracing::mojom::kServiceName, &coordinator_);
 
 // Register tracing agents.
 #if defined(ENABLE_POWER_TRACING)
@@ -142,7 +140,6 @@ void TracingControllerImpl::AddAgents() {
 
 #if defined(OS_CHROMEOS)
   agents_.push_back(std::make_unique<CrOSTracingAgent>(connector));
-  agents_.push_back(std::make_unique<ArcTracingAgentImpl>(connector));
 #elif defined(CAST_TRACING_AGENT)
   agents_.push_back(std::make_unique<CastTracingAgent>(connector));
 #elif defined(OS_WIN)
@@ -166,7 +163,16 @@ void TracingControllerImpl::AddAgents() {
 std::unique_ptr<base::DictionaryValue>
 TracingControllerImpl::GenerateMetadataDict() const {
   auto metadata_dict = std::make_unique<base::DictionaryValue>();
-  metadata_dict->SetString("trace-config", trace_config_->ToString());
+
+  // trace_config_ can be null if the tracing controller finishes flushing
+  // traces before the Chrome tracing agent finishes flushing traces. Normally,
+  // this does not happen; however, if the service manager is teared down during
+  // tracing, e.g. at Chrome shutdown, tracing controller may finish flushing
+  // traces without waiting for tracing agents.
+  if (trace_config_) {
+    DCHECK(IsTracing());
+    metadata_dict->SetString("trace-config", trace_config_->ToString());
+  }
 
   metadata_dict->SetString("network-type", GetNetworkTypeString());
   metadata_dict->SetString("product-version", GetContentClient()->GetProduct());
@@ -316,7 +322,7 @@ bool TracingControllerImpl::StopTracing(
 bool TracingControllerImpl::StopTracing(
     const scoped_refptr<TraceDataEndpoint>& trace_data_endpoint,
     const std::string& agent_label) {
-  if (!IsTracing())
+  if (!IsTracing() || drainer_)
     return false;
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
@@ -390,6 +396,7 @@ void TracingControllerImpl::CompleteFlush() {
   filtered_metadata_.reset(nullptr);
   trace_data_endpoint_ = nullptr;
   trace_config_ = nullptr;
+  drainer_ = nullptr;
 }
 
 void TracingControllerImpl::OnDataComplete() {

@@ -15,9 +15,10 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/message_center/message_center_export.h"
-#include "ui/message_center/notification.h"
-#include "ui/message_center/notification_delegate.h"
+#include "ui/message_center/public/cpp/notification.h"
+#include "ui/message_center/public/cpp/notification_delegate.h"
 #include "ui/message_center/views/slide_out_controller.h"
+#include "ui/views/animation/ink_drop_host_view.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -33,7 +34,7 @@ class NotificationControlButtonsView;
 // An base class for a notification entry. Contains background and other
 // elements shared by derived notification views.
 class MESSAGE_CENTER_EXPORT MessageView
-    : public views::View,
+    : public views::InkDropHostView,
       public views::SlideOutController::Delegate {
  public:
   static const char kViewClassName[];
@@ -61,6 +62,8 @@ class MESSAGE_CENTER_EXPORT MessageView
 
   virtual void SetExpanded(bool expanded);
   virtual bool IsExpanded() const;
+  virtual bool IsManuallyExpandedOrCollapsed() const;
+  virtual void SetManuallyExpandedOrCollapsed(bool value);
 
   // Invoked when the container view of MessageView (e.g. MessageCenterView in
   // ash) is starting the animation that possibly hides some part of
@@ -70,7 +73,7 @@ class MESSAGE_CENTER_EXPORT MessageView
   virtual void OnContainerAnimationEnded();
 
   void OnCloseButtonPressed();
-  virtual void OnSettingsButtonPressed();
+  virtual void OnSettingsButtonPressed(const ui::Event& event);
 
   // views::View
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
@@ -94,11 +97,6 @@ class MESSAGE_CENTER_EXPORT MessageView
   void set_scroller(views::ScrollView* scroller) { scroller_ = scroller; }
   std::string notification_id() const { return notification_id_; }
 
-#if defined(OS_CHROMEOS)
-  // By calling this, all notifications are treated as non-pinned forcibly.
-  void set_force_disable_pinned() { force_disable_pinned_ = true; }
-#endif
-
  protected:
   // Creates and add close button to view hierarchy when necessary. Derived
   // classes should call this after its view hierarchy is populated to ensure
@@ -112,6 +110,8 @@ class MESSAGE_CENTER_EXPORT MessageView
   views::View* background_view() { return background_view_; }
   views::ScrollView* scroller() { return scroller_; }
 
+  bool is_nested() const { return is_nested_; }
+
  private:
   std::string notification_id_;
   views::View* background_view_ = nullptr;  // Owned by views hierarchy.
@@ -121,9 +121,6 @@ class MESSAGE_CENTER_EXPORT MessageView
 
   // Flag if the notification is set to pinned or not.
   bool pinned_ = false;
-  // Flag if pin is forcibly disabled on this view. If true, the view is never
-  // pinned regardless of the value of |pinned_|.
-  bool force_disable_pinned_ = false;
 
   std::unique_ptr<views::Painter> focus_painter_;
 

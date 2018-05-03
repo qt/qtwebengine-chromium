@@ -13,6 +13,7 @@
 #include "fxjs/fxjse.h"
 #include "v8/include/v8.h"
 
+class CFXJS_Engine;
 class CFXJSE_Class;
 class CFXJSE_Value;
 struct FXJSE_CLASS_DESCRIPTOR;
@@ -21,6 +22,7 @@ class CFXJSE_Context {
  public:
   static std::unique_ptr<CFXJSE_Context> Create(
       v8::Isolate* pIsolate,
+      CFXJS_Engine* pOptionalEngineToSet,
       const FXJSE_CLASS_DESCRIPTOR* pGlobalClass,
       CFXJSE_HostObject* pGlobalObject);
 
@@ -40,9 +42,8 @@ class CFXJSE_Context {
  protected:
   friend class CFXJSE_ScopeUtil_IsolateHandleContext;
 
-  CFXJSE_Context();
-  CFXJSE_Context(const CFXJSE_Context&);
-  CFXJSE_Context& operator=(const CFXJSE_Context&);
+  CFXJSE_Context(const CFXJSE_Context&) = delete;
+  CFXJSE_Context& operator=(const CFXJSE_Context&) = delete;
 
   v8::Global<v8::Context> m_hContext;
   v8::Isolate* m_pIsolate;

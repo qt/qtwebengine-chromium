@@ -20,6 +20,7 @@ public:
         fBufferMapThreshold = SK_MaxS32; // Overridable in GrContextOptions.
         fMaxTextureSize = options.fMaxTextureSize;
         fMaxRenderTargetSize = SkTMin(options.fMaxRenderTargetSize, fMaxTextureSize);
+        fMaxPreferredRenderTargetSize = fMaxRenderTargetSize;
         fMaxVertexAttributes = options.fMaxVertexAttributes;
 
         fShaderCaps.reset(new GrShaderCaps(contextOptions));
@@ -33,18 +34,40 @@ public:
 
         this->applyOptionsOverrides(contextOptions);
     }
-    int getSampleCount(int /*requestCount*/, GrPixelConfig /*config*/) const override {
-        return 0;
-    }
     bool isConfigTexturable(GrPixelConfig config) const override {
         return fOptions.fConfigOptions[config].fTexturable;
     }
-    bool isConfigRenderable(GrPixelConfig config, bool withMSAA) const override {
-        return fOptions.fConfigOptions[config].fRenderable[withMSAA];
-    }
+
     bool isConfigCopyable(GrPixelConfig config) const override {
         return false;
     }
+
+    int getRenderTargetSampleCount(int requestCount, GrPixelConfig config) const override {
+        requestCount = SkTMax(requestCount, 1);
+        switch (fOptions.fConfigOptions[config].fRenderability) {
+            case GrMockOptions::ConfigOptions::Renderability::kNo:
+                return 0;
+            case GrMockOptions::ConfigOptions::Renderability::kNonMSAA:
+                return requestCount > 1 ? 0 : 1;
+            case GrMockOptions::ConfigOptions::Renderability::kMSAA:
+                return requestCount > kMaxSampleCnt ? 0 : GrNextPow2(requestCount);
+        }
+        return 0;
+    }
+
+    int maxRenderTargetSampleCount(GrPixelConfig config) const override {
+        switch (fOptions.fConfigOptions[config].fRenderability) {
+            case GrMockOptions::ConfigOptions::Renderability::kNo:
+                return 0;
+            case GrMockOptions::ConfigOptions::Renderability::kNonMSAA:
+                return 1;
+            case GrMockOptions::ConfigOptions::Renderability::kMSAA:
+                return kMaxSampleCnt;
+        }
+        return 0;
+    }
+
+    bool surfaceSupportsWritePixels(const GrSurface* surface) const override { return true; }
 
     bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
                             bool* rectsMustMatch, bool* disallowSubrect) const override {
@@ -52,8 +75,14 @@ public:
     }
 
     bool validateBackendTexture(const GrBackendTexture& tex, SkColorType,
-                                GrPixelConfig*) const override {
-        return SkToBool(tex.getMockTextureInfo());
+                                GrPixelConfig* config) const override {
+        const GrMockTextureInfo* texInfo = tex.getMockTextureInfo();
+        if (!texInfo) {
+            return false;
+        }
+
+        *config = texInfo->fConfig;
+        return true;
     }
 
     bool validateBackendRenderTarget(const GrBackendRenderTarget& rt, SkColorType,
@@ -61,7 +90,19 @@ public:
         return false;
     }
 
+    bool getConfigFromBackendFormat(const GrBackendFormat& format, SkColorType ct,
+                                    GrPixelConfig* config) const override {
+        const GrPixelConfig* mockFormat = format.getMockFormat();
+        if (!mockFormat) {
+            return false;
+        }
+        *config = *mockFormat;
+        return true;
+    }
+
 private:
+    static const int kMaxSampleCnt = 16;
+
     GrMockOptions fOptions;
     typedef GrCaps INHERITED;
 };

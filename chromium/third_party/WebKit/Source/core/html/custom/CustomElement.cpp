@@ -91,92 +91,75 @@ static CustomElementDefinition* DefinitionFor(
   return nullptr;
 }
 
-HTMLElement* CustomElement::CreateCustomElementSync(
-    Document& document,
-    const QualifiedName& tag_name) {
-  CustomElementDefinition* definition = nullptr;
-  CustomElementRegistry* registry = CustomElement::Registry(document);
-  if (registry) {
-    definition = registry->DefinitionFor(
-        CustomElementDescriptor(tag_name.LocalName(), tag_name.LocalName()));
-  }
-  return CreateCustomElementSync(document, tag_name, definition);
-}
-
-HTMLElement* CustomElement::CreateCustomElementSync(
-    Document& document,
-    const AtomicString& local_name,
-    CustomElementDefinition* definition) {
-  return CreateCustomElementSync(
-      document,
-      QualifiedName(g_null_atom, local_name, HTMLNames::xhtmlNamespaceURI),
-      definition);
-}
-
 // https://dom.spec.whatwg.org/#concept-create-element
-HTMLElement* CustomElement::CreateCustomElementSync(
+HTMLElement* CustomElement::CreateCustomElement(Document& document,
+                                                const QualifiedName& tag_name,
+                                                CreateElementFlags flags) {
+  DCHECK(ShouldCreateCustomElement(tag_name)) << tag_name;
+  // 4. Let definition be the result of looking up a custom element
+  // definition given document, namespace, localName, and is.
+  if (auto* definition = DefinitionFor(
+          document, CustomElementDescriptor(tag_name.LocalName(),
+                                            tag_name.LocalName()))) {
+    DCHECK(definition->Descriptor().IsAutonomous());
+    // 6. Otherwise, if definition is non-null, then:
+    return definition->CreateElement(document, tag_name, flags);
+  }
+  // 7. Otherwise:
+  return ToHTMLElement(
+      CreateUncustomizedOrUndefinedElementTemplate<kQNameIsValid>(
+          document, tag_name, flags, g_null_atom));
+}
+
+// Step 7 of https://dom.spec.whatwg.org/#concept-create-element in
+// addition to Custom Element V0 handling.
+template <CustomElement::CreateUUCheckLevel level>
+Element* CustomElement::CreateUncustomizedOrUndefinedElementTemplate(
     Document& document,
     const QualifiedName& tag_name,
-    CustomElementDefinition* definition) {
-  DCHECK(ShouldCreateCustomElement(tag_name) ||
-         ShouldCreateCustomizedBuiltinElement(tag_name));
-  HTMLElement* element;
-
-  if (definition && definition->Descriptor().IsAutonomous()) {
-    // 6. If definition is non-null and we have an autonomous custom element
-    element = definition->CreateElementSync(document, tag_name);
-  } else if (definition) {
-    // 5. If definition is non-null and we have a customized built-in element
-    element = CreateUndefinedElement(document, tag_name);
-    definition->Upgrade(element);
-  } else {
-    // 7. Otherwise
-    element = CreateUndefinedElement(document, tag_name);
+    const CreateElementFlags flags,
+    const AtomicString& is_value) {
+  if (level == kQNameIsValid) {
+    DCHECK(is_value.IsNull());
+    DCHECK(ShouldCreateCustomElement(tag_name)) << tag_name;
   }
-  return element;
-}
 
-HTMLElement* CustomElement::CreateCustomElementAsync(
-    Document& document,
-    const QualifiedName& tag_name) {
-  DCHECK(ShouldCreateCustomElement(tag_name));
-
-  // To create an element:
-  // https://dom.spec.whatwg.org/#concept-create-element
-  // 6. If definition is non-null, then:
-  // 6.2. If the synchronous custom elements flag is not set:
-  if (CustomElementDefinition* definition = DefinitionFor(
-          document,
-          CustomElementDescriptor(tag_name.LocalName(), tag_name.LocalName())))
-    return definition->CreateElementAsync(document, tag_name);
-
-  return CreateUndefinedElement(document, tag_name);
-}
-
-// Create a HTMLElement
-HTMLElement* CustomElement::CreateUndefinedElement(
-    Document& document,
-    const QualifiedName& tag_name) {
-  bool should_create_builtin = ShouldCreateCustomizedBuiltinElement(tag_name);
-  DCHECK(ShouldCreateCustomElement(tag_name) || should_create_builtin);
-
-  HTMLElement* element;
+  Element* element;
   if (V0CustomElement::IsValidName(tag_name.LocalName()) &&
       document.RegistrationContext()) {
-    Element* v0element = document.RegistrationContext()->CreateCustomTagElement(
-        document, tag_name);
-    SECURITY_DCHECK(v0element->IsHTMLElement());
-    element = ToHTMLElement(v0element);
-  } else if (should_create_builtin) {
-    element = HTMLElementFactory::createHTMLElement(
-        tag_name.LocalName(), document, kCreatedByCreateElement);
+    element = document.RegistrationContext()->CreateCustomTagElement(document,
+                                                                     tag_name);
   } else {
-    element = HTMLElement::Create(tag_name, document);
+    // 7.1. Let interface be the element interface for localName and namespace.
+    // 7.2. Set result to a new element that implements interface, with ...
+    element = document.CreateRawElement(tag_name, flags);
+    if (level == kCheckAll && !is_value.IsNull()) {
+      element->SetIsValue(is_value);
+      if (flags.IsCustomElementsV0())
+        V0CustomElementRegistrationContext::SetTypeExtension(element, is_value);
+    }
   }
 
-  element->SetCustomElementState(CustomElementState::kUndefined);
+  // 7.3. If namespace is the HTML namespace, and either localName is a
+  // valid custom element name or is is non-null, then set result’s
+  // custom element state to "undefined".
+  if (level == kQNameIsValid)
+    element->SetCustomElementState(CustomElementState::kUndefined);
+  else if (tag_name.NamespaceURI() == HTMLNames::xhtmlNamespaceURI &&
+           (CustomElement::IsValidName(tag_name.LocalName()) ||
+            !is_value.IsNull()))
+    element->SetCustomElementState(CustomElementState::kUndefined);
 
   return element;
+}
+
+Element* CustomElement::CreateUncustomizedOrUndefinedElement(
+    Document& document,
+    const QualifiedName& tag_name,
+    const CreateElementFlags flags,
+    const AtomicString& is_value) {
+  return CreateUncustomizedOrUndefinedElementTemplate<kCheckAll>(
+      document, tag_name, flags, is_value);
 }
 
 HTMLElement* CustomElement::CreateFailedElement(Document& document,
@@ -257,8 +240,11 @@ void CustomElement::TryToUpgrade(Element* element) {
   CustomElementRegistry* registry = CustomElement::Registry(*element);
   if (!registry)
     return;
-  if (CustomElementDefinition* definition = registry->DefinitionFor(
-          CustomElementDescriptor(element->localName(), element->localName())))
+  const AtomicString& is_value = element->IsValue();
+  if (CustomElementDefinition* definition =
+          registry->DefinitionFor(CustomElementDescriptor(
+              is_value.IsNull() ? element->localName() : is_value,
+              element->localName())))
     definition->EnqueueUpgradeReaction(element);
   else
     registry->AddCandidate(element);

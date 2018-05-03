@@ -71,6 +71,12 @@ void QuicSentPacketManagerPeer::SetLossAlgorithm(
 }
 
 // static
+RttStats* QuicSentPacketManagerPeer::GetRttStats(
+    QuicSentPacketManager* sent_packet_manager) {
+  return &sent_packet_manager->rtt_stats_;
+}
+
+// static
 bool QuicSentPacketManagerPeer::HasPendingPackets(
     const QuicSentPacketManager* sent_packet_manager) {
   return sent_packet_manager->unacked_packets_.HasInFlightPackets();
@@ -83,6 +89,11 @@ bool QuicSentPacketManagerPeer::IsRetransmission(
   DCHECK(HasRetransmittableFrames(sent_packet_manager, packet_number));
   if (!HasRetransmittableFrames(sent_packet_manager, packet_number)) {
     return false;
+  }
+  if (sent_packet_manager->session_decides_what_to_write()) {
+    return sent_packet_manager->unacked_packets_
+               .GetTransmissionInfo(packet_number)
+               .transmission_type != NOT_RETRANSMISSION;
   }
   for (auto transmission_info : sent_packet_manager->unacked_packets_) {
     if (transmission_info.retransmission == packet_number) {
@@ -107,6 +118,12 @@ QuicTime::Delta QuicSentPacketManagerPeer::GetRetransmissionDelay(
 }
 
 // static
+QuicTime::Delta QuicSentPacketManagerPeer::GetTailLossProbeDelay(
+    const QuicSentPacketManager* sent_packet_manager) {
+  return sent_packet_manager->GetTailLossProbeDelay();
+}
+
+// static
 bool QuicSentPacketManagerPeer::HasUnackedCryptoPackets(
     const QuicSentPacketManager* sent_packet_manager) {
   return sent_packet_manager->unacked_packets_.HasPendingCryptoPackets();
@@ -119,7 +136,7 @@ size_t QuicSentPacketManagerPeer::GetNumRetransmittablePackets(
   for (QuicUnackedPacketMap::const_iterator it =
            sent_packet_manager->unacked_packets_.begin();
        it != sent_packet_manager->unacked_packets_.end(); ++it) {
-    if (!it->retransmittable_frames.empty()) {
+    if (sent_packet_manager->unacked_packets_.HasRetransmittableFrames(*it)) {
       ++num_unacked_packets;
     }
   }

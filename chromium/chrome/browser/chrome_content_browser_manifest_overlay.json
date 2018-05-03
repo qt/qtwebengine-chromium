@@ -10,6 +10,7 @@
           "chrome::mojom::CacheStatsRecorder",
           "chrome::mojom::NetBenchmarking",
           "extensions::StashService",
+          "metrics::mojom::CallStackProfileCollector",
           "metrics::mojom::LeakDetector",
           "mojom::ModuleEventSink",
           "rappor::mojom::RapporRecorder",
@@ -25,7 +26,7 @@
         ]
       },
       "requires": {
-        "accessibility_autoclick": [ "ash:autoclick" ],
+        "autoclick_app": [ "chromeos:autoclick" ],
         "ash": [ "system_ui", "test", "display" ],
         // Only used in classic ash case.
         "ash_pref_connector": [ "pref_connector" ],
@@ -49,7 +50,7 @@
         "patch": [ "patch_file" ],
         "pdf_compositor": [ "compositor" ],
         "profile_import": [ "import" ],
-        "profiling": [ "profiling" ],
+        "profiling": [ "profiling", "heap_profiler" ],
         "proxy_resolver": [ "factory" ],
         "preferences": [ "pref_client", "pref_control" ],
         "removable_storage_writer": [ "removable_storage_writer" ],
@@ -59,6 +60,7 @@
           "input_device_controller",
           "window_manager"
         ],
+        "unzip": [ "unzip_file" ],
         "util_win" : [ "shell_util_win" ],
         "wifi_util_win": [ "wifi_credentials" ]
       }
@@ -84,6 +86,7 @@
           "media_router::mojom::MediaRouter",
           "page_load_metrics::mojom::PageLoadMetrics",
           "password_manager::mojom::CredentialManager",
+          "safe_browsing::mojom::PhishingDetectorClient",
           "translate::mojom::ContentTranslateDriver",
 
           // TODO(beng): These should be moved to a separate capability.

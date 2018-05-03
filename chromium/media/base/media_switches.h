@@ -25,6 +25,8 @@ MEDIA_EXPORT extern const char kAudioBufferSize[];
 
 MEDIA_EXPORT extern const char kAutoplayPolicy[];
 
+MEDIA_EXPORT extern const char kDisableAudioOutput[];
+
 MEDIA_EXPORT extern const char kVideoThreads[];
 
 MEDIA_EXPORT extern const char kEnableMediaSuspend[];
@@ -39,7 +41,6 @@ MEDIA_EXPORT extern const char kAlsaOutputDevice[];
 
 #if defined(OS_WIN)
 MEDIA_EXPORT extern const char kEnableExclusiveAudio[];
-MEDIA_EXPORT extern const char kForceMediaFoundationVideoCapture[];
 MEDIA_EXPORT extern const char kForceWaveAudio[];
 MEDIA_EXPORT extern const char kTrySupportedChannelLayouts[];
 MEDIA_EXPORT extern const char kWaveOutBuffers[];
@@ -72,6 +73,7 @@ MEDIA_EXPORT extern const char kUseFakeJpegDecodeAccelerator[];
 MEDIA_EXPORT extern const char kEnableInbandTextTracks[];
 
 MEDIA_EXPORT extern const char kRequireAudioHardwareForTesting[];
+MEDIA_EXPORT extern const char kMuteAudio[];
 
 MEDIA_EXPORT extern const char kVideoUnderflowThresholdMs[];
 
@@ -119,6 +121,7 @@ MEDIA_EXPORT extern const base::Feature kMojoVideoDecoder;
 MEDIA_EXPORT extern const base::Feature kMseBufferByPts;
 MEDIA_EXPORT extern const base::Feature kMseFlacInIsobmff;
 MEDIA_EXPORT extern const base::Feature kNewAudioRenderingMixingStrategy;
+MEDIA_EXPORT extern const base::Feature kNewEncodeCpuLoadEstimator;
 MEDIA_EXPORT extern const base::Feature kNewRemotePlaybackPipeline;
 MEDIA_EXPORT extern const base::Feature kOverflowIconsForMediaControls;
 MEDIA_EXPORT extern const base::Feature kOverlayFullscreenVideo;
@@ -146,6 +149,7 @@ MEDIA_EXPORT extern const base::Feature kMediaDrmPersistentLicense;
 MEDIA_EXPORT extern const base::Feature kD3D11VideoDecoding;
 MEDIA_EXPORT extern const base::Feature kDelayCopyNV12Textures;
 MEDIA_EXPORT extern const base::Feature kMediaFoundationH264Encoding;
+MEDIA_EXPORT extern const base::Feature kMediaFoundationVideoCapture;
 #endif  // defined(OS_WIN)
 
 // Based on a |command_line| and the current platform, returns the effective

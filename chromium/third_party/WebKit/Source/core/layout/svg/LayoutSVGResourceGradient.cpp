@@ -39,18 +39,17 @@ void LayoutSVGResourceGradient::RemoveAllClientsFromCache(
       mark_for_invalidation ? kPaintInvalidation : kParentOnlyInvalidation);
 }
 
-void LayoutSVGResourceGradient::RemoveClientFromCache(
-    LayoutObject* client,
-    bool mark_for_invalidation) {
-  DCHECK(client);
-  gradient_map_.erase(client);
-  MarkClientForInvalidation(client, mark_for_invalidation
-                                        ? kPaintInvalidation
-                                        : kParentOnlyInvalidation);
+bool LayoutSVGResourceGradient::RemoveClientFromCache(LayoutObject& client) {
+  auto entry = gradient_map_.find(&client);
+  if (entry == gradient_map_.end())
+    return false;
+  gradient_map_.erase(entry);
+  return true;
 }
 
 SVGPaintServer LayoutSVGResourceGradient::PreparePaintServer(
-    const LayoutObject& object) {
+    const LayoutObject& object,
+    const FloatRect& object_bounding_box) {
   ClearInvalidationMask();
 
   // Validate gradient DOM state before building the actual
@@ -66,7 +65,6 @@ SVGPaintServer LayoutSVGResourceGradient::PreparePaintServer(
   // Spec: When the geometry of the applicable element has no width or height
   // and objectBoundingBox is specified, then the given effect (e.g. a gradient
   // or a filter) will be ignored.
-  FloatRect object_bounding_box = object.ObjectBoundingBox();
   if (GradientUnits() == SVGUnitTypes::kSvgUnitTypeObjectboundingbox &&
       object_bounding_box.IsEmpty())
     return SVGPaintServer::Invalid();

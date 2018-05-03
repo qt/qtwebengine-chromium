@@ -105,6 +105,7 @@
 <translation id="5537725057119320332">ส่ง</translation>
 <translation id="5546461542133609677">เปิดเสียง</translation>
 <translation id="561939826962581046">เวลา</translation>
+<translation id="5630795885300617244">แตะ 2 ครั้งที่ด้านขวาหรือซ้ายเพื่อข้ามทีละ 10 วินาที</translation>
 <translation id="5641012560118721995">หยุดเล่นชั่วคราว</translation>
 <translation id="5643186887447432888">ปุ่ม</translation>
 <translation id="5677946354068040947">ตัวเลือกเพิ่มเติม</translation>
@@ -123,6 +124,7 @@
 <translation id="6404546809543547843">ตัวควบคุมเวลาของเสียง</translation>
 <translation id="648732519525291180">เครื่องมือเลือกเวลา</translation>
 <translation id="6550675742724504774">ตัวเลือก</translation>
+<translation id="6564313821541007458">ขณะนี้อยู่ในโหมดการแสดงภาพซ้อนภาพ</translation>
 <translation id="658823671542763450">เข้าสู่โหมดเต็มหน้าจอ</translation>
 <translation id="663493177488814956">ฟีด</translation>
 <translation id="6637586476836377253">บันทึก</translation>
@@ -168,12 +170,12 @@
 <translation id="8444882422881193423"><ph name="NUMBER_OF_FILES" /> ไฟล์</translation>
 <translation id="8451268428117625855">โปรดเลือกไฟล์</translation>
 <translation id="8461852803063341183">ปุ่มตัวเลือก</translation>
-<translation id="8511325616783751178">ปุ่มแบบเลื่อนลง</translation>
 <translation id="8534579021159131403">นาที</translation>
 <translation id="8541249477527128034">การควบคุมสื่อ</translation>
 <translation id="8583702881314752957">รายการคำจำกัดความ</translation>
 <translation id="8597182159515967513">ส่วนหัว</translation>
 <translation id="8613126697340063924">ควบคุมการเล่นระยะไกล</translation>
+<translation id="8741316211671074806">การแสดงภาพซ้อนภาพ</translation>
 <translation id="8750798805984357768">โปรดเลือกตัวเลือกอย่างหนึ่งอย่างใดเหล่านี้</translation>
 <translation id="8785498733064193001">เริ่มเล่น</translation>
 <translation id="8845239796550121995">ตอนนี้กำลังแคสต์ไปยัง TV</translation>
@@ -189,7 +191,6 @@
 <translation id="9132465097189459683">อื่นๆ...</translation>
 <translation id="9138385573473225930">การแจ้งเตือน</translation>
 <translation id="9155987714137265666"><ph name="WEEK" /> เริ่มวันที่ <ph name="WEEK_START_DATE" /></translation>
-<translation id="916607977885256133">การแสดงภาพซ้อนภาพ</translation>
 <translation id="947831847158436616">เซลล์</translation>
 <translation id="966787709310836684">เมนู</translation>
 </translationbundle>

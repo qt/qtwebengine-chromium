@@ -91,9 +91,11 @@ class MetaBuildWrapper(object):
                         help='path to config file '
                              '(default is %(default)s)')
       subp.add_argument('-i', '--isolate-map-file', metavar='PATH',
-                        default=self.default_isolate_map,
                         help='path to isolate map file '
-                             '(default is %(default)s)')
+                             '(default is %(default)s)',
+                        default=[],
+                        action='append',
+                        dest='isolate_map_files')
       subp.add_argument('-g', '--goma-dir',
                         help='path to goma directory')
       subp.add_argument('--android-version-code',
@@ -581,14 +583,26 @@ class MetaBuildWrapper(object):
     self.mixins = contents['mixins']
 
   def ReadIsolateMap(self):
-    if not self.Exists(self.args.isolate_map_file):
-      raise MBErr('isolate map file not found at %s' %
-                  self.args.isolate_map_file)
-    try:
-      return ast.literal_eval(self.ReadFile(self.args.isolate_map_file))
-    except SyntaxError as e:
-      raise MBErr('Failed to parse isolate map file "%s": %s' %
-                  (self.args.isolate_map_file, e))
+    if not self.args.isolate_map_files:
+      self.args.isolate_map_files = [self.default_isolate_map]
+
+    for f in self.args.isolate_map_files:
+      if not self.Exists(f):
+        raise MBErr('isolate map file not found at %s' % f)
+    isolate_maps = {}
+    for isolate_map in self.args.isolate_map_files:
+      try:
+        isolate_map = ast.literal_eval(self.ReadFile(isolate_map))
+        duplicates = set(isolate_map).intersection(isolate_maps)
+        if duplicates:
+          raise MBErr(
+              'Duplicate targets in isolate map files: %s.' %
+              ', '.join(duplicates))
+        isolate_maps.update(isolate_map)
+      except SyntaxError as e:
+        raise MBErr(
+            'Failed to parse isolate map file "%s": %s' % (isolate_map, e))
+    return isolate_maps
 
   def ConfigFromArgs(self):
     if self.args.config:
@@ -711,6 +725,8 @@ class MetaBuildWrapper(object):
         return ret
 
     android = 'target_os="android"' in vals['gn_args']
+    fuchsia = 'target_os="fuchsia"' in vals['gn_args']
+    win = self.platform == 'win32' or 'target_os="win"' in vals['gn_args']
     for target in swarming_targets:
       if android:
         # Android targets may be either android_apk or executable. The former
@@ -720,6 +736,11 @@ class MetaBuildWrapper(object):
         runtime_deps_targets = [
             target + '.runtime_deps',
             'obj/%s.stamp.runtime_deps' % label.replace(':', '/')]
+      elif fuchsia:
+        # Only emit a runtime deps file for the group() target on Fuchsia.
+        label = isolate_map[target]['label']
+        runtime_deps_targets = [
+          'obj/%s.stamp.runtime_deps' % label.replace(':', '/')]
       elif (isolate_map[target]['type'] == 'script' or
             isolate_map[target].get('label_type') == 'group'):
         # For script targets, the build target is usually a group,
@@ -729,11 +750,11 @@ class MetaBuildWrapper(object):
         label = isolate_map[target]['label']
         runtime_deps_targets = [
             'obj/%s.stamp.runtime_deps' % label.replace(':', '/')]
-        if self.platform == 'win32':
+        if win:
           runtime_deps_targets += [ target + '.exe.runtime_deps' ]
         else:
           runtime_deps_targets += [ target + '.runtime_deps' ]
-      elif self.platform == 'win32':
+      elif win:
         runtime_deps_targets = [target + '.exe.runtime_deps']
       else:
         runtime_deps_targets = [target + '.runtime_deps']
@@ -885,6 +906,7 @@ class MetaBuildWrapper(object):
 
     is_android = 'target_os="android"' in vals['gn_args']
     is_fuchsia = 'target_os="fuchsia"' in vals['gn_args']
+    is_win = self.platform == 'win32' or 'target_os="win"' in vals['gn_args']
 
     # This should be true if tests with type='windowed_test_launcher' are
     # expected to run using xvfb. For example, Linux Desktop, X11 CrOS and
@@ -903,7 +925,7 @@ class MetaBuildWrapper(object):
     test_type = isolate_map[target]['type']
 
     executable = isolate_map[target].get('executable', target)
-    executable_suffix = '.exe' if self.platform == 'win32' else ''
+    executable_suffix = '.exe' if is_win else ''
 
     cmdline = []
     extra_files = [

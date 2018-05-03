@@ -105,16 +105,17 @@ bool PruneNoOpsTraverser::visitDeclaration(Visit, TIntermDeclaration *node)
 
                 // Create a new variable to use in the declarator so that the variable and node
                 // types are kept consistent.
-                TType type(declaratorSymbol->getType());
+                TType *type = new TType(declaratorSymbol->getType());
                 if (mInGlobalScope)
                 {
-                    type.setQualifier(EvqGlobal);
+                    type->setQualifier(EvqGlobal);
                 }
                 else
                 {
-                    type.setQualifier(EvqTemporary);
+                    type->setQualifier(EvqTemporary);
                 }
-                TVariable *variable = new TVariable(mSymbolTable, nullptr, type, SymbolType::Empty);
+                TVariable *variable =
+                    new TVariable(mSymbolTable, ImmutableString(""), type, SymbolType::Empty);
                 queueReplacementWithParent(node, declaratorSymbol, new TIntermSymbol(variable),
                                            OriginalNode::IS_DROPPED);
             }

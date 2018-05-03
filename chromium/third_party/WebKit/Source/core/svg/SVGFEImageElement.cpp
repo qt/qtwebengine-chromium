@@ -77,7 +77,6 @@ void SVGFEImageElement::FetchImageResource() {
   FetchParameters params(
       ResourceRequest(GetDocument().CompleteURL(HrefString())), options);
   cached_image_ = ImageResourceContent::Fetch(params, GetDocument().Fetcher());
-
   if (cached_image_)
     cached_image_->AddObserver(this);
 }
@@ -145,8 +144,8 @@ void SVGFEImageElement::ImageNotifyFinished(ImageResourceContent*) {
   if (!parent || !IsSVGFilterElement(parent) || !parent->GetLayoutObject())
     return;
 
-  if (LayoutObject* layout_object = this->GetLayoutObject())
-    MarkForLayoutAndParentResourceInvalidation(layout_object);
+  if (LayoutObject* layout_object = GetLayoutObject())
+    MarkForLayoutAndParentResourceInvalidation(*layout_object);
 }
 
 FilterEffect* SVGFEImageElement::Build(SVGFilterBuilder*, Filter* filter) {

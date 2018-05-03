@@ -245,13 +245,17 @@ config("default") {
     cflags += [
       "-fsanitize=$sanitizers",
       "-fno-sanitize-recover=$sanitizers",
-      "-fsanitize-blacklist=" + rebase_path("../tools/xsan.blacklist"),
     ]
+    if (!is_win) {
+      cflags += [ "-fno-omit-frame-pointer" ]
+    }
+    if (is_linux) {
+      cflags_cc += [ "-stdlib=libc++" ]
+      ldflags += [ "-stdlib=libc++" ]
+    }
     ldflags += [ "-fsanitize=$sanitizers" ]
     if (sanitizers == "memory") {
       cflags += [ "-fsanitize-memory-track-origins" ]
-      cflags_cc += [ "-stdlib=libc++" ]
-      ldflags += [ "-stdlib=libc++" ]
     }
   }
 }
@@ -359,7 +363,6 @@ config("warnings") {
     cflags += [
       "-Wno-covered-switch-default",
       "-Wno-deprecated",
-      "-Wno-implicit-fallthrough",
       "-Wno-missing-noreturn",
       "-Wno-old-style-cast",
       "-Wno-padded",
@@ -378,6 +381,9 @@ config("warnings") {
       "-Wno-direct-ivar-access",
       "-Wno-objcc-interface-ivars",
     ]
+  }
+  if (!is_win || is_clang) {
+    cflags += [ "-Wno-implicit-fallthrough" ]
   }
 }
 config("warnings_except_public_headers") {

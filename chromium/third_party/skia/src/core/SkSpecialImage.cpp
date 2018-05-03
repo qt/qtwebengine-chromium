@@ -87,6 +87,7 @@ sk_sp<SkSpecialImage> SkSpecialImage::makeTextureImage(GrContext* context) {
         return curContext == context ? sk_sp<SkSpecialImage>(SkRef(this)) : nullptr;
     }
 
+    auto proxyProvider = context->contextPriv().proxyProvider();
     SkBitmap bmp;
     // At this point, we are definitely not texture-backed, so we must be raster or generator
     // backed. If we remove the special-wrapping-an-image subclass, we may be able to assert that
@@ -102,8 +103,7 @@ sk_sp<SkSpecialImage> SkSpecialImage::makeTextureImage(GrContext* context) {
 
     // TODO: this is a tight copy of 'bmp' but it doesn't have to be (given SkSpecialImage's
     // semantics). Since this is cached though we would have to bake the fit into the cache key.
-    sk_sp<GrTextureProxy> proxy = GrMakeCachedBitmapProxy(context->contextPriv().proxyProvider(),
-                                                          bmp);
+    sk_sp<GrTextureProxy> proxy = GrMakeCachedBitmapProxy(proxyProvider, bmp);
     if (!proxy) {
         return nullptr;
     }
@@ -409,9 +409,12 @@ public:
         if (!rec) {
             return false;
         }
-
+        sk_sp<SkColorSpace> colorSpace;
+        if (GrPixelConfigIsSRGB(fTextureProxy->config())) {
+            colorSpace = SkColorSpace::MakeSRGB();
+        }
         sk_sp<GrSurfaceContext> sContext = fContext->contextPriv().makeWrappedSurfaceContext(
-                                                                          fTextureProxy, nullptr);
+                fTextureProxy, std::move(colorSpace));
         if (!sContext) {
             return false;
         }

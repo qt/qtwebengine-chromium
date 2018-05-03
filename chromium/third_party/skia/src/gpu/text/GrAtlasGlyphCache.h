@@ -28,8 +28,7 @@ class GrGpu;
  */
 class GrAtlasTextStrike : public SkNVRefCnt<GrAtlasTextStrike> {
 public:
-    /** Owner is the cache that owns this strike. */
-    GrAtlasTextStrike(GrAtlasGlyphCache* owner, const SkDescriptor& fontScalerKey);
+    GrAtlasTextStrike(const SkDescriptor& fontScalerKey);
     ~GrAtlasTextStrike();
 
     inline GrGlyph* getGlyph(const SkGlyph& skGlyph, GrGlyph::PackedID packed,
@@ -65,7 +64,7 @@ public:
     // happen.
     // TODO we can handle some of these cases if we really want to, but the long term solution is to
     // get the actual glyph image itself when we get the glyph metrics.
-    bool addGlyphToAtlas(GrDeferredUploadTarget*, GrGlyph*, SkGlyphCache*,
+    bool addGlyphToAtlas(GrDeferredUploadTarget*, GrAtlasGlyphCache*, GrGlyph*, SkGlyphCache*,
                          GrMaskFormat expectedMaskFormat);
 
     // testing
@@ -88,7 +87,6 @@ private:
     SkAutoDescriptor fFontScalerKey;
     SkArenaAlloc fPool{512};
 
-    GrAtlasGlyphCache* fAtlasGlyphCache;
     int fAtlasedGlyphs;
     bool fIsAbandoned;
 
@@ -130,18 +128,15 @@ public:
     // if getProxies returns nullptr, the client must not try to use other functions on the
     // GrAtlasGlyphCache which use the atlas.  This function *must* be called first, before other
     // functions which use the atlas.
-    const sk_sp<GrTextureProxy>* getProxies(GrMaskFormat format) {
+    const sk_sp<GrTextureProxy>* getProxies(GrMaskFormat format, unsigned int* numProxies) {
+        SkASSERT(numProxies);
+
         if (this->initAtlas(format)) {
+            *numProxies = this->getAtlas(format)->pageCount();
             return this->getAtlas(format)->getProxies();
         }
+        *numProxies = 0;
         return nullptr;
-    }
-
-    uint32_t getAtlasPageCount(GrMaskFormat format) {
-        if (this->initAtlas(format)) {
-            return this->getAtlas(format)->pageCount();
-        }
-        return 0;
     }
 
     SkScalar getGlyphSizeLimit() const { return fGlyphSizeLimit; }
@@ -186,8 +181,14 @@ public:
 
     // GrOnFlushCallbackObject overrides
 
-    void preFlush(GrOnFlushResourceProvider*, const uint32_t*, int,
-                  SkTArray<sk_sp<GrRenderTargetContext>>*) override {}
+    void preFlush(GrOnFlushResourceProvider* onFlushResourceProvider, const uint32_t*, int,
+                  SkTArray<sk_sp<GrRenderTargetContext>>*) override {
+        for (int i = 0; i < kMaskFormatCount; ++i) {
+            if (fAtlases[i]) {
+                fAtlases[i]->instantiate(onFlushResourceProvider);
+            }
+        }
+    }
 
     void postFlush(GrDeferredUploadToken startTokenForNextFlush,
                    const uint32_t* opListIDs, int numOpListIDs) override {
@@ -243,7 +244,7 @@ private:
     bool initAtlas(GrMaskFormat);
 
     GrAtlasTextStrike* generateStrike(const SkGlyphCache* cache) {
-        GrAtlasTextStrike* strike = new GrAtlasTextStrike(this, cache->getDescriptor());
+        GrAtlasTextStrike* strike = new GrAtlasTextStrike(cache->getDescriptor());
         fCache.add(strike);
         return strike;
     }

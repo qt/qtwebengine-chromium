@@ -15,10 +15,10 @@
 #include "base/memory/ptr_util.h"
 #include "base/time/time.h"
 #include "content/browser/loader/downloaded_temp_file_impl.h"
+#include "content/browser/loader/navigation_metrics.h"
 #include "content/browser/loader/resource_controller.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
-#include "content/browser/loader/resource_scheduler.h"
 #include "content/public/browser/global_request_id.h"
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/cpp/bindings/message.h"
@@ -27,6 +27,7 @@
 #include "net/url_request/redirect_info.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
+#include "services/network/resource_scheduler.h"
 
 namespace content {
 namespace {
@@ -116,7 +117,7 @@ MojoAsyncResourceHandler::MojoAsyncResourceHandler(
   InitializeResourceBufferConstants();
   // This unretained pointer is safe, because |binding_| is owned by |this| and
   // the callback will never be called after |this| is destroyed.
-  binding_.set_connection_error_handler(base::BindOnce(
+  binding_.set_connection_error_with_reason_handler(base::BindOnce(
       &MojoAsyncResourceHandler::Cancel, base::Unretained(this)));
 
   if (IsResourceTypeFrame(resource_type)) {
@@ -168,6 +169,7 @@ void MojoAsyncResourceHandler::OnResponseStarted(
     network::ResourceResponse* response,
     std::unique_ptr<ResourceController> controller) {
   DCHECK(!has_controller());
+  time_response_started_ = base::TimeTicks::Now();
 
   if (upload_progress_tracker_) {
     upload_progress_tracker_->OnUploadCompleted();
@@ -179,7 +181,7 @@ void MojoAsyncResourceHandler::OnResponseStarted(
   reported_total_received_bytes_ = response->head.encoded_data_length;
 
   response->head.request_start = request()->creation_time();
-  response->head.response_start = base::TimeTicks::Now();
+  response->head.response_start = time_response_started_;
   sent_received_response_message_ = true;
 
   network::mojom::DownloadedTempFilePtr downloaded_file_ptr;
@@ -331,6 +333,13 @@ void MojoAsyncResourceHandler::OnReadCompleted(
   }
 
   if (response_body_consumer_handle_.is_valid()) {
+    if (url_loader_options_ &
+        network::mojom::kURLLoadOptionPauseOnResponseStarted) {
+      base::TimeTicks time_first_read_completed = base::TimeTicks::Now();
+      RecordNavigationResourceHandlerMetrics(time_response_started_,
+                                             time_proceed_with_response_,
+                                             time_first_read_completed);
+    }
     // Send the data pipe on the first OnReadCompleted call.
     url_loader_client_->OnStartLoadingResponseBody(
         std::move(response_body_consumer_handle_));
@@ -390,6 +399,9 @@ void MojoAsyncResourceHandler::FollowRedirect() {
 
 void MojoAsyncResourceHandler::ProceedWithResponse() {
   DCHECK(did_defer_on_response_started_);
+
+  time_proceed_with_response_ = base::TimeTicks::Now();
+
   request()->LogUnblocked();
   Resume();
 }
@@ -405,11 +417,11 @@ void MojoAsyncResourceHandler::SetPriority(net::RequestPriority priority,
 }
 
 void MojoAsyncResourceHandler::PauseReadingBodyFromNet() {
-  NOTREACHED();
+  ResourceHandler::PauseReadingBodyFromNet();
 }
 
 void MojoAsyncResourceHandler::ResumeReadingBodyFromNet() {
-  NOTREACHED();
+  ResourceHandler::ResumeReadingBodyFromNet();
 }
 
 void MojoAsyncResourceHandler::OnWritableForTesting() {
@@ -586,8 +598,13 @@ void MojoAsyncResourceHandler::OnWritable(MojoResult result) {
   Resume();
 }
 
-void MojoAsyncResourceHandler::Cancel() {
-  const ResourceRequestInfoImpl* info = GetRequestInfo();
+void MojoAsyncResourceHandler::Cancel(uint32_t custom_reason,
+                                      const std::string& description) {
+  ResourceRequestInfoImpl* info = GetRequestInfo();
+
+  if (custom_reason == network::mojom::URLLoader::kClientDisconnectReason)
+    info->set_custom_cancel_reason(description);
+
   ResourceDispatcherHostImpl::Get()->CancelRequestFromRenderer(
       GlobalRequestID(info->GetChildID(), info->GetRequestID()));
 }
@@ -605,12 +622,12 @@ void MojoAsyncResourceHandler::ReportBadMessage(const std::string& error) {
   mojo::ReportBadMessage(error);
 }
 
-std::unique_ptr<UploadProgressTracker>
+std::unique_ptr<network::UploadProgressTracker>
 MojoAsyncResourceHandler::CreateUploadProgressTracker(
     const base::Location& from_here,
-    UploadProgressTracker::UploadProgressReportCallback callback) {
-  return std::make_unique<UploadProgressTracker>(from_here, std::move(callback),
-                                                 request());
+    network::UploadProgressTracker::UploadProgressReportCallback callback) {
+  return std::make_unique<network::UploadProgressTracker>(
+      from_here, std::move(callback), request());
 }
 
 void MojoAsyncResourceHandler::OnTransfer(
@@ -618,7 +635,7 @@ void MojoAsyncResourceHandler::OnTransfer(
     network::mojom::URLLoaderClientPtr url_loader_client) {
   binding_.Unbind();
   binding_.Bind(std::move(mojo_request));
-  binding_.set_connection_error_handler(base::BindOnce(
+  binding_.set_connection_error_with_reason_handler(base::BindOnce(
       &MojoAsyncResourceHandler::Cancel, base::Unretained(this)));
   url_loader_client_ = std::move(url_loader_client);
 }

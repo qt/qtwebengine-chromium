@@ -27,8 +27,6 @@ source_set("ios_core") {
     "client_gestures.mm",
     "client_keyboard.h",
     "client_keyboard.mm",
-    "keychain_wrapper.h",
-    "keychain_wrapper.mm",
   ]
 
   public_deps = [
@@ -71,4 +69,12 @@ source_set("ios_core_unit_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
 
   data = []
+}
+
+test("ios_remoting_unittests") {
+  deps = [
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//remoting/ios/persistence:unit_tests",
+  ]
 }

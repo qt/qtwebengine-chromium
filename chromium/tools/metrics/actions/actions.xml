@@ -677,31 +677,67 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Accel_Move_Window_To_Above_Display">
+<action name="Accel_Media_Next_Track">
+  <owner>warx@chromium.org</owner>
+  <description>User pressed the next track media control button.</description>
+</action>
+
+<action name="Accel_Media_PlayPause">
+  <owner>warx@chromium.org</owner>
+  <description>User pressed the play/pause media control button.</description>
+</action>
+
+<action name="Accel_Media_Prev_Track">
   <owner>warx@chromium.org</owner>
   <description>
-    User presses accelerator trying to move active window to above display.
+    User pressed the previous track media control button.
+  </description>
+</action>
+
+<action name="Accel_Move_Active_Window_Between_Displays">
+  <owner>warx@chromium.org</owner>
+  <description>
+    User presses accelerator to move active window between displays.
+  </description>
+</action>
+
+<action name="Accel_Move_Window_To_Above_Display">
+  <obsolete>
+    Replaced with Accel_Move_Active_Window_Between_Displays in March 2018.
+  </obsolete>
+  <owner>warx@chromium.org</owner>
+  <description>
+    User presses accelerator to move active window to above display.
   </description>
 </action>
 
 <action name="Accel_Move_Window_To_Below_Display">
+  <obsolete>
+    Replaced with Accel_Move_Active_Window_Between_Displays in March 2018.
+  </obsolete>
   <owner>warx@chromium.org</owner>
   <description>
-    User presses accelerator trying to move active window to below display.
+    User presses accelerator to move active window to below display.
   </description>
 </action>
 
 <action name="Accel_Move_Window_To_Left_Display">
+  <obsolete>
+    Replaced with Accel_Move_Active_Window_Between_Displays in March 2018.
+  </obsolete>
   <owner>warx@chromium.org</owner>
   <description>
-    User presses accelerator trying to move active window to left display.
+    User presses accelerator to move active window to left display.
   </description>
 </action>
 
 <action name="Accel_Move_Window_To_Right_Display">
+  <obsolete>
+    Replaced with Accel_Move_Active_Window_Between_Displays in March 2018.
+  </obsolete>
   <owner>warx@chromium.org</owner>
   <description>
-    User presses accelerator trying to move active window to right display.
+    User presses accelerator to move active window to right display.
   </description>
 </action>
 
@@ -1157,7 +1193,7 @@ should be able to be added at any place in this file.
   <description>A Chrome OS user manually starts Select To Speak.</description>
 </action>
 
-<action name="Accessibility.TwoFingersHeldGeneratedSpokenFeedbackCountdown">
+<action name="Accessibility.TwoFingersHeldDown">
   <owner>dmazzoni@chromium.org</owner>
   <description>
     Metric recorded on Chrome OS when the user holds down two fingers on a touch
@@ -1700,7 +1736,8 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Android.InstantApps.InstantAppsEligiblePageLoaded">
+<action name="Android.InstantApps.InstantAppsEligiblePageLoaded"
+    not_user_triggered="true">
   <owner>mariakhomenko@chromium.org</owner>
   <description>
     A page finished loading in Chrome that could have been loaded in an Instant
@@ -1894,16 +1931,19 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="AppList_SearchedBySpeech">
+  <obsolete>App list doesn't have voice search anymore.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="AppList_VoiceSearchCanceled">
+  <obsolete>App list doesn't have voice search anymore.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
 <action name="AppList_VoiceSearchStartedManually">
+  <obsolete>App list doesn't have voice search anymore.</obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -5047,7 +5087,18 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="FocusInactivePopupForAccessibility">
+  <owner>dtseng@chromium.org</owner>
+  <description>
+    Places focus on non-modal UI such as info bars, bubble widgets for
+    accessibility.
+  </description>
+</action>
+
 <action name="FocusInfobars">
+  <obsolete>
+    No longer used. Generalized/renamed to FocusInactivePopupForAccessibility.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -6789,6 +6840,23 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="IncompatibleApplicationsPage.ApplicationRemoved">
+  <owner>pmonette@chromium.org</owner>
+  <description>
+    A user uninstalled one of the listed incompatible applications while the
+    chrome://settings/incompatibleApplications page was open.
+  </description>
+</action>
+
+<action name="IncompatibleApplicationsPage.UninstallationStarted">
+  <owner>pmonette@chromium.org</owner>
+  <description>
+    A user clicked the &quot;Uninstall&quot; button for one of the listed
+    incompatible applications while the
+    chrome://settings/incompatibleApplications was open.
+  </description>
+</action>
+
 <action name="Indent">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8210,6 +8278,20 @@ should be able to be added at any place in this file.
 <action name="KeySystemSupport.WidevineWithType.Supported">
   <owner>xhwang@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="KeyboardShortcutViewer.CreateWindow">
+  <owner>wutao@chromium.org</owner>
+  <description>
+    Records when the user creates a new window of Keyboard Shortcut Viewer.
+  </description>
+</action>
+
+<action name="KeyboardShortcutViewer.Search">
+  <owner>wutao@chromium.org</owner>
+  <description>
+    Records when the user enters search mode in Keyboard Shortcut Viewer.
+  </description>
 </action>
 
 <action name="KeywordEditor_AddKeyword">
@@ -12018,6 +12100,13 @@ should be able to be added at any place in this file.
   <description>Please enter the description of the metric.</description>
 </action>
 
+<action name="MobileOmniboxDeleteUrl">
+  <owner>thildebr@chromium.org</owner>
+  <description>
+    The user cleared the contents of the omnibox via the delete button.
+  </description>
+</action>
+
 <action name="MobileOmniboxRefineSuggestion">
   <obsolete>
     Deprecated 07/2017. Replaced by MobileOmniboxRefineSuggestion.Query and
@@ -12410,12 +12499,26 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="MobileToolbarOmniboxShortcut">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User pressed the omnibox shortcut on the toolbar. iOS only.
+  </description>
+</action>
+
 <action name="MobileToolbarReload">
   <owner>tedchoc@chromium.org</owner>
   <description>
     User pressed the reload icon in the toolbar.  Pre-M55, MobileToolbarReload
     accounted for all reload actions.  M55+, this metric only refers to reloads
     that occurred from the toolbar.
+  </description>
+</action>
+
+<action name="MobileToolbarShareMenu">
+  <owner>gambard@chromium.org</owner>
+  <description>
+    User pressed the toolbar's button to open the share menu. iOS only.
   </description>
 </action>
 
@@ -15851,6 +15954,54 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="RelaunchRecommendedShown">
+  <owner>grt@chromium.org</owner>
+  <description>
+    A bubble was shown to the user to indicate that their administrator
+    recommends that Chrome be relaunched.
+  </description>
+</action>
+
+<action name="RelaunchRecommended_Accept">
+  <owner>grt@chromium.org</owner>
+  <description>
+    The user accepted to relaunch Chrome in response to a bubble indicating that
+    their administrator recommended that Chrome be relaunched.
+  </description>
+</action>
+
+<action name="RelaunchRecommended_Close">
+  <owner>grt@chromium.org</owner>
+  <description>
+    The bubble indicating to the user that their administrator recommends a
+    browser relaunch was closed by the user.
+  </description>
+</action>
+
+<action name="RelaunchRequiredShown">
+  <owner>grt@chromium.org</owner>
+  <description>
+    A dialog was shown to the user to indicate that their administrator requires
+    that Chrome be relaunched.
+  </description>
+</action>
+
+<action name="RelaunchRequired_Accept">
+  <owner>grt@chromium.org</owner>
+  <description>
+    The user accepted to relaunch Chrome in response to a dialog indicating that
+    their administrator required that Chrome be relaunched.
+  </description>
+</action>
+
+<action name="RelaunchRequired_Close">
+  <owner>grt@chromium.org</owner>
+  <description>
+    The dialog indicating to the user that their administrator requires a
+    browser relaunch was closed by the user.
+  </description>
+</action>
+
 <action name="Reload">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -17941,6 +18092,22 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="StatusArea_DockedMagnifierDisabled">
+  <owner>afakhry@chromium.org</owner>
+  <description>
+    The user disabled the Docked Magnifier from the accessibility menu in the
+    system tray.
+  </description>
+</action>
+
+<action name="StatusArea_DockedMagnifierEnabled">
+  <owner>afakhry@chromium.org</owner>
+  <description>
+    The user enabled the Docked Magnifier from the accessibility menu in the
+    system tray.
+  </description>
+</action>
+
 <action name="StatusArea_Drive_CancelOperation">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -18137,6 +18304,20 @@ should be able to be added at any place in this file.
     Counts the number of times the user stops screen capturing via the Screen
     Capture notification. Note these notifications are managed by the system
     menu and not the general notification center.
+  </description>
+</action>
+
+<action name="StatusArea_SelectToSpeakDisabled">
+  <owner>katie@chromium.org</owner>
+  <description>
+    Ash system menu: Accessibility: Disable Select-to-Speak.
+  </description>
+</action>
+
+<action name="StatusArea_SelectToSpeakEnabled">
+  <owner>katie@chromium.org</owner>
+  <description>
+    Ash system menu: Accessibility: Enable Select-to-Speak.
   </description>
 </action>
 
@@ -18413,6 +18594,24 @@ should be able to be added at any place in this file.
   <description>
     Android: A contextual suggestion in the carousel in Chrome Home was opened
     by the user.
+  </description>
+</action>
+
+<action name="Suggestions.ExpandableHeader.Collapsed">
+  <owner>huayinz@chromium.org</owner>
+  <owner>twellington@chromium.com</owner>
+  <description>
+    Android: The suggestions section is collapsed by user click on the section
+    header.
+  </description>
+</action>
+
+<action name="Suggestions.ExpandableHeader.Expanded">
+  <owner>huayinz@chromium.org</owner>
+  <owner>twellington@chromium.com</owner>
+  <description>
+    Android: The suggestions section is expanded by user click on the section
+    header.
   </description>
 </action>
 

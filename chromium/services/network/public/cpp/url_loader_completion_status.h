@@ -7,16 +7,17 @@
 
 #include <stdint.h>
 
+#include "base/component_export.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "base/time/time.h"
 #include "net/ssl/ssl_info.h"
 #include "services/network/public/cpp/cors/cors_error_status.h"
-#include "services/network/public/interfaces/cors.mojom-shared.h"
+#include "services/network/public/mojom/cors.mojom-shared.h"
 
 namespace network {
 
-struct URLLoaderCompletionStatus {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) URLLoaderCompletionStatus {
   URLLoaderCompletionStatus();
   URLLoaderCompletionStatus(const URLLoaderCompletionStatus& status);
 

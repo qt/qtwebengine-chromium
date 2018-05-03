@@ -447,10 +447,6 @@ class ListHashSetNode : public ListHashSetNodeBase<ValueArg> {
     allocator->Deallocate(this);
   }
 
-  // This is not called in normal tracing, but it is called if we find a
-  // pointer to a node on the stack using conservative scanning. Since the
-  // original ListHashSet may no longer exist we make sure to mark the
-  // neighbours in the chain too.
   template <typename VisitorDispatcher>
   void Trace(VisitorDispatcher visitor) {
     // The conservative stack scan can find nodes that have been removed
@@ -463,8 +459,8 @@ class ListHashSetNode : public ListHashSetNodeBase<ValueArg> {
     if (WasAlreadyDestructed())
       return;
     NodeAllocator::TraceValue(visitor, this);
-    visitor->Mark(Next());
-    visitor->Mark(Prev());
+    visitor->Trace(Next());
+    visitor->Trace(Prev());
   }
 
   ListHashSetNode* Next() const {
@@ -1127,10 +1123,9 @@ void ListHashSet<T, inlineCapacity, U, V>::DeleteAllNodes() {
 template <typename T, size_t inlineCapacity, typename U, typename V>
 template <typename VisitorDispatcher>
 void ListHashSet<T, inlineCapacity, U, V>::Trace(VisitorDispatcher visitor) {
-  static_assert(
-      HashTraits<T>::kWeakHandlingFlag == kNoWeakHandlingInCollections,
-      "HeapListHashSet does not support weakness, consider using "
-      "HeapLinkedHashSet instead.");
+  static_assert(HashTraits<T>::kWeakHandlingFlag == kNoWeakHandling,
+                "HeapListHashSet does not support weakness, consider using "
+                "HeapLinkedHashSet instead.");
   // This marks all the nodes and their contents live that can be accessed
   // through the HashTable. That includes m_head and m_tail so we do not have
   // to explicitly trace them here.

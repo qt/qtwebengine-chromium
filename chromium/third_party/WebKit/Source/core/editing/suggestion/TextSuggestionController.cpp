@@ -19,6 +19,7 @@
 #include "core/editing/suggestion/TextSuggestionInfo.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/layout/LayoutTheme.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 
@@ -206,6 +207,10 @@ bool TextSuggestionController::IsMenuOpen() const {
 
 void TextSuggestionController::HandlePotentialSuggestionTap(
     const PositionInFlatTree& caret_position) {
+  // TODO(crbug.com/779126): add support for suggestions in immersive mode.
+  if (GetDocument().GetSettings()->GetImmersiveModeEnabled())
+    return;
+
   // It's theoretically possible, but extremely unlikely, that the user has
   // managed to tap on some text after TextSuggestionController has told the
   // browser to open the text suggestions menu, but before the browser has
@@ -595,8 +600,16 @@ void TextSuggestionController::ReplaceRangeWithText(const EphemeralRange& range,
   GetFrame().Selection().SetSelectionAndEndTyping(
       SelectionInDOMTree::Builder().SetBaseAndExtent(range).Build());
 
+  // TODO(editing-dev): We should check whether |TextSuggestionController| is
+  // available or not.
+  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  GetFrame().GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+
   // Dispatch 'beforeinput'.
-  Element* const target = GetFrame().GetEditor().FindEventTargetFromSelection();
+  Element* const target = FindEventTargetFrom(
+      GetFrame(), GetFrame().Selection().ComputeVisibleSelectionInDOMTree());
+
   DataTransfer* const data_transfer = DataTransfer::Create(
       DataTransfer::DataTransferType::kInsertReplacementText,
       DataTransferAccessPolicy::kDataTransferReadable,

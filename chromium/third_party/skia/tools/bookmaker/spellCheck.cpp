@@ -53,7 +53,6 @@ private:
         INHERITED::resetCommon();
         fMethod = nullptr;
         fRoot = nullptr;
-        fTableState = TableState::kNone;
         fInCode = false;
         fInConst = false;
         fInFormula = false;
@@ -74,7 +73,7 @@ private:
     const BmhParser& fBmhParser;
     Definition* fMethod;
     RootDefinition* fRoot;
-    TableState fTableState;
+    int fLocalLine;
     bool fInCode;
     bool fInConst;
     bool fInDescription;
@@ -136,10 +135,6 @@ bool SpellCheck::check(Definition* def) {
     fLineCount = def->fLineCount;
     string printable = def->printableName();
     const char* textStart = def->fContentStart;
-    if (MarkType::kParam != def->fMarkType && MarkType::kConst != def->fMarkType &&
-            MarkType::kPrivate != def->fMarkType && TableState::kNone != fTableState) {
-        fTableState = TableState::kNone;
-    }
     switch (def->fMarkType) {
         case MarkType::kAlias:
             break;
@@ -159,12 +154,6 @@ bool SpellCheck::check(Definition* def) {
             break;
         case MarkType::kConst: {
             fInConst = true;
-            if (TableState::kNone == fTableState) {
-                fTableState = TableState::kRow;
-            }
-            if (TableState::kRow == fTableState) {
-                fTableState = TableState::kColumn;
-            }
             this->wordCheck(def->fName);
             const char* lineEnd = strchr(textStart, '\n');
             this->wordCheck(lineEnd - textStart, textStart);
@@ -187,8 +176,6 @@ bool SpellCheck::check(Definition* def) {
         case MarkType::kEnumClass:
             this->wordCheck(def->fName);
             break;
-        case MarkType::kError:
-            break;
         case MarkType::kExample:
             break;
         case MarkType::kExperimental:
@@ -204,9 +191,15 @@ bool SpellCheck::check(Definition* def) {
             break;
         case MarkType::kHeight:
             break;
+        case MarkType::kIllustration:
+            break;
         case MarkType::kImage:
             break;
+        case MarkType::kIn:
+            break;
         case MarkType::kLegend:
+            break;
+        case MarkType::kLine:
             break;
         case MarkType::kLink:
             break;
@@ -223,11 +216,9 @@ bool SpellCheck::check(Definition* def) {
             if (all_lower(method_name)) {
                 method_name += "()";
             }
-            string formattedStr = def->formatFunction();
             if (!def->isClone() && Definition::MethodType::kOperator != def->fMethodType) {
                 this->wordCheck(method_name);
             }
-            fTableState = TableState::kNone;
             fMethod = def;
             } break;
         case MarkType::kNoExample:
@@ -235,12 +226,6 @@ bool SpellCheck::check(Definition* def) {
         case MarkType::kOutdent:
             break;
         case MarkType::kParam: {
-            if (TableState::kNone == fTableState) {
-                fTableState = TableState::kRow;
-            }
-            if (TableState::kRow == fTableState) {
-                fTableState = TableState::kColumn;
-            }
             TextParser paramParser(def->fFileName, def->fStart, def->fContentStart,
                     def->fLineCount);
             paramParser.skipWhiteSpace();
@@ -256,6 +241,8 @@ bool SpellCheck::check(Definition* def) {
        } break;
         case MarkType::kPlatform:
             break;
+        case MarkType::kPopulate:
+            break;
         case MarkType::kPrivate:
             break;
         case MarkType::kReturn:
@@ -263,6 +250,8 @@ bool SpellCheck::check(Definition* def) {
         case MarkType::kRow:
             break;
         case MarkType::kSeeAlso:
+            break;
+        case MarkType::kSet:
             break;
         case MarkType::kStdOut: {
             fInStdOut = true;
@@ -338,8 +327,6 @@ bool SpellCheck::check(Definition* def) {
         case MarkType::kConst:
             fInConst = false;
         case MarkType::kParam:
-            SkASSERT(TableState::kColumn == fTableState);
-            fTableState = TableState::kRow;
             break;
         case MarkType::kReturn:
         case MarkType::kSeeAlso:
@@ -392,6 +379,7 @@ void SpellCheck::leafCheck(const char* start, const char* end) {
     const char* wordStart = nullptr;
     const char* wordEnd = nullptr;
     const char* possibleEnd = nullptr;
+    fLocalLine = 0;
     do {
         if (wordStart && wordEnd) {
             if (!allLower || (!inQuotes && '\"' != lastCh && !inParens
@@ -459,6 +447,9 @@ void SpellCheck::leafCheck(const char* start, const char* end) {
                 allLower = false;
             case '-':  // note that dash doesn't clear allLower
                 break;
+            case '\n':
+                ++fLocalLine;
+                // fall through
             default:
                 wordEnd = chPtr;
                 break;
@@ -494,7 +485,8 @@ void SpellCheck::report(SkCommandLineFlags::StringArray report) {
                 continue;
             }
             if (iter.second.fCount == 1) {
-                SkDebugf("%s(%d): %s\n", iter.second.fFile.c_str(), iter.second.fLine,
+                string fullName = this->ReportFilename(iter.second.fFile);
+                SkDebugf("%s(%d): %s\n", fullName.c_str(), iter.second.fLine,
                         iter.first.c_str());
             }
         }
@@ -564,7 +556,8 @@ void SpellCheck::report(SkCommandLineFlags::StringArray report) {
             break;
         }
         if (check.compare(mispelled) == 0) {
-            SkDebugf("%s(%d): %s\n", iter.second.fFile.c_str(), iter.second.fLine,
+            string fullName = this->ReportFilename(iter.second.fFile);
+            SkDebugf("%s(%d): %s\n", fullName.c_str(), iter.second.fLine,
                     iter.first.c_str());
             if (report.count() == ++index) {
                 break;
@@ -655,7 +648,7 @@ void SpellCheck::wordCheck(const string& str) {
     } else {
         CheckEntry* entry = &mappy[str];
         entry->fFile = fFileName;
-        entry->fLine = fLineCount;
+        entry->fLine = fLineCount + fLocalLine;
         entry->fCount = 1;
     }
 }

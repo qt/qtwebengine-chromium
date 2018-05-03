@@ -15,31 +15,13 @@
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLVertexGeoBuilder.h"
 
-void GrCCCoverageProcessor::Shader::emitVaryings(GrGLSLVaryingHandler* varyingHandler,
-                                                 GrGLSLVarying::Scope scope, SkString* code,
-                                                 const char* position, const char* coverage,
-                                                 const char* wind) {
-    SkASSERT(GrGLSLVarying::Scope::kVertToGeo != scope);
-    WindHandling windHandling = this->onEmitVaryings(varyingHandler, scope, code, position,
-                                                     coverage, wind);
-    if (WindHandling::kNotHandled == windHandling) {
-        fWind.reset(kHalf_GrSLType, scope);
-        varyingHandler->addFlatVarying("wind", &fWind);
-        code->appendf("%s = %s;", OutName(fWind), wind);
-    }
-}
-
 void GrCCCoverageProcessor::Shader::emitFragmentCode(const GrCCCoverageProcessor& proc,
-                                                     GrGLSLPPFragmentBuilder* f,
+                                                     GrGLSLFPFragmentBuilder* f,
                                                      const char* skOutputColor,
                                                      const char* skOutputCoverage) const {
     f->codeAppendf("half coverage = 0;");
     this->onEmitFragmentCode(f, "coverage");
-    if (fWind.fsIn()) {
-        f->codeAppendf("%s.a = coverage * %s;", skOutputColor, fWind.fsIn());
-    } else {
-        f->codeAppendf("%s.a = coverage;", skOutputColor);
-    }
+    f->codeAppendf("%s.a = coverage;", skOutputColor);
     f->codeAppendf("%s = half4(1);", skOutputCoverage);
 #ifdef SK_DEBUG
     if (proc.debugVisualizationsEnabled()) {
@@ -62,7 +44,7 @@ void GrCCCoverageProcessor::Shader::EmitEdgeDistanceEquation(GrGLSLVertexGeoBuil
     s->codeAppendf("%s = float3(-n, dot(n, %s) - .5);", outputDistanceEquation, leftPt);
 }
 
-int GrCCCoverageProcessor::Shader::DefineSoftSampleLocations(GrGLSLPPFragmentBuilder* f,
+int GrCCCoverageProcessor::Shader::DefineSoftSampleLocations(GrGLSLFPFragmentBuilder* f,
                                                              const char* samplesName) {
     // Standard DX11 sample locations.
 #if defined(SK_BUILD_FOR_ANDROID) || defined(SK_BUILD_FOR_IOS)
@@ -84,8 +66,11 @@ int GrCCCoverageProcessor::Shader::DefineSoftSampleLocations(GrGLSLPPFragmentBui
 
 void GrCCCoverageProcessor::getGLSLProcessorKey(const GrShaderCaps&,
                                                 GrProcessorKeyBuilder* b) const {
-    int key = (int)fRenderPass << 1;
-    if (Impl::kGeometryShader == fImpl) {
+    int key = (int)fRenderPass << 2;
+    if (WindMethod::kInstanceData == fWindMethod) {
+        key |= 2;
+    }
+    if (Impl::kVertexShader == fImpl) {
         key |= 1;
     }
 #ifdef SK_DEBUG

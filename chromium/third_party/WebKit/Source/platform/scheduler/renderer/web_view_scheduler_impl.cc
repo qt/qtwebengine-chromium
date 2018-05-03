@@ -11,6 +11,7 @@
 #include "platform/WebFrameScheduler.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/base/virtual_time_domain.h"
+#include "platform/scheduler/child/default_params.h"
 #include "platform/scheduler/renderer/auto_advancing_virtual_time_domain.h"
 #include "platform/scheduler/renderer/budget_pool.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
@@ -99,7 +100,7 @@ WebViewSchedulerImpl::WebViewSchedulerImpl(
     bool disable_background_timer_throttling)
     : intervention_reporter_(intervention_reporter),
       renderer_scheduler_(renderer_scheduler),
-      page_visible_(true),
+      page_visible_(kDefaultPageVisibility == PageVisibilityState::kVisible),
       disable_background_timer_throttling_(disable_background_timer_throttling),
       is_audio_playing_(false),
       reported_background_throttling_since_navigation_(false),
@@ -132,11 +133,11 @@ void WebViewSchedulerImpl::SetPageVisible(bool page_visible) {
   UpdateBackgroundThrottlingState();
 }
 
-void WebViewSchedulerImpl::SetPageStopped(bool stopped) {
+void WebViewSchedulerImpl::SetPageFrozen(bool frozen) {
   for (WebFrameSchedulerImpl* frame_scheduler : frame_schedulers_)
-    frame_scheduler->SetPageStopped(stopped);
+    frame_scheduler->SetPageFrozen(frozen);
   if (delegate_)
-    delegate_->SetPageStopped(stopped);
+    delegate_->SetPageFrozen(frozen);
 }
 
 std::unique_ptr<WebFrameSchedulerImpl>
@@ -173,7 +174,8 @@ void WebViewSchedulerImpl::ReportIntervention(const std::string& message) {
 }
 
 base::TimeTicks WebViewSchedulerImpl::EnableVirtualTime() {
-  return renderer_scheduler_->EnableVirtualTime();
+  return renderer_scheduler_->EnableVirtualTime(
+      RendererSchedulerImpl::BaseTimeOverridePolicy::DO_NOT_OVERRIDE);
 }
 
 void WebViewSchedulerImpl::DisableVirtualTimeForTesting() {
@@ -182,6 +184,10 @@ void WebViewSchedulerImpl::DisableVirtualTimeForTesting() {
 
 void WebViewSchedulerImpl::SetVirtualTimePolicy(VirtualTimePolicy policy) {
   renderer_scheduler_->SetVirtualTimePolicy(policy);
+}
+
+void WebViewSchedulerImpl::SetInitialVirtualTimeOffset(base::TimeDelta offset) {
+  renderer_scheduler_->SetInitialVirtualTimeOffset(offset);
 }
 
 bool WebViewSchedulerImpl::VirtualTimeAllowedToAdvance() const {

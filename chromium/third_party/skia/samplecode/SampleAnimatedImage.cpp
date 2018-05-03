@@ -25,7 +25,6 @@ class SampleAnimatedImage : public SampleView {
 public:
     SampleAnimatedImage()
         : INHERITED()
-        , fRunning(false)
         , fYOffset(0)
     {}
 
@@ -63,7 +62,19 @@ protected:
             return false;
         }
 
-        fImage->update(animTimer.msec());
+        const double lastWallTime = fLastWallTime;
+        fLastWallTime = animTimer.msec();
+
+        if (fRunning) {
+            fCurrentTime += fLastWallTime - lastWallTime;
+            if (fCurrentTime > fTimeToShowNextFrame) {
+                fTimeToShowNextFrame += fImage->decodeNextFrame();
+                if (fImage->isFinished()) {
+                    fRunning = false;
+                }
+            }
+        }
+
         return true;
     }
 
@@ -79,6 +90,7 @@ protected:
             return;
         }
 
+        fTimeToShowNextFrame = fImage->currentFrameDuration();
         SkPictureRecorder recorder;
         auto canvas = recorder.beginRecording(fImage->getBounds());
         canvas->drawDrawable(fImage.get());
@@ -95,16 +107,16 @@ protected:
         if (fImage && SampleCode::CharQ(*evt, &uni)) {
             switch (uni) {
                 case kPauseKey:
-                    if (fRunning) {
-                        fImage->stop();
-                        fRunning = false;
+                    fRunning = !fRunning;
+                    if (fImage->isFinished()) {
+                        // fall through
                     } else {
-                        fImage->start();
-                        fRunning = true;
+                        return true;
                     }
-                    return true;
                 case kResetKey:
                     fImage->reset();
+                    fCurrentTime = fLastWallTime;
+                    fTimeToShowNextFrame = fCurrentTime + fImage->currentFrameDuration();
                     return true;
                 default:
                     break;
@@ -116,8 +128,11 @@ protected:
 private:
     sk_sp<SkAnimatedImage>  fImage;
     sk_sp<SkDrawable>       fDrawable;
-    bool                    fRunning;
     SkScalar                fYOffset;
+    bool                    fRunning = false;
+    double                  fCurrentTime = 0.0;
+    double                  fLastWallTime = 0.0;
+    double                  fTimeToShowNextFrame = 0.0;
     typedef SampleView INHERITED;
 };
 

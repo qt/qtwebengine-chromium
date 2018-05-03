@@ -232,18 +232,18 @@ void SVGSVGElement::CollectStyleForPresentationAttribute(
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == x_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &x_->CssValue());
+                                            x_->CssValue());
   } else if (property == y_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &y_->CssValue());
+                                            y_->CssValue());
   } else if (IsOutermostSVGSVGElement() &&
              (property == width_ || property == height_)) {
     if (property == width_) {
       AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                              &width_->CssValue());
+                                              width_->CssValue());
     } else if (property == height_) {
       AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                              &height_->CssValue());
+                                              height_->CssValue());
     }
   } else {
     SVGGraphicsElement::CollectStyleForPresentationAttribute(name, value,
@@ -275,7 +275,7 @@ void SVGSVGElement::SvgAttributeChanged(const QualifiedName& attr_name) {
                             StyleChangeReasonForTracing::Create(
                                 StyleChangeReason::kSVGContainerSizeChange));
         if (layout_object)
-          ToLayoutSVGRoot(layout_object)->IntrinsicDimensionsChanged();
+          ToLayoutSVGRoot(layout_object)->IntrinsicSizingInfoChanged();
       }
     } else {
       InvalidateSVGPresentationAttributeStyle();
@@ -291,15 +291,15 @@ void SVGSVGElement::SvgAttributeChanged(const QualifiedName& attr_name) {
     if (LayoutObject* object = GetLayoutObject()) {
       object->SetNeedsTransformUpdate();
       if (attr_name == SVGNames::viewBoxAttr && object->IsSVGRoot())
-        ToLayoutSVGRoot(object)->IntrinsicDimensionsChanged();
+        ToLayoutSVGRoot(object)->IntrinsicSizingInfoChanged();
     }
   }
 
   if (update_relative_lengths_or_view_box ||
       SVGZoomAndPan::IsKnownAttribute(attr_name)) {
     SVGElement::InvalidationGuard invalidation_guard(this);
-    if (auto* layout_object = this->GetLayoutObject())
-      MarkForLayoutAndParentResourceInvalidation(layout_object);
+    if (auto* layout_object = GetLayoutObject())
+      MarkForLayoutAndParentResourceInvalidation(*layout_object);
     return;
   }
 
@@ -701,8 +701,8 @@ void SVGSVGElement::SetViewSpec(SVGViewSpec* view_spec) {
   if (!view_spec_ && !view_spec)
     return;
   view_spec_ = view_spec;
-  if (LayoutObject* layout_object = this->GetLayoutObject())
-    MarkForLayoutAndParentResourceInvalidation(layout_object);
+  if (LayoutObject* layout_object = GetLayoutObject())
+    MarkForLayoutAndParentResourceInvalidation(*layout_object);
 }
 
 void SVGSVGElement::SetupInitialView(const String& fragment_identifier,

@@ -10,7 +10,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -157,7 +156,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
       const ParsedQuicVersionVector& supported_versions);
 
   // Creates a connectivity probing packet.
-  std::unique_ptr<QuicEncryptedPacket> SerializeConnectivityProbingPacket();
+  OwningSerializedPacketPointer SerializeConnectivityProbingPacket();
 
   // Returns a dummy packet that is valid but contains no useful information.
   static SerializedPacket NoPacket();
@@ -198,8 +197,15 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // MaybeAddPadding().
   void AddPendingPadding(QuicByteCount size);
 
+  // Sets transmission type of next constructed packets.
+  void SetTransmissionType(TransmissionType type);
+
   void set_debug_delegate(DebugDelegate* debug_delegate) {
     debug_delegate_ = debug_delegate;
+  }
+
+  void set_can_set_transmission_type(bool can_set_transmission_type) {
+    can_set_transmission_type_ = can_set_transmission_type;
   }
 
   QuicByteCount pending_padding_bytes() const { return pending_padding_bytes_; }
@@ -288,6 +294,10 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // packet size. Please note, full padding does not consume pending padding
   // bytes.
   bool needs_full_padding_;
+
+  // If true, packet_'s transmission type is only set by
+  // SetPacketTransmissionType and does not get cleared in ClearPacket.
+  bool can_set_transmission_type_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicPacketCreator);
 };

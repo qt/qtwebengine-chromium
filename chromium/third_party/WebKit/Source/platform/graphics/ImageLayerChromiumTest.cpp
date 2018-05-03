@@ -66,7 +66,9 @@ class TestImage : public Image {
   }
 
   PaintImage PaintImageForCurrentFrame() override {
-    return CreatePaintImageBuilder().set_image(image_).TakePaintImage();
+    return CreatePaintImageBuilder()
+        .set_image(image_, PaintImage::GetNextContentId())
+        .TakePaintImage();
   }
 
  private:
@@ -94,7 +96,7 @@ class TestImage : public Image {
 TEST(ImageLayerChromiumTest, imageLayerContentReset) {
   FakeGraphicsLayerClient client;
   std::unique_ptr<FakeGraphicsLayer> graphics_layer =
-      WTF::WrapUnique(new FakeGraphicsLayer(&client));
+      WTF::WrapUnique(new FakeGraphicsLayer(client));
   ASSERT_TRUE(graphics_layer.get());
 
   ASSERT_FALSE(graphics_layer->HasContentsLayer());
@@ -116,7 +118,7 @@ TEST(ImageLayerChromiumTest, imageLayerContentReset) {
 TEST(ImageLayerChromiumTest, opaqueImages) {
   FakeGraphicsLayerClient client;
   std::unique_ptr<FakeGraphicsLayer> graphics_layer =
-      WTF::WrapUnique(new FakeGraphicsLayer(&client));
+      WTF::WrapUnique(new FakeGraphicsLayer(client));
   ASSERT_TRUE(graphics_layer.get());
 
   bool opaque = true;

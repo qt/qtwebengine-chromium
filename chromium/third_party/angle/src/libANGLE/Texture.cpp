@@ -342,6 +342,26 @@ bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
         }
     }
 
+    // OpenGLES 3.1 spec section 8.16 states that a texture is not mipmap complete if:
+    // The internalformat specified for the texture is DEPTH_STENCIL format, the value of
+    // DEPTH_STENCIL_TEXTURE_MODE is STENCIL_INDEX, and either the magnification filter is
+    // not NEAREST or the minification filter is neither NEAREST nor NEAREST_MIPMAP_NEAREST.
+    // However, the ES 3.1 spec differs from the statement above, because it is incorrect.
+    // See the issue at https://github.com/KhronosGroup/OpenGL-API/issues/33.
+    // For multismaple texture, filter state of multisample texture is ignored(11.1.3.3).
+    // So it shouldn't be judged as incomplete texture. So, we ignore filtering for multisample
+    // texture completeness here.
+    if (mTarget != GL_TEXTURE_2D_MULTISAMPLE && baseImageDesc.format.info->depthBits > 0 &&
+        mDepthStencilTextureMode == GL_STENCIL_INDEX)
+    {
+        if ((samplerState.minFilter != GL_NEAREST &&
+             samplerState.minFilter != GL_NEAREST_MIPMAP_NEAREST) ||
+            samplerState.magFilter != GL_NEAREST)
+        {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -479,7 +499,7 @@ void TextureState::setImageDesc(GLenum target, size_t level, const ImageDesc &de
 
 const ImageDesc &TextureState::getImageDesc(const ImageIndex &imageIndex) const
 {
-    return getImageDesc(imageIndex.type, imageIndex.mipIndex);
+    return getImageDesc(imageIndex.target, imageIndex.mipIndex);
 }
 
 void TextureState::setImageDescChain(GLuint baseLevel,
@@ -792,14 +812,12 @@ GLuint Texture::getMaxLevel() const
 
 void Texture::setDepthStencilTextureMode(GLenum mode)
 {
-    if (mode != mState.mDepthStencilTextureMode)
+    if (mState.mDepthStencilTextureMode != mode)
     {
-        // Changing the mode from the default state (GL_DEPTH_COMPONENT) is not implemented yet
-        UNIMPLEMENTED();
+        mState.mDepthStencilTextureMode = mode;
+        mDirtyBits.set(DIRTY_BIT_DEPTH_STENCIL_TEXTURE_MODE);
+        invalidateCompletenessCache();
     }
-
-    // TODO(geofflang): add dirty bits
-    mState.mDepthStencilTextureMode = mode;
 }
 
 GLenum Texture::getDepthStencilTextureMode() const
@@ -895,9 +913,10 @@ egl::Stream *Texture::getBoundStream() const
     return mBoundStream;
 }
 
-void Texture::signalDirty(InitState initState) const
+void Texture::signalDirty(const Context *context, InitState initState)
 {
-    mDirtyChannel.signal(initState);
+    mState.mInitState = initState;
+    onStateChange(context, angle::SubjectMessage::STATE_CHANGE);
     invalidateCompletenessCache();
 }
 
@@ -923,7 +942,7 @@ Error Texture::setImage(const Context *context,
 
     InitState initState = DetermineInitState(context, pixels);
     mState.setImageDesc(target, level, ImageDesc(size, Format(internalFormat, type), initState));
-    signalDirty(initState);
+    signalDirty(context, initState);
 
     return NoError();
 }
@@ -966,7 +985,7 @@ Error Texture::setCompressedImage(const Context *context,
 
     InitState initState = DetermineInitState(context, pixels);
     mState.setImageDesc(target, level, ImageDesc(size, Format(internalFormat), initState));
-    signalDirty(initState);
+    signalDirty(context, initState);
 
     return NoError();
 }
@@ -1020,7 +1039,7 @@ Error Texture::copyImage(const Context *context,
                                   Format(internalFormatInfo), InitState::Initialized));
 
     // We need to initialize this texture only if the source attachment is not initialized.
-    signalDirty(InitState::Initialized);
+    signalDirty(context, InitState::Initialized);
 
     return NoError();
 }
@@ -1076,7 +1095,7 @@ Error Texture::copyTexture(const Context *context,
         target, level,
         ImageDesc(sourceDesc.size, Format(internalFormatInfo), InitState::Initialized));
 
-    signalDirty(InitState::Initialized);
+    signalDirty(context, InitState::Initialized);
 
     return NoError();
 }
@@ -1148,7 +1167,7 @@ Error Texture::setStorage(const Context *context,
     mDirtyBits.set(DIRTY_BIT_BASE_LEVEL);
     mDirtyBits.set(DIRTY_BIT_MAX_LEVEL);
 
-    signalDirty(InitState::MayNeedInit);
+    signalDirty(context, InitState::MayNeedInit);
 
     return NoError();
 }
@@ -1175,7 +1194,7 @@ Error Texture::setStorageMultisample(const Context *context,
     mState.setImageDescChainMultisample(size, Format(internalFormat), samples, fixedSampleLocations,
                                         InitState::MayNeedInit);
 
-    signalDirty(InitState::MayNeedInit);
+    signalDirty(context, InitState::MayNeedInit);
 
     return NoError();
 }
@@ -1215,7 +1234,7 @@ Error Texture::generateMipmap(const Context *context)
                                  InitState::Initialized);
     }
 
-    signalDirty(InitState::Initialized);
+    signalDirty(context, InitState::Initialized);
 
     return NoError();
 }
@@ -1237,7 +1256,7 @@ Error Texture::bindTexImageFromSurface(const Context *context, egl::Surface *sur
     Extents size(surface->getWidth(), surface->getHeight(), 1);
     ImageDesc desc(size, surface->getBindTexImageFormat(), InitState::Initialized);
     mState.setImageDesc(mState.mTarget, 0, desc);
-    signalDirty(InitState::Initialized);
+    signalDirty(context, InitState::Initialized);
     return NoError();
 }
 
@@ -1250,7 +1269,7 @@ Error Texture::releaseTexImageFromSurface(const Context *context)
     // Erase the image info for level 0
     ASSERT(mState.mTarget == GL_TEXTURE_2D || mState.mTarget == GL_TEXTURE_RECTANGLE_ANGLE);
     mState.clearImageDesc(mState.mTarget, 0);
-    signalDirty(InitState::Initialized);
+    signalDirty(context, InitState::Initialized);
     return NoError();
 }
 
@@ -1281,7 +1300,7 @@ Error Texture::acquireImageFromStream(const Context *context,
     Extents size(desc.width, desc.height, 1);
     mState.setImageDesc(mState.mTarget, 0,
                         ImageDesc(size, Format(desc.internalFormat), InitState::Initialized));
-    signalDirty(InitState::Initialized);
+    signalDirty(context, InitState::Initialized);
     return NoError();
 }
 
@@ -1293,7 +1312,7 @@ Error Texture::releaseImageFromStream(const Context *context)
 
     // Set to incomplete
     mState.clearImageDesc(mState.mTarget, 0);
-    signalDirty(InitState::Initialized);
+    signalDirty(context, InitState::Initialized);
     return NoError();
 }
 
@@ -1330,7 +1349,7 @@ Error Texture::setEGLImageTarget(const Context *context, GLenum target, egl::Ima
 
     mState.clearImageDescs();
     mState.setImageDesc(target, 0, ImageDesc(size, imageTarget->getFormat(), initState));
-    signalDirty(initState);
+    signalDirty(context, initState);
 
     return NoError();
 }
@@ -1347,7 +1366,7 @@ const Format &Texture::getAttachmentFormat(GLenum /*binding*/, const ImageIndex 
 
 GLsizei Texture::getAttachmentSamples(const ImageIndex &imageIndex) const
 {
-    return getSamples(imageIndex.type, 0);
+    return getSamples(imageIndex.target, 0);
 }
 
 void Texture::onAttach(const Context *context)
@@ -1427,7 +1446,7 @@ Error Texture::ensureInitialized(const Context *context)
     }
     if (anyDirty)
     {
-        signalDirty(InitState::Initialized);
+        signalDirty(context, InitState::Initialized);
     }
     mState.mInitState = InitState::Initialized;
 
@@ -1448,7 +1467,7 @@ void Texture::setInitState(const ImageIndex &imageIndex, InitState initState)
 {
     ImageDesc newDesc = mState.getImageDesc(imageIndex);
     newDesc.initState = initState;
-    mState.setImageDesc(imageIndex.type, imageIndex.mipIndex, newDesc);
+    mState.setImageDesc(imageIndex.target, imageIndex.mipIndex, newDesc);
 }
 
 Error Texture::ensureSubImageInitialized(const Context *context,

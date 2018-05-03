@@ -23,12 +23,12 @@
 #include "net/base/load_states.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
+#include "net/base/proxy_server.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_with_source.h"
 #include "net/nqe/network_quality_estimator.h"
-#include "net/proxy/proxy_server.h"
 #include "net/url_request/url_request_context.h"
 
 namespace net {
@@ -91,6 +91,9 @@ URLRequestJob::URLRequestJob(URLRequest* request,
       last_notified_total_received_bytes_(0),
       last_notified_total_sent_bytes_(0),
       weak_factory_(this) {
+  // Socket tagging only supported for HTTP/HTTPS.
+  DCHECK(request == nullptr || SocketTag() == request->socket_tag() ||
+         request->url().SchemeIsHTTPOrHTTPS());
   base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
   if (power_monitor)
     power_monitor->AddObserver(this);

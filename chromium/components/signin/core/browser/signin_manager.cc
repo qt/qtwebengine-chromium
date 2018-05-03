@@ -15,7 +15,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_internals_util.h"
 #include "components/signin/core/browser/signin_metrics.h"
@@ -28,19 +27,23 @@
 
 using namespace signin_internals_util;
 
-SigninManager::SigninManager(SigninClient* client,
-                             ProfileOAuth2TokenService* token_service,
-                             AccountTrackerService* account_tracker_service,
-                             GaiaCookieManagerService* cookie_manager_service,
-                             SigninErrorController* signin_error_controller)
+SigninManager::SigninManager(
+    SigninClient* client,
+    ProfileOAuth2TokenService* token_service,
+    AccountTrackerService* account_tracker_service,
+    GaiaCookieManagerService* cookie_manager_service,
+    SigninErrorController* signin_error_controller,
+    signin::AccountConsistencyMethod account_consistency)
     : SigninManagerBase(client,
                         account_tracker_service,
                         signin_error_controller),
       prohibit_signout_(false),
       type_(SIGNIN_TYPE_NONE),
       client_(client),
+      diagnostics_client_(nullptr),
       token_service_(token_service),
       cookie_manager_service_(cookie_manager_service),
+      account_consistency_(account_consistency),
       signin_manager_signed_in_(false),
       user_info_fetched_by_account_tracker_(false),
       weak_pointer_factory_(this) {}
@@ -158,7 +161,7 @@ void SigninManager::SignOut(
     signin_metrics::ProfileSignout signout_source_metric,
     signin_metrics::SignoutDelete signout_delete_metric) {
   StartSignOut(signout_source_metric, signout_delete_metric,
-               !signin::IsDiceEnabledForProfile(client_->GetPrefs()));
+               account_consistency_ != signin::AccountConsistencyMethod::kDice);
 }
 
 void SigninManager::SignOutAndRemoveAllAccounts(
@@ -244,10 +247,7 @@ void SigninManager::DoSignOut(
     token_service_->RevokeAllCredentials();
   }
 
-  for (auto& observer : observer_list_) {
-    observer.GoogleSignedOut(account_id, username);
-    observer.GoogleSignedOut(account_info);
-  }
+  FireGoogleSignedOut(account_id, account_info);
 }
 
 void SigninManager::Initialize(PrefService* local_state) {
@@ -344,6 +344,12 @@ bool SigninManager::IsUsernameAllowedByPolicy(const std::string& username,
   return !!match;  // !! == convert from UBool to bool.
 }
 
+// static
+SigninManager* SigninManager::FromSigninManagerBase(
+    SigninManagerBase* manager) {
+  return static_cast<SigninManager*>(manager);
+}
+
 bool SigninManager::IsAllowedUsername(const std::string& username) const {
   const PrefService* local_state = local_state_pref_registrar_.prefs();
   if (!local_state)
@@ -437,12 +443,29 @@ void SigninManager::OnSignedIn() {
 }
 
 void SigninManager::FireGoogleSigninSucceeded() {
+  if (diagnostics_client_) {
+    diagnostics_client_->WillFireGoogleSigninSucceeded(
+        GetAuthenticatedAccountInfo());
+  }
+
   std::string account_id = GetAuthenticatedAccountId();
   std::string email = GetAuthenticatedAccountInfo().email;
   for (auto& observer : observer_list_) {
     observer.GoogleSigninSucceeded(account_id, email);
     observer.GoogleSigninSucceeded(GetAuthenticatedAccountInfo());
     observer.GoogleSigninSucceededWithPassword(account_id, email, password_);
+  }
+}
+
+void SigninManager::FireGoogleSignedOut(const std::string& account_id,
+                                        const AccountInfo& account_info) {
+  if (diagnostics_client_) {
+    diagnostics_client_->WillFireGoogleSignedOut(account_info);
+  }
+
+  for (auto& observer : observer_list_) {
+    observer.GoogleSignedOut(account_id, account_info.email);
+    observer.GoogleSignedOut(account_info);
   }
 }
 

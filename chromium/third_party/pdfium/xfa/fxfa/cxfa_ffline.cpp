@@ -29,7 +29,7 @@ CFX_GraphStateData::LineCap LineCapToFXGE(XFA_AttributeEnum iLineCap) {
 
 }  // namespace
 
-CXFA_FFLine::CXFA_FFLine(CXFA_Node* pNode) : CXFA_FFDraw(pNode) {}
+CXFA_FFLine::CXFA_FFLine(CXFA_Node* pNode) : CXFA_FFWidget(pNode) {}
 
 CXFA_FFLine::~CXFA_FFLine() {}
 
@@ -44,6 +44,7 @@ void CXFA_FFLine::GetRectFromHand(CFX_RectF& rect,
         break;
       case XFA_AttributeEnum::Right:
         rect.top += fHalfWidth;
+        break;
       case XFA_AttributeEnum::Even:
         break;
       default:

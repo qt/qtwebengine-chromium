@@ -31,9 +31,9 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time_to_iso8601.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -56,11 +56,10 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/extensions/api/downloads.h"
+#include "components/download/public/common/download_interrupt_reasons.h"
+#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "content/public/browser/download_interrupt_reasons.h"
-#include "content/public/browser/download_item.h"
-#include "content/public/browser/download_save_info.h"
-#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -87,7 +86,7 @@
 
 using content::BrowserContext;
 using content::BrowserThread;
-using content::DownloadItem;
+using download::DownloadItem;
 using content::DownloadManager;
 
 namespace download_extension_errors {
@@ -193,7 +192,7 @@ const char* const kDangerStrings[] = {
   kDangerHost,
   kDangerUnwanted
 };
-static_assert(arraysize(kDangerStrings) == content::DOWNLOAD_DANGER_TYPE_MAX,
+static_assert(arraysize(kDangerStrings) == download::DOWNLOAD_DANGER_TYPE_MAX,
               "kDangerStrings should have DOWNLOAD_DANGER_TYPE_MAX elements");
 
 // Note: Any change to the state strings, should be accompanied by a
@@ -204,52 +203,45 @@ const char* const kStateStrings[] = {
   kStateInterrupted,
   kStateInterrupted,
 };
-static_assert(arraysize(kStateStrings) == DownloadItem::MAX_DOWNLOAD_STATE,
+static_assert(arraysize(kStateStrings) ==
+                  download::DownloadItem::MAX_DOWNLOAD_STATE,
               "kStateStrings should have MAX_DOWNLOAD_STATE elements");
 
-const char* DangerString(content::DownloadDangerType danger) {
+const char* DangerString(download::DownloadDangerType danger) {
   DCHECK(danger >= 0);
-  DCHECK(danger < static_cast<content::DownloadDangerType>(
-      arraysize(kDangerStrings)));
-  if (danger < 0 || danger >= static_cast<content::DownloadDangerType>(
-      arraysize(kDangerStrings)))
+  DCHECK(danger <
+         static_cast<download::DownloadDangerType>(arraysize(kDangerStrings)));
+  if (danger < 0 || danger >= static_cast<download::DownloadDangerType>(
+                                  arraysize(kDangerStrings)))
     return "";
   return kDangerStrings[danger];
 }
 
-content::DownloadDangerType DangerEnumFromString(const std::string& danger) {
+download::DownloadDangerType DangerEnumFromString(const std::string& danger) {
   for (size_t i = 0; i < arraysize(kDangerStrings); ++i) {
     if (danger == kDangerStrings[i])
-      return static_cast<content::DownloadDangerType>(i);
+      return static_cast<download::DownloadDangerType>(i);
   }
-  return content::DOWNLOAD_DANGER_TYPE_MAX;
+  return download::DOWNLOAD_DANGER_TYPE_MAX;
 }
 
-const char* StateString(DownloadItem::DownloadState state) {
+const char* StateString(download::DownloadItem::DownloadState state) {
   DCHECK(state >= 0);
-  DCHECK(state < static_cast<DownloadItem::DownloadState>(
-      arraysize(kStateStrings)));
-  if (state < 0 || state >= static_cast<DownloadItem::DownloadState>(
-      arraysize(kStateStrings)))
+  DCHECK(state < static_cast<download::DownloadItem::DownloadState>(
+                     arraysize(kStateStrings)));
+  if (state < 0 || state >= static_cast<download::DownloadItem::DownloadState>(
+                                arraysize(kStateStrings)))
     return "";
   return kStateStrings[state];
 }
 
-DownloadItem::DownloadState StateEnumFromString(const std::string& state) {
+download::DownloadItem::DownloadState StateEnumFromString(
+    const std::string& state) {
   for (size_t i = 0; i < arraysize(kStateStrings); ++i) {
     if ((kStateStrings[i] != NULL) && (state == kStateStrings[i]))
       return static_cast<DownloadItem::DownloadState>(i);
   }
   return DownloadItem::MAX_DOWNLOAD_STATE;
-}
-
-std::string TimeToISO8601(const base::Time& t) {
-  base::Time::Exploded exploded;
-  t.UTCExplode(&exploded);
-  return base::StringPrintf(
-      "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", exploded.year, exploded.month,
-      exploded.day_of_month, exploded.hour, exploded.minute, exploded.second,
-      exploded.millisecond);
 }
 
 std::unique_ptr<base::DictionaryValue> DownloadItemToJSON(
@@ -273,25 +265,27 @@ std::unique_ptr<base::DictionaryValue> DownloadItemToJSON(
   json->SetBoolean(kCanResumeKey, download_item->CanResume());
   json->SetBoolean(kPausedKey, download_item->IsPaused());
   json->SetString(kMimeKey, download_item->GetMimeType());
-  json->SetString(kStartTimeKey, TimeToISO8601(download_item->GetStartTime()));
+  json->SetString(kStartTimeKey,
+                  base::TimeToISO8601(download_item->GetStartTime()));
   json->SetDouble(kBytesReceivedKey, download_item->GetReceivedBytes());
   json->SetDouble(kTotalBytesKey, download_item->GetTotalBytes());
   json->SetBoolean(kIncognitoKey, browser_context->IsOffTheRecord());
   if (download_item->GetState() == DownloadItem::INTERRUPTED) {
-    json->SetString(kErrorKey,
-                    content::DownloadInterruptReasonToString(
-                        download_item->GetLastReason()));
+    json->SetString(kErrorKey, download::DownloadInterruptReasonToString(
+                                   download_item->GetLastReason()));
   } else if (download_item->GetState() == DownloadItem::CANCELLED) {
     json->SetString(kErrorKey,
-                    content::DownloadInterruptReasonToString(
-                        content::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED));
+                    download::DownloadInterruptReasonToString(
+                        download::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED));
   }
   if (!download_item->GetEndTime().is_null())
-    json->SetString(kEndTimeKey, TimeToISO8601(download_item->GetEndTime()));
+    json->SetString(kEndTimeKey,
+                    base::TimeToISO8601(download_item->GetEndTime()));
   base::TimeDelta time_remaining;
   if (download_item->TimeRemaining(&time_remaining)) {
     base::Time now = base::Time::Now();
-    json->SetString(kEstimatedEndTimeKey, TimeToISO8601(now + time_remaining));
+    json->SetString(kEstimatedEndTimeKey,
+                    base::TimeToISO8601(now + time_remaining));
   }
   DownloadedByExtension* by_ext = DownloadedByExtension::Get(download_item);
   if (by_ext) {
@@ -563,9 +557,9 @@ void RunDownloadQuery(
   std::string danger_string =
       downloads::ToString(query_in.danger);
   if (!danger_string.empty()) {
-    content::DownloadDangerType danger_type = DangerEnumFromString(
-        danger_string);
-    if (danger_type == content::DOWNLOAD_DANGER_TYPE_MAX) {
+    download::DownloadDangerType danger_type =
+        DangerEnumFromString(danger_string);
+    if (danger_type == download::DOWNLOAD_DANGER_TYPE_MAX) {
       *error = errors::kInvalidDangerType;
       return;
     }
@@ -768,11 +762,10 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
   // Returns false if this |extension_id| was not expected or if this
   // |extension_id| has already reported. The caller is responsible for
   // validating |filename|.
-  bool DeterminerCallback(
-      Profile* profile,
-      const std::string& extension_id,
-      const base::FilePath& filename,
-      downloads::FilenameConflictAction conflict_action) {
+  bool DeterminerCallback(content::BrowserContext* browser_context,
+                          const std::string& extension_id,
+                          const base::FilePath& filename,
+                          downloads::FilenameConflictAction conflict_action) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     bool found_info = false;
     for (size_t index = 0; index < determiners_.size(); ++index) {
@@ -800,7 +793,7 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
               &determined_conflict_action_,
               &warnings);
           if (!warnings.empty())
-            WarningService::NotifyWarningsOnUI(profile, warnings);
+            WarningService::NotifyWarningsOnUI(browser_context, warnings);
           if (winner_extension_id == determiners_[index].extension_id)
             determiner_ = determiners_[index];
         }
@@ -965,18 +958,16 @@ const char DownloadedByExtension::kKey[] =
   "DownloadItem DownloadedByExtension";
 
 DownloadedByExtension* DownloadedByExtension::Get(
-    content::DownloadItem* item) {
+    download::DownloadItem* item) {
   base::SupportsUserData::Data* data = item->GetUserData(kKey);
   return (data == NULL) ? NULL :
       static_cast<DownloadedByExtension*>(data);
 }
 
-DownloadedByExtension::DownloadedByExtension(
-    content::DownloadItem* item,
-    const std::string& id,
-    const std::string& name)
-  : id_(id),
-    name_(name) {
+DownloadedByExtension::DownloadedByExtension(download::DownloadItem* item,
+                                             const std::string& id,
+                                             const std::string& name)
+    : id_(id), name_(name) {
   item->SetUserData(kKey, base::WrapUnique(this));
 }
 
@@ -1030,8 +1021,8 @@ bool DownloadsDownloadFunction::RunAsync() {
             }
           }
         })");
-  std::unique_ptr<content::DownloadUrlParameters> download_params(
-      new content::DownloadUrlParameters(
+  std::unique_ptr<download::DownloadUrlParameters> download_params(
+      new download::DownloadUrlParameters(
           download_url, render_frame_host()->GetProcess()->GetID(),
           render_frame_host()->GetRenderViewHost()->GetRoutingID(),
           render_frame_host()->GetRoutingID(),
@@ -1082,14 +1073,18 @@ bool DownloadsDownloadFunction::RunAsync() {
       downloads::ToString(options.method);
   if (!method_string.empty())
     download_params->set_method(method_string);
-  if (options.body.get())
-    download_params->set_post_body(*options.body);
+  if (options.body.get()) {
+    download_params->set_post_body(
+        network::ResourceRequestBody::CreateFromBytes(options.body->data(),
+                                                      options.body->size()));
+  }
+
   download_params->set_callback(base::Bind(
       &DownloadsDownloadFunction::OnStarted, this,
       creator_suggested_filename, options.conflict_action));
   // Prevent login prompts for 401/407 responses.
   download_params->set_do_not_prompt_for_login(true);
-  download_params->set_download_source(content::DownloadSource::EXTENSION_API);
+  download_params->set_download_source(download::DownloadSource::EXTENSION_API);
 
   DownloadManager* manager = BrowserContext::GetDownloadManager(
       current_profile);
@@ -1102,11 +1097,11 @@ void DownloadsDownloadFunction::OnStarted(
     const base::FilePath& creator_suggested_filename,
     downloads::FilenameConflictAction creator_conflict_action,
     DownloadItem* item,
-    content::DownloadInterruptReason interrupt_reason) {
+    download::DownloadInterruptReason interrupt_reason) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   VLOG(1) << __func__ << " " << item << " " << interrupt_reason;
   if (item) {
-    DCHECK_EQ(content::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
+    DCHECK_EQ(download::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
     SetResult(std::make_unique<base::Value>(static_cast<int>(item->GetId())));
     if (!creator_suggested_filename.empty() ||
         (creator_conflict_action !=
@@ -1124,8 +1119,8 @@ void DownloadsDownloadFunction::OnStarted(
     new DownloadedByExtension(item, extension()->id(), extension()->name());
     item->UpdateObservers();
   } else {
-    DCHECK_NE(content::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
-    error_ = content::DownloadInterruptReasonToString(interrupt_reason);
+    DCHECK_NE(download::DOWNLOAD_INTERRUPT_REASON_NONE, interrupt_reason);
+    error_ = download::DownloadInterruptReasonToString(interrupt_reason);
   }
   SendResponse(error_.empty());
 }
@@ -1562,10 +1557,8 @@ bool DownloadsGetFileIconFunction::RunAsync() {
   float scale = 1.0;
   content::WebContents* web_contents =
       dispatcher()->GetVisibleWebContents();
-  if (web_contents) {
-    scale = ui::GetScaleFactorForNativeView(
-        web_contents->GetRenderWidgetHostView()->GetNativeView());
-  }
+  if (web_contents && web_contents->GetRenderWidgetHostView())
+    scale = web_contents->GetRenderWidgetHostView()->GetDeviceScaleFactor();
   EXTENSION_FUNCTION_VALIDATE(icon_extractor_->ExtractIconURLForPath(
       download_item->GetTargetFilePath(),
       scale,
@@ -1733,7 +1726,7 @@ void ExtensionDownloadsEventRouter::DetermineFilenameInternal(
 }
 
 bool ExtensionDownloadsEventRouter::DetermineFilename(
-    Profile* profile,
+    content::BrowserContext* browser_context,
     bool include_incognito,
     const std::string& ext_id,
     int download_id,
@@ -1742,7 +1735,8 @@ bool ExtensionDownloadsEventRouter::DetermineFilename(
     std::string* error) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   RecordApiFunctions(DOWNLOADS_FUNCTION_DETERMINE_FILENAME);
-  DownloadItem* item = GetDownload(profile, include_incognito, download_id);
+  DownloadItem* item =
+      GetDownload(browser_context, include_incognito, download_id);
   ExtensionDownloadsEventRouterData* data =
       item ? ExtensionDownloadsEventRouterData::Get(item) : NULL;
   // maxListeners=1 in downloads.idl and suggestCallback in
@@ -1766,8 +1760,8 @@ bool ExtensionDownloadsEventRouter::DetermineFilename(
               base::FilePath());
   // If the invalid filename check is moved to before DeterminerCallback(), then
   // it will block forever waiting for this ext_id to report.
-  if (Fault(!data->DeterminerCallback(
-                profile, ext_id, filename, conflict_action),
+  if (Fault(!data->DeterminerCallback(browser_context, ext_id, filename,
+                                      conflict_action),
             errors::kUnexpectedDeterminer, error) ||
       Fault((!const_filename.empty() && !valid_filename),
             errors::kInvalidFilename, error))

@@ -33,7 +33,6 @@
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/stub_layer_tree_host_single_thread_client.h"
 #include "cc/test/test_task_graph_runner.h"
-#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -170,7 +169,8 @@ class TextureLayerTest : public testing::Test {
     layer_tree_host_ = MockLayerTreeHost::Create(
         &fake_client_, &task_graph_runner_, animation_host_.get());
     EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
-    layer_tree_host_->SetViewportSize(gfx::Size(10, 10));
+    layer_tree_host_->SetViewportSizeAndScale(gfx::Size(10, 10), 1.f,
+                                              viz::LocalSurfaceId());
     Mock::VerifyAndClearExpectations(layer_tree_host_.get());
   }
 
@@ -188,7 +188,7 @@ class TextureLayerTest : public testing::Test {
   std::unique_ptr<AnimationHost> animation_host_;
   FakeImplTaskRunnerProvider task_runner_provider_;
   FakeLayerTreeHostClient fake_client_;
-  TestSharedBitmapManager shared_bitmap_manager_;
+  viz::TestSharedBitmapManager shared_bitmap_manager_;
   TestTaskGraphRunner task_graph_runner_;
   std::unique_ptr<LayerTreeFrameSink> layer_tree_frame_sink_;
   FakeLayerTreeHostImpl host_impl_;
@@ -618,7 +618,8 @@ class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
 
     root_->AddChild(layer_);
     layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree_host()->SetViewportSizeAndScale(bounds, 1.f,
+                                               viz::LocalSurfaceId());
     SetMailbox('1');
     EXPECT_EQ(0, callback_count_);
 
@@ -688,7 +689,8 @@ class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
 
     root_->AddChild(layer_);
     layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree_host()->SetViewportSizeAndScale(bounds, 1.f,
+                                               viz::LocalSurfaceId());
     SetMailbox('1');
 
     PostSetNeedsCommitToMainThread();
@@ -771,8 +773,9 @@ class TextureLayerImplWithResourceTest : public TextureLayerTest {
 // Test conditions for results of TextureLayerImpl::WillDraw under
 // different configurations of different mailbox, texture_id, and draw_mode.
 TEST_F(TextureLayerImplWithResourceTest, TestWillDraw) {
-  EXPECT_CALL(test_data_.mock_callback_,
-              Release(test_data_.mailbox_name1_, gpu::SyncToken(), false))
+  EXPECT_CALL(
+      test_data_.mock_callback_,
+      Release(test_data_.mailbox_name1_, test_data_.sync_token1_, false))
       .Times(AnyNumber());
   EXPECT_CALL(
       test_data_.mock_callback_,
@@ -847,10 +850,11 @@ TEST_F(TextureLayerImplWithResourceTest, TestImplLayerCallbacks) {
       test_data_.resource1_,
       viz::SingleReleaseCallback::Create(test_data_.release_callback1_));
 
-  // Test multiple commits without an activation. The resource wasn't used so no
-  // sync token is returned.
-  EXPECT_CALL(test_data_.mock_callback_,
-              Release(test_data_.mailbox_name1_, gpu::SyncToken(), false))
+  // Test multiple commits without an activation. The resource wasn't used so
+  // the original sync token is returned.
+  EXPECT_CALL(
+      test_data_.mock_callback_,
+      Release(test_data_.mailbox_name1_, test_data_.sync_token1_, false))
       .Times(1);
   pending_layer->SetTransferableResource(
       test_data_.resource2_,
@@ -883,9 +887,11 @@ TEST_F(TextureLayerImplWithResourceTest, TestImplLayerCallbacks) {
   active_layer->DidBecomeActive();
   Mock::VerifyAndClearExpectations(&test_data_.mock_callback_);
 
-  // Test destructor. The resource wasn't used so no sync token is returned.
-  EXPECT_CALL(test_data_.mock_callback_,
-              Release(test_data_.mailbox_name1_, gpu::SyncToken(), false))
+  // Test destructor. The resource wasn't used so the original sync token is
+  // returned.
+  EXPECT_CALL(
+      test_data_.mock_callback_,
+      Release(test_data_.mailbox_name1_, test_data_.sync_token1_, false))
       .Times(1);
   pending_layer->SetTransferableResource(
       test_data_.resource1_,
@@ -1212,7 +1218,8 @@ class TextureLayerWithResourceMainThreadDeleted : public LayerTreeTest {
 
     root_->AddChild(layer_);
     layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree_host()->SetViewportSizeAndScale(bounds, 1.f,
+                                               viz::LocalSurfaceId());
   }
 
   void BeginTest() override {
@@ -1281,7 +1288,8 @@ class TextureLayerWithResourceImplThreadDeleted : public LayerTreeTest {
 
     root_->AddChild(layer_);
     layer_tree_host()->SetRootLayer(root_);
-    layer_tree_host()->SetViewportSize(bounds);
+    layer_tree_host()->SetViewportSizeAndScale(bounds, 1.f,
+                                               viz::LocalSurfaceId());
   }
 
   void BeginTest() override {

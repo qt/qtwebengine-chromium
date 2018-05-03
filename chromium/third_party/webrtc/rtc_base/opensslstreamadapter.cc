@@ -42,8 +42,8 @@ namespace {
 
 namespace rtc {
 
-#if (OPENSSL_VERSION_NUMBER < 0x10001000L)
-#error "webrtc requires at least OpenSSL version 1.0.1, to support DTLS-SRTP"
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#error "webrtc requires at least OpenSSL version 1.1.0, to support DTLS-SRTP"
 #endif
 
 // SRTP cipher suite table. |internal_name| is used to construct a
@@ -162,27 +162,34 @@ static long stream_ctrl(BIO* h, int cmd, long arg1, void* arg2);
 static int stream_new(BIO* h);
 static int stream_free(BIO* data);
 
-static const BIO_METHOD methods_stream = {
-    BIO_TYPE_BIO, "stream",   stream_write, stream_read, stream_puts, 0,
-    stream_ctrl,  stream_new, stream_free,  nullptr,
-};
+static BIO_METHOD* BIO_stream_method() {
+  static BIO_METHOD* method = [] {
+    BIO_METHOD* method = BIO_meth_new(BIO_TYPE_BIO, "stream");
+    BIO_meth_set_write(method, stream_write);
+    BIO_meth_set_read(method, stream_read);
+    BIO_meth_set_puts(method, stream_puts);
+    BIO_meth_set_ctrl(method, stream_ctrl);
+    BIO_meth_set_create(method, stream_new);
+    BIO_meth_set_destroy(method, stream_free);
+    return method;
+  }();
+  return method;
+}
 
 static BIO* BIO_new_stream(StreamInterface* stream) {
-  // TODO(davidben): Remove the const_cast when BoringSSL is assumed.
-  BIO* ret = BIO_new(const_cast<BIO_METHOD*>(&methods_stream));
+  BIO* ret = BIO_new(BIO_stream_method());
   if (ret == nullptr)
     return nullptr;
-  ret->ptr = stream;
+  BIO_set_data(ret, stream);
   return ret;
 }
 
 // bio methods return 1 (or at least non-zero) on success and 0 on failure.
 
 static int stream_new(BIO* b) {
-  b->shutdown = 0;
-  b->init = 1;
-  b->num = 0;  // 1 means end-of-stream
-  b->ptr = 0;
+  BIO_set_shutdown(b, 0);
+  BIO_set_init(b, 1);
+  BIO_set_data(b, 0);
   return 1;
 }
 
@@ -195,15 +202,13 @@ static int stream_free(BIO* b) {
 static int stream_read(BIO* b, char* out, int outl) {
   if (!out)
     return -1;
-  StreamInterface* stream = static_cast<StreamInterface*>(b->ptr);
+  StreamInterface* stream = static_cast<StreamInterface*>(BIO_get_data(b));
   BIO_clear_retry_flags(b);
   size_t read;
   int error;
   StreamResult result = stream->Read(out, outl, &read, &error);
   if (result == SR_SUCCESS) {
     return checked_cast<int>(read);
-  } else if (result == SR_EOS) {
-    b->num = 1;
   } else if (result == SR_BLOCK) {
     BIO_set_retry_read(b);
   }
@@ -213,7 +218,7 @@ static int stream_read(BIO* b, char* out, int outl) {
 static int stream_write(BIO* b, const char* in, int inl) {
   if (!in)
     return -1;
-  StreamInterface* stream = static_cast<StreamInterface*>(b->ptr);
+  StreamInterface* stream = static_cast<StreamInterface*>(BIO_get_data(b));
   BIO_clear_retry_flags(b);
   size_t written;
   int error;
@@ -234,8 +239,11 @@ static long stream_ctrl(BIO* b, int cmd, long num, void* ptr) {
   switch (cmd) {
     case BIO_CTRL_RESET:
       return 0;
-    case BIO_CTRL_EOF:
-      return b->num;
+    case BIO_CTRL_EOF: {
+      StreamInterface* stream = static_cast<StreamInterface*>(ptr);
+      // 1 means end-of-stream.
+      return (stream->GetState() == SS_CLOSED) ? 1 : 0;
+    }
     case BIO_CTRL_WPENDING:
     case BIO_CTRL_PENDING:
       return 0;
@@ -280,13 +288,6 @@ void OpenSSLStreamAdapter::SetServerRole(SSLRole role) {
   role_ = role;
 }
 
-std::unique_ptr<SSLCertificate> OpenSSLStreamAdapter::GetPeerCertificate()
-    const {
-  return peer_certificate_ ? std::unique_ptr<SSLCertificate>(
-                                 peer_certificate_->GetReference())
-                           : nullptr;
-}
-
 bool OpenSSLStreamAdapter::SetPeerCertificateDigest(
     const std::string& digest_alg,
     const unsigned char* digest_val,
@@ -316,7 +317,7 @@ bool OpenSSLStreamAdapter::SetPeerCertificateDigest(
   peer_certificate_digest_value_.SetData(digest_val, digest_len);
   peer_certificate_digest_algorithm_ = digest_alg;
 
-  if (!peer_certificate_) {
+  if (!peer_cert_chain_) {
     // Normal case, where the digest is set before we obtain the certificate
     // from the handshake.
     return true;
@@ -643,7 +644,6 @@ StreamResult OpenSSLStreamAdapter::Read(void* data, size_t data_len,
       return SR_EOS;
       break;
     default:
-      RTC_LOG(LS_VERBOSE) << " -- error " << code;
       Error("SSL_read", (ssl_error ? ssl_error : -1), 0, false);
       if (error)
         *error = ssl_error_code_;
@@ -664,7 +664,7 @@ void OpenSSLStreamAdapter::FlushInput(unsigned int left) {
     RTC_DCHECK(ssl_error == SSL_ERROR_NONE);
 
     if (ssl_error != SSL_ERROR_NONE) {
-      RTC_LOG(LS_VERBOSE) << " -- error " << code;
+      RTC_DLOG(LS_VERBOSE) << " -- error " << code;
       Error("SSL_read", (ssl_error ? ssl_error : -1), 0, false);
       return;
     }
@@ -824,7 +824,7 @@ int OpenSSLStreamAdapter::ContinueSSL() {
       RTC_LOG(LS_VERBOSE) << " -- success";
       // By this point, OpenSSL should have given us a certificate, or errored
       // out if one was missing.
-      RTC_DCHECK(peer_certificate_ || !client_auth_enabled());
+      RTC_DCHECK(peer_cert_chain_ || !client_auth_enabled());
 
       state_ = SSL_CONNECTED;
       if (!waiting_to_verify_peer_certificate()) {
@@ -921,7 +921,7 @@ void OpenSSLStreamAdapter::Cleanup(uint8_t alert) {
     ssl_ctx_ = nullptr;
   }
   identity_.reset();
-  peer_certificate_.reset();
+  peer_cert_chain_.reset();
 
   // Clear the DTLS timer
   Thread::Current()->Clear(this, MSG_TIMEOUT);
@@ -970,35 +970,17 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
     case SSL_PROTOCOL_TLS_12:
     default:
       if (ssl_mode_ == SSL_MODE_DTLS) {
-#if (OPENSSL_VERSION_NUMBER >= 0x10002000L)
-        // DTLS 1.2 only available starting from OpenSSL 1.0.2
         if (role_ == SSL_CLIENT) {
           method = DTLS_client_method();
         } else {
           method = DTLS_server_method();
         }
-#else
-        if (role_ == SSL_CLIENT) {
-          method = DTLSv1_client_method();
-        } else {
-          method = DTLSv1_server_method();
-        }
-#endif
       } else {
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
-        // New API only available starting from OpenSSL 1.1.0
         if (role_ == SSL_CLIENT) {
           method = TLS_client_method();
         } else {
           method = TLS_server_method();
         }
-#else
-        if (role_ == SSL_CLIENT) {
-          method = SSLv23_client_method();
-        } else {
-          method = SSLv23_server_method();
-        }
-#endif
       }
       break;
   }
@@ -1073,15 +1055,18 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
 }
 
 bool OpenSSLStreamAdapter::VerifyPeerCertificate() {
-  if (!has_peer_certificate_digest() || !peer_certificate_) {
+  if (!has_peer_certificate_digest() || !peer_cert_chain_ ||
+      !peer_cert_chain_->GetSize()) {
     RTC_LOG(LS_WARNING) << "Missing digest or peer certificate.";
     return false;
   }
+  const OpenSSLCertificate* leaf_cert =
+      static_cast<const OpenSSLCertificate*>(&peer_cert_chain_->Get(0));
 
   unsigned char digest[EVP_MAX_MD_SIZE];
   size_t digest_length;
   if (!OpenSSLCertificate::ComputeDigest(
-          peer_certificate_->x509(), peer_certificate_digest_algorithm_, digest,
+          leaf_cert->x509(), peer_certificate_digest_algorithm_, digest,
           sizeof(digest), &digest_length)) {
     RTC_LOG(LS_WARNING) << "Failed to compute peer cert digest.";
     return false;
@@ -1103,7 +1088,7 @@ bool OpenSSLStreamAdapter::VerifyPeerCertificate() {
 
 std::unique_ptr<SSLCertChain> OpenSSLStreamAdapter::GetPeerSSLCertChain()
     const {
-  return std::unique_ptr<SSLCertChain>(peer_cert_chain_->Copy());
+  return peer_cert_chain_ ? peer_cert_chain_->UniqueCopy() : nullptr;
 }
 
 int OpenSSLStreamAdapter::SSLVerifyCallback(X509_STORE_CTX* store, void* arg) {
@@ -1115,9 +1100,6 @@ int OpenSSLStreamAdapter::SSLVerifyCallback(X509_STORE_CTX* store, void* arg) {
 
 #if defined(OPENSSL_IS_BORINGSSL)
   STACK_OF(X509)* chain = SSL_get_peer_full_cert_chain(ssl);
-  // Creates certificate.
-  stream->peer_certificate_.reset(
-      new OpenSSLCertificate(sk_X509_value(chain, 0)));
   // Creates certificate chain.
   std::vector<std::unique_ptr<SSLCertificate>> cert_chain;
   for (X509* cert : chain) {
@@ -1127,7 +1109,8 @@ int OpenSSLStreamAdapter::SSLVerifyCallback(X509_STORE_CTX* store, void* arg) {
 #else
   // Record the peer's certificate.
   X509* cert = SSL_get_peer_certificate(ssl);
-  stream->peer_certificate_.reset(new OpenSSLCertificate(cert));
+  stream->peer_cert_chain_.reset(
+      new SSLCertChain(new OpenSSLCertificate(cert)));
   X509_free(cert);
 #endif
 

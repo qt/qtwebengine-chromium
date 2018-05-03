@@ -28,6 +28,7 @@
 
 #include "core/typed_arrays/ArrayBufferViewHelpers.h"
 #include "core/typed_arrays/DOMTypedArray.h"
+#include "modules/webaudio/AudioBasicProcessorHandler.h"
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/BiquadProcessor.h"
 
@@ -36,6 +37,24 @@ namespace blink {
 class BaseAudioContext;
 class AudioParam;
 class BiquadFilterOptions;
+
+class BiquadFilterHandler : public AudioBasicProcessorHandler {
+ public:
+  static scoped_refptr<BiquadFilterHandler> Create(AudioNode&,
+                                                   float sample_rate,
+                                                   AudioParamHandler& frequency,
+                                                   AudioParamHandler& q,
+                                                   AudioParamHandler& gain,
+                                                   AudioParamHandler& detune);
+
+ private:
+  BiquadFilterHandler(AudioNode&,
+                      float sample_rate,
+                      AudioParamHandler& frequency,
+                      AudioParamHandler& q,
+                      AudioParamHandler& gain,
+                      AudioParamHandler& detune);
+};
 
 class BiquadFilterNode final : public AudioNode {
   DEFINE_WRAPPERTYPEINFO();
@@ -73,7 +92,8 @@ class BiquadFilterNode final : public AudioNode {
   // set of frequencies (in Hz). The phase response is in radians.
   void getFrequencyResponse(NotShared<const DOMFloat32Array> frequency_hz,
                             NotShared<DOMFloat32Array> mag_response,
-                            NotShared<DOMFloat32Array> phase_response);
+                            NotShared<DOMFloat32Array> phase_response,
+                            ExceptionState&);
 
  private:
   BiquadFilterNode(BaseAudioContext&);

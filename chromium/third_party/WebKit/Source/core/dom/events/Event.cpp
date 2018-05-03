@@ -32,7 +32,7 @@
 #include "core/frame/UseCounter.h"
 #include "core/svg/SVGElement.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "platform/bindings/ScriptState.h"
 
 namespace blink {
@@ -355,12 +355,10 @@ EventTarget* Event::currentTarget() const {
 double Event::timeStamp(ScriptState* script_state) const {
   double time_stamp = 0;
   if (script_state && LocalDOMWindow::From(script_state)) {
-    Performance* performance =
+    WindowPerformance* performance =
         DOMWindowPerformance::performance(*LocalDOMWindow::From(script_state));
-    double timestamp_seconds =
-        (platform_time_stamp_ - TimeTicks()).InSecondsF();
     time_stamp =
-        performance->MonotonicTimeToDOMHighResTimeStamp(timestamp_seconds);
+        performance->MonotonicTimeToDOMHighResTimeStamp(platform_time_stamp_);
   }
 
   return time_stamp;

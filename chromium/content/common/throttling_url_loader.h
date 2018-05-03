@@ -10,24 +10,21 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string_piece.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/common/content_export.h"
 #include "content/common/possibly_associated_interface_ptr.h"
 #include "content/public/common/shared_url_loader_factory.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace base {
 class SingleThreadTaskRunner;
 }
 
 namespace content {
-
-namespace mojom {
-class URLLoaderFactory;
-}
 
 // ThrottlingURLLoader is a wrapper around the
 // network::mojom::URLLoader[Factory] interfaces. It applies a list of
@@ -51,29 +48,10 @@ class CONTENT_EXPORT ThrottlingURLLoader
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
-  using StartLoaderCallback =
-      base::OnceCallback<void(network::mojom::URLLoaderRequest request,
-                              network::mojom::URLLoaderClientPtr client)>;
-
-  // Similar to the method above, but uses a |start_loader_callback| instead of
-  // a network::mojom::URLLoaderFactory to start the loader. The callback must
-  // be safe to call during the lifetime of the returned object.
-  static std::unique_ptr<ThrottlingURLLoader> CreateLoaderAndStart(
-      StartLoaderCallback start_loader_callback,
-      std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      int32_t routing_id,
-      network::ResourceRequest* url_request,
-      network::mojom::URLLoaderClient* client,
-      const net::NetworkTrafficAnnotationTag& traffic_annotation,
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
-
   ~ThrottlingURLLoader() override;
 
   void FollowRedirect();
   void SetPriority(net::RequestPriority priority, int32_t intra_priority_value);
-
-  // Disconnects the client connection and releases the URLLoader.
-  void DisconnectClient();
 
   // Disconnect the forwarding URLLoaderClient and the URLLoader. Returns the
   // datapipe endpoints.
@@ -92,14 +70,10 @@ class CONTENT_EXPORT ThrottlingURLLoader
       network::mojom::URLLoaderClient* client,
       const net::NetworkTrafficAnnotationTag& traffic_annotation);
 
-  // Either of the two sets of arguments below is valid but not both:
-  // - |factory|, |routing_id|, |request_id| and |options|;
-  // - |start_loader_callback|.
   void Start(scoped_refptr<SharedURLLoaderFactory> factory,
              int32_t routing_id,
              int32_t request_id,
              uint32_t options,
-             StartLoaderCallback start_loader_callback,
              network::ResourceRequest* url_request,
              scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
@@ -107,7 +81,6 @@ class CONTENT_EXPORT ThrottlingURLLoader
                 int32_t routing_id,
                 int32_t request_id,
                 uint32_t options,
-                StartLoaderCallback start_loader_callback,
                 network::ResourceRequest* url_request,
                 scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
@@ -144,11 +117,14 @@ class CONTENT_EXPORT ThrottlingURLLoader
 
   void OnClientConnectionError();
 
-  void CancelWithError(int error_code);
+  void CancelWithError(int error_code, base::StringPiece custom_reason);
   void Resume();
   void SetPriority(net::RequestPriority priority);
   void PauseReadingBodyFromNet(URLLoaderThrottle* throttle);
   void ResumeReadingBodyFromNet(URLLoaderThrottle* throttle);
+
+  // Disconnects the client connection and releases the URLLoader.
+  void DisconnectClient(base::StringPiece custom_description);
 
   enum DeferredStage {
     DEFERRED_NONE,
@@ -192,7 +168,6 @@ class CONTENT_EXPORT ThrottlingURLLoader
               int32_t in_routing_id,
               int32_t in_request_id,
               uint32_t in_options,
-              StartLoaderCallback in_start_loader_callback,
               network::ResourceRequest* in_url_request,
               scoped_refptr<base::SingleThreadTaskRunner> in_task_runner);
     ~StartInfo();
@@ -201,8 +176,6 @@ class CONTENT_EXPORT ThrottlingURLLoader
     int32_t routing_id;
     int32_t request_id;
     uint32_t options;
-
-    StartLoaderCallback start_loader_callback;
 
     network::ResourceRequest url_request;
     // |task_runner_| is used to set up |client_binding_|.

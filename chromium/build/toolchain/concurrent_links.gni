@@ -29,12 +29,23 @@ if (concurrent_links == -1) {
     # Sanitizer coverage instrumentation increases linker memory consumption
     # significantly.
     _args = [ "--mem_per_link_gb=16" ]
+  } else if (is_win && symbol_level == 1 && !is_debug) {
+    _args = [ "--mem_per_link_gb=3" ]
   } else if (is_win) {
     _args = [ "--mem_per_link_gb=5" ]
   } else if (is_mac) {
     _args = [ "--mem_per_link_gb=4" ]
   } else if (is_android && !is_component_build && symbol_level == 2) {
+    # Full debug symbols require large memory for link.
     _args = [ "--mem_per_link_gb=25" ]
+  } else if (is_android && !is_debug && !using_sanitizer && symbol_level == 0) {
+    # Increase the number of concurrent links for release bots. Debug builds
+    # make heavier use of ProGuard, and so should not be raised. Sanitizers also
+    # increase the memory overhead.
+    _args = [ "--mem_per_link_gb=4" ]
+  } else if (is_linux && !is_chromeos && symbol_level == 0) {
+    # Memory consumption on link without debug symbols is low on linux.
+    _args = [ "--mem_per_link_gb=3" ]
   } else {
     _args = []
   }

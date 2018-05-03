@@ -56,7 +56,6 @@ jumbo_source_set("browser_sources") {
     "browser_accessibility_state.h",
     "browser_associated_interface.h",
     "browser_child_process_host.h",
-    "browser_child_process_host_delegate.cc",
     "browser_child_process_host_delegate.h",
     "browser_child_process_host_iterator.cc",
     "browser_child_process_host_iterator.h",
@@ -107,20 +106,12 @@ jumbo_source_set("browser_sources") {
     "devtools_socket_factory.h",
     "discardable_shared_memory_manager.h",
     "dom_storage_context.h",
-    "download_danger_type.h",
-    "download_interrupt_reason_values.h",
-    "download_interrupt_reasons.h",
-    "download_item.h",
+    "download_item_utils.h",
     "download_manager.cc",
     "download_manager.h",
     "download_manager_delegate.cc",
     "download_manager_delegate.h",
     "download_request_utils.h",
-    "download_save_info.cc",
-    "download_save_info.h",
-    "download_source.h",
-    "download_url_parameters.cc",
-    "download_url_parameters.h",
     "favicon_status.cc",
     "favicon_status.h",
     "file_url_loader.h",
@@ -212,9 +203,9 @@ jumbo_source_set("browser_sources") {
     "push_messaging_service.cc",
     "push_messaging_service.h",
     "quota_permission_context.h",
-    "readback_types.h",
     "reload_type.h",
     "render_frame_host.h",
+    "render_frame_metadata_provider.h",
     "render_process_host.h",
     "render_process_host_factory.h",
     "render_process_host_observer.h",
@@ -277,6 +268,8 @@ jumbo_source_set("browser_sources") {
     "utility_process_host.h",
     "utility_process_host_client.h",
     "utility_process_mojo_client.h",
+    "video_capture_device_launcher.h",
+    "visibility.h",
     "vpn_service_proxy.h",
     "web_contents.cc",
     "web_contents.h",
@@ -310,18 +303,21 @@ jumbo_source_set("browser_sources") {
   ]
 
   public_deps = [
+    "//components/download/public/common:public",
     "//content/public/common:common_sources",
+    "//device/usb/public/mojom",
     "//ipc",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
-    "//services/network/public/interfaces",
+    "//services/network/public/mojom",
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
     "//services/service_manager/public/cpp",
+    "//services/tracing/public/cpp",
 
     # We expose skia headers in the public API.
     "//skia",
 
-    # We expose storage headers for quota in the public API.
+    # We expose storage headers for quota and blob storage context in the public API.
     "//storage/browser",
     "//third_party/WebKit/public:mojo_bindings",
   ]
@@ -329,10 +325,10 @@ jumbo_source_set("browser_sources") {
     "//cc",
     "//content/browser",  # Must not be public_deps!
     "//device/geolocation",
-    "//device/usb/public/interfaces",
     "//gpu",
     "//gpu/command_buffer/service:gles2",
     "//media",
+    "//media/capture",
     "//net",
     "//ppapi/c",
     "//ui/accessibility",
@@ -370,10 +366,6 @@ jumbo_source_set("browser_sources") {
     ]
   }
 
-  if (is_chromeos) {
-    sources += [ "arc_tracing_agent.h" ]
-  }
-
   if (enable_webrtc) {
     sources += [
       "desktop_capture.cc",
@@ -381,6 +373,6 @@ jumbo_source_set("browser_sources") {
       "webrtc_log.cc",
       "webrtc_log.h",
     ]
-    deps += [ "//third_party/webrtc/modules/desktop_capture" ]
+    public_deps += [ "//third_party/webrtc/modules/desktop_capture" ]
   }
 }

@@ -31,7 +31,6 @@
 #include "core/loader/FrameFetchContext.h"
 
 #include <memory>
-#include "common/net/ip_address_space.mojom-blink.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameOwner.h"
 #include "core/frame/FrameTypes.h"
@@ -55,14 +54,16 @@
 #include "platform/testing/HistogramTester.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityViolationReportingPolicy.h"
+#include "public/mojom/net/ip_address_space.mojom-blink.h"
 #include "public/platform/WebClientHintsType.h"
 #include "public/platform/WebDocumentSubresourceFilter.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-blink.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/device_memory/approximated_device_memory.h"
+#include "third_party/WebKit/public/common/device_memory/approximated_device_memory.h"
+#include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
 
 namespace blink {
 
@@ -155,6 +156,12 @@ class FrameFetchContextTest : public ::testing::Test {
     return child_fetch_context;
   }
 
+  // Call the method for the actual test cases as only this fixture is specified
+  // as a friend class.
+  void SetFirstPartyCookieAndRequestorOrigin(ResourceRequest& request) {
+    fetch_context->SetFirstPartyCookieAndRequestorOrigin(request);
+  }
+
   std::unique_ptr<DummyPageHolder> dummy_page_holder;
   // We don't use the DocumentLoader directly in any tests, but need to keep it
   // around as long as the ResourceFetcher and Document live due to indirect
@@ -199,6 +206,16 @@ class FrameFetchContextSubresourceFilterTest : public FrameFetchContextTest {
         SecurityViolationReportingPolicy::kSuppressReporting);
   }
 
+  ResourceRequestBlockedReason CanRequestAndVerifyIsAd(bool expect_is_ad) {
+    ResourceRequestBlockedReason reason =
+        CanRequestInternal(SecurityViolationReportingPolicy::kReport);
+    const KURL url("http://example.com/");
+    EXPECT_EQ(expect_is_ad, fetch_context->IsAdResource(
+                                url, Resource::kMock,
+                                WebURLRequest::kRequestContextUnspecified));
+    return reason;
+  }
+
  private:
   ResourceRequestBlockedReason CanRequestInternal(
       SecurityViolationReportingPolicy reporting_policy) {
@@ -223,7 +240,8 @@ class FrameFetchContextMockedLocalFrameClientTest
   void SetUp() override {
     url = KURL("https://example.test/foo");
     http_url = KURL("http://example.test/foo");
-    main_resource_url = KURL("https://www.example.test");
+    main_resource_url = KURL("https://example.test");
+    different_host_url = KURL("https://different.example.test/foo");
     client = new ::testing::NiceMock<FrameFetchContextMockLocalFrameClient>();
     dummy_page_holder =
         DummyPageHolder::Create(IntSize(500, 500), nullptr, client);
@@ -239,6 +257,7 @@ class FrameFetchContextMockedLocalFrameClientTest
   KURL url;
   KURL http_url;
   KURL main_resource_url;
+  KURL different_host_url;
 
   Persistent<::testing::NiceMock<FrameFetchContextMockLocalFrameClient>> client;
 };
@@ -517,6 +536,16 @@ class FrameFetchContextHintsTest : public FrameFetchContextTest {
  public:
   FrameFetchContextHintsTest() = default;
 
+  void SetUp() override {
+    FrameFetchContextTest::SetUp();
+    // Set the document URL to a secure document.
+    document->SetURL(KURL("https://www.example.com/"));
+    document->SetSecurityOrigin(
+        SecurityOrigin::Create(KURL("https://www.example.com/")));
+    Settings* settings = document->GetSettings();
+    settings->SetScriptEnabled(true);
+  }
+
  protected:
   void ExpectHeader(const char* input,
                     const char* header_name,
@@ -554,20 +583,45 @@ TEST_F(FrameFetchContextHintsTest, MonitorDeviceMemorySecureTransport) {
   ExpectHeader("https://www.example.com/1.gif", "DPR", false, "");
   ExpectHeader("https://www.example.com/1.gif", "Width", false, "");
   ExpectHeader("https://www.example.com/1.gif", "Viewport-Width", false, "");
+  // The origin of the resource does not match the origin of the main frame
+  // resource. Client hints are still attached.
+  ExpectHeader("https://www.someother-example.com/1.gif", "Device-Memory", true,
+               "4");
 }
 
 // Verify that client hints are not attched when the resources do not belong to
 // a secure context.
 TEST_F(FrameFetchContextHintsTest, MonitorDeviceMemoryHintsInsecureContext) {
+  WebRuntimeFeatures::EnableClientHintsPersistent(false);
   ExpectHeader("http://www.example.com/1.gif", "Device-Memory", false, "");
-  ClientHintsPreferences preferences;
-  preferences.SetShouldSendForTesting(mojom::WebClientHintsType::kDeviceMemory);
-  document->GetClientHintsPreferences().UpdateFrom(preferences);
-  ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(4096);
-  ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "4");
-  ExpectHeader("http://www.example.com/1.gif", "DPR", false, "");
-  ExpectHeader("http://www.example.com/1.gif", "Width", false, "");
-  ExpectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+
+  {
+    ClientHintsPreferences preferences;
+    preferences.SetShouldSendForTesting(
+        mojom::WebClientHintsType::kDeviceMemory);
+    document->GetClientHintsPreferences().UpdateFrom(preferences);
+    ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(4096);
+    ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "4");
+    ExpectHeader("http://www.example.com/1.gif", "DPR", false, "");
+    ExpectHeader("http://www.example.com/1.gif", "Width", false, "");
+    ExpectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+  }
+
+  {
+    // Verify that client hints are not attched when the resources do not belong
+    // to a secure context and the persistent client hint features is enabled.
+    WebRuntimeFeatures::EnableClientHintsPersistent(true);
+    ExpectHeader("http://www.example.com/1.gif", "Device-Memory", false, "");
+    ClientHintsPreferences preferences;
+    preferences.SetShouldSendForTesting(
+        mojom::WebClientHintsType::kDeviceMemory);
+    document->GetClientHintsPreferences().UpdateFrom(preferences);
+    ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(4096);
+    ExpectHeader("http://www.example.com/1.gif", "Device-Memory", false, "");
+    ExpectHeader("http://www.example.com/1.gif", "DPR", false, "");
+    ExpectHeader("http://www.example.com/1.gif", "Width", false, "");
+    ExpectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+  }
 }
 
 // Verify that client hints are attched when the resources belong to a local
@@ -615,15 +669,28 @@ TEST_F(FrameFetchContextHintsTest, MonitorDPRHints) {
 }
 
 TEST_F(FrameFetchContextHintsTest, MonitorDPRHintsInsecureTransport) {
+  WebRuntimeFeatures::EnableClientHintsPersistent(false);
   ExpectHeader("http://www.example.com/1.gif", "DPR", false, "");
-  ClientHintsPreferences preferences;
-  preferences.SetShouldSendForTesting(mojom::WebClientHintsType::kDpr);
-  document->GetClientHintsPreferences().UpdateFrom(preferences);
-  ExpectHeader("http://www.example.com/1.gif", "DPR", true, "1");
-  dummy_page_holder->GetPage().SetDeviceScaleFactorDeprecated(2.5);
-  ExpectHeader("http://www.example.com/1.gif", "DPR", true, "2.5");
-  ExpectHeader("http://www.example.com/1.gif", "Width", false, "");
-  ExpectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+
+  {
+    ClientHintsPreferences preferences;
+    preferences.SetShouldSendForTesting(mojom::WebClientHintsType::kDpr);
+    document->GetClientHintsPreferences().UpdateFrom(preferences);
+    ExpectHeader("http://www.example.com/1.gif", "DPR", true, "1");
+    dummy_page_holder->GetPage().SetDeviceScaleFactorDeprecated(2.5);
+    ExpectHeader("http://www.example.com/1.gif", "DPR", true, "2.5");
+    ExpectHeader("http://www.example.com/1.gif", "Width", false, "");
+    ExpectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+  }
+
+  {
+    WebRuntimeFeatures::EnableClientHintsPersistent(true);
+    ExpectHeader("http://www.example.com/1.gif", "DPR", false, "");
+    dummy_page_holder->GetPage().SetDeviceScaleFactorDeprecated(2.5);
+    ExpectHeader("http://www.example.com/1.gif", "DPR", false, "  ");
+    ExpectHeader("http://www.example.com/1.gif", "Width", false, "");
+    ExpectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+  }
 }
 
 TEST_F(FrameFetchContextHintsTest, MonitorResourceWidthHints) {
@@ -872,7 +939,7 @@ TEST_F(FrameFetchContextTest, SetFirstPartyCookieAndRequestorOrigin) {
     }
 
     // Compare the populated |requestorOrigin| against |test.serializedOrigin|
-    fetch_context->SetFirstPartyCookieAndRequestorOrigin(request);
+    SetFirstPartyCookieAndRequestorOrigin(request);
     if (strlen(test.serialized_origin) == 0) {
       EXPECT_TRUE(!request.RequestorOrigin());
     } else {
@@ -887,9 +954,10 @@ TEST_F(FrameFetchContextTest, SetFirstPartyCookieAndRequestorOrigin) {
 TEST_F(FrameFetchContextTest, ModifyPriorityForLowPriorityIframes) {
   Settings* settings = document->GetSettings();
   FrameFetchContext* childFetchContext = CreateChildFrame();
-  GetNetworkStateNotifier().SetNetworkQualityInfoOverride(
-      WebEffectiveConnectionType::kType3G, 1 /* transport_rtt_msec */,
-      10000 /* downlink_throughput_mbps */);
+  GetNetworkStateNotifier().SetNetworkConnectionInfoOverride(
+      true, WebConnectionType::kWebConnectionTypeCellular3G,
+      WebEffectiveConnectionType::kType3G, 1 /* http_rtt_msec */,
+      10.0 /* max_bandwidth_mbps */);
 
   // Experiment is not enabled, expect default values.
   EXPECT_EQ(ResourceLoadPriority::kVeryHigh,
@@ -917,15 +985,16 @@ TEST_F(FrameFetchContextTest, ModifyPriorityForLowPriorityIframes) {
 
   // Low priority iframes enabled and network is slow, main frame request's
   // priorities should not change.
-  GetNetworkStateNotifier().SetNetworkQualityInfoOverride(
-      WebEffectiveConnectionType::kType2G, 1 /* transport_rtt_msec */,
-      10000 /* downlink_throughput_mbps */);
+  GetNetworkStateNotifier().SetNetworkConnectionInfoOverride(
+      true, WebConnectionType::kWebConnectionTypeCellular3G,
+      WebEffectiveConnectionType::kType2G, 1 /* http_rtt_msec */,
+      10.0 /* max_bandwidth_mbps */);
   EXPECT_EQ(ResourceLoadPriority::kVeryHigh,
             fetch_context->ModifyPriorityForExperiments(
                 ResourceLoadPriority::kVeryHigh));
   // Low priority iframes enabled, everything in child frame should be low
   // priority.
-  EXPECT_EQ(ResourceLoadPriority::kVeryLow,
+  EXPECT_EQ(ResourceLoadPriority::kLow,
             childFetchContext->ModifyPriorityForExperiments(
                 ResourceLoadPriority::kVeryHigh));
   EXPECT_EQ(ResourceLoadPriority::kVeryLow,
@@ -1024,6 +1093,8 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
   HistogramTester histogram_tester;
 
   {
+    ASSERT_EQ(url.Host(), main_resource_url.Host());
+    ASSERT_EQ("https", url.Protocol());
     ResourceRequest resource_request(url);
     resource_request.SetRequestContext(WebURLRequest::kRequestContextImage);
     resource_request.SetFetchCredentialsMode(
@@ -1044,7 +1115,34 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
   }
 
   {
+    // Try with a different resource that has a different origin than the main
+    // frame.
+    ASSERT_NE(different_host_url.Host(), main_resource_url.Host());
+    ASSERT_EQ("https", different_host_url.Protocol());
+    ResourceRequest resource_request(different_host_url);
+    resource_request.SetRequestContext(WebURLRequest::kRequestContextImage);
+    resource_request.SetFetchCredentialsMode(
+        network::mojom::FetchCredentialsMode::kOmit);
+    ResourceResponse response(different_host_url);
+    response.SetHTTPHeaderField("accept-ch", "dpr");
+    response.SetHTTPHeaderField("accept-ch-lifetime", "3600");
+    Resource* resource = MockResource::Create(resource_request);
+    resource->SetResponse(response);
+    fetch_context->DispatchDidReceiveResponse(
+        CreateUniqueIdentifier(), response, resource_request.GetFrameType(),
+        resource_request.GetRequestContext(), resource,
+        FetchContext::ResourceResponseType::kNotFromMemoryCache);
+
+    // There should not be a change in the usage count.
+    histogram_tester.ExpectBucketCount(
+        "Blink.UseCounter.Features",
+        static_cast<int>(WebFeature::kPersistentClientHintHeader), 1);
+  }
+
+  {
     // Next, try with a HTTP URL.
+    ASSERT_EQ(http_url.Host(), main_resource_url.Host());
+    ASSERT_EQ("http", http_url.Protocol());
     ResourceRequest resource_request(http_url);
     resource_request.SetRequestContext(WebURLRequest::kRequestContextImage);
     resource_request.SetFetchCredentialsMode(
@@ -1087,24 +1185,28 @@ TEST_F(FrameFetchContextMockedLocalFrameClientTest,
 TEST_F(FrameFetchContextSubresourceFilterTest, Filter) {
   SetFilterPolicy(WebDocumentSubresourceFilter::kDisallow);
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kSubresourceFilter, CanRequest());
+  EXPECT_EQ(ResourceRequestBlockedReason::kSubresourceFilter,
+            CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(1, GetFilteredLoadCallCount());
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kSubresourceFilter, CanRequest());
+  EXPECT_EQ(ResourceRequestBlockedReason::kSubresourceFilter,
+            CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(2, GetFilteredLoadCallCount());
 
   EXPECT_EQ(ResourceRequestBlockedReason::kSubresourceFilter,
             CanRequestPreload());
   EXPECT_EQ(2, GetFilteredLoadCallCount());
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kSubresourceFilter, CanRequest());
+  EXPECT_EQ(ResourceRequestBlockedReason::kSubresourceFilter,
+            CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(3, GetFilteredLoadCallCount());
 }
 
 TEST_F(FrameFetchContextSubresourceFilterTest, Allow) {
   SetFilterPolicy(WebDocumentSubresourceFilter::kAllow);
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequest());
+  EXPECT_EQ(ResourceRequestBlockedReason::kNone,
+            CanRequestAndVerifyIsAd(false));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 
   EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestPreload());
@@ -1114,10 +1216,21 @@ TEST_F(FrameFetchContextSubresourceFilterTest, Allow) {
 TEST_F(FrameFetchContextSubresourceFilterTest, WouldDisallow) {
   SetFilterPolicy(WebDocumentSubresourceFilter::kWouldDisallow);
 
-  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequest());
+  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 
   EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestPreload());
+  EXPECT_EQ(0, GetFilteredLoadCallCount());
+}
+
+// Tests that if a subresource is allowed as per subresource filter ruleset but
+// is fetched from a frame that is tagged as an ad, then the subresource should
+// be tagged as well.
+TEST_F(FrameFetchContextSubresourceFilterTest, AdTaggingBasedOnFrame) {
+  SetFilterPolicy(WebDocumentSubresourceFilter::kAllow);
+  document->Loader()->GetSubresourceFilter()->SetIsAdSubframe(true);
+
+  EXPECT_EQ(ResourceRequestBlockedReason::kNone, CanRequestAndVerifyIsAd(true));
   EXPECT_EQ(0, GetFilteredLoadCallCount());
 }
 
@@ -1249,8 +1362,8 @@ TEST_F(FrameFetchContextTest, DispatchDidFinishLoadingWhenDetached) {
 TEST_F(FrameFetchContextTest, DispatchDidFailWhenDetached) {
   dummy_page_holder = nullptr;
 
-  fetch_context->DispatchDidFail(8, ResourceError::Failure(NullURL()), 5,
-                                 false);
+  fetch_context->DispatchDidFail(KURL(), 8, ResourceError::Failure(NullURL()),
+                                 5, false);
   // Should not crash.
 }
 
@@ -1418,7 +1531,7 @@ TEST_F(FrameFetchContextTest,
 
   dummy_page_holder = nullptr;
 
-  fetch_context->SetFirstPartyCookieAndRequestorOrigin(request);
+  SetFirstPartyCookieAndRequestorOrigin(request);
 
   EXPECT_EQ(document_url, request.SiteForCookies());
   EXPECT_EQ(origin, request.RequestorOrigin());

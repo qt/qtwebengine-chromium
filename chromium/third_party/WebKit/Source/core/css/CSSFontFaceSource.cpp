@@ -60,10 +60,15 @@ scoped_refptr<SimpleFontData> CSSFontFaceSource::GetFontData(
 
   FontCacheKey key = font_description.CacheKey(FontFaceCreationParams());
 
-  scoped_refptr<SimpleFontData>& font_data =
-      font_data_table_.insert(key, nullptr).stored_value->value;
-  if (!font_data)
-    font_data = CreateFontData(font_description, font_selection_capabilities);
+  // Get or create the font data. Take care to avoid dangling references into
+  // font_data_table_, because it is modified below during pruning.
+  scoped_refptr<SimpleFontData> font_data;
+  {
+    auto* it = font_data_table_.insert(key, nullptr).stored_value;
+    if (!it->value)
+      it->value = CreateFontData(font_description, font_selection_capabilities);
+    font_data = it->value;
+  }
 
   font_cache_key_age.PrependOrMoveToFirst(key);
   PruneOldestIfNeeded();

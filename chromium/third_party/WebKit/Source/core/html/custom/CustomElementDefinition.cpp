@@ -6,6 +6,7 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Attr.h"
+#include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/custom/CustomElement.h"
@@ -16,6 +17,7 @@
 #include "core/html/custom/CustomElementReaction.h"
 #include "core/html/custom/CustomElementReactionStack.h"
 #include "core/html/custom/CustomElementUpgradeReaction.h"
+#include "core/html_element_factory.h"
 
 namespace blink {
 
@@ -90,13 +92,17 @@ void CustomElementDefinition::CheckConstructorResult(
 
 HTMLElement* CustomElementDefinition::CreateElementForConstructor(
     Document& document) {
-  // TODO(kojii): When HTMLElementFactory has an option not to queue
-  // upgrade, call that instead of HTMLElement. HTMLElement is enough
-  // for now, but type extension will require HTMLElementFactory.
   HTMLElement* element =
-      HTMLElement::Create(QualifiedName(g_null_atom, Descriptor().LocalName(),
-                                        HTMLNames::xhtmlNamespaceURI),
-                          document);
+      HTMLElementFactory::Create(Descriptor().LocalName(), document,
+                                 CreateElementFlags::ByCreateElement());
+  if (element) {
+    element->SetIsValue(Descriptor().GetName());
+  } else {
+    element =
+        HTMLElement::Create(QualifiedName(g_null_atom, Descriptor().LocalName(),
+                                          HTMLNames::xhtmlNamespaceURI),
+                            document);
+  }
   // TODO(davaajav): write this as one call to setCustomElementState instead of
   // two
   element->SetCustomElementState(CustomElementState::kUndefined);
@@ -104,12 +110,48 @@ HTMLElement* CustomElementDefinition::CreateElementForConstructor(
   return element;
 }
 
-HTMLElement* CustomElementDefinition::CreateElementAsync(
+// A part of https://dom.spec.whatwg.org/#concept-create-element
+HTMLElement* CustomElementDefinition::CreateElement(
     Document& document,
-    const QualifiedName& tag_name) {
-  // https://dom.spec.whatwg.org/#concept-create-element
+    const QualifiedName& tag_name,
+    CreateElementFlags flags) {
+  DCHECK(CustomElement::ShouldCreateCustomElement(tag_name) ||
+         CustomElement::ShouldCreateCustomizedBuiltinElement(tag_name))
+      << tag_name;
+
+  // 5. If definition is non-null, and definition’s name is not equal to
+  // its local name (i.e., definition represents a customized built-in
+  // element), then:
+  if (!descriptor_.IsAutonomous()) {
+    // 5.1. Let interface be the element interface for localName and the
+    // HTML namespace.
+    // 5.2. Set result to a new element that implements interface, with
+    // no attributes, namespace set to the HTML namespace, namespace
+    // prefix set to prefix, local name set to localName, custom element
+    // state set to "undefined", custom element definition set to null,
+    // is value set to is, and node document set to document.
+    auto* result = document.CreateRawElement(tag_name, flags);
+    result->SetCustomElementState(CustomElementState::kUndefined);
+    result->SetIsValue(Descriptor().GetName());
+
+    // 5.3. If the synchronous custom elements flag is set, upgrade
+    // element using definition.
+    // 5.4. Otherwise, enqueue a custom element upgrade reaction given
+    // result and definition.
+    if (!flags.IsAsyncCustomElements())
+      Upgrade(result);
+    else
+      EnqueueUpgradeReaction(result);
+    return ToHTMLElement(result);
+  }
+
   // 6. If definition is non-null, then:
-  // 6.2. If the synchronous custom elements flag is not set:
+  // 6.1. If the synchronous custom elements flag is set, then run these
+  // steps while catching any exceptions:
+  if (!flags.IsAsyncCustomElements())
+    return CreateAutonomousCustomElementSync(document, tag_name);
+
+  // 6.2. Otherwise: (the synchronous custom elements flag is not set)
   // 6.2.1. Set result to a new element that implements the HTMLElement
   // interface, with no attributes, namespace set to the HTML namespace,
   // namespace prefix set to prefix, local name set to localName, custom

@@ -511,28 +511,28 @@ struct FuzzTraits<base::ListValue> {
           bool tmp;
           p->GetBoolean(index, &tmp);
           fuzzer->FuzzBool(&tmp);
-          p->Set(index, base::MakeUnique<base::Value>(tmp));
+          p->Set(index, std::make_unique<base::Value>(tmp));
           break;
         }
         case base::Value::Type::INTEGER: {
           int tmp;
           p->GetInteger(index, &tmp);
           fuzzer->FuzzInt(&tmp);
-          p->Set(index, base::MakeUnique<base::Value>(tmp));
+          p->Set(index, std::make_unique<base::Value>(tmp));
           break;
         }
         case base::Value::Type::DOUBLE: {
           double tmp;
           p->GetDouble(index, &tmp);
           fuzzer->FuzzDouble(&tmp);
-          p->Set(index, base::MakeUnique<base::Value>(tmp));
+          p->Set(index, std::make_unique<base::Value>(tmp));
           break;
         }
         case base::Value::Type::STRING: {
           std::string tmp;
           p->GetString(index, &tmp);
           fuzzer->FuzzString(&tmp);
-          p->Set(index, base::MakeUnique<base::Value>(tmp));
+          p->Set(index, std::make_unique<base::Value>(tmp));
           break;
         }
         case base::Value::Type::BINARY: {
@@ -547,7 +547,7 @@ struct FuzzTraits<base::ListValue> {
           if (p->GetDictionary(index, &dict_weak)) {
             FuzzParam(dict_weak, fuzzer);
           } else {
-            auto dict = base::MakeUnique<base::DictionaryValue>();
+            auto dict = std::make_unique<base::DictionaryValue>();
             FuzzParam(dict.get(), fuzzer);
             p->Set(index, std::move(dict));
           }
@@ -558,7 +558,7 @@ struct FuzzTraits<base::ListValue> {
           if (p->GetList(index, &list_weak)) {
             FuzzParam(list_weak, fuzzer);
           } else {
-            auto list = base::MakeUnique<base::ListValue>();
+            auto list = std::make_unique<base::ListValue>();
             FuzzParam(list.get(), fuzzer);
             p->Set(index, std::move(list));
           }
@@ -620,13 +620,13 @@ struct FuzzTraits<base::DictionaryValue> {
           break;
         }
         case base::Value::Type::DICTIONARY: {
-          auto tmp = base::MakeUnique<base::DictionaryValue>();
+          auto tmp = std::make_unique<base::DictionaryValue>();
           FuzzParam(tmp.get(), fuzzer);
           p->SetWithoutPathExpansion(property, std::move(tmp));
           break;
         }
         case base::Value::Type::LIST: {
-          auto tmp = base::MakeUnique<base::ListValue>();
+          auto tmp = std::make_unique<base::ListValue>();
           FuzzParam(tmp.get(), fuzzer);
           p->SetWithoutPathExpansion(property, std::move(tmp));
           break;
@@ -1447,8 +1447,9 @@ struct FuzzTraits<network::DataElement> {
     if (!fuzzer->ShouldGenerate())
       return true;
 
-    switch (RandInRange(4)) {
-      case network::DataElement::Type::TYPE_BYTES: {
+    switch (RandInRange(3)) {
+      case 0: {
+        // network::DataElement::Type::TYPE_BYTES
         if (RandEvent(2)) {
           p->SetToEmptyBytes();
         } else {
@@ -1459,7 +1460,8 @@ struct FuzzTraits<network::DataElement> {
         }
         return true;
       }
-      case network::DataElement::Type::TYPE_FILE: {
+      case 1: {
+        // network::DataElement::Type::TYPE_FILE
         base::FilePath path;
         uint64_t offset;
         uint64_t length;
@@ -1475,7 +1477,8 @@ struct FuzzTraits<network::DataElement> {
         p->SetToFilePathRange(path, offset, length, modification_time);
         return true;
       }
-      case network::DataElement::Type::TYPE_BLOB: {
+      case 2: {
+        // network::DataElement::Type::TYPE_BLOB
         std::string uuid;
         uint64_t offset;
         uint64_t length;
@@ -1486,22 +1489,6 @@ struct FuzzTraits<network::DataElement> {
         if (!FuzzParam(&length, fuzzer))
           return false;
         p->SetToBlobRange(uuid, offset, length);
-        return true;
-      }
-      case network::DataElement::Type::TYPE_FILE_FILESYSTEM: {
-        GURL url;
-        uint64_t offset;
-        uint64_t length;
-        base::Time modification_time;
-        if (!FuzzParam(&url, fuzzer))
-          return false;
-        if (!FuzzParam(&offset, fuzzer))
-          return false;
-        if (!FuzzParam(&length, fuzzer))
-          return false;
-        if (!FuzzParam(&modification_time, fuzzer))
-          return false;
-        p->SetToFileSystemUrlRange(url, offset, length, modification_time);
         return true;
       }
       default: {
@@ -1536,17 +1523,14 @@ struct FuzzTraits<url::Origin> {
     std::string scheme = p->scheme();
     std::string host = p->host();
     uint16_t port = p->port();
-    std::string suborigin = p->suborigin();
     if (!FuzzParam(&scheme, fuzzer))
       return false;
     if (!FuzzParam(&host, fuzzer))
       return false;
     if (!FuzzParam(&port, fuzzer))
       return false;
-    if (!FuzzParam(&suborigin, fuzzer))
-      return false;
     *p = url::Origin::UnsafelyCreateOriginWithoutNormalization(scheme, host,
-                                                               port, suborigin);
+                                                               port);
 
     // Force a unique origin 1% of the time:
     if (RandInRange(100) == 1)
@@ -1655,7 +1639,7 @@ class MessageFactory<Message, IPC::MessageKind::CONTROL> {
  public:
   template <typename... Args>
   static std::unique_ptr<Message> New(const Args&... args) {
-    return base::MakeUnique<Message>(args...);
+    return std::make_unique<Message>(args...);
   }
 };
 
@@ -1664,7 +1648,7 @@ class MessageFactory<Message, IPC::MessageKind::ROUTED> {
  public:
   template <typename... Args>
   static std::unique_ptr<Message> New(const Args&... args) {
-    return base::MakeUnique<Message>(RandInRange(MAX_FAKE_ROUTING_ID), args...);
+    return std::make_unique<Message>(RandInRange(MAX_FAKE_ROUTING_ID), args...);
   }
 };
 

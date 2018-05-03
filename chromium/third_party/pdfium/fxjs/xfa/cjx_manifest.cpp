@@ -22,13 +22,12 @@ CJX_Manifest::CJX_Manifest(CXFA_Manifest* manifest) : CJX_Node(manifest) {
 CJX_Manifest::~CJX_Manifest() {}
 
 CJS_Return CJX_Manifest::evaluate(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
-  return CJS_Return(
-      runtime->NewBoolean(!!ToNode(GetXFAObject())->GetWidgetAcc()));
+  return CJS_Return(runtime->NewBoolean(GetXFANode()->IsWidgetReady()));
 }
 
 void CJX_Manifest::defaultValue(CFXJSE_Value* pValue,

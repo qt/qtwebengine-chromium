@@ -32,6 +32,7 @@
 
 #include <memory>
 
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "platform/Histogram.h"
@@ -39,6 +40,8 @@
 #include "platform/Language.h"
 #include "platform/MemoryCoordinator.h"
 #include "platform/PartitionAllocMemoryDumpProvider.h"
+#include "platform/WebTaskRunner.h"
+#include "platform/exported/WebClipboardImpl.h"
 #include "platform/font_family_names.h"
 #include "platform/fonts/FontCacheMemoryDumpProvider.h"
 #include "platform/heap/BlinkGCMemoryDumpProvider.h"
@@ -64,8 +67,7 @@
 #include "public/platform/modules/serviceworker/WebServiceWorkerCacheStorage.h"
 #include "public/platform/modules/webmidi/WebMIDIAccessor.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "third_party/WebKit/Source/platform/exported/WebClipboardImpl.h"
-#include "third_party/WebKit/common/origin_trials/trial_policy.h"
+#include "third_party/WebKit/public/common/origin_trials/trial_policy.h"
 
 namespace blink {
 
@@ -105,7 +107,7 @@ static void MaxObservedSizeFunction(size_t size_in_mb) {
 static void CallOnMainThreadFunction(WTF::MainThreadFunction function,
                                      void* context) {
   PostCrossThreadTask(
-      *Platform::Current()->MainThread()->GetWebTaskRunner(), FROM_HERE,
+      *Platform::Current()->MainThread()->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(function, CrossThreadUnretained(context)));
 }
 
@@ -163,7 +165,8 @@ void Platform::Initialize(Platform* platform) {
 
   // Pre-create the File thread so multiple threads can call FileTaskRunner() in
   // a non racy way later.
-  g_platform->file_thread_ = g_platform->CreateThread("File");
+  g_platform->file_thread_ = g_platform->CreateThread(
+      WebThreadCreationParams(WebThreadType::kFileThread));
 
   if (BlinkResourceCoordinatorBase::IsEnabled())
     RendererResourceCoordinator::Initialize();
@@ -183,13 +186,13 @@ WebThread* Platform::MainThread() const {
   return main_thread_;
 }
 
-WebTaskRunner* Platform::FileTaskRunner() const {
-  return file_thread_ ? file_thread_->GetWebTaskRunner() : nullptr;
+base::SingleThreadTaskRunner* Platform::FileTaskRunner() const {
+  return file_thread_ ? file_thread_->GetTaskRunner().get() : nullptr;
 }
 
 scoped_refptr<base::SingleThreadTaskRunner> Platform::BaseFileTaskRunner()
     const {
-  return file_thread_ ? file_thread_->GetSingleThreadTaskRunner() : nullptr;
+  return file_thread_ ? file_thread_->GetTaskRunner() : nullptr;
 }
 
 service_manager::Connector* Platform::GetConnector() {
@@ -211,7 +214,7 @@ std::unique_ptr<WebStorageNamespace> Platform::CreateLocalStorageNamespace() {
 }
 
 std::unique_ptr<WebStorageNamespace> Platform::CreateSessionStorageNamespace(
-    int64_t namespace_id) {
+    base::StringPiece namespace_id) {
   return nullptr;
 }
 
@@ -220,7 +223,8 @@ std::unique_ptr<WebServiceWorkerCacheStorage> Platform::CreateCacheStorage(
   return nullptr;
 }
 
-std::unique_ptr<WebThread> Platform::CreateThread(const char* name) {
+std::unique_ptr<WebThread> Platform::CreateThread(
+    const WebThreadCreationParams& params) {
   return nullptr;
 }
 
@@ -256,8 +260,8 @@ Platform::CreateRTCPeerConnectionHandler(
   return nullptr;
 }
 
-std::unique_ptr<WebMediaRecorderHandler>
-Platform::CreateMediaRecorderHandler() {
+std::unique_ptr<WebMediaRecorderHandler> Platform::CreateMediaRecorderHandler(
+    scoped_refptr<base::SingleThreadTaskRunner>) {
   return nullptr;
 }
 

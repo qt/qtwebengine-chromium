@@ -8,9 +8,10 @@
 #include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/IDLTypes.h"
+#include "bindings/core/v8/NativeValueTraitsImpl.h"
 #include "bindings/core/v8/V8ArrayBuffer.h"
 #include "bindings/core/v8/V8ArrayBufferView.h"
-#include "bindings/core/v8/V8BindingForCore.h"
 #include "bindings/core/v8/V8Blob.h"
 #include "bindings/core/v8/V8FormData.h"
 #include "bindings/core/v8/V8URLSearchParams.h"
@@ -35,7 +36,7 @@
 #include "platform/network/http_names.h"
 #include "public/platform/WebCORS.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
-#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
+#include "services/network/public/mojom/fetch_api.mojom-blink.h"
 
 namespace blink {
 
@@ -67,8 +68,10 @@ FetchResponseData* CreateFetchResponseDataFromWebResponse(
   }
 
   response->ReplaceBodyStreamBuffer(new BodyStreamBuffer(
-      script_state, new BlobBytesConsumer(ExecutionContext::From(script_state),
-                                          web_response.GetBlobDataHandle())));
+      script_state,
+      new BlobBytesConsumer(ExecutionContext::From(script_state),
+                            web_response.GetBlobDataHandle()),
+      nullptr /* AbortSignal */));
 
   // Filter the response according to |webResponse|'s ResponseType.
   switch (web_response.ResponseType()) {
@@ -148,21 +151,24 @@ Response* Response::Create(ScriptState* script_state,
     Blob* blob = V8Blob::ToImpl(body.As<v8::Object>());
     body_buffer = new BodyStreamBuffer(
         script_state,
-        new BlobBytesConsumer(execution_context, blob->GetBlobDataHandle()));
+        new BlobBytesConsumer(execution_context, blob->GetBlobDataHandle()),
+        nullptr /* AbortSignal */);
     content_type = blob->type();
   } else if (body->IsArrayBuffer()) {
     // Avoid calling into V8 from the following constructor parameters, which
     // is potentially unsafe.
     DOMArrayBuffer* array_buffer = V8ArrayBuffer::ToImpl(body.As<v8::Object>());
     body_buffer = new BodyStreamBuffer(script_state,
-                                       new FormDataBytesConsumer(array_buffer));
+                                       new FormDataBytesConsumer(array_buffer),
+                                       nullptr /* AbortSignal */);
   } else if (body->IsArrayBufferView()) {
     // Avoid calling into V8 from the following constructor parameters, which
     // is potentially unsafe.
     DOMArrayBufferView* array_buffer_view =
         V8ArrayBufferView::ToImpl(body.As<v8::Object>());
     body_buffer = new BodyStreamBuffer(
-        script_state, new FormDataBytesConsumer(array_buffer_view));
+        script_state, new FormDataBytesConsumer(array_buffer_view),
+        nullptr /* AbortSignal */);
   } else if (V8FormData::hasInstance(body, isolate)) {
     scoped_refptr<EncodedFormData> form_data =
         V8FormData::ToImpl(body.As<v8::Object>())->EncodeMultiPartFormData();
@@ -172,13 +178,15 @@ Response* Response::Create(ScriptState* script_state,
                    form_data->Boundary().data();
     body_buffer = new BodyStreamBuffer(
         script_state,
-        new FormDataBytesConsumer(execution_context, std::move(form_data)));
+        new FormDataBytesConsumer(execution_context, std::move(form_data)),
+        nullptr /* AbortSignal */);
   } else if (V8URLSearchParams::hasInstance(body, isolate)) {
     scoped_refptr<EncodedFormData> form_data =
         V8URLSearchParams::ToImpl(body.As<v8::Object>())->ToEncodedFormData();
     body_buffer = new BodyStreamBuffer(
         script_state,
-        new FormDataBytesConsumer(execution_context, std::move(form_data)));
+        new FormDataBytesConsumer(execution_context, std::move(form_data)),
+        nullptr /* AbortSignal */);
     content_type = "application/x-www-form-urlencoded;charset=UTF-8";
   } else if (ReadableStreamOperations::IsReadableStream(script_state,
                                                         body_value)) {
@@ -186,11 +194,13 @@ Response* Response::Create(ScriptState* script_state,
                       WebFeature::kFetchResponseConstructionWithStream);
     body_buffer = new BodyStreamBuffer(script_state, body_value);
   } else {
-    String string = ToUSVString(isolate, body, exception_state);
+    String string = NativeValueTraits<IDLUSVString>::NativeValue(
+        isolate, body, exception_state);
     if (exception_state.HadException())
       return nullptr;
     body_buffer =
-        new BodyStreamBuffer(script_state, new FormDataBytesConsumer(string));
+        new BodyStreamBuffer(script_state, new FormDataBytesConsumer(string),
+                             nullptr /* AbortSignal */);
     content_type = "text/plain;charset=UTF-8";
   }
   return Create(script_state, body_buffer, content_type, init, exception_state);

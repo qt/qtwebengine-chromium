@@ -29,8 +29,6 @@ const char kInstallDirectoryName[] = "Extensions";
 
 const char kTempExtensionName[] = "CRX_INSTALL";
 
-const char kDecodedImagesFilename[] = "DECODED_IMAGES";
-
 const char kDecodedMessageCatalogsFilename[] = "DECODED_MESSAGE_CATALOGS";
 
 const char kGeneratedBackgroundPageFilename[] =
@@ -120,5 +118,7 @@ const char* const kHangoutsExtensionIds[6] = {
 // Error returned when scripting of a page is denied due to enterprise policy.
 const char kPolicyBlockedScripting[] =
     "This page cannot be scripted due to an ExtensionsSettings policy.";
+
+const int kContentVerificationDefaultBlockSize = 4096;
 
 }  // namespace extension_misc

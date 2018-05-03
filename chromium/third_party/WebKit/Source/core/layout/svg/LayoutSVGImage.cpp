@@ -114,7 +114,7 @@ void LayoutSVGImage::UpdateLayout() {
 
   // Invalidate all resources of this client if our layout changed.
   if (EverHadLayout() && SelfNeedsLayout())
-    SVGResourcesCache::ClientLayoutChanged(this);
+    SVGResourcesCache::ClientLayoutChanged(*this);
 
   UpdateBoundingBox();
 
@@ -129,7 +129,7 @@ void LayoutSVGImage::UpdateLayout() {
 
   if (needs_boundaries_update_) {
     local_visual_rect_ = object_bounding_box_;
-    SVGLayoutSupport::AdjustVisualRectWithResources(this, local_visual_rect_);
+    SVGLayoutSupport::AdjustVisualRectWithResources(*this, local_visual_rect_);
     needs_boundaries_update_ = false;
     update_parent_boundaries = true;
   }
@@ -185,7 +185,7 @@ void LayoutSVGImage::ImageChanged(WrappedImagePtr,
   // Notify parent resources that we've changed. This also invalidates
   // references from resources (filters) that may have a cached
   // representation of this image/layout object.
-  LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(this,
+  LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(*this,
                                                                          false);
 
   if (StyleRef().Width().IsAuto() || StyleRef().Height().IsAuto()) {

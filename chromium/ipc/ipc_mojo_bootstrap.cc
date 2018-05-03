@@ -123,9 +123,11 @@ class ChannelAssociatedGroupController
 
   void ShutDown() {
     DCHECK(thread_checker_.CalledOnValidThread());
+    shut_down_ = true;
     connector_->CloseMessagePipe();
     OnPipeError();
     connector_.reset();
+    outgoing_messages_.clear();
   }
 
   // mojo::AssociatedGroupController:
@@ -585,7 +587,15 @@ class ChannelAssociatedGroupController
     if (task_runner_->BelongsToCurrentThread()) {
       DCHECK(thread_checker_.CalledOnValidThread());
       if (!connector_ || paused_) {
-        outgoing_messages_.emplace_back(std::move(*message));
+        if (!shut_down_) {
+          outgoing_messages_.emplace_back(std::move(*message));
+
+          // TODO(https://crbug.com/813045): Remove this. Typically this queue
+          // won't exceed something like 50 messages even on slow devices. If
+          // the massive leaks we see can be attributed to this queue, it would
+          // have to be quite a bit larger.
+          CHECK_LE(outgoing_messages_.size(), 100000u);
+        }
         return true;
       }
       return connector_->Accept(message);
@@ -869,6 +879,7 @@ class ChannelAssociatedGroupController
   base::Lock lock_;
 
   bool encountered_error_ = false;
+  bool shut_down_ = false;
 
   // ID #1 is reserved for the mojom::Channel interface.
   uint32_t next_interface_id_ = 2;

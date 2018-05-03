@@ -12,7 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "services/service_manager/public/interfaces/connector.mojom.h"
+#include "services/service_manager/public/mojom/connector.mojom.h"
 #include "services/ui/common/accelerator_util.h"
 #include "services/ui/common/switches.h"
 #include "services/ui/ws/accelerator.h"
@@ -164,7 +164,7 @@ void WindowManagerStateTest::OnEventAckTimeout(
 void WindowManagerStateTest::SetUp() {
   window_event_targeting_helper_.SetTaskRunner(task_runner_);
   window_manager_state_ = window_event_targeting_helper_.display()
-                              ->GetActiveWindowManagerDisplayRoot()
+                              ->window_manager_display_root()
                               ->window_manager_state();
   window_ = window_event_targeting_helper_.CreatePrimaryTree(
       gfx::Rect(0, 0, 100, 100), gfx::Rect(0, 0, 50, 50));
@@ -568,22 +568,19 @@ TEST_F(WindowManagerStateTest, AckTimeout) {
       "InputEvent window=" + kWindowManagerClientIdString + ",1 event_action=7",
       ChangesToDescription1(*tracker->changes())[0]);
 
-  OnEventAckTimeout(window()->id().client_id);
+  OnEventAckTimeout(window()->owning_tree_id());
   EXPECT_TRUE(window_manager()->on_accelerator_called());
   EXPECT_EQ(accelerator->id(), window_manager()->on_accelerator_id());
 }
 
 TEST_F(WindowManagerStateTest, InterceptingEmbedderReceivesEvents) {
   WindowTree* embedder_tree = tree();
-  ServerWindow* embedder_root = window();
   const ClientWindowId embed_window_id(embedder_tree->id(), 12);
   embedder_tree->NewWindow(embed_window_id, ServerWindow::Properties());
   ServerWindow* embedder_window =
       embedder_tree->GetWindowByClientId(embed_window_id);
   ASSERT_TRUE(
-      embedder_tree->AddWindow(ClientWindowId(embedder_root->id().client_id,
-                                              embedder_root->id().window_id),
-                               embed_window_id));
+      embedder_tree->AddWindow(FirstRootId(embedder_tree), embed_window_id));
 
   TestWindowTreeClient* embedder_client = wm_client();
 
@@ -725,12 +722,11 @@ TEST(WindowManagerStateShutdownTest, DestroyTreeBeforeDisplay) {
   TestScreenManager screen_manager;
   screen_manager.Init(window_server->display_manager());
   screen_manager.AddDisplay();
-  const UserId kUserId1 = "2";
-  AddWindowManager(window_server, kUserId1);
+  AddWindowManager(window_server);
   ASSERT_EQ(1u, window_server->display_manager()->displays().size());
   Display* display = *(window_server->display_manager()->displays().begin());
   WindowManagerDisplayRoot* window_manager_display_root =
-      display->GetWindowManagerDisplayRootForUser(kUserId1);
+      display->window_manager_display_root();
   ASSERT_TRUE(window_manager_display_root);
   WindowTree* tree =
       window_manager_display_root->window_manager_state()->window_tree();
@@ -769,12 +765,16 @@ TEST(WindowManagerStateEventTest, AdjustEventLocation) {
   WindowServer* window_server = ws_test_helper.window_server();
   TestScreenManager screen_manager;
   screen_manager.Init(window_server->display_manager());
-  const UserId kUserId1 = "2";
-  AddWindowManager(window_server, kUserId1);
-  window_server->user_id_tracker()->AddUserId(kUserId1);
-  window_server->user_id_tracker()->SetActiveUserId(kUserId1);
+  AddWindowManager(window_server);
   const int64_t first_display_id = screen_manager.AddDisplay();
   const int64_t second_display_id = screen_manager.AddDisplay();
+  Display* first_display =
+      window_server->display_manager()->GetDisplayById(first_display_id);
+  // As there are no child windows make sure the root is a valid target.
+  first_display->window_manager_display_root()
+      ->GetClientVisibleRoot()
+      ->set_event_targeting_policy(
+          mojom::EventTargetingPolicy::TARGET_AND_DESCENDANTS);
   Display* second_display =
       window_server->display_manager()->GetDisplayById(second_display_id);
   ASSERT_TRUE(second_display);
@@ -792,7 +792,7 @@ TEST(WindowManagerStateEventTest, AdjustEventLocation) {
       ui::PointerDetails(EventPointerType::POINTER_TYPE_MOUSE, 0),
       base::TimeTicks());
   WindowManagerDisplayRoot* window_manager_display_root =
-      second_display->GetWindowManagerDisplayRootForUser(kUserId1);
+      second_display->window_manager_display_root();
   TestChangeTracker* tracker =
       ws_test_helper.window_server_delegate()->last_client()->tracker();
   tracker->changes()->clear();
@@ -823,13 +823,33 @@ TEST_F(WindowManagerStateTest, CursorLocationManagerUpdatedOnMouseMove) {
   // Tests add display with kInvalidDisplayId.
   window_manager_state()->ProcessEvent(&move, display::kInvalidDisplayId);
   CursorLocationManager* cursor_location_manager =
-      window_server()->display_manager()->GetCursorLocationManager(
-          window_manager_state()->user_id());
+      window_server()->display_manager()->cursor_location_manager();
   // The location reported to clients is offset by the root transform.
   EXPECT_EQ(
       gfx::Point(19, 18),
       Atomic32ToPoint(CursorLocationManagerTestApi(cursor_location_manager)
                           .current_cursor_location()));
+}
+
+TEST_F(WindowManagerStateTest, SetCapture) {
+  ASSERT_EQ(1u, window_server()->display_manager()->displays().size());
+  Display* display = *(window_server()->display_manager()->displays().begin());
+  TestPlatformDisplay* platform_display =
+      static_cast<TestPlatformDisplay*>(display->platform_display());
+  EXPECT_TRUE(window_tree()->SetCapture(FirstRootId(window_tree())));
+  EXPECT_EQ(FirstRoot(window_tree()), window_manager_state()->capture_window());
+  EXPECT_TRUE(platform_display->has_capture());
+  EXPECT_TRUE(window_tree()->ReleaseCapture(FirstRootId(window_tree())));
+  EXPECT_FALSE(platform_display->has_capture());
+
+  // In unified mode capture should not propagate to the PlatformDisplay. This
+  // is for compatibility with classic ash. See http://crbug.com/773348.
+  display->SetDisplay(display::Display(display::kUnifiedDisplayId));
+  EXPECT_TRUE(window_tree()->SetCapture(FirstRootId(window_tree())));
+  EXPECT_EQ(FirstRoot(window_tree()), window_manager_state()->capture_window());
+  EXPECT_FALSE(platform_display->has_capture());
+  EXPECT_TRUE(window_tree()->ReleaseCapture(FirstRootId(window_tree())));
+  EXPECT_FALSE(platform_display->has_capture());
 }
 
 TEST_F(WindowManagerStateTestAsync, CursorResetOverNoTargetAsync) {

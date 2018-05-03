@@ -10,17 +10,15 @@
 #include <vector>
 
 #include "base/macros.h"
-#include "content/browser/download/download_create_info.h"
+#include "components/download/public/common/download_create_info.h"
+#include "components/download/public/common/download_request_handle_interface.h"
 #include "content/browser/download/download_file.h"
 #include "content/browser/download/download_item_impl.h"
-#include "content/browser/download/download_request_handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace content {
 
-class BrowserContext;
 class DownloadManager;
-class WebContents;
 
 class MockDownloadItemImpl : public DownloadItemImpl {
  public:
@@ -31,11 +29,11 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_METHOD5(OnDownloadTargetDetermined,
                void(const base::FilePath&,
                     TargetDisposition,
-                    DownloadDangerType,
+                    download::DownloadDangerType,
                     const base::FilePath&,
-                    DownloadInterruptReason));
-  MOCK_METHOD1(AddObserver, void(DownloadItem::Observer*));
-  MOCK_METHOD1(RemoveObserver, void(DownloadItem::Observer*));
+                    download::DownloadInterruptReason));
+  MOCK_METHOD1(AddObserver, void(download::DownloadItem::Observer*));
+  MOCK_METHOD1(RemoveObserver, void(download::DownloadItem::Observer*));
   MOCK_METHOD0(UpdateObservers, void());
   MOCK_METHOD0(CanShowInFolder, bool());
   MOCK_METHOD0(CanOpenDownload, bool());
@@ -51,13 +49,15 @@ class MockDownloadItemImpl : public DownloadItemImpl {
     NOTREACHED();
   }
   MOCK_METHOD0(OnDownloadedFileRemoved, void());
-  void Start(std::unique_ptr<DownloadFile> download_file,
-             std::unique_ptr<DownloadRequestHandleInterface> req_handle,
-             const DownloadCreateInfo& create_info) override {
+  void Start(
+      std::unique_ptr<DownloadFile> download_file,
+      std::unique_ptr<download::DownloadRequestHandleInterface> req_handle,
+      const download::DownloadCreateInfo& create_info) override {
     MockStart(download_file.get(), req_handle.get());
   }
 
-  MOCK_METHOD2(MockStart, void(DownloadFile*, DownloadRequestHandleInterface*));
+  MOCK_METHOD2(MockStart,
+               void(DownloadFile*, download::DownloadRequestHandleInterface*));
 
   MOCK_METHOD0(Remove, void());
   MOCK_CONST_METHOD1(TimeRemaining, bool(base::TimeDelta*));
@@ -70,7 +70,8 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_CONST_METHOD0(GetTargetFilePath, const base::FilePath&());
   MOCK_CONST_METHOD0(GetTargetDisposition, TargetDisposition());
   MOCK_METHOD2(OnContentCheckCompleted,
-               void(DownloadDangerType, DownloadInterruptReason));
+               void(download::DownloadDangerType,
+                    download::DownloadInterruptReason));
   MOCK_CONST_METHOD0(GetState, DownloadState());
   MOCK_CONST_METHOD0(GetUrlChain, const std::vector<GURL>&());
   MOCK_METHOD1(SetTotalBytes, void(int64_t));
@@ -99,7 +100,7 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_CONST_METHOD0(GetOpenWhenComplete, bool());
   MOCK_METHOD1(SetOpenWhenComplete, void(bool));
   MOCK_CONST_METHOD0(GetFileExternallyRemoved, bool());
-  MOCK_CONST_METHOD0(GetDangerType, DownloadDangerType());
+  MOCK_CONST_METHOD0(GetDangerType, download::DownloadDangerType());
   MOCK_CONST_METHOD0(IsDangerous, bool());
   MOCK_METHOD0(GetAutoOpened, bool());
   MOCK_CONST_METHOD0(GetForcedFilePath, const base::FilePath&());
@@ -111,9 +112,7 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_CONST_METHOD0(GetLastAccessTime, base::Time());
   MOCK_CONST_METHOD0(GetLastModifiedTime, const std::string&());
   MOCK_CONST_METHOD0(GetETag, const std::string&());
-  MOCK_CONST_METHOD0(GetLastReason, DownloadInterruptReason());
-  MOCK_CONST_METHOD0(GetBrowserContext, BrowserContext*());
-  MOCK_CONST_METHOD0(GetWebContents, WebContents*());
+  MOCK_CONST_METHOD0(GetLastReason, download::DownloadInterruptReason());
   MOCK_CONST_METHOD0(GetFileNameToReportUser, base::FilePath());
   MOCK_METHOD1(SetDisplayName, void(const base::FilePath&));
   // May be called when vlog is on.

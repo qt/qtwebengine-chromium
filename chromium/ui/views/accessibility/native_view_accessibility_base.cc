@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <map>
+#include <memory>
+
 #include "ui/views/accessibility/native_view_accessibility_base.h"
 
 #include "base/memory/ptr_util.h"
@@ -16,6 +19,9 @@ namespace views {
 
 namespace {
 
+base::LazyInstance<std::map<int32_t, ui::AXPlatformNode*>>::Leaky
+    g_unique_id_to_ax_platform_node = LAZY_INSTANCE_INITIALIZER;
+
 bool IsAccessibilityFocusableWhenEnabled(View* view) {
   return view->focus_behavior() != View::FocusBehavior::NEVER &&
          view->IsDrawn();
@@ -24,7 +30,7 @@ bool IsAccessibilityFocusableWhenEnabled(View* view) {
 // Used to determine if a View should be ignored by accessibility clients by
 // being a non-keyboard-focusable child of a keyboard-focusable ancestor. E.g.,
 // LabelButtons contain Labels, but a11y should just show that there's a button.
-bool IsViewUnfocusableChildOfFocusableAncestor(View* view) {
+bool IsViewUnfocusableDescendantOfFocusableAncestor(View* view) {
   if (IsAccessibilityFocusableWhenEnabled(view))
     return false;
 
@@ -66,9 +72,12 @@ NativeViewAccessibilityBase::NativeViewAccessibilityBase(View* view)
         base::BindRepeating(&FromNativeWindow));
     first_time = false;
   }
+
+  g_unique_id_to_ax_platform_node.Get()[GetUniqueId().Get()] = ax_node_;
 }
 
 NativeViewAccessibilityBase::~NativeViewAccessibilityBase() {
+  g_unique_id_to_ax_platform_node.Get().erase(GetUniqueId().Get());
   ax_node_->Destroy();
 }
 
@@ -77,7 +86,7 @@ gfx::NativeViewAccessible NativeViewAccessibilityBase::GetNativeObject() {
 }
 
 void NativeViewAccessibilityBase::NotifyAccessibilityEvent(
-    ui::AXEvent event_type) {
+    ax::mojom::Event event_type) {
   ax_node_->NotifyAccessibilityEvent(event_type);
 }
 
@@ -95,7 +104,7 @@ const ui::AXNodeData& NativeViewAccessibilityBase::GetData() const {
   // This will require ensuring that Chrome OS invalidates the whole
   // subtree when a View changes its visibility state.
   if (!view()->IsDrawn())
-    data_.AddState(ui::AX_STATE_INVISIBLE);
+    data_.AddState(ax::mojom::State::kInvisible);
 
   // Make sure this element is excluded from the a11y tree if there's a
   // focusable parent. All keyboard focusable elements should be leaf nodes.
@@ -105,8 +114,8 @@ const ui::AXNodeData& NativeViewAccessibilityBase::GetData() const {
   // because we needed a way to mark a View as a leaf node in the
   // accessibility tree. We need to replace this with a cross-platform
   // solution that works for ChromeVox, too, and move it to ViewAccessibility.
-  if (IsViewUnfocusableChildOfFocusableAncestor(view()))
-    data_.role = ui::AX_ROLE_IGNORED;
+  if (IsViewUnfocusableDescendantOfFocusableAncestor(view()))
+    data_.role = ax::mojom::Role::kIgnored;
 
   return data_;
 }
@@ -117,6 +126,8 @@ const ui::AXTreeData& NativeViewAccessibilityBase::GetTreeData() const {
 }
 
 int NativeViewAccessibilityBase::GetChildCount() {
+  if (IsLeaf())
+    return 0;
   int child_count = view()->child_count();
 
   std::vector<Widget*> child_widgets;
@@ -127,6 +138,9 @@ int NativeViewAccessibilityBase::GetChildCount() {
 }
 
 gfx::NativeViewAccessible NativeViewAccessibilityBase::ChildAtIndex(int index) {
+  if (IsLeaf())
+    return nullptr;
+
   // If this is a root view, our widget might have child widgets. Include
   std::vector<Widget*> child_widgets;
   PopulateChildWidgetVector(&child_widgets);
@@ -161,7 +175,12 @@ gfx::NativeViewAccessible NativeViewAccessibilityBase::GetParent() {
   return nullptr;
 }
 
-gfx::Rect NativeViewAccessibilityBase::GetScreenBoundsRect() const {
+gfx::Rect NativeViewAccessibilityBase::GetClippedScreenBoundsRect() const {
+  // We could optionally add clipping here if ever needed.
+  return view()->GetBoundsInScreen();
+}
+
+gfx::Rect NativeViewAccessibilityBase::GetUnclippedScreenBoundsRect() const {
   return view()->GetBoundsInScreen();
 }
 
@@ -169,6 +188,9 @@ gfx::NativeViewAccessible NativeViewAccessibilityBase::HitTestSync(int x,
                                                                    int y) {
   if (!view() || !view()->GetWidget())
     return nullptr;
+
+  if (IsLeaf())
+    return GetNativeObject();
 
   // Search child widgets first, since they're on top in the z-order.
   std::vector<Widget*> child_widgets;
@@ -212,7 +234,14 @@ gfx::NativeViewAccessible NativeViewAccessibilityBase::GetFocus() {
 }
 
 ui::AXPlatformNode* NativeViewAccessibilityBase::GetFromNodeID(int32_t id) {
-  return nullptr;
+  // Note: For Views, node IDs and unique IDs are the same - but that isn't
+  // necessarily true for all AXPlatformNodes.
+  auto it = g_unique_id_to_ax_platform_node.Get().find(id);
+
+  if (it == g_unique_id_to_ax_platform_node.Get().end())
+    return nullptr;
+
+  return it->second;
 }
 
 int NativeViewAccessibilityBase::GetIndexInParent() const {
@@ -239,23 +268,19 @@ bool NativeViewAccessibilityBase::IsOffscreen() const {
 }
 
 std::set<int32_t> NativeViewAccessibilityBase::GetReverseRelations(
-    ui::AXIntAttribute attr,
+    ax::mojom::IntAttribute attr,
     int32_t dst_id) {
   return std::set<int32_t>();
 }
 
 std::set<int32_t> NativeViewAccessibilityBase::GetReverseRelations(
-    ui::AXIntListAttribute attr,
+    ax::mojom::IntListAttribute attr,
     int32_t dst_id) {
   return std::set<int32_t>();
 }
 
 const ui::AXUniqueId& NativeViewAccessibilityBase::GetUniqueId() const {
   return ViewAccessibility::GetUniqueId();
-}
-
-gfx::RectF NativeViewAccessibilityBase::GetBoundsInScreen() const {
-  return gfx::RectF(view()->GetBoundsInScreen());
 }
 
 void NativeViewAccessibilityBase::PopulateChildWidgetVector(

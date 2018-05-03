@@ -161,10 +161,8 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls,
     String source_code;
     std::unique_ptr<Vector<char>> cached_meta_data;
     LoadResult result = LoadResult::kNotHandled;
-    if (RuntimeEnabledFeatures::ServiceWorkerScriptStreamingEnabled()) {
-      result = LoadingScriptFromInstalledScriptsManager(
-          complete_url, &response_url, &source_code, &cached_meta_data);
-    }
+    result = LoadingScriptFromInstalledScriptsManager(
+        complete_url, &response_url, &source_code, &cached_meta_data);
 
     // If the script wasn't provided by the InstalledScriptsManager, load from
     // ResourceLoader.
@@ -330,6 +328,7 @@ WorkerGlobalScope::WorkerGlobalScope(
                                  thread->GetWorkerReportingProxy()),
       url_(creation_params->script_url),
       user_agent_(creation_params->user_agent),
+      parent_devtools_token_(creation_params->parent_devtools_token),
       v8_cache_options_(creation_params->v8_cache_options),
       thread_(thread),
       timers_(GetTaskRunner(TaskType::kJavascriptTimer)),

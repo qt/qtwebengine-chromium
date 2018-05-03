@@ -182,32 +182,32 @@ void FramebufferAttachment::attach(const Context *context,
 
 GLuint FramebufferAttachment::getRedSize() const
 {
-    return getFormat().info->redBits;
+    return getSize().empty() ? 0 : getFormat().info->redBits;
 }
 
 GLuint FramebufferAttachment::getGreenSize() const
 {
-    return getFormat().info->greenBits;
+    return getSize().empty() ? 0 : getFormat().info->greenBits;
 }
 
 GLuint FramebufferAttachment::getBlueSize() const
 {
-    return getFormat().info->blueBits;
+    return getSize().empty() ? 0 : getFormat().info->blueBits;
 }
 
 GLuint FramebufferAttachment::getAlphaSize() const
 {
-    return getFormat().info->alphaBits;
+    return getSize().empty() ? 0 : getFormat().info->alphaBits;
 }
 
 GLuint FramebufferAttachment::getDepthSize() const
 {
-    return getFormat().info->depthBits;
+    return getSize().empty() ? 0 : getFormat().info->depthBits;
 }
 
 GLuint FramebufferAttachment::getStencilSize() const
 {
-    return getFormat().info->stencilBits;
+    return getSize().empty() ? 0 : getFormat().info->stencilBits;
 }
 
 GLenum FramebufferAttachment::getComponentType() const
@@ -236,7 +236,7 @@ GLenum FramebufferAttachment::cubeMapFace() const
     ASSERT(mType == GL_TEXTURE);
 
     const auto &index = mTarget.textureIndex();
-    return IsCubeMapTextureTarget(index.type) ? index.type : GL_NONE;
+    return index.type == GL_TEXTURE_CUBE_MAP ? index.target : GL_NONE;
 }
 
 GLint FramebufferAttachment::mipLevel() const
@@ -250,12 +250,7 @@ GLint FramebufferAttachment::layer() const
     ASSERT(mType == GL_TEXTURE);
 
     const auto &index = mTarget.textureIndex();
-
-    if (index.type == GL_TEXTURE_2D_ARRAY || index.type == GL_TEXTURE_3D)
-    {
-        return index.layerIndex;
-    }
-    return 0;
+    return index.hasLayer() ? index.layerIndex : 0;
 }
 
 GLsizei FramebufferAttachment::getNumViews() const
@@ -356,11 +351,6 @@ Error FramebufferAttachmentObject::getAttachmentRenderTarget(
     rx::FramebufferAttachmentRenderTarget **rtOut) const
 {
     return getAttachmentImpl()->getAttachmentRenderTarget(context, binding, imageIndex, rtOut);
-}
-
-OnAttachmentDirtyChannel *FramebufferAttachmentObject::getDirtyChannel()
-{
-    return &mDirtyChannel;
 }
 
 Error FramebufferAttachmentObject::initializeContents(const Context *context,

@@ -55,28 +55,7 @@ ClientLayerTreeFrameSink::ClientLayerTreeFrameSink(
   DETACH_FROM_THREAD(thread_checker_);
 }
 
-ClientLayerTreeFrameSink::ClientLayerTreeFrameSink(
-    scoped_refptr<VulkanContextProvider> vulkan_context_provider,
-    InitParams* params)
-    : cc::LayerTreeFrameSink(std::move(vulkan_context_provider)),
-      hit_test_data_provider_(std::move(params->hit_test_data_provider)),
-      local_surface_id_provider_(std::move(params->local_surface_id_provider)),
-      synthetic_begin_frame_source_(
-          std::move(params->synthetic_begin_frame_source)),
-      pipes_(std::move(params->pipes)),
-      client_binding_(this),
-      enable_surface_synchronization_(params->enable_surface_synchronization),
-      wants_animate_only_begin_frames_(params->wants_animate_only_begin_frames),
-      weak_factory_(this) {
-  DETACH_FROM_THREAD(thread_checker_);
-}
-
 ClientLayerTreeFrameSink::~ClientLayerTreeFrameSink() {}
-
-base::WeakPtr<ClientLayerTreeFrameSink> ClientLayerTreeFrameSink::GetWeakPtr() {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  return weak_factory_.GetWeakPtr();
-}
 
 bool ClientLayerTreeFrameSink::BindToClient(
     cc::LayerTreeFrameSinkClient* client) {
@@ -100,7 +79,8 @@ bool ClientLayerTreeFrameSink::BindToClient(
                    weak_factory_.GetWeakPtr()));
     compositor_frame_sink_ptr_ = compositor_frame_sink_associated_.get();
   }
-  client_binding_.Bind(std::move(pipes_.client_request));
+  client_binding_.Bind(std::move(pipes_.client_request),
+                       compositor_task_runner_);
 
   if (synthetic_begin_frame_source_) {
     client->SetBeginFrameSource(synthetic_begin_frame_source_.get());
@@ -156,7 +136,7 @@ void ClientLayerTreeFrameSink::SubmitCompositorFrame(CompositorFrame frame) {
 
   mojom::HitTestRegionListPtr hit_test_region_list;
   if (hit_test_data_provider_)
-    hit_test_region_list = hit_test_data_provider_->GetHitTestData();
+    hit_test_region_list = hit_test_data_provider_->GetHitTestData(frame);
 
   compositor_frame_sink_ptr_->SubmitCompositorFrame(
       local_surface_id_, std::move(frame), std::move(hit_test_region_list),
@@ -169,6 +149,18 @@ void ClientLayerTreeFrameSink::DidNotProduceFrame(const BeginFrameAck& ack) {
   DCHECK(!ack.has_damage);
   DCHECK_LE(BeginFrameArgs::kStartingFrameNumber, ack.sequence_number);
   compositor_frame_sink_ptr_->DidNotProduceFrame(ack);
+}
+
+void ClientLayerTreeFrameSink::DidAllocateSharedBitmap(
+    mojo::ScopedSharedBufferHandle buffer,
+    const SharedBitmapId& id) {
+  DCHECK(compositor_frame_sink_ptr_);
+  compositor_frame_sink_ptr_->DidAllocateSharedBitmap(std::move(buffer), id);
+}
+
+void ClientLayerTreeFrameSink::DidDeleteSharedBitmap(const SharedBitmapId& id) {
+  DCHECK(compositor_frame_sink_ptr_);
+  compositor_frame_sink_ptr_->DidDeleteSharedBitmap(id);
 }
 
 void ClientLayerTreeFrameSink::DidReceiveCompositorFrameAck(

@@ -210,8 +210,8 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTextures(
     const gfx::Size& natural_size,
     base::TimeDelta timestamp) {
   if (format != PIXEL_FORMAT_ARGB && format != PIXEL_FORMAT_XRGB &&
-      format != PIXEL_FORMAT_UYVY && format != PIXEL_FORMAT_NV12 &&
-      format != PIXEL_FORMAT_I420) {
+      format != PIXEL_FORMAT_RGB32 && format != PIXEL_FORMAT_UYVY &&
+      format != PIXEL_FORMAT_NV12 && format != PIXEL_FORMAT_I420) {
     LOG(DFATAL) << "Unsupported pixel format supported, got "
                 << VideoPixelFormatToString(format);
     return nullptr;
@@ -830,7 +830,7 @@ size_t VideoFrame::BitDepth() const {
   switch (format_) {
     case media::PIXEL_FORMAT_UNKNOWN:
       NOTREACHED();
-    // Fall through!
+      FALLTHROUGH;
     case media::PIXEL_FORMAT_I420:
     case media::PIXEL_FORMAT_YV12:
     case media::PIXEL_FORMAT_I422:

@@ -15,7 +15,11 @@
 #include "SkMakeUnique.h"
 #include "SkMathPriv.h"
 #include "ccpr/GrCCCoverageProcessor.h"
+#include "ccpr/GrCCPathParser.h"
 #include "ops/GrDrawOp.h"
+
+static constexpr int kAtlasMinSize = 1024;
+static constexpr int kPadding = 1;
 
 class GrCCAtlas::Node {
 public:
@@ -24,10 +28,15 @@ public:
 
     Node* previous() const { return fPrevious.get(); }
 
-    bool addRect(int w, int h, SkIPoint16* loc) {
-        static constexpr int kPad = 1;
-
-        if (!fRectanizer.addRect(w + kPad, h + kPad, loc)) {
+    bool addRect(int w, int h, SkIPoint16* loc, int maxAtlasSize) {
+        // Pad all paths except those that are expected to take up an entire physical texture.
+        if (w < maxAtlasSize) {
+            w = SkTMin(w + kPadding, maxAtlasSize);
+        }
+        if (h < maxAtlasSize) {
+            h = SkTMin(h + kPadding, maxAtlasSize);
+        }
+        if (!fRectanizer.addRect(w, h, loc)) {
             return false;
         }
         loc->fX += fX;
@@ -41,21 +50,58 @@ private:
     GrRectanizerSkyline fRectanizer;
 };
 
-GrCCAtlas::GrCCAtlas(const GrCaps& caps, int minWidth, int minHeight)
-        : fMaxAtlasSize(caps.maxRenderTargetSize()), fDrawBounds{0, 0} {
-    SkASSERT(fMaxAtlasSize <= caps.maxTextureSize());
-    SkASSERT(SkTMax(minWidth, minHeight) <= fMaxAtlasSize);
-    int initialSize = GrNextPow2(SkTMax(minWidth, minHeight));
-    initialSize = SkTMax(int(kMinSize), initialSize);
+class GrCCAtlas::DrawCoverageCountOp : public GrDrawOp {
+public:
+    DEFINE_OP_CLASS_ID
+
+    DrawCoverageCountOp(sk_sp<const GrCCPathParser> parser, CoverageCountBatchID batchID,
+                        const SkISize& drawBounds)
+            : INHERITED(ClassID())
+            , fParser(std::move(parser))
+            , fBatchID(batchID)
+            , fDrawBounds(drawBounds) {
+        this->setBounds(SkRect::MakeIWH(fDrawBounds.width(), fDrawBounds.height()),
+                        GrOp::HasAABloat::kNo, GrOp::IsZeroArea::kNo);
+    }
+
+    // GrDrawOp interface.
+    const char* name() const override { return "GrCCAtlas::DrawCoverageCountOp"; }
+    FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
+    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*,
+                                GrPixelConfigIsClamped) override { return RequiresDstTexture::kNo; }
+    bool onCombineIfPossible(GrOp* other, const GrCaps& caps) override { return false; }
+    void onPrepare(GrOpFlushState*) override {}
+    void onExecute(GrOpFlushState* flushState) override {
+        fParser->drawCoverageCount(flushState, fBatchID,
+                                   SkIRect::MakeWH(fDrawBounds.width(), fDrawBounds.height()));
+    }
+
+private:
+    const sk_sp<const GrCCPathParser> fParser;
+    const CoverageCountBatchID fBatchID;
+    const SkISize fDrawBounds;
+
+    typedef GrDrawOp INHERITED;
+};
+
+GrCCAtlas::GrCCAtlas(const GrCaps& caps, int minSize)
+        : fMaxAtlasSize(SkTMax(minSize, caps.maxPreferredRenderTargetSize())) {
+    // Caller should have cropped any paths to the destination render target instead of asking for
+    // an atlas larger than maxRenderTargetSize.
+    SkASSERT(fMaxAtlasSize <= caps.maxRenderTargetSize());
+    int initialSize = GrNextPow2(minSize + kPadding);
+    initialSize = SkTMax(kAtlasMinSize, initialSize);
     initialSize = SkTMin(initialSize, fMaxAtlasSize);
     fHeight = fWidth = initialSize;
-    fTopNode = skstd::make_unique<Node>(nullptr, 0, 0, initialSize, initialSize);
+    fTopNode = skstd::make_unique<Node>(nullptr, 0, 0, fWidth, fHeight);
 }
 
-GrCCAtlas::~GrCCAtlas() {}
+GrCCAtlas::~GrCCAtlas() {
+}
 
 bool GrCCAtlas::addRect(int w, int h, SkIPoint16* loc) {
-    // This can't be called anymore once finalize() has been called.
+    // This can't be called anymore once setCoverageCountBatchID() has been called.
+    SkASSERT(!fCoverageCountBatchID);
     SkASSERT(!fTextureProxy);
 
     if (!this->internalPlaceRect(w, h, loc)) {
@@ -68,17 +114,14 @@ bool GrCCAtlas::addRect(int w, int h, SkIPoint16* loc) {
 }
 
 bool GrCCAtlas::internalPlaceRect(int w, int h, SkIPoint16* loc) {
-    SkASSERT(SkTMax(w, h) < fMaxAtlasSize);
-
     for (Node* node = fTopNode.get(); node; node = node->previous()) {
-        if (node->addRect(w, h, loc)) {
+        if (node->addRect(w, h, loc, fMaxAtlasSize)) {
             return true;
         }
     }
 
     // The rect didn't fit. Grow the atlas and try again.
     do {
-        SkASSERT(SkTMax(fWidth, fHeight) <= fMaxAtlasSize);
         if (fWidth == fMaxAtlasSize && fHeight == fMaxAtlasSize) {
             return false;
         }
@@ -91,16 +134,19 @@ bool GrCCAtlas::internalPlaceRect(int w, int h, SkIPoint16* loc) {
             fWidth = SkTMin(fWidth * 2, fMaxAtlasSize);
             fTopNode = skstd::make_unique<Node>(std::move(fTopNode), left, 0, fWidth, fHeight);
         }
-    } while (!fTopNode->addRect(w, h, loc));
+    } while (!fTopNode->addRect(w, h, loc, fMaxAtlasSize));
 
     return true;
 }
 
-sk_sp<GrRenderTargetContext> GrCCAtlas::finalize(
-        GrOnFlushResourceProvider* onFlushRP, std::unique_ptr<GrDrawOp> atlasOp) {
+sk_sp<GrRenderTargetContext> GrCCAtlas::finalize(GrOnFlushResourceProvider* onFlushRP,
+                                                 sk_sp<const GrCCPathParser> parser) {
+    SkASSERT(fCoverageCountBatchID);
     SkASSERT(!fTextureProxy);
 
     GrSurfaceDesc desc;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
+    desc.fOrigin = kTopLeft_GrSurfaceOrigin;
     desc.fWidth = fWidth;
     desc.fHeight = fHeight;
     desc.fConfig = kAlpha_half_GrPixelConfig;
@@ -113,7 +159,10 @@ sk_sp<GrRenderTargetContext> GrCCAtlas::finalize(
 
     SkIRect clearRect = SkIRect::MakeSize(fDrawBounds);
     rtc->clear(&clearRect, 0, GrRenderTargetContext::CanClearFullscreen::kYes);
-    rtc->addDrawOp(GrNoClip(), std::move(atlasOp));
+
+    auto op = skstd::make_unique<DrawCoverageCountOp>(std::move(parser), fCoverageCountBatchID,
+                                                      fDrawBounds);
+    rtc->addDrawOp(GrNoClip(), std::move(op));
 
     fTextureProxy = sk_ref_sp(rtc->asTextureProxy());
     return rtc;

@@ -27,7 +27,6 @@
 
 #include <memory>
 #include "bindings/core/v8/ScriptController.h"
-#include "common/net/ip_address_space.mojom-blink.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -69,6 +68,7 @@
 #include "platform/wtf/text/ParsingUtilities.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "platform/wtf/text/StringUTF8Adaptor.h"
+#include "public/mojom/net/ip_address_space.mojom-blink.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebURLRequest.h"
@@ -1838,24 +1838,36 @@ bool ContentSecurityPolicy::ShouldBypassContentSecurityPolicy(
 }
 
 // static
-bool ContentSecurityPolicy::IsValidCSPAttr(const String& attr) {
-  ContentSecurityPolicy* policy = ContentSecurityPolicy::Create();
-  policy->AddPolicyFromHeaderValue(attr,
-                                   kContentSecurityPolicyHeaderTypeEnforce,
-                                   kContentSecurityPolicyHeaderSourceHTTP);
-  if (!policy->console_messages_.IsEmpty())
+bool ContentSecurityPolicy::IsValidCSPAttr(const String& attr,
+                                           const String& context_required_csp) {
+  ContentSecurityPolicy* attr_policy = ContentSecurityPolicy::Create();
+  attr_policy->AddPolicyFromHeaderValue(attr,
+                                        kContentSecurityPolicyHeaderTypeEnforce,
+                                        kContentSecurityPolicyHeaderSourceHTTP);
+  if (!attr_policy->console_messages_.IsEmpty() ||
+      attr_policy->policies_.size() != 1) {
     return false;
-  if (policy->policies_.size() != 1)
-    return false;
+  }
 
   // Don't allow any report endpoints in "csp" attributes.
-  for (auto& directiveList : policy->policies_) {
-    // TODO(andypaicu): when `report-to` is implemented, make sure this still
-    // works.
+  for (auto& directiveList : attr_policy->policies_) {
     if (directiveList->ReportEndpoints().size() != 0)
       return false;
   }
-  return true;
+
+  if (context_required_csp.IsEmpty() || context_required_csp.IsNull()) {
+    return true;
+  }
+
+  ContentSecurityPolicy* context_policy = ContentSecurityPolicy::Create();
+  context_policy->AddPolicyFromHeaderValue(
+      context_required_csp, kContentSecurityPolicyHeaderTypeEnforce,
+      kContentSecurityPolicyHeaderSourceHTTP);
+
+  DCHECK(context_policy->console_messages_.IsEmpty() &&
+         context_policy->policies_.size() == 1);
+
+  return context_policy->Subsumes(*attr_policy);
 }
 
 }  // namespace blink

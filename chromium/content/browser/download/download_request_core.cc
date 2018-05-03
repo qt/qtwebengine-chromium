@@ -17,20 +17,19 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "components/download/public/common/download_create_info.h"
+#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_stats.h"
+#include "components/download/public/common/download_task_runner.h"
 #include "content/browser/byte_stream.h"
-#include "content/browser/download/download_create_info.h"
-#include "content/browser/download/download_interrupt_reasons_impl.h"
+#include "content/browser/download/download_interrupt_reasons_utils.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_request_handle.h"
-#include "content/browser/download/download_stats.h"
-#include "content/browser/download/download_task_runner.h"
 #include "content/browser/download/download_utils.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/service_manager/service_manager_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/download_interrupt_reasons.h"
-#include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/navigation_entry.h"
@@ -41,8 +40,8 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/wake_lock_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/wake_lock_provider.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 
 namespace content {
@@ -56,19 +55,19 @@ class DownloadRequestData : public base::SupportsUserData::Data {
   ~DownloadRequestData() override {}
 
   static void Attach(net::URLRequest* request,
-                     DownloadUrlParameters* download_parameters,
+                     download::DownloadUrlParameters* download_parameters,
                      uint32_t download_id);
   static DownloadRequestData* Get(const net::URLRequest* request);
   static void Detach(net::URLRequest* request);
 
-  std::unique_ptr<DownloadSaveInfo> TakeSaveInfo() {
+  std::unique_ptr<download::DownloadSaveInfo> TakeSaveInfo() {
     return std::move(save_info_);
   }
   uint32_t download_id() const { return download_id_; }
   std::string guid() const { return guid_; }
   bool is_transient() const { return transient_; }
   bool fetch_error_body() const { return fetch_error_body_; }
-  const DownloadUrlParameters::OnStartedCallback& callback() const {
+  const download::DownloadUrlParameters::OnStartedCallback& callback() const {
     return on_started_callback_;
   }
   std::string request_origin() const { return request_origin_; }
@@ -76,12 +75,12 @@ class DownloadRequestData : public base::SupportsUserData::Data {
  private:
   static const int kKey;
 
-  std::unique_ptr<DownloadSaveInfo> save_info_;
-  uint32_t download_id_ = DownloadItem::kInvalidId;
+  std::unique_ptr<download::DownloadSaveInfo> save_info_;
+  uint32_t download_id_ = download::DownloadItem::kInvalidId;
   std::string guid_;
   bool fetch_error_body_ = false;
   bool transient_ = false;
-  DownloadUrlParameters::OnStartedCallback on_started_callback_;
+  download::DownloadUrlParameters::OnStartedCallback on_started_callback_;
   std::string request_origin_;
 };
 
@@ -90,11 +89,11 @@ const int DownloadRequestData::kKey = 0;
 
 // static
 void DownloadRequestData::Attach(net::URLRequest* request,
-                                 DownloadUrlParameters* parameters,
+                                 download::DownloadUrlParameters* parameters,
                                  uint32_t download_id) {
   auto request_data = std::make_unique<DownloadRequestData>();
   request_data->save_info_.reset(
-      new DownloadSaveInfo(parameters->GetSaveInfo()));
+      new download::DownloadSaveInfo(parameters->GetSaveInfo()));
   request_data->download_id_ = download_id;
   request_data->guid_ = parameters->guid();
   request_data->fetch_error_body_ = parameters->fetch_error_body();
@@ -119,11 +118,11 @@ void DownloadRequestData::Detach(net::URLRequest* request) {
 const int DownloadRequestCore::kDownloadByteStreamSize = 100 * 1024;
 
 // static
-std::unique_ptr<net::URLRequest>
-DownloadRequestCore::CreateRequestOnIOThread(uint32_t download_id,
-                                             DownloadUrlParameters* params) {
+std::unique_ptr<net::URLRequest> DownloadRequestCore::CreateRequestOnIOThread(
+    uint32_t download_id,
+    download::DownloadUrlParameters* params) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(download_id == DownloadItem::kInvalidId ||
+  DCHECK(download_id == download::DownloadItem::kInvalidId ||
          !params->content_initiated())
       << "Content initiated downloads shouldn't specify a download ID";
 
@@ -142,13 +141,15 @@ std::string DownloadRequestUtils::GetRequestOriginFromRequest(
   return std::string();  // Empty string if data does not exist.
 }
 
-DownloadRequestCore::DownloadRequestCore(net::URLRequest* request,
-                                         Delegate* delegate,
-                                         bool is_parallel_request,
-                                         DownloadSource download_source)
+DownloadRequestCore::DownloadRequestCore(
+    net::URLRequest* request,
+    Delegate* delegate,
+    bool is_parallel_request,
+    const std::string& request_origin,
+    download::DownloadSource download_source)
     : delegate_(delegate),
       request_(request),
-      download_id_(DownloadItem::kInvalidId),
+      download_id_(download::DownloadItem::kInvalidId),
       fetch_error_body_(false),
       transient_(false),
       bytes_read_(0),
@@ -156,12 +157,15 @@ DownloadRequestCore::DownloadRequestCore(net::URLRequest* request,
       was_deferred_(false),
       is_partial_request_(false),
       started_(false),
-      abort_reason_(DOWNLOAD_INTERRUPT_REASON_NONE),
+      abort_reason_(download::DOWNLOAD_INTERRUPT_REASON_NONE),
+      request_origin_(request_origin),
       download_source_(download_source) {
   DCHECK(request_);
   DCHECK(delegate_);
-  if (!is_parallel_request)
-    RecordDownloadCountWithSource(UNTHROTTLED_COUNT, download_source);
+  if (!is_parallel_request) {
+    download::RecordDownloadCountWithSource(download::UNTHROTTLED_COUNT,
+                                            download_source);
+  }
 
   // Request Wake Lock.
   service_manager::Connector* connector =
@@ -191,7 +195,7 @@ DownloadRequestCore::DownloadRequestCore(net::URLRequest* request,
     DownloadRequestData::Detach(request_);
     is_partial_request_ = save_info_->offset > 0;
   } else {
-    save_info_.reset(new DownloadSaveInfo);
+    save_info_.reset(new download::DownloadSaveInfo);
     ResourceRequestInfoImpl* request_info =
         ResourceRequestInfoImpl::ForRequest(request_);
     if (request_info && request_info->suggested_filename().has_value()) {
@@ -208,14 +212,16 @@ DownloadRequestCore::~DownloadRequestCore() {
     stream_writer_->RegisterCallback(base::Closure());
 }
 
-std::unique_ptr<DownloadCreateInfo>
-DownloadRequestCore::CreateDownloadCreateInfo(DownloadInterruptReason result) {
+std::unique_ptr<download::DownloadCreateInfo>
+DownloadRequestCore::CreateDownloadCreateInfo(
+    download::DownloadInterruptReason result) {
   DCHECK(!started_);
   started_ = true;
-  std::unique_ptr<DownloadCreateInfo> create_info(
-      new DownloadCreateInfo(base::Time::Now(), std::move(save_info_)));
+  std::unique_ptr<download::DownloadCreateInfo> create_info(
+      new download::DownloadCreateInfo(base::Time::Now(),
+                                       std::move(save_info_)));
 
-  if (result == DOWNLOAD_INTERRUPT_REASON_NONE)
+  if (result == download::DOWNLOAD_INTERRUPT_REASON_NONE)
     create_info->remote_address = request()->GetSocketAddress().host();
   create_info->method = request()->method();
   create_info->connection_info = request()->response_info().connection_info;
@@ -228,6 +234,7 @@ DownloadRequestCore::CreateDownloadCreateInfo(DownloadInterruptReason result) {
   create_info->response_headers = request()->response_headers();
   create_info->offset = create_info->save_info->offset;
   create_info->fetch_error_body = fetch_error_body_;
+  create_info->request_origin = request_origin_;
   create_info->download_source = download_source_;
   return create_info;
 }
@@ -238,20 +245,20 @@ bool DownloadRequestCore::OnResponseStarted(
   DVLOG(20) << __func__ << "() " << DebugString();
   download_start_time_ = base::TimeTicks::Now();
 
-  DownloadInterruptReason result =
+  download::DownloadInterruptReason result =
       request()->response_headers()
           ? HandleSuccessfulServerResponse(*request()->response_headers(),
                                            save_info_.get(), fetch_error_body_)
-          : DOWNLOAD_INTERRUPT_REASON_NONE;
+          : download::DOWNLOAD_INTERRUPT_REASON_NONE;
 
   if (request()->response_headers()) {
-    RecordDownloadHttpResponseCode(
+    download::RecordDownloadHttpResponseCode(
         request()->response_headers()->response_code());
   }
 
-  std::unique_ptr<DownloadCreateInfo> create_info =
+  std::unique_ptr<download::DownloadCreateInfo> create_info =
       CreateDownloadCreateInfo(result);
-  if (result != DOWNLOAD_INTERRUPT_REASON_NONE) {
+  if (result != download::DOWNLOAD_INTERRUPT_REASON_NONE) {
     delegate_->OnStart(std::move(create_info),
                        std::unique_ptr<ByteStreamReader>(),
                        base::ResetAndReturn(&on_started_callback_));
@@ -267,8 +274,9 @@ bool DownloadRequestCore::OnResponseStarted(
 
   // Create the ByteStream for sending data to the download sink.
   std::unique_ptr<ByteStreamReader> stream_reader;
-  CreateByteStream(base::ThreadTaskRunnerHandle::Get(), GetDownloadTaskRunner(),
-                   kDownloadByteStreamSize, &stream_writer_, &stream_reader);
+  CreateByteStream(base::ThreadTaskRunnerHandle::Get(),
+                   download::GetDownloadTaskRunner(), kDownloadByteStreamSize,
+                   &stream_writer_, &stream_reader);
   stream_writer_->RegisterCallback(
       base::Bind(&DownloadRequestCore::ResumeRequest, AsWeakPtr()));
 
@@ -301,8 +309,9 @@ bool DownloadRequestCore::OnResponseStarted(
     create_info->save_info->suggested_name.clear();
   }
 
-  RecordDownloadContentDisposition(create_info->content_disposition);
-  RecordDownloadSourcePageTransitionType(create_info->transition_type);
+  download::RecordDownloadContentDisposition(create_info->content_disposition);
+  download::RecordDownloadSourcePageTransitionType(
+      create_info->transition_type);
 
   delegate_->OnStart(std::move(create_info), std::move(stream_reader),
                      base::ResetAndReturn(&on_started_callback_));
@@ -313,9 +322,9 @@ bool DownloadRequestCore::OnRequestRedirected() {
   DVLOG(20) << __func__ << "() " << DebugString();
   if (is_partial_request_) {
     // A redirect while attempting a partial resumption indicates a potential
-    // middle box. Trigger another interruption so that the DownloadItem can
-    // retry.
-    abort_reason_ = DOWNLOAD_INTERRUPT_REASON_SERVER_UNREACHABLE;
+    // middle box. Trigger another interruption so that the
+    // download::DownloadItem can retry.
+    abort_reason_ = download::DOWNLOAD_INTERRUPT_REASON_SERVER_UNREACHABLE;
     return false;
   }
   return true;
@@ -361,7 +370,8 @@ bool DownloadRequestCore::OnReadCompleted(int bytes_read, bool* defer) {
   return true;
 }
 
-void DownloadRequestCore::OnWillAbort(DownloadInterruptReason reason) {
+void DownloadRequestCore::OnWillAbort(
+    download::DownloadInterruptReason reason) {
   DVLOG(20) << __func__ << "() reason=" << reason << " " << DebugString();
   DCHECK(!started_);
   abort_reason_ = reason;
@@ -389,7 +399,7 @@ void DownloadRequestCore::OnResponseCompleted(
     if (error_code == net::OK)
       error_code = net::ERR_FAILED;
   }
-  DownloadInterruptReason reason = HandleRequestCompletionStatus(
+  download::DownloadInterruptReason reason = HandleRequestCompletionStatus(
       error_code, has_strong_validators, request()->ssl_info().cert_status,
       abort_reason_);
 
@@ -398,9 +408,10 @@ void DownloadRequestCore::OnResponseCompleted(
     request()->response_headers()->EnumerateHeader(nullptr, "Accept-Ranges",
                                                    &accept_ranges);
   }
-  RecordAcceptsRanges(accept_ranges, bytes_read_, has_strong_validators);
-  RecordNetworkBlockage(base::TimeTicks::Now() - download_start_time_,
-                        total_pause_time_);
+  download::RecordAcceptsRanges(accept_ranges, bytes_read_,
+                                has_strong_validators);
+  download::RecordNetworkBlockage(base::TimeTicks::Now() - download_start_time_,
+                                  total_pause_time_);
 
   // Send the info down the stream.  Conditional is in case we get
   // OnResponseCompleted without OnResponseStarted.
@@ -409,7 +420,7 @@ void DownloadRequestCore::OnResponseCompleted(
 
   // If the error mapped to something unknown, record it so that
   // we can drill down.
-  if (reason == DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED) {
+  if (reason == download::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED) {
     base::UmaHistogramSparse("Download.MapErrorNetworkFailed",
                              std::abs(status.error()));
   }
@@ -422,8 +433,8 @@ void DownloadRequestCore::OnResponseCompleted(
 
   // OnResponseCompleted() called without OnResponseStarted(). This should only
   // happen when the request was aborted.
-  DCHECK_NE(reason, DOWNLOAD_INTERRUPT_REASON_NONE);
-  std::unique_ptr<DownloadCreateInfo> create_info =
+  DCHECK_NE(reason, download::DOWNLOAD_INTERRUPT_REASON_NONE);
+  std::unique_ptr<download::DownloadCreateInfo> create_info =
       CreateDownloadCreateInfo(reason);
   std::unique_ptr<ByteStreamReader> empty_byte_stream;
   delegate_->OnStart(std::move(create_info), std::move(empty_byte_stream),

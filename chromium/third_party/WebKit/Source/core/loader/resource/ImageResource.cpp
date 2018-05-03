@@ -88,12 +88,6 @@ class ImageResource::ImageResourceInfoImpl final
   bool IsSchedulingReload() const override {
     return resource_->is_scheduling_reload_;
   }
-  bool HasDevicePixelRatioHeaderValue() const override {
-    return resource_->has_device_pixel_ratio_header_value_;
-  }
-  float DevicePixelRatioHeaderValue() const override {
-    return resource_->device_pixel_ratio_header_value_;
-  }
   const ResourceResponse& GetResponse() const override {
     return resource_->GetResponse();
   }
@@ -180,7 +174,9 @@ ImageResource* ImageResource::Fetch(FetchParameters& params,
   return resource;
 }
 
-bool ImageResource::CanReuse(const FetchParameters& params) const {
+bool ImageResource::CanReuse(
+    const FetchParameters& params,
+    scoped_refptr<const SecurityOrigin> new_source_origin) const {
   // If the image is a placeholder, but this fetch doesn't allow a
   // placeholder, then do not reuse this resource.
   if (params.GetPlaceholderImageRequestType() !=
@@ -188,7 +184,7 @@ bool ImageResource::CanReuse(const FetchParameters& params) const {
       placeholder_option_ != PlaceholderOption::kDoNotReloadPlaceholder)
     return false;
 
-  return Resource::CanReuse(params);
+  return Resource::CanReuse(params, std::move(new_source_origin));
 }
 
 bool ImageResource::CanUseCacheValidator() const {
@@ -218,13 +214,10 @@ ImageResource::ImageResource(const ResourceRequest& resource_request,
                              bool is_placeholder)
     : Resource(resource_request, kImage, options),
       content_(content),
-      device_pixel_ratio_header_value_(1.0),
-      has_device_pixel_ratio_header_value_(false),
       is_scheduling_reload_(false),
       placeholder_option_(
           is_placeholder ? PlaceholderOption::kShowAndReloadPlaceholderAlways
-                         : PlaceholderOption::kDoNotReloadPlaceholder),
-      flush_timer_(this, &ImageResource::FlushImageIfNeeded) {
+                         : PlaceholderOption::kDoNotReloadPlaceholder) {
   DCHECK(GetContent());
   RESOURCE_LOADING_DVLOG(1) << "new ImageResource(ResourceRequest) " << this;
   GetContent()->SetImageResourceInfo(new ImageResourceInfoImpl(this));
@@ -308,7 +301,7 @@ void ImageResource::AllClientsAndObserversRemoved() {
   // after a conservative GC prevents resetAnimation() from upsetting ongoing
   // animation updates (crbug.com/613709)
   if (!ThreadHeap::WillObjectBeLazilySwept(this)) {
-    Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+    Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
         FROM_HERE, WTF::Bind(&ImageResourceContent::DoResetAnimation,
                              WrapWeakPersistent(GetContent())));
   } else {
@@ -343,7 +336,9 @@ void ImageResource::AppendData(const char* data, size_t length) {
     // inform the clients which causes an invalidation of this image. In other
     // words, we only invalidate this image every |kFlushDelaySeconds| seconds
     // while loading.
-    if (!flush_timer_.IsActive()) {
+    if (Loader() && !is_pending_flushing_) {
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+          Loader()->GetLoadingTaskRunner();
       double now = WTF::CurrentTimeTicksInSeconds();
       if (!last_flush_time_)
         last_flush_time_ = now;
@@ -352,18 +347,23 @@ void ImageResource::AppendData(const char* data, size_t length) {
       double flush_delay = last_flush_time_ - now + kFlushDelaySeconds;
       if (flush_delay < 0.)
         flush_delay = 0.;
-      flush_timer_.StartOneShot(flush_delay, FROM_HERE);
+      task_runner->PostDelayedTask(FROM_HERE,
+                                   WTF::Bind(&ImageResource::FlushImageIfNeeded,
+                                             WrapWeakPersistent(this)),
+                                   TimeDelta::FromSecondsD(flush_delay));
+      is_pending_flushing_ = true;
     }
   }
 }
 
-void ImageResource::FlushImageIfNeeded(TimerBase*) {
+void ImageResource::FlushImageIfNeeded() {
   // We might have already loaded the image fully, in which case we don't need
   // to call |updateImage()|.
   if (IsLoading()) {
     last_flush_time_ = WTF::CurrentTimeTicksInSeconds();
     UpdateImage(Data(), ImageResourceContent::kUpdateImage, false);
   }
+  is_pending_flushing_ = false;
 }
 
 void ImageResource::DecodeError(bool all_data_received) {
@@ -373,6 +373,9 @@ void ImageResource::DecodeError(bool all_data_received) {
   SetEncodedSize(0);
   if (!ErrorOccurred())
     SetStatus(ResourceStatus::kDecodeError);
+
+  if (multipart_parser_)
+    multipart_parser_->Cancel();
 
   bool is_multipart = !!multipart_parser_;
   // Finishes loading if needed, and notifies observers.
@@ -403,9 +406,10 @@ void ImageResource::NotifyStartLoad() {
 }
 
 void ImageResource::Finish(double load_finish_time,
-                           WebTaskRunner* task_runner) {
+                           base::SingleThreadTaskRunner* task_runner) {
   if (multipart_parser_) {
-    multipart_parser_->Finish();
+    if (!ErrorOccurred())
+      multipart_parser_->Finish();
     if (Data())
       UpdateImageAndClearBuffer();
   } else {
@@ -421,7 +425,7 @@ void ImageResource::Finish(double load_finish_time,
 }
 
 void ImageResource::FinishAsError(const ResourceError& error,
-                                  WebTaskRunner* task_runner) {
+                                  base::SingleThreadTaskRunner* task_runner) {
   if (multipart_parser_)
     multipart_parser_->Cancel();
   // TODO(hiroshige): Move setEncodedSize() call to Resource::error() if it
@@ -467,16 +471,6 @@ void ImageResource::ResponseReceived(
   // (e.g. a 304) with a partial set of updated headers that were folded into
   // the cached response.
   Resource::ResponseReceived(response, std::move(handle));
-
-  device_pixel_ratio_header_value_ =
-      GetResponse()
-          .HttpHeaderField(HTTPNames::Content_DPR)
-          .ToFloat(&has_device_pixel_ratio_header_value_);
-  if (!has_device_pixel_ratio_header_value_ ||
-      device_pixel_ratio_header_value_ <= 0.0) {
-    device_pixel_ratio_header_value_ = 1.0;
-    has_device_pixel_ratio_header_value_ = false;
-  }
 
   if (placeholder_option_ ==
           PlaceholderOption::kShowAndReloadPlaceholderAlways &&
@@ -633,6 +627,13 @@ void ImageResource::ReloadIfLoFiOrPlaceholderImage(
 void ImageResource::OnePartInMultipartReceived(
     const ResourceResponse& response) {
   DCHECK(multipart_parser_);
+
+  if (!GetResponse().IsNull()) {
+    CHECK_EQ(GetResponse().WasFetchedViaServiceWorker(),
+             response.WasFetchedViaServiceWorker());
+    CHECK_EQ(GetResponse().ResponseTypeViaServiceWorker(),
+             response.ResponseTypeViaServiceWorker());
+  }
 
   SetResponse(response);
   if (multipart_parsing_state_ == MultipartParsingState::kWaitingForFirstPart) {

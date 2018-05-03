@@ -1,0 +1,54 @@
+# Copyright 2018 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//components/vector_icons/vector_icons.gni")
+
+# The icons in this target, unlike those in //ash/resources/vector_icons, are ok to use from outside of ash/.
+aggregate_vector_icons("ash_public_vector_icons") {
+  icon_directory = "."
+
+  icons = [
+    "notification_captive_portal.icon",
+    "notification_cellular_alert.1x.icon",
+    "notification_cellular_alert.icon",
+    "notification_google.icon",
+    "notification_image.icon",
+    "notification_installed.icon",
+    "notification_mobile_data.icon",
+    "notification_mobile_data_off.icon",
+    "notification_play_prism.icon",
+    "notification_printing.icon",
+    "notification_printing_done.icon",
+    "notification_printing_warning.icon",
+    "notification_storage_full.icon",
+    "notification_vpn.icon",
+    "notification_warning.icon",
+    "notification_wifi_off.icon",
+    "notification_download.icon",
+    "notification_end_of_support.icon",
+    "window_control_left_snapped.1x.icon",
+    "window_control_left_snapped.icon",
+    "window_control_right_snapped.1x.icon",
+    "window_control_right_snapped.icon",
+    "window_control_close.1x.icon",
+    "window_control_close.icon",
+    "window_control_maximize.1x.icon",
+    "window_control_maximize.icon",
+    "window_control_minimize.1x.icon",
+    "window_control_minimize.icon",
+    "window_control_restore.1x.icon",
+    "window_control_restore.icon",
+  ]
+}
+
+source_set("vector_icons") {
+  sources = get_target_outputs(":ash_public_vector_icons")
+
+  deps = [
+    ":ash_public_vector_icons",
+    "//base",
+    "//skia",
+    "//ui/gfx",
+  ]
+}

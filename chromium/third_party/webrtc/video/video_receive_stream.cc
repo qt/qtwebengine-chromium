@@ -60,11 +60,11 @@ VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
     *(codec.H264()) = VideoEncoder::GetDefaultH264Settings();
     codec.H264()->profile =
         H264::ParseSdpProfileLevelId(decoder.codec_params)->profile;
-  } else if (codec.codecType == kVideoCodecStereo) {
+  } else if (codec.codecType == kVideoCodecMultiplex) {
     VideoReceiveStream::Decoder associated_decoder = decoder;
     associated_decoder.payload_name = CodecTypeToPayloadString(kVideoCodecVP9);
     VideoCodec associated_codec = CreateDecoderVideoCodec(associated_decoder);
-    associated_codec.codecType = kVideoCodecStereo;
+    associated_codec.codecType = kVideoCodecMultiplex;
     strncpy(associated_codec.plName, decoder.payload_name.c_str(),
             sizeof(associated_codec.plName));
     return associated_codec;
@@ -226,6 +226,8 @@ void VideoReceiveStream::Start() {
   process_thread_->RegisterModule(&video_receiver_, RTC_FROM_HERE);
 
   // Start the decode thread
+  video_receiver_.DecoderThreadStarting();
+  stats_proxy_.DecoderThreadStarting();
   decode_thread_.Start();
   rtp_video_stream_receiver_.StartReceive();
 }
@@ -233,6 +235,9 @@ void VideoReceiveStream::Start() {
 void VideoReceiveStream::Stop() {
   RTC_DCHECK_CALLED_SEQUENTIALLY(&worker_sequence_checker_);
   rtp_video_stream_receiver_.StopReceive();
+
+  stats_proxy_.OnUniqueFramesCounted(
+      rtp_video_stream_receiver_.GetUniqueFramesSeen());
 
   frame_buffer_->Stop();
   call_stats_->DeregisterStatsObserver(this);
@@ -246,6 +251,8 @@ void VideoReceiveStream::Stop() {
     video_receiver_.TriggerDecoderShutdown();
 
     decode_thread_.Stop();
+    video_receiver_.DecoderThreadStopped();
+    stats_proxy_.DecoderThreadStopped();
     // Deregister external decoders so they are no longer running during
     // destruction. This effectively stops the VCM since the decoder thread is
     // stopped, the VCM is deregistered and no asynchronous decoder threads are
@@ -352,7 +359,7 @@ void VideoReceiveStream::RequestKeyFrame() {
 }
 
 void VideoReceiveStream::OnCompleteFrame(
-    std::unique_ptr<video_coding::FrameObject> frame) {
+    std::unique_ptr<video_coding::EncodedFrame> frame) {
   int64_t last_continuous_pid = frame_buffer_->InsertFrame(std::move(frame));
   if (last_continuous_pid != -1)
     rtp_video_stream_receiver_.FrameContinuous(last_continuous_pid);
@@ -413,14 +420,13 @@ bool VideoReceiveStream::Decode() {
   static const int kMaxWaitForKeyFrameMs = 200;
 
   int wait_ms = keyframe_required_ ? kMaxWaitForKeyFrameMs : kMaxWaitForFrameMs;
-  std::unique_ptr<video_coding::FrameObject> frame;
+  std::unique_ptr<video_coding::EncodedFrame> frame;
   // TODO(philipel): Call NextFrame with |keyframe_required| argument when
   //                 downstream project has been fixed.
   video_coding::FrameBuffer::ReturnReason res =
       frame_buffer_->NextFrame(wait_ms, &frame);
 
   if (res == video_coding::FrameBuffer::ReturnReason::kStopped) {
-    video_receiver_.DecodingStopped();
     return false;
   }
 

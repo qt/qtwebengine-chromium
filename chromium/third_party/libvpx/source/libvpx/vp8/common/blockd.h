@@ -37,7 +37,9 @@ extern "C" {
 #define SEGMENT_DELTADATA 0
 #define SEGMENT_ABSDATA 1
 
-typedef struct { int r, c; } POS;
+typedef struct {
+  int r, c;
+} POS;
 
 #define PLANE_TYPE_Y_NO_DC 0
 #define PLANE_TYPE_Y2 1
@@ -180,6 +182,9 @@ typedef struct {
   unsigned int low_res_ref_frames[MAX_REF_FRAMES];
   // The video frame counter value for the key frame, for lowest resolution.
   unsigned int key_frame_counter_value;
+  // Flags to signal skipped encoding of previous and base layer stream.
+  unsigned int skip_encoding_prev_stream;
+  unsigned int skip_encoding_base_stream;
   LOWER_RES_MB_INFO *mb_info;
 } LOWER_RES_FRAME_INFO;
 #endif

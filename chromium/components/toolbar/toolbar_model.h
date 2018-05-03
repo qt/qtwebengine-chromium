@@ -25,13 +25,18 @@ class ToolbarModel {
  public:
   virtual ~ToolbarModel() = default;
 
-  // Returns a formatted URL for display in the toolbar. The formatting
-  // includes:
+  // Returns the formatted full URL for the toolbar. The formatting includes:
   //   - Some characters may be unescaped.
   //   - The scheme and/or trailing slash may be dropped.
-  // If |prefix_end| is non-NULL, it is set to the length of the pre-hostname
-  // portion of the resulting URL.
-  virtual base::string16 GetFormattedURL(size_t* prefix_end) const = 0;
+  // This method specifically keeps the URL suitable for editing by not
+  // applying any elisions that change the meaning of the URL.
+  virtual base::string16 GetFormattedFullURL() const = 0;
+
+  // Returns a simplified URL for display (but not editing) on the toolbar.
+  // This formatting is generally a superset of GetFormattedFullURL, and may
+  // include some destructive elisions that change the meaning of the URL.
+  // The returned string is not suitable for editing, and is for display only.
+  virtual base::string16 GetURLForDisplay() const = 0;
 
   // Returns the URL of the current navigation entry.
   virtual GURL GetURL() const = 0;

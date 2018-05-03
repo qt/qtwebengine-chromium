@@ -17,6 +17,7 @@
 #include "content/public/common/content_switches.h"
 #include "media/base/media_switches.h"
 #include "services/device/public/cpp/device_features.h"
+#include "services/network/public/cpp/features.h"
 #include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
@@ -95,9 +96,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   WebRuntimeFeatures::EnableOriginTrials(
       base::FeatureList::IsEnabled(features::kOriginTrials));
-
-  WebRuntimeFeatures::EnableFeaturePolicy(
-      base::FeatureList::IsEnabled(features::kFeaturePolicy));
 
   if (!base::FeatureList::IsEnabled(features::kWebUsb))
     WebRuntimeFeatures::EnableWebUsb(false);
@@ -198,8 +196,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kReducedReferrerGranularity))
     WebRuntimeFeatures::EnableReducedReferrerGranularity(true);
 
-  if (command_line.HasSwitch(switches::kRootLayerScrolls))
-    WebRuntimeFeatures::EnableRootLayerScrolling(true);
+  WebRuntimeFeatures::EnableRootLayerScrolling(
+      base::FeatureList::IsEnabled(features::kRootLayerScrolling) ||
+      enableExperimentalWebPlatformFeatures);
 
   if (command_line.HasSwitch(switches::kDisablePermissionsAPI))
     WebRuntimeFeatures::EnablePermissionsAPI(false);
@@ -231,8 +230,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kScrollAnchorSerialization))
     WebRuntimeFeatures::EnableScrollAnchorSerialization(true);
 
-  if (command_line.HasSwitch(switches::kEnableSlimmingPaintV175))
-    WebRuntimeFeatures::EnableFeatureFromString("SlimmingPaintV175", true);
+  WebRuntimeFeatures::EnableFeatureFromString(
+      "SlimmingPaintV175",
+      base::FeatureList::IsEnabled(features::kSlimmingPaintV175) ||
+          command_line.HasSwitch(switches::kEnableSlimmingPaintV175) ||
+          enableExperimentalWebPlatformFeatures);
+
   if (command_line.HasSwitch(switches::kEnableSlimmingPaintV2))
     WebRuntimeFeatures::EnableSlimmingPaintV2(true);
 
@@ -289,15 +292,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kServiceWorkerPaymentApps))
     WebRuntimeFeatures::EnablePaymentApp(true);
 
-  WebRuntimeFeatures::EnableServiceWorkerScriptStreaming(
-      base::FeatureList::IsEnabled(features::kServiceWorkerScriptStreaming));
-
   WebRuntimeFeatures::EnableServiceWorkerScriptFullCodeCache(
       base::FeatureList::IsEnabled(
           features::kServiceWorkerScriptFullCodeCache));
 
   WebRuntimeFeatures::EnableNetworkService(
-      base::FeatureList::IsEnabled(features::kNetworkService));
+      base::FeatureList::IsEnabled(network::features::kNetworkService));
+
+  WebRuntimeFeatures::EnableMojoBlobURLs(
+      base::FeatureList::IsEnabled(network::features::kNetworkService));
 
   if (base::FeatureList::IsEnabled(features::kGamepadExtensions))
     WebRuntimeFeatures::EnableGamepadExtensions(true);
@@ -321,7 +324,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kNotificationsWithMojo))
     WebRuntimeFeatures::EnableNotificationsWithMojo(true);
 
-  if (base::FeatureList::IsEnabled(features::kOutOfBlinkCORS))
+  if (base::FeatureList::IsEnabled(network::features::kOutOfBlinkCORS))
     WebRuntimeFeatures::EnableOutOfBlinkCORS(true);
 
   if (base::FeatureList::IsEnabled(features::kOriginManifest))
@@ -356,7 +359,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   WebRuntimeFeatures::EnableClientPlaceholdersForServerLoFi(
       base::GetFieldTrialParamValue("PreviewsClientLoFi",
-                                    "replace_server_placeholders") == "true");
+                                    "replace_server_placeholders") != "false");
 
   WebRuntimeFeatures::EnableResourceLoadScheduler(
       base::FeatureList::IsEnabled(features::kResourceLoadScheduler));
@@ -395,6 +398,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       "FeaturePolicyForPermissions",
       base::FeatureList::IsEnabled(features::kUseFeaturePolicyForPermissions));
 
+  if (base::FeatureList::IsEnabled(features::kKeyboardLockAPI))
+    WebRuntimeFeatures::EnableFeatureFromString("KeyboardLock", true);
+
   // Enable explicitly enabled features, and then disable explicitly disabled
   // ones.
   for (const std::string& feature :
@@ -406,8 +412,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::EnableFeatureFromString(feature, false);
   }
 
-  if (base::FeatureList::IsEnabled(features::kV8ContextSnapshot))
-    WebRuntimeFeatures::EnableV8ContextSnapshot(true);
+  WebRuntimeFeatures::EnableV8ContextSnapshot(
+      base::FeatureList::IsEnabled(features::kV8ContextSnapshot));
 
   if (base::FeatureList::IsEnabled(features::kStopInBackground))
     WebRuntimeFeatures::EnableStopInBackground(true);
@@ -423,6 +429,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   WebRuntimeFeatures::EnablePictureInPicture(
       base::FeatureList::IsEnabled(media::kPictureInPicture));
+
+  WebRuntimeFeatures::EnableCodeCacheAfterExecute(
+      base::FeatureList::IsEnabled(features::kCodeCacheAfterExecute));
+
+  if (base::FeatureList::IsEnabled(features::kUnifiedTouchAdjustment))
+    WebRuntimeFeatures::EnableUnifiedTouchAdjustment(true);
 };
 
 }  // namespace content

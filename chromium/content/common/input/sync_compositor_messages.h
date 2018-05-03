@@ -118,20 +118,16 @@ IPC_STRUCT_TRAITS_END()
 // Synchronous IPCs are allowed here to the renderer compositor thread. See
 // design doc https://goo.gl/Tn81FW and https://crbug.com/526842 for details.
 
-IPC_SYNC_MESSAGE_CONTROL1_1(
-    SyncCompositorMsg_SynchronizeRendererState,
-    std::vector<int> /* routing ids*/,
-    std::vector<content::SyncCompositorCommonRendererParams>)
-
 IPC_MESSAGE_ROUTED1(SyncCompositorMsg_ComputeScroll, base::TimeTicks)
 
 IPC_MESSAGE_ROUTED1(SyncCompositorMsg_DemandDrawHwAsync,
                     content::SyncCompositorDemandDrawHwParams)
 
-IPC_SYNC_MESSAGE_ROUTED1_3(SyncCompositorMsg_DemandDrawHw,
+IPC_SYNC_MESSAGE_ROUTED1_4(SyncCompositorMsg_DemandDrawHw,
                            content::SyncCompositorDemandDrawHwParams,
                            content::SyncCompositorCommonRendererParams,
                            uint32_t /* layer_tree_frame_sink_id */,
+                           uint32_t /* metadata_version */,
                            base::Optional<viz::CompositorFrame>)
 
 IPC_SYNC_MESSAGE_ROUTED1_2(SyncCompositorMsg_SetSharedMemory,
@@ -141,9 +137,10 @@ IPC_SYNC_MESSAGE_ROUTED1_2(SyncCompositorMsg_SetSharedMemory,
 
 IPC_MESSAGE_ROUTED0(SyncCompositorMsg_ZeroSharedMemory)
 
-IPC_SYNC_MESSAGE_ROUTED1_2(SyncCompositorMsg_DemandDrawSw,
+IPC_SYNC_MESSAGE_ROUTED1_3(SyncCompositorMsg_DemandDrawSw,
                            content::SyncCompositorDemandDrawSwParams,
                            content::SyncCompositorCommonRendererParams,
+                           uint32_t /* metadata_version */,
                            base::Optional<viz::CompositorFrameMetadata>)
 
 IPC_SYNC_MESSAGE_ROUTED2_1(SyncCompositorMsg_ZoomBy,
@@ -160,6 +157,13 @@ IPC_MESSAGE_ROUTED2(SyncCompositorMsg_ReclaimResources,
 
 IPC_MESSAGE_ROUTED1(SyncCompositorMsg_SetScroll, gfx::ScrollOffset)
 
+// Let renderer know begin frame messages won't be sent even if requested.
+IPC_MESSAGE_ROUTED1(SyncCompositorMsg_SetBeginFramePaused, bool /* paused */)
+
+// Sent by the browser when the renderer should generate a new frame.
+IPC_MESSAGE_ROUTED1(SyncCompositorMsg_BeginFrame,
+                    viz::BeginFrameArgs /* args */)
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
@@ -168,8 +172,19 @@ IPC_MESSAGE_ROUTED0(SyncCompositorHostMsg_LayerTreeFrameSinkCreated)
 IPC_MESSAGE_ROUTED1(SyncCompositorHostMsg_UpdateState,
                     content::SyncCompositorCommonRendererParams)
 
-IPC_MESSAGE_ROUTED2(SyncCompositorHostMsg_ReturnFrame,
+// Response to a begin frame request.
+IPC_MESSAGE_ROUTED1(SyncCompositorHostMsg_BeginFrameResponse,
+                    content::SyncCompositorCommonRendererParams)
+
+IPC_MESSAGE_ROUTED3(SyncCompositorHostMsg_ReturnFrame,
                     uint32_t /* layer_tree_frame_sink_id */,
+                    uint32_t /* metadata_version */,
                     base::Optional<viz::CompositorFrame>)
+
+// Sent by renderer to request a SyncCompositorMsg_BeginFrame message for
+// upcoming display events. If |enabled| is true, the BeginFrame message will
+// continue to be be delivered until the notification is disabled.
+IPC_MESSAGE_ROUTED1(SyncCompositorHostMsg_SetNeedsBeginFrames,
+                    bool /* enabled */)
 
 #endif  // CONTENT_COMMON_SYNC_COMPOSITOR_MESSAGES_H_

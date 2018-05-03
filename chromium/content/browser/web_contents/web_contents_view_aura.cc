@@ -20,8 +20,8 @@
 #include "content/browser/download/drag_download_util.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
-#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/dip_util.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/input/touch_selection_controller_client_aura.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
@@ -69,6 +69,7 @@
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/display/display.h"
@@ -236,48 +237,6 @@ const ui::Clipboard::FormatType& GetFileSystemFileFormatType() {
   return format;
 }
 
-// Writes file system files to the pickle.
-void WriteFileSystemFilesToPickle(
-    const std::vector<DropData::FileSystemFileInfo>& file_system_files,
-    base::Pickle* pickle) {
-  pickle->WriteUInt32(file_system_files.size());
-  for (size_t i = 0; i < file_system_files.size(); ++i) {
-    pickle->WriteString(file_system_files[i].url.spec());
-    pickle->WriteInt64(file_system_files[i].size);
-    pickle->WriteString(file_system_files[i].filesystem_id);
-  }
-}
-
-// Reads file system files from the pickle.
-bool ReadFileSystemFilesFromPickle(
-    const base::Pickle& pickle,
-    std::vector<DropData::FileSystemFileInfo>* file_system_files) {
-  base::PickleIterator iter(pickle);
-
-  uint32_t num_files = 0;
-  if (!iter.ReadUInt32(&num_files))
-    return false;
-  file_system_files->resize(num_files);
-
-  for (uint32_t i = 0; i < num_files; ++i) {
-    std::string url_string;
-    int64_t size = 0;
-    std::string filesystem_id;
-    if (!iter.ReadString(&url_string) || !iter.ReadInt64(&size) ||
-        !iter.ReadString(&filesystem_id)) {
-      return false;
-    }
-
-    GURL url(url_string);
-    if (!url.is_valid())
-      return false;
-
-    (*file_system_files)[i].url = url;
-    (*file_system_files)[i].size = size;
-    (*file_system_files)[i].filesystem_id = filesystem_id;
-  }
-  return true;
-}
 
 // Utility to fill a ui::OSExchangeDataProvider object from DropData.
 void PrepareDragData(const DropData& drop_data,
@@ -311,7 +270,8 @@ void PrepareDragData(const DropData& drop_data,
     provider->SetFilenames(drop_data.filenames);
   if (!drop_data.file_system_files.empty()) {
     base::Pickle pickle;
-    WriteFileSystemFilesToPickle(drop_data.file_system_files, &pickle);
+    DropData::FileSystemFileInfo::WriteFileSystemFilesToPickle(
+        drop_data.file_system_files, &pickle);
     provider->SetPickledData(GetFileSystemFileFormatType(), pickle);
   }
   if (!drop_data.custom_data.empty()) {
@@ -353,7 +313,8 @@ void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
   base::Pickle pickle;
   std::vector<DropData::FileSystemFileInfo> file_system_files;
   if (data.GetPickledData(GetFileSystemFileFormatType(), &pickle) &&
-      ReadFileSystemFilesFromPickle(pickle, &file_system_files))
+      DropData::FileSystemFileInfo::ReadFileSystemFilesFromPickle(
+          pickle, &file_system_files))
     drop_data->file_system_files = file_system_files;
 
   if (data.GetPickledData(ui::Clipboard::GetWebCustomDataFormatType(), &pickle))
@@ -383,29 +344,6 @@ blink::WebDragOperationsMask ConvertToWeb(int drag_op) {
   if (drag_op & ui::DragDropTypes::DRAG_LINK)
     web_drag_op |= blink::kWebDragOperationLink;
   return (blink::WebDragOperationsMask) web_drag_op;
-}
-
-int ConvertAuraEventFlagsToWebInputEventModifiers(int aura_event_flags) {
-  int web_input_event_modifiers = 0;
-  if (aura_event_flags & ui::EF_SHIFT_DOWN)
-    web_input_event_modifiers |= blink::WebInputEvent::kShiftKey;
-  if (aura_event_flags & ui::EF_CONTROL_DOWN)
-    web_input_event_modifiers |= blink::WebInputEvent::kControlKey;
-  if (aura_event_flags & ui::EF_ALT_DOWN)
-    web_input_event_modifiers |= blink::WebInputEvent::kAltKey;
-  if (aura_event_flags & ui::EF_COMMAND_DOWN)
-    web_input_event_modifiers |= blink::WebInputEvent::kMetaKey;
-  if (aura_event_flags & ui::EF_LEFT_MOUSE_BUTTON)
-    web_input_event_modifiers |= blink::WebInputEvent::kLeftButtonDown;
-  if (aura_event_flags & ui::EF_MIDDLE_MOUSE_BUTTON)
-    web_input_event_modifiers |= blink::WebInputEvent::kMiddleButtonDown;
-  if (aura_event_flags & ui::EF_RIGHT_MOUSE_BUTTON)
-    web_input_event_modifiers |= blink::WebInputEvent::kRightButtonDown;
-  if (aura_event_flags & ui::EF_BACK_MOUSE_BUTTON)
-    web_input_event_modifiers |= blink::WebInputEvent::kBackButtonDown;
-  if (aura_event_flags & ui::EF_FORWARD_MOUSE_BUTTON)
-    web_input_event_modifiers |= blink::WebInputEvent::kForwardButtonDown;
-  return web_input_event_modifiers;
 }
 
 GlobalRoutingID GetRenderViewHostID(RenderViewHost* rvh) {
@@ -530,9 +468,9 @@ void WebContentsViewAura::InstallCreateHookForTests(
 
 WebContentsViewAura::WebContentsViewAura(WebContentsImpl* web_contents,
                                          WebContentsViewDelegate* delegate)
-    : is_mus_browser_plugin_guest_(web_contents->GetBrowserPluginGuest() !=
-                                       nullptr &&
-                                   (switches::IsMusHostingViz())),
+    : is_mus_browser_plugin_guest_(
+          web_contents->GetBrowserPluginGuest() != nullptr &&
+          base::FeatureList::IsEnabled(features::kMash)),
       web_contents_(web_contents),
       delegate_(delegate),
       current_drag_op_(blink::kWebDragOperationNone),
@@ -544,8 +482,7 @@ WebContentsViewAura::WebContentsViewAura(WebContentsImpl* web_contents,
       current_overscroll_gesture_(OVERSCROLL_NONE),
       completed_overscroll_gesture_(OVERSCROLL_NONE),
       navigation_overlay_(nullptr),
-      init_rwhv_with_null_parent_for_testing_(false) {
-}
+      init_rwhv_with_null_parent_for_testing_(false) {}
 
 void WebContentsViewAura::SetDelegateForTesting(
     WebContentsViewDelegate* delegate) {
@@ -623,23 +560,24 @@ void WebContentsViewAura::EndDrag(RenderWidgetHost* source_rwh,
 
 void WebContentsViewAura::InstallOverscrollControllerDelegate(
     RenderWidgetHostViewAura* view) {
-  const std::string value = base::CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation);
-  if (value == "0") {
-    navigation_overlay_.reset();
-    return;
-  }
-  if (value == "2") {
-    navigation_overlay_.reset();
-    if (!gesture_nav_simple_)
-      gesture_nav_simple_.reset(new GestureNavSimple(web_contents_));
-    view->overscroll_controller()->set_delegate(gesture_nav_simple_.get());
-    return;
-  }
-  view->overscroll_controller()->set_delegate(this);
-  if (!navigation_overlay_ && !is_mus_browser_plugin_guest_) {
-    navigation_overlay_.reset(
-        new OverscrollNavigationOverlay(web_contents_, window_.get()));
+  const OverscrollConfig::Mode mode = OverscrollConfig::GetMode();
+  switch (mode) {
+    case OverscrollConfig::Mode::kDisabled:
+      navigation_overlay_.reset();
+      break;
+    case OverscrollConfig::Mode::kParallaxUi:
+      view->overscroll_controller()->set_delegate(this);
+      if (!navigation_overlay_ && !is_mus_browser_plugin_guest_) {
+        navigation_overlay_.reset(
+            new OverscrollNavigationOverlay(web_contents_, window_.get()));
+      }
+      break;
+    case OverscrollConfig::Mode::kSimpleUi:
+      navigation_overlay_.reset();
+      if (!gesture_nav_simple_)
+        gesture_nav_simple_.reset(new GestureNavSimple(web_contents_));
+      view->overscroll_controller()->set_delegate(gesture_nav_simple_.get());
+      break;
   }
 }
 
@@ -709,47 +647,6 @@ gfx::NativeWindow WebContentsViewAura::GetTopLevelNativeWindow() const {
   return web_contents_->GetOuterWebContents()
       ->GetView()
       ->GetTopLevelNativeWindow();
-}
-
-namespace {
-
-void GetScreenInfoForWindow(ScreenInfo* results,
-                            aura::Window* window) {
-  display::Screen* screen = display::Screen::GetScreen();
-  const display::Display display = window
-                                       ? screen->GetDisplayNearestWindow(window)
-                                       : screen->GetPrimaryDisplay();
-  results->rect = display.bounds();
-  results->available_rect = display.work_area();
-  results->depth = display.color_depth();
-  results->depth_per_component = display.depth_per_component();
-  results->is_monochrome = display.is_monochrome();
-  results->device_scale_factor = display.device_scale_factor();
-  results->color_space = display.color_space();
-
-  // The Display rotation and the ScreenInfo orientation are not the same
-  // angle. The former is the physical display rotation while the later is the
-  // rotation required by the content to be shown properly on the screen, in
-  // other words, relative to the physical display.
-  results->orientation_angle = display.RotationAsDegree();
-  if (results->orientation_angle == 90)
-    results->orientation_angle = 270;
-  else if (results->orientation_angle == 270)
-    results->orientation_angle = 90;
-
-  results->orientation_type =
-      RenderWidgetHostViewBase::GetOrientationTypeForDesktop(display);
-}
-
-}  // namespace
-
-// Static.
-void WebContentsView::GetDefaultScreenInfo(ScreenInfo* results) {
-  GetScreenInfoForWindow(results, nullptr);
-}
-
-void WebContentsViewAura::GetScreenInfo(ScreenInfo* screen_info) const {
-  GetScreenInfoForWindow(screen_info, GetNativeView());
 }
 
 void WebContentsViewAura::GetContainerBounds(gfx::Rect* out) const {
@@ -1143,8 +1040,6 @@ gfx::Size WebContentsViewAura::GetMaximumSize() const {
 void WebContentsViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
                                           const gfx::Rect& new_bounds) {
   SizeChangedCommon(new_bounds.size());
-  if (delegate_)
-    delegate_->SizeChanged(new_bounds.size());
 
   // Constrained web dialogs, need to be kept centered over our content area.
   for (size_t i = 0; i < window_->children().size(); i++) {
@@ -1277,7 +1172,7 @@ void WebContentsViewAura::OnDragEntered(const ui::DropTargetEvent& event) {
   gfx::PointF screen_pt(display::Screen::GetScreen()->GetCursorScreenPoint());
   current_rwh_for_drag_->DragTargetDragEnter(
       *current_drop_data_, transformed_pt, screen_pt, op,
-      ConvertAuraEventFlagsToWebInputEventModifiers(event.flags()));
+      ui::EventFlagsToWebEventModifiers(event.flags()));
 
   if (drag_dest_delegate_) {
     drag_dest_delegate_->OnReceiveDragData(event.data());
@@ -1325,7 +1220,7 @@ int WebContentsViewAura::OnDragUpdated(const ui::DropTargetEvent& event) {
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
   target_rwh->DragTargetDragOver(
       transformed_pt, screen_pt, op,
-      ConvertAuraEventFlagsToWebInputEventModifiers(event.flags()));
+      ui::EventFlagsToWebEventModifiers(event.flags()));
 
   if (drag_dest_delegate_)
     drag_dest_delegate_->OnDragOver();
@@ -1374,7 +1269,7 @@ int WebContentsViewAura::OnPerformDrop(const ui::DropTargetEvent& event) {
   target_rwh->DragTargetDrop(
       *current_drop_data_, transformed_pt,
       gfx::PointF(display::Screen::GetScreen()->GetCursorScreenPoint()),
-      ConvertAuraEventFlagsToWebInputEventModifiers(event.flags()));
+      ui::EventFlagsToWebEventModifiers(event.flags()));
   if (drag_dest_delegate_)
     drag_dest_delegate_->OnDrop();
   current_drop_data_.reset();

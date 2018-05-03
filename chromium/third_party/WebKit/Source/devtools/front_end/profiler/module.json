@@ -9,25 +9,6 @@
             "className": "Profiler.HeapProfilerPanel"
         },
         {
-            "type": "view",
-            "location": "panel",
-            "id": "js_profiler",
-            "title": "Profiler",
-            "order": 65,
-            "className": "Profiler.JSProfilerPanel",
-            "condition": "v8only"
-        },
-        {
-            "type": "view",
-            "location": "panel",
-            "id": "js_profiler",
-            "title": "JavaScript Profiler",
-            "persistence": "closeable",
-            "order": 65,
-            "className": "Profiler.JSProfilerPanel",
-            "condition": "!v8only"
-        },
-        {
             "type": "@UI.ContextMenu.Provider",
             "contextTypes": [
                 "SDK.RemoteObject"
@@ -59,7 +40,7 @@
             "defaultValue": true
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "profiler.heap-toggle-recording",
             "iconClass": "largeicon-start-recording",
             "toggledIconClass": "largeicon-stop-recording",
@@ -80,7 +61,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "profiler.js-toggle-recording",
             "iconClass": "largeicon-start-recording",
             "toggledIconClass": "largeicon-stop-recording",

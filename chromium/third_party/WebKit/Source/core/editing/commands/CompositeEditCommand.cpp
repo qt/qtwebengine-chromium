@@ -48,6 +48,7 @@
 #include "core/editing/commands/ApplyStyleCommand.h"
 #include "core/editing/commands/DeleteFromTextNodeCommand.h"
 #include "core/editing/commands/DeleteSelectionCommand.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/editing/commands/InsertIntoTextNodeCommand.h"
 #include "core/editing/commands/InsertLineBreakCommand.h"
 #include "core/editing/commands/InsertNodeBeforeCommand.h"
@@ -287,6 +288,7 @@ void CompositeEditCommand::InsertNodeBefore(
     ShouldAssumeContentIsAlwaysEditable
         should_assume_content_is_always_editable) {
   DCHECK_NE(GetDocument().body(), ref_child);
+  ABORT_EDITING_COMMAND_IF(!ref_child->parentNode());
   // TODO(editing-dev): Use of updateStyleAndLayoutIgnorePendingStylesheets
   // needs to be audited.  See http://crbug.com/590369 for more details.
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
@@ -610,19 +612,14 @@ void CompositeEditCommand::InsertNodeAtTabSpanPosition(
   InsertNodeAt(node, PositionOutsideTabSpan(pos), editing_state);
 }
 
-bool CompositeEditCommand::DeleteSelection(EditingState* editing_state,
-                                           bool smart_delete,
-                                           bool merge_blocks_after_delete,
-                                           bool expand_for_special_elements,
-                                           bool sanitize_markup) {
+bool CompositeEditCommand::DeleteSelection(
+    EditingState* editing_state,
+    const DeleteSelectionOptions& options) {
   if (!EndingSelection().IsRange())
     return true;
 
   ApplyCommandToComposite(
-      DeleteSelectionCommand::Create(
-          GetDocument(), smart_delete, merge_blocks_after_delete,
-          expand_for_special_elements, sanitize_markup),
-      editing_state);
+      DeleteSelectionCommand::Create(GetDocument(), options), editing_state);
   if (editing_state->IsAborted())
     return false;
 
@@ -1325,7 +1322,9 @@ void CompositeEditCommand::MoveParagraphWithClones(
 
   SetEndingSelection(SelectionForUndoStep::From(
       SelectionInDOMTree::Builder().Collapse(start).Extend(end).Build()));
-  if (!DeleteSelection(editing_state, false, false, false))
+  if (!DeleteSelection(
+          editing_state,
+          DeleteSelectionOptions::Builder().SetSanitizeMarkup(true).Build()))
     return;
 
   // There are bugs in deletion when it removes a fully selected table/list.
@@ -1414,7 +1413,6 @@ void CompositeEditCommand::MoveParagraphs(
   int start_index = -1;
   int end_index = -1;
   int destination_index = -1;
-  bool original_is_directional = EndingSelection().IsDirectional();
   if (should_preserve_selection == kPreserveSelection &&
       !EndingSelection().IsNone()) {
     VisiblePosition visible_start = EndingVisibleSelection().VisibleStart();
@@ -1506,7 +1504,9 @@ void CompositeEditCommand::MoveParagraphs(
       SelectionInDOMTree::Builder().Collapse(start).Extend(end).Build());
   SetEndingSelection(
       SelectionForUndoStep::From(selection_to_delete.AsSelection()));
-  if (!DeleteSelection(editing_state, false, false, false))
+  if (!DeleteSelection(
+          editing_state,
+          DeleteSelectionOptions::Builder().SetSanitizeMarkup(true).Build()))
     return;
 
   DCHECK(destination.DeepEquivalent().IsConnected()) << destination;
@@ -1553,7 +1553,6 @@ void CompositeEditCommand::MoveParagraphs(
   const VisibleSelection& destination_selection =
       CreateVisibleSelection(SelectionInDOMTree::Builder()
                                  .Collapse(destination.ToPositionWithAffinity())
-                                 .SetIsDirectional(original_is_directional)
                                  .Build());
   if (EndingSelection().IsNone()) {
     // We abort executing command since |destination| becomes invisible.
@@ -1614,7 +1613,6 @@ void CompositeEditCommand::MoveParagraphs(
       CreateVisibleSelection(SelectionInDOMTree::Builder()
                                  .Collapse(start_range.StartPosition())
                                  .Extend(end_range.StartPosition())
-                                 .SetIsDirectional(original_is_directional)
                                  .Build());
   SetEndingSelection(
       SelectionForUndoStep::From(visible_selection.AsSelection()));
@@ -1722,7 +1720,6 @@ bool CompositeEditCommand::BreakOutOfEmptyListItem(
   SetEndingSelection(SelectionForUndoStep::From(
       SelectionInDOMTree::Builder()
           .Collapse(Position::FirstPositionInNode(*new_block))
-          .SetIsDirectional(EndingSelection().IsDirectional())
           .Build()));
 
   style->PrepareToApplyAt(EndingSelection().Start());
@@ -1785,7 +1782,6 @@ bool CompositeEditCommand::BreakOutOfEmptyMailBlockquotedParagraph(
   SetEndingSelection(SelectionForUndoStep::From(
       SelectionInDOMTree::Builder()
           .Collapse(at_br.ToPositionWithAffinity())
-          .SetIsDirectional(EndingSelection().IsDirectional())
           .Build()));
 
   // If this is an empty paragraph there must be a line break here.

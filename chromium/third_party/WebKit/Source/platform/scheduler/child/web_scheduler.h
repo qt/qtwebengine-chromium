@@ -6,6 +6,8 @@
 #define THIRD_PARTY_WEBKIT_SOURCE_PLATFORM_SCHEDULER_RENDERER_WEB_SCHEDULER_H_
 
 #include "base/location.h"
+#include "base/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebThread.h"
@@ -14,8 +16,6 @@
 #include <memory>
 
 namespace blink {
-
-class WebTaskRunner;
 
 // This class is used to submit tasks and pass other information from Blink to
 // the platform's scheduler.
@@ -68,16 +68,13 @@ class PLATFORM_EXPORT WebScheduler {
   virtual void PostNonNestableIdleTask(const base::Location&,
                                        WebThread::IdleTask) = 0;
 
-  // Returns a WebTaskRunner for timer tasks. Can be called from any thread.
-  virtual WebTaskRunner* TimerTaskRunner() = 0;
+  // Returns a task runner for kV8 tasks. Can be called from any thread.
+  virtual base::SingleThreadTaskRunner* V8TaskRunner() = 0;
 
-  // Returns a WebTaskRunner for kV8 tasks. Can be called from any thread.
-  virtual WebTaskRunner* V8TaskRunner() = 0;
-
-  // Returns a WebTaskRunner for compositor tasks. This is intended only to be
+  // Returns a task runner for compositor tasks. This is intended only to be
   // used by specific animation and rendering related tasks (e.g. animated GIFS)
   // and should not generally be used.
-  virtual WebTaskRunner* CompositorTaskRunner() = 0;
+  virtual base::SingleThreadTaskRunner* CompositorTaskRunner() = 0;
 
   // Creates a new WebViewScheduler for a given WebView. Must be called from
   // the associated WebThread.
@@ -98,6 +95,10 @@ class PLATFORM_EXPORT WebScheduler {
   // Tells the scheduler that a navigation task is no longer pending.
   virtual void RemovePendingNavigation(
       scheduler::RendererScheduler::NavigatingFrameType) = 0;
+
+  // Returns the current time recognized by the scheduler, which may perhaps
+  // be based on a real or virtual time domain. Used by Timer.
+  virtual base::TimeTicks MonotonicallyIncreasingVirtualTime() const = 0;
 
   // Test helpers.
 

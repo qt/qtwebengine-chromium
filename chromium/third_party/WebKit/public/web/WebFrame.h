@@ -39,7 +39,7 @@
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/web/WebFrameLoadType.h"
 #include "public/web/WebTreeScopeType.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -203,6 +203,9 @@ class BLINK_EXPORT WebFrame {
   // Detaches a frame from its parent frame if it has one.
   void DetachFromParent();
 #endif
+
+  // Mark this frame's document as having received a user gesture.
+  virtual void SetHasReceivedUserGesture() = 0;
 
  protected:
   explicit WebFrame(WebTreeScopeType);

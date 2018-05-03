@@ -46,8 +46,8 @@ UI.installDragHandle = function(
    * @param {!Event} event
    */
   function onMouseDown(event) {
-    var dragHandler = new UI.DragHandler();
-    var dragStart = dragHandler.elementDragStart.bind(
+    const dragHandler = new UI.DragHandler();
+    const dragStart = dragHandler.elementDragStart.bind(
         dragHandler, element, elementDragStart, elementDrag, elementDragEnd, cursor, event);
     if (startDelay)
       startTimer = setTimeout(dragStart, startDelay);
@@ -61,7 +61,7 @@ UI.installDragHandle = function(
     startTimer = null;
   }
 
-  var startTimer;
+  let startTimer;
   element.addEventListener('mousedown', onMouseDown, false);
   if (startDelay)
     element.addEventListener('mouseup', onMouseUp, false);
@@ -78,7 +78,7 @@ UI.installDragHandle = function(
  * @param {!Event} event
  */
 UI.elementDragStart = function(targetElement, elementDragStart, elementDrag, elementDragEnd, cursor, event) {
-  var dragHandler = new UI.DragHandler();
+  const dragHandler = new UI.DragHandler();
   dragHandler.elementDragStart(targetElement, elementDragStart, elementDrag, elementDragEnd, cursor, event);
 };
 
@@ -131,14 +131,18 @@ UI.DragHandler = class {
     if (elementDragStart && !elementDragStart(/** @type {!MouseEvent} */ (event)))
       return;
 
-    var targetDocument = event.target.ownerDocument;
+    const targetDocument = event.target.ownerDocument;
     this._elementDraggingEventListener = elementDrag;
     this._elementEndDraggingEventListener = elementDragEnd;
     console.assert(
         (UI.DragHandler._documentForMouseOut || targetDocument) === targetDocument, 'Dragging on multiple documents.');
     UI.DragHandler._documentForMouseOut = targetDocument;
     this._dragEventsTargetDocument = targetDocument;
-    this._dragEventsTargetDocumentTop = targetDocument.defaultView.top.document;
+    try {
+      this._dragEventsTargetDocumentTop = targetDocument.defaultView.top.document;
+    } catch (e) {
+      this._dragEventsTargetDocumentTop = this._dragEventsTargetDocument;
+    }
 
     targetDocument.addEventListener('mousemove', this._elementDragMove, true);
     targetDocument.addEventListener('mouseup', this._elementDragEnd, true);
@@ -217,7 +221,7 @@ UI.DragHandler = class {
    * @param {!Event} event
    */
   _elementDragEnd(event) {
-    var elementDragEnd = this._elementEndDraggingEventListener;
+    const elementDragEnd = this._elementEndDraggingEventListener;
     this._cancelDragEvents(/** @type {!MouseEvent} */ (event));
     event.preventDefault();
     if (elementDragEnd)
@@ -234,7 +238,7 @@ UI.DragHandler._glassPaneUsageCount = 0;
 UI.isBeingEdited = function(node) {
   if (!node || node.nodeType !== Node.ELEMENT_NODE)
     return false;
-  var element = /** {!Element} */ (node);
+  let element = /** {!Element} */ (node);
   if (element.classList.contains('text-prompt') || element.nodeName === 'INPUT' || element.nodeName === 'TEXTAREA')
     return true;
 
@@ -257,7 +261,7 @@ UI.isEditing = function() {
   if (UI.__editingCount)
     return true;
 
-  var focused = document.deepActiveElement();
+  const focused = document.deepActiveElement();
   if (!focused)
     return false;
   return focused.classList.contains('text-prompt') || focused.nodeName === 'INPUT' || focused.nodeName === 'TEXTAREA';
@@ -285,7 +289,8 @@ UI.markBeingEdited = function(element, value) {
   return true;
 };
 
-UI.CSSNumberRegex = /^(-?(?:\d+(?:\.\d+)?|\.\d+))$/;
+// Avoids Infinity, NaN, and scientific notation (e.g. 1e20), see crbug.com/81165.
+UI._numberRegex = /^(-?(?:\d+(?:\.\d+)?|\.\d+))$/;
 
 UI.StyleValueDelimiters = ' \xA0\t\n"\':;,/()';
 
@@ -294,7 +299,7 @@ UI.StyleValueDelimiters = ' \xA0\t\n"\':;,/()';
  * @return {?string}
  */
 UI._valueModificationDirection = function(event) {
-  var direction = null;
+  let direction = null;
   if (event.type === 'mousewheel') {
     // When shift is pressed while spinning mousewheel, delta comes as wheelDeltaX.
     if (event.wheelDeltaY > 0 || event.wheelDeltaX > 0)
@@ -316,17 +321,17 @@ UI._valueModificationDirection = function(event) {
  * @return {?string}
  */
 UI._modifiedHexValue = function(hexString, event) {
-  var direction = UI._valueModificationDirection(event);
+  const direction = UI._valueModificationDirection(event);
   if (!direction)
     return null;
 
-  var mouseEvent = /** @type {!MouseEvent} */ (event);
-  var number = parseInt(hexString, 16);
+  const mouseEvent = /** @type {!MouseEvent} */ (event);
+  const number = parseInt(hexString, 16);
   if (isNaN(number) || !isFinite(number))
     return null;
 
-  var hexStrLen = hexString.length;
-  var channelLen = hexStrLen / 3;
+  const hexStrLen = hexString.length;
+  const channelLen = hexStrLen / 3;
 
   // Colors are either rgb or rrggbb.
   if (channelLen !== 1 && channelLen !== 2)
@@ -338,7 +343,7 @@ UI._modifiedHexValue = function(hexString, event) {
   // When alt is pressed, increase B by 1.
   // If no shortcut keys are pressed then increase hex value by 1.
   // Keys can be pressed together to increase RGB channels. e.g trying different shades.
-  var delta = 0;
+  let delta = 0;
   if (UI.KeyboardShortcut.eventHasCtrlOrMeta(mouseEvent))
     delta += Math.pow(16, channelLen * 2);
   if (mouseEvent.shiftKey)
@@ -351,12 +356,12 @@ UI._modifiedHexValue = function(hexString, event) {
     delta *= -1;
 
   // Increase hex value by 1 and clamp from 0 ... maxValue.
-  var maxValue = Math.pow(16, hexStrLen) - 1;
-  var result = Number.constrain(number + delta, 0, maxValue);
+  const maxValue = Math.pow(16, hexStrLen) - 1;
+  const result = Number.constrain(number + delta, 0, maxValue);
 
   // Ensure the result length is the same as the original hex value.
-  var resultString = result.toString(16).toUpperCase();
-  for (var i = 0, lengthDelta = hexStrLen - resultString.length; i < lengthDelta; ++i)
+  let resultString = result.toString(16).toUpperCase();
+  for (let i = 0, lengthDelta = hexStrLen - resultString.length; i < lengthDelta; ++i)
     resultString = '0' + resultString;
   return resultString;
 };
@@ -364,21 +369,22 @@ UI._modifiedHexValue = function(hexString, event) {
 /**
  * @param {number} number
  * @param {!Event} event
+ * @param {number=} modifierMultiplier
  * @return {?number}
  */
-UI._modifiedFloatNumber = function(number, event) {
-  var direction = UI._valueModificationDirection(event);
+UI._modifiedFloatNumber = function(number, event, modifierMultiplier) {
+  const direction = UI._valueModificationDirection(event);
   if (!direction)
     return null;
 
-  var mouseEvent = /** @type {!MouseEvent} */ (event);
+  const mouseEvent = /** @type {!MouseEvent} */ (event);
 
   // Precision modifier keys work with both mousewheel and up/down keys.
   // When ctrl is pressed, increase by 100.
   // When shift is pressed, increase by 10.
   // When alt is pressed, increase by 0.1.
   // Otherwise increase by 1.
-  var delta = 1;
+  let delta = 1;
   if (UI.KeyboardShortcut.eventHasCtrlOrMeta(mouseEvent))
     delta = 100;
   else if (mouseEvent.shiftKey)
@@ -388,13 +394,14 @@ UI._modifiedFloatNumber = function(number, event) {
 
   if (direction === 'Down')
     delta *= -1;
+  if (modifierMultiplier)
+    delta *= modifierMultiplier;
 
   // Make the new number and constrain it to a precision of 6, this matches numbers the engine returns.
   // Use the Number constructor to forget the fixed precision, so 1.100000 will print as 1.1.
-  var result = Number((number + delta).toFixed(6));
-  if (!String(result).match(UI.CSSNumberRegex))
+  const result = Number((number + delta).toFixed(6));
+  if (!String(result).match(UI._numberRegex))
     return null;
-
   return result;
 };
 
@@ -405,11 +412,11 @@ UI._modifiedFloatNumber = function(number, event) {
  * @return {?string}
  */
 UI.createReplacementString = function(wordString, event, customNumberHandler) {
-  var prefix;
-  var suffix;
-  var number;
-  var replacementString = null;
-  var matches = /(.*#)([\da-fA-F]+)(.*)/.exec(wordString);
+  let prefix;
+  let suffix;
+  let number;
+  let replacementString = null;
+  let matches = /(.*#)([\da-fA-F]+)(.*)/.exec(wordString);
   if (matches && matches.length) {
     prefix = matches[1];
     suffix = matches[3];
@@ -448,36 +455,37 @@ UI.handleElementValueModifications = function(event, element, finishHandler, sug
     return document.createRange();
   }
 
-  var arrowKeyOrMouseWheelEvent = (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.type === 'mousewheel');
-  var pageKeyPressed = (event.key === 'PageUp' || event.key === 'PageDown');
+  const arrowKeyOrMouseWheelEvent =
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.type === 'mousewheel');
+  const pageKeyPressed = (event.key === 'PageUp' || event.key === 'PageDown');
   if (!arrowKeyOrMouseWheelEvent && !pageKeyPressed)
     return false;
 
-  var selection = element.getComponentSelection();
+  const selection = element.getComponentSelection();
   if (!selection.rangeCount)
     return false;
 
-  var selectionRange = selection.getRangeAt(0);
+  const selectionRange = selection.getRangeAt(0);
   if (!selectionRange.commonAncestorContainer.isSelfOrDescendant(element))
     return false;
 
-  var originalValue = element.textContent;
-  var wordRange =
+  const originalValue = element.textContent;
+  const wordRange =
       selectionRange.startContainer.rangeOfWord(selectionRange.startOffset, UI.StyleValueDelimiters, element);
-  var wordString = wordRange.toString();
+  const wordString = wordRange.toString();
 
   if (suggestionHandler && suggestionHandler(wordString))
     return false;
 
-  var replacementString = UI.createReplacementString(wordString, event, customNumberHandler);
+  const replacementString = UI.createReplacementString(wordString, event, customNumberHandler);
 
   if (replacementString) {
-    var replacementTextNode = createTextNode(replacementString);
+    const replacementTextNode = createTextNode(replacementString);
 
     wordRange.deleteContents();
     wordRange.insertNode(replacementTextNode);
 
-    var finalSelectionRange = createRange();
+    const finalSelectionRange = createRange();
     finalSelectionRange.setStart(replacementTextNode, 0);
     finalSelectionRange.setEnd(replacementTextNode, replacementString.length);
 
@@ -502,7 +510,7 @@ UI.handleElementValueModifications = function(event, element, finishHandler, sug
  */
 Number.preciseMillisToString = function(ms, precision) {
   precision = precision || 0;
-  var format = '%.' + precision + 'f\xa0ms';
+  const format = '%.' + precision + 'f\xa0ms';
   return Common.UIString(format, ms);
 };
 
@@ -546,19 +554,19 @@ Number.millisToString = function(ms, higherResolution) {
   if (ms < 1000)
     return UI._millisFormat.format(ms);
 
-  var seconds = ms / 1000;
+  const seconds = ms / 1000;
   if (seconds < 60)
     return UI._secondsFormat.format(seconds);
 
-  var minutes = seconds / 60;
+  const minutes = seconds / 60;
   if (minutes < 60)
     return UI._minutesFormat.format(minutes);
 
-  var hours = minutes / 60;
+  const hours = minutes / 60;
   if (hours < 24)
     return UI._hoursFormat.format(hours);
 
-  var days = hours / 24;
+  const days = hours / 24;
   return UI._daysFormat.format(days);
 };
 
@@ -581,13 +589,13 @@ Number.bytesToString = function(bytes) {
   if (bytes < 1024)
     return Common.UIString('%.0f\xa0B', bytes);
 
-  var kilobytes = bytes / 1024;
+  const kilobytes = bytes / 1024;
   if (kilobytes < 100)
     return Common.UIString('%.1f\xa0KB', kilobytes);
   if (kilobytes < 1024)
     return Common.UIString('%.0f\xa0KB', kilobytes);
 
-  var megabytes = kilobytes / 1024;
+  const megabytes = kilobytes / 1024;
   if (megabytes < 100)
     return Common.UIString('%.1f\xa0MB', megabytes);
   else
@@ -599,8 +607,8 @@ Number.bytesToString = function(bytes) {
  * @return {string}
  */
 Number.withThousandsSeparator = function(num) {
-  var str = num + '';
-  var re = /(\d+)(\d{3})/;
+  let str = num + '';
+  const re = /(\d+)(\d{3})/;
   while (str.match(re))
     str = str.replace(re, '$1\xa0$2');  // \xa0 is a non-breaking space
   return str;
@@ -612,7 +620,7 @@ Number.withThousandsSeparator = function(num) {
  * @return {!Element}
  */
 UI.formatLocalized = function(format, substitutions) {
-  var formatters = {s: substitution => substitution};
+  const formatters = {s: substitution => substitution};
   /**
    * @param {!Element} a
    * @param {string|!Element} b
@@ -671,23 +679,26 @@ UI.installComponentRootStyles = function(element) {
   UI.themeSupport.injectCustomStyleSheets(element);
   element.classList.add('platform-' + Host.platform());
 
-  /**
-   * Detect overlay scrollbar enable by checking clientWidth and offsetWidth of
-   * overflow: scroll div.
-   * @param {?Document=} document
-   * @return {boolean}
-   */
-  function overlayScrollbarEnabled(document) {
-    var scrollDiv = document.createElement('div');
-    scrollDiv.setAttribute('style', 'width: 100px; height: 100px; overflow: scroll;');
-    document.body.appendChild(scrollDiv);
-    var scrollbarWidth = scrollDiv.offsetWidth - scrollDiv.clientWidth;
-    document.body.removeChild(scrollDiv);
-    return scrollbarWidth === 0;
-  }
-
-  if (!Host.isMac() && overlayScrollbarEnabled(element.ownerDocument))
+  // Detect overlay scrollbar enable by checking for nonzero scrollbar width.
+  if (!Host.isMac() && UI.measuredScrollbarWidth(element.ownerDocument) === 0)
     element.classList.add('overlay-scrollbar-enabled');
+};
+
+/**
+ * @param {?Document} document
+ * @return {number}
+ */
+UI.measuredScrollbarWidth = function(document) {
+  if (typeof UI._measuredScrollbarWidth === 'number')
+    return UI._measuredScrollbarWidth;
+  if (!document)
+    return 16;
+  const scrollDiv = document.createElement('div');
+  scrollDiv.setAttribute('style', 'width: 100px; height: 100px; overflow: scroll;');
+  document.body.appendChild(scrollDiv);
+  UI._measuredScrollbarWidth = scrollDiv.offsetWidth - scrollDiv.clientWidth;
+  document.body.removeChild(scrollDiv);
+  return UI._measuredScrollbarWidth;
 };
 
 /**
@@ -696,7 +707,7 @@ UI.installComponentRootStyles = function(element) {
  * @return {!DocumentFragment}
  */
 UI.createShadowRootWithCoreStyles = function(element, cssFile) {
-  var shadowRoot = element.createShadowRoot();
+  const shadowRoot = element.createShadowRoot();
   UI.appendStyle(shadowRoot, 'ui/inspectorCommon.css');
   UI.themeSupport.injectHighlightStyleSheets(shadowRoot);
   UI.themeSupport.injectCustomStyleSheets(shadowRoot);
@@ -714,8 +725,8 @@ UI._windowFocused = function(document, event) {
   if (event.target.document.nodeType === Node.DOCUMENT_NODE)
     document.body.classList.remove('inactive');
   UI._keyboardFocus = true;
-  var listener = () => {
-    var activeElement = document.deepActiveElement();
+  const listener = () => {
+    const activeElement = document.deepActiveElement();
     if (activeElement)
       activeElement.removeAttribute('data-keyboard-focus');
     UI._keyboardFocus = false;
@@ -741,8 +752,8 @@ UI._windowBlurred = function(document, event) {
  * @param {!Event} event
  */
 UI._focusChanged = function(event) {
-  var document = event.target && event.target.ownerDocument;
-  var element = document ? document.deepActiveElement() : null;
+  const document = event.target && event.target.ownerDocument;
+  const element = document ? document.deepActiveElement() : null;
   UI.Widget.focusWidgetForNode(element);
   UI.XWidget.focusWidgetForNode(element);
   if (!UI._keyboardFocus)
@@ -782,7 +793,7 @@ UI.ElementFocusRestorer = class {
  * @return {?Element}
  */
 UI.highlightSearchResult = function(element, offset, length, domChanges) {
-  var result = UI.highlightSearchResults(element, [new TextUtils.SourceRange(offset, length)], domChanges);
+  const result = UI.highlightSearchResults(element, [new TextUtils.SourceRange(offset, length)], domChanges);
   return result.length ? result[0] : null;
 };
 
@@ -822,48 +833,48 @@ UI.runCSSAnimationOnce = function(element, className) {
  */
 UI.highlightRangesWithStyleClass = function(element, resultRanges, styleClass, changes) {
   changes = changes || [];
-  var highlightNodes = [];
-  var textNodes = element.childTextNodes();
-  var lineText = textNodes
-                     .map(function(node) {
-                       return node.textContent;
-                     })
-                     .join('');
-  var ownerDocument = element.ownerDocument;
+  const highlightNodes = [];
+  const textNodes = element.childTextNodes();
+  const lineText = textNodes
+                       .map(function(node) {
+                         return node.textContent;
+                       })
+                       .join('');
+  const ownerDocument = element.ownerDocument;
 
   if (textNodes.length === 0)
     return highlightNodes;
 
-  var nodeRanges = [];
-  var rangeEndOffset = 0;
-  for (var i = 0; i < textNodes.length; ++i) {
-    var range = {};
+  const nodeRanges = [];
+  let rangeEndOffset = 0;
+  for (let i = 0; i < textNodes.length; ++i) {
+    const range = {};
     range.offset = rangeEndOffset;
     range.length = textNodes[i].textContent.length;
     rangeEndOffset = range.offset + range.length;
     nodeRanges.push(range);
   }
 
-  var startIndex = 0;
-  for (var i = 0; i < resultRanges.length; ++i) {
-    var startOffset = resultRanges[i].offset;
-    var endOffset = startOffset + resultRanges[i].length;
+  let startIndex = 0;
+  for (let i = 0; i < resultRanges.length; ++i) {
+    const startOffset = resultRanges[i].offset;
+    const endOffset = startOffset + resultRanges[i].length;
 
     while (startIndex < textNodes.length &&
            nodeRanges[startIndex].offset + nodeRanges[startIndex].length <= startOffset)
       startIndex++;
-    var endIndex = startIndex;
+    let endIndex = startIndex;
     while (endIndex < textNodes.length && nodeRanges[endIndex].offset + nodeRanges[endIndex].length < endOffset)
       endIndex++;
     if (endIndex === textNodes.length)
       break;
 
-    var highlightNode = ownerDocument.createElement('span');
+    const highlightNode = ownerDocument.createElement('span');
     highlightNode.className = styleClass;
     highlightNode.textContent = lineText.substring(startOffset, endOffset);
 
-    var lastTextNode = textNodes[endIndex];
-    var lastText = lastTextNode.textContent;
+    const lastTextNode = textNodes[endIndex];
+    const lastText = lastTextNode.textContent;
     lastTextNode.textContent = lastText.substring(endOffset - nodeRanges[endIndex].offset);
     changes.push({node: lastTextNode, type: 'changed', oldText: lastText, newText: lastTextNode.textContent});
 
@@ -872,13 +883,14 @@ UI.highlightRangesWithStyleClass = function(element, resultRanges, styleClass, c
       changes.push({node: highlightNode, type: 'added', nextSibling: lastTextNode, parent: lastTextNode.parentElement});
       highlightNodes.push(highlightNode);
 
-      var prefixNode = ownerDocument.createTextNode(lastText.substring(0, startOffset - nodeRanges[startIndex].offset));
+      const prefixNode =
+          ownerDocument.createTextNode(lastText.substring(0, startOffset - nodeRanges[startIndex].offset));
       lastTextNode.parentElement.insertBefore(prefixNode, highlightNode);
       changes.push({node: prefixNode, type: 'added', nextSibling: highlightNode, parent: lastTextNode.parentElement});
     } else {
-      var firstTextNode = textNodes[startIndex];
-      var firstText = firstTextNode.textContent;
-      var anchorElement = firstTextNode.nextSibling;
+      const firstTextNode = textNodes[startIndex];
+      const firstText = firstTextNode.textContent;
+      const anchorElement = firstTextNode.nextSibling;
 
       firstTextNode.parentElement.insertBefore(highlightNode, anchorElement);
       changes.push(
@@ -888,9 +900,9 @@ UI.highlightRangesWithStyleClass = function(element, resultRanges, styleClass, c
       firstTextNode.textContent = firstText.substring(0, startOffset - nodeRanges[startIndex].offset);
       changes.push({node: firstTextNode, type: 'changed', oldText: firstText, newText: firstTextNode.textContent});
 
-      for (var j = startIndex + 1; j < endIndex; j++) {
-        var textNode = textNodes[j];
-        var text = textNode.textContent;
+      for (let j = startIndex + 1; j < endIndex; j++) {
+        const textNode = textNodes[j];
+        const text = textNode.textContent;
         textNode.textContent = '';
         changes.push({node: textNode, type: 'changed', oldText: text, newText: textNode.textContent});
       }
@@ -903,8 +915,8 @@ UI.highlightRangesWithStyleClass = function(element, resultRanges, styleClass, c
 };
 
 UI.applyDomChanges = function(domChanges) {
-  for (var i = 0, size = domChanges.length; i < size; ++i) {
-    var entry = domChanges[i];
+  for (let i = 0, size = domChanges.length; i < size; ++i) {
+    const entry = domChanges[i];
     switch (entry.type) {
       case 'added':
         entry.parent.insertBefore(entry.node, entry.nextSibling);
@@ -917,8 +929,8 @@ UI.applyDomChanges = function(domChanges) {
 };
 
 UI.revertDomChanges = function(domChanges) {
-  for (var i = domChanges.length - 1; i >= 0; --i) {
-    var entry = domChanges[i];
+  for (let i = domChanges.length - 1; i >= 0; --i) {
+    const entry = domChanges[i];
     switch (entry.type) {
       case 'added':
         entry.node.remove();
@@ -936,12 +948,12 @@ UI.revertDomChanges = function(domChanges) {
  * @return {!UI.Size}
  */
 UI.measurePreferredSize = function(element, containerElement) {
-  var oldParent = element.parentElement;
-  var oldNextSibling = element.nextSibling;
+  const oldParent = element.parentElement;
+  const oldNextSibling = element.nextSibling;
   containerElement = containerElement || element.ownerDocument.body;
   containerElement.appendChild(element);
   element.positionAt(0, 0);
-  var result = element.getBoundingClientRect();
+  const result = element.getBoundingClientRect();
 
   element.positionAt(undefined, undefined);
   if (oldParent)
@@ -973,7 +985,7 @@ UI.InvokeOnceHandlers = class {
       if (this._autoInvoke)
         this.scheduleInvoke();
     }
-    var methods = this._handlers.get(object);
+    let methods = this._handlers.get(object);
     if (!methods) {
       methods = new Set();
       this._handlers.set(object, methods);
@@ -990,13 +1002,13 @@ UI.InvokeOnceHandlers = class {
   }
 
   _invoke() {
-    var handlers = this._handlers;
+    const handlers = this._handlers;
     this._handlers = null;
-    var keys = handlers.keysArray();
-    for (var i = 0; i < keys.length; ++i) {
-      var object = keys[i];
-      var methods = handlers.get(object).valuesArray();
-      for (var j = 0; j < methods.length; ++j)
+    const keys = handlers.keysArray();
+    for (let i = 0; i < keys.length; ++i) {
+      const object = keys[i];
+      const methods = handlers.get(object).valuesArray();
+      for (let j = 0; j < methods.length; ++j)
         methods[j].call(object);
     }
   }
@@ -1036,16 +1048,16 @@ UI.invokeOnceAfterBatchUpdate = function(object, method) {
  * @return {function()}
  */
 UI.animateFunction = function(window, func, params, frames, animationComplete) {
-  var values = new Array(params.length);
-  var deltas = new Array(params.length);
-  for (var i = 0; i < params.length; ++i) {
+  const values = new Array(params.length);
+  const deltas = new Array(params.length);
+  for (let i = 0; i < params.length; ++i) {
     values[i] = params[i].from;
     deltas[i] = (params[i].to - params[i].from) / frames;
   }
 
-  var raf = window.requestAnimationFrame(animationStep);
+  let raf = window.requestAnimationFrame(animationStep);
 
-  var framesLeft = frames;
+  let framesLeft = frames;
 
   function animationStep() {
     if (--framesLeft < 0) {
@@ -1053,7 +1065,7 @@ UI.animateFunction = function(window, func, params, frames, animationComplete) {
         animationComplete();
       return;
     }
-    for (var i = 0; i < params.length; ++i) {
+    for (let i = 0; i < params.length; ++i) {
       if (params[i].to > params[i].from)
         values[i] = Number.constrain(values[i] + deltas[i], params[i].from, params[i].to);
       else
@@ -1095,9 +1107,9 @@ UI.LongClickController = class extends Common.Object {
   _enable() {
     if (this._longClickData)
       return;
-    var boundMouseDown = mouseDown.bind(this);
-    var boundMouseUp = mouseUp.bind(this);
-    var boundReset = this.reset.bind(this);
+    const boundMouseDown = mouseDown.bind(this);
+    const boundMouseUp = mouseUp.bind(this);
+    const boundReset = this.reset.bind(this);
 
     this._element.addEventListener('mousedown', boundMouseDown, false);
     this._element.addEventListener('mouseout', boundReset, false);
@@ -1113,7 +1125,7 @@ UI.LongClickController = class extends Common.Object {
     function mouseDown(e) {
       if (e.which !== 1)
         return;
-      var callback = this._callback;
+      const callback = this._callback;
       this._longClickInterval = setTimeout(callback.bind(null, e), 200);
     }
 
@@ -1157,7 +1169,7 @@ UI.initializeUIUtils = function(document, themeSetting) {
     UI.themeSupport = new UI.ThemeSupport(themeSetting);
   UI.themeSupport.applyTheme(document);
 
-  var body = /** @type {!Element} */ (document.body);
+  const body = /** @type {!Element} */ (document.body);
   UI.appendStyle(body, 'ui/inspectorStyle.css');
   UI.GlassPane.setContainer(/** @type {!Element} */ (document.body));
 };
@@ -1190,7 +1202,7 @@ UI.registerCustomElement = function(localName, typeExtension, prototype) {
  * @return {!Element}
  */
 UI.createTextButton = function(text, clickHandler, className, primary) {
-  var element = createElementWithClass('button', className || '', 'text-button');
+  const element = createElementWithClass('button', className || '', 'text-button');
   element.textContent = text;
   if (primary)
     element.classList.add('primary-button');
@@ -1205,7 +1217,7 @@ UI.createTextButton = function(text, clickHandler, className, primary) {
  * @return {!Element}
  */
 UI.createInput = function(className, type) {
-  var element = createElementWithClass('input', className || '');
+  const element = createElementWithClass('input', className || '');
   element.spellcheck = false;
   element.classList.add('harmony-input');
   if (type)
@@ -1220,7 +1232,7 @@ UI.createInput = function(className, type) {
  * @return {!Element}
  */
 UI.createRadioLabel = function(name, title, checked) {
-  var element = createElement('label', 'dt-radio');
+  const element = createElement('label', 'dt-radio');
   element.radioElement.name = name;
   element.radioElement.checked = !!checked;
   element.createTextChild(title);
@@ -1233,7 +1245,7 @@ UI.createRadioLabel = function(name, title, checked) {
  * @return {!Element}
  */
 UI.createLabel = function(title, iconClass) {
-  var element = createElement('label', 'dt-icon-label');
+  const element = createElement('label', 'dt-icon-label');
   element.createChild('span').textContent = title;
   element.type = iconClass;
   return element;
@@ -1246,7 +1258,7 @@ UI.createLabel = function(title, iconClass) {
  * @param {number} tabIndex
  */
 UI.createSliderLabel = function(min, max, tabIndex) {
-  var element = createElement('label', 'dt-slider');
+  const element = createElement('label', 'dt-slider');
   element.sliderElement.min = min;
   element.sliderElement.max = max;
   element.sliderElement.step = 1;
@@ -1260,15 +1272,15 @@ UI.createSliderLabel = function(min, max, tabIndex) {
  * @suppressGlobalPropertiesCheck
  */
 UI.appendStyle = function(node, cssFile) {
-  var content = Runtime.cachedResources[cssFile] || '';
+  const content = Runtime.cachedResources[cssFile] || '';
   if (!content)
     console.error(cssFile + ' not preloaded. Check module.json');
-  var styleElement = createElement('style');
+  let styleElement = createElement('style');
   styleElement.type = 'text/css';
   styleElement.textContent = content;
   node.appendChild(styleElement);
 
-  var themeStyleSheet = UI.themeSupport.themeStyleSheet(cssFile, content);
+  const themeStyleSheet = UI.themeSupport.themeStyleSheet(cssFile, content);
   if (themeStyleSheet) {
     styleElement = createElement('style');
     styleElement.type = 'text/css';
@@ -1297,7 +1309,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
    */
   createdCallback() {
     UI.CheckboxLabel._lastId = (UI.CheckboxLabel._lastId || 0) + 1;
-    var id = 'ui-checkbox-label' + UI.CheckboxLabel._lastId;
+    const id = 'ui-checkbox-label' + UI.CheckboxLabel._lastId;
     this._shadowRoot = UI.createShadowRootWithCoreStyles(this, 'ui/checkboxTextLabel.css');
     this.checkboxElement = /** @type {!HTMLInputElement} */ (this._shadowRoot.createChild('input'));
     this.checkboxElement.type = 'checkbox';
@@ -1316,7 +1328,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
   static create(title, checked, subtitle) {
     if (!UI.CheckboxLabel._constructor)
       UI.CheckboxLabel._constructor = UI.registerCustomElement('label', 'dt-checkbox', UI.CheckboxLabel.prototype);
-    var element = /** @type {!UI.CheckboxLabel} */ (new UI.CheckboxLabel._constructor());
+    const element = /** @type {!UI.CheckboxLabel} */ (new UI.CheckboxLabel._constructor());
     element.checkboxElement.checked = !!checked;
     if (title !== undefined) {
       element.textElement.textContent = title;
@@ -1341,7 +1353,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
    */
   set checkColor(color) {
     this.checkboxElement.classList.add('dt-checkbox-themed');
-    var stylesheet = createElement('style');
+    const stylesheet = createElement('style');
     stylesheet.textContent = 'input.dt-checkbox-themed:checked:after { background-color: ' + color + '}';
     this._shadowRoot.appendChild(stylesheet);
   }
@@ -1363,7 +1375,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
      */
     createdCallback: function() {
       this.type = 'button';
-      var root = UI.createShadowRootWithCoreStyles(this, 'ui/textButton.css');
+      const root = UI.createShadowRootWithCoreStyles(this, 'ui/textButton.css');
       root.createChild('content');
     },
 
@@ -1377,7 +1389,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
     createdCallback: function() {
       this.radioElement = this.createChild('input', 'dt-radio-button');
       this.radioElement.type = 'radio';
-      var root = UI.createShadowRootWithCoreStyles(this, 'ui/radioButton.css');
+      const root = UI.createShadowRootWithCoreStyles(this, 'ui/radioButton.css');
       root.createChild('content').select = '.dt-radio-button';
       root.createChild('content');
       this.addEventListener('click', radioClickHandler, false);
@@ -1403,7 +1415,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
      * @this {Element}
      */
     createdCallback: function() {
-      var root = UI.createShadowRootWithCoreStyles(this);
+      const root = UI.createShadowRootWithCoreStyles(this);
       this._iconElement = UI.Icon.create();
       this._iconElement.style.setProperty('margin-right', '4px');
       root.appendChild(this._iconElement);
@@ -1426,7 +1438,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
      * @this {Element}
      */
     createdCallback: function() {
-      var root = UI.createShadowRootWithCoreStyles(this, 'ui/slider.css');
+      const root = UI.createShadowRootWithCoreStyles(this, 'ui/slider.css');
       this.sliderElement = createElementWithClass('input', 'dt-range-input');
       this.sliderElement.type = 'range';
       root.appendChild(this.sliderElement);
@@ -1455,7 +1467,7 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
      * @this {Element}
      */
     createdCallback: function() {
-      var root = UI.createShadowRootWithCoreStyles(this, 'ui/smallBubble.css');
+      const root = UI.createShadowRootWithCoreStyles(this, 'ui/smallBubble.css');
       this._textElement = root.createChild('div');
       this._textElement.className = 'info';
       this._textElement.createChild('content');
@@ -1477,9 +1489,9 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
      * @this {Element}
      */
     createdCallback: function() {
-      var root = UI.createShadowRootWithCoreStyles(this, 'ui/closeButton.css');
+      const root = UI.createShadowRootWithCoreStyles(this, 'ui/closeButton.css');
       this._buttonElement = root.createChild('div', 'close-button');
-      var regularIcon = UI.Icon.create('smallicon-cross', 'default-icon');
+      const regularIcon = UI.Icon.create('smallicon-cross', 'default-icon');
       this._hoverIcon = UI.Icon.create('mediumicon-red-cross-hover', 'hover-icon');
       this._activeIcon = UI.Icon.create('mediumicon-red-cross-active', 'active-icon');
       this._buttonElement.appendChild(regularIcon);
@@ -1510,9 +1522,10 @@ UI.CheckboxLabel = class extends HTMLLabelElement {
  * @param {function(string)} apply
  * @param {function(string):boolean} validate
  * @param {boolean} numeric
+ * @param {number=} modifierMultiplier
  * @return {function(string)}
  */
-UI.bindInput = function(input, apply, validate, numeric) {
+UI.bindInput = function(input, apply, validate, numeric, modifierMultiplier) {
   input.addEventListener('change', onChange, false);
   input.addEventListener('input', onInput, false);
   input.addEventListener('keydown', onKeyDown, false);
@@ -1523,7 +1536,7 @@ UI.bindInput = function(input, apply, validate, numeric) {
   }
 
   function onChange() {
-    var valid = validate(input.value);
+    const valid = validate(input.value);
     input.classList.toggle('error-input', !valid);
     if (valid)
       apply(input.value);
@@ -1543,18 +1556,8 @@ UI.bindInput = function(input, apply, validate, numeric) {
     if (!numeric)
       return;
 
-    var increment = event.key === 'ArrowUp' ? 1 : event.key === 'ArrowDown' ? -1 : 0;
-    if (!increment)
-      return;
-    if (event.shiftKey)
-      increment *= 10;
-
-    var value = input.value;
-    if (!validate(value) || !value)
-      return;
-
-    value = (value ? Number(value) : 0) + increment;
-    var stringValue = value ? String(value) : '';
+    const value = UI._modifiedFloatNumber(parseFloat(input.value), event, modifierMultiplier);
+    const stringValue = value ? String(value) : '';
     if (!validate(stringValue) || !value)
       return;
 
@@ -1569,7 +1572,7 @@ UI.bindInput = function(input, apply, validate, numeric) {
   function setValue(value) {
     if (value === input.value)
       return;
-    var valid = validate(value);
+    const valid = validate(value);
     input.classList.toggle('error-input', !valid);
     input.value = value;
   }
@@ -1594,10 +1597,10 @@ UI.trimText = function(context, text, maxWidth, trimFunction) {
   if (textWidth <= maxWidth)
     return text;
 
-  var l = 0;
-  var r = text.length;
-  var lv = 0;
-  var rv = textWidth;
+  let l = 0;
+  let r = text.length;
+  let lv = 0;
+  let rv = textWidth;
   while (l < r && lv !== rv && lv !== maxWidth) {
     const m = Math.ceil(l + (r - l) * (maxWidth - lv) / (rv - lv));
     const mv = UI.measureTextWidth(context, trimFunction(text, m));
@@ -1643,18 +1646,18 @@ UI.measureTextWidth = function(context, text) {
   if (text.length > maxCacheableLength)
     return context.measureText(text).width;
 
-  var widthCache = UI.measureTextWidth._textWidthCache;
+  let widthCache = UI.measureTextWidth._textWidthCache;
   if (!widthCache) {
     widthCache = new Map();
     UI.measureTextWidth._textWidthCache = widthCache;
   }
   const font = context.font;
-  var textWidths = widthCache.get(font);
+  let textWidths = widthCache.get(font);
   if (!textWidths) {
     textWidths = new Map();
     widthCache.set(font, textWidths);
   }
-  var width = textWidths.get(text);
+  let width = textWidths.get(text);
   if (!width) {
     width = context.measureText(text).width;
     textWidths.set(text, width);
@@ -1711,7 +1714,7 @@ UI.ThemeSupport = class {
    */
   injectCustomStyleSheets(element) {
     for (const sheet of this._customSheets){
-      var styleElement = createElement('style');
+      const styleElement = createElement('style');
       styleElement.type = 'text/css';
       styleElement.textContent = sheet;
       element.appendChild(styleElement);
@@ -1735,13 +1738,13 @@ UI.ThemeSupport = class {
     if (this._themeName === 'dark')
       document.body.classList.add('-theme-with-dark-background');
 
-    var styleSheets = document.styleSheets;
-    var result = [];
-    for (var i = 0; i < styleSheets.length; ++i)
+    const styleSheets = document.styleSheets;
+    const result = [];
+    for (let i = 0; i < styleSheets.length; ++i)
       result.push(this._patchForTheme(styleSheets[i].href, styleSheets[i]));
     result.push('/*# sourceURL=inspector.css.theme */');
 
-    var styleElement = createElement('style');
+    const styleElement = createElement('style');
     styleElement.type = 'text/css';
     styleElement.textContent = result.join('\n');
     document.head.appendChild(styleElement);
@@ -1757,9 +1760,9 @@ UI.ThemeSupport = class {
     if (!this.hasTheme() || this._injectingStyleSheet)
       return '';
 
-    var patch = this._cachedThemePatches.get(id);
+    let patch = this._cachedThemePatches.get(id);
     if (!patch) {
-      var styleElement = createElement('style');
+      const styleElement = createElement('style');
       styleElement.type = 'text/css';
       styleElement.textContent = text;
       document.body.appendChild(styleElement);
@@ -1775,28 +1778,28 @@ UI.ThemeSupport = class {
    * @return {string}
    */
   _patchForTheme(id, styleSheet) {
-    var cached = this._cachedThemePatches.get(id);
+    const cached = this._cachedThemePatches.get(id);
     if (cached)
       return cached;
 
     try {
-      var rules = styleSheet.cssRules;
-      var result = [];
-      for (var j = 0; j < rules.length; ++j) {
+      const rules = styleSheet.cssRules;
+      const result = [];
+      for (let j = 0; j < rules.length; ++j) {
         if (rules[j] instanceof CSSImportRule) {
           result.push(this._patchForTheme(rules[j].styleSheet.href, rules[j].styleSheet));
           continue;
         }
-        var output = [];
-        var style = rules[j].style;
-        var selectorText = rules[j].selectorText;
-        for (var i = 0; style && i < style.length; ++i)
+        const output = [];
+        const style = rules[j].style;
+        const selectorText = rules[j].selectorText;
+        for (let i = 0; style && i < style.length; ++i)
           this._patchProperty(selectorText, style, style[i], output);
         if (output.length)
           result.push(rules[j].selectorText + '{' + output.join('') + '}');
       }
 
-      var fullText = result.join('\n');
+      const fullText = result.join('\n');
       this._cachedThemePatches.set(id, fullText);
       return fullText;
     } catch (e) {
@@ -1820,13 +1823,13 @@ UI.ThemeSupport = class {
     if (!this._themableProperties.has(name))
       return;
 
-    var value = style.getPropertyValue(name);
+    const value = style.getPropertyValue(name);
     if (!value || value === 'none' || value === 'inherit' || value === 'initial' || value === 'transparent')
       return;
     if (name === 'background-image' && value.indexOf('gradient') === -1)
       return;
 
-    var isSelection = selectorText.indexOf('.-theme-selection-color') !== -1;
+    let isSelection = selectorText.indexOf('.-theme-selection-color') !== -1;
     if (selectorText.indexOf('-theme-') !== -1 && !isSelection)
       return;
 
@@ -1836,7 +1839,7 @@ UI.ThemeSupport = class {
     }
 
     isSelection = isSelection || selectorText.indexOf('selected') !== -1 || selectorText.indexOf('.selection') !== -1;
-    var colorUsage = UI.ThemeSupport.ColorUsage.Unknown;
+    let colorUsage = UI.ThemeSupport.ColorUsage.Unknown;
     if (isSelection)
       colorUsage |= UI.ThemeSupport.ColorUsage.Selection;
     if (name.indexOf('background') === 0 || name.indexOf('border') === 0)
@@ -1846,8 +1849,8 @@ UI.ThemeSupport = class {
 
     output.push(name);
     output.push(':');
-    var items = value.replace(Common.Color.Regex, '\0$1\0').split('\0');
-    for (var i = 0; i < items.length; ++i)
+    const items = value.replace(Common.Color.Regex, '\0$1\0').split('\0');
+    for (let i = 0; i < items.length; ++i)
       output.push(this.patchColorText(items[i], colorUsage));
     if (style.getPropertyPriority(name))
       output.push(' !important');
@@ -1860,11 +1863,11 @@ UI.ThemeSupport = class {
    * @return {string}
    */
   patchColorText(text, colorUsage) {
-    var color = Common.Color.parse(text);
+    const color = Common.Color.parse(text);
     if (!color)
       return text;
-    var outColor = this.patchColor(color, colorUsage);
-    var outText = outColor.asString(null);
+    const outColor = this.patchColor(color, colorUsage);
+    let outText = outColor.asString(null);
     if (!outText)
       outText = outColor.asString(outColor.hasAlpha() ? Common.Color.Format.RGBA : Common.Color.Format.RGB);
     return outText || text;
@@ -1876,9 +1879,9 @@ UI.ThemeSupport = class {
    * @return {!Common.Color}
    */
   patchColor(color, colorUsage) {
-    var hsla = color.hsla();
+    const hsla = color.hsla();
     this._patchHSLA(hsla, colorUsage);
-    var rgba = [];
+    const rgba = [];
     Common.Color.hsl2rgb(hsla, rgba);
     return new Common.Color(rgba, color.format());
   }
@@ -1888,17 +1891,17 @@ UI.ThemeSupport = class {
    * @param {!UI.ThemeSupport.ColorUsage} colorUsage
    */
   _patchHSLA(hsla, colorUsage) {
-    var hue = hsla[0];
-    var sat = hsla[1];
-    var lit = hsla[2];
-    var alpha = hsla[3];
+    let hue = hsla[0];
+    const sat = hsla[1];
+    let lit = hsla[2];
+    const alpha = hsla[3];
 
     switch (this._themeName) {
       case 'dark':
         if (colorUsage & UI.ThemeSupport.ColorUsage.Selection)
           hue = (hue + 0.5) % 1;
-        var minCap = colorUsage & UI.ThemeSupport.ColorUsage.Background ? 0.14 : 0;
-        var maxCap = colorUsage & UI.ThemeSupport.ColorUsage.Foreground ? 0.9 : 1;
+        const minCap = colorUsage & UI.ThemeSupport.ColorUsage.Background ? 0.14 : 0;
+        const maxCap = colorUsage & UI.ThemeSupport.ColorUsage.Foreground ? 0.9 : 1;
         lit = 1 - lit;
         if (lit < minCap * 2)
           lit = minCap + lit / 2;
@@ -1939,7 +1942,7 @@ UI.createDocumentationLink = function(article, title) {
  */
 UI.loadImage = function(url) {
   return new Promise(fulfill => {
-    var image = new Image();
+    const image = new Image();
     image.addEventListener('load', () => fulfill(image));
     image.addEventListener('error', () => fulfill(null));
     image.src = url;
@@ -1962,7 +1965,7 @@ UI.themeSupport;
  * @return {!Node}
  */
 UI.createFileSelectorElement = function(callback) {
-  var fileSelectorElement = createElement('input');
+  const fileSelectorElement = createElement('input');
   fileSelectorElement.type = 'file';
   fileSelectorElement.style.display = 'none';
   fileSelectorElement.setAttribute('tabindex', -1);
@@ -1986,13 +1989,13 @@ UI.MessageDialog = class {
    * @return {!Promise}
    */
   static async show(message, where) {
-    var dialog = new UI.Dialog();
+    const dialog = new UI.Dialog();
     dialog.setSizeBehavior(UI.GlassPane.SizeBehavior.MeasureContent);
     dialog.setDimmed(true);
-    var shadowRoot = UI.createShadowRootWithCoreStyles(dialog.contentElement, 'ui/confirmDialog.css');
-    var content = shadowRoot.createChild('div', 'widget');
+    const shadowRoot = UI.createShadowRootWithCoreStyles(dialog.contentElement, 'ui/confirmDialog.css');
+    const content = shadowRoot.createChild('div', 'widget');
     await new Promise(resolve => {
-      var okButton = UI.createTextButton(Common.UIString('OK'), resolve, '', true);
+      const okButton = UI.createTextButton(Common.UIString('OK'), resolve, '', true);
       content.createChild('div', 'message').createChild('span').textContent = message;
       content.createChild('div', 'button').appendChild(okButton);
       dialog.setOutsideClickCallback(event => {
@@ -2013,14 +2016,14 @@ UI.ConfirmDialog = class {
    * @return {!Promise<boolean>}
    */
   static async show(message, where) {
-    var dialog = new UI.Dialog();
+    const dialog = new UI.Dialog();
     dialog.setSizeBehavior(UI.GlassPane.SizeBehavior.MeasureContent);
     dialog.setDimmed(true);
-    var shadowRoot = UI.createShadowRootWithCoreStyles(dialog.contentElement, 'ui/confirmDialog.css');
-    var content = shadowRoot.createChild('div', 'widget');
+    const shadowRoot = UI.createShadowRootWithCoreStyles(dialog.contentElement, 'ui/confirmDialog.css');
+    const content = shadowRoot.createChild('div', 'widget');
     content.createChild('div', 'message').createChild('span').textContent = message;
-    var buttonsBar = content.createChild('div', 'button');
-    var result = await new Promise(resolve => {
+    const buttonsBar = content.createChild('div', 'button');
+    const result = await new Promise(resolve => {
       buttonsBar.appendChild(UI.createTextButton(Common.UIString('OK'), () => resolve(true), '', true));
       buttonsBar.appendChild(UI.createTextButton(Common.UIString('Cancel'), () => resolve(false)));
       dialog.setOutsideClickCallback(event => {
@@ -2039,10 +2042,10 @@ UI.ConfirmDialog = class {
  * @return {!Element}
  */
 UI.createInlineButton = function(toolbarButton) {
-  var element = createElement('span');
-  var shadowRoot = UI.createShadowRootWithCoreStyles(element, 'ui/inlineButton.css');
+  const element = createElement('span');
+  const shadowRoot = UI.createShadowRootWithCoreStyles(element, 'ui/inlineButton.css');
   element.classList.add('inline-button');
-  var toolbar = new UI.Toolbar('');
+  const toolbar = new UI.Toolbar('');
   toolbar.appendToolbarItem(toolbarButton);
   shadowRoot.appendChild(toolbar.element);
   return element;

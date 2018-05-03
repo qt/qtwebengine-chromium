@@ -39,21 +39,12 @@ TEST_F(WebContentsViewAuraTest, EnableDisableOverscroll) {
   EXPECT_TRUE(wcva->navigation_overlay_);
 }
 
-TEST_F(WebContentsViewAuraTest, ScreenInfoColorDepth) {
-  WebContentsView* web_contents_view = view();
-
-  ScreenInfo screen_info;
-  web_contents_view->GetScreenInfo(&screen_info);
-  EXPECT_EQ(24u, screen_info.depth);
-  EXPECT_EQ(8u, screen_info.depth_per_component);
-}
-
 TEST_F(WebContentsViewAuraTest, ShowHideParent) {
-  EXPECT_TRUE(web_contents()->IsVisible());
+  EXPECT_EQ(web_contents()->GetVisibility(), content::Visibility::VISIBLE);
   root_window()->Hide();
-  EXPECT_FALSE(web_contents()->IsVisible());
+  EXPECT_EQ(web_contents()->GetVisibility(), content::Visibility::HIDDEN);
   root_window()->Show();
-  EXPECT_TRUE(web_contents()->IsVisible());
+  EXPECT_EQ(web_contents()->GetVisibility(), content::Visibility::VISIBLE);
 }
 
 }  // namespace content

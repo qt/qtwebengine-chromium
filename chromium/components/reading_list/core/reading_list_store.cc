@@ -22,10 +22,10 @@
 #include "components/sync/protocol/model_type_state.pb.h"
 
 ReadingListStore::ReadingListStore(
-    StoreFactoryFunction create_store_callback,
+    syncer::OnceModelTypeStoreFactory create_store_callback,
     const ChangeProcessorFactory& change_processor_factory)
     : ReadingListModelStorage(change_processor_factory, syncer::READING_LIST),
-      create_store_callback_(create_store_callback),
+      create_store_callback_(std::move(create_store_callback)),
       pending_transaction_count_(0) {}
 
 ReadingListStore::~ReadingListStore() {
@@ -40,9 +40,10 @@ void ReadingListStore::SetReadingListModel(ReadingListModel* model,
   model_ = model;
   delegate_ = delegate;
   clock_ = clock;
-  create_store_callback_.Run(
-      syncer::READING_LIST,
-      base::Bind(&ReadingListStore::OnStoreCreated, base::AsWeakPtr(this)));
+  std::move(create_store_callback_)
+      .Run(syncer::READING_LIST,
+           base::BindOnce(&ReadingListStore::OnStoreCreated,
+                          base::AsWeakPtr(this)));
 }
 
 std::unique_ptr<ReadingListModelStorage::ScopedBatchUpdate>
@@ -122,12 +123,11 @@ void ReadingListStore::RemoveEntry(const ReadingListEntry& entry) {
 }
 
 void ReadingListStore::OnDatabaseLoad(
-    syncer::ModelTypeStore::Result result,
+    const base::Optional<syncer::ModelError>& error,
     std::unique_ptr<syncer::ModelTypeStore::RecordList> entries) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (result != syncer::ModelTypeStore::Result::SUCCESS) {
-    change_processor()->ReportError(FROM_HERE,
-                                    "Cannot load Reading List Database.");
+  if (error) {
+    change_processor()->ReportError(*error);
     return;
   }
   auto loaded_entries =
@@ -158,25 +158,26 @@ void ReadingListStore::OnDatabaseLoad(
 }
 
 void ReadingListStore::OnReadAllMetadata(
-    base::Optional<syncer::ModelError> error,
+    const base::Optional<syncer::ModelError>& error,
     std::unique_ptr<syncer::MetadataBatch> metadata_batch) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (error) {
-    change_processor()->ReportError(FROM_HERE, "Failed to read metadata.");
+    change_processor()->ReportError({FROM_HERE, "Failed to read metadata."});
   } else {
     change_processor()->ModelReadyToSync(std::move(metadata_batch));
   }
 }
 
-void ReadingListStore::OnDatabaseSave(syncer::ModelTypeStore::Result result) {
+void ReadingListStore::OnDatabaseSave(
+    const base::Optional<syncer::ModelError>& error) {
   return;
 }
 
 void ReadingListStore::OnStoreCreated(
-    syncer::ModelTypeStore::Result result,
+    const base::Optional<syncer::ModelError>& error,
     std::unique_ptr<syncer::ModelTypeStore> store) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (result != syncer::ModelTypeStore::Result::SUCCESS) {
+  if (error) {
     // TODO(crbug.com/664926): handle store creation error.
     return;
   }

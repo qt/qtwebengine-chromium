@@ -40,19 +40,17 @@ namespace {
 // Takes ownership and destruct on the target thread.
 void Destruct(base::File file) {}
 
-void DidOpenFile(
-    scoped_refptr<FileSystemContext> context,
-    base::WeakPtr<FileSystemOperationImpl> operation,
-    const FileSystemOperationImpl::OpenFileCallback& callback,
-    base::File file,
-    const base::Closure& on_close_callback) {
+void DidOpenFile(scoped_refptr<FileSystemContext> context,
+                 base::WeakPtr<FileSystemOperationImpl> operation,
+                 const FileSystemOperationImpl::OpenFileCallback& callback,
+                 base::File file,
+                 base::OnceClosure on_close_callback) {
   if (!operation) {
     context->default_file_task_runner()->PostTask(
-        FROM_HERE,
-        base::Bind(&Destruct, base::Passed(&file)));
+        FROM_HERE, base::BindOnce(&Destruct, base::Passed(&file)));
     return;
   }
-  callback.Run(std::move(file), on_close_callback);
+  callback.Run(std::move(file), std::move(on_close_callback));
 }
 
 }  // namespace
@@ -583,7 +581,7 @@ void FileSystemOperationImpl::DidWrite(
   if (complete && write_status != FileWriterDelegate::ERROR_WRITE_NOT_STARTED) {
     DCHECK(operation_context_);
     operation_context_->change_observers()->Notify(
-        &FileChangeObserver::OnModifyFile, std::make_tuple(url));
+        &FileChangeObserver::OnModifyFile, url);
   }
 
   StatusCallback cancel_callback = cancel_callback_;

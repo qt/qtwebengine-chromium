@@ -674,7 +674,8 @@ TextRunHarfBuzz::TextRunHarfBuzz(const Font& template_font)
       italic(false),
       weight(Font::Weight::NORMAL),
       strike(false),
-      underline(false) {}
+      underline(false),
+      heavy_underline(false) {}
 
 TextRunHarfBuzz::~TextRunHarfBuzz() {}
 
@@ -1130,61 +1131,27 @@ SelectionModel RenderTextHarfBuzz::AdjacentWordSelectionModel(
   if (!success)
     return selection;
 
-  // Match OS specific word break behavior.
-#if defined(OS_WIN)
-  size_t pos;
-  if (direction == CURSOR_RIGHT) {
-    pos = std::min(selection.caret_pos() + 1, text().length());
-    while (iter.Advance()) {
-      pos = iter.pos();
-      if (iter.IsWord() && pos > selection.caret_pos()) {
-        // In Windows, word move advances past any characters separating the
-        // end of the current word from the next word.
-        while (iter.Advance() && !iter.IsWord())
-          pos = iter.pos();
-        break;
-      }
-    }
-  } else {  // direction == CURSOR_LEFT
-    // Notes: We always iterate words from the beginning.
-    // This is probably fast enough for our usage, but we may
-    // want to modify WordIterator so that it can start from the
-    // middle of string and advance backwards.
-    pos = std::max<int>(selection.caret_pos() - 1, 0);
-    while (iter.Advance()) {
-      if (iter.IsWord()) {
-        size_t begin = iter.pos() - iter.GetString().length();
-        if (begin == selection.caret_pos()) {
-          // The cursor is at the beginning of a word.
-          // Move to previous word.
-          break;
-        } else if (iter.pos() >= selection.caret_pos()) {
-          // The cursor is in the middle or at the end of a word.
-          // Move to the top of current word.
-          pos = begin;
-          break;
-        }
-        pos = iter.pos() - iter.GetString().length();
-      }
-    }
-  }
-  return SelectionModel(pos, CURSOR_FORWARD);
-#else
   internal::TextRunList* run_list = GetRunList();
-  SelectionModel cur(selection);
+  SelectionModel current(selection);
   for (;;) {
-    cur = AdjacentCharSelectionModel(cur, direction);
-    size_t run = GetRunContainingCaret(cur);
+    current = AdjacentCharSelectionModel(current, direction);
+    size_t run = GetRunContainingCaret(current);
     if (run == run_list->size())
       break;
+    size_t cursor = current.caret_pos();
+#if defined(OS_WIN)
+    // Windows generally advances to the start of a word in either direction.
+    // TODO: Break on the end of a word when the neighboring text is puctuation.
+    if (iter.IsStartOfWord(cursor))
+      break;
+#else
     const bool is_forward =
         run_list->runs()[run]->is_rtl == (direction == CURSOR_LEFT);
-    size_t cursor = cur.caret_pos();
     if (is_forward ? iter.IsEndOfWord(cursor) : iter.IsStartOfWord(cursor))
       break;
+#endif  // defined(OS_WIN)
   }
-  return cur;
-#endif
+  return current;
 }
 
 std::vector<Rect> RenderTextHarfBuzz::GetSubstringBounds(const Range& range) {
@@ -1367,7 +1334,9 @@ void RenderTextHarfBuzz::DrawVisualText(internal::SkiaTextRenderer* renderer) {
                 ? (SkFloatToScalar(segment.width()) + preceding_segment_widths +
                    SkIntToScalar(origin.x()))
                 : positions[colored_glyphs.end() - glyphs_range.start()].x());
-        if (run.underline)
+        if (run.heavy_underline)
+          renderer->DrawUnderline(start_x, origin.y(), end_x - start_x, 2.0);
+        else if (run.underline)
           renderer->DrawUnderline(start_x, origin.y(), end_x - start_x);
         if (run.strike)
           renderer->DrawStrike(start_x, origin.y(), end_x - start_x,
@@ -1456,6 +1425,7 @@ void RenderTextHarfBuzz::ItemizeTextToRuns(
     run->baseline_type = style.baseline();
     run->strike = style.style(STRIKE);
     run->underline = style.style(UNDERLINE);
+    run->heavy_underline = style.style(HEAVY_UNDERLINE);
     run->weight = style.weight();
     int32_t script_item_break = 0;
     bidi_iterator.GetLogicalRun(run_break, &script_item_break, &run->level);
@@ -1739,6 +1709,8 @@ void RenderTextHarfBuzz::EnsureLayoutRunList() {
   }
 }
 
+// Returns the current run list, |display_run_list_| if the text is elided, or
+// |layout_run_list_| otherwise.
 internal::TextRunList* RenderTextHarfBuzz::GetRunList() {
   DCHECK(!update_layout_run_list_);
   DCHECK(!update_display_run_list_);
@@ -1771,7 +1743,7 @@ bool RenderTextHarfBuzz::GetDecoratedTextForRange(
       int style = Font::NORMAL;
       if (run.italic)
         style |= Font::ITALIC;
-      if (run.underline)
+      if (run.underline || run.heavy_underline)
         style |= Font::UNDERLINE;
 
       // Get range relative to the decorated text.
@@ -1785,6 +1757,10 @@ bool RenderTextHarfBuzz::GetDecoratedTextForRange(
     }
   }
   return true;
+}
+
+void RenderTextHarfBuzz::SetGlyphWidthForTest(float test_width) {
+  glyph_width_for_test_ = test_width;
 }
 
 }  // namespace gfx

@@ -32,14 +32,18 @@ run_jsbundler("select_to_speak_copied_files") {
     "../chromevox/cvox2/background/tree_walker.js",
     "checked.png",
     "closure_shim.js",
+    "earcons/null_selection.ogg",
+    "node_utils.js",
     "options.css",
     "options.html",
     "paragraph_utils.js",
+    "rect_utils.js",
     "select_to_speak.js",
     "select_to_speak_gdocs_script.js",
     "select_to_speak_main.js",
     "select_to_speak_options.js",
     "unchecked.png",
+    "word_utils.js",
   ]
   rewrite_rules = [
     rebase_path(".", root_build_dir) + ":",
@@ -146,11 +150,13 @@ js2gtest("select_to_speak_extjs_tests") {
   test_type = "extension"
   sources = [
     "select_to_speak_keystroke_selection_test.extjs",
+    "select_to_speak_mouse_selection_test.extjs",
   ]
   gen_include_files = [
     "../chromevox/testing/callback_helper.js",
     "mock_tts.js",
     "select_to_speak_e2e_test_base.js",
+    "pipe.jpg",
   ]
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
 }

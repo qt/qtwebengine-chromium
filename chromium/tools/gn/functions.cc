@@ -554,7 +554,7 @@ const char kGetEnv_Help[] =
 
   value = getenv(env_var_name)
 
-  Returns the value of the given enironment variable. If the value is not
+  Returns the value of the given environment variable. If the value is not
   found, it will try to look up the variable with the "opposite" case (based on
   the case of the first letter of the variable), but is otherwise
   case-sensitive.
@@ -964,9 +964,10 @@ Value RunPrint(Scope* scope,
 
   const BuildSettings::PrintCallback& cb =
       scope->settings()->build_settings()->print_callback();
-  if (cb.is_null())
+  if (cb.is_null()) {
     printf("%s", output.c_str());
-  else
+    fflush(stdout);
+  } else
     cb.Run(output);
 
   return Value();

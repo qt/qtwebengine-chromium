@@ -8,16 +8,17 @@
 
 #include "net/quic/core/spdy_utils.h"
 #include "net/quic/platform/api/quic_logging.h"
+#include "net/quic/platform/api/quic_ptr_util.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/spdy/core/spdy_protocol.h"
 
-using std::string;
 
 namespace net {
 
 QuicClientPromisedInfo::QuicClientPromisedInfo(
     QuicSpdyClientSessionBase* session,
     QuicStreamId id,
-    string url)
+    QuicString url)
     : session_(session),
       id_(id),
       url_(std::move(url)),
@@ -39,36 +40,38 @@ void QuicClientPromisedInfo::Init() {
       QuicTime::Delta::FromSeconds(kPushPromiseTimeoutSecs));
 }
 
-void QuicClientPromisedInfo::OnPromiseHeaders(const SpdyHeaderBlock& headers) {
+bool QuicClientPromisedInfo::OnPromiseHeaders(const SpdyHeaderBlock& headers) {
   // RFC7540, Section 8.2, requests MUST be safe [RFC7231], Section
   // 4.2.1.  GET and HEAD are the methods that are safe and required.
   SpdyHeaderBlock::const_iterator it = headers.find(kHttp2MethodHeader);
   if (it == headers.end()) {
     QUIC_DVLOG(1) << "Promise for stream " << id_ << " has no method";
     Reset(QUIC_INVALID_PROMISE_METHOD);
-    return;
+    return false;
   }
   if (!(it->second == "GET" || it->second == "HEAD")) {
     QUIC_DVLOG(1) << "Promise for stream " << id_ << " has invalid method "
                   << it->second;
     Reset(QUIC_INVALID_PROMISE_METHOD);
-    return;
+    return false;
   }
-  if (!SpdyUtils::UrlIsValid(headers)) {
+  if (!SpdyUtils::PromisedUrlIsValid(headers)) {
     QUIC_DVLOG(1) << "Promise for stream " << id_ << " has invalid URL "
                   << url_;
     Reset(QUIC_INVALID_PROMISE_URL);
-    return;
+    return false;
   }
-  if (!session_->IsAuthorized(SpdyUtils::GetHostNameFromHeaderBlock(headers))) {
+  if (!session_->IsAuthorized(
+          SpdyUtils::GetPromisedHostNameFromHeaders(headers))) {
     Reset(QUIC_UNAUTHORIZED_PROMISE_URL);
-    return;
+    return false;
   }
-  request_headers_.reset(new SpdyHeaderBlock(headers.Clone()));
+  request_headers_ = headers.Clone();
+  return true;
 }
 
 void QuicClientPromisedInfo::OnResponseHeaders(const SpdyHeaderBlock& headers) {
-  response_headers_.reset(new SpdyHeaderBlock(headers.Clone()));
+  response_headers_ = QuicMakeUnique<SpdyHeaderBlock>(headers.Clone());
   if (client_request_delegate_) {
     // We already have a client request waiting.
     FinalValidation();
@@ -86,7 +89,7 @@ void QuicClientPromisedInfo::Reset(QuicRstStreamErrorCode error_code) {
 
 QuicAsyncStatus QuicClientPromisedInfo::FinalValidation() {
   if (!client_request_delegate_->CheckVary(
-          *client_request_headers_, *request_headers_, *response_headers_)) {
+          client_request_headers_, request_headers_, *response_headers_)) {
     Reset(QUIC_PROMISE_VARY_MISMATCH);
     return QUIC_FAILURE;
   }
@@ -124,8 +127,8 @@ QuicAsyncStatus QuicClientPromisedInfo::HandleClientRequest(
   }
 
   client_request_delegate_ = delegate;
-  client_request_headers_.reset(new SpdyHeaderBlock(request_headers.Clone()));
-  if (!response_headers_) {
+  client_request_headers_ = request_headers.Clone();
+  if (response_headers_ == nullptr) {
     return QUIC_PENDING;
   }
   return FinalValidation();

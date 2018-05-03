@@ -79,10 +79,12 @@ void BidirectionalStreamQuicImpl::Start(
   delegate_ = delegate;
   request_info_ = request_info;
 
+  // TODO(https://crbug.com/656607): Add proper annotation here.
   int rv = session_->RequestStream(
       request_info_->method == "POST",
       base::Bind(&BidirectionalStreamQuicImpl::OnStreamReady,
-                 weak_factory_.GetWeakPtr()));
+                 weak_factory_.GetWeakPtr()),
+      NO_TRAFFIC_ANNOTATION_BUG_656607);
   if (rv == ERR_IO_PENDING)
     return;
 
@@ -120,8 +122,8 @@ int BidirectionalStreamQuicImpl::WriteHeaders() {
   http_request_info.method = request_info_->method;
   http_request_info.extra_headers = request_info_->extra_headers;
 
-  CreateSpdyHeadersFromHttpRequest(
-      http_request_info, http_request_info.extra_headers, true, &headers);
+  CreateSpdyHeadersFromHttpRequest(http_request_info,
+                                   http_request_info.extra_headers, &headers);
   int rv = stream_->WriteHeaders(std::move(headers),
                                  request_info_->end_stream_on_headers, nullptr);
   if (rv >= 0) {

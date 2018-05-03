@@ -31,10 +31,13 @@
 #include "vp9/encoder/vp9_encodemv.h"
 #include "vp9/encoder/vp9_ratectrl.h"
 
-// Max rate target for 1080P and below encodes under normal circumstances
-// (1920 * 1080 / (16 * 16)) * MAX_MB_RATE bits per MB
+// Max rate per frame for 1080P and below encodes if no level requirement given.
+// For larger formats limit to MAX_MB_RATE bits per MB
+// 4Mbits is derived from the level requirement for level 4 (1080P 30) which
+// requires that HW can sustain a rate of 16Mbits over a 4 frame group.
+// If a lower level requirement is specified then this may over ride this value.
 #define MAX_MB_RATE 250
-#define MAXRATE_1080P 2025000
+#define MAXRATE_1080P 4000000
 
 #define DEFAULT_KF_BOOST 2000
 #define DEFAULT_GF_BOOST 2000
@@ -1100,6 +1103,9 @@ static int rc_pick_q_and_bounds_two_pass(const VP9_COMP *cpi, int *bottom_index,
       // Baseline value derived from cpi->active_worst_quality and kf boost.
       active_best_quality =
           get_kf_active_quality(rc, active_worst_quality, cm->bit_depth);
+      if (cpi->twopass.kf_zeromotion_pct >= STATIC_KF_GROUP_THRESH) {
+        active_best_quality /= 4;
+      }
 
       // Allow somewhat lower kf minq with small image formats.
       if ((cm->width * cm->height) <= (352 * 288)) {
@@ -1490,6 +1496,9 @@ void vp9_rc_postencode_update(VP9_COMP *cpi, uint64_t bytes_used) {
   if (cm->frame_type != KEY_FRAME) rc->reset_high_source_sad = 0;
 
   rc->last_avg_frame_bandwidth = rc->avg_frame_bandwidth;
+  if (cpi->use_svc &&
+      cpi->svc.spatial_layer_id < cpi->svc.number_spatial_layers - 1)
+    cpi->svc.lower_layer_qindex = cm->base_qindex;
 }
 
 void vp9_rc_postencode_update_drop_frame(VP9_COMP *cpi) {
@@ -1584,9 +1593,8 @@ void vp9_rc_get_one_pass_vbr_params(VP9_COMP *cpi) {
       // Adjust boost and af_ratio based on avg_frame_low_motion, which varies
       // between 0 and 100 (stationary, 100% zero/small motion).
       rc->gfu_boost =
-          VPXMAX(500,
-                 DEFAULT_GF_BOOST * (rc->avg_frame_low_motion << 1) /
-                     (rc->avg_frame_low_motion + 100));
+          VPXMAX(500, DEFAULT_GF_BOOST * (rc->avg_frame_low_motion << 1) /
+                          (rc->avg_frame_low_motion + 100));
       rc->af_ratio_onepass_vbr = VPXMIN(15, VPXMAX(5, 3 * rc->gfu_boost / 400));
     }
     adjust_gfint_frame_constraint(cpi, rc->frames_to_key);
@@ -1861,13 +1869,8 @@ void vp9_rc_set_gf_interval_range(const VP9_COMP *const cpi,
       rc->max_gf_interval = vp9_rc_get_default_max_gf_interval(
           cpi->framerate, rc->min_gf_interval);
 
-    // Extended interval for genuinely static scenes
-    rc->static_scene_max_gf_interval = MAX_LAG_BUFFERS * 2;
-
-    if (is_altref_enabled(cpi)) {
-      if (rc->static_scene_max_gf_interval > oxcf->lag_in_frames - 1)
-        rc->static_scene_max_gf_interval = oxcf->lag_in_frames - 1;
-    }
+    // Extended max interval for genuinely static scenes like slide shows.
+    rc->static_scene_max_gf_interval = MAX_STATIC_GF_GROUP_LENGTH;
 
     if (rc->max_gf_interval > rc->static_scene_max_gf_interval)
       rc->max_gf_interval = rc->static_scene_max_gf_interval;
@@ -1911,12 +1914,12 @@ void vp9_rc_update_framerate(VP9_COMP *cpi) {
       VPXMAX(rc->min_frame_bandwidth, FRAME_OVERHEAD_BITS);
 
   // A maximum bitrate for a frame is defined.
-  // The baseline for this aligns with HW implementations that
-  // can support decode of 1080P content up to a bitrate of MAX_MB_RATE bits
-  // per 16x16 MB (averaged over a frame). However this limit is extended if
-  // a very high rate is given on the command line or the the rate cannnot
-  // be acheived because of a user specificed max q (e.g. when the user
-  // specifies lossless encode.
+  // However this limit is extended if a very high rate is given on the command
+  // line or the the rate cannnot be acheived because of a user specificed max q
+  // (e.g. when the user specifies lossless encode).
+  //
+  // If a level is specified that requires a lower maximum rate then the level
+  // value take precedence.
   vbr_max_bits =
       (int)(((int64_t)rc->avg_frame_bandwidth * oxcf->two_pass_vbrmax_section) /
             100);

@@ -54,7 +54,9 @@
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/ui/public/interfaces/constants.mojom.h"
 #include "third_party/WebKit/public/web/WebKit.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/base/ui_features.h"
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
@@ -91,15 +93,6 @@ static void WarmupWindowsLocales(const ppapi::PpapiPermissions& permissions) {
 
 #endif
 
-static bool IsRunningWithMus() {
-#if BUILDFLAG(ENABLE_MUS)
-  const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
-  return cmdline->HasSwitch(switches::kMus);
-#else
-  return false;
-#endif
-}
-
 namespace content {
 
 typedef int32_t (*InitializeBrokerFunc)
@@ -130,7 +123,7 @@ PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
   // allocator.
   if (!command_line.HasSwitch(switches::kSingleProcess)) {
     discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
-    if (IsRunningWithMus()) {
+    if (features::IsMusEnabled()) {
 #if defined(USE_AURA)
       GetServiceManagerConnection()->GetConnector()->BindInterface(
           ui::mojom::kServiceName, &manager_ptr);

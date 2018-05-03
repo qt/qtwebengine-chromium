@@ -8,6 +8,7 @@
 #include "platform/wtf/text/StringBuilder.h"
 
 namespace blink {
+namespace cssvalue {
 
 CSSContentDistributionValue::CSSContentDistributionValue(
     CSSValueID distribution,
@@ -33,12 +34,11 @@ String CSSContentDistributionValue::CustomCSSText() const {
       list->Append(*CSSIdentifierValue::Create(preference));
       list->Append(*CSSIdentifierValue::Create(CSSValueBaseline));
     } else {
+      if (overflow_ != CSSValueInvalid)
+        list->Append(*CSSIdentifierValue::Create(overflow_));
       list->Append(*CSSIdentifierValue::Create(position_));
     }
   }
-  if (overflow_ != CSSValueInvalid)
-    list->Append(*CSSIdentifierValue::Create(overflow_));
-
   return list->CustomCSSText();
 }
 
@@ -48,4 +48,5 @@ bool CSSContentDistributionValue::Equals(
          overflow_ == other.overflow_;
 }
 
+}  // namespace cssvalue
 }  // namespace blink

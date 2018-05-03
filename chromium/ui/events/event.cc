@@ -828,6 +828,7 @@ TouchEvent::TouchEvent(const base::NativeEvent& native_event)
       unique_event_id_(ui::GetNextTouchEventId()),
       may_cause_scrolling_(false),
       should_remove_native_touch_id_mapping_(false),
+      hovering_(false),
       pointer_details_(GetTouchPointerDetailsFromNative(native_event)) {
   latency()->AddLatencyNumberWithTimestamp(
       INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, 0, time_stamp(), 1);
@@ -842,6 +843,7 @@ TouchEvent::TouchEvent(const PointerEvent& pointer_event)
       unique_event_id_(ui::GetNextTouchEventId()),
       may_cause_scrolling_(false),
       should_remove_native_touch_id_mapping_(false),
+      hovering_(false),
       pointer_details_(pointer_event.pointer_details()) {
   DCHECK(pointer_event.IsTouchPointerEvent() ||
          pointer_event.IsPenPointerEvent());
@@ -881,6 +883,7 @@ TouchEvent::TouchEvent(EventType type,
       unique_event_id_(ui::GetNextTouchEventId()),
       may_cause_scrolling_(false),
       should_remove_native_touch_id_mapping_(false),
+      hovering_(false),
       pointer_details_(pointer_details) {
   latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
   pointer_details_.twist = angle;
@@ -891,6 +894,7 @@ TouchEvent::TouchEvent(const TouchEvent& copy)
       unique_event_id_(copy.unique_event_id_),
       may_cause_scrolling_(copy.may_cause_scrolling_),
       should_remove_native_touch_id_mapping_(false),
+      hovering_(copy.hovering_),
       pointer_details_(copy.pointer_details_) {
   // Copied events should not remove touch id mapping, as this either causes the
   // mapping to be lost before the initial event has finished dispatching, or
@@ -1178,6 +1182,7 @@ KeyEvent::KeyEvent(const base::NativeEvent& native_event, int event_flags)
   // Only Windows has native character events.
   if (is_char_) {
     key_ = DomKey::FromCharacter(native_event.wParam);
+    set_flags(PlatformKeyMap::ReplaceControlAndAltWithAltGraph(flags()));
   } else {
     int adjusted_flags = flags();
     key_ = PlatformKeyMap::DomKeyFromKeyboardCode(key_code(), &adjusted_flags);

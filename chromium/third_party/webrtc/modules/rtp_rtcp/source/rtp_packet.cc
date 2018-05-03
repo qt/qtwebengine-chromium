@@ -336,10 +336,11 @@ rtc::ArrayView<uint8_t> RtpPacket::AllocateRawExtension(int id, size_t length) {
   extension_entry->offset = rtc::dchecked_cast<uint16_t>(
       extensions_offset + extensions_size_ + kOneByteHeaderSize);
   extension_entry->length = rtc::dchecked_cast<uint8_t>(length);
-  extensions_size_ = rtc::dchecked_cast<uint16_t>(new_extensions_size);
+  extensions_size_ = new_extensions_size;
 
   // Update header length field.
-  uint16_t extensions_words = (extensions_size_ + 3) / 4;  // Wrap up to 32bit.
+  uint16_t extensions_words = rtc::dchecked_cast<uint16_t>(
+      (extensions_size_ + 3) / 4);  // Wrap up to 32bit.
   ByteWriter<uint16_t>::WriteBigEndian(WriteAt(extensions_offset - 2),
                                        extensions_words);
   // Fill extension padding place with zeroes.
@@ -499,11 +500,15 @@ bool RtpPacket::ParseBuffer(const uint8_t* buffer, size_t size) {
               << "Duplicate rtp header extension id " << id << ". Overwriting.";
         }
 
-        extensions_size_ += kOneByteHeaderSize;
-        extension_entries_[idx].offset =
-            rtc::dchecked_cast<uint16_t>(extension_offset + extensions_size_);
-        extension_entries_[idx].length = rtc::dchecked_cast<uint16_t>(length);
-        extensions_size_ += length;
+        size_t offset =
+            extension_offset + extensions_size_ + kOneByteHeaderSize;
+        if (!rtc::IsValueInRangeForNumericType<uint16_t>(offset)) {
+          RTC_DLOG(LS_WARNING) << "Oversized rtp header extension.";
+          break;
+        }
+        extension_entries_[idx].offset = static_cast<uint16_t>(offset);
+        extension_entries_[idx].length = length;
+        extensions_size_ += kOneByteHeaderSize + length;
       }
     }
     payload_offset_ = extension_offset + extensions_capacity;

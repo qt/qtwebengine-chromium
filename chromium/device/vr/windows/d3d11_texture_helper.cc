@@ -241,6 +241,9 @@ D3D11TextureHelper::GetBackbuffer() {
 
 void D3D11TextureHelper::SetBackbuffer(
     Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer) {
+  if (render_state_.target_texture_ != back_buffer) {
+    render_state_.render_target_view_ = nullptr;
+  }
   render_state_.target_texture_ = back_buffer;
 }
 
@@ -281,9 +284,6 @@ bool D3D11TextureHelper::EnsureInitialized() {
   D3D_FEATURE_LEVEL feature_levels[] = {D3D_FEATURE_LEVEL_11_1};
   UINT flags = 0;
   D3D_FEATURE_LEVEL feature_level_out = D3D_FEATURE_LEVEL_11_1;
-#if defined _DEBUG
-  flags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
 
   Microsoft::WRL::ComPtr<IDXGIAdapter> adapter = GetAdapter();
   if (!adapter) {

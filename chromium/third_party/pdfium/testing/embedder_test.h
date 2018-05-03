@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 
+#include "public/cpp/fpdf_deleters.h"
 #include "public/fpdf_dataavail.h"
 #include "public/fpdf_ext.h"
 #include "public/fpdf_formfill.h"
@@ -105,23 +106,53 @@ class EmbedderTest : public ::testing::Test,
   int GetFirstPageNum();
   int GetPageCount();
 
-  // Load a specific page of the open document.
+  // Load a specific page of the open document with a given non-negative
+  // |page_number|. On success, fire form events for the page and return a page
+  // handle. On failure, return nullptr.
+  // The caller does not own the returned page handle, but must call
+  // UnloadPage() on it when done.
+  // The caller cannot call this for a |page_number| if it already obtained and
+  // holds the page handle for that page.
   FPDF_PAGE LoadPage(int page_number);
 
-  // Convert a loaded page into a bitmap.
-  FPDF_BITMAP RenderPage(FPDF_PAGE page);
-
-  // Convert a loaded page into a bitmap with page rendering flags specified.
-  // See public/fpdfview.h for a list of page rendering flags.
-  FPDF_BITMAP RenderPageWithFlags(FPDF_PAGE page,
-                                  FPDF_FORMHANDLE handle,
-                                  int flags);
-
-  // Relese the resources obtained from LoadPage(). Further use of |page|
-  // is prohibited after this call is made.
+  // Fire form unload events and release the resources for a |page| obtained
+  // from LoadPage(). Further use of |page| is prohibited after calling this.
   void UnloadPage(FPDF_PAGE page);
 
+  // RenderLoadedPageWithFlags() with no flags.
+  std::unique_ptr<void, FPDFBitmapDeleter> RenderLoadedPage(FPDF_PAGE page);
+
+  // Convert |page| loaded via LoadPage() into a bitmap with the specified page
+  // rendering |flags|.
+  //
+  // See public/fpdfview.h for a list of page rendering flags.
+  std::unique_ptr<void, FPDFBitmapDeleter> RenderLoadedPageWithFlags(
+      FPDF_PAGE page,
+      int flags);
+
+  // RenderSavedPageWithFlags() with no flags.
+  std::unique_ptr<void, FPDFBitmapDeleter> RenderSavedPage(FPDF_PAGE page);
+
+  // Convert |page| loaded via LoadSavedPage() into a bitmap with the specified
+  // page rendering |flags|.
+  //
+  // See public/fpdfview.h for a list of page rendering flags.
+  std::unique_ptr<void, FPDFBitmapDeleter> RenderSavedPageWithFlags(
+      FPDF_PAGE page,
+      int flags);
+
+  // Convert |page| into a bitmap with the specified page rendering |flags|.
+  // The form handle associated with |page| should be passed in via |handle|.
+  // If |handle| is nullptr, then forms on the page will not be rendered.
+  //
+  // See public/fpdfview.h for a list of page rendering flags.
+  // If none of the above Render methods are appropriate, then use this one.
+  static std::unique_ptr<void, FPDFBitmapDeleter>
+  RenderPageWithFlags(FPDF_PAGE page, FPDF_FORMHANDLE handle, int flags);
+
  protected:
+  using PageNumberToHandleMap = std::map<int, FPDF_PAGE>;
+
   bool OpenDocumentHelper(const char* password,
                           bool must_linearize,
                           FakeFileAccess* network_simulator,
@@ -146,19 +177,20 @@ class EmbedderTest : public ::testing::Test,
                             int expected_height,
                             const char* expected_md5sum);
 
-  void ClearString() { m_String.clear(); }
-  const std::string& GetString() const { return m_String; }
+  void ClearString() { data_string_.clear(); }
+  const std::string& GetString() const { return data_string_; }
 
   static int GetBlockFromString(void* param,
                                 unsigned long pos,
                                 unsigned char* buf,
                                 unsigned long size);
 
+  // See comments in the respective non-Saved versions of these methods.
   FPDF_DOCUMENT OpenSavedDocument(const char* password = nullptr);
   void CloseSavedDocument();
   FPDF_PAGE LoadSavedPage(int page_number);
-  FPDF_BITMAP RenderSavedPage(FPDF_PAGE page);
   void CloseSavedPage(FPDF_PAGE page);
+
   void VerifySavedRendering(FPDF_PAGE page,
                             int width,
                             int height,
@@ -167,25 +199,28 @@ class EmbedderTest : public ::testing::Test,
 
   void SetWholeFileAvailable();
 
-  Delegate* delegate_;
   std::unique_ptr<Delegate> default_delegate_;
-  FPDF_DOCUMENT document_;
-  FPDF_FORMHANDLE form_handle_;
-  FPDF_AVAIL avail_;
-  FPDF_FILEACCESS file_access_;  // must outlive avail_.
-  void* external_isolate_;
-  TestLoader* loader_;
-  size_t file_length_;
+  Delegate* delegate_;
+
+  FPDF_DOCUMENT document_ = nullptr;
+  FPDF_FORMHANDLE form_handle_ = nullptr;
+  FPDF_AVAIL avail_ = nullptr;
+  FPDF_FILEACCESS file_access_;                       // must outlive |avail_|.
+  std::unique_ptr<FakeFileAccess> fake_file_access_;  // must outlive |avail_|.
+
+  void* external_isolate_ = nullptr;
+  TestLoader* loader_ = nullptr;
+  size_t file_length_ = 0;
   std::unique_ptr<char, pdfium::FreeDeleter> file_contents_;
-  std::map<int, FPDF_PAGE> page_map_;
-  std::map<FPDF_PAGE, int> page_reverse_map_;
-  FPDF_DOCUMENT m_SavedDocument;
-  FPDF_FORMHANDLE m_SavedForm;
-  FPDF_AVAIL m_SavedAvail;
-  FPDF_FILEACCESS saved_file_access_;  // must outlive m_SavedAvail.
-  std::unique_ptr<FakeFileAccess> fake_file_access_;  // must outlive avail_.
-  std::unique_ptr<FakeFileAccess>
-      saved_fake_file_access_;  // must outlive m_SavedAvail.
+  PageNumberToHandleMap page_map_;
+
+  FPDF_DOCUMENT saved_document_ = nullptr;
+  FPDF_FORMHANDLE saved_form_handle_ = nullptr;
+  FPDF_AVAIL saved_avail_ = nullptr;
+  FPDF_FILEACCESS saved_file_access_;  // must outlive |saved_avail_|.
+  // must outlive |saved_avail_|.
+  std::unique_ptr<FakeFileAccess> saved_fake_file_access_;
+  PageNumberToHandleMap saved_page_map_;
 
  private:
   static void UnsupportedHandlerTrampoline(UNSUPPORT_INFO*, int type);
@@ -205,7 +240,17 @@ class EmbedderTest : public ::testing::Test,
                                 const void* data,
                                 unsigned long size);
 
-  std::string m_String;
+  // Helper method for the methods below.
+  static int GetPageNumberForPage(const PageNumberToHandleMap& page_map,
+                                  FPDF_PAGE page);
+  // Find |page| inside |page_map_| and return the associated page number, or -1
+  // if |page| cannot be found.
+  int GetPageNumberForLoadedPage(FPDF_PAGE page) const;
+
+  // Same as GetPageNumberForLoadedPage(), but with |saved_page_map_|.
+  int GetPageNumberForSavedPage(FPDF_PAGE page) const;
+
+  std::string data_string_;
 };
 
 #endif  // TESTING_EMBEDDER_TEST_H_

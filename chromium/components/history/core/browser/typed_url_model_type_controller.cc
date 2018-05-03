@@ -78,7 +78,7 @@ void TypedURLModelTypeController::PostBridgeTask(const base::Location& location,
   }
 
   history->ScheduleDBTask(
-      std::make_unique<RunTaskOnHistoryThread>(std::move(task)),
+      FROM_HERE, std::make_unique<RunTaskOnHistoryThread>(std::move(task)),
       &task_tracker_);
 }
 
@@ -89,8 +89,8 @@ void TypedURLModelTypeController::OnSavingBrowserHistoryDisabledChanged() {
     // generate an unrecoverable error. This can be fixed by restarting
     // Chrome (on restart, typed urls will not be a registered type).
     if (state() != NOT_RUNNING && state() != STOPPING) {
-      ReportModelError(syncer::ModelError(
-          FROM_HERE, "History saving is now disabled by policy."));
+      ReportModelError(
+          {FROM_HERE, "History saving is now disabled by policy."});
     }
   }
 }

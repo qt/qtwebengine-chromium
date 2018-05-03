@@ -34,11 +34,13 @@
 #include <utility>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/single_thread_task_runner.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/CoreExport.h"
 #include "core/animation/WorkletAnimationController.h"
 #include "core/dom/ContainerNode.h"
+#include "core/dom/CreateElementFlags.h"
 #include "core/dom/DocumentEncodingData.h"
 #include "core/dom/DocumentInit.h"
 #include "core/dom/DocumentLifecycle.h"
@@ -218,25 +220,6 @@ enum ShadowCascadeOrder {
   kShadowCascadeV1
 };
 
-enum CreateElementFlags {
-  kCreatedByParser = 1 << 0,
-  // Synchronous custom elements flag:
-  // https://dom.spec.whatwg.org/#concept-create-element
-  // TODO(kojii): Remove these flags, add an option not to queue upgrade, and
-  // let parser/DOM methods to upgrade synchronously when necessary.
-  kSynchronousCustomElements = 0 << 1,
-  kAsynchronousCustomElements = 1 << 1,
-
-  // Aliases by callers.
-  // Clone a node: https://dom.spec.whatwg.org/#concept-node-clone
-  kCreatedByCloneNode = kAsynchronousCustomElements,
-  kCreatedByImportNode = kCreatedByCloneNode,
-  // https://dom.spec.whatwg.org/#dom-document-createelement
-  kCreatedByCreateElement = kSynchronousCustomElements,
-  // https://html.spec.whatwg.org/#create-an-element-for-the-token
-  kCreatedByFragmentParser = kCreatedByParser | kAsynchronousCustomElements,
-};
-
 // Collect data about deferred loading of offscreen cross-origin documents. All
 // cross-origin documents log Created. Only those that would load log a reason.
 // We can then see the % of cross-origin documents that never have to load.
@@ -345,6 +328,18 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Location* location() const;
 
+  Element* CreateElementForBinding(const AtomicString& local_name,
+                                   ExceptionState& = ASSERT_NO_EXCEPTION);
+  Element* CreateElementForBinding(const AtomicString& local_name,
+                                   const StringOrDictionary&,
+                                   ExceptionState&);
+  Element* createElementNS(const AtomicString& namespace_uri,
+                           const AtomicString& qualified_name,
+                           ExceptionState&);
+  Element* createElementNS(const AtomicString& namespace_uri,
+                           const AtomicString& qualified_name,
+                           const StringOrDictionary&,
+                           ExceptionState&);
   DocumentFragment* createDocumentFragment();
   Text* createTextNode(const String& data);
   Comment* createComment(const String& data);
@@ -358,10 +353,15 @@ class CORE_EXPORT Document : public ContainerNode,
                           ExceptionState&,
                           bool should_ignore_namespace_checks = false);
   Node* importNode(Node* imported_node, bool deep, ExceptionState&);
-  Element* createElementNS(const AtomicString& namespace_uri,
-                           const AtomicString& qualified_name,
-                           ExceptionState&);
-  Element* createElement(const QualifiedName&, CreateElementFlags);
+
+  // "create an element" defined in DOM standard. This supports both of
+  // autonomous custom elements and customized built-in elements.
+  Element* CreateElement(const QualifiedName&,
+                         const CreateElementFlags,
+                         const AtomicString& is);
+  // Creates an element without custom element processing.
+  Element* CreateRawElement(const QualifiedName&,
+                            const CreateElementFlags = CreateElementFlags());
 
   Element* ElementFromPoint(double x, double y) const;
   HeapVector<Member<Element>> ElementsFromPoint(double x, double y) const;
@@ -405,7 +405,6 @@ class CORE_EXPORT Document : public ContainerNode,
   }
 
   String origin() const;
-  String suborigin() const;
 
   String visibilityState() const;
   mojom::PageVisibilityState GetPageVisibilityState() const;
@@ -706,7 +705,7 @@ class CORE_EXPORT Document : public ContainerNode,
   bool FinishingOrIsPrinting() {
     return printing_ == kPrinting || printing_ == kFinishingPrinting;
   }
-  void SetPrinting(PrintingState state) { printing_ = state; }
+  void SetPrinting(PrintingState);
 
   bool PaginatedForScreen() const { return paginated_for_screen_; }
   void SetPaginatedForScreen(bool p) { paginated_for_screen_ = p; }
@@ -991,7 +990,7 @@ class CORE_EXPORT Document : public ContainerNode,
   // The document of the parent frame.
   Document* ParentDocument() const;
   Document& TopDocument() const;
-  Document* ContextDocument();
+  Document* ContextDocument() const;
 
   ScriptRunner* GetScriptRunner() { return script_runner_.Get(); }
 
@@ -1197,22 +1196,13 @@ class CORE_EXPORT Document : public ContainerNode,
 
   TextAutosizer* GetTextAutosizer();
 
-  Element* createElement(const AtomicString& local_name,
-                         ExceptionState& = ASSERT_NO_EXCEPTION);
-  Element* createElement(const AtomicString& local_name,
-                         const StringOrDictionary&,
-                         ExceptionState& = ASSERT_NO_EXCEPTION);
-  Element* createElementNS(const AtomicString& namespace_uri,
-                           const AtomicString& qualified_name,
-                           const StringOrDictionary&,
-                           ExceptionState&);
   ScriptValue registerElement(
       ScriptState*,
       const AtomicString& name,
       const ElementRegistrationOptions&,
       ExceptionState&,
       V0CustomElement::NameSet valid_names = V0CustomElement::kStandardNames);
-  V0CustomElementRegistrationContext* RegistrationContext() {
+  V0CustomElementRegistrationContext* RegistrationContext() const {
     return registration_context_.Get();
   }
   V0CustomElementMicrotaskRunQueue* CustomElementMicrotaskRunQueue();
@@ -1421,9 +1411,14 @@ class CORE_EXPORT Document : public ContainerNode,
   ukm::UkmRecorder* UkmRecorder();
   int64_t UkmSourceID() const;
 
-  scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType) override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType) override;
 
   void RecordUkmOutliveTimeAfterShutdown(int outlive_time_count);
+
+  bool CurrentFrameHadRAF() const;
+  bool NextFrameHasPendingRAF() const;
+
+  const AtomicString& RequiredCSP();
 
  protected:
   Document(const DocumentInit&, DocumentClassFlags = kDefaultDocumentClass);
@@ -1432,11 +1427,8 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void ClearXMLVersion() { xml_version_ = String(); }
 
-  virtual Document* CloneDocumentWithoutChildren();
+  virtual Document* CloneDocumentWithoutChildren() const;
 
-  bool ImportContainerNodeChildren(ContainerNode* old_container_node,
-                                   ContainerNode* new_container_node,
-                                   ExceptionState&);
   void LockCompatibilityMode() { compatibility_mode_locked_ = true; }
   ParserSynchronizationPolicy GetParserSynchronizationPolicy() const {
     return parser_sync_policy_;
@@ -1495,7 +1487,7 @@ class CORE_EXPORT Document : public ContainerNode,
   String nodeName() const final;
   NodeType getNodeType() const final;
   bool ChildTypeAllowed(NodeType) const final;
-  Node* cloneNode(bool deep, ExceptionState&) final;
+  Node* Clone(Document&, CloneChildrenFlag) const override;
   void CloneDataFromDocument(const Document&);
 
   ShadowCascadeOrder shadow_cascade_order_ = kShadowCascadeNone;

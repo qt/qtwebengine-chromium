@@ -11,11 +11,10 @@
 #include "base/memory/ref_counted.h"
 #include "components/ntp_snippets/breaking_news/subscription_json_request.h"
 #include "components/ntp_snippets/breaking_news/subscription_manager.h"
-#include "components/signin/core/browser/signin_manager_base.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/identity/public/cpp/identity_manager.h"
 #include "url/gurl.h"
 
-class OAuth2TokenService;
 class PrefRegistrySimple;
 class PrefService;
 
@@ -34,14 +33,14 @@ namespace ntp_snippets {
 // to the content suggestions server and does the bookkeeping for the data used
 // for subscription. Bookkeeping is required to detect any change (e.g. the
 // token render invalid), and resubscribe accordingly.
-class SubscriptionManagerImpl : public SubscriptionManager {
+class SubscriptionManagerImpl : public SubscriptionManager,
+                                public identity::IdentityManager::Observer {
  public:
   SubscriptionManagerImpl(
       scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
       PrefService* pref_service,
       variations::VariationsService* variations_service,
-      SigninManagerBase* signin_manager,
-      OAuth2TokenService* access_token_service,
+      identity::IdentityManager* identity_manager,
       const std::string& locale,
       const std::string& api_key,
       const GURL& subscribe_url,
@@ -64,7 +63,9 @@ class SubscriptionManagerImpl : public SubscriptionManager {
   static void ClearProfilePrefs(PrefService* pref_service);
 
  private:
-  class SigninObserver;
+  // identity:IdentityManager::Observer implementation.
+  void OnPrimaryAccountSet(const AccountInfo& account_info) override;
+  void OnPrimaryAccountCleared(const AccountInfo& account_info) override;
 
   void SigninStatusChanged();
 
@@ -99,9 +100,7 @@ class SubscriptionManagerImpl : public SubscriptionManager {
   variations::VariationsService* const variations_service_;
 
   // Authentication for signed-in users.
-  SigninManagerBase* signin_manager_;
-  std::unique_ptr<SigninObserver> signin_observer_;
-  OAuth2TokenService* access_token_service_;
+  identity::IdentityManager* identity_manager_;
 
   const std::string locale_;
 

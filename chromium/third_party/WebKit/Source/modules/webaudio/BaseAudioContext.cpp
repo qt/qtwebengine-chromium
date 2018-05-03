@@ -37,7 +37,6 @@
 #include "core/html/media/HTMLMediaElement.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ConsoleTypes.h"
-#include "core/origin_trials/origin_trials.h"
 #include "modules/mediastream/MediaStream.h"
 #include "modules/webaudio/AnalyserNode.h"
 #include "modules/webaudio/AudioBuffer.h"
@@ -47,6 +46,7 @@
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "modules/webaudio/AudioWorklet.h"
+#include "modules/webaudio/AudioWorkletGlobalScope.h"
 #include "modules/webaudio/AudioWorkletMessagingProxy.h"
 #include "modules/webaudio/BiquadFilterNode.h"
 #include "modules/webaudio/ChannelMergerNode.h"
@@ -147,9 +147,7 @@ void BaseAudioContext::Initialize() {
 
   FFTFrame::Initialize();
 
-  if (OriginTrials::audioWorkletEnabled(GetExecutionContext())) {
-    audio_worklet_ = AudioWorklet::Create(this);
-  }
+  audio_worklet_ = AudioWorklet::Create(this);
 
   if (destination_node_) {
     destination_node_->Handler().Initialize();
@@ -188,9 +186,6 @@ void BaseAudioContext::Uninitialize() {
   listener_->WaitForHRTFDatabaseLoaderThreadCompletion();
 
   RecordAutoplayStatus();
-
-  // TODO(crbug.com/764396): Remove this when fixed.
-  RecordValueSetterStatistics();
 
   Clear();
 }
@@ -314,18 +309,9 @@ ScriptPromise BaseAudioContext::decodeAudioData(
 
     decode_audio_resolvers_.insert(resolver);
 
-    // Add a reference to success_callback and error_callback so that
-    // they don't get collected prematurely before decodeAudioData
-    // calls them.
-    if (success_callback) {
-      success_callbacks_.emplace_back(success_callback);
-    }
-    if (error_callback) {
-      error_callbacks_.emplace_back(error_callback);
-    }
-
-    audio_decoder_.DecodeAsync(audio, rate, success_callback, error_callback,
-                               resolver, this);
+    audio_decoder_.DecodeAsync(
+        audio, rate, ToV8PersistentCallbackFunction(success_callback),
+        ToV8PersistentCallbackFunction(error_callback), resolver, this);
   } else {
     // If audioData is already detached (neutered) we need to reject the
     // promise with an error.
@@ -343,8 +329,8 @@ ScriptPromise BaseAudioContext::decodeAudioData(
 void BaseAudioContext::HandleDecodeAudioData(
     AudioBuffer* audio_buffer,
     ScriptPromiseResolver* resolver,
-    V8DecodeSuccessCallback* success_callback,
-    V8DecodeErrorCallback* error_callback) {
+    V8PersistentCallbackFunction<V8DecodeSuccessCallback>* success_callback,
+    V8PersistentCallbackFunction<V8DecodeErrorCallback>* error_callback) {
   DCHECK(IsMainThread());
 
   if (audio_buffer) {
@@ -364,24 +350,6 @@ void BaseAudioContext::HandleDecodeAudioData(
   // We've resolved the promise.  Remove it now.
   DCHECK(decode_audio_resolvers_.Contains(resolver));
   decode_audio_resolvers_.erase(resolver);
-
-  // Find the success_callback and error_callback and remove it from
-  // our list so that it can be collected.  Remove any matching entry
-  // found (callback methods could be duplicated) which should be ok
-  // because we're only using this to hold a reference to the
-  // callback.
-
-  if (success_callback) {
-    size_t index = success_callbacks_.Find(success_callback);
-    DCHECK_NE(index, kNotFound);
-    success_callbacks_.EraseAt(index);
-  }
-
-  if (error_callback) {
-    size_t index = error_callbacks_.Find(error_callback);
-    DCHECK_NE(index, kNotFound);
-    error_callbacks_.EraseAt(index);
-  }
 }
 
 AudioBufferSourceNode* BaseAudioContext::createBufferSource(
@@ -746,7 +714,7 @@ void BaseAudioContext::HandleStoppableSourceNodes() {
   DCHECK(IsAudioThread());
   DCHECK(IsGraphOwner());
 
-  if (active_source_nodes_.size())
+  if (finished_source_handlers_.size())
     ScheduleMainThreadCleanup();
 }
 
@@ -848,6 +816,7 @@ void BaseAudioContext::PerformCleanupOnMainThread() {
 
     // Copy over the surviving active nodes.
     HeapVector<Member<AudioNode>> actives;
+    CHECK_GE(active_source_nodes_.size(), remove_count);
     actives.ReserveInitialCapacity(active_source_nodes_.size() - remove_count);
     for (unsigned i = 0; i < removables.size(); ++i) {
       if (!removables[i])
@@ -862,7 +831,7 @@ void BaseAudioContext::ScheduleMainThreadCleanup() {
   if (has_posted_cleanup_task_)
     return;
   PostCrossThreadTask(
-      *Platform::Current()->MainThread()->GetWebTaskRunner(), FROM_HERE,
+      *Platform::Current()->MainThread()->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(&BaseAudioContext::PerformCleanupOnMainThread,
                       WrapCrossThreadPersistent(this)));
   has_posted_cleanup_task_ = true;
@@ -918,15 +887,15 @@ bool BaseAudioContext::IsAllowedToStart() const {
       DCHECK(document->GetFrame() &&
              document->GetFrame()->IsCrossOriginSubframe());
       document->AddConsoleMessage(ConsoleMessage::Create(
-          kJSMessageSource, kWarningMessageLevel,
-          "An AudioContext in a cross origin iframe must be created or "
-          "resumed from a user gesture to enable audio output."));
+          kOtherMessageSource, kWarningMessageLevel,
+          "The AudioContext was not allowed to start. It must be resumed (or "
+          "created) from a user gesture event handler."));
       break;
     case AutoplayPolicy::Type::kDocumentUserActivationRequired:
       document->AddConsoleMessage(ConsoleMessage::Create(
-          kJSMessageSource, kWarningMessageLevel,
-          "An AudioContext must be created or resumed after the document "
-          "received a user gesture to enable audio playback."));
+          kOtherMessageSource, kWarningMessageLevel,
+          "The AudioContext was not allowed to start. It must be resume (or "
+          "created) after a user gesture on the page. https://goo.gl/7K7WLu"));
       break;
   }
 
@@ -1025,7 +994,11 @@ AudioWorklet* BaseAudioContext::audioWorklet() const {
 }
 
 void BaseAudioContext::NotifyWorkletIsReady() {
+  DCHECK(IsMainThread());
   DCHECK(audioWorklet()->IsReady());
+
+  worklet_backing_worker_thread_ =
+      audioWorklet()->GetMessagingProxy()->GetBackingWorkerThread();
 
   // If the context is running or suspended, restart the destination to switch
   // the render thread with the worklet thread. Note that restarting can happen
@@ -1033,6 +1006,32 @@ void BaseAudioContext::NotifyWorkletIsReady() {
   if (ContextState() != kClosed) {
     destination()->GetAudioDestinationHandler().RestartRendering();
   }
+}
+
+void BaseAudioContext::UpdateWorkletGlobalScopeOnRenderingThread() {
+  DCHECK(!IsMainThread());
+
+  // Only if the worklet is properly initialized and ready.
+  if (worklet_backing_worker_thread_) {
+    AudioWorkletGlobalScope* global_scope =
+        ToAudioWorkletGlobalScope(
+              worklet_backing_worker_thread_->GlobalScope());
+
+    // When BaseAudioContext is being torn down, AudioWorkletGlobalScope might
+    // be already gone at this point because it's destroyed on the main thread
+    // but the audio thread may not have stopped. So we check |global_scope|
+    // before we update it.
+    if (global_scope) {
+      global_scope->SetCurrentFrame(CurrentSampleFrame());
+    }
+  }
+}
+
+bool BaseAudioContext::CheckWorkletGlobalScopeOnRenderingThread() {
+  DCHECK(!IsMainThread());
+
+  return worklet_backing_worker_thread_ &&
+         worklet_backing_worker_thread_->GlobalScope();
 }
 
 }  // namespace blink

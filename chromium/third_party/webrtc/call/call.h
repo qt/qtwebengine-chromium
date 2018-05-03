@@ -15,10 +15,12 @@
 #include <string>
 #include <vector>
 
+#include "api/fec_controller.h"
 #include "api/rtcerror.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
 #include "call/audio_state.h"
+#include "call/bitrate_constraints.h"
 #include "call/flexfec_receive_stream.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "call/video_receive_stream.h"
@@ -42,19 +44,6 @@ enum class MediaType {
   DATA
 };
 
-// Like std::min, but considers non-positive values to be unset.
-// TODO(zstein): Remove once all callers use rtc::Optional.
-template <typename T>
-static T MinPositive(T a, T b) {
-  if (a <= 0) {
-    return b;
-  }
-  if (b <= 0) {
-    return a;
-  }
-  return std::min(a, b);
-}
-
 class PacketReceiver {
  public:
   enum DeliveryStatus {
@@ -71,49 +60,39 @@ class PacketReceiver {
   virtual ~PacketReceiver() {}
 };
 
+struct CallConfig {
+  explicit CallConfig(RtcEventLog* event_log) : event_log(event_log) {
+    RTC_DCHECK(event_log);
+  }
+
+  RTC_DEPRECATED static constexpr int kDefaultStartBitrateBps = 300000;
+
+  // Bitrate config used until valid bitrate estimates are calculated. Also
+  // used to cap total bitrate used. This comes from the remote connection.
+  BitrateConstraints bitrate_config;
+
+  // AudioState which is possibly shared between multiple calls.
+  // TODO(solenberg): Change this to a shared_ptr once we can use C++11.
+  rtc::scoped_refptr<AudioState> audio_state;
+
+  // Audio Processing Module to be used in this call.
+  // TODO(solenberg): Change this to a shared_ptr once we can use C++11.
+  AudioProcessing* audio_processing = nullptr;
+
+  // RtcEventLog to use for this call. Required.
+  // Use webrtc::RtcEventLog::CreateNull() for a null implementation.
+  RtcEventLog* event_log = nullptr;
+
+  // FecController to use for this call.
+  FecControllerFactoryInterface* fec_controller_factory = nullptr;
+};
+
 // A Call instance can contain several send and/or receive streams. All streams
 // are assumed to have the same remote endpoint and will share bitrate estimates
 // etc.
 class Call {
  public:
-  struct Config {
-    explicit Config(RtcEventLog* event_log) : event_log(event_log) {
-      RTC_DCHECK(event_log);
-    }
-
-    static constexpr int kDefaultStartBitrateBps = 300000;
-
-    // Bitrate config used until valid bitrate estimates are calculated. Also
-    // used to cap total bitrate used. This comes from the remote connection.
-    struct BitrateConfig {
-      int min_bitrate_bps = 0;
-      int start_bitrate_bps = kDefaultStartBitrateBps;
-      int max_bitrate_bps = -1;
-    } bitrate_config;
-
-    // The local client's bitrate preferences. The actual configuration used
-    // is a combination of this and |bitrate_config|. The combination is
-    // currently more complicated than a simple mask operation (see
-    // SetBitrateConfig and SetBitrateConfigMask). Assumes that 0 <= min <=
-    // start <= max holds for set parameters.
-    struct BitrateConfigMask {
-      rtc::Optional<int> min_bitrate_bps;
-      rtc::Optional<int> start_bitrate_bps;
-      rtc::Optional<int> max_bitrate_bps;
-    };
-
-    // AudioState which is possibly shared between multiple calls.
-    // TODO(solenberg): Change this to a shared_ptr once we can use C++11.
-    rtc::scoped_refptr<AudioState> audio_state;
-
-    // Audio Processing Module to be used in this call.
-    // TODO(solenberg): Change this to a shared_ptr once we can use C++11.
-    AudioProcessing* audio_processing = nullptr;
-
-    // RtcEventLog to use for this call. Required.
-    // Use webrtc::RtcEventLog::CreateNull() for a null implementation.
-    RtcEventLog* event_log = nullptr;
-  };
+  using Config = CallConfig;
 
   struct Stats {
     std::string ToString(int64_t time_ms) const;
@@ -144,6 +123,10 @@ class Call {
   virtual VideoSendStream* CreateVideoSendStream(
       VideoSendStream::Config config,
       VideoEncoderConfig encoder_config) = 0;
+  virtual VideoSendStream* CreateVideoSendStream(
+      VideoSendStream::Config config,
+      VideoEncoderConfig encoder_config,
+      std::unique_ptr<FecController> fec_controller);
   virtual void DestroyVideoSendStream(VideoSendStream* send_stream) = 0;
 
   virtual VideoReceiveStream* CreateVideoReceiveStream(
@@ -164,25 +147,16 @@ class Call {
   // Call instance exists.
   virtual PacketReceiver* Receiver() = 0;
 
+  // This is used to access the transport controller send instance owned by
+  // Call. The send transport controller is currently owned by Call for legacy
+  // reasons. (for instance  variants of call tests are built on this assumtion)
+  // TODO(srte): Move ownership of transport controller send out of Call and
+  // remove this method interface.
+  virtual RtpTransportControllerSendInterface* GetTransportControllerSend() = 0;
+
   // Returns the call statistics, such as estimated send and receive bandwidth,
   // pacing delay, etc.
   virtual Stats GetStats() const = 0;
-
-  // The greater min and smaller max set by this and SetBitrateConfigMask will
-  // be used. The latest non-negative start value from either call will be used.
-  // Specifying a start bitrate (>0) will reset the current bitrate estimate.
-  // This is due to how the 'x-google-start-bitrate' flag is currently
-  // implemented. Passing -1 leaves the start bitrate unchanged. Behavior is not
-  // guaranteed for other negative values or 0.
-  virtual void SetBitrateConfig(
-      const Config::BitrateConfig& bitrate_config) = 0;
-
-  // The greater min and smaller max set by this and SetBitrateConfig will be
-  // used. The latest non-negative start value form either call will be used.
-  // Specifying a start bitrate will reset the current bitrate estimate.
-  // Assumes 0 <= min <= start <= max holds for set parameters.
-  virtual void SetBitrateConfigMask(
-      const Config::BitrateConfigMask& bitrate_mask) = 0;
 
   virtual void SetBitrateAllocationStrategy(
       std::unique_ptr<rtc::BitrateAllocationStrategy>
@@ -197,10 +171,6 @@ class Call {
   virtual void OnTransportOverheadChanged(
       MediaType media,
       int transport_overhead_per_packet) = 0;
-
-  virtual void OnNetworkRouteChanged(
-      const std::string& transport_name,
-      const rtc::NetworkRoute& network_route) = 0;
 
   virtual void OnSentPacket(const rtc::SentPacket& sent_packet) = 0;
 

@@ -47,17 +47,22 @@ void SVGContainerPainter::Paint(const PaintInfo& paint_info) {
     Optional<FloatClipRecorder> clip_recorder;
     Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
     if (layout_svg_container_.IsSVGViewportContainer() &&
-        SVGLayoutSupport::IsOverflowHidden(&layout_svg_container_)) {
+        SVGLayoutSupport::IsOverflowHidden(layout_svg_container_)) {
       if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
         const auto* fragment =
             paint_info.FragmentToPaint(layout_svg_container_);
         if (!fragment)
           return;
         const auto* properties = fragment->PaintProperties();
-        DCHECK(properties && properties->OverflowClip());
-        scoped_paint_chunk_properties.emplace(
-            paint_info.context.GetPaintController(), properties->OverflowClip(),
-            layout_svg_container_, paint_info.DisplayItemTypeForClipping());
+        // TODO(crbug.com/814815): The condition should be a DCHECK, but for now
+        // we may paint the object for filters during PrePaint before the
+        // properties are ready.
+        if (properties && properties->OverflowOrInnerBorderRadiusClip()) {
+          scoped_paint_chunk_properties.emplace(
+              paint_info.context.GetPaintController(),
+              properties->OverflowOrInnerBorderRadiusClip(),
+              layout_svg_container_, paint_info.DisplayItemTypeForClipping());
+        }
       } else {
         FloatRect viewport =
             layout_svg_container_.LocalToSVGParentTransform().Inverse().MapRect(

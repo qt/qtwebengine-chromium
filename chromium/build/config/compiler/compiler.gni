@@ -54,22 +54,15 @@ declare_args() {
   # Windows build.
   use_incremental_wpo = false
 
-  # Root directory that will store the MSVC link repro. This should only be
-  # used for debugging purposes on the builders where a MSVC linker flakyness
-  # has been observed. The targets for which a link repro should be generated
-  # should add somethink like this to their configuration:
-  #   if (linkrepro_root_dir != "") {
-  #     ldflags = ["/LINKREPRO:" + linkrepro_root_dir + "/" + target_name]
-  #   }
-  #
-  # Note that doing a link repro uses a lot of disk space and slows down the
-  # build, so this shouldn't be enabled on too many targets.
-  #
-  # See crbug.com/669854.
-  linkrepro_root_dir = ""
-
   # Whether or not we should use position independent code.
   use_pic = true
+
+  # Whether we're using a sample profile collected on an architecture different
+  # than the one we're compiling for.
+  #
+  # It's currently not possible to collect AFDO profiles on anything but
+  # x86{,_64}.
+  using_mismatched_sample_profile = current_cpu != "x64" && current_cpu != "x86"
 }
 
 assert(!is_cfi || use_thin_lto, "CFI requires ThinLTO")
@@ -88,6 +81,14 @@ exclude_unwind_tables =
 # TODO(brettw) it's weird that Mac and desktop Linux are different. We should
 # explore favoring size over speed in this case as well.
 optimize_for_size = is_android || is_ios
+
+declare_args() {
+  # Whether we should consider the profile we're using to be accurate. Accurate
+  # profiles have the benefit of (potentially substantial) binary size
+  # reductions, by instructing the compiler to optimize cold and uncovered
+  # functions heavily for size. This often comes at the cost of performance.
+  sample_profile_is_accurate = optimize_for_size
+}
 
 # Determine whether to enable or disable frame pointers, based on the platform
 # and build arguments.
@@ -155,11 +156,12 @@ declare_args() {
   # Linux or Fuchsia.
   # TODO(pcc): Enable lld on more architectures on Linux. E.g. we probably need
   # to fix some of crbug.com/742655 to enable it on ARM.
-  # TODO(pcc): Remove !is_msan once crbug.com/772559 is fixed.
-  use_lld = is_clang && !is_msan &&
+  use_lld = is_clang &&
             ((is_win && host_os != "win") || is_fuchsia ||
              (use_thin_lto && target_os != "chromeos") ||
-             (is_linux && current_cpu == "x64" && target_os != "chromeos"))
+             (is_linux && current_cpu == "x64" && target_os != "chromeos") ||
+             (is_android && (current_cpu != "arm" || arm_version >= 7) &&
+              current_cpu != "mipsel" && current_cpu != "mips64el"))
 }
 
 declare_args() {
@@ -167,8 +169,9 @@ declare_args() {
   use_gold =
       (!use_lld && !(is_chromecast && is_linux &&
                      (current_cpu == "arm" || current_cpu == "mipsel")) &&
-       (is_linux && (current_cpu == "x64" || current_cpu == "x86" ||
-                     current_cpu == "arm" || current_cpu == "mipsel"))) ||
+       (is_linux &&
+        (current_cpu == "x64" || current_cpu == "x86" || current_cpu == "arm" ||
+         current_cpu == "mipsel" || current_cpu == "mips64el"))) ||
       (is_android && (current_cpu == "x86" || current_cpu == "x64" ||
                       current_cpu == "arm" || current_cpu == "arm64"))
 }

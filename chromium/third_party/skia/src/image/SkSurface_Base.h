@@ -45,6 +45,8 @@ public:
      */
     virtual sk_sp<SkImage> onNewImageSnapshot() = 0;
 
+    virtual void onWritePixels(const SkPixmap&, int x, int y) = 0;
+
     /**
      *  Default implementation:
      *
@@ -95,7 +97,7 @@ public:
     }
 
     virtual bool onCharacterize(SkSurfaceCharacterization*) const { return false; }
-    virtual bool onDraw(SkDeferredDisplayList*) { return false; }
+    virtual bool onDraw(const SkDeferredDisplayList*) { return false; }
 
     inline SkCanvas* getCachedCanvas();
     inline sk_sp<SkImage> refCachedImage();

@@ -49,7 +49,7 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/canvas/CanvasAsyncBlobCreator.h"
-#include "core/html/canvas/CanvasContextCreationAttributes.h"
+#include "core/html/canvas/CanvasContextCreationAttributesCore.h"
 #include "core/html/canvas/CanvasFontCache.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/CanvasRenderingContextFactory.h"
@@ -64,6 +64,7 @@
 #include "core/layout/HitTestCanvasResult.h"
 #include "core/layout/LayoutHTMLCanvas.h"
 #include "core/layout/LayoutView.h"
+#include "core/origin_trials/origin_trials.h"
 #include "core/page/ChromeClient.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintTiming.h"
@@ -253,7 +254,7 @@ void HTMLCanvasElement::RegisterRenderingContextFactory(
 
 CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContext(
     const String& type,
-    const CanvasContextCreationAttributes& attributes) {
+    const CanvasContextCreationAttributesCore& attributes) {
   CanvasRenderingContext::ContextType context_type =
       CanvasRenderingContext::ContextTypeFromId(type);
 
@@ -300,14 +301,14 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContext(
   }
 
   LayoutObject* layout_object = GetLayoutObject();
-  if (layout_object && Is2d() && !context_->CreationAttributes().alpha()) {
+  if (layout_object && Is2d() && !context_->CreationAttributes().alpha) {
     // In the alpha false case, canvas is initially opaque even though there is
     // no ImageBuffer, so we need to trigger an invalidation.
     DidDraw();
   }
 
-  if (attributes.lowLatency() &&
-      RuntimeEnabledFeatures::LowLatencyCanvasEnabled()) {
+  if (attributes.low_latency &&
+      OriginTrials::lowLatencyCanvasEnabled(&GetDocument())) {
     CreateLayer();
     SetNeedsUnbufferedInputEvents(true);
     // TODO: rename to CanvasFrameDispatcherImpl
@@ -386,6 +387,12 @@ void HTMLCanvasElement::DidDraw() {
 
 void HTMLCanvasElement::FinalizeFrame() {
   TRACE_EVENT0("blink", "HTMLCanvasElement::FinalizeFrame");
+
+  // FinalizeFrame indicates the end of a script task that may have rendered
+  // into the canvas, now is a good time to unlock cache entries.
+  if (auto* resource_provider = ResourceProvider())
+    resource_provider->ReleaseLockedImages();
+
   if (canvas2d_bridge_) {
     // Compute to determine whether disable accleration is needed
     if (IsAccelerated() &&
@@ -436,9 +443,16 @@ void HTMLCanvasElement::FinalizeFrame() {
   did_notify_listeners_for_current_frame_ = false;
 }
 
-void HTMLCanvasElement::DisableAcceleration() {
+void HTMLCanvasElement::DisableAcceleration(
+    std::unique_ptr<Canvas2DLayerBridge>
+        unaccelerated_bridge_used_for_testing) {
   // Create and configure an unaccelerated Canvas2DLayerBridge.
-  std::unique_ptr<Canvas2DLayerBridge> bridge = CreateUnaccelerated2dBuffer();
+  std::unique_ptr<Canvas2DLayerBridge> bridge;
+  if (unaccelerated_bridge_used_for_testing) {
+    bridge = std::move(unaccelerated_bridge_used_for_testing);
+  } else {
+    bridge = CreateUnaccelerated2dBuffer();
+  }
 
   if (bridge && canvas2d_bridge_) {
     ReplaceExistingCanvas2DBuffer(std::move(bridge));
@@ -495,10 +509,7 @@ void HTMLCanvasElement::DoDeferredPaintInvalidation() {
     }
   }
 
-  if (context_ &&
-      context_->GetContextType() ==
-          CanvasRenderingContext::kContextImageBitmap &&
-      context_->PlatformLayer()) {
+  if (context_ && HasImageBitmapContext() && context_->PlatformLayer()) {
     context_->PlatformLayer()->Invalidate();
   }
 
@@ -681,7 +692,7 @@ void HTMLCanvasElement::Paint(GraphicsContext& context, const LayoutRect& r) {
   if (HasImageBuffer()) {
     if (!context.ContextDisabled()) {
       SkBlendMode composite_operator =
-          !context_ || context_->CreationAttributes().alpha()
+          !context_ || context_->CreationAttributes().alpha
               ? SkBlendMode::kSrcOver
               : SkBlendMode::kSrc;
       FloatRect src_rect = FloatRect(FloatPoint(), FloatSize(Size()));
@@ -698,7 +709,7 @@ void HTMLCanvasElement::Paint(GraphicsContext& context, const LayoutRect& r) {
     }
   } else {
     // When alpha is false, we should draw to opaque black.
-    if (!context_->CreationAttributes().alpha())
+    if (!context_->CreationAttributes().alpha)
       context.FillRect(FloatRect(r), Color(0, 0, 0));
   }
 
@@ -743,7 +754,7 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::ToStaticBitmapImage(
     return nullptr;
   scoped_refptr<StaticBitmapImage> image_bitmap = nullptr;
   if (Is3d()) {
-    if (context_->CreationAttributes().premultipliedAlpha()) {
+    if (context_->CreationAttributes().premultiplied_alpha) {
       context_->PaintRenderingResultsToCanvas(source_buffer);
       if (webgl_resource_provider_)
         image_bitmap = webgl_resource_provider_->Snapshot();
@@ -758,6 +769,9 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::ToStaticBitmapImage(
         SkImageInfo info =
             SkImageInfo::Make(adjusted_size.Width(), adjusted_size.Height(),
                               kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+        info = info.makeColorSpace(ColorParams().GetSkColorSpace());
+        if (ColorParams().GetSkColorType() != kN32_SkColorType)
+          info = info.makeColorType(kRGBA_F16_SkColorType);
         image_bitmap = StaticBitmapImage::Create(std::move(data_array), info);
       }
     }
@@ -848,10 +862,12 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
     // If the canvas element's bitmap has no pixels
     GetDocument()
         .GetTaskRunner(TaskType::kCanvasBlobSerialization)
-        ->PostTask(FROM_HERE,
-                   WTF::Bind(&V8BlobCallback::InvokeAndReportException,
-                             WrapPersistentCallbackFunction(callback), nullptr,
-                             nullptr));
+        ->PostTask(
+            FROM_HERE,
+            WTF::Bind(&V8PersistentCallbackFunction<
+                          V8BlobCallback>::InvokeAndReportException,
+                      WrapPersistent(ToV8PersistentCallbackFunction(callback)),
+                      nullptr, nullptr));
     return;
   }
 
@@ -880,10 +896,12 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
   } else {
     GetDocument()
         .GetTaskRunner(TaskType::kCanvasBlobSerialization)
-        ->PostTask(FROM_HERE,
-                   WTF::Bind(&V8BlobCallback::InvokeAndReportException,
-                             WrapPersistentCallbackFunction(callback), nullptr,
-                             nullptr));
+        ->PostTask(
+            FROM_HERE,
+            WTF::Bind(&V8PersistentCallbackFunction<
+                          V8BlobCallback>::InvokeAndReportException,
+                      WrapPersistent(ToV8PersistentCallbackFunction(callback)),
+                      nullptr, nullptr));
     return;
   }
 }
@@ -1123,8 +1141,7 @@ PaintCanvas* HTMLCanvasElement::ExistingDrawingCanvas() const {
 
 bool HTMLCanvasElement::TryCreateImageBuffer() {
   DCHECK(context_);
-  DCHECK(context_->GetContextType() !=
-         CanvasRenderingContext::kContextImageBitmap);
+  DCHECK(!HasImageBitmapContext());
   if (!HasImageBuffer() && !did_fail_to_create_resource_provider_) {
     CreateImageBufferInternal(nullptr);
     if (did_fail_to_create_resource_provider_ && Is2d() && !Size().IsEmpty()) {
@@ -1155,8 +1172,7 @@ scoped_refptr<Image> HTMLCanvasElement::CopiedImage(
   if (!context_)
     return CreateTransparentImage(Size());
 
-  if (context_->GetContextType() ==
-      CanvasRenderingContext::kContextImageBitmap) {
+  if (HasImageBitmapContext()) {
     scoped_refptr<Image> image = context_->GetImage(hint);
     // TODO(fserb): return image?
     if (image)
@@ -1267,8 +1283,7 @@ scoped_refptr<Image> HTMLCanvasElement::GetSourceImageForCanvas(
     return result;
   }
 
-  if (context_->GetContextType() ==
-      CanvasRenderingContext::kContextImageBitmap) {
+  if (HasImageBitmapContext()) {
     *status = kNormalSourceImageStatus;
     scoped_refptr<Image> result = context_->GetImage(hint);
     if (!result)
@@ -1316,8 +1331,7 @@ bool HTMLCanvasElement::WouldTaintOrigin(const SecurityOrigin*) const {
 }
 
 FloatSize HTMLCanvasElement::ElementSize(const FloatSize&) const {
-  if (context_ && context_->GetContextType() ==
-                      CanvasRenderingContext::kContextImageBitmap) {
+  if (context_ && HasImageBitmapContext()) {
     scoped_refptr<Image> image = context_->GetImage(kPreferNoAcceleration);
     if (image)
       return FloatSize(image->width(), image->height());
@@ -1346,7 +1360,7 @@ ScriptPromise HTMLCanvasElement::CreateImageBitmap(
 void HTMLCanvasElement::SetPlaceholderFrame(
     scoped_refptr<StaticBitmapImage> image,
     base::WeakPtr<OffscreenCanvasFrameDispatcher> dispatcher,
-    scoped_refptr<WebTaskRunner> task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     unsigned resource_id) {
   OffscreenCanvasPlaceholder::SetPlaceholderFrame(
       std::move(image), std::move(dispatcher), std::move(task_runner),
@@ -1357,7 +1371,7 @@ void HTMLCanvasElement::SetPlaceholderFrame(
 }
 
 bool HTMLCanvasElement::IsOpaque() const {
-  return context_ && !context_->CreationAttributes().alpha();
+  return context_ && !context_->CreationAttributes().alpha;
 }
 
 bool HTMLCanvasElement::IsSupportedInteractiveCanvasFallback(
@@ -1546,10 +1560,11 @@ void HTMLCanvasElement::ReplaceExistingCanvas2DBuffer(
     // functional.
     if (!image)
       return;
-    new_buffer->Canvas()->drawImage(image->PaintImageForCurrentFrame(), 0, 0);
+    new_buffer->DrawFullImage(image->PaintImageForCurrentFrame());
   }
 
   RestoreCanvasMatrixClipStack(new_buffer->Canvas());
+  new_buffer->DidRestoreCanvasMatrixClipStack(new_buffer->Canvas());
   canvas2d_bridge_ = std::move(new_buffer);
   canvas2d_bridge_->SetCanvasResourceHost(this);
 }
@@ -1561,6 +1576,14 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::NewImageSnapshot(
   if (webgl_resource_provider_)
     return webgl_resource_provider_->Snapshot();
   return nullptr;
+}
+
+bool HTMLCanvasElement::HasImageBitmapContext() const {
+  if (!context_)
+    return false;
+  CanvasRenderingContext::ContextType type = context_->GetContextType();
+  return (type == CanvasRenderingContext::kContextImageBitmap ||
+          type == CanvasRenderingContext::kContextXRPresent);
 }
 
 }  // namespace blink

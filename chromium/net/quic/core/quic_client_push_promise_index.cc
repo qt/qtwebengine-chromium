@@ -4,13 +4,11 @@
 
 #include "net/quic/core/quic_client_push_promise_index.h"
 
-#include <string>
-
 #include "net/quic/core/quic_client_promised_info.h"
 #include "net/quic/core/spdy_utils.h"
+#include "net/quic/platform/api/quic_string.h"
 
 using net::SpdyHeaderBlock;
-using std::string;
 
 namespace net {
 
@@ -21,7 +19,7 @@ QuicClientPushPromiseIndex::~QuicClientPushPromiseIndex() {}
 QuicClientPushPromiseIndex::TryHandle::~TryHandle() {}
 
 QuicClientPromisedInfo* QuicClientPushPromiseIndex::GetPromised(
-    const string& url) {
+    const QuicString& url) {
   QuicPromisedByUrlMap::iterator it = promised_by_url_.find(url);
   if (it == promised_by_url_.end()) {
     return nullptr;
@@ -33,7 +31,7 @@ QuicAsyncStatus QuicClientPushPromiseIndex::Try(
     const SpdyHeaderBlock& request,
     QuicClientPushPromiseIndex::Delegate* delegate,
     TryHandle** handle) {
-  string url(SpdyUtils::GetUrlFromHeaderBlock(request));
+  QuicString url(SpdyUtils::GetPromisedUrlFromHeaders(request));
   QuicPromisedByUrlMap::iterator it = promised_by_url_.find(url);
   if (it != promised_by_url_.end()) {
     QuicClientPromisedInfo* promised = it->second;

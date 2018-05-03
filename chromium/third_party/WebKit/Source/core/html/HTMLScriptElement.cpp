@@ -41,21 +41,15 @@ namespace blink {
 using namespace HTMLNames;
 
 inline HTMLScriptElement::HTMLScriptElement(Document& document,
-                                            bool was_inserted_by_parser,
-                                            bool already_started,
-                                            bool created_during_document_write)
+                                            const CreateElementFlags flags)
     : HTMLElement(scriptTag, document),
-      loader_(InitializeScriptLoader(was_inserted_by_parser,
-                                     already_started,
-                                     created_during_document_write)) {}
+      loader_(InitializeScriptLoader(flags.IsCreatedByParser(),
+                                     flags.WasAlreadyStarted(),
+                                     flags.IsCreatedDuringDocumentWrite())) {}
 
-HTMLScriptElement* HTMLScriptElement::Create(
-    Document& document,
-    bool was_inserted_by_parser,
-    bool already_started,
-    bool created_during_document_write) {
-  return new HTMLScriptElement(document, was_inserted_by_parser,
-                               already_started, created_during_document_write);
+HTMLScriptElement* HTMLScriptElement::Create(Document& document,
+                                             const CreateElementFlags flags) {
+  return new HTMLScriptElement(document, flags);
 }
 
 bool HTMLScriptElement::IsURLAttribute(const Attribute& attribute) const {
@@ -224,9 +218,12 @@ void HTMLScriptElement::SetScriptElementForBinding(
     element.SetHTMLScriptElement(this);
 }
 
-Element* HTMLScriptElement::CloneElementWithoutAttributesAndChildren() {
-  return new HTMLScriptElement(GetDocument(), false, loader_->AlreadyStarted(),
-                               false);
+Element* HTMLScriptElement::CloneWithoutAttributesAndChildren(
+    Document& factory) const {
+  CreateElementFlags flags =
+      CreateElementFlags::ByCloneNode().SetAlreadyStarted(
+          loader_->AlreadyStarted());
+  return factory.CreateElement(TagQName(), flags, IsValue());
 }
 
 void HTMLScriptElement::Trace(blink::Visitor* visitor) {

@@ -40,8 +40,10 @@ class TimeDelta;
 
 namespace views {
 
+class Label;
 class MenuRunner;
 class TextfieldController;
+class ViewsTextServicesContextMenu;
 
 // A views/skia textfield implementation. No platform-specific code is used.
 class VIEWS_EXPORT Textfield : public View,
@@ -218,8 +220,14 @@ class VIEWS_EXPORT Textfield : public View,
   // Clears Edit history.
   void ClearEditHistory();
 
-  // Set the accessible name of the text field.
+  // Set the accessible name of the text field. If the textfield has a visible
+  // label, use SetAssociatedLabel() instead.
   void SetAccessibleName(const base::string16& name);
+
+  // If the accessible name should be the same as the label text, use this. It
+  // will set both the accessible label relationship and the accessible name
+  // from the contents of the label.
+  void SetAssociatedLabel(Label* label);
 
   // Set extra spacing placed between glyphs; used for obscured text styling.
   void SetGlyphSpacing(int spacing);
@@ -351,6 +359,11 @@ class VIEWS_EXPORT Textfield : public View,
 
   // Executes the given |command|.
   virtual void ExecuteTextEditCommand(ui::TextEditCommand command);
+
+  // Offsets the double-clicked word's range. This is only used in the unusual
+  // case where the text changes on the second mousedown of a double-click.
+  // This is harmless if there is not a currently double-clicked word.
+  void OffsetDoubleClickWord(int offset);
 
  private:
   friend class TextfieldTestApi;
@@ -488,8 +501,10 @@ class VIEWS_EXPORT Textfield : public View,
   base::string16 placeholder_text_;
 
   // Placeholder text color.
-  // TODO(estade): remove this when Harmony/MD is default.
-  SkColor placeholder_text_color_;
+  // TODO(newcomer): Use NativeTheme to define different default placeholder
+  // text colors for chrome/CrOS when harmony is enabled by default
+  // (https://crbug.com/803279).
+  base::Optional<SkColor> placeholder_text_color_;
 
   // The draw flags specified for |placeholder_text_|.
   int placeholder_text_draw_flags_;
@@ -501,6 +516,9 @@ class VIEWS_EXPORT Textfield : public View,
   // True when the contents are deemed unacceptable and should be indicated as
   // such.
   bool invalid_;
+
+  // The unique id for the associated label's accessible object.
+  int32_t label_ax_id_;
 
   // The accessible name of the text field.
   base::string16 accessible_name_;
@@ -551,6 +569,7 @@ class VIEWS_EXPORT Textfield : public View,
 
   // Context menu related members.
   std::unique_ptr<ui::SimpleMenuModel> context_menu_contents_;
+  std::unique_ptr<ViewsTextServicesContextMenu> text_services_context_menu_;
   std::unique_ptr<views::MenuRunner> context_menu_runner_;
 
   // View containing the text cursor.

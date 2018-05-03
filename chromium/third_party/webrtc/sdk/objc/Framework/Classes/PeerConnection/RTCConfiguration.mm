@@ -30,6 +30,7 @@
 @synthesize candidateNetworkPolicy = _candidateNetworkPolicy;
 @synthesize continualGatheringPolicy = _continualGatheringPolicy;
 @synthesize maxIPv6Networks = _maxIPv6Networks;
+@synthesize disableLinkLocalNetworks = _disableLinkLocalNetworks;
 @synthesize audioJitterBufferMaxPackets = _audioJitterBufferMaxPackets;
 @synthesize audioJitterBufferFastAccelerate = _audioJitterBufferFastAccelerate;
 @synthesize iceConnectionReceivingTimeout = _iceConnectionReceivingTimeout;
@@ -42,6 +43,7 @@
     _shouldPresumeWritableWhenFullyRelayed;
 @synthesize iceCheckMinInterval = _iceCheckMinInterval;
 @synthesize iceRegatherIntervalRange = _iceRegatherIntervalRange;
+@synthesize sdpSemantics = _sdpSemantics;
 @synthesize turnCustomizer = _turnCustomizer;
 
 - (instancetype)init {
@@ -75,6 +77,7 @@
     _continualGatheringPolicy =
         [[self class] continualGatheringPolicyForNativePolicy:nativePolicy];
     _maxIPv6Networks = config.max_ipv6_networks;
+    _disableLinkLocalNetworks = config.disable_link_local_networks;
     _audioJitterBufferMaxPackets = config.audio_jitter_buffer_max_packets;
     _audioJitterBufferFastAccelerate = config.audio_jitter_buffer_fast_accelerate;
     _iceConnectionReceivingTimeout = config.ice_connection_receiving_timeout;
@@ -94,33 +97,38 @@
       _iceRegatherIntervalRange =
           [[RTCIntervalRange alloc] initWithNativeIntervalRange:nativeIntervalRange];
     }
+    _sdpSemantics = [[self class] sdpSemanticsForNativeSdpSemantics:config.sdp_semantics];
     _turnCustomizer = config.turn_customizer;
   }
   return self;
 }
 
 - (NSString *)description {
-  return
-      [NSString stringWithFormat:
-                    @"RTCConfiguration: "
-                    @"{\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%@\n%@\n%d\n}\n",
-                    _iceServers,
-                    [[self class] stringForTransportPolicy:_iceTransportPolicy],
-                    [[self class] stringForBundlePolicy:_bundlePolicy],
-                    [[self class] stringForRtcpMuxPolicy:_rtcpMuxPolicy],
-                    [[self class] stringForTcpCandidatePolicy:_tcpCandidatePolicy],
-                    [[self class] stringForCandidateNetworkPolicy:_candidateNetworkPolicy],
-                    [[self class] stringForContinualGatheringPolicy:_continualGatheringPolicy],
-                    _audioJitterBufferMaxPackets,
-                    _audioJitterBufferFastAccelerate,
-                    _iceConnectionReceivingTimeout,
-                    _iceBackupCandidatePairPingInterval,
-                    _iceCandidatePoolSize,
-                    _shouldPruneTurnPorts,
-                    _shouldPresumeWritableWhenFullyRelayed,
-                    _iceCheckMinInterval,
-                    _iceRegatherIntervalRange,
-                    _maxIPv6Networks];
+  static NSString *formatString =
+      @"RTCConfiguration: "
+      @"{\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%@\n%@\n%d\n%d\n}\n";
+
+  return [NSString
+      stringWithFormat:formatString,
+                       _iceServers,
+                       [[self class] stringForTransportPolicy:_iceTransportPolicy],
+                       [[self class] stringForBundlePolicy:_bundlePolicy],
+                       [[self class] stringForRtcpMuxPolicy:_rtcpMuxPolicy],
+                       [[self class] stringForTcpCandidatePolicy:_tcpCandidatePolicy],
+                       [[self class] stringForCandidateNetworkPolicy:_candidateNetworkPolicy],
+                       [[self class] stringForContinualGatheringPolicy:_continualGatheringPolicy],
+                       [[self class] stringForSdpSemantics:_sdpSemantics],
+                       _audioJitterBufferMaxPackets,
+                       _audioJitterBufferFastAccelerate,
+                       _iceConnectionReceivingTimeout,
+                       _iceBackupCandidatePairPingInterval,
+                       _iceCandidatePoolSize,
+                       _shouldPruneTurnPorts,
+                       _shouldPresumeWritableWhenFullyRelayed,
+                       _iceCheckMinInterval,
+                       _iceRegatherIntervalRange,
+                       _disableLinkLocalNetworks,
+                       _maxIPv6Networks];
 }
 
 #pragma mark - Private
@@ -147,6 +155,7 @@
   nativeConfig->continual_gathering_policy = [[self class]
       nativeContinualGatheringPolicyForPolicy:_continualGatheringPolicy];
   nativeConfig->max_ipv6_networks = _maxIPv6Networks;
+  nativeConfig->disable_link_local_networks = _disableLinkLocalNetworks;
   nativeConfig->audio_jitter_buffer_max_packets = _audioJitterBufferMaxPackets;
   nativeConfig->audio_jitter_buffer_fast_accelerate =
       _audioJitterBufferFastAccelerate  ? true : false;
@@ -181,6 +190,7 @@
     nativeConfig->ice_regather_interval_range =
         rtc::Optional<rtc::IntervalRange>(*nativeIntervalRange);
   }
+  nativeConfig->sdp_semantics = [[self class] nativeSdpSemanticsForSdpSemantics:_sdpSemantics];
   if (_turnCustomizer) {
     nativeConfig->turn_customizer = _turnCustomizer;
   }
@@ -389,6 +399,39 @@
       return rtc::KT_RSA;
     case RTCEncryptionKeyTypeECDSA:
       return rtc::KT_ECDSA;
+  }
+}
+
++ (webrtc::SdpSemantics)nativeSdpSemanticsForSdpSemantics:(RTCSdpSemantics)sdpSemantics {
+  switch (sdpSemantics) {
+    case RTCSdpSemanticsDefault:
+      return webrtc::SdpSemantics::kDefault;
+    case RTCSdpSemanticsPlanB:
+      return webrtc::SdpSemantics::kPlanB;
+    case RTCSdpSemanticsUnifiedPlan:
+      return webrtc::SdpSemantics::kUnifiedPlan;
+  }
+}
+
++ (RTCSdpSemantics)sdpSemanticsForNativeSdpSemantics:(webrtc::SdpSemantics)sdpSemantics {
+  switch (sdpSemantics) {
+    case webrtc::SdpSemantics::kDefault:
+      return RTCSdpSemanticsDefault;
+    case webrtc::SdpSemantics::kPlanB:
+      return RTCSdpSemanticsPlanB;
+    case webrtc::SdpSemantics::kUnifiedPlan:
+      return RTCSdpSemanticsUnifiedPlan;
+  }
+}
+
++ (NSString *)stringForSdpSemantics:(RTCSdpSemantics)sdpSemantics {
+  switch (sdpSemantics) {
+    case RTCSdpSemanticsDefault:
+      return @"DEFAULT";
+    case RTCSdpSemanticsPlanB:
+      return @"PLAN_B";
+    case RTCSdpSemanticsUnifiedPlan:
+      return @"UNIFIED_PLAN";
   }
 }
 

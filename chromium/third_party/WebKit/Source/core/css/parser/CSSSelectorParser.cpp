@@ -30,6 +30,9 @@ CSSSelectorList CSSSelectorParser::ParseSelector(
     return CSSSelectorList();
 
   parser.RecordUsageAndDeprecations(result);
+
+  if (result.HasPseudoMatches())
+    return result.TransformForPseudoMatches();
   return result;
 }
 
@@ -43,6 +46,9 @@ CSSSelectorList CSSSelectorParser::ConsumeSelector(
   stream.ConsumeWhitespace();
   CSSSelectorList result = parser.ConsumeComplexSelectorList(stream, observer);
   parser.RecordUsageAndDeprecations(result);
+
+  if (result.HasPseudoMatches())
+    return result.TransformForPseudoMatches();
   return result;
 }
 
@@ -528,9 +534,20 @@ std::unique_ptr<CSSParserSelector> CSSSelectorParser::ConsumePseudo(
     return nullptr;
 
   switch (selector->GetPseudoType()) {
-    case CSSSelector::kPseudoMatches:
+    case CSSSelector::kPseudoMatches: {
       if (!RuntimeEnabledFeatures::CSSMatchesEnabled())
         break;
+
+      DisallowPseudoElementsScope scope(this);
+
+      std::unique_ptr<CSSSelectorList> selector_list =
+          std::make_unique<CSSSelectorList>();
+      *selector_list = ConsumeComplexSelectorList(block);
+      if (!selector_list->IsValid() || !block.AtEnd())
+        return nullptr;
+      selector->SetSelectorList(std::move(selector_list));
+      return selector;
+    }
     case CSSSelector::kPseudoHost:
     case CSSSelector::kPseudoHostContext:
     case CSSSelector::kPseudoAny:
@@ -540,7 +557,8 @@ std::unique_ptr<CSSParserSelector> CSSSelectorParser::ConsumePseudo(
       std::unique_ptr<CSSSelectorList> selector_list =
           std::make_unique<CSSSelectorList>();
       *selector_list = ConsumeCompoundSelectorList(block);
-      if (!selector_list->IsValid() || !block.AtEnd())
+      if (!selector_list->IsValid() || !block.AtEnd() ||
+          selector_list->HasPseudoMatches())
         return nullptr;
       selector->SetSelectorList(std::move(selector_list));
       return selector;
@@ -562,7 +580,8 @@ std::unique_ptr<CSSParserSelector> CSSSelectorParser::ConsumePseudo(
       std::unique_ptr<CSSParserSelector> inner_selector =
           ConsumeCompoundSelector(block);
       block.ConsumeWhitespace();
-      if (!inner_selector || !block.AtEnd())
+      if (!inner_selector || !block.AtEnd() ||
+          inner_selector->GetPseudoType() == CSSSelector::kPseudoMatches)
         return nullptr;
       Vector<std::unique_ptr<CSSParserSelector>> selector_vector;
       selector_vector.push_back(std::move(inner_selector));
@@ -675,6 +694,7 @@ CSSSelector::MatchType CSSSelectorParser::ConsumeAttributeMatch(
     case kDelimiterToken:
       if (token.Delimiter() == '=')
         return CSSSelector::kAttributeExact;
+      FALLTHROUGH;
     default:
       failed_parsing_ = true;
       return CSSSelector::kAttributeExact;
@@ -901,7 +921,7 @@ void CSSSelectorParser::RecordUsageAndDeprecations(
   if (!context_->IsUseCounterRecordingEnabled())
     return;
 
-  for (const CSSSelector* selector = selector_list.First(); selector;
+  for (const CSSSelector* selector = selector_list.FirstForCSSOM(); selector;
        selector = CSSSelectorList::Next(*selector)) {
     for (const CSSSelector* current = selector; current;
          current = current->TagHistory()) {
@@ -911,8 +931,14 @@ void CSSSelectorParser::RecordUsageAndDeprecations(
           feature = WebFeature::kCSSSelectorPseudoAny;
           break;
         case CSSSelector::kPseudoMatches:
-          if (RuntimeEnabledFeatures::CSSMatchesEnabled())
-            feature = WebFeature::kCSSSelectorPseudoMatches;
+          DCHECK(RuntimeEnabledFeatures::CSSMatchesEnabled());
+          feature = WebFeature::kCSSSelectorPseudoMatches;
+          break;
+        case CSSSelector::kPseudoAnyLink:
+          feature = WebFeature::kCSSSelectorPseudoAnyLink;
+          break;
+        case CSSSelector::kPseudoWebkitAnyLink:
+          feature = WebFeature::kCSSSelectorPseudoWebkitAnyLink;
           break;
         case CSSSelector::kPseudoUnresolved:
           feature = WebFeature::kCSSSelectorPseudoUnresolved;

@@ -24,6 +24,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
+#include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
@@ -40,7 +41,8 @@
 #include "net/base/load_states.h"
 #include "net/base/request_priority.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
+#include "services/network/keepalive_statistics_recorder.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
 #include "url/gurl.h"
 
 namespace base {
@@ -53,6 +55,10 @@ class HttpRequestHeaders;
 class URLRequest;
 class URLRequestContextGetter;
 }
+
+namespace network {
+class ResourceScheduler;
+}  // namespace network
 
 namespace storage {
 class FileSystemContext;
@@ -72,7 +78,6 @@ class ResourceHandler;
 class ResourceMessageDelegate;
 class ResourceRequesterInfo;
 class ResourceRequestInfoImpl;
-class ResourceScheduler;
 class ServiceWorkerNavigationHandleCore;
 struct NavigationRequestInfo;
 struct Referrer;
@@ -103,7 +108,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // ResourceDispatcherHost implementation:
   void SetDelegate(ResourceDispatcherHostDelegate* delegate) override;
   void SetAllowCrossOriginAuthPrompt(bool value) override;
-  void ClearLoginDelegateForRequest(net::URLRequest* request) override;
   void RegisterInterceptor(const std::string& http_header,
                            const std::string& starts_with,
                            const InterceptorCallback& interceptor) override;
@@ -221,20 +225,18 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // resource response to another application (e.g. a web page) without being
   // handled by the browser itself. If the request should be intercepted as a
   // stream, a StreamResourceHandler is returned which provides access to the
-  // response. |plugin_path| is the path to the plugin which is handling the
-  // URL request. This may be empty if there is no plugin handling the request.
+  // response.
   //
   // This function must be called after the ResourceRequestInfo has been created
   // and associated with the request. If |payload| is set to a non-empty value,
   // the caller must send it to the old resource handler instead of cancelling
   // it.
   virtual std::unique_ptr<ResourceHandler> MaybeInterceptAsStream(
-      const base::FilePath& plugin_path,
       net::URLRequest* request,
       network::ResourceResponse* response,
       std::string* payload);
 
-  ResourceScheduler* scheduler() { return scheduler_.get(); }
+  network::ResourceScheduler* scheduler() { return scheduler_.get(); }
 
   // Called by a ResourceHandler when it's ready to start reading data and
   // sending it to the renderer. Returns true if there are enough file
@@ -334,7 +336,12 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
     return main_thread_task_runner_;
   }
 
+  network::KeepaliveStatisticsRecorder* keepalive_statistics_recorder() {
+    return &keepalive_statistics_recorder_;
+  }
+
  private:
+  class ScheduledResourceRequestAdapter;
   friend class ResourceDispatcherHostTest;
 
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
@@ -407,8 +414,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   void DidReceiveResponse(ResourceLoader* loader,
                           network::ResourceResponse* response) override;
   void DidFinishLoading(ResourceLoader* loader) override;
-  std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
-      ResourceLoader* loader) override;
 
   // An init helper that runs on the IO thread.
   void OnInit();
@@ -418,7 +423,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Helper function for URL requests.
   void BeginRequestInternal(std::unique_ptr<net::URLRequest> request,
-                            std::unique_ptr<ResourceHandler> handler);
+                            std::unique_ptr<ResourceHandler> handler,
+                            bool is_initiated_by_fetch_api);
 
   void StartLoading(ResourceRequestInfoImpl* info,
                     std::unique_ptr<ResourceLoader> loader);
@@ -680,6 +686,10 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       bool must_download,
       bool is_new_request);
 
+  void RunAuthRequiredCallback(
+      net::URLRequest* url_request,
+      const base::Optional<net::AuthCredentials>& credentials);
+
   // Returns true if there are two or more tabs that are not network 2-quiet
   // (i.e. have at least three outstanding requests).
   bool HasRequestsFromMultipleActiveTabs();
@@ -788,10 +798,12 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   bool allow_cross_origin_auth_prompt_;
 
-  std::unique_ptr<ResourceScheduler> scheduler_;
+  std::unique_ptr<network::ResourceScheduler> scheduler_;
 
   // Used to invoke an interceptor for the HTTP header.
   HeaderInterceptorMap http_header_interceptor_map_;
+
+  network::KeepaliveStatisticsRecorder keepalive_statistics_recorder_;
 
   // Points to the registered download handler intercept.
   CreateDownloadHandlerIntercept create_download_handler_intercept_;
@@ -801,6 +813,10 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Task runner for the IO thead.
   scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner_;
+
+  static constexpr int kMaxKeepaliveConnections = 256;
+  static constexpr int kMaxKeepaliveConnectionsPerProcess = 20;
+  static constexpr int kMaxKeepaliveConnectionsPerProcessForFetchAPI = 10;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcherHostImpl);
 };

@@ -1,4 +1,3 @@
-# Copyright 2017 The Chromium OS Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -17,15 +16,16 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_SRC_FILES := \
 	amdgpu.c \
+	amlogic.c \
 	cirrus.c \
 	drv.c \
 	evdi.c \
 	exynos.c \
-	gma500.c \
 	helpers.c \
 	i915.c \
 	marvell.c \
 	mediatek.c \
+	msm.c \
 	nouveau.c \
 	rockchip.c \
 	tegra.c \

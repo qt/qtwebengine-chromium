@@ -15,6 +15,8 @@ if (is_android) {
 
 cast_source_set("browser") {
   sources = [
+    "application_media_capabilities.cc",
+    "application_media_capabilities.h",
     "cast_browser_context.cc",
     "cast_browser_context.h",
     "cast_browser_main_parts.cc",
@@ -44,8 +46,11 @@ cast_source_set("browser") {
     "cast_resource_dispatcher_host_delegate.h",
     "cast_web_contents_manager.cc",
     "cast_web_contents_manager.h",
-    "cast_web_view.cc",
     "cast_web_view.h",
+    "cast_web_view_default.cc",
+    "cast_web_view_default.h",
+    "cast_web_view_factory.cc",
+    "cast_web_view_factory.h",
     "devtools/cast_devtools_manager_delegate.cc",
     "devtools/cast_devtools_manager_delegate.h",
     "devtools/remote_debugging_server.cc",
@@ -83,7 +88,7 @@ cast_source_set("browser") {
     "//base",
     "//base:i18n",
     "//cc",
-    "//chromecast:chromecast_features",
+    "//chromecast:chromecast_buildflags",
     "//chromecast/app:cast_crash_client",
     "//chromecast/app:chromecast_settings",
     "//chromecast/app:resources",
@@ -92,6 +97,7 @@ cast_source_set("browser") {
     "//chromecast/base:cast_version",
     "//chromecast/browser:resources",
     "//chromecast/common",
+    "//chromecast/common:interfaces",
     "//chromecast/common/media",
     "//chromecast/common/media:interfaces",
     "//chromecast/graphics",
@@ -101,6 +107,7 @@ cast_source_set("browser") {
     "//chromecast/media/service",
     "//chromecast/net",
     "//chromecast/service",
+    "//components/download/public/common:public",
     "//components/metrics",
     "//components/metrics:gpu",
     "//components/metrics:net",
@@ -134,8 +141,8 @@ cast_source_set("browser") {
       "android/cast_content_window_android.cc",
       "android/cast_content_window_android.h",
       "android/cast_metrics_helper_android.cc",
-      "android/cast_web_contents_activity.cc",
-      "android/cast_web_contents_activity.h",
+      "android/cast_web_contents_surface_helper.cc",
+      "android/cast_web_contents_surface_helper.h",
     ]
     deps += [
       ":jni_headers",
@@ -145,10 +152,11 @@ cast_source_set("browser") {
     sources += [
       "cast_display_configurator.cc",
       "cast_display_configurator.h",
+      "cast_touch_device_manager.cc",
+      "cast_touch_device_manager.h",
     ]
 
     deps += [
-      "//chromecast/common:interfaces",
       "//mojo/public/cpp/bindings",
       "//ui/aura",
     ]
@@ -198,6 +206,12 @@ cast_source_set("browser") {
 
   if (enable_chromecast_extensions) {
     sources += [
+      "cast_extension_host.cc",
+      "cast_extension_host.h",
+      "cast_web_view_extension.cc",
+      "cast_web_view_extension.h",
+      "extension_request_protocol_handler.cc",
+      "extension_request_protocol_handler.h",
       "extensions/api/identity/identity_api.cc",
       "extensions/api/identity/identity_api.h",
       "extensions/cast_display_info_provider.cc",
@@ -225,6 +239,7 @@ cast_source_set("browser") {
       "//components/pref_registry",
       "//components/storage_monitor",
       "//components/user_prefs:user_prefs",
+      "//components/version_info",
       "//extensions/browser",
       "//extensions/common",
       "//extensions/common/api",
@@ -298,6 +313,8 @@ cast_source_set("test_support") {
   sources = [
     "test/cast_browser_test.cc",
     "test/cast_browser_test.h",
+    "test/fake_web_contents_observer.cc",
+    "test/fake_web_contents_observer.h",
   ]
 
   public_deps = [
@@ -308,6 +325,7 @@ cast_source_set("test_support") {
   deps = [
     "//base",
     "//chromecast/base",
+    "//chromecast/common:interfaces",
     "//content/public/browser",
     "//content/public/common",
     "//testing/gtest",
@@ -327,7 +345,7 @@ cast_source_set("browsertests") {
 
   deps = [
     ":test_support",
-    "//chromecast:chromecast_features",
+    "//chromecast:chromecast_buildflags",
     "//chromecast/base",
     "//chromecast/base:chromecast_switches",
     "//chromecast/base/metrics",
@@ -341,6 +359,7 @@ cast_source_set("unittests") {
 
   sources = [
     "cast_media_blocker_unittest.cc",
+    "cast_touch_device_manager_unittest.cc",
     "devtools/cast_devtools_manager_delegate_unittest.cc",
   ]
 
@@ -350,6 +369,7 @@ cast_source_set("unittests") {
     "//chromecast/base",
     "//content/public/browser",
     "//content/test:test_support",
+    "//ui/events/devices:devices",
     "//ui/gl:test_support",
   ]
 }
@@ -361,7 +381,7 @@ if (is_android) {
       "android/apk/src/org/chromium/chromecast/shell/CastCrashHandler.java",
       "android/apk/src/org/chromium/chromecast/shell/CastMetricsHelper.java",
       "android/apk/src/org/chromium/chromecast/shell/CastSysInfoAndroid.java",
-      "android/apk/src/org/chromium/chromecast/shell/CastWebContentsActivity.java",
+      "android/apk/src/org/chromium/chromecast/shell/CastWebContentsSurfaceHelper.java",
     ]
 
     jni_package = "chromecast"

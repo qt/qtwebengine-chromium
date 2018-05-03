@@ -88,8 +88,8 @@ void computeDisplacement(Extractor ex, const SkVector& scale, SkBitmap* dst,
             SkScalar displX = scaleForColor.fX * ex.getX(c) + scaleAdj.fX;
             SkScalar displY = scaleForColor.fY * ex.getY(c) + scaleAdj.fY;
             // Truncate the displacement values
-            const int srcX = x + SkScalarTruncToInt(displX);
-            const int srcY = y + SkScalarTruncToInt(displY);
+            const int32_t srcX = Sk32_sat_add(x, SkScalarTruncToInt(displX));
+            const int32_t srcY = Sk32_sat_add(y, SkScalarTruncToInt(displY));
             *dstPtr++ = ((srcX < 0) || (srcX >= srcW) || (srcY < 0) || (srcY >= srcH)) ?
                       0 : *(src.getAddr32(srcX, srcY));
         }
@@ -147,12 +147,12 @@ SkDisplacementMapEffect::~SkDisplacementMapEffect() {
 
 sk_sp<SkFlattenable> SkDisplacementMapEffect::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 2);
-    ChannelSelectorType xsel = (ChannelSelectorType)buffer.readInt();
-    ChannelSelectorType ysel = (ChannelSelectorType)buffer.readInt();
+
+    ChannelSelectorType xsel = buffer.read32LE(kLast_ChannelSelectorType);
+    ChannelSelectorType ysel = buffer.read32LE(kLast_ChannelSelectorType);
     SkScalar scale = buffer.readScalar();
-    return Make(xsel, ysel, scale,
-                common.getInput(0), common.getInput(1),
-                &common.cropRect());
+
+    return Make(xsel, ysel, scale, common.getInput(0), common.getInput(1), &common.cropRect());
 }
 
 void SkDisplacementMapEffect::flatten(SkWriteBuffer& buffer) const {

@@ -25,7 +25,6 @@
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_imagerenderer.h"
-#include "xfa/fxfa/cxfa_widgetacc.h"
 #include "xfa/fxfa/parser/cxfa_border.h"
 #include "xfa/fxfa/parser/cxfa_box.h"
 #include "xfa/fxfa/parser/cxfa_image.h"
@@ -403,7 +402,7 @@ bool CXFA_FFWidget::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   m_dwStatus |= XFA_WidgetStatus_Focused;
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Enter;
-  eParam.m_pTarget = m_pNode->GetWidgetAcc();
+  eParam.m_pTarget = m_pNode.Get();
   m_pNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Enter, &eParam);
   return true;
 }
@@ -564,13 +563,8 @@ bool CXFA_FFWidget::IsLayoutRectEmpty() {
 CXFA_FFWidget* CXFA_FFWidget::GetParent() {
   CXFA_Node* pParentNode = m_pNode->GetParent();
   if (pParentNode) {
-    CXFA_WidgetAcc* pParentWidgetAcc =
-        static_cast<CXFA_WidgetAcc*>(pParentNode->GetWidgetAcc());
-    if (pParentWidgetAcc) {
-      CXFA_LayoutProcessor* layout = GetDocView()->GetXFALayout();
-      return static_cast<CXFA_FFWidget*>(
-          layout->GetLayoutItem(pParentWidgetAcc->GetNode()));
-    }
+    CXFA_LayoutProcessor* layout = GetDocView()->GetXFALayout();
+    return static_cast<CXFA_FFWidget*>(layout->GetLayoutItem(pParentNode));
   }
   return nullptr;
 }
@@ -624,7 +618,7 @@ void CXFA_FFWidget::EventKillFocus() {
   }
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Exit;
-  eParam.m_pTarget = m_pNode->GetWidgetAcc();
+  eParam.m_pTarget = m_pNode.Get();
   m_pNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Exit, &eParam);
 }
 

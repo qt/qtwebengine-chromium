@@ -62,6 +62,10 @@ enum AccessibilityRole {
   kInlineTextBoxRole,  // No mapping to ARIA role.
   kInputTimeRole,      // No mapping to ARIA role.
   kLabelRole,
+  kLayoutTableRole,
+  kLayoutTableCellRole,
+  kLayoutTableColumnRole,
+  kLayoutTableRowRole,
   kLegendRole,     // No mapping to ARIA role.
   kLineBreakRole,  // No mapping to ARIA role.
   kLinkRole,
@@ -194,6 +198,12 @@ enum AccessibilityExpanded {
   kExpandedUndefined = 0,
   kExpandedCollapsed,
   kExpandedExpanded,
+};
+
+enum AccessibilitySelectedState {
+  kSelectedStateUndefined = 0,
+  kSelectedStateFalse,
+  kSelectedStateTrue,
 };
 
 enum AriaCurrentState {

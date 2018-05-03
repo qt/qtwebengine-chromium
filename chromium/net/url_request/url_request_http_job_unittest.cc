@@ -40,6 +40,7 @@
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
+#include "net/websockets/websocket_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -189,18 +190,18 @@ TEST_F(URLRequestHttpJobSetUpSourceTest, UnknownEncoding) {
 class URLRequestHttpJobWithProxy {
  public:
   explicit URLRequestHttpJobWithProxy(
-      std::unique_ptr<ProxyService> proxy_service)
-      : proxy_service_(std::move(proxy_service)),
+      std::unique_ptr<ProxyResolutionService> proxy_resolution_service)
+      : proxy_resolution_service_(std::move(proxy_resolution_service)),
         context_(new TestURLRequestContext(true)) {
     context_->set_client_socket_factory(&socket_factory_);
     context_->set_network_delegate(&network_delegate_);
-    context_->set_proxy_service(proxy_service_.get());
+    context_->set_proxy_resolution_service(proxy_resolution_service_.get());
     context_->Init();
   }
 
   MockClientSocketFactory socket_factory_;
   TestNetworkDelegate network_delegate_;
-  std::unique_ptr<ProxyService> proxy_service_;
+  std::unique_ptr<ProxyResolutionService> proxy_resolution_service_;
   std::unique_ptr<TestURLRequestContext> context_;
 
  private:
@@ -258,8 +259,9 @@ TEST(URLRequestHttpJobWithProxy, TestSuccessfulWithOneProxy) {
   const ProxyServer proxy_server =
       ProxyServer::FromURI("http://origin.net:80", ProxyServer::SCHEME_HTTP);
 
-  std::unique_ptr<ProxyService> proxy_service =
-      ProxyService::CreateFixedFromPacResult(proxy_server.ToPacString());
+  std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
+      ProxyResolutionService::CreateFixedFromPacResult(
+          proxy_server.ToPacString());
 
   MockWrite writes[] = {MockWrite(kSimpleProxyGetMockWrite)};
   MockRead reads[] = {MockRead(SYNCHRONOUS, ERR_CONNECTION_RESET)};
@@ -267,7 +269,8 @@ TEST(URLRequestHttpJobWithProxy, TestSuccessfulWithOneProxy) {
   StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
                                        arraysize(writes));
 
-  URLRequestHttpJobWithProxy http_job_with_proxy(std::move(proxy_service));
+  URLRequestHttpJobWithProxy http_job_with_proxy(
+      std::move(proxy_resolution_service));
   http_job_with_proxy.socket_factory_.AddSocketDataProvider(&socket_data);
 
   TestDelegate delegate;
@@ -304,8 +307,8 @@ TEST(URLRequestHttpJobWithProxy,
 
   // Connection to |proxy_server| would fail. Request should be fetched over
   // DIRECT.
-  std::unique_ptr<ProxyService> proxy_service =
-      ProxyService::CreateFixedFromPacResult(
+  std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
+      ProxyResolutionService::CreateFixedFromPacResult(
           proxy_server.ToPacString() + "; " +
           ProxyServer::Direct().ToPacString());
 
@@ -321,7 +324,8 @@ TEST(URLRequestHttpJobWithProxy,
   StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
                                        arraysize(writes));
 
-  URLRequestHttpJobWithProxy http_job_with_proxy(std::move(proxy_service));
+  URLRequestHttpJobWithProxy http_job_with_proxy(
+      std::move(proxy_resolution_service));
   http_job_with_proxy.socket_factory_.AddSocketDataProvider(&connect_data_1);
   http_job_with_proxy.socket_factory_.AddSocketDataProvider(&socket_data);
 
@@ -1512,142 +1516,27 @@ TEST_F(URLRequestHttpJobTest, AndroidCleartextPermittedTest) {
 }
 #endif
 
-// This base class just serves to set up some things before the TestURLRequest
-// constructor is called.
-class URLRequestHttpJobWebSocketTestBase : public ::testing::Test {
- protected:
-  URLRequestHttpJobWebSocketTestBase() : socket_data_(nullptr, 0, nullptr, 0),
-                                         context_(true) {
-    // A Network Delegate is required for the WebSocketHandshakeStreamBase
-    // object to be passed on to the HttpNetworkTransaction.
-    context_.set_network_delegate(&network_delegate_);
-
-    // Attempting to create real ClientSocketHandles is not going to work out so
-    // well. Set up a fake socket factory.
-    socket_factory_.AddSocketDataProvider(&socket_data_);
-    context_.set_client_socket_factory(&socket_factory_);
-    context_.Init();
-  }
-
-  StaticSocketDataProvider socket_data_;
-  TestNetworkDelegate network_delegate_;
-  MockClientSocketFactory socket_factory_;
-  TestURLRequestContext context_;
-};
-
-class URLRequestHttpJobWebSocketTest
-    : public URLRequestHttpJobWebSocketTestBase {
- protected:
-  URLRequestHttpJobWebSocketTest()
-      : req_(context_.CreateRequest(GURL("ws://www.example.com"),
-                                    DEFAULT_PRIORITY,
-                                    &delegate_,
-                                    TRAFFIC_ANNOTATION_FOR_TESTS)) {}
-
-  TestDelegate delegate_;
-  std::unique_ptr<URLRequest> req_;
-};
-
-class MockCreateHelper : public WebSocketHandshakeStreamBase::CreateHelper {
- public:
-  // GoogleMock does not appear to play nicely with move-only types like
-  // std::unique_ptr, so this forwarding method acts as a workaround.
-  std::unique_ptr<WebSocketHandshakeStreamBase> CreateBasicStream(
-      std::unique_ptr<ClientSocketHandle> connection,
-      bool using_proxy) override {
-    // Discard the arguments since we don't need them anyway.
-    return base::WrapUnique(CreateBasicStreamMock());
-  }
-
-  MOCK_METHOD0(CreateBasicStreamMock,
-               WebSocketHandshakeStreamBase*());
-};
-
 #if BUILDFLAG(ENABLE_WEBSOCKETS)
 
-class FakeWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
- public:
-  FakeWebSocketHandshakeStream() : initialize_stream_was_called_(false) {}
-
-  bool initialize_stream_was_called() const {
-    return initialize_stream_was_called_;
+class URLRequestHttpJobWebSocketTest : public ::testing::Test {
+ protected:
+  URLRequestHttpJobWebSocketTest() : context_(true) {
+    context_.set_network_delegate(&network_delegate_);
+    context_.set_client_socket_factory(&socket_factory_);
+    context_.Init();
+    req_ =
+        context_.CreateRequest(GURL("ws://www.example.org"), DEFAULT_PRIORITY,
+                               &delegate_, TRAFFIC_ANNOTATION_FOR_TESTS);
   }
 
-  // Fake implementation of HttpStreamBase methods.
-  int InitializeStream(const HttpRequestInfo* request_info,
-                       bool can_send_early,
-                       RequestPriority priority,
-                       const NetLogWithSource& net_log,
-                       const CompletionCallback& callback) override {
-    initialize_stream_was_called_ = true;
-    return ERR_IO_PENDING;
-  }
+  // A Network Delegate is required for the WebSocketHandshakeStreamBase
+  // object to be passed on to the HttpNetworkTransaction.
+  TestNetworkDelegate network_delegate_;
 
-  int SendRequest(const HttpRequestHeaders& request_headers,
-                  HttpResponseInfo* response,
-                  const CompletionCallback& callback) override {
-    return ERR_IO_PENDING;
-  }
-
-  int ReadResponseHeaders(const CompletionCallback& callback) override {
-    return ERR_IO_PENDING;
-  }
-
-  int ReadResponseBody(IOBuffer* buf,
-                       int buf_len,
-                       const CompletionCallback& callback) override {
-    return ERR_IO_PENDING;
-  }
-
-  void Close(bool not_reusable) override {}
-
-  bool IsResponseBodyComplete() const override { return false; }
-
-  bool IsConnectionReused() const override { return false; }
-  void SetConnectionReused() override {}
-
-  bool CanReuseConnection() const override { return false; }
-
-  int64_t GetTotalReceivedBytes() const override { return 0; }
-  int64_t GetTotalSentBytes() const override { return 0; }
-
-  bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override {
-    return false;
-  }
-
-  bool GetAlternativeService(
-      AlternativeService* alternative_service) const override {
-    return false;
-  }
-
-  void GetSSLInfo(SSLInfo* ssl_info) override {}
-
-  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override {}
-
-  bool GetRemoteEndpoint(IPEndPoint* endpoint) override { return false; }
-
-  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
-                                 TokenBindingType tb_type,
-                                 std::vector<uint8_t>* out) override {
-    ADD_FAILURE();
-    return ERR_NOT_IMPLEMENTED;
-  }
-
-  void Drain(HttpNetworkSession* session) override {}
-
-  void PopulateNetErrorDetails(NetErrorDetails* details) override { return; }
-
-  void SetPriority(RequestPriority priority) override {}
-
-  HttpStream* RenewStreamForAuth() override { return nullptr; }
-
-  // Fake implementation of WebSocketHandshakeStreamBase method(s)
-  std::unique_ptr<WebSocketStream> Upgrade() override {
-    return std::unique_ptr<WebSocketStream>();
-  }
-
- private:
-  bool initialize_stream_was_called_;
+  TestURLRequestContext context_;
+  MockClientSocketFactory socket_factory_;
+  TestDelegate delegate_;
+  std::unique_ptr<URLRequest> req_;
 };
 
 TEST_F(URLRequestHttpJobWebSocketTest, RejectedWithoutCreateHelper) {
@@ -1657,21 +1546,51 @@ TEST_F(URLRequestHttpJobWebSocketTest, RejectedWithoutCreateHelper) {
 }
 
 TEST_F(URLRequestHttpJobWebSocketTest, CreateHelperPassedThrough) {
-  std::unique_ptr<MockCreateHelper> create_helper =
-      std::make_unique<::testing::StrictMock<MockCreateHelper>>();
-  FakeWebSocketHandshakeStream* fake_handshake_stream(
-      new FakeWebSocketHandshakeStream);
-  // Ownership of fake_handshake_stream is transferred when CreateBasicStream()
-  // is called.
-  EXPECT_CALL(*create_helper, CreateBasicStreamMock())
-      .WillOnce(Return(fake_handshake_stream));
+  HttpRequestHeaders headers;
+  headers.SetHeader("Connection", "Upgrade");
+  headers.SetHeader("Upgrade", "websocket");
+  headers.SetHeader("Origin", "http://www.example.org");
+  headers.SetHeader("Sec-WebSocket-Version", "13");
+  req_->SetExtraRequestHeaders(headers);
+
+  MockWrite writes[] = {
+      MockWrite("GET / HTTP/1.1\r\n"
+                "Host: www.example.org\r\n"
+                "Connection: Upgrade\r\n"
+                "Upgrade: websocket\r\n"
+                "Origin: http://www.example.org\r\n"
+                "Sec-WebSocket-Version: 13\r\n"
+                "User-Agent:\r\n"
+                "Accept-Encoding: gzip, deflate\r\n"
+                "Accept-Language: en-us,fr\r\n"
+                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                "Sec-WebSocket-Extensions: permessage-deflate; "
+                "client_max_window_bits\r\n\r\n")};
+
+  MockRead reads[] = {
+      MockRead("HTTP/1.1 101 Switching Protocols\r\n"
+               "Upgrade: websocket\r\n"
+               "Connection: Upgrade\r\n"
+               "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"),
+      MockRead(ASYNC, 0)};
+
+  StaticSocketDataProvider data(reads, arraysize(reads), writes,
+                                arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&data);
+
+  auto websocket_stream_create_helper =
+      std::make_unique<TestWebSocketHandshakeStreamCreateHelper>();
+
   req_->SetUserData(WebSocketHandshakeStreamBase::CreateHelper::DataKey(),
-                    std::move(create_helper));
+                    std::move(websocket_stream_create_helper));
   req_->SetLoadFlags(LOAD_DISABLE_CACHE);
   req_->Start();
   base::RunLoop().RunUntilIdle();
-  EXPECT_THAT(delegate_.request_status(), IsError(ERR_IO_PENDING));
-  EXPECT_TRUE(fake_handshake_stream->initialize_stream_was_called());
+  EXPECT_THAT(delegate_.request_status(), IsOk());
+  EXPECT_TRUE(delegate_.response_completed());
+
+  EXPECT_TRUE(data.AllWriteDataConsumed());
+  EXPECT_TRUE(data.AllReadDataConsumed());
 }
 
 #endif  // BUILDFLAG(ENABLE_WEBSOCKETS)

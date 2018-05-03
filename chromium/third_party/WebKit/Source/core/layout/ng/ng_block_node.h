@@ -40,7 +40,7 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
   // special constraint spaces -- infinite available size for max content, zero
   // available size for min content, and percentage resolution size zero for
   // both.
-  MinMaxSize ComputeMinMaxSize();
+  MinMaxSize ComputeMinMaxSize(const MinMaxSizeInput&);
 
   NGBoxStrut GetScrollbarSizes() const;
 
@@ -62,6 +62,7 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
   void SaveStaticOffsetForLegacy(const NGLogicalOffset&,
                                  const LayoutObject* offset_container);
 
+  static bool CanUseNewLayout(const LayoutBox&);
   bool CanUseNewLayout() const;
 
   String ToString() const;

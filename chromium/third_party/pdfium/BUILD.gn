@@ -132,6 +132,7 @@ jumbo_static_library("pdfium") {
     "fpdfsdk/fpdf_dataavail.cpp",
     "fpdfsdk/fpdf_ext.cpp",
     "fpdfsdk/fpdf_flatten.cpp",
+    "fpdfsdk/fpdf_ppo.cpp",
     "fpdfsdk/fpdf_progressive.cpp",
     "fpdfsdk/fpdf_searchex.cpp",
     "fpdfsdk/fpdf_structtree.cpp",
@@ -146,7 +147,6 @@ jumbo_static_library("pdfium") {
     "fpdfsdk/fpdfeditpath.cpp",
     "fpdfsdk/fpdfedittext.cpp",
     "fpdfsdk/fpdfformfill.cpp",
-    "fpdfsdk/fpdfppo.cpp",
     "fpdfsdk/fpdfsave.cpp",
     "fpdfsdk/fpdftext.cpp",
     "fpdfsdk/fpdfview.cpp",
@@ -196,6 +196,7 @@ jumbo_static_library("pdfium") {
     ":pwl",
     "third_party:bigint",
     "third_party:pdfium_base",
+    "third_party:skia_shared",
   ]
 
   public_deps = [
@@ -255,10 +256,6 @@ jumbo_static_library("test_support") {
     deps += [
       "//v8",
       "//v8:v8_libplatform",
-    ]
-    include_dirs += [
-      "//v8",
-      "//v8/include",
     ]
     configs += [ "//v8:external_startup_data" ]
   }
@@ -762,6 +759,12 @@ jumbo_static_library("fxcodec") {
 
   if (pdf_enable_xfa) {
     sources += [
+      "core/fxcodec/bmp/cfx_bmpcontext.cpp",
+      "core/fxcodec/bmp/cfx_bmpcontext.h",
+      "core/fxcodec/bmp/cfx_bmpdecompressor.cpp",
+      "core/fxcodec/bmp/cfx_bmpdecompressor.h",
+      "core/fxcodec/bmp/fx_bmp.cpp",
+      "core/fxcodec/bmp/fx_bmp.h",
       "core/fxcodec/codec/ccodec_bmpmodule.cpp",
       "core/fxcodec/codec/ccodec_bmpmodule.h",
       "core/fxcodec/codec/ccodec_gifmodule.cpp",
@@ -778,8 +781,6 @@ jumbo_static_library("fxcodec") {
       "core/fxcodec/gif/cfx_gifcontext.h",
       "core/fxcodec/gif/cfx_lzwdecompressor.cpp",
       "core/fxcodec/gif/cfx_lzwdecompressor.h",
-      "core/fxcodec/lbmp/fx_bmp.cpp",
-      "core/fxcodec/lbmp/fx_bmp.h",
     ]
     deps += [
       "third_party:fx_tiff",
@@ -903,8 +904,8 @@ jumbo_static_library("fxcrt") {
       "core/fxcrt/css/cfx_csscomputedstyle.h",
       "core/fxcrt/css/cfx_csscustomproperty.cpp",
       "core/fxcrt/css/cfx_csscustomproperty.h",
-      "core/fxcrt/css/cfx_cssdatatable.cpp",
-      "core/fxcrt/css/cfx_cssdatatable.h",
+      "core/fxcrt/css/cfx_cssdata.cpp",
+      "core/fxcrt/css/cfx_cssdata.h",
       "core/fxcrt/css/cfx_cssdeclaration.cpp",
       "core/fxcrt/css/cfx_cssdeclaration.h",
       "core/fxcrt/css/cfx_cssenumvalue.cpp",
@@ -1083,11 +1084,10 @@ jumbo_static_library("fxge") {
     ":fxcrt",
   ]
 
-  defines = [ "DEFINE_PS_TABLES" ]
   if (is_component_build || use_system_freetype) {
     # ft_adobe_glyph_list is not exported from the Freetype shared library so we
     # need it defined in component builds and builds using system freetype.
-    defines += [ "DEFINE_PS_TABLES_DATA" ]
+    defines = [ "DEFINE_PS_TABLES_DATA" ]
   }
 
   if (pdf_enable_xfa) {
@@ -1194,6 +1194,10 @@ jumbo_static_library("fxjs") {
       "fxjs/CJX_Define.h",
       "fxjs/JS_Define.cpp",
       "fxjs/JS_Define.h",
+      "fxjs/cfx_v8.cpp",
+      "fxjs/cfx_v8.h",
+      "fxjs/cfxjs_engine.cpp",
+      "fxjs/cfxjs_engine.h",
       "fxjs/cjs_annot.cpp",
       "fxjs/cjs_annot.h",
       "fxjs/cjs_app.cpp",
@@ -1210,8 +1214,6 @@ jumbo_static_library("fxjs") {
       "fxjs/cjs_display.h",
       "fxjs/cjs_document.cpp",
       "fxjs/cjs_document.h",
-      "fxjs/cjs_embedobj.cpp",
-      "fxjs/cjs_embedobj.h",
       "fxjs/cjs_event.cpp",
       "fxjs/cjs_event.h",
       "fxjs/cjs_event_context.cpp",
@@ -1262,12 +1264,8 @@ jumbo_static_library("fxjs") {
       "fxjs/cjs_timerobj.h",
       "fxjs/cjs_util.cpp",
       "fxjs/cjs_util.h",
-      "fxjs/cjs_v8.cpp",
-      "fxjs/cjs_v8.h",
       "fxjs/cjs_zoomtype.cpp",
       "fxjs/cjs_zoomtype.h",
-      "fxjs/fxjs_v8.cpp",
-      "fxjs/fxjs_v8.h",
       "fxjs/global_timer.cpp",
       "fxjs/global_timer.h",
       "fxjs/js_resources.cpp",
@@ -1279,10 +1277,6 @@ jumbo_static_library("fxjs") {
       "//v8:v8_libplatform",
     ]
     configs += [ "//v8:external_startup_data" ]
-    include_dirs = [
-      "//v8",
-      "//v8/include",
-    ]
     public_deps = [
       "//v8",
     ]
@@ -1299,6 +1293,7 @@ jumbo_static_library("fxjs") {
         "fxjs/cfxjse_engine.h",
         "fxjs/cfxjse_formcalc_context.cpp",
         "fxjs/cfxjse_formcalc_context.h",
+        "fxjs/cfxjse_isolatetracker.cpp",
         "fxjs/cfxjse_isolatetracker.h",
         "fxjs/cfxjse_resolveprocessor.cpp",
         "fxjs/cfxjse_resolveprocessor.h",
@@ -1806,15 +1801,39 @@ if (pdf_enable_xfa) {
     configs += [ ":pdfium_core_config" ]
   }
 
-  # TODO(crbug.com/pdfium/964): Support jumbo builds.
-  static_library("xfa") {
+  group("xfa") {
+    deps = [
+      ":xfa_fde",
+      ":xfa_fgas",
+      ":xfa_fwl",
+      ":xfa_fxfa",
+      ":xfa_fxfa_fm2js",
+      ":xfa_fxfa_parser",
+      ":xfa_fxgraphics",
+    ]
+  }
+
+  jumbo_static_library("xfa_fde") {
     sources = [
+      "xfa/fde/cfde_data.h",
       "xfa/fde/cfde_texteditengine.cpp",
       "xfa/fde/cfde_texteditengine.h",
       "xfa/fde/cfde_textout.cpp",
       "xfa/fde/cfde_textout.h",
       "xfa/fde/cfde_wordbreak_data.cpp",
       "xfa/fde/cfde_wordbreak_data.h",
+    ]
+    deps = [
+      ":fxcrt",
+    ]
+    configs += [
+      ":pdfium_core_config",
+      ":xfa_warnings",
+    ]
+  }
+
+  jumbo_static_library("xfa_fgas") {
+    sources = [
       "xfa/fgas/crt/cfgas_formatstring.cpp",
       "xfa/fgas/crt/cfgas_formatstring.h",
       "xfa/fgas/font/cfgas_defaultfontmanager.cpp",
@@ -1839,6 +1858,18 @@ if (pdf_enable_xfa) {
       "xfa/fgas/layout/cfx_rtfbreak.h",
       "xfa/fgas/layout/cfx_txtbreak.cpp",
       "xfa/fgas/layout/cfx_txtbreak.h",
+    ]
+    deps = [
+      ":fxcrt",
+    ]
+    configs += [
+      ":pdfium_core_config",
+      ":xfa_warnings",
+    ]
+  }
+
+  jumbo_static_library("xfa_fwl") {
+    sources = [
       "xfa/fwl/cfwl_app.cpp",
       "xfa/fwl/cfwl_app.h",
       "xfa/fwl/cfwl_barcode.cpp",
@@ -1955,6 +1986,20 @@ if (pdf_enable_xfa) {
       "xfa/fwl/theme/cfwl_utils.h",
       "xfa/fwl/theme/cfwl_widgettp.cpp",
       "xfa/fwl/theme/cfwl_widgettp.h",
+    ]
+    deps = [
+      ":fxbarcode",
+      ":fxcrt",
+      ":xfa_fgas",
+    ]
+    configs += [
+      ":pdfium_core_config",
+      ":xfa_warnings",
+    ]
+  }
+
+  jumbo_static_library("xfa_fxfa") {
+    sources = [
       "xfa/fxfa/cxfa_eventparam.cpp",
       "xfa/fxfa/cxfa_eventparam.h",
       "xfa/fxfa/cxfa_ffapp.cpp",
@@ -1973,8 +2018,8 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/cxfa_ffdoc.h",
       "xfa/fxfa/cxfa_ffdocview.cpp",
       "xfa/fxfa/cxfa_ffdocview.h",
-      "xfa/fxfa/cxfa_ffdraw.cpp",
-      "xfa/fxfa/cxfa_ffdraw.h",
+      "xfa/fxfa/cxfa_ffdropdown.cpp",
+      "xfa/fxfa/cxfa_ffdropdown.h",
       "xfa/fxfa/cxfa_ffexclgroup.cpp",
       "xfa/fxfa/cxfa_ffexclgroup.h",
       "xfa/fxfa/cxfa_fffield.cpp",
@@ -2001,8 +2046,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/cxfa_ffrectangle.h",
       "xfa/fxfa/cxfa_ffsignature.cpp",
       "xfa/fxfa/cxfa_ffsignature.h",
-      "xfa/fxfa/cxfa_ffsubform.cpp",
-      "xfa/fxfa/cxfa_ffsubform.h",
       "xfa/fxfa/cxfa_fftext.cpp",
       "xfa/fxfa/cxfa_fftext.h",
       "xfa/fxfa/cxfa_fftextedit.cpp",
@@ -2025,6 +2068,8 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/cxfa_loadercontext.h",
       "xfa/fxfa/cxfa_pieceline.cpp",
       "xfa/fxfa/cxfa_pieceline.h",
+      "xfa/fxfa/cxfa_readynodeiterator.cpp",
+      "xfa/fxfa/cxfa_readynodeiterator.h",
       "xfa/fxfa/cxfa_rendercontext.cpp",
       "xfa/fxfa/cxfa_rendercontext.h",
       "xfa/fxfa/cxfa_textlayout.cpp",
@@ -2041,10 +2086,23 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/cxfa_texttabstopscontext.h",
       "xfa/fxfa/cxfa_textuserdata.cpp",
       "xfa/fxfa/cxfa_textuserdata.h",
-      "xfa/fxfa/cxfa_widgetacc.cpp",
-      "xfa/fxfa/cxfa_widgetacc.h",
-      "xfa/fxfa/cxfa_widgetacciterator.cpp",
-      "xfa/fxfa/cxfa_widgetacciterator.h",
+      "xfa/fxfa/fxfa.h",
+      "xfa/fxfa/fxfa_basic.h",
+    ]
+    deps = [
+      ":fxcrt",
+      ":fxjs",
+      ":xfa_fde",
+      ":xfa_fgas",
+    ]
+    configs += [
+      ":pdfium_core_config",
+      ":xfa_warnings",
+    ]
+  }
+
+  jumbo_static_library("xfa_fxfa_fm2js") {
+    sources = [
       "xfa/fxfa/fm2js/cxfa_fmexpression.cpp",
       "xfa/fxfa/fm2js/cxfa_fmexpression.h",
       "xfa/fxfa/fm2js/cxfa_fmlexer.cpp",
@@ -2055,8 +2113,18 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/fm2js/cxfa_fmsimpleexpression.h",
       "xfa/fxfa/fm2js/cxfa_fmtojavascriptdepth.cpp",
       "xfa/fxfa/fm2js/cxfa_fmtojavascriptdepth.h",
-      "xfa/fxfa/fxfa.h",
-      "xfa/fxfa/fxfa_basic.h",
+    ]
+    deps = [
+      "//third_party/icu:icuuc",
+    ]
+    configs += [
+      ":pdfium_core_config",
+      ":xfa_warnings",
+    ]
+  }
+
+  jumbo_static_library("xfa_fxfa_parser") {
+    sources = [
       "xfa/fxfa/parser/cscript_datawindow.cpp",
       "xfa/fxfa/parser/cscript_datawindow.h",
       "xfa/fxfa/parser/cscript_eventpseudomodel.cpp",
@@ -2450,6 +2518,8 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_nodeiteratortemplate.h",
       "xfa/fxfa/parser/cxfa_nodelocale.cpp",
       "xfa/fxfa/parser/cxfa_nodelocale.h",
+      "xfa/fxfa/parser/cxfa_nodeowner.cpp",
+      "xfa/fxfa/parser/cxfa_nodeowner.h",
       "xfa/fxfa/parser/cxfa_numberofcopies.cpp",
       "xfa/fxfa/parser/cxfa_numberofcopies.h",
       "xfa/fxfa/parser/cxfa_numberpattern.cpp",
@@ -2747,6 +2817,22 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/xfa_resolvenode_rs.h",
       "xfa/fxfa/parser/xfa_utils.cpp",
       "xfa/fxfa/parser/xfa_utils.h",
+    ]
+    deps = [
+      ":fxcrt",
+      ":fxjs",
+      ":xfa_fde",
+      ":xfa_fgas",
+      ":xfa_fxfa",
+    ]
+    configs += [
+      ":pdfium_core_config",
+      ":xfa_warnings",
+    ]
+  }
+
+  jumbo_static_library("xfa_fxgraphics") {
+    sources = [
       "xfa/fxgraphics/cxfa_gecolor.cpp",
       "xfa/fxgraphics/cxfa_gecolor.h",
       "xfa/fxgraphics/cxfa_gepath.cpp",
@@ -2757,12 +2843,6 @@ if (pdf_enable_xfa) {
       "xfa/fxgraphics/cxfa_geshading.h",
       "xfa/fxgraphics/cxfa_graphics.cpp",
       "xfa/fxgraphics/cxfa_graphics.h",
-    ]
-    include_dirs = [ "." ]
-    deps = [
-      ":fxbarcode",
-      ":fxcrt",
-      ":fxjs",
     ]
     configs += [
       ":pdfium_core_config",
@@ -2871,13 +2951,14 @@ test("pdfium_unittests") {
   }
   if (pdf_enable_v8) {
     sources += [
+      "fxjs/cfx_v8_unittest.cpp",
+      "fxjs/cfx_v8_unittest.h",
+      "fxjs/cfxjs_engine_unittest.cpp",
       "fxjs/cjs_publicmethods_unittest.cpp",
       "fxjs/cjs_util_unittest.cpp",
     ]
-    include_dirs += [
-      "//v8",
-      "//v8/include",
-    ]
+    deps += [ ":fxjs" ]
+    configs += [ "//v8:external_startup_data" ]
   }
   configs += [ ":pdfium_core_config" ]
   if (is_android) {
@@ -2937,8 +3018,8 @@ test("pdfium_embeddertests") {
 
   if (pdf_enable_v8) {
     sources += [
+      "fxjs/cfxjs_engine_embeddertest.cpp",
       "fxjs/cjs_publicmethods_embeddertest.cpp",
-      "fxjs/fxjs_v8_embeddertest.cpp",
       "testing/js_embedder_test.cpp",
       "testing/js_embedder_test.h",
     ]

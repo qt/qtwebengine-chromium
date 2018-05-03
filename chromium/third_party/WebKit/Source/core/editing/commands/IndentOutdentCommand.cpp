@@ -32,6 +32,7 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/editing/commands/InsertListCommand.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
@@ -91,8 +92,9 @@ bool IndentOutdentCommand::TryIndentingAsListItem(const Position& start,
   // We should calculate visible range in list item because inserting new
   // list element will change visibility of list item, e.g. :first-child
   // CSS selector.
-  HTMLElement* new_list = ToHTMLElement(GetDocument().createElement(
-      list_element->TagQName(), kCreatedByCloneNode));
+  HTMLElement* new_list = ToHTMLElement(GetDocument().CreateElement(
+      list_element->TagQName(), CreateElementFlags::ByCloneNode(),
+      g_null_atom));
   InsertNodeBefore(new_list, selected_list_item, editing_state);
   if (editing_state->IsAborted())
     return false;
@@ -292,8 +294,25 @@ void IndentOutdentCommand::OutdentParagraph(EditingState* editing_state) {
   if (Element* enclosing_block_flow = EnclosingBlock(
           visible_start_of_paragraph.DeepEquivalent().AnchorNode())) {
     if (enclosing_block_flow != enclosing_element) {
-      split_blockquote_node =
-          SplitTreeToNode(enclosing_block_flow, enclosing_element, true);
+      // We should check if the blockquotes are nested, as nested blockquotes
+      // may be at different indentations.
+      const Position& previous_element =
+          PreviousCandidate(visible_start_of_paragraph.DeepEquivalent());
+      HTMLElement* const previous_element_is_blockquote =
+          ToHTMLElement(EnclosingNodeOfType(previous_element,
+                                            &IsHTMLListOrBlockquoteElement));
+      const bool is_previous_blockquote_same =
+          !previous_element_is_blockquote ||
+          (enclosing_element == previous_element_is_blockquote);
+      const bool split_ancestor = true;
+      if (is_previous_blockquote_same) {
+        split_blockquote_node = SplitTreeToNode(
+            enclosing_block_flow, enclosing_element, split_ancestor);
+      } else {
+        SplitTreeToNode(
+            visible_start_of_paragraph.DeepEquivalent().AnchorNode(),
+            enclosing_element, split_ancestor);
+      }
     } else {
       // We split the blockquote at where we start outdenting.
       Node* highest_inline_node = HighestEnclosingNodeOfType(

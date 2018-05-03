@@ -18,14 +18,15 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "cc/base/histograms.h"
-#include "cc/base/switches.h"
 #include "cc/raster/single_thread_task_graph_runner.h"
 #include "cc/raster/task_graph_runner.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/frame_sinks/delay_based_time_source.h"
 #include "components/viz/common/gl_helper.h"
 #include "components/viz/common/gpu/vulkan_in_process_context_provider.h"
+#include "components/viz/common/switches.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/host/renderer_settings_creation.h"
 #include "components/viz/service/display/display.h"
@@ -47,7 +48,6 @@
 #include "content/browser/compositor/software_browser_compositor_output_surface.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
-#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu_stream_constants.h"
 #include "content/public/common/content_switches.h"
@@ -64,6 +64,7 @@
 #include "services/service_manager/runner/common/client_util.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 #include "third_party/khronos/GLES2/gl2.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_switches.h"
@@ -196,7 +197,7 @@ GpuProcessTransportFactory::GpuProcessTransportFactory(
     }
   }
 
-  if (command_line->HasSwitch(cc::switches::kRunAllCompositorStagesBeforeDraw))
+  if (command_line->HasSwitch(switches::kRunAllCompositorStagesBeforeDraw))
     wait_for_all_pipeline_stages_before_draw_ = true;
 
   task_graph_runner_->Start("CompositorTileWorker1",
@@ -231,7 +232,7 @@ GpuProcessTransportFactory::CreateSoftwareOutputDevice(
     return base::WrapUnique(new viz::SoftwareOutputDevice);
 
 #if defined(USE_AURA)
-  if (switches::IsMusHostingViz()) {
+  if (base::FeatureList::IsEnabled(features::kMash)) {
     NOTREACHED();
     return nullptr;
   }
@@ -633,21 +634,13 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   // The |delegated_output_surface| is given back to the compositor, it
   // delegates to the Display as its root surface. Importantly, it shares the
   // same ContextProvider as the Display's output surface.
-  auto layer_tree_frame_sink =
-      vulkan_context_provider
-          ? std::make_unique<viz::DirectLayerTreeFrameSink>(
-                compositor->frame_sink_id(), GetHostFrameSinkManager(),
-                GetFrameSinkManager(), data->display.get(),
-                data->display_client.get(),
-                static_cast<scoped_refptr<viz::VulkanContextProvider>>(
-                    vulkan_context_provider))
-          : std::make_unique<viz::DirectLayerTreeFrameSink>(
-                compositor->frame_sink_id(), GetHostFrameSinkManager(),
-                GetFrameSinkManager(), data->display.get(),
-                data->display_client.get(), context_provider,
-                shared_worker_context_provider_, compositor->task_runner(),
-                GetGpuMemoryBufferManager(),
-                viz::ServerSharedBitmapManager::current());
+  auto layer_tree_frame_sink = std::make_unique<viz::DirectLayerTreeFrameSink>(
+      compositor->frame_sink_id(), GetHostFrameSinkManager(),
+      GetFrameSinkManager(), data->display.get(), data->display_client.get(),
+      context_provider, shared_worker_context_provider_,
+      compositor->task_runner(), GetGpuMemoryBufferManager(),
+      viz::ServerSharedBitmapManager::current(),
+      features::IsVizHitTestingEnabled());
   data->display->Resize(compositor->size());
   data->display->SetOutputIsSecure(data->output_is_secure);
   compositor->SetLayerTreeFrameSink(std::move(layer_tree_frame_sink));
@@ -906,11 +899,6 @@ void GpuProcessTransportFactory::SetOutputIsSecure(ui::Compositor* compositor,
   data->output_is_secure = secure;
   if (data->display)
     data->display->SetOutputIsSecure(secure);
-}
-
-const viz::ResourceSettings& GpuProcessTransportFactory::GetResourceSettings()
-    const {
-  return renderer_settings_.resource_settings;
 }
 
 void GpuProcessTransportFactory::AddObserver(

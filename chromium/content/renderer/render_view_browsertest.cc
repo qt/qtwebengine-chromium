@@ -22,7 +22,6 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "cc/trees/layer_tree_host.h"
-#include "content/common/content_switches_internal.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/common/frame_replication_state.h"
@@ -37,6 +36,7 @@
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/navigation_state.h"
@@ -61,7 +61,7 @@
 #include "net/base/net_errors.h"
 #include "net/cert/cert_status_flags.h"
 #include "services/network/public/cpp/resource_request_body.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
@@ -90,6 +90,13 @@
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/range/range.h"
 #include "ui/native_theme/native_theme_features.h"
+
+#if defined(OS_ANDROID)
+#include "third_party/WebKit/public/platform/WebCoalescedInputEvent.h"
+#include "third_party/WebKit/public/platform/WebGestureDevice.h"
+#include "third_party/WebKit/public/platform/WebGestureEvent.h"
+#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -171,13 +178,6 @@ class WebUITestWebUIControllerFactory : public WebUIControllerFactory {
     return HasWebUIScheme(url);
   }
 };
-
-// Timestamps logged close to each other under low resolution timers
-// are more likely to record the same value. Allow for this by relaxing
-// constraints on systems with these timers.
-bool TimeTicksGT(const base::TimeTicks& x, const base::TimeTicks& y) {
-  return base::TimeTicks::IsHighResolution() ? x > y : x >= y;
-}
 
 // FrameReplicationState is normally maintained in the browser process,
 // but the function below provides a way for tests to construct a partial
@@ -400,6 +400,12 @@ class RenderViewImplTest : public RenderViewTest {
         PageMsg_SetZoomLevel_Command::USE_CURRENT_TEMPORARY_MODE, level);
   }
 
+  int GetScrollbarWidth() {
+    blink::WebView* webview = view()->webview();
+    return webview->Size().width -
+           webview->MainFrame()->VisibleContentRect().width;
+  }
+
   // Closes a view created during the test, i.e. not the |view()|. Checks that
   // the main frame is detached and deleted, and makes sure the view does not
   // leak.
@@ -438,11 +444,13 @@ class RenderViewImplScaleFactorTest : public RenderViewImplBlinkSettingsTest {
     ResizeParams params;
     params.screen_info.device_scale_factor = dsf;
     params.new_size = gfx::Size(100, 100);
-    params.physical_backing_size = gfx::Size(200, 200);
+    params.compositor_viewport_pixel_size = gfx::Size(200, 200);
     params.visible_viewport_size = params.new_size;
     params.needs_resize_ack = false;
+    params.content_source_id = view()->GetContentSourceId();
     view()->OnResize(params);
-    ASSERT_EQ(dsf, view()->device_scale_factor_);
+    ASSERT_EQ(dsf, view()->GetWebScreenInfo().device_scale_factor);
+    ASSERT_EQ(dsf, view()->GetOriginalScreenInfo().device_scale_factor);
   }
 
   void TestEmulatedSizeDprDsf(int width, int height, float dpr,
@@ -474,6 +482,82 @@ class RenderViewImplScaleFactorTest : public RenderViewImplBlinkSettingsTest {
                                   ->device_scale_factor());
   }
 };
+
+#if defined(OS_ANDROID)
+class TapCallbackFilter : public IPC::Listener {
+ public:
+  explicit TapCallbackFilter(
+      base::RepeatingCallback<void(const gfx::Rect&, const gfx::Size&)>
+          callback)
+      : callback_(callback) {}
+
+  bool OnMessageReceived(const IPC::Message& msg) override {
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(TapCallbackFilter, msg)
+      IPC_MESSAGE_HANDLER(ViewHostMsg_ShowDisambiguationPopup,
+                          OnShowDisambiguationPopup)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+  void OnShowDisambiguationPopup(const gfx::Rect& rect_pixels,
+                                 const gfx::Size& size,
+                                 base::SharedMemoryHandle handle) {
+    callback_.Run(rect_pixels, size);
+  }
+
+ private:
+  base::RepeatingCallback<void(const gfx::Rect&, const gfx::Size&)> callback_;
+};
+
+static blink::WebCoalescedInputEvent FatTap(int x,
+                                            int y,
+                                            int width,
+                                            int height) {
+  blink::WebGestureEvent event(
+      blink::WebInputEvent::kGestureTap, blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::GetStaticTimeStampForTests());
+  event.source_device = blink::kWebGestureDeviceTouchscreen;
+  event.x = x;
+  event.y = y;
+  event.data.tap.width = width;
+  event.data.tap.height = height;
+  return blink::WebCoalescedInputEvent(event);
+}
+
+TEST_F(RenderViewImplScaleFactorTest, TapDisambiguatorSize) {
+  DoSetUp();
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableUseZoomForDSF);
+  const float device_scale = 2.625f;
+  SetDeviceScaleFactor(device_scale);
+  EXPECT_EQ(device_scale, view()->GetDeviceScaleFactor());
+
+  LoadHTML(
+      "<style type=\"text/css\">"
+      " a {"
+      "  display: block;"
+      "  width: 40px;"
+      "  height: 40px;"
+      "  background-color:#ccccff;"
+      " }"
+      "</style>"
+      "<body style=\"margin: 0px\">"
+      "<a href=\"#\">link </a>"
+      "<a href=\"#\">link </a>"
+      "</body>");
+  std::unique_ptr<TapCallbackFilter> callback_filter(
+      new TapCallbackFilter(base::BindRepeating(
+          [](const gfx::Rect& rect_pixels, const gfx::Size& canvas_size) {
+            EXPECT_EQ(rect_pixels, gfx::Rect(28, 68, 24, 24));
+            EXPECT_EQ(canvas_size, gfx::Size(48, 48));
+          })));
+  render_thread_->sink().AddFilter(callback_filter.get());
+  view()->webview()->HandleInputEvent(FatTap(40, 80, 200, 200));
+  render_thread_->sink().RemoveFilter(callback_filter.get());
+}
+#endif
 
 // Ensure that the main RenderFrame is deleted and cleared from the RenderView
 // after closing it.
@@ -605,19 +689,15 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicy) {
   policy_info.default_policy = blink::kWebNavigationPolicyCurrentTab;
   blink::WebNavigationPolicy policy =
       frame()->DecidePolicyForNavigation(policy_info);
-  if (!IsBrowserSideNavigationEnabled()) {
-    EXPECT_EQ(blink::kWebNavigationPolicyCurrentTab, policy);
-  } else {
-    // If this is a renderer-initiated navigation that just begun, it should
-    // stop and be sent to the browser.
-    EXPECT_EQ(blink::kWebNavigationPolicyHandledByClient, policy);
+  // If this is a renderer-initiated navigation that just begun, it should
+  // stop and be sent to the browser.
+  EXPECT_EQ(blink::kWebNavigationPolicyHandledByClient, policy);
 
-    // If this a navigation that is ready to commit, it should be handled
-    // locally.
-    request.SetCheckForBrowserSideNavigation(false);
-    policy = frame()->DecidePolicyForNavigation(policy_info);
-    EXPECT_EQ(blink::kWebNavigationPolicyCurrentTab, policy);
-  }
+  // If this a navigation that is ready to commit, it should be handled
+  // locally.
+  request.SetCheckForBrowserSideNavigation(false);
+  policy = frame()->DecidePolicyForNavigation(policy_info);
+  EXPECT_EQ(blink::kWebNavigationPolicyCurrentTab, policy);
 
   // Verify that form posts to WebUI URLs will be sent to the browser process.
   blink::WebURLRequest form_request(GURL("chrome://foo"));
@@ -720,6 +800,61 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
   EXPECT_EQ(blink::kWebNavigationPolicyIgnore, policy);
 
   CloseRenderView(new_view);
+}
+
+// This test verifies that when device emulation is enabled, RenderFrameProxy
+// continues to receive the original ScreenInfo and not the emualted
+// ScreenInfo.
+TEST_F(RenderViewImplScaleFactorTest, DeviceEmulationWithOOPIF) {
+  DoSetUp();
+
+  // This test should only run with --site-per-process.
+  if (!AreAllSitesIsolatedForTesting())
+    return;
+
+  const float device_scale = 2.0f;
+  float compositor_dsf = IsUseZoomForDSFEnabled() ? 1.f : device_scale;
+  SetDeviceScaleFactor(device_scale);
+
+  LoadHTML(
+      "<body style='min-height:1000px;'>"
+      "  <iframe src='data:text/html,frame 1'></iframe>"
+      "</body>");
+
+  WebFrame* web_frame = frame()->GetWebFrame();
+  ASSERT_TRUE(web_frame->FirstChild()->IsWebLocalFrame());
+  TestRenderFrame* child_frame = static_cast<TestRenderFrame*>(
+      RenderFrame::FromWebFrame(web_frame->FirstChild()->ToWebLocalFrame()));
+  ASSERT_TRUE(child_frame);
+
+  child_frame->SwapOut(kProxyRoutingId + 1, true,
+                       ReconstructReplicationStateForTesting(child_frame));
+  EXPECT_TRUE(web_frame->FirstChild()->IsWebRemoteFrame());
+  RenderFrameProxy* child_proxy = RenderFrameProxy::FromWebFrame(
+      web_frame->FirstChild()->ToWebRemoteFrame());
+  ASSERT_TRUE(child_proxy);
+
+  // Verify that the system device scale factor has propagated into the
+  // RenderFrameProxy.
+  EXPECT_EQ(device_scale,
+            view()->GetWidget()->GetWebScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale,
+            view()->GetWidget()->GetOriginalScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale, child_proxy->screen_info().device_scale_factor);
+
+  TestEmulatedSizeDprDsf(640, 480, 3.f, compositor_dsf);
+
+  // Verify that the RenderFrameProxy device scale factor is still the same.
+  EXPECT_EQ(3.f, view()->GetWidget()->GetWebScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale,
+            view()->GetWidget()->GetOriginalScreenInfo().device_scale_factor);
+  EXPECT_EQ(device_scale, child_proxy->screen_info().device_scale_factor);
+
+  view()->OnDisableDeviceEmulation();
+
+  blink::WebDeviceEmulationParams params;
+  view()->OnEnableDeviceEmulation(params);
+  // Don't disable here to test that emulation is being shutdown properly.
 }
 
 // Verify that security origins are replicated properly to RenderFrameProxies
@@ -889,9 +1024,6 @@ TEST_F(RenderViewImplTest, SetZoomLevelAfterCrossProcessNavigation) {
   main_frame->SwapOut(kProxyRoutingId, true,
                       ReconstructReplicationStateForTesting(main_frame));
   EXPECT_TRUE(view()->webview()->MainFrame()->IsWebRemoteFrame());
-
-  // This should not cause a crash.
-  view()->OnDeviceScaleFactorChanged();
 }
 
 // Test that we get the correct UpdateState message when we go back twice
@@ -2046,10 +2178,9 @@ TEST_F(RenderViewImplTest, BrowserNavigationStartSanitized) {
 }
 
 // Checks that a browser-initiated navigation in an initial document that has
-// been accessed does not use browser-side timestamp (there may be arbitrary
+// been accessed uses browser-side timestamp (there may be arbitrary
 // content and/or scripts injected, including beforeunload handler that shows
 // a confirmation dialog).
-// If PlzNavigate is enabled, browser-side timestamp is always used.
 TEST_F(RenderViewImplTest, NavigationStartWhenInitialDocumentWasAccessed) {
   // Trigger a didAccessInitialDocument notification.
   ExecuteJavaScriptForTests("document.title = 'Hi!';");
@@ -2059,10 +2190,7 @@ TEST_F(RenderViewImplTest, NavigationStartWhenInitialDocumentWasAccessed) {
 
   FrameHostMsg_DidStartProvisionalLoad::Param nav_params =
       ProcessAndReadIPC<FrameHostMsg_DidStartProvisionalLoad>();
-  if (!IsBrowserSideNavigationEnabled())
-    EXPECT_GT(std::get<2>(nav_params), common_params.navigation_start);
-  else
-    EXPECT_EQ(common_params.navigation_start, std::get<2>(nav_params));
+  EXPECT_EQ(common_params.navigation_start, std::get<2>(nav_params));
 }
 
 TEST_F(RenderViewImplTest, NavigationStartForReload) {
@@ -2085,15 +2213,8 @@ TEST_F(RenderViewImplTest, NavigationStartForReload) {
   FrameHostMsg_DidStartProvisionalLoad::Param host_nav_params =
       ProcessAndReadIPC<FrameHostMsg_DidStartProvisionalLoad>();
 
-  if (!IsBrowserSideNavigationEnabled()) {
-    // The browser navigation_start should not be used because beforeunload was
-    // fired during Navigate.
-    EXPECT_PRED2(TimeTicksGT, std::get<2>(host_nav_params),
-                 common_params.navigation_start);
-  } else {
-    // PlzNavigate: the browser navigation_start is always used.
-    EXPECT_EQ(common_params.navigation_start, std::get<2>(host_nav_params));
-  }
+  // The browser navigation_start is always used.
+  EXPECT_EQ(common_params.navigation_start, std::get<2>(host_nav_params));
 }
 
 TEST_F(RenderViewImplTest, NavigationStartForSameProcessHistoryNavigation) {
@@ -2116,16 +2237,9 @@ TEST_F(RenderViewImplTest, NavigationStartForSameProcessHistoryNavigation) {
                        RequestNavigationParams());
   FrameHostMsg_DidStartProvisionalLoad::Param host_nav_params =
       ProcessAndReadIPC<FrameHostMsg_DidStartProvisionalLoad>();
-  if (!IsBrowserSideNavigationEnabled()) {
-    // The browser navigation_start should not be used because beforeunload was
-    // fired during GoToOffsetWithParams.
-    EXPECT_PRED2(TimeTicksGT, std::get<2>(host_nav_params),
-                 common_params_back.navigation_start);
-  } else {
-    // PlzNavigate: the browser navigation_start is always used.
-    EXPECT_EQ(common_params_back.navigation_start,
-              std::get<2>(host_nav_params));
-  }
+
+  // The browser navigation_start is always used.
+  EXPECT_EQ(common_params_back.navigation_start, std::get<2>(host_nav_params));
   render_thread_->sink().ClearMessages();
 
   // Go forward.
@@ -2139,13 +2253,8 @@ TEST_F(RenderViewImplTest, NavigationStartForSameProcessHistoryNavigation) {
                        RequestNavigationParams());
   FrameHostMsg_DidStartProvisionalLoad::Param host_nav_params2 =
       ProcessAndReadIPC<FrameHostMsg_DidStartProvisionalLoad>();
-  if (!IsBrowserSideNavigationEnabled()) {
-    EXPECT_PRED2(TimeTicksGT, std::get<2>(host_nav_params2),
-                 common_params_forward.navigation_start);
-  } else {
-    EXPECT_EQ(common_params_forward.navigation_start,
-              std::get<2>(host_nav_params2));
-  }
+  EXPECT_EQ(common_params_forward.navigation_start,
+            std::get<2>(host_nav_params2));
 }
 
 TEST_F(RenderViewImplTest, NavigationStartForCrossProcessHistoryNavigation) {
@@ -2169,37 +2278,46 @@ TEST_F(RenderViewImplTest, NavigationStartForCrossProcessHistoryNavigation) {
 }
 
 TEST_F(RenderViewImplTest, PreferredSizeZoomed) {
-  LoadHTML("<body style='margin:0;'><div style='display:inline-block; "
-           "width:400px; height:400px;'/></body>");
-  view()->webview()->MainFrame()->ToWebLocalFrame()->SetCanHaveScrollbars(
-      false);
+  LoadHTML(
+      "<body style='margin:0;'>"
+      "<div style='display:inline-block; "
+      "width:400px; height:400px;'/></body>");
+
+  // For unknown reasons, setting fixed scrollbar width using
+  // ::-webkit-scrollbar makes Mac bots flaky (crbug.com/785088).
+  // Measure native scrollbar width instead.
+  int scrollbar_width = GetScrollbarWidth();
   EnablePreferredSizeMode();
 
   gfx::Size size = GetPreferredSize();
-  EXPECT_EQ(gfx::Size(400, 400), size);
+  EXPECT_EQ(gfx::Size(400 + scrollbar_width, 400), size);
 
   SetZoomLevel(ZoomFactorToZoomLevel(2.0));
   size = GetPreferredSize();
-  EXPECT_EQ(gfx::Size(800, 800), size);
+  EXPECT_EQ(gfx::Size(800 + scrollbar_width, 800), size);
 }
 
 TEST_F(RenderViewImplScaleFactorTest, PreferredSizeWithScaleFactor) {
   DoSetUp();
-  LoadHTML("<body style='margin:0;'><div style='display:inline-block; "
-           "width:400px; height:400px;'/></body>");
-  view()->webview()->MainFrame()->ToWebLocalFrame()->SetCanHaveScrollbars(
-      false);
+  LoadHTML(
+      "<body style='margin:0;'><div style='display:inline-block; "
+      "width:400px; height:400px;'/></body>");
+
+  // For unknown reasons, setting fixed scrollbar width using
+  // ::-webkit-scrollbar makes Mac bots flaky (crbug.com/785088).
+  // Measure native scrollbar width instead.
+  int scrollbar_width = GetScrollbarWidth();
   EnablePreferredSizeMode();
 
   gfx::Size size = GetPreferredSize();
-  EXPECT_EQ(gfx::Size(400, 400), size);
+  EXPECT_EQ(gfx::Size(400 + scrollbar_width, 400), size);
 
   // The size is in DIP. Changing the scale factor should not change
   // the preferred size. (Caveat: a page may apply different layout for
   // high DPI, in which case, the size may differ.)
   SetDeviceScaleFactor(2.f);
   size = GetPreferredSize();
-  EXPECT_EQ(gfx::Size(400, 400), size);
+  EXPECT_EQ(gfx::Size(400 + scrollbar_width, 400), size);
 }
 
 // Ensure the RenderViewImpl history list is properly updated when starting a

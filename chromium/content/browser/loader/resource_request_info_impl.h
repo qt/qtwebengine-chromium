@@ -23,7 +23,7 @@
 #include "content/public/common/resource_type.h"
 #include "net/base/load_states.h"
 #include "services/network/public/cpp/resource_request_body.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
 
 namespace content {
 class DetachableResourceHandler;
@@ -104,6 +104,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   bool ShouldReportRawHeaders() const;
   NavigationUIData* GetNavigationUIData() const override;
   bool CanceledByDevTools() const override;
+  base::StringPiece GetCustomCancelReason() const override;
 
   CONTENT_EXPORT void AssociateWithRequest(net::URLRequest* request);
 
@@ -218,6 +219,16 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
     blocked_cross_site_document_ = value;
   }
 
+  void set_custom_cancel_reason(base::StringPiece reason) {
+    custom_cancel_reason_ = reason.as_string();
+  }
+
+  bool first_auth_attempt() const { return first_auth_attempt_; }
+
+  void set_first_auth_attempt(bool first_auth_attempt) {
+    first_auth_attempt_ = first_auth_attempt;
+  }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
                            DeletedFilterDetached);
@@ -258,6 +269,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   std::unique_ptr<NavigationUIData> navigation_ui_data_;
   base::Optional<std::string> suggested_filename_;
   bool blocked_cross_site_document_;
+  bool first_auth_attempt_;
 
   // Keeps upload body blobs alive for the duration of the request.
   BlobHandles blob_handles_;
@@ -266,6 +278,8 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   // and remote endpoint. This callback will be removed once PlzNavigate is
   // shipped.
   TransferCallback on_transfer_;
+
+  std::string custom_cancel_reason_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceRequestInfoImpl);
 };

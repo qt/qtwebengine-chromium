@@ -1457,12 +1457,12 @@ void GlobalActivityTracker::RecordProcessLaunch(
     ProcessId process_id,
     const FilePath::StringType& exe,
     const FilePath::StringType& args) {
-  const int64_t pid = process_id;
   if (exe.find(FILE_PATH_LITERAL(" "))) {
-    RecordProcessLaunch(pid, FilePath::StringType(FILE_PATH_LITERAL("\"")) +
-                                 exe + FILE_PATH_LITERAL("\" ") + args);
+    RecordProcessLaunch(process_id,
+                        FilePath::StringType(FILE_PATH_LITERAL("\"")) + exe +
+                            FILE_PATH_LITERAL("\" ") + args);
   } else {
-    RecordProcessLaunch(pid, exe + FILE_PATH_LITERAL(' ') + args);
+    RecordProcessLaunch(process_id, exe + FILE_PATH_LITERAL(' ') + args);
   }
 }
 
@@ -1496,7 +1496,7 @@ void GlobalActivityTracker::RecordProcessExit(ProcessId process_id,
     task_runner->PostTask(
         FROM_HERE,
         BindOnce(&GlobalActivityTracker::CleanupAfterProcess, Unretained(this),
-                 pid, now_stamp, exit_code, Passed(&command_line)));
+                 pid, now_stamp, exit_code, std::move(command_line)));
     return;
   }
 

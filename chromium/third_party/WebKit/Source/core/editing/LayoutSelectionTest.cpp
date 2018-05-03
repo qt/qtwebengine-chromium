@@ -689,12 +689,10 @@ TEST_F(LayoutSelectionTest, Embed) {
 class NGLayoutSelectionTest
     : public LayoutSelectionTest,
       private ScopedLayoutNGForTest,
-      private ScopedLayoutNGPaintFragmentsForTest,
       private ScopedPaintUnderInvalidationCheckingForTest {
  public:
   NGLayoutSelectionTest()
       : ScopedLayoutNGForTest(true),
-        ScopedLayoutNGPaintFragmentsForTest(true),
         ScopedPaintUnderInvalidationCheckingForTest(true) {}
 };
 
@@ -820,6 +818,7 @@ TEST_F(NGLayoutSelectionTest, MixedBlockFlowsAsSibling) {
 }
 
 TEST_F(NGLayoutSelectionTest, MixedBlockFlowsAnscestor) {
+  // Both "foo" and "bar" for DIV elements should be legacy LayoutBlock.
   const SelectionInDOMTree& selection = SetSelectionTextToBody(
       "<div contenteditable>f^oo"
       "<div contenteditable=false>ba|r</div></div>");
@@ -829,19 +828,10 @@ TEST_F(NGLayoutSelectionTest, MixedBlockFlowsAnscestor) {
   TEST_NEXT(IsLegacyBlockFlow, kContain, NotInvalidate);
   TEST_NEXT(IsLayoutNGBlockFlow, kContain, NotInvalidate);
   TEST_NEXT("foo", kStart, ShouldInvalidate);
-  TEST_NEXT(IsLayoutNGBlockFlow, kContain, NotInvalidate);
+  TEST_NEXT(IsLegacyBlockFlow, kContain, NotInvalidate);
   TEST_NEXT("bar", kEnd, ShouldInvalidate);
   TEST_NO_NEXT_LAYOUT_OBJECT();
   EXPECT_EQ(1u, Selection().LayoutSelectionStart().value());
-  LayoutObject* const bar = GetDocument()
-                                .body()
-                                ->firstChild()
-                                ->firstChild()
-                                ->nextSibling()
-                                ->firstChild()
-                                ->GetLayoutObject();
-  EXPECT_EQ(std::make_pair(0u, 2u), Selection().LayoutSelectionStartEndForNG(
-                                        GetNGPhysicalTextFragment(bar)));
 }
 
 TEST_F(NGLayoutSelectionTest, MixedBlockFlowsDecendant) {

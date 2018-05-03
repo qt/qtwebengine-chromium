@@ -447,14 +447,16 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   bool RequiresAnonymousTableWrappers(const LayoutObject*) const;
 
  public:
+  // Dump this layout object to the specified string builder.
+  void DumpLayoutObject(StringBuilder&,
+                        bool dump_address,
+                        unsigned show_tree_character_offset) const;
+
 #ifndef NDEBUG
   void ShowTreeForThis() const;
   void ShowLayoutTreeForThis() const;
   void ShowLineTreeForThis() const;
   void ShowLayoutObject() const;
-
-  // Dump this layout object to the specified string builder.
-  void DumpLayoutObject(StringBuilder&) const;
 
   // Dump the subtree established by this layout object to the specified string
   // builder. There will be one object per line, and descendants will be
@@ -514,6 +516,9 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   }
   bool IsLayoutNGMixin() const { return IsOfType(kLayoutObjectNGMixin); }
   bool IsLayoutNGListItem() const { return IsOfType(kLayoutObjectNGListItem); }
+  bool IsLayoutNGListMarker() const {
+    return IsOfType(kLayoutObjectNGListMarker);
+  }
   bool IsLayoutTableCol() const {
     return IsOfType(kLayoutObjectLayoutTableCol);
   }
@@ -525,6 +530,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   bool IsProgress() const { return IsOfType(kLayoutObjectProgress); }
   bool IsQuote() const { return IsOfType(kLayoutObjectQuote); }
   bool IsLayoutButton() const { return IsOfType(kLayoutObjectLayoutButton); }
+  bool IsLayoutCustom() const { return IsOfType(kLayoutObjectLayoutCustom); }
   bool IsLayoutFullScreen() const {
     return IsOfType(kLayoutObjectLayoutFullScreen);
   }
@@ -846,6 +852,8 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   bool IsSelectionBorder() const;
 
+  // CSS clip only applies when position is absolute or fixed. Prefer this check
+  // over !Style()->HasAutoClip().
   bool HasClip() const {
     return IsOutOfFlowPositioned() && !Style()->HasAutoClip();
   }
@@ -1002,10 +1010,18 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // (point 3 above).
   LayoutObject* Container(AncestorSkipInfo* = nullptr) const;
   // Finds the container as if this object is fixed-position.
-  LayoutBlock* ContainerForFixedPosition(AncestorSkipInfo* = nullptr) const;
+  LayoutBlock* ContainingBlockForFixedPosition(
+      AncestorSkipInfo* = nullptr) const;
   // Finds the containing block as if this object is absolute-position.
   LayoutBlock* ContainingBlockForAbsolutePosition(
       AncestorSkipInfo* = nullptr) const;
+
+  bool CanContainOutOfFlowPositionedElement(EPosition position) const {
+    DCHECK(position == EPosition::kAbsolute || position == EPosition::kFixed);
+    return (position == EPosition::kAbsolute &&
+            CanContainAbsolutePositionObjects()) ||
+           (position == EPosition::kFixed && CanContainFixedPositionObjects());
+  }
 
   virtual LayoutObject* HoverAncestor() const { return Parent(); }
 
@@ -1143,10 +1159,10 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   CompositingState GetCompositingState() const;
   virtual CompositingReasons AdditionalCompositingReasons() const;
 
-  bool HitTest(HitTestResult&,
-               const HitTestLocation& location_in_container,
-               const LayoutPoint& accumulated_offset,
-               HitTestFilter = kHitTestAll);
+  virtual bool HitTestAllPhases(HitTestResult&,
+                                const HitTestLocation& location_in_container,
+                                const LayoutPoint& accumulated_offset,
+                                HitTestFilter = kHitTestAll);
   // Returns the node that is ultimately added to the hit test result. Some
   // objects report a hit testing node that is not their own (such as
   // continuations and some psuedo elements) and it is important that the
@@ -1158,10 +1174,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
                            const LayoutPoint& accumulated_offset,
                            HitTestAction);
 
-  virtual PositionWithAffinity PositionForPoint(const LayoutPoint&);
-  PositionWithAffinity CreatePositionWithAffinity(int offset, TextAffinity);
-  PositionWithAffinity CreatePositionWithAffinity(int offset);
-  PositionWithAffinity CreatePositionWithAffinity(const Position&);
+  virtual PositionWithAffinity PositionForPoint(const LayoutPoint&) const;
+  PositionWithAffinity CreatePositionWithAffinity(int offset,
+                                                  TextAffinity) const;
+  PositionWithAffinity CreatePositionWithAffinity(int offset) const;
+  PositionWithAffinity CreatePositionWithAffinity(const Position&) const;
 
   virtual void DirtyLinesFromChangedChild(
       LayoutObject*,
@@ -1315,6 +1332,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   IntRect AbsoluteBoundingBoxRect(MapCoordinatesFlags = 0) const;
   // FIXME: This function should go away eventually
   IntRect AbsoluteBoundingBoxRectIgnoringTransforms() const;
+  // These two handles inline anchors without content as well.
+  LayoutRect AbsoluteBoundingBoxRectHandlingEmptyAnchor() const;
+  // This returns an IntRect expanded from
+  // AbsoluteBoundingBoxRectHandlingEmptyAnchor by ScrollMargin.
+  LayoutRect AbsoluteBoundingBoxRectForScrollIntoView() const;
 
   // Build an array of quads in absolute coords for line boxes
   virtual void AbsoluteQuads(Vector<FloatQuad>&,
@@ -1480,8 +1502,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // selection. The rect returned is in the object's local coordinate space.
   virtual LayoutRect LocalSelectionRect() const { return LayoutRect(); }
 
-  // View coordinates means the coordinate space of |view()|.
-  LayoutRect SelectionRectInViewCoordinates() const;
+  LayoutRect AbsoluteSelectionRect() const;
 
   bool CanBeSelectionLeaf() const;
   bool HasSelectedChildren() const {
@@ -1593,8 +1614,8 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
                                  TransformationMatrix&) const;
 
   bool CreatesGroup() const {
-    return IsTransparent() || HasMask() || HasFilterInducingProperty() ||
-           Style()->HasBlendMode();
+    return IsTransparent() || HasMask() || HasClipPath() ||
+           HasFilterInducingProperty() || Style()->HasBlendMode();
   }
 
   // Collects rectangles that the outline of this object would be drawing along
@@ -1734,6 +1755,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   void SetNeedsOverflowRecalcAfterStyleChange();
 
+  void InvalidateClipPathCache();
+
+  // Call |SetShouldInvalidateSelection| on all selected children.
+  void InvalidateSelectionOfSelectedChildren();
+
   // Painters can use const methods only, except for these explicitly declared
   // methods.
   class CORE_EXPORT MutableForPainting {
@@ -1791,6 +1817,8 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     void SetPartialInvalidationRect(const LayoutRect& r) {
       layout_object_.SetPartialInvalidationRect(r);
     }
+
+    void InvalidateClipPathCache() { layout_object_.InvalidateClipPathCache(); }
 
 #if DCHECK_IS_ON()
     // Same as setNeedsPaintPropertyUpdate() but does not mark ancestors as
@@ -1934,9 +1962,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     kLayoutObjectNGBlockFlow,
     kLayoutObjectNGMixin,
     kLayoutObjectNGListItem,
+    kLayoutObjectNGListMarker,
     kLayoutObjectProgress,
     kLayoutObjectQuote,
     kLayoutObjectLayoutButton,
+    kLayoutObjectLayoutCustom,
     kLayoutObjectLayoutFlowThread,
     kLayoutObjectLayoutFullScreen,
     kLayoutObjectLayoutFullScreenPlaceholder,
@@ -2137,6 +2167,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   inline void InvalidateContainerPreferredLogicalWidths();
 
   LayoutObject* ContainerForAbsolutePosition(AncestorSkipInfo* = nullptr) const;
+  LayoutObject* ContainerForFixedPosition(AncestorSkipInfo* = nullptr) const;
 
   const LayoutBoxModelObject* EnclosingCompositedContainer() const;
 
@@ -2148,6 +2179,13 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   void RemoveShapeImageClient(ShapeValue*);
   void RemoveCursorImageClient(const CursorList*);
+
+  // These are helper functions for AbsoluteBoudingBoxRectHandlingEmptyAnchor()
+  // and AbsoluteBoundingBoxRectForScrollIntoView().
+  enum class ExpandScrollMargin { kExpand, kIgnore };
+  LayoutRect AbsoluteBoundingBoxRectHelper(ExpandScrollMargin) const;
+  bool GetUpperLeftCorner(ExpandScrollMargin, FloatPoint&) const;
+  bool GetLowerRightCorner(ExpandScrollMargin, FloatPoint&) const;
 
 #if DCHECK_IS_ON()
   void CheckBlockPositionedObjectsNeedLayout();
@@ -2161,7 +2199,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // LayoutView to return the owning LayoutObject in the containing frame.
   inline LayoutObject* ParentCrossingFrames() const;
 
-  void InvalidatePaintForSelection();
   void ApplyPseudoStyleChanges(const ComputedStyle& old_style);
   void ApplyFirstLineChanges(const ComputedStyle& old_style);
 
@@ -2747,6 +2784,9 @@ CORE_EXPORT const LayoutObject* AssociatedLayoutObjectOf(
     const Node&,
     int offset_in_node,
     LayoutObjectSide = LayoutObjectSide::kRemainingTextIfOnBoundary);
+
+CORE_EXPORT std::ostream& operator<<(std::ostream&, const LayoutObject*);
+CORE_EXPORT std::ostream& operator<<(std::ostream&, const LayoutObject&);
 
 #define DEFINE_LAYOUT_OBJECT_TYPE_CASTS(thisType, predicate)           \
   DEFINE_TYPE_CASTS(thisType, LayoutObject, object, object->predicate, \

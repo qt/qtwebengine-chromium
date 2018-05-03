@@ -22,9 +22,10 @@
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "public/platform/site_engagement.mojom-shared.h"
 #include "public/web/WebTextDirection.h"
+#include "public/web/commit_result.mojom-shared.h"
 #include "public/web/selection_menu_behavior.mojom-shared.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/common/sandbox_flags.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -197,6 +198,18 @@ class WebLocalFrame : public WebFrame {
       bool is_client_redirect,
       const base::UnguessableToken& devtools_navigation_token) = 0;
 
+  // Commits a same-document navigation in the frame. For history navigations, a
+  // valid WebHistoryItem should be provided. Returns CommitResult::Ok if the
+  // load committed.
+  virtual mojom::CommitResult CommitSameDocumentNavigation(
+      const WebURL&,
+      WebFrameLoadType,
+      const WebHistoryItem&,
+      bool is_client_redirect) = 0;
+
+  // Loads a JavaScript URL in the frame.
+  virtual void LoadJavaScriptURL(const WebURL&) = 0;
+
   // This method is short-hand for calling LoadData, where mime_type is
   // "text/html" and text_encoding is "UTF-8".
   virtual void LoadHTMLString(const WebData& html,
@@ -277,10 +290,6 @@ class WebLocalFrame : public WebFrame {
   // in this frame. Used to propagate state when this frame has navigated
   // cross process.
   virtual void SetCommittedFirstRealLoad() = 0;
-
-  // Mark this frame's document as having received a user gesture, based on
-  // one of its descendants having processed a user gesture.
-  virtual void SetHasReceivedUserGesture() = 0;
 
   // Reports a list of unique blink::WebFeature values representing
   // Blink features used, performed or encountered by the browser during the
@@ -716,7 +725,8 @@ class WebLocalFrame : public WebFrame {
   // Dispatches a message event on the current DOMWindow in this WebFrame.
   virtual void DispatchMessageEventWithOriginCheck(
       const WebSecurityOrigin& intended_target_origin,
-      const WebDOMEvent&) = 0;
+      const WebDOMEvent&,
+      bool has_user_gesture) = 0;
 
   // Site engagement --------------------------------------------------------
 
@@ -773,6 +783,9 @@ class WebLocalFrame : public WebFrame {
   // Load the given URL.
   virtual void LoadRequest(const WebURLRequest&) = 0;
 
+  // Check whether loading has completed based on subframe state, etc.
+  virtual void CheckCompleted() = 0;
+
   // Geometry -----------------------------------------------------------------
 
   // NOTE: These routines do not force page layout so their results may
@@ -785,8 +798,8 @@ class WebLocalFrame : public WebFrame {
   // If set to false, do not draw scrollbars on this frame's view.
   virtual void SetCanHaveScrollbars(bool) = 0;
 
-  // The size of the contents area.
-  virtual WebSize ContentsSize() const = 0;
+  // The size of the document in this frame.
+  virtual WebSize DocumentSize() const = 0;
 
   // Returns true if the contents (minus scrollbars) has non-zero area.
   virtual bool HasVisibleContent() const = 0;

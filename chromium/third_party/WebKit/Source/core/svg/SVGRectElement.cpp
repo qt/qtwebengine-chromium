@@ -20,7 +20,6 @@
 
 #include "core/svg/SVGRectElement.h"
 
-#include "core/css/StyleChangeReason.h"
 #include "core/layout/svg/LayoutSVGRect.h"
 #include "core/svg/SVGLength.h"
 
@@ -112,22 +111,22 @@ void SVGRectElement::CollectStyleForPresentationAttribute(
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == x_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &x_->CssValue());
+                                            x_->CssValue());
   } else if (property == y_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &y_->CssValue());
+                                            y_->CssValue());
   } else if (property == width_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &width_->CssValue());
+                                            width_->CssValue());
   } else if (property == height_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &height_->CssValue());
+                                            height_->CssValue());
   } else if (property == rx_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &rx_->CssValue());
+                                            rx_->CssValue());
   } else if (property == ry_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &ry_->CssValue());
+                                            ry_->CssValue());
   } else {
     SVGGeometryElement::CollectStyleForPresentationAttribute(name, value,
                                                              style);
@@ -138,20 +137,8 @@ void SVGRectElement::SvgAttributeChanged(const QualifiedName& attr_name) {
   if (attr_name == SVGNames::xAttr || attr_name == SVGNames::yAttr ||
       attr_name == SVGNames::widthAttr || attr_name == SVGNames::heightAttr ||
       attr_name == SVGNames::rxAttr || attr_name == SVGNames::ryAttr) {
-    SVGElement::InvalidationGuard invalidation_guard(this);
-
-    InvalidateSVGPresentationAttributeStyle();
-    SetNeedsStyleRecalc(kLocalStyleChange,
-                        StyleChangeReasonForTracing::FromAttribute(attr_name));
     UpdateRelativeLengthsInformation();
-
-    LayoutSVGShape* layout_object = ToLayoutSVGShape(this->GetLayoutObject());
-    if (!layout_object)
-      return;
-
-    layout_object->SetNeedsShapeUpdate();
-    MarkForLayoutAndParentResourceInvalidation(layout_object);
-
+    GeometryPresentationAttributeChanged(attr_name);
     return;
   }
 

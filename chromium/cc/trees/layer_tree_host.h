@@ -44,8 +44,6 @@
 #include "cc/trees/swap_promise_manager.h"
 #include "cc/trees/target_property.h"
 #include "components/viz/common/resources/resource_format.h"
-#include "components/viz/common/surfaces/surface_reference_owner.h"
-#include "components/viz/common/surfaces/surface_sequence_generator.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rect.h"
@@ -61,6 +59,7 @@ class LayerTreeMutator;
 class MutatorEvents;
 class MutatorHost;
 struct PendingPageScaleAnimation;
+class RenderFrameMetadataObserver;
 class RenderingStatsInstrumentation;
 struct OverscrollBehavior;
 class TaskGraphRunner;
@@ -69,8 +68,7 @@ class UkmRecorderFactory;
 struct RenderingStats;
 struct ScrollAndScaleSet;
 
-class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
-                                public MutatorHostClient {
+class CC_EXPORT LayerTreeHost : public MutatorHostClient {
  public:
   struct CC_EXPORT InitParams {
     LayerTreeHostClient* client = nullptr;
@@ -98,7 +96,7 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
       LayerTreeHostSingleThreadClient* single_thread_client,
       InitParams* params);
 
-  ~LayerTreeHost() override;
+  virtual ~LayerTreeHost();
 
   // Returns the process global unique identifier for this LayerTreeHost.
   int GetId() const;
@@ -117,10 +115,6 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
 
   // Returns the settings used by this host.
   const LayerTreeSettings& GetSettings() const;
-
-  // Sets the client id used to generate the viz::SurfaceId that uniquely
-  // identifies the Surfaces produced by this compositor.
-  void SetFrameSinkId(const viz::FrameSinkId& frame_sink_id);
 
   // Sets the LayerTreeMutator interface used to directly mutate the compositor
   // state on the compositor thread. (Compositor-Worker)
@@ -191,7 +185,7 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   // Synchronously performs a complete main frame update, commit and compositor
   // frame. Used only in single threaded mode when the compositor's internal
   // scheduling is disabled.
-  void Composite(base::TimeTicks frame_begin_time);
+  void Composite(base::TimeTicks frame_begin_time, bool raster);
 
   // Requests a redraw (compositor frame) for the given rect.
   void SetNeedsRedrawRect(const gfx::Rect& damage_rect);
@@ -229,7 +223,7 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   // Returns the id of the benchmark on success, 0 otherwise.
   int ScheduleMicroBenchmark(const std::string& benchmark_name,
                              std::unique_ptr<base::Value> value,
-                             const MicroBenchmark::DoneCallback& callback);
+                             MicroBenchmark::DoneCallback callback);
 
   // Returns true if the message was successfully delivered and handled.
   bool SendMessageToMicroBenchmark(int id, std::unique_ptr<base::Value> value);
@@ -298,9 +292,10 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
     return event_listener_properties_[static_cast<size_t>(event_class)];
   }
 
-  void SetViewportSize(
-      const gfx::Size& device_viewport_size,
-      const viz::LocalSurfaceId& local_surface_id = viz::LocalSurfaceId());
+  void SetViewportSizeAndScale(const gfx::Size& device_viewport_size,
+                               float device_scale_factor,
+                               const viz::LocalSurfaceId& local_surface_id);
+
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
   void SetBrowserControlsHeight(float top_height,
@@ -325,12 +320,10 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
                                base::TimeDelta duration);
   bool HasPendingPageScaleAnimation() const;
 
-  void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
 
   void SetRecordingScaleFactor(float recording_scale_factor);
 
-  void SetPaintedDeviceScaleFactor(float painted_device_scale_factor);
   float painted_device_scale_factor() const {
     return painted_device_scale_factor_;
   }
@@ -481,9 +474,6 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   // are always already built and so cc doesn't have to build them.
   bool IsUsingLayerLists() const;
 
-  // viz::SurfaceReferenceOwner implementation.
-  viz::SurfaceSequenceGenerator* GetSurfaceSequenceGenerator() override;
-
   // MutatorHostClient implementation.
   bool IsElementInList(ElementId element_id,
                        ElementListType list_type) const override;
@@ -521,6 +511,9 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   float recording_scale_factor() const { return recording_scale_factor_; }
 
   void SetURLForUkm(const GURL& url);
+
+  void SetRenderFrameObserver(
+      std::unique_ptr<RenderFrameMetadataObserver> observer);
 
  protected:
   LayerTreeHost(InitParams* params, CompositorMode mode);
@@ -615,7 +608,6 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
 
   TaskGraphRunner* task_graph_runner_;
 
-  viz::SurfaceSequenceGenerator surface_sequence_generator_;
   uint32_t num_consecutive_frames_without_slow_paths_ = 0;
 
   scoped_refptr<Layer> root_layer_;
@@ -635,6 +627,8 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   float page_scale_factor_ = 1.f;
   float min_page_scale_factor_ = 1.f;
   float max_page_scale_factor_ = 1.f;
+
+  int raster_color_space_id_ = -1;
   gfx::ColorSpace raster_color_space_;
 
   uint32_t content_source_id_;

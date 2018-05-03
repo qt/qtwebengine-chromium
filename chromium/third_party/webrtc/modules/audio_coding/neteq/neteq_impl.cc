@@ -46,6 +46,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/sanitizer.h"
+#include "rtc_base/system/fallthrough.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -103,9 +104,7 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
       playout_mode_(config.playout_mode),
       enable_fast_accelerate_(config.enable_fast_accelerate),
       nack_enabled_(false),
-      enable_muted_state_(config.enable_muted_state),
-      use_dtx_delay_fix_(
-          field_trial::IsEnabled("WebRTC-NetEqOpusDtxDelayFix")) {
+      enable_muted_state_(config.enable_muted_state) {
   RTC_LOG(LS_INFO) << "NetEq config: " << config.ToString();
   int fs = config.sample_rate_hz;
   if (fs != 8000 && fs != 16000 && fs != 32000 && fs != 48000) {
@@ -877,9 +876,8 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame, bool* muted) {
   // This is the criterion that we did decode some data through the speech
   // decoder, and the operation resulted in comfort noise.
   const bool codec_internal_sid_frame =
-      use_dtx_delay_fix_ ? (speech_type == AudioDecoder::kComfortNoise &&
-                            start_num_packets > packet_list.size())
-                         : (speech_type == AudioDecoder::kComfortNoise);
+      (speech_type == AudioDecoder::kComfortNoise &&
+       start_num_packets > packet_list.size());
 
   if (sid_frame_available || codec_internal_sid_frame) {
     // Start a new stopwatch since we are decoding a new CNG packet.
@@ -946,7 +944,7 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame, bool* muted) {
           static_cast<uint32_t>(output_size_samples_));
       // Skipping break on purpose. Execution should move on into the
       // next case.
-      FALLTHROUGH();
+      RTC_FALLTHROUGH();
     }
     case kAudioRepetition: {
       // TODO(hlundin): Write test for this.

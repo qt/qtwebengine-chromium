@@ -120,9 +120,6 @@ type:sandbox::BrokerServices
 type:sandbox::TargetPolicy
 type:sandbox::TargetServices
 
-# Likewise (base/win/scoped_handle.cc).
-type:*ActiveVerifier*
-
 #############################################################################
 # Disabled indirect calls
 
@@ -153,7 +150,7 @@ src:*audio/pulse/pulse_stubs.cc
 
 # Calls to auto-generated stubs by generate_library_loader.py
 src:*device/udev_linux/udev1_loader.cc
-src:*net/proxy/proxy_config_service_linux.cc
+src:*net/proxy_resolution/proxy_config_service_linux.cc
 
 # Calls to auto-generated stubs by ui/gl/generate_bindings.py
 src:*ui/gl/gl_bindings_autogen_*

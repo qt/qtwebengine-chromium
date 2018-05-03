@@ -26,43 +26,65 @@
 #ifndef CSSImageGeneratorValue_h
 #define CSSImageGeneratorValue_h
 
+#include <map>
 #include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
-#include "platform/geometry/LayoutSizeHash.h"
+#include "platform/geometry/FloatSize.h"
 #include "platform/heap/SelfKeepAlive.h"
-#include "platform/wtf/HashCountedSet.h"
+#include "platform/wtf/HashMap.h"
 
 namespace blink {
 
 class Document;
 class Image;
-class FloatSize;
 class ComputedStyle;
 class ImageResourceObserver;
 
+struct FloatSizeCompare {
+  bool operator()(const FloatSize& lhs, const FloatSize& rhs) const {
+    if (lhs.Width() < rhs.Width())
+      return true;
+    if (lhs.Width() > rhs.Width())
+      return false;
+    return lhs.Height() < rhs.Height();
+  }
+};
+
+// Use std::map because the WTF versions require a hashing function, while
+// the stl maps require a weak comparison operator that can be defined for
+// FloatSize. These maps do not contain many objects because we do not expect
+// any particular CSSGeneratedImageValue to have clients at many different
+// sizes at any given time.
+using ImageSizeCountMap = std::map<FloatSize, unsigned, FloatSizeCompare>;
+using GeneratedImageMap =
+    std::map<FloatSize, scoped_refptr<Image>, FloatSizeCompare>;
+
 class GeneratedImageCache {
  public:
-  void AddSize(const LayoutSize&);
-  void RemoveSize(const LayoutSize&);
+  void AddSize(const FloatSize&);
+  void RemoveSize(const FloatSize&);
 
-  Image* GetImage(const LayoutSize&) const;
-  void PutImage(const LayoutSize&, scoped_refptr<Image>);
+  Image* GetImage(const FloatSize&) const;
+  void PutImage(const FloatSize&, scoped_refptr<Image>);
 
  private:
   // A count of how many times a given image size is in use.
-  HashCountedSet<LayoutSize> sizes_;
+  ImageSizeCountMap sizes_;
 
   // A cache of Image objects by image size.
-  HashMap<LayoutSize, scoped_refptr<Image>> images_;
+  GeneratedImageMap images_;
 };
 
 struct SizeAndCount {
   DISALLOW_NEW();
-  SizeAndCount(LayoutSize new_size = LayoutSize(), int new_count = 0)
-      : size(new_size), count(new_count) {}
+  SizeAndCount() : size(), count(0) {}
 
-  LayoutSize size;
+  // The non-zero size associated with this client. A client must only
+  // ever be present at one non-zero size, with as many zero sizes as it wants.
+  FloatSize size;
+
+  // The net number of times this client has been added.
   int count;
 };
 
@@ -72,13 +94,15 @@ class CORE_EXPORT CSSImageGeneratorValue : public CSSValue {
  public:
   ~CSSImageGeneratorValue();
 
-  void AddClient(const ImageResourceObserver*, const LayoutSize&);
+  void AddClient(const ImageResourceObserver*);
+
   void RemoveClient(const ImageResourceObserver*);
-  // The |container_size| is the container size with subpixel snapping.
+  // The |target_size| is the desired image size. Background images should not
+  // be snapped. In other case the target size must be pixel snapped already.
   scoped_refptr<Image> GetImage(const ImageResourceObserver&,
                                 const Document&,
                                 const ComputedStyle&,
-                                const LayoutSize& container_size);
+                                const FloatSize& target_size);
 
   bool IsFixedSize() const;
   FloatSize FixedSize(const Document&, const FloatSize& default_object_size);
@@ -97,15 +121,15 @@ class CORE_EXPORT CSSImageGeneratorValue : public CSSValue {
  protected:
   explicit CSSImageGeneratorValue(ClassType);
 
-  Image* GetImage(const ImageResourceObserver*, const LayoutSize&);
-  void PutImage(const LayoutSize&, scoped_refptr<Image>);
+  Image* GetImage(const ImageResourceObserver*, const FloatSize&) const;
+  void PutImage(const FloatSize&, scoped_refptr<Image>) const;
   const ClientSizeCountMap& Clients() const { return clients_; }
 
   // A map from LayoutObjects (with entry count) to image sizes.
-  ClientSizeCountMap clients_;
+  mutable ClientSizeCountMap clients_;
 
   // Cached image instances.
-  GeneratedImageCache cached_images_;
+  mutable GeneratedImageCache cached_images_;
 
   // TODO(Oilpan): when/if we can make the layoutObject point directly to the
   // CSSImageGenerator value using a member we don't need to have this hack

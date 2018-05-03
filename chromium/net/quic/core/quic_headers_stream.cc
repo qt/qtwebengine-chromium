@@ -59,14 +59,12 @@ void QuicHeadersStream::MaybeReleaseSequencerBuffer() {
   }
 }
 
-void QuicHeadersStream::OnStreamFrameAcked(QuicStreamOffset offset,
+bool QuicHeadersStream::OnStreamFrameAcked(QuicStreamOffset offset,
                                            QuicByteCount data_length,
                                            bool fin_acked,
                                            QuicTime::Delta ack_delay_time) {
   QuicIntervalSet<QuicStreamOffset> newly_acked(offset, offset + data_length);
-  if (session()->allow_multiple_acks_for_data()) {
-    newly_acked.Difference(bytes_acked());
-  }
+  newly_acked.Difference(bytes_acked());
   for (const auto& acked : newly_acked) {
     QuicStreamOffset acked_offset = acked.min();
     QuicByteCount acked_length = acked.max() - acked.min();
@@ -89,9 +87,10 @@ void QuicHeadersStream::OnStreamFrameAcked(QuicStreamOffset offset,
       if (header.unacked_length < header_length) {
         QUIC_BUG << "Unsent stream data is acked. unacked_length: "
                  << header.unacked_length << " acked_length: " << header_length;
+        RecordInternalErrorLocation(QUIC_HEADERS_STREAM);
         CloseConnectionWithDetails(QUIC_INTERNAL_ERROR,
                                    "Unsent stream data is acked");
-        return;
+        return false;
       }
       if (header.ack_listener != nullptr && header_length > 0) {
         header.ack_listener->OnPacketAcked(header_length, ack_delay_time);
@@ -107,13 +106,14 @@ void QuicHeadersStream::OnStreamFrameAcked(QuicStreamOffset offset,
          unacked_headers_.front().unacked_length == 0) {
     unacked_headers_.pop_front();
   }
-  QuicStream::OnStreamFrameAcked(offset, data_length, fin_acked,
-                                 ack_delay_time);
+  return QuicStream::OnStreamFrameAcked(offset, data_length, fin_acked,
+                                        ack_delay_time);
 }
 
 void QuicHeadersStream::OnStreamFrameRetransmitted(QuicStreamOffset offset,
                                                    QuicByteCount data_length,
                                                    bool /*fin_retransmitted*/) {
+  QuicStream::OnStreamFrameRetransmitted(offset, data_length, false);
   for (CompressedHeaderInfo& header : unacked_headers_) {
     if (offset < header.headers_stream_offset) {
       // This header frame offset belongs to headers with smaller offset, stop

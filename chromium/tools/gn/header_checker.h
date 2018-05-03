@@ -6,16 +6,17 @@
 #define TOOLS_GN_HEADER_CHECKER_H_
 
 #include <map>
-#include <set>
 #include <vector>
 
+#include "base/atomic_ref_count.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/run_loop.h"
 #include "base/strings/string_piece.h"
+#include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "tools/gn/err.h"
+#include "tools/gn/source_dir.h"
 
 class BuildSettings;
 class InputFile;
@@ -24,7 +25,7 @@ class SourceFile;
 class Target;
 
 namespace base {
-class MessageLoop;
+class FilePath;
 }
 
 class HeaderChecker : public base::RefCountedThreadSafe<HeaderChecker> {
@@ -67,6 +68,9 @@ class HeaderChecker : public base::RefCountedThreadSafe<HeaderChecker> {
   FRIEND_TEST_ALL_PREFIXES(HeaderCheckerTest, CheckInclude);
   FRIEND_TEST_ALL_PREFIXES(HeaderCheckerTest, PublicFirst);
   FRIEND_TEST_ALL_PREFIXES(HeaderCheckerTest, CheckIncludeAllowCircular);
+  FRIEND_TEST_ALL_PREFIXES(HeaderCheckerTest, SourceFileForInclude);
+  FRIEND_TEST_ALL_PREFIXES(HeaderCheckerTest,
+                           SourceFileForInclude_FileNotFound);
   ~HeaderChecker();
 
   struct TargetInfo {
@@ -88,6 +92,8 @@ class HeaderChecker : public base::RefCountedThreadSafe<HeaderChecker> {
 
   typedef std::vector<TargetInfo> TargetVector;
   typedef std::map<SourceFile, TargetVector> FileMap;
+  typedef base::RepeatingCallback<bool(const base::FilePath& path)>
+      PathExistsCallback;
 
   // Backend for Run() that takes the list of files to check. The errors_ list
   // will be populate on failure.
@@ -102,7 +108,11 @@ class HeaderChecker : public base::RefCountedThreadSafe<HeaderChecker> {
   bool IsFileInOuputDir(const SourceFile& file) const;
 
   // Resolves the contents of an include to a SourceFile.
-  SourceFile SourceFileForInclude(const base::StringPiece& input) const;
+  SourceFile SourceFileForInclude(const base::StringPiece& relative_file_path,
+                                  const std::vector<SourceDir>& include_dirs,
+                                  const InputFile& source_file,
+                                  const LocationRange& range,
+                                  Err* err) const;
 
   // from_target is the target the file was defined from. It will be used in
   // error messages.
@@ -160,13 +170,14 @@ class HeaderChecker : public base::RefCountedThreadSafe<HeaderChecker> {
   // These are initialized during construction (which happens on one thread)
   // and are not modified after, so any thread can read these without locking.
 
-  base::MessageLoop* main_loop_;
-  base::RunLoop main_thread_runner_;
-
   const BuildSettings* build_settings_;
 
   // Maps source files to targets it appears in (usually just one target).
   FileMap file_map_;
+
+  // Number of tasks posted by RunCheckOverFiles() that haven't completed their
+  // execution.
+  base::AtomicRefCount task_count_;
 
   // Locked variables ----------------------------------------------------------
   //
@@ -175,6 +186,9 @@ class HeaderChecker : public base::RefCountedThreadSafe<HeaderChecker> {
   base::Lock lock_;
 
   std::vector<Err> errors_;
+
+  // Signaled when |task_count_| becomes zero.
+  base::ConditionVariable task_count_cv_;
 
   DISALLOW_COPY_AND_ASSIGN(HeaderChecker);
 };

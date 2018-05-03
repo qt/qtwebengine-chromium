@@ -6,6 +6,7 @@
 #define NGPhysicalBoxFragment_h
 
 #include "core/CoreExport.h"
+#include "core/layout/ng/geometry/ng_box_strut.h"
 #include "core/layout/ng/inline/ng_baseline.h"
 #include "core/layout/ng/ng_physical_container_fragment.h"
 
@@ -19,6 +20,7 @@ class CORE_EXPORT NGPhysicalBoxFragment final
                         const ComputedStyle& style,
                         NGPhysicalSize size,
                         Vector<scoped_refptr<NGPhysicalFragment>>& children,
+                        const NGPixelSnappedPhysicalBoxStrut& padding,
                         const NGPhysicalOffsetRect& contents_visual_rect,
                         Vector<NGBaseline>& baselines,
                         NGBoxType box_type,
@@ -27,6 +29,8 @@ class CORE_EXPORT NGPhysicalBoxFragment final
                         scoped_refptr<NGBreakToken> break_token = nullptr);
 
   const NGBaseline* Baseline(const NGBaselineRequest&) const;
+
+  const NGPixelSnappedPhysicalBoxStrut& Padding() const { return padding_; }
 
   bool HasSelfPaintingLayer() const;
   bool ChildrenInline() const;
@@ -43,10 +47,16 @@ class CORE_EXPORT NGPhysicalBoxFragment final
   // VisualRect of itself including contents, in the local coordinate.
   NGPhysicalOffsetRect VisualRectWithContents() const;
 
+  void AddSelfOutlineRects(Vector<LayoutRect>*,
+                           const LayoutPoint& additional_offset) const;
+
+  PositionWithAffinity PositionForPoint(const NGPhysicalOffset&) const override;
+
   scoped_refptr<NGPhysicalFragment> CloneWithoutOffset() const;
 
  private:
   Vector<NGBaseline> baselines_;
+  NGPixelSnappedPhysicalBoxStrut padding_;
 };
 
 DEFINE_TYPE_CASTS(NGPhysicalBoxFragment,

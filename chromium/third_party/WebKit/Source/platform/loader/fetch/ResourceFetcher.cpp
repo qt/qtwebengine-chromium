@@ -57,7 +57,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
-#include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "public/platform/modules/fetch/fetch_api_request.mojom-blink.h"
 
 using blink::WebURLRequest;
 
@@ -120,6 +120,7 @@ ResourceLoadPriority TypeToPriority(Resource::Type type) {
       return ResourceLoadPriority::kVeryHigh;
     case Resource::kXSLStyleSheet:
       DCHECK(RuntimeEnabledFeatures::XSLTEnabled());
+      FALLTHROUGH;
     case Resource::kRaw:
     case Resource::kImportResource:
     case Resource::kScript:
@@ -244,6 +245,7 @@ WebURLRequest::RequestContext ResourceFetcher::DetermineRequestContext(
       return WebURLRequest::kRequestContextHyperlink;
     case Resource::kXSLStyleSheet:
       DCHECK(RuntimeEnabledFeatures::XSLTEnabled());
+      FALLTHROUGH;
     case Resource::kCSSStyleSheet:
       return WebURLRequest::kRequestContextStyle;
     case Resource::kScript:
@@ -466,10 +468,8 @@ Resource* ResourceFetcher::ResourceForStaticData(
   resource->SetCacheIdentifier(cache_identifier);
   resource->Finish(0.0, Context().GetLoadingTaskRunner().get());
 
-  if (ShouldResourceBeAddedToMemoryCache(params, resource) &&
-      !substitute_data.IsValid()) {
-    GetMemoryCache()->Add(resource);
-  }
+  if (!substitute_data.IsValid())
+    AddToMemoryCacheIfNeeded(params, resource);
 
   return resource;
 }
@@ -538,12 +538,11 @@ void ResourceFetcher::RemovePreload(Resource* resource) {
     preloads_.erase(it);
 }
 
-ResourceFetcher::PrepareRequestResult ResourceFetcher::PrepareRequest(
+ResourceRequestBlockedReason ResourceFetcher::PrepareRequest(
     FetchParameters& params,
     const ResourceFactory& factory,
     const SubstituteData& substitute_data,
-    unsigned long identifier,
-    ResourceRequestBlockedReason& blocked_reason) {
+    unsigned long identifier) {
   ResourceRequest& resource_request = params.MutableResourceRequest();
   Resource::Type resource_type = factory.GetType();
   const ResourceLoaderOptions& options = params.Options();
@@ -579,7 +578,7 @@ ResourceFetcher::PrepareRequestResult ResourceFetcher::PrepareRequest(
       params.GetResourceWidth(), resource_request);
 
   if (!params.Url().IsValid())
-    return kAbort;
+    return ResourceRequestBlockedReason::kOther;
 
   resource_request.SetPriority(ComputeLoadPriority(
       resource_type, params.GetResourceRequest(), ResourcePriority::kNotVisible,
@@ -605,13 +604,18 @@ ResourceFetcher::PrepareRequestResult ResourceFetcher::PrepareRequest(
   network_instrumentation::ResourcePrioritySet(identifier,
                                                resource_request.Priority());
 
-  blocked_reason = Context().CanRequest(
-      resource_type, resource_request,
-      MemoryCache::RemoveFragmentIdentifierIfNeeded(params.Url()), options,
-      reporting_policy, params.GetOriginRestriction(),
-      resource_request.GetRedirectStatus());
+  KURL url = MemoryCache::RemoveFragmentIdentifierIfNeeded(params.Url());
+  ResourceRequestBlockedReason blocked_reason = Context().CanRequest(
+      resource_type, resource_request, url, options, reporting_policy,
+      params.GetOriginRestriction(), resource_request.GetRedirectStatus());
+
+  if (Context().IsAdResource(url, resource_type,
+                             resource_request.GetRequestContext())) {
+    resource_request.SetIsAdResource();
+  }
+
   if (blocked_reason != ResourceRequestBlockedReason::kNone)
-    return kBlock;
+    return blocked_reason;
 
   const scoped_refptr<const SecurityOrigin>& origin = options.security_origin;
   if (origin && !origin->IsUnique() &&
@@ -633,10 +637,10 @@ ResourceFetcher::PrepareRequestResult ResourceFetcher::PrepareRequest(
                            FetchContext::RedirectType::kNotForRedirect);
 
   if (!params.Url().IsValid())
-    return kAbort;
+    return ResourceRequestBlockedReason::kOther;
 
   params.MutableOptions().cors_flag =
-      !origin || !origin->CanRequestNoSuborigin(params.Url());
+      !origin || !origin->CanRequest(params.Url());
 
   if (options.cors_handling_by_resource_fetcher ==
       kEnableCORSHandlingByResourceFetcher) {
@@ -645,10 +649,7 @@ ResourceFetcher::PrepareRequestResult ResourceFetcher::PrepareRequest(
       case network::mojom::FetchCredentialsMode::kOmit:
         break;
       case network::mojom::FetchCredentialsMode::kSameOrigin:
-        allow_stored_credentials =
-            !params.Options().cors_flag ||
-            (origin &&
-             origin->HasSuboriginAndShouldAllowCredentialsFor(params.Url()));
+        allow_stored_credentials = !params.Options().cors_flag;
         break;
       case network::mojom::FetchCredentialsMode::kInclude:
         allow_stored_credentials = true;
@@ -657,7 +658,7 @@ ResourceFetcher::PrepareRequestResult ResourceFetcher::PrepareRequest(
     resource_request.SetAllowStoredCredentials(allow_stored_credentials);
   }
 
-  return kContinue;
+  return ResourceRequestBlockedReason::kNone;
 }
 
 Resource* ResourceFetcher::RequestResource(
@@ -669,13 +670,15 @@ Resource* ResourceFetcher::RequestResource(
   // shouldn't provide a client.
   DCHECK(!client ||
          params.Options().synchronous_policy == kRequestAsynchronously);
-  Resource* resource = RequestResource(params, factory, substitute_data);
+  Resource* resource =
+      RequestResourceInternal(params, factory, substitute_data);
+  DCHECK(resource);
   if (client)
     client->SetResource(resource, Context().GetLoadingTaskRunner().get());
   return resource;
 }
 
-Resource* ResourceFetcher::RequestResource(
+Resource* ResourceFetcher::RequestResourceInternal(
     FetchParameters& params,
     const ResourceFactory& factory,
     const SubstituteData& substitute_data) {
@@ -702,13 +705,8 @@ Resource* ResourceFetcher::RequestResource(
   }
 
   ResourceRequestBlockedReason blocked_reason =
-      ResourceRequestBlockedReason::kNone;
-
-  PrepareRequestResult result = PrepareRequest(params, factory, substitute_data,
-                                               identifier, blocked_reason);
-  if (result == kAbort)
-    return nullptr;
-  if (result == kBlock)
+      PrepareRequest(params, factory, substitute_data, identifier);
+  if (blocked_reason != ResourceRequestBlockedReason::kNone)
     return ResourceForBlockedRequest(params, factory, blocked_reason);
 
   Resource::Type resource_type = factory.GetType();
@@ -734,7 +732,8 @@ Resource* ResourceFetcher::RequestResource(
       // in the case of data URLs which might have resources such as fonts that
       // need to be decoded only on demand. These data URLs are allowed to be
       // processed using the normal ResourceFetcher machinery.
-      return nullptr;
+      return ResourceForBlockedRequest(params, factory,
+                                       ResourceRequestBlockedReason::kOther);
     }
   }
 
@@ -760,7 +759,7 @@ Resource* ResourceFetcher::RequestResource(
   switch (policy) {
     case kReload:
       GetMemoryCache()->Remove(resource);
-    // Fall through
+      FALLTHROUGH;
     case kLoad:
       resource = CreateResourceForLoading(params, factory);
       break;
@@ -805,18 +804,17 @@ Resource* ResourceFetcher::RequestResource(
   // loading immediately. If revalidation policy was determined as |Revalidate|,
   // the resource was already initialized for the revalidation here, but won't
   // start loading.
-  if (!ResourceNeedsLoad(resource, params, policy)) {
-    if (policy != kUse)
-      InsertAsPreloadIfNecessary(resource, params, resource_type);
-    return resource;
+  if (ResourceNeedsLoad(resource, params, policy)) {
+    if (StartLoad(resource)) {
+      scoped_resource_load_tracker.ResourceLoadContinuesBeyondScope();
+    } else {
+      resource->FinishAsError(ResourceError::CancelledError(params.Url()),
+                              Context().GetLoadingTaskRunner().get());
+    }
   }
-
-  if (!StartLoad(resource))
-    return nullptr;
 
   if (policy != kUse)
     InsertAsPreloadIfNecessary(resource, params, resource_type);
-  scoped_resource_load_tracker.ResourceLoadContinuesBeyondScope();
 
   return resource;
 }
@@ -864,8 +862,26 @@ void ResourceFetcher::InitializeRevalidation(
   resource->SetRevalidatingRequest(revalidating_request);
 }
 
+scoped_refptr<const SecurityOrigin> ResourceFetcher::GetSourceOrigin(
+    const ResourceLoaderOptions& options) const {
+  if (options.security_origin)
+    return options.security_origin;
+
+  return Context().GetSecurityOrigin();
+}
+
+void ResourceFetcher::AddToMemoryCacheIfNeeded(const FetchParameters& params,
+                                               Resource* resource) {
+  if (!ShouldResourceBeAddedToMemoryCache(params, resource))
+    return;
+
+  resource->SetSourceOrigin(GetSourceOrigin(params.Options()));
+
+  GetMemoryCache()->Add(resource);
+}
+
 Resource* ResourceFetcher::CreateResourceForLoading(
-    FetchParameters& params,
+    const FetchParameters& params,
     const ResourceFactory& factory) {
   const String cache_identifier = GetCacheIdentifier();
   DCHECK(!IsMainThread() ||
@@ -883,8 +899,7 @@ Resource* ResourceFetcher::CreateResourceForLoading(
   }
   resource->SetCacheIdentifier(cache_identifier);
 
-  if (ShouldResourceBeAddedToMemoryCache(params, resource))
-    GetMemoryCache()->Add(resource);
+  AddToMemoryCacheIfNeeded(params, resource);
   return resource;
 }
 
@@ -970,7 +985,7 @@ Resource* ResourceFetcher::MatchPreload(const FetchParameters& params,
     return nullptr;
 
   if (IsImageResourceDisallowedToBeReused(*resource) ||
-      !resource->CanReuse(params))
+      !resource->CanReuse(params, GetSourceOrigin(params.Options())))
     return nullptr;
 
   if (!resource->MatchPreload(params, Context().GetLoadingTaskRunner().get()))
@@ -993,12 +1008,15 @@ void ResourceFetcher::InsertAsPreloadIfNecessary(Resource* resource,
     return;
   }
   PreloadKey key(params.Url(), type);
-  if (preloads_.find(key) == preloads_.end()) {
-    preloads_.insert(key, resource);
-    resource->MarkAsPreload();
-    if (preloaded_urls_for_test_)
-      preloaded_urls_for_test_->insert(resource->Url().GetString());
-  }
+  if (preloads_.find(key) != preloads_.end())
+    return;
+
+  resource->SetSourceOrigin(GetSourceOrigin(params.Options()));
+
+  preloads_.insert(key, resource);
+  resource->MarkAsPreload();
+  if (preloaded_urls_for_test_)
+    preloaded_urls_for_test_->insert(resource->Url().GetString());
 }
 
 bool ResourceFetcher::IsImageResourceDisallowedToBeReused(
@@ -1101,7 +1119,8 @@ ResourceFetcher::DetermineRevalidationPolicyInternal(
   if (is_static_data)
     return kUse;
 
-  if (!existing_resource.CanReuse(fetch_params)) {
+  if (!existing_resource.CanReuse(fetch_params,
+                                  GetSourceOrigin(fetch_params.Options()))) {
     RESOURCE_LOADING_DVLOG(1) << "ResourceFetcher::DetermineRevalidationPolicy "
                                  "reloading due to Resource::CanReuse() "
                                  "returning false.";
@@ -1298,8 +1317,6 @@ bool ResourceFetcher::IsPreloadedForTest(const KURL& url) const {
 }
 
 void ResourceFetcher::ClearPreloads(ClearPreloadsPolicy policy) {
-  LogPreloadStats(policy);
-
   Vector<PreloadKey> keys_to_be_removed;
   for (const auto& pair : preloads_) {
     Resource* resource = pair.value;
@@ -1443,9 +1460,9 @@ void ResourceFetcher::HandleLoaderError(Resource* resource,
                              FetchInitiatorTypeNames::internal;
 
   resource->VirtualTimePauser().PauseVirtualTime(false);
-  Context().DispatchDidFail(resource->Identifier(), error,
-                            resource->GetResponse().EncodedDataLength(),
-                            is_internal_request);
+  Context().DispatchDidFail(
+      resource->LastResourceRequest().Url(), resource->Identifier(), error,
+      resource->GetResponse().EncodedDataLength(), is_internal_request);
 
   if (error.IsCancellation())
     RemovePreload(resource);
@@ -1490,7 +1507,8 @@ bool ResourceFetcher::StartLoad(Resource* resource) {
 
     if (Context().GetFrameScheduler()) {
       WebScopedVirtualTimePauser virtual_time_pauser =
-          Context().GetFrameScheduler()->CreateWebScopedVirtualTimePauser();
+          Context().GetFrameScheduler()->CreateWebScopedVirtualTimePauser(
+              WebScopedVirtualTimePauser::VirtualTaskDuration::kNonInstant);
       virtual_time_pauser.PauseVirtualTime(true);
       resource->VirtualTimePauser() = std::move(virtual_time_pauser);
     }
@@ -1498,13 +1516,7 @@ bool ResourceFetcher::StartLoad(Resource* resource) {
                                       resource->GetType(),
                                       resource->Options().initiator_info);
 
-    // Resource requests from suborigins should not be intercepted by the
-    // service worker of the physical origin. This has the effect that, for now,
-    // suborigins do not work with service workers. See
-    // https://w3c.github.io/webappsec-suborigins/.
     const SecurityOrigin* source_origin = Context().GetSecurityOrigin();
-    if (source_origin && source_origin->HasSuborigin())
-      request.SetServiceWorkerMode(WebURLRequest::ServiceWorkerMode::kNone);
 
     // TODO(shaochuan): Saving modified ResourceRequest back to |resource|,
     // remove once dispatchWillSendRequest() takes const ResourceRequest.
@@ -1602,153 +1614,6 @@ void ResourceFetcher::ReloadLoFiImages() {
   }
 }
 
-void ResourceFetcher::LogPreloadStats(ClearPreloadsPolicy policy) {
-  unsigned scripts = 0;
-  unsigned script_misses = 0;
-  unsigned stylesheets = 0;
-  unsigned stylesheet_misses = 0;
-  unsigned images = 0;
-  unsigned image_misses = 0;
-  unsigned fonts = 0;
-  unsigned font_misses = 0;
-  unsigned medias = 0;
-  unsigned media_misses = 0;
-  unsigned text_tracks = 0;
-  unsigned text_track_misses = 0;
-  unsigned imports = 0;
-  unsigned import_misses = 0;
-  unsigned raws = 0;
-  unsigned raw_misses = 0;
-  for (const auto& pair : preloads_) {
-    Resource* resource = pair.value;
-    // Do not double count link rel preloads. These do not get cleared if the
-    // ClearPreloadsPolicy is only clearing speculative markup preloads.
-    if (resource->IsLinkPreload() &&
-        policy == kClearSpeculativeMarkupPreloads) {
-      continue;
-    }
-    int miss_count = resource->IsUnusedPreload() ? 1 : 0;
-    switch (resource->GetType()) {
-      case Resource::kImage:
-        images++;
-        image_misses += miss_count;
-        break;
-      case Resource::kScript:
-        scripts++;
-        script_misses += miss_count;
-        break;
-      case Resource::kCSSStyleSheet:
-        stylesheets++;
-        stylesheet_misses += miss_count;
-        break;
-      case Resource::kFont:
-        fonts++;
-        font_misses += miss_count;
-        break;
-      case Resource::kAudio:
-      case Resource::kVideo:
-        medias++;
-        media_misses += miss_count;
-        break;
-      case Resource::kTextTrack:
-        text_tracks++;
-        text_track_misses += miss_count;
-        break;
-      case Resource::kImportResource:
-        imports++;
-        import_misses += miss_count;
-        break;
-      case Resource::kRaw:
-        raws++;
-        raw_misses += miss_count;
-        break;
-      case Resource::kMock:
-        // Do not count Resource::Mock because this type is only for testing.
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, image_preloads,
-                                  ("PreloadScanner.Counts2.Image", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, image_preload_misses,
-      ("PreloadScanner.Counts2.Miss.Image", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, script_preloads,
-      ("PreloadScanner.Counts2.Script", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, script_preload_misses,
-      ("PreloadScanner.Counts2.Miss.Script", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, stylesheet_preloads,
-      ("PreloadScanner.Counts2.CSSStyleSheet", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, stylesheet_preload_misses,
-      ("PreloadScanner.Counts2.Miss.CSSStyleSheet", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, font_preloads,
-                                  ("PreloadScanner.Counts2.Font", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, font_preload_misses,
-      ("PreloadScanner.Counts2.Miss.Font", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, media_preloads,
-                                  ("PreloadScanner.Counts2.Media", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, media_preload_misses,
-      ("PreloadScanner.Counts2.Miss.Media", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, text_track_preloads,
-      ("PreloadScanner.Counts2.TextTrack", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, text_track_preload_misses,
-      ("PreloadScanner.Counts2.Miss.TextTrack", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, import_preloads,
-      ("PreloadScanner.Counts2.Import", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, import_preload_misses,
-      ("PreloadScanner.Counts2.Miss.Import", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, raw_preloads,
-                                  ("PreloadScanner.Counts2.Raw", 0, 100, 25));
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      CustomCountHistogram, raw_preload_misses,
-      ("PreloadScanner.Counts2.Miss.Raw", 0, 100, 25));
-
-  if (images)
-    image_preloads.Count(images);
-  if (image_misses)
-    image_preload_misses.Count(image_misses);
-  if (scripts)
-    script_preloads.Count(scripts);
-  if (script_misses)
-    script_preload_misses.Count(script_misses);
-  if (stylesheets)
-    stylesheet_preloads.Count(stylesheets);
-  if (stylesheet_misses)
-    stylesheet_preload_misses.Count(stylesheet_misses);
-  if (fonts)
-    font_preloads.Count(fonts);
-  if (font_misses)
-    font_preload_misses.Count(font_misses);
-  if (medias)
-    media_preloads.Count(medias);
-  if (media_misses)
-    media_preload_misses.Count(media_misses);
-  if (text_tracks)
-    text_track_preloads.Count(text_tracks);
-  if (text_track_misses)
-    text_track_preload_misses.Count(text_track_misses);
-  if (imports)
-    import_preloads.Count(imports);
-  if (import_misses)
-    import_preload_misses.Count(import_misses);
-  if (raws)
-    raw_preloads.Count(raws);
-  if (raw_misses)
-    raw_preload_misses.Count(raw_misses);
-}
-
 String ResourceFetcher::GetCacheIdentifier() const {
   if (Context().IsControlledByServiceWorker())
     return String::Number(Context().ServiceWorkerID());
@@ -1782,13 +1647,13 @@ void ResourceFetcher::StopFetchingInternal(StopFetchingTarget target) {
   HeapVector<Member<ResourceLoader>> loaders_to_cancel;
   for (const auto& loader : non_blocking_loaders_) {
     if (target == StopFetchingTarget::kIncludingKeepaliveLoaders ||
-        !loader->GetKeepalive()) {
+        !loader->ShouldBeKeptAliveWhenDetached()) {
       loaders_to_cancel.push_back(loader);
     }
   }
   for (const auto& loader : loaders_) {
     if (target == StopFetchingTarget::kIncludingKeepaliveLoaders ||
-        !loader->GetKeepalive()) {
+        !loader->ShouldBeKeptAliveWhenDetached()) {
       loaders_to_cancel.push_back(loader);
     }
   }

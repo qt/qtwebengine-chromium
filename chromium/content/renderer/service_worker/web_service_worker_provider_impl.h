@@ -12,8 +12,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "third_party/WebKit/common/service_worker/service_worker_error_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/common/message_port/transferable_message.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
 #include "third_party/WebKit/public/platform/web_feature.mojom.h"
 
@@ -25,7 +26,6 @@ class WebServiceWorkerProviderClient;
 namespace content {
 
 class ServiceWorkerDispatcher;
-class ServiceWorkerHandleReference;
 class ServiceWorkerProviderContext;
 class ThreadSafeSender;
 
@@ -59,15 +59,13 @@ class CONTENT_EXPORT WebServiceWorkerProviderImpl
                                  blink::WebString* error_message) override;
   // Sets the ServiceWorkerContainer#controller for this provider. It's not
   // used when this WebServiceWorkerProvider is for a service worker context.
-  void SetController(std::unique_ptr<ServiceWorkerHandleReference> controller,
+  void SetController(blink::mojom::ServiceWorkerObjectInfoPtr controller,
                      const std::set<blink::mojom::WebFeature>& features,
                      bool should_notify_controller_change);
   // Posts a message to the ServiceWorkerContainer for this provider.
   // Corresponds to Client#postMessage().
-  void PostMessageToClient(
-      std::unique_ptr<ServiceWorkerHandleReference> source_handle,
-      const base::string16& message,
-      std::vector<mojo::ScopedMessagePipeHandle> message_pipes);
+  void PostMessageToClient(blink::mojom::ServiceWorkerObjectInfoPtr source,
+                           blink::TransferableMessage message);
   // For UseCounter purposes. Called when the controller service worker used a
   // feature. It is counted as if it were a feature usage from the page.
   void CountFeature(blink::mojom::WebFeature feature);

@@ -201,11 +201,11 @@ FX_RECT CFX_FloatRect::ToRoundedFxRect() const {
 
 #ifndef NDEBUG
 std::ostream& operator<<(std::ostream& os, const CFX_FloatRect& rect) {
-  os << "rect[" << rect.Width() << "x" << rect.Height() << " (" << rect.left
-     << ", " << rect.bottom << ")]";
+  os << "rect[w " << rect.Width() << " x h " << rect.Height() << " (left "
+     << rect.left << ", bot " << rect.bottom << ")]";
   return os;
 }
-#endif
+#endif  // NDEBUG
 
 CFX_Matrix CFX_Matrix::GetInverse() const {
   CFX_Matrix inverse;
@@ -271,10 +271,10 @@ void CFX_Matrix::Rotate(float fRadian, bool bPrepended) {
                  bPrepended);
 }
 
-void CFX_Matrix::RotateAt(float fRadian, float dx, float dy, bool bPrepended) {
-  Translate(dx, dy, bPrepended);
+void CFX_Matrix::RotateAt(float fRadian, float x, float y, bool bPrepended) {
+  Translate(-x, -y, bPrepended);
   Rotate(fRadian, bPrepended);
-  Translate(-dx, -dy, bPrepended);
+  Translate(x, y, bPrepended);
 }
 
 void CFX_Matrix::Shear(float fAlphaRadian, float fBetaRadian, bool bPrepended) {

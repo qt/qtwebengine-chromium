@@ -28,6 +28,7 @@ class Env;
 
 namespace base {
 class CommandLine;
+class DeferredSequencedTaskRunner;
 class FilePath;
 class HighResolutionTimerManager;
 class MemoryPressureMonitor;
@@ -75,12 +76,6 @@ class ScopedIPCSupport;
 namespace net {
 class NetworkChangeNotifier;
 }  // namespace net
-
-#if defined(USE_OZONE)
-namespace gfx {
-class ClientNativePixmapFactory;
-}  // namespace gfx
-#endif
 
 #if BUILDFLAG(ENABLE_MUS)
 namespace ui {
@@ -164,9 +159,12 @@ class CONTENT_EXPORT BrowserMainLoop {
   // through stopping threads to PostDestroyThreads.
   void ShutdownThreadsAndCleanUp();
 
+  void InitializeIOThreadForTesting();
+
   int GetResultCode() const { return result_code_; }
 
   media::AudioManager* audio_manager() const { return audio_manager_.get(); }
+  base::SequencedTaskRunner* audio_service_runner();
   media::AudioSystem* audio_system() const { return audio_system_.get(); }
   MediaStreamManager* media_stream_manager() const {
     return media_stream_manager_.get();
@@ -241,6 +239,9 @@ class CONTENT_EXPORT BrowserMainLoop {
   // Create all secondary threads.
   int CreateThreads();
 
+  // Called just after creating the threads.
+  int PostCreateThreads();
+
   // Called right after the browser threads have been started.
   int BrowserThreadsStarted();
 
@@ -248,6 +249,7 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   void MainMessageLoopRun();
 
+  void InitializeIOThread();
   void InitializeMojo();
   base::FilePath GetStartupTraceFileName(
       const base::CommandLine& command_line) const;
@@ -272,6 +274,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   // CreateStartupTasks()
   //   PreCreateThreads()
   //   CreateThreads()
+  //   PostCreateThreads()
   //   BrowserThreadsStarted()
   //     InitializeMojo()
   //     InitStartupTracingForDuration()
@@ -362,6 +365,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   // |user_input_monitor_| has to outlive |audio_manager_|, so declared first.
   std::unique_ptr<media::UserInputMonitor> user_input_monitor_;
   std::unique_ptr<media::AudioManager> audio_manager_;
+  scoped_refptr<base::DeferredSequencedTaskRunner> audio_service_runner_;
   std::unique_ptr<media::AudioSystem> audio_system_;
 
   std::unique_ptr<midi::MidiService> midi_service_;
@@ -375,9 +379,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   std::unique_ptr<media::DeviceMonitorLinux> device_monitor_linux_;
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   std::unique_ptr<media::DeviceMonitorMac> device_monitor_mac_;
-#endif
-#if defined(USE_OZONE)
-  std::unique_ptr<gfx::ClientNativePixmapFactory> client_native_pixmap_factory_;
 #endif
 
 #if BUILDFLAG(ENABLE_WEBRTC)

@@ -23,12 +23,15 @@
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/readback_types.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "third_party/WebKit/public/platform/modules/manifest/manifest_manager.mojom.h"
 #include "url/gurl.h"
 
 class SkBitmap;
+
+namespace base {
+class UnguessableToken;
+}
 
 namespace gfx {
 class Image;
@@ -61,7 +64,7 @@ class PageHandler : public DevToolsDomainHandler,
   static std::vector<PageHandler*> ForAgentHost(DevToolsAgentHostImpl* host);
 
   void Wire(UberDispatcher* dispatcher) override;
-  void SetRenderer(RenderProcessHost* process_host,
+  void SetRenderer(int process_host_id,
                    RenderFrameHostImpl* frame_host) override;
   void OnSwapCompositorFrame(viz::CompositorFrameMetadata frame_metadata);
   void OnSynchronousSwapCompositorFrame(
@@ -90,6 +93,7 @@ class PageHandler : public DevToolsDomainHandler,
   void Navigate(const std::string& url,
                 Maybe<std::string> referrer,
                 Maybe<std::string> transition_type,
+                Maybe<std::string> frame_id,
                 std::unique_ptr<NavigateCallback> callback) override;
   Response StopLoading() override;
 
@@ -119,6 +123,7 @@ class PageHandler : public DevToolsDomainHandler,
                   Maybe<bool> ignore_invalid_page_ranges,
                   Maybe<String> header_template,
                   Maybe<String> footer_template,
+                  Maybe<bool> prefer_css_page_size,
                   std::unique_ptr<PrintToPDFCallback> callback) override;
   Response StartScreencast(Maybe<std::string> format,
                            Maybe<int> quality,
@@ -147,12 +152,12 @@ class PageHandler : public DevToolsDomainHandler,
   WebContentsImpl* GetWebContents();
   void NotifyScreencastVisibility(bool visible);
   void InnerSwapCompositorFrame();
-  void ScreencastFrameCaptured(viz::CompositorFrameMetadata metadata,
-                               const SkBitmap& bitmap,
-                               ReadbackResponse response);
-  void ScreencastFrameEncoded(viz::CompositorFrameMetadata metadata,
-                              const base::Time& timestamp,
-                              const std::string& data);
+  void ScreencastFrameCaptured(
+      std::unique_ptr<Page::ScreencastFrameMetadata> metadata,
+      const SkBitmap& bitmap);
+  void ScreencastFrameEncoded(
+      std::unique_ptr<Page::ScreencastFrameMetadata> metadata,
+      const std::string& data);
 
   void ScreenshotCaptured(
       std::unique_ptr<CaptureScreenshotCallback> callback,
@@ -194,7 +199,8 @@ class PageHandler : public DevToolsDomainHandler,
   NotificationRegistrar registrar_;
   JavaScriptDialogCallback pending_dialog_;
   scoped_refptr<DevToolsDownloadManagerDelegate> download_manager_delegate_;
-  std::unique_ptr<NavigateCallback> navigate_callback_;
+  base::flat_map<base::UnguessableToken, std::unique_ptr<NavigateCallback>>
+      navigate_callbacks_;
   base::WeakPtrFactory<PageHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PageHandler);

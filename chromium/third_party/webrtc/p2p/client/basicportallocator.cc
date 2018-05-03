@@ -429,6 +429,17 @@ void BasicPortAllocatorSession::Regather(
   }
 }
 
+void BasicPortAllocatorSession::SetStunKeepaliveIntervalForReadyPorts(
+    const rtc::Optional<int>& stun_keepalive_interval) {
+  auto ports = ReadyPorts();
+  for (PortInterface* port : ports) {
+    if (port->Type() == STUN_PORT_TYPE) {
+      static_cast<UDPPort*>(port)->set_stun_keepalive_delay(
+          stun_keepalive_interval);
+    }
+  }
+}
+
 std::vector<PortInterface*> BasicPortAllocatorSession::ReadyPorts() const {
   std::vector<PortInterface*> ret;
   for (const PortData& data : ports_) {
@@ -633,6 +644,14 @@ std::vector<rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
       network_manager->GetAnyAddressNetworks(&networks);
     }
   }
+  // Filter out link-local networks if needed.
+  if (flags() & PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS) {
+    networks.erase(std::remove_if(networks.begin(), networks.end(),
+                                  [](rtc::Network* network) {
+                                    return IPIsLinkLocal(network->prefix());
+                                  }),
+                   networks.end());
+  }
   // Do some more filtering, depending on the network ignore mask and "disable
   // costly networks" flag.
   networks.erase(std::remove_if(networks.begin(), networks.end(),
@@ -644,6 +663,13 @@ std::vector<rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
   if (flags() & PORTALLOCATOR_DISABLE_COSTLY_NETWORKS) {
     uint16_t lowest_cost = rtc::kNetworkCostMax;
     for (rtc::Network* network : networks) {
+      // Don't determine the lowest cost from a link-local network.
+      // On iOS, a device connected to the computer will get a link-local
+      // network for communicating with the computer, however this network can't
+      // be used to connect to a peer outside the network.
+      if (rtc::IPIsLinkLocal(network->GetBestIP())) {
+        continue;
+      }
       lowest_cost = std::min<uint16_t>(lowest_cost, network->GetCost());
     }
     networks.erase(std::remove_if(networks.begin(), networks.end(),
@@ -1342,6 +1368,8 @@ void AllocationSequence::CreateStunPorts() {
       session_->username(), session_->password(), config_->StunServers(),
       session_->allocator()->origin());
   if (port) {
+    port->set_stun_keepalive_delay(
+        session_->allocator()->stun_candidate_keepalive_interval());
     session_->AddAllocatedPort(port, this, true);
     // Since StunPort is not created using shared socket, |port| will not be
     // added to the dequeue.

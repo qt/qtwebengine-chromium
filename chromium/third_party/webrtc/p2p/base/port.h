@@ -19,6 +19,9 @@
 
 #include "api/candidate.h"
 #include "api/optional.h"
+#include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair.h"
+#include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
+#include "logging/rtc_event_log/icelogger.h"
 #include "p2p/base/candidatepairinterface.h"
 #include "p2p/base/packetlossestimator.h"
 #include "p2p/base/packetsocketfactory.h"
@@ -103,6 +106,36 @@ enum class IceCandidatePairState {
   // frozen because we have not implemented ICE freezing logic.
 };
 
+// Stats that we can return about the port of a STUN candidate.
+class StunStats {
+ public:
+  StunStats() = default;
+  StunStats(const StunStats&) = default;
+  ~StunStats() = default;
+
+  StunStats& operator=(const StunStats& other) = default;
+
+  int stun_binding_requests_sent = 0;
+  int stun_binding_responses_received = 0;
+  double stun_binding_rtt_ms_total = 0;
+  double stun_binding_rtt_ms_squared_total = 0;
+};
+
+// Stats that we can return about a candidate.
+class CandidateStats {
+ public:
+  CandidateStats();
+  explicit CandidateStats(Candidate candidate);
+  CandidateStats(const CandidateStats&);
+  ~CandidateStats();
+
+  Candidate candidate;
+  // STUN port stats if this candidate is a STUN candidate.
+  rtc::Optional<StunStats> stun_stats;
+};
+
+typedef std::vector<CandidateStats> CandidateStatsList;
+
 // Stats that we can return about the connections for a transport channel.
 // TODO(hta): Rename to ConnectionStats
 struct ConnectionInfo {
@@ -146,7 +179,7 @@ struct ConnectionInfo {
   rtc::Optional<uint32_t> current_round_trip_time_ms;
 };
 
-// Information about all the connections of a channel.
+// Information about all the candidate pairs of a channel.
 typedef std::vector<ConnectionInfo> ConnectionInfos;
 
 const char* ProtoToString(ProtocolType proto);
@@ -364,6 +397,8 @@ class Port : public PortInterface, public rtc::MessageHandler,
   size_t AddPrflxCandidate(const Candidate& local);
 
   int16_t network_cost() const { return network_cost_; }
+
+  void GetStunStats(rtc::Optional<StunStats>* stats) override{};
 
  protected:
   enum { MSG_DESTROY_IF_DEAD = 0, MSG_FIRST_AVAILABLE };
@@ -639,6 +674,13 @@ class Connection : public CandidatePairInterface,
   std::string ToDebugId() const;
   std::string ToString() const;
   std::string ToSensitiveString() const;
+  // Structured description of this candidate pair.
+  const webrtc::IceCandidatePairDescription& ToLogDescription();
+  // Integer typed hash value of this candidate pair.
+  uint32_t hash() { return hash_; }
+  void set_ice_event_log(webrtc::IceEventLog* ice_event_log) {
+    ice_event_log_ = ice_event_log;
+  }
   // Prints pings_since_last_response_ into a string.
   void PrintPingsSinceLastResponse(std::string* pings, size_t max);
 
@@ -728,6 +770,8 @@ class Connection : public CandidatePairInterface,
   void MaybeUpdateLocalCandidate(ConnectionRequest* request,
                                  StunMessage* response);
 
+  void LogCandidatePairEvent(webrtc::IceCandidatePairEventType type);
+
   WriteState write_state_;
   bool receiving_;
   bool connected_;
@@ -774,6 +818,10 @@ class Connection : public CandidatePairInterface,
   int receiving_timeout_;
   int64_t time_created_ms_;
   int num_pings_sent_ = 0;
+
+  rtc::Optional<webrtc::IceCandidatePairDescription> log_description_;
+  uint32_t hash_;
+  webrtc::IceEventLog* ice_event_log_ = nullptr;
 
   friend class Port;
   friend class ConnectionRequest;

@@ -18,15 +18,15 @@ namespace test {
 namespace {
 
 // Loop variables.
-const int kBitrates[] = {500};
+const size_t kBitrates[] = {500};
 const VideoCodecType kVideoCodecType[] = {kVideoCodecVP8};
 const bool kHwCodec[] = {false};
 
 // Codec settings.
-const bool kResilienceOn = false;
+const int kNumSpatialLayers = 1;
 const int kNumTemporalLayers = 1;
+const bool kResilienceOn = kNumSpatialLayers > 1 || kNumTemporalLayers > 1;
 const bool kDenoisingOn = false;
-const bool kErrorConcealmentOn = false;
 const bool kSpatialResizeOn = false;
 const bool kFrameDropperOn = false;
 
@@ -46,7 +46,7 @@ const int kNumFrames = 30;
 class VideoProcessorIntegrationTestParameterized
     : public VideoProcessorIntegrationTest,
       public ::testing::WithParamInterface<
-          ::testing::tuple<int, VideoCodecType, bool>> {
+          ::testing::tuple<size_t, VideoCodecType, bool>> {
  protected:
   VideoProcessorIntegrationTestParameterized()
       : bitrate_(::testing::get<0>(GetParam())),
@@ -54,31 +54,36 @@ class VideoProcessorIntegrationTestParameterized
         hw_codec_(::testing::get<2>(GetParam())) {}
   ~VideoProcessorIntegrationTestParameterized() override = default;
 
-  void RunTest(int width,
-               int height,
-               int framerate,
+  void RunTest(size_t width,
+               size_t height,
+               size_t framerate,
                const std::string& filename) {
     config_.filename = filename;
-    config_.input_filename = ResourcePath(filename, "yuv");
-    config_.output_filename =
-        TempFilename(OutputPath(), "plot_videoprocessor_integrationtest");
+    config_.filepath = ResourcePath(filename, "yuv");
     config_.use_single_core = kUseSingleCore;
     config_.measure_cpu = kMeasureCpu;
     config_.hw_encoder = hw_codec_;
     config_.hw_decoder = hw_codec_;
     config_.num_frames = kNumFrames;
-    config_.SetCodecSettings(codec_type_, kNumTemporalLayers,
-                             kErrorConcealmentOn, kDenoisingOn, kFrameDropperOn,
-                             kSpatialResizeOn, kResilienceOn, width, height);
+
+    const size_t num_simulcast_streams =
+        codec_type_ == kVideoCodecVP8 ? kNumSpatialLayers : 1;
+    const size_t num_spatial_layers =
+        codec_type_ == kVideoCodecVP9 ? kNumSpatialLayers : 1;
+
+    config_.SetCodecSettings(codec_type_, num_simulcast_streams,
+                             num_spatial_layers, kNumTemporalLayers,
+                             kDenoisingOn, kFrameDropperOn, kSpatialResizeOn,
+                             kResilienceOn, width, height);
 
     std::vector<RateProfile> rate_profiles = {
-        {bitrate_, framerate, kNumFrames + 1}};
+        {bitrate_, framerate, kNumFrames}};
 
     ProcessFramesAndMaybeVerify(rate_profiles, nullptr, nullptr, nullptr,
                                 &kVisualizationParams);
   }
 
-  const int bitrate_;
+  const size_t bitrate_;
   const VideoCodecType codec_type_;
   const bool hw_codec_;
 };
@@ -89,24 +94,28 @@ INSTANTIATE_TEST_CASE_P(CodecSettings,
                                            ::testing::ValuesIn(kVideoCodecType),
                                            ::testing::ValuesIn(kHwCodec)));
 
-TEST_P(VideoProcessorIntegrationTestParameterized, Process_128x96_30fps) {
+TEST_P(VideoProcessorIntegrationTestParameterized, Foreman_128x96_30) {
   RunTest(128, 96, 30, "foreman_128x96");
 }
 
-TEST_P(VideoProcessorIntegrationTestParameterized, Process_160x120_30fps) {
+TEST_P(VideoProcessorIntegrationTestParameterized, Foreman_160x120_30) {
   RunTest(160, 120, 30, "foreman_160x120");
 }
 
-TEST_P(VideoProcessorIntegrationTestParameterized, Process_176x144_30fps) {
+TEST_P(VideoProcessorIntegrationTestParameterized, Foreman_176x144_30) {
   RunTest(176, 144, 30, "foreman_176x144");
 }
 
-TEST_P(VideoProcessorIntegrationTestParameterized, Process_320x240_30fps) {
+TEST_P(VideoProcessorIntegrationTestParameterized, Foreman_320x240_30) {
   RunTest(320, 240, 30, "foreman_320x240");
 }
 
-TEST_P(VideoProcessorIntegrationTestParameterized, Process_352x288_30fps) {
+TEST_P(VideoProcessorIntegrationTestParameterized, Foreman_352x288_30) {
   RunTest(352, 288, 30, "foreman_cif");
+}
+
+TEST_P(VideoProcessorIntegrationTestParameterized, FourPeople_1280x720_30) {
+  RunTest(1280, 720, 30, "FourPeople_1280x720_30");
 }
 
 }  // namespace test

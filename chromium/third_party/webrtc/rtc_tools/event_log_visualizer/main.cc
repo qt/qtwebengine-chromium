@@ -15,6 +15,7 @@
 #include "rtc_tools/event_log_visualizer/analyzer.h"
 #include "rtc_tools/event_log_visualizer/plot_base.h"
 #include "rtc_tools/event_log_visualizer/plot_python.h"
+#include "system_wrappers/include/field_trial_default.h"
 #include "test/field_trial.h"
 #include "test/testsupport/fileutils.h"
 
@@ -114,6 +115,12 @@ DEFINE_bool(plot_audio_encoder_num_channels,
 DEFINE_bool(plot_audio_jitter_buffer,
             false,
             "Plot the audio jitter buffer delay profile.");
+DEFINE_bool(plot_ice_candidate_pair_config,
+            false,
+            "Plot the ICE candidate pair config events.");
+DEFINE_bool(plot_ice_connectivity_check,
+            false,
+            "Plot the ICE candidate pair connectivity checks.");
 
 DEFINE_string(
     force_fieldtrials,
@@ -195,7 +202,10 @@ int main(int argc, char* argv[]) {
   }
 
   webrtc::test::SetExecutablePath(argv[0]);
-  webrtc::test::InitFieldTrialsFromString(FLAG_force_fieldtrials);
+  webrtc::test::ValidateFieldTrialsStringOrDie(FLAG_force_fieldtrials);
+  // InitFieldTrialsFromString stores the char*, so the char array must outlive
+  // the application.
+  webrtc::field_trial::InitFieldTrialsFromString(FLAG_force_fieldtrials);
 
   std::string filename = argv[1];
 
@@ -314,6 +324,13 @@ int main(int argc, char* argv[]) {
                                           collection->AppendNewPlot());
   }
 
+  if (FLAG_plot_ice_candidate_pair_config) {
+    analyzer.CreateIceCandidatePairConfigGraph(collection->AppendNewPlot());
+  }
+  if (FLAG_plot_ice_connectivity_check) {
+    analyzer.CreateIceConnectivityCheckGraph(collection->AppendNewPlot());
+  }
+
   collection->Draw();
 
   if (FLAG_print_triage_notifications) {
@@ -352,4 +369,6 @@ void SetAllPlotFlags(bool setting) {
   FLAG_plot_audio_encoder_dtx = setting;
   FLAG_plot_audio_encoder_num_channels = setting;
   FLAG_plot_audio_jitter_buffer = setting;
+  FLAG_plot_ice_candidate_pair_config = setting;
+  FLAG_plot_ice_connectivity_check = setting;
 }

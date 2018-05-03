@@ -31,6 +31,8 @@
 namespace sh
 {
 
+class ImmutableString;
+
 class TDiagnostics;
 
 class TIntermTraverser;
@@ -248,7 +250,7 @@ class TIntermSymbol : public TIntermTyped
     const TType &getType() const override;
 
     const TSymbolUniqueId &uniqueId() const;
-    const TString &getName() const;
+    ImmutableString getName() const;
     const TVariable &variable() const { return *mVariable; }
 
     void traverse(TIntermTraverser *it) override;
@@ -268,9 +270,9 @@ class TIntermExpression : public TIntermTyped
     TIntermExpression(const TType &t);
 
     const TType &getType() const override { return mType; }
-    TType *getTypePointer() { return &mType; }
 
   protected:
+    TType *getTypePointer() { return &mType; }
     void setType(const TType &t) { mType = t; }
     void setTypePreservePrecision(const TType &t);
 
@@ -285,7 +287,7 @@ class TIntermExpression : public TIntermTyped
 class TIntermRaw : public TIntermExpression
 {
   public:
-    TIntermRaw(const TType &type, const TString &rawText)
+    TIntermRaw(const TType &type, const ImmutableString &rawText)
         : TIntermExpression(type), mRawText(rawText)
     {
     }
@@ -299,7 +301,7 @@ class TIntermRaw : public TIntermExpression
 
     bool hasSideEffects() const override { return false; }
 
-    TString getRawText() const { return mRawText; }
+    const ImmutableString &getRawText() const { return mRawText; }
 
     void traverse(TIntermTraverser *it) override;
 
@@ -307,7 +309,7 @@ class TIntermRaw : public TIntermExpression
     bool replaceChildNode(TIntermNode *, TIntermNode *) override { return false; }
 
   protected:
-    TString mRawText;
+    ImmutableString mRawText;
 };
 
 // Constant folded node.
@@ -347,13 +349,6 @@ class TIntermConstantUnion : public TIntermExpression
     bool getBConst(size_t index) const
     {
         return mUnionArrayPointer ? mUnionArrayPointer[index].getBConst() : false;
-    }
-
-    void replaceConstantUnion(const TConstantUnion *safeConstantUnion)
-    {
-        ASSERT(safeConstantUnion);
-        // Previous union pointer freed on pool deallocation.
-        mUnionArrayPointer = safeConstantUnion;
     }
 
     TIntermConstantUnion *getAsConstantUnion() override { return this; }
@@ -458,6 +453,8 @@ class TIntermBinary : public TIntermOperator
   public:
     // This constructor determines the type of the binary node based on the operands and op.
     TIntermBinary(TOperator op, TIntermTyped *left, TIntermTyped *right);
+    // Comma qualifier depends on the shader version, so use this to create comma nodes:
+    static TIntermBinary *CreateComma(TIntermTyped *left, TIntermTyped *right, int shaderVersion);
 
     TIntermTyped *deepCopy() const override { return new TIntermBinary(*this); }
 
@@ -466,9 +463,6 @@ class TIntermBinary : public TIntermOperator
 
     static TOperator GetMulOpBasedOnOperands(const TType &left, const TType &right);
     static TOperator GetMulAssignOpBasedOnOperands(const TType &left, const TType &right);
-    static TQualifier GetCommaQualifier(int shaderVersion,
-                                        const TIntermTyped *left,
-                                        const TIntermTyped *right);
 
     TIntermBinary *getAsBinaryNode() override { return this; };
     void traverse(TIntermTraverser *it) override;
@@ -495,6 +489,10 @@ class TIntermBinary : public TIntermOperator
 
   private:
     void promote();
+
+    static TQualifier GetCommaQualifier(int shaderVersion,
+                                        const TIntermTyped *left,
+                                        const TIntermTyped *right);
 
     TIntermBinary(const TIntermBinary &node);  // Note: not deleted, just private!
 };
@@ -537,15 +535,6 @@ class TIntermUnary : public TIntermOperator
 typedef TVector<TIntermNode *> TIntermSequence;
 typedef TVector<int> TQualifierList;
 
-//
-// This is just to help yacc.
-//
-struct TIntermFunctionCallOrMethod
-{
-    TIntermSequence *arguments;
-    TIntermNode *thisNode;
-};
-
 // Interface for node classes that have an arbitrarily sized set of children.
 class TIntermAggregateBase
 {
@@ -575,11 +564,11 @@ class TIntermAggregate : public TIntermOperator, public TIntermAggregateBase
     static TIntermAggregate *CreateRawFunctionCall(const TFunction &func,
                                                    TIntermSequence *arguments);
 
+    // This covers all built-in function calls - whether they are associated with an op or not.
     static TIntermAggregate *CreateBuiltInFunctionCall(const TFunction &func,
                                                        TIntermSequence *arguments);
     static TIntermAggregate *CreateConstructor(const TType &type,
                                                TIntermSequence *arguments);
-    static TIntermAggregate *Create(const TType &type, TOperator op, TIntermSequence *arguments);
     ~TIntermAggregate() {}
 
     // Note: only supported for nodes that can be a part of an expression.
@@ -600,8 +589,6 @@ class TIntermAggregate : public TIntermOperator, public TIntermAggregateBase
 
     TIntermSequence *getSequence() override { return &mArguments; }
     const TIntermSequence *getSequence() const override { return &mArguments; }
-
-    TString getSymbolTableMangledName() const;
 
     void setUseEmulatedFunction() { mUseEmulatedFunction = true; }
     bool getUseEmulatedFunction() { return mUseEmulatedFunction; }
@@ -633,7 +620,7 @@ class TIntermAggregate : public TIntermOperator, public TIntermAggregateBase
 
     TIntermAggregate(const TIntermAggregate &node);  // note: not deleted, just private!
 
-    void setTypePrecisionAndQualifier(const TType &type);
+    void setPrecisionAndQualifier();
 
     bool areChildrenConstQualified();
 

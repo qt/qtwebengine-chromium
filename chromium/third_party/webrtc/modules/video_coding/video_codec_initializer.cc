@@ -10,6 +10,7 @@
 
 #include "modules/video_coding/include/video_codec_initializer.h"
 
+#include "api/video_codecs/video_encoder.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/video_bitrate_allocator.h"
 #include "modules/video_coding/codecs/vp8/screenshare_layers.h"
@@ -39,7 +40,7 @@ bool VideoCodecInitializer::SetupCodec(
     bool nack_enabled,
     VideoCodec* codec,
     std::unique_ptr<VideoBitrateAllocator>* bitrate_allocator) {
-  if (PayloadStringToCodecType(settings.payload_name) == kVideoCodecStereo) {
+  if (PayloadStringToCodecType(settings.payload_name) == kVideoCodecMultiplex) {
     VideoSendStream::Config::EncoderSettings associated_codec_settings =
         settings;
     associated_codec_settings.payload_name =
@@ -49,7 +50,7 @@ bool VideoCodecInitializer::SetupCodec(
       RTC_LOG(LS_ERROR) << "Failed to create stereo encoder configuration.";
       return false;
     }
-    codec->codecType = kVideoCodecStereo;
+    codec->codecType = kVideoCodecMultiplex;
     strncpy(codec->plName, settings.payload_name.c_str(),
             sizeof(codec->plName));
     return true;
@@ -192,6 +193,15 @@ VideoCodec VideoCodecInitializer::VideoEncoderConfigToVideoCodec(
   video_codec.numberOfSimulcastStreams =
       static_cast<unsigned char>(streams.size());
   video_codec.minBitrate = streams[0].min_bitrate_bps / 1000;
+  bool codec_active = false;
+  for (const VideoStream& stream : streams) {
+    if (stream.active) {
+      codec_active = true;
+      break;
+    }
+  }
+  // Set active for the entire video codec for the non simulcast case.
+  video_codec.active = codec_active;
   if (video_codec.minBitrate < kEncoderMinBitrateKbps)
     video_codec.minBitrate = kEncoderMinBitrateKbps;
   video_codec.timing_frame_thresholds = {kDefaultTimingFramesDelayMs,
@@ -231,6 +241,7 @@ VideoCodec VideoCodecInitializer::VideoEncoderConfigToVideoCodec(
     sim_stream->qpMax = streams[i].max_qp;
     sim_stream->numberOfTemporalLayers = static_cast<unsigned char>(
         streams[i].temporal_layer_thresholds_bps.size() + 1);
+    sim_stream->active = streams[i].active;
 
     video_codec.width =
         std::max(video_codec.width, static_cast<uint16_t>(streams[i].width));

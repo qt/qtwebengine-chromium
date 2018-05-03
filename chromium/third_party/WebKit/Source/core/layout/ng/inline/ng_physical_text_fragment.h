@@ -8,6 +8,7 @@
 #include "core/CoreExport.h"
 #include "core/layout/ng/inline/ng_text_end_effect.h"
 #include "core/layout/ng/ng_physical_fragment.h"
+#include "platform/fonts/FontBaseline.h"
 #include "platform/fonts/NGTextFragmentPaintInfo.h"
 #include "platform/fonts/shaping/ShapeResult.h"
 #include "platform/wtf/text/StringView.h"
@@ -86,6 +87,9 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
   bool IsHorizontal() const {
     return LineOrientation() == NGLineOrientation::kHorizontal;
   }
+  FontBaseline BaselineType() const {
+    return IsHorizontal() ? kAlphabeticBaseline : kIdeographicBaseline;
+  }
 
   // The visual bounding box that includes glpyh bounding box and CSS
   // properties, in local coordinates.
@@ -111,6 +115,11 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
   // Returns true if the text is generated (from, e.g., list marker,
   // pseudo-element, ...) instead of from a DOM text node.
   bool IsAnonymousText() const;
+
+  // Returns the text offset in the fragment placed closest to the given point.
+  unsigned TextOffsetForPoint(const NGPhysicalOffset&) const;
+
+  PositionWithAffinity PositionForPoint(const NGPhysicalOffset&) const override;
 
  private:
   // The text of NGInlineNode; i.e., of a parent block. The text for this

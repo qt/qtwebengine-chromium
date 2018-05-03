@@ -79,13 +79,14 @@ int DevToolsAgentHostImpl::s_force_creation_count_ = 0;
 // static
 std::string DevToolsAgentHost::GetProtocolVersion() {
   // TODO(dgozman): generate this.
-  return "1.2";
+  return "1.3";
 }
 
 // static
 bool DevToolsAgentHost::IsSupportedProtocolVersion(const std::string& version) {
   // TODO(dgozman): generate this.
-  return version == "1.0" || version == "1.1" || version == "1.2";
+  return version == "1.0" || version == "1.1" || version == "1.2" ||
+         version == "1.3";
 }
 
 // static
@@ -219,7 +220,8 @@ bool DevToolsAgentHostImpl::DispatchProtocolMessage(
   DevToolsSession* session = SessionByClient(client);
   if (!session)
     return false;
-  return DispatchProtocolMessage(session, message);
+  DispatchProtocolMessage(session, message);
+  return true;
 }
 
 void DevToolsAgentHostImpl::InnerDetachClient(DevToolsAgentHostClient* client) {
@@ -241,14 +243,9 @@ bool DevToolsAgentHostImpl::IsAttached() {
   return !sessions_.empty();
 }
 
-void DevToolsAgentHostImpl::InspectElement(
-    DevToolsAgentHostClient* client,
-    int x,
-    int y) {
-  DevToolsSession* session = SessionByClient(client);
-  if (session)
-    InspectElement(session, x, y);
-}
+void DevToolsAgentHostImpl::InspectElement(RenderFrameHost* frame_host,
+                                           int x,
+                                           int y) {}
 
 std::string DevToolsAgentHostImpl::GetId() {
   return id_;
@@ -310,17 +307,13 @@ void DevToolsAgentHostImpl::ForceDetachAllClients() {
   }
 }
 
-void DevToolsAgentHostImpl::ForceDetachSession(DevToolsSession* session) {
-  DevToolsAgentHostClient* client = session->client();
-  InnerDetachClient(client);
-  client->AgentHostClosed(this);
-}
+void DevToolsAgentHostImpl::AttachSession(DevToolsSession* session) {}
 
-void DevToolsAgentHostImpl::InspectElement(
+void DevToolsAgentHostImpl::DetachSession(DevToolsSession* session) {}
+
+void DevToolsAgentHostImpl::DispatchProtocolMessage(
     DevToolsSession* session,
-    int x,
-    int y) {
-}
+    const std::string& message) {}
 
 // static
 void DevToolsAgentHost::DetachAllClients() {

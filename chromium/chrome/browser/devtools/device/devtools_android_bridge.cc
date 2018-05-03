@@ -36,8 +36,8 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/devtools/remote_debugging_server.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/buildflags.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/features.h"
 #include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/prefs/pref_service.h"
@@ -71,8 +71,6 @@ bool BrowserIdFromString(const std::string& browser_id_str,
   *browser_id = browser_id_str.substr(colon_pos + 1);
   return true;
 }
-
-static void NoOp(int, const std::string&) {}
 
 }  // namespace
 
@@ -146,7 +144,7 @@ void DevToolsAndroidBridge::OpenRemotePage(scoped_refptr<RemoteBrowser> browser,
   std::string query = net::EscapeQueryParamValue(url, false /* use_plus */);
   std::string request =
       base::StringPrintf(kNewPageRequestWithURL, query.c_str());
-  SendJsonRequest(browser->GetId(), request, base::Bind(&NoOp));
+  SendJsonRequest(browser->GetId(), request, base::DoNothing());
 }
 
 DevToolsAndroidBridge::DevToolsAndroidBridge(

@@ -7,9 +7,13 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "cc/paint/skia_paint_canvas.h"
+#include "cc/raster/playback_image_provider.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/CanvasColorParams.h"
+#include "platform/graphics/WebGraphicsContext3DProviderWrapper.h"
 #include "platform/wtf/Noncopyable.h"
+#include "platform/wtf/Optional.h"
 #include "platform/wtf/RefCounted.h"
 #include "platform/wtf/Vector.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -19,7 +23,7 @@ class GrContext;
 class SkCanvas;
 
 namespace cc {
-
+class ImageDecodeCache;
 class PaintCanvas;
 }
 
@@ -52,7 +56,8 @@ class WebGraphicsContext3DProviderWrapper;
 //   2) use Canvas() to get a drawing interface
 //   3) Call Snapshot() to acquire a bitmap with the rendered image in it.
 
-class PLATFORM_EXPORT CanvasResourceProvider {
+class PLATFORM_EXPORT CanvasResourceProvider
+    : public WebGraphicsContext3DProviderWrapper::DestructionObserver {
   WTF_MAKE_NONCOPYABLE(CanvasResourceProvider);
 
  public:
@@ -76,7 +81,11 @@ class PLATFORM_EXPORT CanvasResourceProvider {
   virtual scoped_refptr<CanvasResource> ProduceFrame() = 0;
   scoped_refptr<StaticBitmapImage> Snapshot();
 
+  // WebGraphicsContext3DProvider::DestructionObserver implementation.
+  void OnContextDestroyed() override;
+
   cc::PaintCanvas* Canvas();
+  void ReleaseLockedImages();
   void FlushSkia() const;
   const CanvasColorParams& ColorParams() const { return color_params_; }
   void SetFilterQuality(SkFilterQuality quality) { filter_quality_ = quality; }
@@ -99,7 +108,7 @@ class PLATFORM_EXPORT CanvasResourceProvider {
     return 0;
   }
   void Clear();
-  virtual ~CanvasResourceProvider();
+  ~CanvasResourceProvider() override;
 
  protected:
   gpu::gles2::GLES2Interface* ContextGL() const;
@@ -122,19 +131,44 @@ class PLATFORM_EXPORT CanvasResourceProvider {
                          base::WeakPtr<WebGraphicsContext3DProviderWrapper>);
 
  private:
+  class CanvasImageProvider : public cc::ImageProvider {
+   public:
+    CanvasImageProvider(cc::ImageDecodeCache*,
+                        const gfx::ColorSpace& target_color_space);
+    ~CanvasImageProvider() override;
+
+    // cc::ImageProvider implementation.
+    ScopedDecodedDrawImage GetDecodedDrawImage(const cc::DrawImage&) override;
+
+    void ReleaseLockedImages();
+
+   private:
+    void CanUnlockImage(ScopedDecodedDrawImage);
+
+    std::vector<ScopedDecodedDrawImage> locked_images_;
+    cc::PlaybackImageProvider playback_image_provider_;
+  };
+
   virtual sk_sp<SkSurface> CreateSkSurface() const = 0;
   virtual scoped_refptr<CanvasResource> CreateResource();
+  cc::ImageDecodeCache* ImageDecodeCache();
 
   base::WeakPtrFactory<CanvasResourceProvider> weak_ptr_factory_;
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper_;
   IntSize size_;
   CanvasColorParams color_params_;
-  std::unique_ptr<cc::PaintCanvas> canvas_;
+  Optional<CanvasImageProvider> canvas_image_provider_;
+  std::unique_ptr<cc::SkiaPaintCanvas> canvas_;
   mutable sk_sp<SkSurface> surface_;  // mutable for lazy init
   std::unique_ptr<SkCanvas> xform_canvas_;
   WTF::Vector<scoped_refptr<CanvasResource>> recycled_resources_;
   SkFilterQuality filter_quality_;
   bool resource_recycling_enabled_ = true;
+
+  const cc::PaintImage::Id snapshot_paint_image_id_;
+  cc::PaintImage::ContentId snapshot_paint_image_content_id_ =
+      cc::PaintImage::kInvalidContentId;
+  uint32_t snapshot_sk_image_id_ = 0u;
 };
 
 }  // namespace blink

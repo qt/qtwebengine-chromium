@@ -64,7 +64,8 @@ enum RTCIceConnectionState {
     // TODO(guidou): There should only be one constructor argument.
     Constructor(optional RTCConfiguration configuration, optional Dictionary mediaConstraints),
     ConstructorCallWith=ExecutionContext,
-    RaisesException=Constructor
+    RaisesException=Constructor,
+    Exposed=Window
 ] interface RTCPeerConnection : EventTarget {
     [CallWith=ScriptState] Promise<RTCSessionDescription> createOffer(optional RTCOfferOptions options);
     [CallWith=ScriptState] Promise<RTCSessionDescription> createAnswer(optional RTCAnswerOptions options);
@@ -132,8 +133,9 @@ enum RTCIceConnectionState {
     // Non-standard or removed from the spec:
     [Measure] sequence<MediaStream> getLocalStreams();
     [Measure] sequence<MediaStream> getRemoteStreams();
-    [Measure, CallWith=ScriptState, RaisesException] void addStream(MediaStream? stream, optional Dictionary mediaConstraints);
-    [Measure, RaisesException] void removeStream(MediaStream? stream);
+    // TODO(hbos): Remove |mediaConstraints|, they are no longer supported.
+    [Measure, CallWith=ScriptState, RaisesException] void addStream(MediaStream stream, optional Dictionary mediaConstraints);
+    [Measure, RaisesException] void removeStream(MediaStream stream);
     [Measure, RaisesException] RTCDTMFSender createDTMFSender(MediaStreamTrack track);
     attribute EventHandler onaddstream;
     attribute EventHandler onremovestream;

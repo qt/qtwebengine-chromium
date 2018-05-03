@@ -10,7 +10,7 @@
 #include "core/page/PageVisibilityObserver.h"
 #include "modules/ModulesExport.h"
 #include "platform/wtf/Noncopyable.h"
-#include "services/device/public/interfaces/wake_lock.mojom-blink.h"
+#include "services/device/public/mojom/wake_lock.mojom-blink.h"
 
 namespace blink {
 
@@ -26,10 +26,11 @@ class MODULES_EXPORT ScreenWakeLock final
   WTF_MAKE_NONCOPYABLE(ScreenWakeLock);
 
  public:
+  static const char kSupplementName[];
+
   static bool keepAwake(Screen&);
   static void setKeepAwake(Screen&, bool);
 
-  static const char* SupplementName();
   static ScreenWakeLock* From(LocalFrame*);
 
   ~ScreenWakeLock() = default;

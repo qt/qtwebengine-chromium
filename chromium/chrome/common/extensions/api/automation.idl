@@ -76,7 +76,6 @@
     banner,
     blockquote,
     button,
-    buttonDropDown,
     canvas,
     caption,
     caret,
@@ -120,6 +119,10 @@
     inlineTextBox,
     inputTime,
     labelText,
+    layoutTable,
+    layoutTableCell,
+    layoutTableColumn,
+    layoutTableRow,
     legend,
     lineBreak,
     link,
@@ -205,6 +208,7 @@
     haspopup,
     horizontal,
     hovered,
+    ignored,
     invisible,
     linked,
     multiline,
@@ -461,6 +465,30 @@
     // The target of an in-page link.
     AutomationNode? inPageLinkTarget;
 
+    // A node that provides more details about the current node.
+    AutomationNode? details;
+
+    // A node that provides an error message for a current node.
+    AutomationNode? errorMessage;
+
+    // Reverse relationship for details.
+    AutomationNode[]? detailsFor;
+
+    // Reverse relationship for errorMessage.
+    AutomationNode[]? errorMessageFor;
+
+    // Reverse relationship for controls.
+    AutomationNode[]? controlledBy;
+
+    // Reverse relationship for describedBy.
+    AutomationNode[]? descriptionFor;
+
+    // Reverse relationship for flowTo.
+    AutomationNode[]? flowFrom;
+
+    // Reverse relationship for labelledBy.
+    AutomationNode[]? labelFor;
+
     // An array of custom actions.
     CustomAction[]? customActions;
 
@@ -612,6 +640,12 @@
     // The corresponding row header for this cell.
     AutomationNode? tableRowHeader;
 
+    // The column index of this column node.
+    long? tableColumnIndex;
+
+    // The row index of this row node.
+    long? tableRowIndex;
+
     //
     // Live region attributes.
     //
@@ -651,6 +685,9 @@
     // The name of the programmatic backing object.
     DOMString? className;
 
+    // Marks this subtree as modal.
+    boolean? modal;
+
     // A map containing all HTML attributes and their values
     // <jsexterns>@type {Object<string>}</jsexterns>
     object? htmlAttributes;
@@ -674,7 +711,7 @@
     DOMString? language;
 
     // Input restriction, if any, such as readonly or disabled:
-    // undefined - enabled control or other object that is not disabled 
+    // undefined - enabled control or other object that is not disabled
     // Restriction.DISABLED - disallows input in itself + any descendants
     // Restriction.READONLY - allow focus/selection but not input
     DOMString? restriction;

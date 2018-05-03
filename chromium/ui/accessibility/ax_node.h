@@ -33,6 +33,12 @@ class AX_EXPORT AXNode {
   // Get the child at the given index.
   AXNode* ChildAtIndex(int index) const { return children_[index]; }
 
+  // Walking the tree skipping ignored nodes.
+  int GetUnignoredChildCount() const;
+  AXNode* GetUnignoredChildAtIndex(int index) const;
+  AXNode* GetUnignoredParent() const;
+  int GetUnignoredIndexInParent() const;
+
   // Returns true if the node has any of the text related roles.
   bool IsTextNode() const;
 
@@ -71,6 +77,11 @@ class AX_EXPORT AXNode {
   // Gets the text offsets where new lines start either from the node's data or
   // by computing them and caching the result.
   std::vector<int> GetOrComputeLineStartOffsets();
+
+  const std::string& GetInheritedStringAttribute(
+      ax::mojom::StringAttribute attribute) const;
+  base::string16 GetInheritedString16Attribute(
+      ax::mojom::StringAttribute attribute) const;
 
  private:
   // Computes the text offset where each line starts by traversing all child

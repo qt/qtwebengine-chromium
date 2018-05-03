@@ -34,6 +34,8 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/commands/DeleteSelectionOptions.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/editing/commands/InsertLineBreakCommand.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
@@ -165,7 +167,7 @@ Element* InsertParagraphSeparatorCommand::CloneHierarchyUnderNewBlock(
   // Make clones of ancestors in between the start node and the start block.
   Element* parent = block_to_insert;
   for (size_t i = ancestors.size(); i != 0; --i) {
-    Element* child = ancestors[i - 1]->CloneElementWithoutChildren();
+    Element* child = ancestors[i - 1]->CloneWithoutChildren();
     // It should always be okay to remove id from the cloned elements, since the
     // originals are not deleted.
     child->removeAttribute(idAttr);
@@ -194,7 +196,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   if (EndingSelection().IsRange()) {
     GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
     CalculateStyleBeforeInsertion(insertion_position);
-    if (!DeleteSelection(editing_state, false, true))
+    if (!DeleteSelection(editing_state, DeleteSelectionOptions::NormalDelete()))
       return;
     const VisibleSelection& visble_selection_after_delete =
         EndingVisibleSelection();
@@ -272,7 +274,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   } else if (ShouldUseDefaultParagraphElement(start_block)) {
     block_to_insert = CreateDefaultParagraphElement(GetDocument());
   } else {
-    block_to_insert = start_block->CloneElementWithoutChildren();
+    block_to_insert = start_block->CloneWithoutChildren();
   }
 
   VisiblePosition visible_pos =
@@ -312,8 +314,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
       }
 
       if (list_child && list_child != start_block) {
-        Element* list_child_to_insert =
-            list_child->CloneElementWithoutChildren();
+        Element* list_child_to_insert = list_child->CloneWithoutChildren();
         AppendNode(block_to_insert, list_child_to_insert, editing_state);
         if (editing_state->IsAborted())
           return;
@@ -349,7 +350,6 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
             .Collapse(Position::FirstPositionInNode(*parent))
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build()));
     return;
   }
@@ -365,8 +365,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
 
     if (is_first_in_block && !nest_new_block) {
       if (list_child && list_child != start_block) {
-        Element* list_child_to_insert =
-            list_child->CloneElementWithoutChildren();
+        Element* list_child_to_insert = list_child->CloneWithoutChildren();
         AppendNode(block_to_insert, list_child_to_insert, editing_state);
         if (editing_state->IsAborted())
           return;
@@ -423,7 +422,6 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
             .Collapse(insertion_position)
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build()));
     return;
   }
@@ -451,7 +449,6 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
       SetEndingSelection(SelectionForUndoStep::From(
           SelectionInDOMTree::Builder()
               .Collapse(insertion_position)
-              .SetIsDirectional(EndingSelection().IsDirectional())
               .Build()));
       return;
     }
@@ -526,7 +523,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   if (nest_new_block) {
     AppendNode(block_to_insert, start_block, editing_state);
   } else if (list_child && list_child != start_block) {
-    Element* list_child_to_insert = list_child->CloneElementWithoutChildren();
+    Element* list_child_to_insert = list_child->CloneWithoutChildren();
     AppendNode(block_to_insert, list_child_to_insert, editing_state);
     if (editing_state->IsAborted())
       return;
@@ -606,7 +603,6 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   SetEndingSelection(SelectionForUndoStep::From(
       SelectionInDOMTree::Builder()
           .Collapse(Position::FirstPositionInNode(*block_to_insert))
-          .SetIsDirectional(EndingSelection().IsDirectional())
           .Build()));
   ApplyStyleAfterInsertion(start_block, editing_state);
 }

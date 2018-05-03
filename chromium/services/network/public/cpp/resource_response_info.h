@@ -9,24 +9,26 @@
 
 #include <string>
 
+#include "base/component_export.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_timing_info.h"
+#include "net/cert/ct_policy_status.h"
 #include "net/cert/signed_certificate_timestamp_and_status.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/nqe/effective_connection_type.h"
 #include "services/network/public/cpp/http_raw_request_response_info.h"
-#include "services/network/public/interfaces/fetch_api.mojom-shared.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "url/gurl.h"
 
 namespace network {
 
 // NOTE: when modifying this structure, also update ResourceResponse::DeepCopy
 // in resource_response.cc.
-struct ResourceResponseInfo {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
   ResourceResponseInfo();
   ResourceResponseInfo(const ResourceResponseInfo& other);
   ~ResourceResponseInfo();
@@ -49,12 +51,12 @@ struct ResourceResponseInfo {
   // response's mime type.  This may be a derived value.
   std::string charset;
 
+  // The resource's compliance with the Certificate Transparency policy.
+  net::ct::CTPolicyCompliance ct_policy_compliance;
+
   // True if the resource was loaded with an otherwise-valid legacy Symantec
   // certificate which will be distrusted in future.
   bool is_legacy_symantec_cert;
-
-  // The time at which the certificate (if any) of the resource expires.
-  base::Time cert_validity_start;
 
   // Content length if available. -1 if not available
   int64_t content_length;
@@ -111,9 +113,9 @@ struct ResourceResponseInfo {
   // True if the response was fetched by a ServiceWorker.
   bool was_fetched_via_service_worker;
 
-  // True when the request whoes mode is |CORS| or |CORS-with-forced-preflight|
+  // True when a request whose mode is |CORS| or |CORS-with-forced-preflight|
   // is sent to a ServiceWorker but FetchEvent.respondWith is not called. So the
-  // renderer have to resend the request with skip service worker flag
+  // renderer has to resend the request with skip service worker flag
   // considering the CORS preflight logic.
   bool was_fallback_required_by_service_worker;
 
@@ -121,7 +123,8 @@ struct ResourceResponseInfo {
   // ServiceWorkerResponseInfo::url_list_via_service_worker().
   std::vector<GURL> url_list_via_service_worker;
 
-  // The type of the response which was fetched by the ServiceWorker.
+  // The type of the response, if it was returned by a service worker. This is
+  // kDefault if the response was not returned by a service worker.
   mojom::FetchResponseType response_type_via_service_worker;
 
   // The time immediately before starting ServiceWorker. If the response is not

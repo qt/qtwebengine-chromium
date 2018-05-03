@@ -33,6 +33,8 @@ if (use_ozone) {
       "device/udev/device_manager_udev.cc",
       "device/udev/device_manager_udev.h",
       "events_ozone_export.h",
+      "keyboard/event_auto_repeat_handler.cc",
+      "keyboard/event_auto_repeat_handler.h",
     ]
 
     deps = [

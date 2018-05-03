@@ -172,8 +172,6 @@ jumbo_component("gfx") {
     "utf16_indexing.h",
     "vsync_provider.cc",
     "vsync_provider.h",
-    "win/direct_manipulation.cc",
-    "win/direct_manipulation.h",
     "win/direct_write.cc",
     "win/direct_write.h",
     "win/hwnd_util.cc",
@@ -623,6 +621,12 @@ static_library("test_support") {
     "//ui/gfx/animation",
     "//ui/gfx/geometry",
   ]
+
+  if (!is_ios) {
+    sources += [ "render_text_test_api.h" ]
+
+    deps += [ "//third_party:freetype_harfbuzz" ]
+  }
 
   if (is_linux) {
     deps += [ "//third_party/fontconfig" ]

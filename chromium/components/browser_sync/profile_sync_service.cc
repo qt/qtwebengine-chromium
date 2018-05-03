@@ -19,18 +19,18 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/browser_sync/browser_sync_switches.h"
-#include "components/history/core/browser/typed_url_data_type_controller.h"
 #include "components/invalidation/impl/invalidation_prefs.h"
 #include "components/invalidation/public/invalidation_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/json_pref_store.h"
-#include "components/reading_list/features/reading_list_enable_flags.h"
+#include "components/reading_list/features/reading_list_buildflags.h"
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
@@ -235,10 +235,7 @@ void ProfileSyncService::Initialize() {
       sync_client_->GetSyncSessionsClient(), &sync_prefs_, local_device_.get(),
       router,
       base::Bind(&ProfileSyncService::NotifyForeignSessionUpdated,
-                 sync_enabled_weak_factory_.GetWeakPtr()),
-      base::Bind(&ProfileSyncService::TriggerRefresh,
-                 sync_enabled_weak_factory_.GetWeakPtr(),
-                 syncer::ModelTypeSet(syncer::SESSIONS)));
+                 sync_enabled_weak_factory_.GetWeakPtr()));
 
   device_info_sync_bridge_ = std::make_unique<DeviceInfoSyncBridge>(
       local_device_.get(), model_type_store_factory_,
@@ -384,9 +381,12 @@ sync_sessions::OpenTabsUIDelegate* ProfileSyncService::GetOpenTabsUIDelegate() {
   DCHECK(thread_checker_.CalledOnValidThread());
   // Although the backing data actually is of type |SESSIONS|, the desire to use
   // open tabs functionality is tracked by the state of the |PROXY_TABS| type.
-  return IsDataTypeControllerRunning(syncer::PROXY_TABS)
-             ? sessions_sync_manager_.get()
-             : nullptr;
+  if (!IsDataTypeControllerRunning(syncer::PROXY_TABS)) {
+    return nullptr;
+  }
+
+  DCHECK(sessions_sync_manager_);
+  return sessions_sync_manager_->GetOpenTabsUIDelegate();
 }
 
 sync_sessions::FaviconCache* ProfileSyncService::GetFaviconCache() {
@@ -605,7 +605,7 @@ void ProfileSyncService::OnGetTokenFailure(
         UMA_HISTOGRAM_ENUMERATION("Sync.SyncAuthError", AUTH_ERROR_ENCOUNTERED,
                                   AUTH_ERROR_LIMIT);
       }
-      // Fallthrough.
+      FALLTHROUGH;
     }
     default: {
       if (error.state() != GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
@@ -903,8 +903,7 @@ void ProfileSyncService::OnEngineInitialized(
   } else {
     SigninClient* signin_client = signin_->GetOriginal()->signin_client();
     DCHECK(signin_client);
-    std::string signin_scoped_device_id =
-        signin_client->GetSigninScopedDeviceId();
+    signin_scoped_device_id = signin_client->GetSigninScopedDeviceId();
   }
 
   // Initialize local device info.
@@ -1123,7 +1122,7 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
       // On every platform except ChromeOS, sign out the user after a dashboard
       // clear.
       if (!IsLocalSyncEnabled()) {
-        static_cast<SigninManager*>(signin_->GetOriginal())
+        SigninManager::FromSigninManagerBase(signin_->GetOriginal())
             ->SignOut(signin_metrics::SERVER_FORCED_DISABLE,
                       signin_metrics::SignoutDelete::IGNORE_METRIC);
       }
@@ -1623,13 +1622,13 @@ void ProfileSyncService::SetPlatformSyncAllowedProvider(
 }
 
 // static
-syncer::ModelTypeStoreFactory ProfileSyncService::GetModelTypeStoreFactory(
-    const base::FilePath& base_path) {
+syncer::RepeatingModelTypeStoreFactory
+ProfileSyncService::GetModelTypeStoreFactory(const base::FilePath& base_path) {
   // TODO(skym): Verify using AsUTF8Unsafe is okay here. Should work as long
   // as the Local State file is guaranteed to be UTF-8.
   const std::string path =
       FormatSharedModelTypeStorePath(base_path).AsUTF8Unsafe();
-  return base::Bind(&ModelTypeStore::CreateStore, path);
+  return base::BindRepeating(&ModelTypeStore::CreateStore, path);
 }
 
 void ProfileSyncService::ConfigureDataTypeManager() {
@@ -2092,7 +2091,7 @@ void ProfileSyncService::GetAllNodes(
 }
 
 syncer::GlobalIdMapper* ProfileSyncService::GetGlobalIdMapper() const {
-  return sessions_sync_manager_.get();
+  return sessions_sync_manager_->GetGlobalIdMapper();
 }
 
 base::WeakPtr<syncer::JsController> ProfileSyncService::GetJsController() {

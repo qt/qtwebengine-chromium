@@ -7,8 +7,15 @@
 
 #include "net/quic/core/frames/quic_frame.h"
 #include "net/quic/platform/api/quic_containers.h"
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
+
+class QuicSession;
+
+namespace test {
+class QuicControlFrameManagerPeer;
+}  // namespace test
 
 // Control frame manager contains a list of sent control frames with valid
 // control frame IDs. Control frames without valid control frame IDs include:
@@ -20,21 +27,48 @@ namespace net {
 // which need to be retransmitted.
 class QUIC_EXPORT_PRIVATE QuicControlFrameManager {
  public:
-  QuicControlFrameManager();
+  explicit QuicControlFrameManager(QuicSession* session);
   QuicControlFrameManager(const QuicControlFrameManager& other) = delete;
   QuicControlFrameManager(QuicControlFrameManager&& other) = delete;
   ~QuicControlFrameManager();
 
-  // Called when |frame| is sent for the first time or gets retransmitted.
-  // Please note, this function should be called when |frame| is added to the
-  // generator.
-  void OnControlFrameSent(const QuicFrame& frame);
+  // Tries to send a WINDOW_UPDATE_FRAME. Buffers the frame if it cannot be sent
+  // immediately.
+  void WriteOrBufferRstStream(QuicControlFrameId id,
+                              QuicRstStreamErrorCode error,
+                              QuicStreamOffset bytes_written);
 
-  // Called when |frame| gets acked.
-  void OnControlFrameAcked(const QuicFrame& frame);
+  // Tries to send a GOAWAY_FRAME. Buffers the frame if it cannot be sent
+  // immediately.
+  void WriteOrBufferGoAway(QuicErrorCode error,
+                           QuicStreamId last_good_stream_id,
+                           const QuicString& reason);
+
+  // Tries to send a WINDOW_UPDATE_FRAME. Buffers the frame if it cannot be sent
+  // immediately.
+  void WriteOrBufferWindowUpdate(QuicStreamId id, QuicStreamOffset byte_offset);
+
+  // Tries to send a BLOCKED_FRAME. Buffers the frame if it cannot be sent
+  // immediately.
+  void WriteOrBufferBlocked(QuicStreamId id);
+
+  // Sends a PING_FRAME.
+  void WritePing();
+
+  // Called when |frame| gets acked. Returns true if |frame| gets acked for the
+  // first time, return false otherwise.
+  bool OnControlFrameAcked(const QuicFrame& frame);
 
   // Called when |frame| is considered as lost.
   void OnControlFrameLost(const QuicFrame& frame);
+
+  // Called by the session when the connection becomes writable.
+  void OnCanWrite();
+
+  // Retransmit |frame| if it is still outstanding. Returns false if the frame
+  // does not get retransmitted because the connection is blocked. Otherwise,
+  // returns true.
+  bool RetransmitControlFrame(const QuicFrame& frame);
 
   // Returns true if |frame| is outstanding and waiting to be acked. Returns
   // false otherwise.
@@ -44,22 +78,48 @@ class QUIC_EXPORT_PRIVATE QuicControlFrameManager {
   // retransmitted.
   bool HasPendingRetransmission() const;
 
+  // Returns true if there are any lost or new control frames waiting to be
+  // sent.
+  bool WillingToWrite() const;
+
+ private:
+  friend class test::QuicControlFrameManagerPeer;
+
+  // Tries to write buffered control frames to the peer.
+  void WriteBufferedFrames();
+
+  // Called when |frame| is sent for the first time or gets retransmitted.
+  void OnControlFrameSent(const QuicFrame& frame);
+
+  // Writes pending retransmissions if any.
+  void WritePendingRetransmission();
+
   // Retrieves the next pending retransmission. This must only be called when
   // there are pending retransmissions.
   QuicFrame NextPendingRetransmission() const;
 
-  size_t size() const;
+  // Returns true if there are buffered frames waiting to be sent for the first
+  // time.
+  bool HasBufferedFrames() const;
 
- private:
   QuicDeque<QuicFrame> control_frames_;
+
+  // Id of latest saved control frame. 0 if no control frame has been saved.
+  QuicControlFrameId last_control_frame_id_;
 
   // The control frame at the 0th index of control_frames_.
   QuicControlFrameId least_unacked_;
+
+  // ID of the least unsent control frame.
+  QuicControlFrameId least_unsent_;
 
   // TODO(fayang): switch to linked_hash_set when chromium supports it. The bool
   // is not used here.
   // Lost control frames waiting to be retransmitted.
   QuicLinkedHashMap<QuicControlFrameId, bool> pending_retransmissions_;
+
+  // Pointer to the owning QuicSession object.
+  QuicSession* session_;
 };
 
 }  // namespace net

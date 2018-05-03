@@ -35,7 +35,7 @@
 #include "platform/bindings/RuntimeCallStats.h"
 #include "platform/bindings/ScopedPersistent.h"
 #include "platform/bindings/ScriptState.h"
-#include "platform/bindings/ScriptWrappableVisitor.h"
+#include "platform/bindings/ScriptWrappableMarkingVisitor.h"
 #include "platform/bindings/WrapperTypeInfo.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/HashMap.h"
@@ -205,7 +205,7 @@ class PLATFORM_EXPORT V8PerIsolateData {
    public:
     TemporaryScriptWrappableVisitorScope(
         v8::Isolate* isolate,
-        std::unique_ptr<ScriptWrappableVisitor> visitor)
+        std::unique_ptr<ScriptWrappableMarkingVisitor> visitor)
         : isolate_(isolate), saved_visitor_(std::move(visitor)) {
       SwapWithV8PerIsolateDataVisitor(saved_visitor_);
     }
@@ -213,23 +213,24 @@ class PLATFORM_EXPORT V8PerIsolateData {
       SwapWithV8PerIsolateDataVisitor(saved_visitor_);
     }
 
-    inline ScriptWrappableVisitor* CurrentVisitor() {
-      return V8PerIsolateData::From(isolate_)->GetScriptWrappableVisitor();
+    inline ScriptWrappableMarkingVisitor* CurrentVisitor() {
+      return V8PerIsolateData::From(isolate_)
+          ->GetScriptWrappableMarkingVisitor();
     }
 
    private:
     void SwapWithV8PerIsolateDataVisitor(
-        std::unique_ptr<ScriptWrappableVisitor>&);
+        std::unique_ptr<ScriptWrappableMarkingVisitor>&);
 
     v8::Isolate* isolate_;
-    std::unique_ptr<ScriptWrappableVisitor> saved_visitor_;
+    std::unique_ptr<ScriptWrappableMarkingVisitor> saved_visitor_;
   };
 
-  void SetScriptWrappableVisitor(
-      std::unique_ptr<ScriptWrappableVisitor> visitor) {
+  void SetScriptWrappableMarkingVisitor(
+      std::unique_ptr<ScriptWrappableMarkingVisitor> visitor) {
     script_wrappable_visitor_ = std::move(visitor);
   }
-  ScriptWrappableVisitor* GetScriptWrappableVisitor() {
+  ScriptWrappableMarkingVisitor* GetScriptWrappableMarkingVisitor() {
     return script_wrappable_visitor_.get();
   }
 
@@ -277,9 +278,6 @@ class PLATFORM_EXPORT V8PerIsolateData {
   // Contains lists of eternal names, such as dictionary keys.
   HashMap<const void*, Vector<v8::Eternal<v8::Name>>> eternal_name_cache_;
 
-  // Members required for the V8 context snapshot.
-  // v8::Context is created from this blob data image.
-  v8::StartupData startup_data_;
   // When taking a V8 context snapshot, we can't keep V8 objects with eternal
   // handles. So we use a special interface map that doesn't use eternal handles
   // instead of the default V8FunctionTemplateMap.
@@ -303,7 +301,7 @@ class PLATFORM_EXPORT V8PerIsolateData {
   std::unique_ptr<Data> thread_debugger_;
 
   Persistent<ActiveScriptWrappableSet> active_script_wrappables_;
-  std::unique_ptr<ScriptWrappableVisitor> script_wrappable_visitor_;
+  std::unique_ptr<ScriptWrappableMarkingVisitor> script_wrappable_visitor_;
 
   RuntimeCallStats runtime_call_stats_;
 };

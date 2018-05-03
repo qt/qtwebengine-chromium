@@ -5,6 +5,7 @@
 #include "base/task_scheduler/scheduler_single_thread_task_runner_manager.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/synchronization/atomic_flag.h"
 #include "base/synchronization/lock.h"
@@ -338,7 +339,7 @@ TEST_P(TaskSchedulerSingleThreadTaskRunnerManagerCommonTest,
   auto task_runner =
       single_thread_task_runner_manager_
           ->CreateSingleThreadTaskRunnerWithTraits(TaskTraits(), GetParam());
-  EXPECT_TRUE(task_runner->PostTask(FROM_HERE, BindOnce(&DoNothing)));
+  EXPECT_TRUE(task_runner->PostTask(FROM_HERE, DoNothing()));
   task_tracker_.Shutdown();
   TearDownSingleThreadTaskRunnerManager();
   EXPECT_FALSE(task_runner->PostTask(FROM_HERE, BindOnce(&ShouldNotRun)));
@@ -443,7 +444,7 @@ TEST_F(TaskSchedulerSingleThreadTaskRunnerManagerJoinTest,
         BindOnce(&WaitableEvent::Signal, Unretained(&task_running))));
     EXPECT_TRUE(task_runner->PostTask(
         FROM_HERE, BindOnce(&WaitableEvent::Wait, Unretained(&task_blocking))));
-    EXPECT_TRUE(task_runner->PostTask(FROM_HERE, BindOnce(&DoNothing)));
+    EXPECT_TRUE(task_runner->PostTask(FROM_HERE, DoNothing()));
   }
 
   task_running.Wait();
@@ -554,7 +555,7 @@ TEST_F(TaskSchedulerSingleThreadTaskRunnerManagerTestWin, PumpsMessages) {
              HWND* hwnd) { *hwnd = test_harness->CreateTestWindow(); },
           Unretained(this), &hwnd));
 
-  task_tracker_.Flush();
+  task_tracker_.FlushForTesting();
 
   ASSERT_NE(hwnd, nullptr);
   // If the message pump isn't running, we will hang here. This simulates how

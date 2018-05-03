@@ -49,7 +49,6 @@
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
-#include "content/browser/renderer_host/render_widget_host_view_frame_subscriber.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_editcommand_helper.h"
 #import "content/browser/renderer_host/text_input_client_mac.h"
@@ -66,7 +65,6 @@
 #import "content/public/browser/render_widget_host_view_mac_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "gpu/ipc/common/gpu_messages.h"
-#include "media/base/video_frame.h"
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
@@ -399,6 +397,14 @@ void RenderWidgetHostViewMac::OnFrameTokenChanged(uint32_t frame_token) {
   OnFrameTokenChangedForView(frame_token);
 }
 
+void RenderWidgetHostViewMac::DidReceiveFirstFrameAfterNavigation() {
+  render_widget_host_->DidReceiveFirstFrameAfterNavigation();
+}
+
+void RenderWidgetHostViewMac::DestroyCompositorForShutdown() {
+  browser_compositor_.reset();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // AcceleratedWidgetMacNSView, public:
 
@@ -449,8 +455,10 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget,
   [cocoa_view_ setLayer:background_layer_];
   [cocoa_view_ setWantsLayer:YES];
 
-  viz::FrameSinkId frame_sink_id =
-      render_widget_host_->AllocateFrameSinkId(is_guest_view_hack_);
+  viz::FrameSinkId frame_sink_id = is_guest_view_hack_
+                                       ? AllocateFrameSinkIdForGuestViewHack()
+                                       : render_widget_host_->GetFrameSinkId();
+
   browser_compositor_.reset(
       new BrowserCompositorMac(this, this, render_widget_host_->is_hidden(),
                                [cocoa_view_ window], frame_sink_id));
@@ -724,12 +732,30 @@ RenderWidgetHostViewMac::GetFocusedRenderWidgetHostDelegate() {
   return render_widget_host_->delegate();
 }
 
-void RenderWidgetHostViewMac::UpdateBackingStoreProperties() {
-  UpdateScreenInfo(cocoa_view_);
-  // Update the ui::Compositor's color space here. The other display properties
-  // of the ui::Compositor are updated by frame metadata.
-  if (browser_compositor_)
-    browser_compositor_->SetDisplayColorSpace(current_display_color_space_);
+void RenderWidgetHostViewMac::UpdateNSViewAndDisplayProperties() {
+  if (!browser_compositor_)
+    return;
+
+  // During auto-resize it is the responsibility of the caller to ensure that
+  // the NSView and RenderWidgetHostImpl are kept in sync.
+  if (render_widget_host_->auto_resize_enabled())
+    return;
+
+  if (render_widget_host_->delegate())
+    render_widget_host_->delegate()->SendScreenRects();
+  else
+    render_widget_host_->SendScreenRects();
+
+  // RenderWidgetHostImpl will query BrowserCompositorMac for the dimensions
+  // to send to the renderer, so it is required that BrowserCompositorMac be
+  // updated first. Only notify RenderWidgetHostImpl of the update if any
+  // properties it will query have changed.
+  if (browser_compositor_->UpdateNSViewAndDisplay())
+    render_widget_host_->NotifyScreenInfoChanged();
+}
+
+void RenderWidgetHostViewMac::GetScreenInfo(ScreenInfo* screen_info) const {
+  browser_compositor_->GetRendererScreenInfo(screen_info);
 }
 
 void RenderWidgetHostViewMac::Show() {
@@ -753,6 +779,9 @@ void RenderWidgetHostViewMac::Show() {
 }
 
 void RenderWidgetHostViewMac::Hide() {
+  if (!browser_compositor_)
+    return;
+
   ScopedCAActionDisabler disabler;
   [cocoa_view_ setHidden:YES];
 
@@ -761,11 +790,17 @@ void RenderWidgetHostViewMac::Hide() {
 }
 
 void RenderWidgetHostViewMac::WasUnOccluded() {
+  if (!browser_compositor_)
+    return;
+
   browser_compositor_->SetRenderWidgetHostIsHidden(false);
   render_widget_host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewMac::WasOccluded() {
+  if (!browser_compositor_)
+    return;
+
   render_widget_host_->WasHidden();
   browser_compositor_->SetRenderWidgetHostIsHidden(true);
 }
@@ -1084,12 +1119,18 @@ void RenderWidgetHostViewMac::SetTooltipText(
   }
 }
 
-void RenderWidgetHostViewMac::OnSynchronizedDisplayPropertiesChanged() {
-  browser_compositor_->WasResized();
+void RenderWidgetHostViewMac::ResizeDueToAutoResize(const gfx::Size& new_size,
+                                                    uint64_t sequence_number) {
+  browser_compositor_->UpdateForAutoResize(new_size);
+  RenderWidgetHostViewBase::ResizeDueToAutoResize(new_size, sequence_number);
+}
+
+void RenderWidgetHostViewMac::DidNavigate() {
+  browser_compositor_->DidNavigate();
 }
 
 gfx::Size RenderWidgetHostViewMac::GetRequestedRendererSize() const {
-  return browser_compositor_->DelegatedFrameHostDesiredSizeInDIP();
+  return browser_compositor_->GetRendererSize();
 }
 
 bool RenderWidgetHostViewMac::SupportsSpeech() const {
@@ -1153,8 +1194,8 @@ void RenderWidgetHostViewMac::SetShowingContextMenu(bool showing) {
                                     clickCount:0
                                       pressure:0];
   WebMouseEvent web_event = WebMouseEventBuilder::Build(event, cocoa_view_);
-  if (showing)
-    web_event.SetType(WebInputEvent::kMouseLeave);
+  web_event.SetModifiers(web_event.GetModifiers() |
+                         WebInputEvent::kRelativeMotionEvent);
   ForwardMouseEvent(web_event);
 }
 
@@ -1165,28 +1206,9 @@ bool RenderWidgetHostViewMac::IsPopup() const {
 void RenderWidgetHostViewMac::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
-    const ReadbackRequestCallback& callback,
-    const SkColorType preferred_color_type) {
-  browser_compositor_->CopyFromCompositingSurface(
-      src_subrect, dst_size, callback, preferred_color_type);
-}
-
-void RenderWidgetHostViewMac::CopyFromSurfaceToVideoFrame(
-    const gfx::Rect& src_subrect,
-    scoped_refptr<media::VideoFrame> target,
-    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
-  browser_compositor_->CopyFromCompositingSurfaceToVideoFrame(
-      src_subrect, std::move(target), callback);
-}
-
-void RenderWidgetHostViewMac::BeginFrameSubscription(
-    std::unique_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
-  browser_compositor_->GetDelegatedFrameHost()->BeginFrameSubscription(
-      std::move(subscriber));
-}
-
-void RenderWidgetHostViewMac::EndFrameSubscription() {
-  browser_compositor_->GetDelegatedFrameHost()->EndFrameSubscription();
+    base::OnceCallback<void(const SkBitmap&)> callback) {
+  browser_compositor_->GetDelegatedFrameHost()->CopyFromCompositingSurface(
+      src_subrect, dst_size, std::move(callback));
 }
 
 void RenderWidgetHostViewMac::ForwardMouseEvent(const WebMouseEvent& event) {
@@ -1390,9 +1412,8 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
   return true;
 }
 
-bool RenderWidgetHostViewMac::HasAcceleratedSurface(
-      const gfx::Size& desired_size) {
-  return browser_compositor_->HasFrameOfSize(desired_size);
+bool RenderWidgetHostViewMac::ShouldContinueToPauseForFrame() {
+  return browser_compositor_->ShouldContinueToPauseForFrame();
 }
 
 void RenderWidgetHostViewMac::FocusedNodeChanged(
@@ -1422,23 +1443,15 @@ void RenderWidgetHostViewMac::SubmitCompositorFrame(
     viz::mojom::HitTestRegionListPtr hit_test_region_list) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewMac::OnSwapCompositorFrame");
 
-  if (repaint_state_ == RepaintState::Paused) {
-    gfx::Size frame_size = gfx::ConvertSizeToDIP(
-        frame.metadata.device_scale_factor, frame.size_in_pixels());
-    gfx::Size view_size = gfx::Size(cocoa_view_.bounds.size);
-    if (frame_size == view_size || render_widget_host_->auto_resize_enabled()) {
-      NSDisableScreenUpdates();
-      repaint_state_ = RepaintState::ScreenUpdatesDisabled;
-    }
-  }
-
   last_frame_root_background_color_ = frame.metadata.root_background_color;
   last_scroll_offset_ = frame.metadata.root_scroll_offset;
 
   page_at_minimum_scale_ =
       frame.metadata.page_scale_factor == frame.metadata.min_page_scale_factor;
-  browser_compositor_->SubmitCompositorFrame(local_surface_id,
-                                             std::move(frame));
+
+  browser_compositor_->GetDelegatedFrameHost()->SubmitCompositorFrame(
+      local_surface_id, std::move(frame), std::move(hit_test_region_list));
+
   UpdateDisplayVSyncParameters();
 }
 
@@ -1449,6 +1462,10 @@ void RenderWidgetHostViewMac::OnDidNotProduceFrame(
 
 void RenderWidgetHostViewMac::ClearCompositorFrame() {
   browser_compositor_->ClearCompositorFrame();
+}
+
+gfx::Vector2d RenderWidgetHostViewMac::GetOffsetFromRootSurface() {
+  return gfx::Vector2d();
 }
 
 gfx::Rect RenderWidgetHostViewMac::GetBoundsInRootWindow() {
@@ -1505,6 +1522,7 @@ void RenderWidgetHostViewMac::GestureEventAck(
     default:
       break;
   }
+  mouse_wheel_phase_handler_.GestureEventAck(event, ack_result);
 }
 
 void RenderWidgetHostViewMac::DidOverscroll(
@@ -1525,12 +1543,15 @@ RenderWidgetHostImpl* RenderWidgetHostViewMac::GetRenderWidgetHostImpl() const {
 }
 
 viz::LocalSurfaceId RenderWidgetHostViewMac::GetLocalSurfaceId() const {
-  // Call to the DelegatedFrameHost interface.
-  return browser_compositor_->GetLocalSurfaceId();
+  if (!browser_compositor_)
+    return viz::LocalSurfaceId();
+  return browser_compositor_->GetRendererLocalSurfaceId();
 }
 
 viz::FrameSinkId RenderWidgetHostViewMac::GetFrameSinkId() {
-  return browser_compositor_->GetDelegatedFrameHost()->GetFrameSinkId();
+  if (!browser_compositor_)
+    return viz::FrameSinkId();
+  return browser_compositor_->GetDelegatedFrameHost()->frame_sink_id();
 }
 
 bool RenderWidgetHostViewMac::ShouldRouteEvent(
@@ -1588,10 +1609,14 @@ bool RenderWidgetHostViewMac::TransformPointToCoordSpaceForView(
 }
 
 viz::FrameSinkId RenderWidgetHostViewMac::GetRootFrameSinkId() {
+  if (!browser_compositor_)
+    return viz::FrameSinkId();
   return browser_compositor_->GetRootFrameSinkId();
 }
 
 viz::SurfaceId RenderWidgetHostViewMac::GetCurrentSurfaceId() const {
+  if (!browser_compositor_)
+    return viz::SurfaceId();
   return browser_compositor_->GetDelegatedFrameHost()->GetCurrentSurfaceId();
 }
 
@@ -1712,8 +1737,10 @@ void RenderWidgetHostViewMac::OnGetRenderedTextCompleted(
 }
 
 void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
-  if (!render_widget_host_ || render_widget_host_->is_hidden())
+  if (!render_widget_host_ || !browser_compositor_ ||
+      render_widget_host_->is_hidden()) {
     return;
+  }
 
   // Pausing for one view prevents others from receiving frames.
   // This may lead to large delays, causing overlaps. See crbug.com/352020.
@@ -1721,11 +1748,18 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
     return;
 
   // Wait for a frame of the right size to come in.
-  repaint_state_ = RepaintState::Paused;
+  browser_compositor_->BeginPauseForFrame(
+      render_widget_host_->auto_resize_enabled());
   render_widget_host_->PauseForPendingResizeOrRepaints();
-  if (repaint_state_ == RepaintState::ScreenUpdatesDisabled)
-    NSEnableScreenUpdates();
-  repaint_state_ = RepaintState::None;
+  browser_compositor_->EndPauseForFrame();
+}
+
+// static
+viz::FrameSinkId
+RenderWidgetHostViewMac::AllocateFrameSinkIdForGuestViewHack() {
+  return ImageTransportFactory::GetInstance()
+      ->GetContextFactoryPrivate()
+      ->AllocateFrameSinkId();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1742,7 +1776,7 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   display::Screen* screen = display::Screen::GetScreen();
   if (display.id() != screen->GetDisplayNearestView(cocoa_view_).id())
     return;
-  UpdateBackingStoreProperties();
+  UpdateNSViewAndDisplayProperties();
 }
 
 Class GetRenderWidgetHostViewCocoaClassForTesting() {
@@ -2808,7 +2842,7 @@ Class GetRenderWidgetHostViewCocoaClassForTesting() {
 }
 
 - (void)updateScreenProperties{
-  renderWidgetHostView_->UpdateBackingStoreProperties();
+  renderWidgetHostView_->UpdateNSViewAndDisplayProperties();
   renderWidgetHostView_->UpdateDisplayLink();
 }
 
@@ -2827,7 +2861,7 @@ Class GetRenderWidgetHostViewCocoaClassForTesting() {
 }
 
 - (void)windowChangedGlobalFrame:(NSNotification*)notification {
-  renderWidgetHostView_->UpdateBackingStoreProperties();
+  renderWidgetHostView_->UpdateNSViewAndDisplayProperties();
 }
 
 - (void)setFrameSize:(NSSize)newSize {
@@ -2837,15 +2871,7 @@ Class GetRenderWidgetHostViewCocoaClassForTesting() {
   // -setFrame: isn't neccessary.
   [super setFrameSize:newSize];
 
-  if (!renderWidgetHostView_->render_widget_host_)
-    return;
-
-  if (renderWidgetHostView_->render_widget_host_->delegate())
-    renderWidgetHostView_->render_widget_host_->delegate()->SendScreenRects();
-  else
-    renderWidgetHostView_->render_widget_host_->SendScreenRects();
-  renderWidgetHostView_->render_widget_host_->WasResized();
-  renderWidgetHostView_->browser_compositor_->WasResized();
+  renderWidgetHostView_->UpdateNSViewAndDisplayProperties();
 
   // Wait for the frame that WasResize might have requested. If the view is
   // being made visible at a new size, then this call will have no effect
@@ -3467,6 +3493,12 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 }
 
 - (void)viewDidMoveToWindow {
+  // This can be called very late during shutdown, so it needs to be guarded by
+  // a check that DestroyCompositorForShutdown has not yet been called.
+  // https://crbug.com/805726
+  if (!renderWidgetHostView_->browser_compositor_)
+    return;
+
   if ([self window])
     [self updateScreenProperties];
   renderWidgetHostView_->browser_compositor_->SetNSViewAttachedToWindow(

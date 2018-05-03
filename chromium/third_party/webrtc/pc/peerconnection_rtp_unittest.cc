@@ -13,12 +13,14 @@
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "api/fakemetricsobserver.h"
 #include "api/jsep.h"
 #include "api/mediastreaminterface.h"
 #include "api/peerconnectioninterface.h"
 #include "pc/mediastream.h"
 #include "pc/mediastreamtrack.h"
 #include "pc/peerconnectionwrapper.h"
+#include "pc/sdputils.h"
 #include "pc/test/fakeaudiocapturemodule.h"
 #include "pc/test/mockpeerconnectionobservers.h"
 #include "rtc_base/checks.h"
@@ -72,6 +74,12 @@ class PeerConnectionRtpTest : public testing::Test {
 
   std::unique_ptr<PeerConnectionWrapper> CreatePeerConnection() {
     return CreatePeerConnection(RTCConfiguration());
+  }
+
+  std::unique_ptr<PeerConnectionWrapper> CreatePeerConnectionWithPlanB() {
+    RTCConfiguration config;
+    config.sdp_semantics = SdpSemantics::kPlanB;
+    return CreatePeerConnection(config);
   }
 
   std::unique_ptr<PeerConnectionWrapper> CreatePeerConnectionWithUnifiedPlan() {
@@ -209,6 +217,106 @@ TEST_F(PeerConnectionRtpCallbacksTest,
   ASSERT_EQ(callee->observer()->add_track_events_.size(), 2u);
   EXPECT_EQ(callee->observer()->GetAddTrackReceivers(),
             callee->observer()->remove_track_events_);
+}
+
+// Tests that setting a remote description with sending transceivers will fire
+// the OnTrack callback for each transceiver and setting a remote description
+// with receive only transceivers will not call OnTrack.
+TEST_F(PeerConnectionRtpCallbacksTest, UnifiedPlanAddTransceiverCallsOnTrack) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+
+  auto audio_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+  auto video_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_VIDEO);
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+
+  ASSERT_EQ(0u, caller->observer()->on_track_transceivers_.size());
+  ASSERT_EQ(2u, callee->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(audio_transceiver->mid(),
+            callee->pc()->GetTransceivers()[0]->mid());
+  EXPECT_EQ(video_transceiver->mid(),
+            callee->pc()->GetTransceivers()[1]->mid());
+}
+
+// Test that doing additional offer/answer exchanges with no changes to tracks
+// will cause no additional OnTrack calls after the tracks have been negotiated.
+TEST_F(PeerConnectionRtpCallbacksTest, UnifiedPlanReofferDoesNotCallOnTrack) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+
+  caller->AddAudioTrack("audio");
+  callee->AddAudioTrack("audio");
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  EXPECT_EQ(1u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(1u, callee->observer()->on_track_transceivers_.size());
+
+  // If caller reoffers with no changes expect no additional OnTrack calls.
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  EXPECT_EQ(1u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(1u, callee->observer()->on_track_transceivers_.size());
+
+  // Also if callee reoffers with no changes expect no additional OnTrack calls.
+  ASSERT_TRUE(callee->ExchangeOfferAnswerWith(caller.get()));
+  EXPECT_EQ(1u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(1u, callee->observer()->on_track_transceivers_.size());
+}
+
+// Test that OnTrack is called when the transceiver direction changes to send
+// the track.
+TEST_F(PeerConnectionRtpCallbacksTest, UnifiedPlanSetDirectionCallsOnTrack) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+
+  auto transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+  transceiver->SetDirection(RtpTransceiverDirection::kInactive);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  EXPECT_EQ(0u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(0u, callee->observer()->on_track_transceivers_.size());
+
+  transceiver->SetDirection(RtpTransceiverDirection::kSendOnly);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  EXPECT_EQ(0u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(1u, callee->observer()->on_track_transceivers_.size());
+
+  // If the direction changes but it is still receiving on the remote side, then
+  // OnTrack should not be fired again.
+  transceiver->SetDirection(RtpTransceiverDirection::kSendRecv);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  EXPECT_EQ(0u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(1u, callee->observer()->on_track_transceivers_.size());
+}
+
+// Test that OnTrack is called twice when a sendrecv call is started, the callee
+// changes the direction to inactive, then changes it back to sendrecv.
+TEST_F(PeerConnectionRtpCallbacksTest,
+       UnifiedPlanSetDirectionHoldCallsOnTrackTwice) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+
+  auto transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  EXPECT_EQ(0u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(1u, callee->observer()->on_track_transceivers_.size());
+
+  // Put the call on hold by no longer receiving the track.
+  callee->pc()->GetTransceivers()[0]->SetDirection(
+      RtpTransceiverDirection::kInactive);
+
+  ASSERT_TRUE(callee->ExchangeOfferAnswerWith(caller.get()));
+  EXPECT_EQ(0u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(1u, callee->observer()->on_track_transceivers_.size());
+
+  // Resume the call by changing the direction to recvonly. This should call
+  // OnTrack again on the callee side.
+  callee->pc()->GetTransceivers()[0]->SetDirection(
+      RtpTransceiverDirection::kRecvOnly);
+
+  ASSERT_TRUE(callee->ExchangeOfferAnswerWith(caller.get()));
+  EXPECT_EQ(0u, caller->observer()->on_track_transceivers_.size());
+  EXPECT_EQ(2u, callee->observer()->on_track_transceivers_.size());
 }
 
 // These tests examine the state of the peer connection as a result of
@@ -455,6 +563,7 @@ TEST_F(PeerConnectionRtpTest,
   auto caller = CreatePeerConnectionWithUnifiedPlan();
 
   auto transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+  EXPECT_EQ(cricket::MEDIA_TYPE_AUDIO, transceiver->media_type());
 
   ASSERT_TRUE(transceiver->sender());
   EXPECT_EQ(cricket::MEDIA_TYPE_AUDIO, transceiver->sender()->media_type());
@@ -475,6 +584,7 @@ TEST_F(PeerConnectionRtpTest,
   auto caller = CreatePeerConnectionWithUnifiedPlan();
 
   auto transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_VIDEO);
+  EXPECT_EQ(cricket::MEDIA_TYPE_VIDEO, transceiver->media_type());
 
   ASSERT_TRUE(transceiver->sender());
   EXPECT_EQ(cricket::MEDIA_TYPE_VIDEO, transceiver->sender()->media_type());
@@ -864,6 +974,154 @@ TEST_F(PeerConnectionRtpUnifiedPlanTest,
   caller->observer()->clear_negotiation_needed();
   EXPECT_TRUE(caller->pc()->RemoveTrack(sender));
   EXPECT_FALSE(caller->observer()->negotiation_needed());
+}
+
+// Test that OnRenegotiationNeeded is fired if SetDirection is called on an
+// active RtpTransceiver with a new direction.
+TEST_F(PeerConnectionRtpUnifiedPlanTest,
+       RenegotiationNeededAfterTransceiverSetDirection) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+
+  auto transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+
+  caller->observer()->clear_negotiation_needed();
+  transceiver->SetDirection(RtpTransceiverDirection::kInactive);
+  EXPECT_TRUE(caller->observer()->negotiation_needed());
+}
+
+// Test that OnRenegotiationNeeded is not fired if SetDirection is called on an
+// active RtpTransceiver with current direction.
+TEST_F(PeerConnectionRtpUnifiedPlanTest,
+       NoRenegotiationNeededAfterTransceiverSetSameDirection) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+
+  auto transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+
+  caller->observer()->clear_negotiation_needed();
+  transceiver->SetDirection(transceiver->direction());
+  EXPECT_FALSE(caller->observer()->negotiation_needed());
+}
+
+// Test that OnRenegotiationNeeded is not fired if SetDirection is called on a
+// stopped RtpTransceiver.
+TEST_F(PeerConnectionRtpUnifiedPlanTest,
+       NoRenegotiationNeededAfterSetDirectionOnStoppedTransceiver) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+
+  auto transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+  transceiver->Stop();
+
+  caller->observer()->clear_negotiation_needed();
+  transceiver->SetDirection(RtpTransceiverDirection::kInactive);
+  EXPECT_FALSE(caller->observer()->negotiation_needed());
+}
+
+// Test MSID signaling between Unified Plan and Plan B endpoints. There are two
+// options for this kind of signaling: media section based (a=msid) and ssrc
+// based (a=ssrc MSID). While JSEP only specifies media section MSID signaling,
+// we want to ensure compatibility with older Plan B endpoints that might expect
+// ssrc based MSID signaling. Thus we test here that Unified Plan offers both
+// types but answers with the same type as the offer.
+
+class PeerConnectionMsidSignalingTest : public PeerConnectionRtpTest {};
+
+TEST_F(PeerConnectionMsidSignalingTest, UnifiedPlanTalkingToOurself) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  caller->AddAudioTrack("caller_audio");
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+  callee->AddAudioTrack("callee_audio");
+  auto caller_observer =
+      new rtc::RefCountedObject<webrtc::FakeMetricsObserver>();
+  caller->pc()->RegisterUMAObserver(caller_observer);
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+
+  // Offer should have had both a=msid and a=ssrc MSID lines.
+  auto* offer = callee->pc()->remote_description();
+  EXPECT_EQ((cricket::kMsidSignalingMediaSection |
+             cricket::kMsidSignalingSsrcAttribute),
+            offer->description()->msid_signaling());
+
+  // Answer should have had only a=msid lines.
+  auto* answer = caller->pc()->remote_description();
+  EXPECT_EQ(cricket::kMsidSignalingMediaSection,
+            answer->description()->msid_signaling());
+  // Check that this is counted correctly
+  EXPECT_EQ(1, caller_observer->GetEnumCounter(
+                   webrtc::kEnumCounterSdpSemanticNegotiated,
+                   webrtc::kSdpSemanticNegotiatedUnifiedPlan));
+  EXPECT_EQ(0, caller_observer->GetEnumCounter(
+                   webrtc::kEnumCounterSdpSemanticNegotiated,
+                   webrtc::kSdpSemanticNegotiatedNone));
+  EXPECT_EQ(0, caller_observer->GetEnumCounter(
+                   webrtc::kEnumCounterSdpSemanticNegotiated,
+                   webrtc::kSdpSemanticNegotiatedPlanB));
+  EXPECT_EQ(0, caller_observer->GetEnumCounter(
+                   webrtc::kEnumCounterSdpSemanticNegotiated,
+                   webrtc::kSdpSemanticNegotiatedMixed));
+}
+
+TEST_F(PeerConnectionMsidSignalingTest, PlanBOfferToUnifiedPlanAnswer) {
+  auto caller = CreatePeerConnectionWithPlanB();
+  caller->AddAudioTrack("caller_audio");
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+  callee->AddAudioTrack("callee_audio");
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+
+  // Offer should have only a=ssrc MSID lines.
+  auto* offer = callee->pc()->remote_description();
+  EXPECT_EQ(cricket::kMsidSignalingSsrcAttribute,
+            offer->description()->msid_signaling());
+
+  // Answer should have only a=ssrc MSID lines to match the offer.
+  auto* answer = caller->pc()->remote_description();
+  EXPECT_EQ(cricket::kMsidSignalingSsrcAttribute,
+            answer->description()->msid_signaling());
+}
+
+TEST_F(PeerConnectionMsidSignalingTest, PureUnifiedPlanToUs) {
+  auto caller = CreatePeerConnectionWithUnifiedPlan();
+  caller->AddAudioTrack("caller_audio");
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+  callee->AddAudioTrack("callee_audio");
+
+  auto offer = caller->CreateOffer();
+  // Simulate a pure Unified Plan offerer by setting the MSID signaling to media
+  // section only.
+  offer->description()->set_msid_signaling(cricket::kMsidSignalingMediaSection);
+
+  ASSERT_TRUE(
+      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
+
+  // Answer should have only a=msid to match the offer.
+  auto answer = callee->CreateAnswer();
+  EXPECT_EQ(cricket::kMsidSignalingMediaSection,
+            answer->description()->msid_signaling());
+}
+
+// Sender setups in a call.
+
+class PeerConnectionSenderTest : public PeerConnectionRtpTest {};
+
+TEST_F(PeerConnectionSenderTest, CreateTwoSendersWithSameTrack) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+
+  auto track = caller->CreateAudioTrack("audio_track");
+  auto sender1 = caller->AddTrack(track);
+  ASSERT_TRUE(sender1);
+  // We need to temporarily reset the track for the subsequent AddTrack() to
+  // succeed.
+  EXPECT_TRUE(sender1->SetTrack(nullptr));
+  auto sender2 = caller->AddTrack(track);
+  EXPECT_TRUE(sender2);
+  EXPECT_TRUE(sender1->SetTrack(track));
+
+  // TODO(hbos): When https://crbug.com/webrtc/8734 is resolved, this should
+  // return true, and doing |callee->SetRemoteDescription()| should work.
+  EXPECT_FALSE(caller->CreateOfferAndSetAsLocal());
 }
 
 }  // namespace webrtc

@@ -60,6 +60,8 @@ class SurfaceD3D : public SurfaceImpl
                                         GLenum binding,
                                         const gl::ImageIndex &imageIndex,
                                         FramebufferAttachmentRenderTarget **rtOut) override;
+    gl::Error initializeContents(const gl::Context *context,
+                                 const gl::ImageIndex &imageIndex) override;
 
     const angle::Format *getD3DTextureColorFormat() const override;
 
@@ -105,6 +107,8 @@ class SurfaceD3D : public SurfaceImpl
 
     HANDLE mShareHandle;
     IUnknown *mD3DTexture;
+
+    EGLenum mBuftype;
 };
 
 class WindowSurfaceD3D : public SurfaceD3D

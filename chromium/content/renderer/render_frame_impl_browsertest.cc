@@ -34,7 +34,7 @@
 #include "content/test/frame_host_test_interface.mojom.h"
 #include "content/test/test_render_frame.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebEffectiveConnectionType.h"
@@ -177,11 +177,12 @@ TEST_F(RenderFrameImplTest, FrameResize) {
   gfx::Size size(200, 200);
   resize_params.screen_info = ScreenInfo();
   resize_params.new_size = size;
-  resize_params.physical_backing_size = size;
+  resize_params.compositor_viewport_pixel_size = size;
   resize_params.visible_viewport_size = size;
   resize_params.top_controls_height = 0.f;
   resize_params.browser_controls_shrink_blink_size = false;
   resize_params.is_fullscreen_granted = false;
+  resize_params.content_source_id = frame_widget()->GetContentSourceId();
 
   ViewMsg_Resize resize_message(0, resize_params);
   frame_widget()->OnMessageReceived(resize_message);

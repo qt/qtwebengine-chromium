@@ -27,7 +27,6 @@ static const char* pixel_config_name(GrPixelConfig config) {
         case kBGRA_8888_GrPixelConfig: return "BGRA8888";
         case kSRGBA_8888_GrPixelConfig: return "SRGBA8888";
         case kSBGRA_8888_GrPixelConfig: return "SBGRA8888";
-        case kRGBA_8888_sint_GrPixelConfig: return "RGBA8888_sint";
         case kRGBA_float_GrPixelConfig: return "RGBAFloat";
         case kRG_float_GrPixelConfig: return "RGFloat";
         case kAlpha_half_GrPixelConfig: return "AlphaHalf";
@@ -54,6 +53,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fMultisampleDisableSupport = false;
     fInstanceAttribSupport = false;
     fUsesMixedSamples = false;
+    fUsePrimitiveRestart = false;
     fPreferClientSideDynamicBuffers = false;
     fPreferFullscreenClears = false;
     fMustClearUploadedBufferData = false;
@@ -68,9 +68,8 @@ GrCaps::GrCaps(const GrContextOptions& options) {
 
     fMaxVertexAttributes = 0;
     fMaxRenderTargetSize = 1;
+    fMaxPreferredRenderTargetSize = 1;
     fMaxTextureSize = 1;
-    fMaxColorSampleCount = 0;
-    fMaxStencilSampleCount = 0;
     fMaxRasterSamples = 0;
     fMaxWindowRectangles = 0;
 
@@ -97,6 +96,14 @@ GrCaps::GrCaps(const GrContextOptions& options) {
 
 void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
     this->onApplyOptionsOverrides(options);
+    if (options.fDisableDriverCorrectnessWorkarounds) {
+        // We always blacklist coverage counting on Vulkan currently. TODO: Either stop doing that
+        // or disambiguate blacklisting from incomplete implementation.
+        // SkASSERT(!fBlacklistCoverageCounting);
+        SkASSERT(!fAvoidStencilBuffers);
+        SkASSERT(!fAdvBlendEqBlacklist);
+    }
+
     fMaxTextureSize = SkTMin(fMaxTextureSize, options.fMaxTextureSizeOverride);
     fMaxTileSize = fMaxTextureSize;
 #if GR_TEST_UTILS
@@ -154,6 +161,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Multisample disable support", fMultisampleDisableSupport);
     writer->appendBool("Instance Attrib Support", fInstanceAttribSupport);
     writer->appendBool("Uses Mixed Samples", fUsesMixedSamples);
+    writer->appendBool("Use primitive restart", fUsePrimitiveRestart);
     writer->appendBool("Prefer client-side dynamic buffers", fPreferClientSideDynamicBuffers);
     writer->appendBool("Prefer fullscreen clears", fPreferFullscreenClears);
     writer->appendBool("Must clear buffer memory", fMustClearUploadedBufferData);
@@ -172,8 +180,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendS32("Max Vertex Attributes", fMaxVertexAttributes);
     writer->appendS32("Max Texture Size", fMaxTextureSize);
     writer->appendS32("Max Render Target Size", fMaxRenderTargetSize);
-    writer->appendS32("Max Color Sample Count", fMaxColorSampleCount);
-    writer->appendS32("Max Stencil Sample Count", fMaxStencilSampleCount);
+    writer->appendS32("Max Preferred Render Target Size", fMaxPreferredRenderTargetSize);
     writer->appendS32("Max Raster Samples", fMaxRasterSamples);
     writer->appendS32("Max Window Rectangles", fMaxWindowRectangles);
     writer->appendS32("Max Clip Analytic Fragment Processors", fMaxClipAnalyticFPs);
@@ -192,8 +199,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
                          kBlendEquationSupportNames[fBlendEquationSupport]);
     writer->appendString("Map Buffer Support", map_flags_to_string(fMapBufferFlags).c_str());
 
-    SkASSERT(!this->isConfigRenderable(kUnknown_GrPixelConfig, false));
-    SkASSERT(!this->isConfigRenderable(kUnknown_GrPixelConfig, true));
+    SkASSERT(!this->isConfigRenderable(kUnknown_GrPixelConfig));
     SkASSERT(!this->isConfigTexturable(kUnknown_GrPixelConfig));
 
     writer->beginArray("configs");
@@ -202,8 +208,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
         GrPixelConfig config = static_cast<GrPixelConfig>(i);
         writer->beginObject(nullptr, false);
         writer->appendString("name", pixel_config_name(config));
-        writer->appendBool("renderable", this->isConfigRenderable(config, false));
-        writer->appendBool("renderableMSAA", this->isConfigRenderable(config, true));
+        writer->appendS32("max sample count", this->maxRenderTargetSampleCount(config));
         writer->appendBool("texturable", this->isConfigTexturable(config));
         writer->endObject();
     }
@@ -218,3 +223,37 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->endObject();
 }
 
+bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) const {
+    if (!this->isConfigTexturable(desc.fConfig)) {
+        return false;
+    }
+
+    if (GrMipMapped::kYes == mipped && !this->mipMapSupport()) {
+        return false;
+    }
+
+    if (desc.fWidth < 1 || desc.fHeight < 1) {
+        return false;
+    }
+
+    if (SkToBool(desc.fFlags & kRenderTarget_GrSurfaceFlag)) {
+        if (0 == this->getRenderTargetSampleCount(desc.fSampleCnt, desc.fConfig)) {
+            return false;
+        }
+        int maxRTSize = this->maxRenderTargetSize();
+        if (desc.fWidth > maxRTSize || desc.fHeight > maxRTSize) {
+            return false;
+        }
+    } else {
+        // We currently do not support multisampled textures
+        if (desc.fSampleCnt > 1) {
+            return false;
+        }
+        int maxSize = this->maxTextureSize();
+        if (desc.fWidth > maxSize || desc.fHeight > maxSize) {
+            return false;
+        }
+    }
+
+    return true;
+}

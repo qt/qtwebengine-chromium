@@ -43,6 +43,7 @@
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSVariableData.h"
+#include "core/css/FontFace.h"
 #include "core/css/FontSizeFunctions.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
@@ -66,7 +67,6 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLHeadElement.h"
-#include "core/html/VoidCallback.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorHistory.h"
@@ -86,6 +86,7 @@
 #include "core/svg/SVGElement.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
+#include "platform/fonts/FontCustomPlatformData.h"
 #include "platform/fonts/shaping/CachingWordShaper.h"
 #include "platform/text/TextRun.h"
 #include "platform/wtf/Time.h"
@@ -178,14 +179,15 @@ void BlendWithColorsFromGradient(cssvalue::CSSGradientValue* gradient,
                                  bool& found_non_transparent_color,
                                  bool& found_opaque_color,
                                  const LayoutObject& layout_object) {
-  Vector<Color> stop_colors;
-  gradient->GetStopColors(stop_colors, layout_object);
+  const Document& document = layout_object.GetDocument();
+  const ComputedStyle& style = layout_object.StyleRef();
 
+  Vector<Color> stop_colors = gradient->GetStopColors(document, style);
   if (colors.IsEmpty()) {
     colors.AppendRange(stop_colors.begin(), stop_colors.end());
   } else {
     if (colors.size() > 1) {
-      // Gradient on gradient is too complicated, bail out
+      // Gradient on gradient is too complicated, bail out.
       colors.clear();
       return;
     }
@@ -198,9 +200,8 @@ void BlendWithColorsFromGradient(cssvalue::CSSGradientValue* gradient,
       colors.push_back(existing_color.Blend(stop_color));
     }
   }
-  found_opaque_color = found_opaque_color ||
-                       gradient->KnownToBeOpaque(layout_object.GetDocument(),
-                                                 layout_object.StyleRef());
+  found_opaque_color =
+      found_opaque_color || gradient->KnownToBeOpaque(document, style);
 }
 
 // Gets the colors from an image style, if one exists and it is a gradient.
@@ -749,9 +750,32 @@ void InspectorCSSAgent::MediaQueryResultChanged() {
   GetFrontend()->mediaQueryResultChanged();
 }
 
-void InspectorCSSAgent::FontsUpdated() {
+void InspectorCSSAgent::FontsUpdated(
+    const FontFace* font,
+    const String& src,
+    const FontCustomPlatformData* fontCustomPlatformData) {
   FlushPendingProtocolNotifications();
-  GetFrontend()->fontsUpdated();
+
+  if (!(font && src && fontCustomPlatformData)) {
+    GetFrontend()->fontsUpdated();
+    return;
+  }
+
+  // blink::FontFace returns sane property defaults per the web fonts spec,
+  // so we don't perform null checks here.
+  std::unique_ptr<protocol::CSS::FontFace> font_face =
+      protocol::CSS::FontFace::create()
+          .setFontFamily(font->family())
+          .setFontStyle(font->style())
+          .setFontVariant(font->variant())
+          .setFontWeight(font->weight())
+          .setFontStretch(font->stretch())
+          .setUnicodeRange(font->unicodeRange())
+          .setSrc(src)
+          .setPlatformFontFamily(String::FromUTF8(
+              fontCustomPlatformData->FamilyNameForInspector().c_str()))
+          .build();
+  GetFrontend()->fontsUpdated(std::move(font_face));
 }
 
 void InspectorCSSAgent::ActiveStyleSheetsUpdated(Document* document) {

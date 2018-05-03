@@ -31,7 +31,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/url_constants.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
-#include "services/network/public/interfaces/network_service.mojom.h"
+#include "services/network/public/mojom/network_service.mojom.h"
 #include "third_party/zlib/google/compression_utils.h"
 #include "ui/base/template_expressions.h"
 
@@ -244,12 +244,6 @@ class WebUIURLLoaderFactory : public network::mojom::URLLoaderFactory,
       ReceivedBadMessage(render_frame_host_->GetProcess(),
                          bad_message::WEBUI_BAD_SCHEME_ACCESS);
       client->OnComplete(network::URLLoaderCompletionStatus(net::ERR_FAILED));
-      return;
-    }
-
-    if (request.url.host_piece() == kChromeUINetworkViewCacheHost) {
-      GetStoragePartition()->GetNetworkContext()->HandleViewCacheRequest(
-          request.url, std::move(client));
       return;
     }
 

@@ -32,6 +32,10 @@ const char kAdSamplerFrequencyDenominatorParam[] =
 // A frequency denominator with this value indicates sampling is disabled.
 const size_t kSamplerFrequencyDisabled = 0;
 
+// Number of milliseconds to wait after a page finished loading before starting
+// a report. Allows ads which load in the background to finish loading.
+const int64_t kAdSampleCollectionStartDelayMilliseconds = 1000;
+
 // Number of milliseconds to allow data collection to run before sending a
 // report (since this trigger runs in the background).
 const int64_t kAdSampleCollectionPeriodMilliseconds = 5000;
@@ -99,11 +103,15 @@ AdSamplerTrigger::AdSamplerTrigger(
     history::HistoryService* history_service)
     : content::WebContentsObserver(web_contents),
       sampler_frequency_denominator_(GetSamplerFrequencyDenominator()),
+      start_report_delay_ms_(kAdSampleCollectionStartDelayMilliseconds),
       finish_report_delay_ms_(kAdSampleCollectionPeriodMilliseconds),
       trigger_manager_(trigger_manager),
       prefs_(prefs),
       request_context_(request_context),
-      history_service_(history_service) {}
+      history_service_(history_service),
+      task_runner_(content::BrowserThread::GetTaskRunnerForThread(
+          content::BrowserThread::UI)),
+      weak_ptr_factory_(this) {}
 
 AdSamplerTrigger::~AdSamplerTrigger() {}
 
@@ -141,6 +149,16 @@ void AdSamplerTrigger::DidFinishLoad(
     return;
   }
 
+  // Create a report after a short delay. The delay gives more time for ads to
+  // finish loading in the background. This is best-effort.
+  task_runner_->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&AdSamplerTrigger::CreateAdSampleReport,
+                     weak_ptr_factory_.GetWeakPtr()),
+      base::TimeDelta::FromMilliseconds(start_report_delay_ms_));
+}
+
+void AdSamplerTrigger::CreateAdSampleReport() {
   SBErrorOptions error_options =
       TriggerManager::GetSBErrorDisplayOptions(*prefs_, *web_contents());
 
@@ -163,8 +181,8 @@ void AdSamplerTrigger::DidFinishLoad(
   // ads that are detected during this delay will be rejected by TriggerManager
   // because a report is already being collected, so we won't send multiple
   // reports for the same page.
-  content::BrowserThread::PostDelayedTask(
-      content::BrowserThread::UI, FROM_HERE,
+  task_runner_->PostDelayedTask(
+      FROM_HERE,
       base::BindOnce(
           IgnoreResult(&TriggerManager::FinishCollectingThreatDetails),
           base::Unretained(trigger_manager_), TriggerType::AD_SAMPLE,
@@ -174,6 +192,15 @@ void AdSamplerTrigger::DidFinishLoad(
 
   UMA_HISTOGRAM_ENUMERATION(kAdSamplerTriggerActionMetricName, AD_SAMPLED,
                             MAX_ACTIONS);
+}
+
+void AdSamplerTrigger::SetSamplerFrequencyForTest(size_t denominator) {
+  sampler_frequency_denominator_ = denominator;
+}
+
+void AdSamplerTrigger::SetTaskRunnerForTest(
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+  task_runner_ = task_runner;
 }
 
 }  // namespace safe_browsing

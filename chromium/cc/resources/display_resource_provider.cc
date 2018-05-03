@@ -15,11 +15,17 @@ using gpu::gles2::GLES2Interface;
 
 namespace cc {
 
+static GLint GetActiveTextureUnit(GLES2Interface* gl) {
+  GLint active_unit = 0;
+  gl->GetIntegerv(GL_ACTIVE_TEXTURE, &active_unit);
+  return active_unit;
+}
+
 class ScopedSetActiveTexture {
  public:
   ScopedSetActiveTexture(GLES2Interface* gl, GLenum unit)
       : gl_(gl), unit_(unit) {
-    DCHECK_EQ(GL_TEXTURE0, DisplayResourceProvider::GetActiveTextureUnit(gl_));
+    DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
 
     if (unit_ != GL_TEXTURE0)
       gl_->ActiveTexture(unit_);
@@ -89,6 +95,15 @@ void DisplayResourceProvider::SendPromotionHints(
     }
     UnlockForRead(id);
   }
+}
+
+void DisplayResourceProvider::DeletePromotionHint(ResourceMap::iterator it,
+                                                  DeleteStyle style) {
+  viz::internal::Resource* resource = &it->second;
+  // If this resource was interested in promotion hints, then remove it from
+  // the set of resources that we'll notify.
+  if (resource->wants_promotion_hint)
+    wants_promotion_hints_set_.erase(it->first);
 }
 
 bool DisplayResourceProvider::IsBackedBySurfaceTexture(viz::ResourceId id) {
@@ -293,6 +308,9 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
 
     child_info->child_to_parent_map.erase(child_id);
     resource.imported_count = 0;
+#if defined(OS_ANDROID)
+    DeletePromotionHint(it, style);
+#endif
     DeleteResourceInternal(it, style);
   }
 
@@ -454,7 +472,7 @@ GLenum DisplayResourceProvider::BindForSampling(viz::ResourceId resource_id,
             compositor_context_provider_->ContextCapabilities().texture_npot);
         gl->GenerateMipmap(target);
         resource->mipmap_state = viz::internal::Resource::VALID;
-      // fall-through
+        FALLTHROUGH;
       case viz::internal::Resource::VALID:
         min_filter = GL_LINEAR_MIPMAP_LINEAR;
         break;
@@ -475,13 +493,6 @@ GLenum DisplayResourceProvider::BindForSampling(viz::ResourceId resource_id,
 bool DisplayResourceProvider::InUse(viz::ResourceId id) {
   viz::internal::Resource* resource = GetResource(id);
   return resource->lock_for_read_count > 0 || resource->lost;
-}
-
-GLint DisplayResourceProvider::GetActiveTextureUnit(
-    gpu::gles2::GLES2Interface* gl) {
-  GLint active_unit = 0;
-  gl->GetIntegerv(GL_ACTIVE_TEXTURE, &active_unit);
-  return active_unit;
 }
 
 DisplayResourceProvider::ScopedReadLockGL::ScopedReadLockGL(
@@ -555,6 +566,9 @@ void DisplayResourceProvider::UnlockForRead(viz::ResourceId id) {
   if (resource->marked_for_deletion && !resource->lock_for_read_count) {
     if (!resource->child_id) {
       // The resource belongs to this ResourceProvider, so it can be destroyed.
+#if defined(OS_ANDROID)
+      DeletePromotionHint(it, NORMAL);
+#endif
       DeleteResourceInternal(it, NORMAL);
     } else {
       if (batch_return_resources_) {
@@ -612,13 +626,15 @@ DisplayResourceProvider::ScopedReadLockSkImage::ScopedReadLockSkImage(
     GrGLTextureInfo texture_info;
     texture_info.fID = resource->gl_id;
     texture_info.fTarget = resource->target;
-    GrBackendTexture backend_texture(
-        resource->size.width(), resource->size.height(),
-        ToGrPixelConfig(resource->format), texture_info);
+    texture_info.fFormat = TextureStorageFormat(resource->format);
+    GrBackendTexture backend_texture(resource->size.width(),
+                                     resource->size.height(), GrMipMapped::kNo,
+                                     texture_info);
     sk_image_ = SkImage::MakeFromTexture(
         resource_provider->compositor_context_provider_->GrContext(),
-        backend_texture, kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
-        nullptr);
+        backend_texture, kTopLeft_GrSurfaceOrigin,
+        ResourceFormatToClosestSkColorType(resource->format),
+        kPremul_SkAlphaType, nullptr);
   } else if (resource->pixels) {
     SkBitmap sk_bitmap;
     resource_provider->PopulateSkBitmapWithResource(&sk_bitmap, resource);

@@ -12,10 +12,6 @@
 #include "public/platform/WebDocumentSubresourceFilter.h"
 #include "public/platform/WebURL.h"
 
-namespace base {
-class SingleThreadTaskRunner;
-}
-
 namespace blink {
 
 class WebURLLoaderFactory;
@@ -31,12 +27,16 @@ class WebWorkerFetchContext {
  public:
   virtual ~WebWorkerFetchContext() = default;
 
-  virtual void InitializeOnWorkerThread(
-      scoped_refptr<base::SingleThreadTaskRunner>) = 0;
+  virtual void InitializeOnWorkerThread() = 0;
 
   // Returns a new WebURLLoaderFactory which is associated with the worker
   // context. It can be called only once.
   virtual std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() = 0;
+
+  // Returns a new WebURLLoaderFactory that wraps the given
+  // network::mojom::URLLoaderFactory.
+  virtual std::unique_ptr<WebURLLoaderFactory> WrapURLLoaderFactory(
+      mojo::ScopedMessagePipeHandle url_loader_factory_handle) = 0;
 
   // Called when a request is about to be sent out to modify the request to
   // handle the request correctly in the loading stack later. (Example: service

@@ -12,7 +12,7 @@
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
-#include "content/browser/mus_util.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -20,7 +20,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/drop_data.h"
-#include "ui/base/ui_base_switches_util.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
@@ -65,13 +65,6 @@ gfx::NativeWindow WebContentsViewGuest::GetTopLevelNativeWindow() const {
   return guest_->embedder_web_contents()->GetTopLevelNativeWindow();
 }
 
-void WebContentsViewGuest::GetScreenInfo(ScreenInfo* screen_info) const {
-  if (guest_->embedder_web_contents())
-    guest_->embedder_web_contents()->GetView()->GetScreenInfo(screen_info);
-  else
-    WebContentsView::GetDefaultScreenInfo(screen_info);
-}
-
 void WebContentsViewGuest::OnGuestAttached(WebContentsView* parent_view) {
 #if defined(USE_AURA)
   // In aura, ScreenPositionClient doesn't work properly if we do
@@ -79,14 +72,14 @@ void WebContentsViewGuest::OnGuestAttached(WebContentsView* parent_view) {
   // view hierarchy. We add this view as embedder's child here.
   // This would go in WebContentsViewGuest::CreateView, but that is too early to
   // access embedder_web_contents(). Therefore, we do it here.
-  if (!switches::IsMusHostingViz())
+  if (!base::FeatureList::IsEnabled(features::kMash))
     parent_view->GetNativeView()->AddChild(platform_view_->GetNativeView());
 #endif  // defined(USE_AURA)
 }
 
 void WebContentsViewGuest::OnGuestDetached(WebContentsView* old_parent_view) {
 #if defined(USE_AURA)
-  if (!switches::IsMusHostingViz()) {
+  if (!base::FeatureList::IsEnabled(features::kMash)) {
     old_parent_view->GetNativeView()->RemoveChild(
         platform_view_->GetNativeView());
   }

@@ -10,9 +10,11 @@
 #include "net/quic/core/congestion_control/rtt_stats.h"
 #include "net/quic/core/crypto/crypto_protocol.h"
 #include "net/quic/platform/api/quic_bug_tracker.h"
+#include "net/quic/platform/api/quic_fallthrough.h"
 #include "net/quic/platform/api/quic_flag_utils.h"
 #include "net/quic/platform/api/quic_flags.h"
 #include "net/quic/platform/api/quic_logging.h"
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
 
@@ -345,9 +347,7 @@ CongestionControlType BbrSender::GetCongestionControlType() const {
 }
 
 QuicTime::Delta BbrSender::GetMinRtt() const {
-  return !min_rtt_.IsZero()
-             ? min_rtt_
-             : QuicTime::Delta::FromMicroseconds(rtt_stats_->initial_rtt_us());
+  return !min_rtt_.IsZero() ? min_rtt_ : rtt_stats_->initial_rtt();
 }
 
 QuicByteCount BbrSender::GetTargetCongestionWindow(float gain) const {
@@ -613,6 +613,7 @@ void BbrSender::UpdateRecoveryState(QuicPacketNumber last_acked_packet,
       if (is_round_start) {
         recovery_state_ = GROWTH;
       }
+      QUIC_FALLTHROUGH_INTENDED;
 
     case GROWTH:
       // Exit recovery if appropriate.
@@ -778,7 +779,7 @@ void BbrSender::CalculateRecoveryWindow(QuicByteCount bytes_acked,
   recovery_window_ = std::max(min_congestion_window_, recovery_window_);
 }
 
-std::string BbrSender::GetDebugState() const {
+QuicString BbrSender::GetDebugState() const {
   std::ostringstream stream;
   stream << ExportDebugState();
   return stream.str();
@@ -799,7 +800,7 @@ BbrSender::DebugState BbrSender::ExportDebugState() const {
   return DebugState(*this);
 }
 
-static std::string ModeToString(BbrSender::Mode mode) {
+static QuicString ModeToString(BbrSender::Mode mode) {
   switch (mode) {
     case BbrSender::STARTUP:
       return "STARTUP";

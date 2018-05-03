@@ -37,6 +37,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeComputedStyle.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
@@ -49,12 +50,14 @@
 #include "core/html/media/HTMLMediaElement.h"
 #include "core/html_names.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutReplaced.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/style/ComputedStyle.h"
 #include "core/style/ComputedStyleConstants.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg_names.h"
 #include "platform/Length.h"
+#include "platform/feature_policy/FeaturePolicy.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/transforms/TransformOperations.h"
 #include "platform/wtf/Assertions.h"
@@ -76,6 +79,17 @@ TouchAction AdjustTouchActionForElement(TouchAction touch_action,
   return touch_action;
 }
 
+// Returns true for elements that are either <img> or <svg> image or <video>
+// that are not in an image or media document; returns false otherwise.
+bool IsImageOrVideoElement(const Element* element) {
+  if ((IsHTMLImageElement(element) || IsSVGImageElement(element)) &&
+      !element->GetDocument().IsImageDocument())
+    return true;
+  if (IsHTMLVideoElement(element) && !element->GetDocument().IsMediaDocument())
+    return true;
+  return false;
+}
+
 }  // namespace
 
 static EDisplay EquivalentBlockDisplay(EDisplay display) {
@@ -87,6 +101,7 @@ static EDisplay EquivalentBlockDisplay(EDisplay display) {
     case EDisplay::kGrid:
     case EDisplay::kListItem:
     case EDisplay::kFlowRoot:
+    case EDisplay::kLayoutCustom:
       return display;
     case EDisplay::kInlineTable:
       return EDisplay::kTable;
@@ -96,6 +111,8 @@ static EDisplay EquivalentBlockDisplay(EDisplay display) {
       return EDisplay::kFlex;
     case EDisplay::kInlineGrid:
       return EDisplay::kGrid;
+    case EDisplay::kInlineLayoutCustom:
+      return EDisplay::kLayoutCustom;
 
     case EDisplay::kContents:
     case EDisplay::kInline:
@@ -407,6 +424,9 @@ static void AdjustStyleForDisplay(ComputedStyle& style,
         style.MarginAfter().IsPercentOrCalc()) {
       UseCounter::Count(document, WebFeature::kFlexboxPercentageMarginVertical);
     }
+  } else if (layout_parent_style.IsDisplayLayoutCustomBox()) {
+    // Blockify the children of a LayoutCustom.
+    style.SetDisplay(EquivalentBlockDisplay(style.Display()));
   }
 }
 
@@ -533,6 +553,13 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     // from inline.  https://drafts.csswg.org/css-containment/#containment-paint
     if (style.ContainsPaint() && style.Display() == EDisplay::kInline)
       style.SetDisplay(EDisplay::kBlock);
+
+    // If this is a child of a LayoutCustom, we need the name of the parent
+    // layout function for invalidation purposes.
+    if (layout_parent_style.IsDisplayLayoutCustomBox()) {
+      style.SetDisplayLayoutCustomParentName(
+          layout_parent_style.DisplayLayoutCustomName());
+    }
   } else {
     AdjustStyleForFirstLetter(style);
   }
@@ -620,12 +647,12 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
   if (style.GetPosition() == EPosition::kSticky)
     style.SetSubtreeIsSticky(true);
 
-  // If the inherited value of justify-items includes the 'legacy' keyword,
-  // 'auto' computes to the the inherited value.  Otherwise, 'auto' computes to
-  // 'normal'.
-  if (style.JustifyItemsPosition() == ItemPosition::kAuto) {
-    if (parent_style.JustifyItemsPositionType() == ItemPositionType::kLegacy)
-      style.SetJustifyItems(parent_style.JustifyItems());
+  // If the inherited value of justify-items includes the 'legacy'
+  // keyword (plus 'left', 'right' or 'center'), 'legacy' computes to
+  // the the inherited value.  Otherwise, 'auto' computes to 'normal'.
+  if (parent_style.JustifyItemsPositionType() == ItemPositionType::kLegacy &&
+      style.JustifyItemsPosition() == ItemPosition::kLegacy) {
+    style.SetJustifyItems(parent_style.JustifyItems());
   }
 
   AdjustEffectiveTouchAction(style, parent_style, element, is_svg_root);
@@ -640,13 +667,38 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     }
   }
 
-  // TODO(layout-dev): Once LayoutnG handles inline content editable, we should
-  // get rid of following code fragment.
-  if (RuntimeEnabledFeatures::LayoutNGEnabled() &&
-      style.UserModify() != EUserModify::kReadOnly &&
-      style.Display() == EDisplay::kInline &&
-      parent_style.UserModify() == EUserModify::kReadOnly) {
-    style.SetDisplay(EDisplay::kInlineBlock);
+  if (RuntimeEnabledFeatures::LayoutNGEnabled() && !style.ForceLegacyLayout()) {
+    // Form controls are not supported yet.
+    if (element && element->ShouldForceLegacyLayout()) {
+      style.SetForceLegacyLayout(true);
+    }
+
+    // TODO(layout-dev): Once LayoutNG handles inline content editable, we
+    // should get rid of following code fragment.
+    else if (style.UserModify() != EUserModify::kReadOnly ||
+             (element && element->GetDocument().InDesignMode())) {
+      style.SetForceLegacyLayout(true);
+
+      if (style.Display() == EDisplay::kInline &&
+          parent_style.UserModify() == EUserModify::kReadOnly) {
+        style.SetDisplay(EDisplay::kInlineBlock);
+      }
+    }
+  }
+
+  // If intrinsically sized images or videos are disallowed by feature policy,
+  // use default size (300 x 150) instead.
+  if (IsImageOrVideoElement(element)) {
+    if (IsSupportedInFeaturePolicy(
+            mojom::FeaturePolicyFeature::kUnsizedMedia) &&
+        element->GetDocument().GetFrame() &&
+        !element->GetDocument().GetFrame()->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kUnsizedMedia)) {
+      if (!style.Width().IsSpecified())
+        style.SetLogicalWidth(Length(LayoutReplaced::kDefaultWidth, kFixed));
+      if (!style.Height().IsSpecified())
+        style.SetLogicalHeight(Length(LayoutReplaced::kDefaultHeight, kFixed));
+    }
   }
 }
 }  // namespace blink

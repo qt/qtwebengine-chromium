@@ -12,7 +12,7 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/content_features.h"
-#include "content/public/renderer/child_url_loader_factory_getter.h"
+#include "content/public/common/shared_url_loader_factory.h"
 #include "content/renderer/service_worker/controller_service_worker_connector.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -66,8 +66,8 @@ class HeaderRewritingURLLoaderClient : public network::mojom::URLLoaderClient {
     network::mojom::URLLoaderClientPtr ptr;
     binding_.Bind(mojo::MakeRequest(&ptr));
     binding_.set_connection_error_handler(
-        base::Bind(&HeaderRewritingURLLoaderClient::OnClientConnectionError,
-                   base::Unretained(this)));
+        base::BindOnce(&HeaderRewritingURLLoaderClient::OnClientConnectionError,
+                       base::Unretained(this)));
     return ptr;
   }
 
@@ -134,6 +134,32 @@ class HeaderRewritingURLLoaderClient : public network::mojom::URLLoaderClient {
 };
 }  // namespace
 
+// A ServiceWorkerStreamCallback implementation which waits for completion of
+// a stream response for subresource loading. It calls
+// ServiceWorkerSubresourceLoader::CommitCompleted() upon completion of the
+// response.
+class ServiceWorkerSubresourceLoader::StreamWaiter
+    : public blink::mojom::ServiceWorkerStreamCallback {
+ public:
+  StreamWaiter(ServiceWorkerSubresourceLoader* owner,
+               blink::mojom::ServiceWorkerStreamCallbackRequest request)
+      : owner_(owner), binding_(this, std::move(request)) {
+    DCHECK(owner_);
+    binding_.set_connection_error_handler(
+        base::BindOnce(&StreamWaiter::OnAborted, base::Unretained(this)));
+  }
+
+  // mojom::ServiceWorkerStreamCallback implementations:
+  void OnCompleted() override { owner_->CommitCompleted(net::OK); }
+  void OnAborted() override { owner_->CommitCompleted(net::ERR_ABORTED); }
+
+ private:
+  ServiceWorkerSubresourceLoader* owner_;
+  mojo::Binding<blink::mojom::ServiceWorkerStreamCallback> binding_;
+
+  DISALLOW_COPY_AND_ASSIGN(StreamWaiter);
+};
+
 // ServiceWorkerSubresourceLoader -------------------------------------------
 
 ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
@@ -145,7 +171,7 @@ ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<ChildURLLoaderFactoryGetter> default_loader_factory_getter)
+    scoped_refptr<SharedURLLoaderFactory> network_loader_factory)
     : redirect_limit_(net::URLRequest::kMaxRedirects),
       url_loader_client_(std::move(client)),
       url_loader_binding_(this, std::move(request)),
@@ -157,7 +183,7 @@ ServiceWorkerSubresourceLoader::ServiceWorkerSubresourceLoader(
       options_(options),
       traffic_annotation_(traffic_annotation),
       resource_request_(resource_request),
-      default_loader_factory_getter_(std::move(default_loader_factory_getter)),
+      network_loader_factory_(std::move(network_loader_factory)),
       weak_factory_(this) {
   DCHECK(controller_connector_);
   response_head_.request_start = base::TimeTicks::Now();
@@ -215,11 +241,10 @@ void ServiceWorkerSubresourceLoader::DispatchFetchEvent() {
         ControllerServiceWorkerConnector::State::kNoController) {
       // The controller was lost after this loader or its loader factory was
       // created.
-      default_loader_factory_getter_->GetNetworkLoaderFactory()
-          ->CreateLoaderAndStart(url_loader_binding_.Unbind(), routing_id_,
-                                 request_id_, options_, resource_request_,
-                                 std::move(url_loader_client_),
-                                 traffic_annotation_);
+      network_loader_factory_->CreateLoaderAndStart(
+          url_loader_binding_.Unbind(), routing_id_, request_id_, options_,
+          resource_request_, std::move(url_loader_client_),
+          traffic_annotation_);
       DeleteSoon();
       return;
     }
@@ -229,22 +254,38 @@ void ServiceWorkerSubresourceLoader::DispatchFetchEvent() {
     return;
   }
 
-  // TODO(falken): Send client id so FetchEvent#clientId works. We have to
-  // plumb it from the provider host to subresource loader somehow.
-  // (crbug.com/780405)
   // TODO(kinuko): Implement request timeout and ask the browser to kill
   // the controller if it takes too long. (crbug.com/774374)
+
+  // Passing the request body over Mojo moves it out. But the request body
+  // may be needed later, in the case where the service worker doesn't provide a
+  // response in the fetch event. So instead send a cloned body. (Note that
+  // we can't do the reverse, i.e., send the original and restore the clone
+  // later.  By always sending the clone, we ensure the original ResourceRequest
+  // passed into the constructor always points to a valid ResourceRequestBody,
+  // even if this loader gets destructed.)
+  if (resource_request_.request_body) {
+    inflight_fetch_request_->request_body =
+        ServiceWorkerLoaderHelpers::CloneResourceRequestBody(
+            resource_request_.request_body.get());
+  }
+
+  auto params = mojom::DispatchFetchEventParams::New();
+  params->request = *inflight_fetch_request_;
+  params->client_id = controller_connector_->client_id();
   controller->DispatchFetchEvent(
-      *inflight_fetch_request_, std::move(response_callback_ptr),
+      std::move(params), std::move(response_callback_ptr),
       base::BindOnce(&ServiceWorkerSubresourceLoader::OnFetchEventFinished,
                      weak_factory_.GetWeakPtr()));
+  // |inflight_fetch_request_->request_body| should not be used after this
+  // point.
 }
 
 void ServiceWorkerSubresourceLoader::OnFetchEventFinished(
     blink::mojom::ServiceWorkerEventStatus status,
     base::Time dispatch_event_time) {
   // Stop restarting logic here since OnFetchEventFinished() indicates that the
-  // fetch event could be successfully dispatched.
+  // fetch event was successfully dispatched.
   SettleInflightFetchRequestIfNeeded();
 
   switch (status) {
@@ -328,7 +369,7 @@ void ServiceWorkerSubresourceLoader::OnResponseStream(
 void ServiceWorkerSubresourceLoader::OnFallback(
     base::Time dispatch_event_time) {
   SettleInflightFetchRequestIfNeeded();
-  DCHECK(default_loader_factory_getter_);
+  DCHECK(network_loader_factory_);
 
   // When the request mode is CORS or CORS-with-forced-preflight and the origin
   // of the request URL is different from the security origin of the document,
@@ -350,18 +391,17 @@ void ServiceWorkerSubresourceLoader::OnFallback(
   }
 
   // Hand over to the network loader.
+  network_loader_factory_->CreateLoaderAndStart(
+      url_loader_binding_.Unbind(), routing_id_, request_id_, options_,
+      resource_request_,
+      HeaderRewritingURLLoaderClient::CreateAndBind(
+          std::move(url_loader_client_),
+          base::BindRepeating(&RewriteServiceWorkerTime,
+                              response_head_.service_worker_start_time,
+                              response_head_.service_worker_ready_time)),
+      traffic_annotation_);
   // Per spec, redirects after this point are not intercepted by the service
-  // worker again. (https://crbug.com/517364)
-  default_loader_factory_getter_->GetNetworkLoaderFactory()
-      ->CreateLoaderAndStart(
-          url_loader_binding_.Unbind(), routing_id_, request_id_, options_,
-          resource_request_,
-          HeaderRewritingURLLoaderClient::CreateAndBind(
-              std::move(url_loader_client_),
-              base::Bind(&RewriteServiceWorkerTime,
-                         response_head_.service_worker_start_time,
-                         response_head_.service_worker_ready_time)),
-          traffic_annotation_);
+  // worker again (https://crbug.com/517364). So this loader is done.
   DeleteSoon();
 }
 
@@ -403,17 +443,18 @@ void ServiceWorkerSubresourceLoader::StartResponse(
 
   // Handle a stream response body.
   if (!body_as_stream.is_null() && body_as_stream->stream.is_valid()) {
+    DCHECK(!body_as_blob);
     DCHECK(url_loader_client_.is_bound());
+    stream_waiter_ = std::make_unique<StreamWaiter>(
+        this, std::move(body_as_stream->callback_request));
     url_loader_client_->OnStartLoadingResponseBody(
         std::move(body_as_stream->stream));
-    // TODO(falken): Call CommitCompleted() when stream finished.
-    // See https://crbug.com/758455
-    CommitCompleted(net::OK);
     return;
   }
 
   // Handle a blob response body.
   if (body_as_blob) {
+    DCHECK(!body_as_stream);
     body_as_blob_ = std::move(body_as_blob);
     mojo::ScopedDataPipeConsumerHandle data_pipe;
     int error = ServiceWorkerLoaderHelpers::ReadBlobResponseBody(
@@ -447,6 +488,7 @@ void ServiceWorkerSubresourceLoader::CommitResponseHeaders() {
 void ServiceWorkerSubresourceLoader::CommitCompleted(int error_code) {
   DCHECK_LT(status_, Status::kCompleted);
   DCHECK(url_loader_client_.is_bound());
+  stream_waiter_.reset();
   status_ = Status::kCompleted;
   network::URLLoaderCompletionStatus status;
   status.error_code = error_code;
@@ -501,10 +543,10 @@ void ServiceWorkerSubresourceLoader::OnBlobReadingComplete(int net_error) {
 
 ServiceWorkerSubresourceLoaderFactory::ServiceWorkerSubresourceLoaderFactory(
     scoped_refptr<ControllerServiceWorkerConnector> controller_connector,
-    scoped_refptr<ChildURLLoaderFactoryGetter> default_loader_factory_getter)
+    scoped_refptr<SharedURLLoaderFactory> network_loader_factory)
     : controller_connector_(std::move(controller_connector)),
-      default_loader_factory_getter_(std::move(default_loader_factory_getter)) {
-  DCHECK(default_loader_factory_getter_);
+      network_loader_factory_(std::move(network_loader_factory)) {
+  DCHECK(network_loader_factory_);
 }
 
 ServiceWorkerSubresourceLoaderFactory::
@@ -525,7 +567,7 @@ void ServiceWorkerSubresourceLoaderFactory::CreateLoaderAndStart(
   new ServiceWorkerSubresourceLoader(
       std::move(request), routing_id, request_id, options, resource_request,
       std::move(client), traffic_annotation, controller_connector_,
-      default_loader_factory_getter_);
+      network_loader_factory_);
 }
 
 void ServiceWorkerSubresourceLoaderFactory::Clone(

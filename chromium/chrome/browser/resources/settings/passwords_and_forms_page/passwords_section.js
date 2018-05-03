@@ -10,6 +10,8 @@
 
 /**
  * Interface for all callbacks to the password API.
+ * TODO(crbug.com/802352) Move the PasswordManager proxy to a separate
+ * location.
  * @interface
  */
 class PasswordManager {
@@ -84,8 +86,32 @@ class PasswordManager {
 
   /**
    * Triggers the dialogue for exporting passwords.
+   * @param {function():void} callback
    */
-  exportPasswords() {}
+  exportPasswords(callback) {}
+
+  /**
+   * Cancels the ongoing export of passwords.
+   */
+  cancelExportPasswords(callback) {}
+
+  /**
+   * Queries the status of any ongoing export.
+   * @param {function(!PasswordManager.ExportProgressStatus):void} callback
+   */
+  requestExportProgressStatus(callback) {}
+
+  /**
+   * Add an observer to the export progress.
+   * @param {function(!PasswordManager.PasswordExportProgress):void} listener
+   */
+  addPasswordsFileExportProgressListener(listener) {}
+
+  /**
+   * Remove an observer from the export progress.
+   * @param {function(!PasswordManager.PasswordExportProgress):void} listener
+   */
+  removePasswordsFileExportProgressListener(listener) {}
 }
 
 /** @typedef {chrome.passwordsPrivate.PasswordUiEntry} */
@@ -102,6 +128,12 @@ PasswordManager.PlaintextPasswordEvent;
 
 /** @typedef {{ entry: !PasswordManager.PasswordUiEntry, password: string }} */
 PasswordManager.UiEntryWithPassword;
+
+/** @typedef {chrome.passwordsPrivate.PasswordExportProgress} */
+PasswordManager.PasswordExportProgress;
+
+/** @typedef {chrome.passwordsPrivate.ExportProgressStatus} */
+PasswordManager.ExportProgressStatus;
 
 /**
  * Implementation that accesses the private API.
@@ -176,8 +208,29 @@ class PasswordManagerImpl {
   }
 
   /** @override */
-  exportPasswords() {
-    chrome.passwordsPrivate.exportPasswords();
+  exportPasswords(callback) {
+    chrome.passwordsPrivate.exportPasswords(callback);
+  }
+
+  /** @override */
+  cancelExportPasswords() {
+    chrome.passwordsPrivate.cancelExportPasswords();
+  }
+
+  /** @override */
+  requestExportProgressStatus(callback) {
+    chrome.passwordsPrivate.requestExportProgressStatus(callback);
+  }
+
+  /** @override */
+  addPasswordsFileExportProgressListener(listener) {
+    chrome.passwordsPrivate.onPasswordsFileExportProgress.addListener(listener);
+  }
+
+  /** @override */
+  removePasswordsFileExportProgressListener(listener) {
+    chrome.passwordsPrivate.onPasswordsFileExportProgress.removeListener(
+        listener);
   }
 }
 
@@ -251,10 +304,7 @@ Polymer({
     /** @private */
     showExportPasswords_: {
       type: Boolean,
-      value: function() {
-        return loadTimeData.valueExists('showExportPasswords') &&
-            loadTimeData.getBoolean('showExportPasswords');
-      }
+      computed: 'showExportPasswordsAndReady_(savedPasswords)'
     },
 
     /** @private */
@@ -489,6 +539,7 @@ Polymer({
    */
   onImportTap_: function() {
     this.passwordManager_.importPasswords();
+    this.$.exportImportMenu.close();
   },
 
   /**
@@ -503,6 +554,8 @@ Polymer({
   /** @private */
   onPasswordsExportDialogClosed_: function() {
     this.showPasswordsExportDialog_ = false;
+    cr.ui.focusWithoutInk(assert(this.activeDialogAnchor_));
+    this.activeDialogAnchor_ = null;
   },
 
   /**
@@ -534,6 +587,16 @@ Polymer({
    */
   getOnOffLabel_: function(toggleValue) {
     return toggleValue ? this.i18n('toggleOn') : this.i18n('toggleOff');
+  },
+
+  /**
+   * @private
+   * @param {!Array<!PasswordManager.PasswordUiEntry>} savedPasswords
+   */
+  showExportPasswordsAndReady_: function(savedPasswords) {
+    return loadTimeData.valueExists('showExportPasswords') &&
+        loadTimeData.getBoolean('showExportPasswords') &&
+        savedPasswords.length > 0;
   },
 
   /**

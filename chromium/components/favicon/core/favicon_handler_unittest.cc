@@ -11,8 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind_helpers.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/histogram_tester.h"
@@ -432,7 +432,7 @@ class FakeFaviconService {
     // We use PostTaskAndReply() to cause |callback| being run in the current
     // TaskRunner.
     return tracker->PostTaskAndReply(manual_callback_task_runner_.get(),
-                                     FROM_HERE, base::Bind(&base::DoNothing),
+                                     FROM_HERE, base::DoNothing(),
                                      bound_callback);
   }
 
@@ -515,7 +515,7 @@ class FaviconHandlerTest : public testing::Test {
       FaviconDriverObserver::NotificationIconType handler_type,
       const std::vector<FaviconURL>& candidates,
       const GURL& manifest_url = GURL()) {
-    auto handler = base::MakeUnique<FaviconHandler>(&favicon_service_,
+    auto handler = std::make_unique<FaviconHandler>(&favicon_service_,
                                                     &delegate_, handler_type);
     handler->FetchFavicon(kPageURL, /*is_same_document=*/false);
     // The first RunUntilIdle() causes the FaviconService lookups be faster than
@@ -737,7 +737,7 @@ TEST_F(FaviconHandlerTest, UpdateFaviconMappingsAndFetchWithMultipleURLs) {
                   base::flat_set<GURL>{kPageURL, kDifferentPageURL},
                   kIconURL16x16, _, _, _, _));
 
-  std::unique_ptr<FaviconHandler> handler = base::MakeUnique<FaviconHandler>(
+  std::unique_ptr<FaviconHandler> handler = std::make_unique<FaviconHandler>(
       &favicon_service_, &delegate_, FaviconDriverObserver::NON_TOUCH_16_DIP);
   handler->FetchFavicon(kPageURL, /*is_same_document=*/false);
   base::RunLoop().RunUntilIdle();
@@ -765,7 +765,7 @@ TEST_F(FaviconHandlerTest, CloneFaviconMappingsForPageInHistory) {
                   kPageURL, favicon_base::IconTypeSet({kFavicon}),
                   base::flat_set<GURL>({kPageURL})));
 
-  std::unique_ptr<FaviconHandler> handler = base::MakeUnique<FaviconHandler>(
+  std::unique_ptr<FaviconHandler> handler = std::make_unique<FaviconHandler>(
       &favicon_service_, &delegate_, FaviconDriverObserver::NON_TOUCH_16_DIP);
   handler->FetchFavicon(kPageURL, /*is_same_document=*/false);
   base::RunLoop().RunUntilIdle();
@@ -782,7 +782,7 @@ TEST_F(FaviconHandlerTest, CloneFaviconMappingsWithMultipleURLs) {
   favicon_service_.fake()->Store(kPageURLInHistory, kIconURL16x16,
                                  CreateRawBitmapResult(kIconURL16x16));
 
-  std::unique_ptr<FaviconHandler> handler = base::MakeUnique<FaviconHandler>(
+  std::unique_ptr<FaviconHandler> handler = std::make_unique<FaviconHandler>(
       &favicon_service_, &delegate_, FaviconDriverObserver::NON_TOUCH_16_DIP);
   handler->FetchFavicon(kPageURL, /*is_same_document=*/false);
   base::RunLoop().RunUntilIdle();
@@ -805,7 +805,7 @@ TEST_F(FaviconHandlerTest, NotCloneFaviconMappingsInIncognito) {
 
   EXPECT_CALL(favicon_service_, CloneFaviconMappingsForPages(_, _, _)).Times(0);
 
-  std::unique_ptr<FaviconHandler> handler = base::MakeUnique<FaviconHandler>(
+  std::unique_ptr<FaviconHandler> handler = std::make_unique<FaviconHandler>(
       &favicon_service_, &delegate_, FaviconDriverObserver::NON_TOUCH_16_DIP);
   handler->FetchFavicon(kPageURL, /*is_same_document=*/false);
   base::RunLoop().RunUntilIdle();
@@ -1655,7 +1655,7 @@ TEST_F(FaviconHandlerTest, SetFaviconsForLastPageUrlOnly) {
                                FaviconDriverObserver::NON_TOUCH_16_DIP,
                                kIconURL12x12, _, _));
 
-  std::unique_ptr<FaviconHandler> handler = base::MakeUnique<FaviconHandler>(
+  std::unique_ptr<FaviconHandler> handler = std::make_unique<FaviconHandler>(
       &favicon_service_, &delegate_, FaviconDriverObserver::NON_TOUCH_16_DIP);
   handler->FetchFavicon(kPageURL, /*is_same_document=*/false);
   base::RunLoop().RunUntilIdle();
@@ -1683,7 +1683,7 @@ TEST_F(FaviconHandlerTest, SetFaviconsForMultipleUrlsWithinDocument) {
                                FaviconDriverObserver::NON_TOUCH_16_DIP,
                                kIconURL12x12, _, _));
 
-  std::unique_ptr<FaviconHandler> handler = base::MakeUnique<FaviconHandler>(
+  std::unique_ptr<FaviconHandler> handler = std::make_unique<FaviconHandler>(
       &favicon_service_, &delegate_, FaviconDriverObserver::NON_TOUCH_16_DIP);
   handler->FetchFavicon(kPageURL, /*is_same_document=*/false);
   base::RunLoop().RunUntilIdle();

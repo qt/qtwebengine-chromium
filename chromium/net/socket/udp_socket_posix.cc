@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/debug/alias.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
@@ -205,7 +206,8 @@ UDPSocketPosix::UDPSocketPosix(DatagramSocket::BindType bind_type,
       recv_from_address_(NULL),
       write_buf_len_(0),
       net_log_(NetLogWithSource::Make(net_log, NetLogSourceType::UDP_SOCKET)),
-      bound_network_(NetworkChangeNotifier::kInvalidNetworkHandle) {
+      bound_network_(NetworkChangeNotifier::kInvalidNetworkHandle),
+      experimental_recv_optimization_enabled_(false) {
   net_log_.BeginEvent(NetLogEventType::SOCKET_ALIVE,
                       source.ToEventParametersCallback());
   if (bind_type == DatagramSocket::RANDOM_BIND)
@@ -686,20 +688,18 @@ void UDPSocketPosix::DoReadCallback(int rv) {
   DCHECK_NE(rv, ERR_IO_PENDING);
   DCHECK(!read_callback_.is_null());
 
-  // since Run may result in Read being called, clear read_callback_ up front.
-  CompletionCallback c = read_callback_;
-  read_callback_.Reset();
-  c.Run(rv);
+  // Since Run() may result in Read() being called,
+  // clear |read_callback_| up front.
+  base::ResetAndReturn(&read_callback_).Run(rv);
 }
 
 void UDPSocketPosix::DoWriteCallback(int rv) {
   DCHECK_NE(rv, ERR_IO_PENDING);
   DCHECK(!write_callback_.is_null());
 
-  // since Run may result in Write being called, clear write_callback_ up front.
-  CompletionCallback c = write_callback_;
-  write_callback_.Reset();
-  c.Run(rv);
+  // Since Run() may result in Write() being called,
+  // clear |write_callback_| up front.
+  base::ResetAndReturn(&write_callback_).Run(rv);
 }
 
 void UDPSocketPosix::DidCompleteRead() {
@@ -772,6 +772,47 @@ void UDPSocketPosix::LogWrite(int result,
 int UDPSocketPosix::InternalRecvFrom(IOBuffer* buf,
                                      int buf_len,
                                      IPEndPoint* address) {
+  // If the socket is connected and the remote address is known
+  // use the more efficient method that uses read() instead of recvmsg().
+  if (experimental_recv_optimization_enabled_ && is_connected_ &&
+      remote_address_) {
+    return InternalRecvFromConnectedSocket(buf, buf_len, address);
+  }
+  return InternalRecvFromNonConnectedSocket(buf, buf_len, address);
+}
+
+int UDPSocketPosix::InternalRecvFromConnectedSocket(IOBuffer* buf,
+                                                    int buf_len,
+                                                    IPEndPoint* address) {
+  DCHECK(is_connected_);
+  DCHECK(remote_address_);
+  int bytes_transferred;
+  bytes_transferred = HANDLE_EINTR(read(socket_, buf->data(), buf_len));
+  int result;
+
+  if (bytes_transferred < 0) {
+    result = MapSystemError(errno);
+  } else if (bytes_transferred == buf_len) {
+    result = ERR_MSG_TOO_BIG;
+  } else {
+    result = bytes_transferred;
+    if (address)
+      *address = *remote_address_.get();
+  }
+
+  if (result != ERR_IO_PENDING) {
+    SockaddrStorage sock_addr;
+    bool success =
+        remote_address_->ToSockAddr(sock_addr.addr, &sock_addr.addr_len);
+    DCHECK(success);
+    LogRead(result, buf->data(), sock_addr.addr_len, sock_addr.addr);
+  }
+  return result;
+}
+
+int UDPSocketPosix::InternalRecvFromNonConnectedSocket(IOBuffer* buf,
+                                                       int buf_len,
+                                                       IPEndPoint* address) {
   int bytes_transferred;
 
   struct iovec iov = {};

@@ -43,18 +43,23 @@ class Element;
 class HTMLMapElement;
 class HitTestResult;
 class IdTargetObserverRegistry;
+class Node;
 class SVGTreeScopeResources;
 class ScopedStyleResolver;
-class Node;
+class StyleSheetList;
 
 // A class which inherits both Node and TreeScope must call clearRareData() in
 // its destructor so that the Node destructor no longer does problematic
 // NodeList cache manipulation in the destructor.
 class CORE_EXPORT TreeScope : public GarbageCollectedMixin {
  public:
+  enum HitTestPointType {
+    kInternal = 1 << 1,
+    kWebExposed = 1 << 2,
+  };
+
   TreeScope* ParentTreeScope() const { return parent_tree_scope_; }
 
-  TreeScope* OlderShadowRootOrParentTreeScope() const;
   bool IsInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(
       const TreeScope&) const;
 
@@ -91,6 +96,8 @@ class CORE_EXPORT TreeScope : public GarbageCollectedMixin {
   DOMSelection* GetSelection() const;
 
   Element* Retarget(const Element& target) const;
+
+  Element* AdjustedFocusedElementInternal(const Element& target) const;
 
   // Find first anchor with the given name.
   // First searches for an element with the given ID, but if that fails, then
@@ -130,6 +137,10 @@ class CORE_EXPORT TreeScope : public GarbageCollectedMixin {
 
   SVGTreeScopeResources& EnsureSVGTreeScopedResources();
 
+  bool HasMoreStyleSheets() const;
+  StyleSheetList& MoreStyleSheets();
+  void SetMoreStyleSheets(StyleSheetList*);
+
  protected:
   TreeScope(ContainerNode&, Document&);
   TreeScope(Document&);
@@ -141,6 +152,8 @@ class CORE_EXPORT TreeScope : public GarbageCollectedMixin {
   void SetNeedsStyleRecalcForViewportUnits();
 
  private:
+  Element* HitTestPointInternal(Node*, HitTestPointType) const;
+
   Member<ContainerNode> root_node_;
   Member<Document> document_;
   Member<TreeScope> parent_tree_scope_;
@@ -157,6 +170,8 @@ class CORE_EXPORT TreeScope : public GarbageCollectedMixin {
   RadioButtonGroupScope radio_button_group_scope_;
 
   Member<SVGTreeScopeResources> svg_tree_scoped_resources_;
+
+  Member<StyleSheetList> more_style_sheets_;
 };
 
 inline bool TreeScope::HasElementWithId(const AtomicString& id) const {

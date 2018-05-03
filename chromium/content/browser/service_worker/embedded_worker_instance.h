@@ -29,8 +29,8 @@
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
-#include "third_party/WebKit/common/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
 #include "url/gurl.h"
 
 namespace IPC {
@@ -151,11 +151,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // not attached). This method is called by a stop-worker timer to kill
   // idle workers.
   void StopIfNotAttachedToDevTools();
-
-  // Sends |message| to the embedded worker running in the child process.
-  // It is invalid to call this while the worker is not in STARTING or RUNNING
-  // status.
-  ServiceWorkerStatusCode SendIpcMessage(const IPC::Message& message);
 
   // Resumes the worker if it paused after download.
   void ResumeAfterDownload();

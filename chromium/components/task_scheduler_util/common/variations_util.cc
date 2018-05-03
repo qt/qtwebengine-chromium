@@ -4,36 +4,25 @@
 
 #include "components/task_scheduler_util/common/variations_util.h"
 
-#include "base/command_line.h"
+#include <map>
+#include <string>
+
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/task_scheduler/initialization_util.h"
 #include "base/time/time.h"
-#include "components/variations/variations_associated_data.h"
 
 namespace task_scheduler_util {
 
 namespace {
 
-#if !defined(OS_IOS)
-constexpr char kTaskSchedulerVariationParamsSwitch[] =
-    "task-scheduler-variation-params";
-
-constexpr char kSeparator[] = "|";
-
-bool ContainsSeparator(const std::string& str) {
-  return str.find(kSeparator) != std::string::npos;
-}
-#endif  // !defined(OS_IOS)
-
 // Builds a SchedulerWorkerPoolParams from the pool descriptor in
-// |variation_params[variation_param_prefix + pool_name]| and
-// |backward_compatibility|. Returns an invalid SchedulerWorkerPoolParams on
-// failure.
+// |variation_params[variation_param_prefix + pool_name]|. Returns an invalid
+// SchedulerWorkerPoolParams on failure.
 //
 // The pool descriptor is a semi-colon separated value string with the following
 // items:
@@ -46,9 +35,7 @@ bool ContainsSeparator(const std::string& str) {
 std::unique_ptr<base::SchedulerWorkerPoolParams> GetWorkerPoolParams(
     base::StringPiece variation_param_prefix,
     base::StringPiece pool_name,
-    const std::map<std::string, std::string>& variation_params,
-    base::SchedulerBackwardCompatibility backward_compatibility =
-        base::SchedulerBackwardCompatibility::DISABLED) {
+    const std::map<std::string, std::string>& variation_params) {
   auto pool_descriptor_it =
       variation_params.find(base::StrCat({variation_param_prefix, pool_name}));
   if (pool_descriptor_it == variation_params.end())
@@ -76,11 +63,10 @@ std::unique_ptr<base::SchedulerWorkerPoolParams> GetWorkerPoolParams(
     return nullptr;
   }
 
-  auto params = base::MakeUnique<base::SchedulerWorkerPoolParams>(
+  auto params = std::make_unique<base::SchedulerWorkerPoolParams>(
       base::RecommendedMaxNumberOfThreadsInPool(min, max, cores_multiplier,
                                                 offset),
-      base::TimeDelta::FromMilliseconds(detach_milliseconds),
-      backward_compatibility);
+      base::TimeDelta::FromMilliseconds(detach_milliseconds));
 
   if (params->max_threads() <= 0) {
     DLOG(ERROR) << "Invalid max threads in the Worker Pool Descriptor: "
@@ -101,10 +87,11 @@ std::unique_ptr<base::SchedulerWorkerPoolParams> GetWorkerPoolParams(
 }  // namespace
 
 std::unique_ptr<base::TaskScheduler::InitParams> GetTaskSchedulerInitParams(
-    base::StringPiece variation_param_prefix,
-    const std::map<std::string, std::string>& variation_params,
-    base::SchedulerBackwardCompatibility
-        foreground_blocking_backward_compatibility) {
+    base::StringPiece variation_param_prefix) {
+  std::map<std::string, std::string> variation_params;
+  if (!base::GetFieldTrialParams("BrowserScheduler", &variation_params))
+    return nullptr;
+
   const auto background_worker_pool_params = GetWorkerPoolParams(
       variation_param_prefix, "Background", variation_params);
   const auto background_blocking_worker_pool_params = GetWorkerPoolParams(
@@ -112,8 +99,7 @@ std::unique_ptr<base::TaskScheduler::InitParams> GetTaskSchedulerInitParams(
   const auto foreground_worker_pool_params = GetWorkerPoolParams(
       variation_param_prefix, "Foreground", variation_params);
   const auto foreground_blocking_worker_pool_params = GetWorkerPoolParams(
-      variation_param_prefix, "ForegroundBlocking", variation_params,
-      foreground_blocking_backward_compatibility);
+      variation_param_prefix, "ForegroundBlocking", variation_params);
 
   if (!background_worker_pool_params ||
       !background_blocking_worker_pool_params ||
@@ -122,62 +108,23 @@ std::unique_ptr<base::TaskScheduler::InitParams> GetTaskSchedulerInitParams(
     return nullptr;
   }
 
-  return base::MakeUnique<base::TaskScheduler::InitParams>(
+  return std::make_unique<base::TaskScheduler::InitParams>(
       *background_worker_pool_params, *background_blocking_worker_pool_params,
       *foreground_worker_pool_params, *foreground_blocking_worker_pool_params);
 }
 
-#if !defined(OS_IOS)
-void AddVariationParamsToCommandLine(base::StringPiece key_prefix,
-                                     base::CommandLine* command_line) {
-  DCHECK(command_line);
-
-  std::map<std::string, std::string> variation_params;
-  if (!variations::GetVariationParams("BrowserScheduler", &variation_params))
-    return;
-
-  std::vector<base::StringPiece> parts;
-  for (const auto& key_value : variation_params) {
-    if (base::StartsWith(key_value.first, key_prefix,
-                         base::CompareCase::SENSITIVE)) {
-      if (ContainsSeparator(key_value.first) ||
-          ContainsSeparator(key_value.second)) {
-        DLOG(ERROR)
-            << "Unexpected Character in Task Scheduler Variation Params: "
-            << key_value.first << " [" << key_value.second << "]";
-        return;
-      }
-      parts.push_back(key_value.first);
-      parts.push_back(key_value.second);
-    }
-  }
-
-  if (!parts.empty()) {
-    command_line->AppendSwitchASCII(kTaskSchedulerVariationParamsSwitch,
-                                    base::JoinString(parts, kSeparator));
-  }
+std::unique_ptr<base::TaskScheduler::InitParams>
+GetTaskSchedulerInitParamsForBrowser() {
+  // Variations params for the browser processes have no prefix.
+  constexpr char kVariationParamPrefix[] = "";
+  return GetTaskSchedulerInitParams(kVariationParamPrefix);
 }
 
-std::map<std::string, std::string> GetVariationParamsFromCommandLine(
-    const base::CommandLine& command_line) {
-  const auto serialized_variation_params =
-      command_line.GetSwitchValueASCII(kTaskSchedulerVariationParamsSwitch);
-  const auto parts =
-      base::SplitStringPiece(serialized_variation_params, kSeparator,
-                             base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  std::map<std::string, std::string> variation_params;
-  for (auto it = parts.begin(); it != parts.end(); ++it) {
-    base::StringPiece key = *it;
-    ++it;
-    if (it == parts.end()) {
-      NOTREACHED();
-      return std::map<std::string, std::string>();
-    }
-    base::StringPiece value = *it;
-    variation_params[key.as_string()] = value.as_string();
-  }
-  return variation_params;
+std::unique_ptr<base::TaskScheduler::InitParams>
+GetTaskSchedulerInitParamsForRenderer() {
+  // Variations params for renderer processes are prefixed with "Renderer".
+  constexpr char kVariationParamPrefix[] = "Renderer";
+  return GetTaskSchedulerInitParams(kVariationParamPrefix);
 }
-#endif  // !defined(OS_IOS)
 
 }  // namespace task_scheduler_util

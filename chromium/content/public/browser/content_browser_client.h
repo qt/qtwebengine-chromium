@@ -20,25 +20,27 @@
 #include "build/build_config.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/navigation_throttle.h"
+#include "content/public/browser/resource_request_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.mojom.h"
-#include "device/usb/public/interfaces/chooser_service.mojom.h"
-#include "device/usb/public/interfaces/device_manager.mojom.h"
+#include "device/usb/public/mojom/chooser_service.mojom.h"
+#include "device/usb/public/mojom/device_manager.mojom.h"
 #include "media/media_features.h"
 #include "media/mojo/interfaces/remoting.mojom.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
-#include "services/network/public/interfaces/network_service.mojom.h"
+#include "services/network/public/mojom/network_service.mojom.h"
 #include "services/service_manager/embedder/embedded_service_info.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "third_party/WebKit/common/associated_interfaces/associated_interface_registry.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_registry.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/web/window_features.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -83,8 +85,11 @@ struct BindSourceInfo;
 }
 
 namespace net {
+class AuthChallengeInfo;
+class AuthCredentials;
 class ClientCertIdentity;
 using ClientCertIdentityList = std::vector<std::unique_ptr<ClientCertIdentity>>;
+class ClientCertStore;
 class CookieOptions;
 class HttpRequestHeaders;
 class NetLog;
@@ -99,6 +104,7 @@ namespace network {
 namespace mojom {
 class NetworkContext;
 }
+struct ResourceRequest;
 }  // namespace network
 
 namespace rappor {
@@ -143,6 +149,7 @@ class RenderFrameHost;
 class RenderProcessHost;
 class RenderViewHost;
 class ResourceContext;
+class ResourceDispatcherHostLoginDelegate;
 class SiteInstance;
 class SpeechRecognitionManagerDelegate;
 class StoragePartition;
@@ -212,7 +219,13 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Notifies that a render process will be created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
   // embedder's IPC filters have priority.
-  virtual void RenderProcessWillLaunch(RenderProcessHost* host) {}
+  //
+  // If the client provides a service request, the content layer will ask the
+  // corresponding embedder renderer-side component to bind it to an
+  // implementation at the appropriate moment during initialization.
+  virtual void RenderProcessWillLaunch(
+      RenderProcessHost* host,
+      service_manager::mojom::ServiceRequest* service_request) {}
 
   // Notifies that a BrowserChildProcessHost has been created.
   virtual void BrowserChildProcessHostCreated(BrowserChildProcessHost* host) {}
@@ -354,6 +367,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool IsFileAccessAllowed(const base::FilePath& path,
                                    const base::FilePath& absolute_path,
                                    const base::FilePath& profile_path);
+
+  // Indicates whether to force the MIME sniffer to sniff file URLs for HTML.
+  // By default, disabled. May be called on either the UI or IO threads.
+  // See https://crbug.com/777737
+  virtual bool ForceSniffingFileUrlsForHtml();
 
   // Allows the embedder to pass extra command line flags.
   // switches::kProcessType will already be set at this point.
@@ -937,8 +955,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // URL request. This is used only when --enable-network-service is in effect.
   // This is called on the IO thread.
   virtual std::vector<std::unique_ptr<URLLoaderThrottle>>
-  CreateURLLoaderThrottles(const base::Callback<WebContents*()>& wc_getter,
-                           NavigationUIData* navigation_ui_data);
+  CreateURLLoaderThrottles(
+      const network::ResourceRequest& request,
+      ResourceContext* resource_context,
+      const base::RepeatingCallback<WebContents*()>& wc_getter,
+      NavigationUIData* navigation_ui_data,
+      int frame_tree_node_id);
 
   // Allows the embedder to register per-scheme URLLoaderFactory implementations
   // to handle navigation URL requests for schemes not handled by the Network
@@ -958,6 +980,21 @@ class CONTENT_EXPORT ContentBrowserClient {
       RenderFrameHost* frame_host,
       const GURL& frame_url,
       NonNetworkURLLoaderFactoryMap* factories);
+
+  // Allows the embedder to intercept URLLoaderFactory interfaces used for
+  // navigation or being brokered on behalf of a renderer fetching subresources.
+  // |*factory_request| is always valid upon entry and MUST be valid upon
+  // return. The embedder may swap out the value of |*factory_request| for its
+  // own, in which case it must return |true| to indicate that its proxying
+  // requests for the URLLoaderFactory. Otherwise |*factory_request| is left
+  // unmodified and this must return |false|.
+  //
+  // Always called on the UI thread and only when the Network Service is
+  // enabled.
+  virtual bool WillCreateURLLoaderFactory(
+      RenderFrameHost* frame,
+      bool is_navigation,
+      network::mojom::URLLoaderFactoryRequest* factory_request);
 
   // Creates a NetworkContext for a BrowserContext's StoragePartition. If the
   // network service is enabled, it must return a NetworkContext using the
@@ -1025,9 +1062,57 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns whether a base::TaskScheduler should be created when
   // BrowserMainLoop starts.
-  // If false, a task scheduler has been created by the embedder, and browser
-  // main loop should skip creating a second one.
+  // If false, a task scheduler has been created by the embedder, and
+  // BrowserMainLoop should skip creating a second one.
+  // Note: the embedder should *not* start the TaskScheduler for
+  // BrowserMainLoop, BrowserMainLoop itself is responsible for that.
   virtual bool ShouldCreateTaskScheduler();
+
+  // Returns true if the given Webauthn[1] RP ID[2] is permitted to receive
+  // individual attestation certificates. This a) triggers a signal to the
+  // security key that returning individual attestation certificates is
+  // permitted and b) skips any permission prompt for attestation.
+  //
+  // [1] https://www.w3.org/TR/webauthn/
+  // [2] https://www.w3.org/TR/webauthn/#relying-party-identifier
+  virtual bool ShouldPermitIndividualAttestationForWebauthnRPID(
+      content::BrowserContext* browser_context,
+      const std::string& rp_id);
+
+  // Invokes |callback| with |true| if the given Webauthn RP ID (see references
+  // above) is permitted to receive attestation certificates from a device.
+  // Otherwise invokes |callback| with |false|.
+  //
+  // Since these certificates may uniquely identify the authenticator, the
+  // embedder may choose to show a permissions prompt to the user, and only
+  // invoke |callback| afterwards. This may hairpin |callback|.
+  virtual void ShouldReturnAttestationForWebauthnRPID(
+      content::RenderFrameHost* rfh,
+      const std::string& rp_id,
+      const url::Origin& origin,
+      base::OnceCallback<void(bool)> callback);
+
+  // Get platform ClientCertStore. May return nullptr.
+  virtual std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
+      ResourceContext* resource_context);
+
+  // Creates a ResourceDispatcherHostLoginDelegate that asks the user for a
+  // username and password.
+  // Caller owns the returned pointer.
+  // |first_auth_attempt| is needed by AwHttpAuthHandler constructor.
+  // |auth_required_callback| is used to transfer auth credentials to
+  // URLRequest::SetAuth(). The credentials parameter of the callback
+  // is base::nullopt if the request should be cancelled; otherwise
+  // the credentials will be used to respond to the auth challenge. This
+  // callback should be called on the IO thread task runner.
+  virtual ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
+      net::AuthChallengeInfo* auth_info,
+      content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+      bool is_main_frame,
+      const GURL& url,
+      bool first_auth_attempt,
+      const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
+          auth_required_callback);
 };
 
 }  // namespace content

@@ -14,6 +14,7 @@
 #include "net/quic/platform/api/quic_arraysize.h"
 #include "net/quic/platform/api/quic_map_util.h"
 #include "net/quic/platform/api/quic_ptr_util.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 #include "net/quic/platform/api/quic_test.h"
 #include "net/quic/platform/api/quic_text_utils.h"
@@ -23,7 +24,6 @@
 #include "net/quic/test_tools/quic_stream_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 
-using std::string;
 using testing::AnyNumber;
 using testing::Invoke;
 using testing::Return;
@@ -53,18 +53,39 @@ class TestStream : public QuicSpdyStream {
     vec.iov_base = buffer;
     vec.iov_len = QUIC_ARRAYSIZE(buffer);
     size_t bytes_read = Readv(&vec, 1);
-    data_ += string(buffer, bytes_read);
+    data_ += QuicString(buffer, bytes_read);
   }
 
   using QuicSpdyStream::set_ack_listener;
   using QuicStream::CloseWriteSide;
   using QuicStream::WriteOrBufferData;
 
-  const string& data() const { return data_; }
+  const QuicString& data() const { return data_; }
 
  private:
   bool should_process_data_;
-  string data_;
+  QuicString data_;
+};
+
+class TestMockUpdateStreamSession : public MockQuicSpdySession {
+ public:
+  explicit TestMockUpdateStreamSession(QuicConnection* connection)
+      : MockQuicSpdySession(connection) {}
+
+  void UpdateStreamPriority(QuicStreamId id, SpdyPriority priority) override {
+    EXPECT_EQ(id, expected_stream_->id());
+    EXPECT_EQ(expected_priority_, priority);
+    EXPECT_EQ(expected_priority_, expected_stream_->priority());
+  }
+
+  void SetExpectedStream(QuicSpdyStream* stream) { expected_stream_ = stream; }
+  void SetExpectedPriority(SpdyPriority priority) {
+    expected_priority_ = priority;
+  }
+
+ private:
+  QuicSpdyStream* expected_stream_;
+  SpdyPriority expected_priority_;
 };
 
 class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
@@ -103,7 +124,8 @@ class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
     connection_ = new testing::StrictMock<MockQuicConnection>(
         &helper_, &alarm_factory_, Perspective::IS_SERVER,
         SupportedVersions(GetParam()));
-    session_.reset(new testing::StrictMock<MockQuicSpdySession>(connection_));
+    session_ =
+        QuicMakeUnique<testing::StrictMock<MockQuicSpdySession>>(connection_);
     stream_ = new TestStream(GetNthClientInitiatedId(0), session_.get(),
                              stream_should_process_data);
     session_->ActivateStream(QuicWrapUnique(stream_));
@@ -239,7 +261,7 @@ TEST_P(QuicSpdyStreamTest, ParseHeaderStatusCode) {
 TEST_P(QuicSpdyStreamTest, MarkHeadersConsumed) {
   Initialize(kShouldProcessData);
 
-  string body = "this is the body";
+  QuicString body = "this is the body";
   QuicHeaderList headers = ProcessHeaders(false, headers_);
   EXPECT_EQ(headers, stream_->header_list());
 
@@ -250,7 +272,7 @@ TEST_P(QuicSpdyStreamTest, MarkHeadersConsumed) {
 TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBody) {
   Initialize(kShouldProcessData);
 
-  string body = "this is the body";
+  QuicString body = "this is the body";
 
   EXPECT_EQ("", stream_->data());
   QuicHeaderList headers = ProcessHeaders(false, headers_);
@@ -264,7 +286,7 @@ TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBody) {
 }
 
 TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyFragments) {
-  string body = "this is the body";
+  QuicString body = "this is the body";
 
   for (size_t fragment_size = 1; fragment_size < body.size(); ++fragment_size) {
     Initialize(kShouldProcessData);
@@ -284,7 +306,7 @@ TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyFragments) {
 }
 
 TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyFragmentsSplit) {
-  string body = "this is the body";
+  QuicString body = "this is the body";
 
   for (size_t split_point = 1; split_point < body.size() - 1; ++split_point) {
     Initialize(kShouldProcessData);
@@ -310,7 +332,7 @@ TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyFragmentsSplit) {
 TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyReadv) {
   Initialize(!kShouldProcessData);
 
-  string body = "this is the body";
+  QuicString body = "this is the body";
 
   ProcessHeaders(false, headers_);
   QuicStreamFrame frame(GetNthClientInitiatedId(0), false, 0,
@@ -326,13 +348,13 @@ TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyReadv) {
 
   size_t bytes_read = stream_->Readv(&vec, 1);
   EXPECT_EQ(body.length(), bytes_read);
-  EXPECT_EQ(body, string(buffer, bytes_read));
+  EXPECT_EQ(body, QuicString(buffer, bytes_read));
 }
 
 TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyMarkConsumed) {
   Initialize(!kShouldProcessData);
 
-  string body = "this is the body";
+  QuicString body = "this is the body";
 
   ProcessHeaders(false, headers_);
   QuicStreamFrame frame(GetNthClientInitiatedId(0), false, 0,
@@ -344,7 +366,7 @@ TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyMarkConsumed) {
 
   EXPECT_EQ(1, stream_->GetReadableRegions(&vec, 1));
   EXPECT_EQ(body.length(), vec.iov_len);
-  EXPECT_EQ(body, string(static_cast<char*>(vec.iov_base), vec.iov_len));
+  EXPECT_EQ(body, QuicString(static_cast<char*>(vec.iov_base), vec.iov_len));
 
   stream_->MarkConsumed(body.length());
   EXPECT_EQ(body.length(), stream_->flow_controller()->bytes_consumed());
@@ -353,7 +375,7 @@ TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyMarkConsumed) {
 TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyIncrementalReadv) {
   Initialize(!kShouldProcessData);
 
-  string body = "this is the body";
+  QuicString body = "this is the body";
   ProcessHeaders(false, headers_);
   QuicStreamFrame frame(GetNthClientInitiatedId(0), false, 0,
                         QuicStringPiece(body));
@@ -375,7 +397,7 @@ TEST_P(QuicSpdyStreamTest, ProcessHeadersAndBodyIncrementalReadv) {
 TEST_P(QuicSpdyStreamTest, ProcessHeadersUsingReadvWithMultipleIovecs) {
   Initialize(!kShouldProcessData);
 
-  string body = "this is the body";
+  QuicString body = "this is the body";
   ProcessHeaders(false, headers_);
   QuicStreamFrame frame(GetNthClientInitiatedId(0), false, 0,
                         QuicStringPiece(body));
@@ -412,9 +434,13 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlBlocked) {
 
   // Try to send more data than the flow control limit allows.
   const uint64_t kOverflow = 15;
-  string body(kWindow + kOverflow, 'a');
+  QuicString body(kWindow + kOverflow, 'a');
 
-  EXPECT_CALL(*connection_, SendBlocked(GetNthClientInitiatedId(0)));
+  if (session_->use_control_frame_manager()) {
+    EXPECT_CALL(*connection_, SendControlFrame(_));
+  } else {
+    EXPECT_CALL(*connection_, SendBlocked(GetNthClientInitiatedId(0)));
+  }
   EXPECT_CALL(*session_, WritevData(_, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(kWindow, true)));
   stream_->WriteOrBufferData(body, false, nullptr);
@@ -449,7 +475,7 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlNoWindowUpdateIfNotConsumed) {
                          stream_->flow_controller()));
 
   // Stream receives enough data to fill a fraction of the receive window.
-  string body(kWindow / 3, 'a');
+  QuicString body(kWindow / 3, 'a');
   ProcessHeaders(false, headers_);
 
   QuicStreamFrame frame1(GetNthClientInitiatedId(0), false, 0,
@@ -485,7 +511,7 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlWindowUpdate) {
                          stream_->flow_controller()));
 
   // Stream receives enough data to fill a fraction of the receive window.
-  string body(kWindow / 3, 'a');
+  QuicString body(kWindow / 3, 'a');
   ProcessHeaders(false, headers_);
   stream_->ConsumeHeaderList();
 
@@ -501,11 +527,15 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlWindowUpdate) {
   // window of kWindow bytes.
   QuicStreamFrame frame2(GetNthClientInitiatedId(0), false, kWindow / 3,
                          QuicStringPiece(body));
-  EXPECT_CALL(*connection_,
-              SendWindowUpdate(GetNthClientInitiatedId(0),
-                               QuicFlowControllerPeer::ReceiveWindowOffset(
-                                   stream_->flow_controller()) +
-                                   2 * kWindow / 3));
+  if (session_->use_control_frame_manager()) {
+    EXPECT_CALL(*connection_, SendControlFrame(_));
+  } else {
+    EXPECT_CALL(*connection_,
+                SendWindowUpdate(GetNthClientInitiatedId(0),
+                                 QuicFlowControllerPeer::ReceiveWindowOffset(
+                                     stream_->flow_controller()) +
+                                     2 * kWindow / 3));
+  }
   stream_->OnStreamFrame(frame2);
   EXPECT_EQ(kWindow, QuicFlowControllerPeer::ReceiveWindowSize(
                          stream_->flow_controller()));
@@ -543,7 +573,7 @@ TEST_P(QuicSpdyStreamTest, ConnectionFlowControlWindowUpdate) {
 
   // Each stream gets a quarter window of data. This should not trigger a
   // WINDOW_UPDATE for either stream, nor for the connection.
-  string body(kWindow / 4, 'a');
+  QuicString body(kWindow / 4, 'a');
   QuicStreamFrame frame1(GetNthClientInitiatedId(0), false, 0,
                          QuicStringPiece(body));
   stream_->OnStreamFrame(frame1);
@@ -554,14 +584,18 @@ TEST_P(QuicSpdyStreamTest, ConnectionFlowControlWindowUpdate) {
   // Now receive a further single byte on one stream - again this does not
   // trigger a stream WINDOW_UPDATE, but now the connection flow control window
   // is over half full and thus a connection WINDOW_UPDATE is sent.
-  EXPECT_CALL(*connection_, SendWindowUpdate(GetNthClientInitiatedId(0), _))
-      .Times(0);
-  EXPECT_CALL(*connection_, SendWindowUpdate(GetNthClientInitiatedId(1), _))
-      .Times(0);
-  EXPECT_CALL(*connection_,
-              SendWindowUpdate(0, QuicFlowControllerPeer::ReceiveWindowOffset(
-                                      session_->flow_controller()) +
-                                      1 + kWindow / 2));
+  if (session_->use_control_frame_manager()) {
+    EXPECT_CALL(*connection_, SendControlFrame(_));
+  } else {
+    EXPECT_CALL(*connection_, SendWindowUpdate(GetNthClientInitiatedId(0), _))
+        .Times(0);
+    EXPECT_CALL(*connection_, SendWindowUpdate(GetNthClientInitiatedId(1), _))
+        .Times(0);
+    EXPECT_CALL(*connection_,
+                SendWindowUpdate(0, QuicFlowControllerPeer::ReceiveWindowOffset(
+                                        session_->flow_controller()) +
+                                        1 + kWindow / 2));
+  }
   QuicStreamFrame frame3(GetNthClientInitiatedId(0), false, (kWindow / 4),
                          QuicStringPiece("a"));
   stream_->OnStreamFrame(frame3);
@@ -583,7 +617,7 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlViolation) {
   ProcessHeaders(false, headers_);
 
   // Receive data to overflow the window, violating flow control.
-  string body(kWindow + 1, 'a');
+  QuicString body(kWindow + 1, 'a');
   QuicStreamFrame frame(GetNthClientInitiatedId(0), false, 0,
                         QuicStringPiece(body));
   EXPECT_CALL(*connection_,
@@ -621,7 +655,7 @@ TEST_P(QuicSpdyStreamTest, ConnectionFlowControlViolation) {
   ProcessHeaders(false, headers_);
 
   // Send enough data to overflow the connection level flow control window.
-  string body(kConnectionWindow + 1, 'a');
+  QuicString body(kConnectionWindow + 1, 'a');
   EXPECT_LT(body.size(), kStreamWindow);
   QuicStreamFrame frame(GetNthClientInitiatedId(0), false, 0,
                         QuicStringPiece(body));
@@ -643,7 +677,7 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlFinNotBlocked) {
                     stream_->flow_controller()));
 
   // Send a frame with a FIN but no data. This should not be blocked.
-  string body = "";
+  QuicString body = "";
   bool fin = true;
 
   EXPECT_CALL(*connection_, SendBlocked(GetNthClientInitiatedId(0))).Times(0);
@@ -704,7 +738,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersWithOffset) {
   QuicHeaderList headers = ProcessHeaders(false, headers_);
   stream_->ConsumeHeaderList();
 
-  const string body = "this is the body";
+  const QuicString body = "this is the body";
   // Receive trailing headers.
   SpdyHeaderBlock trailers_block;
   trailers_block["key1"] = "value1";
@@ -742,7 +776,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersWithoutOffset) {
   ProcessHeaders(false, headers_);
   stream_->ConsumeHeaderList();
 
-  const string body = "this is the body";
+  const QuicString body = "this is the body";
   // Receive trailing headers, without kFinalOffsetHeaderKey.
   SpdyHeaderBlock trailers_block;
   trailers_block["key1"] = "value1";
@@ -832,7 +866,7 @@ TEST_P(QuicSpdyStreamTest, ClosingStreamWithNoTrailers) {
   stream_->ConsumeHeaderList();
 
   // Receive and consume body with FIN set, and no trailers.
-  const string kBody = string(1024, 'x');
+  const QuicString kBody = QuicString(1024, 'x');
   QuicStreamFrame frame(GetNthClientInitiatedId(0), /*fin=*/true, 0, kBody);
   stream_->OnStreamFrame(frame);
 
@@ -873,7 +907,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersFinalOffset) {
 
   // Write non-zero body data to force a non-zero final offset.
   const int kBodySize = 1 * 1024;  // 1 MB
-  stream_->WriteOrBufferData(string(kBodySize, 'x'), false, nullptr);
+  stream_->WriteOrBufferData(QuicString(kBodySize, 'x'), false, nullptr);
 
   // The final offset field in the trailing headers is populated with the
   // number of body bytes written (including queued bytes).
@@ -901,7 +935,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersClosesWriteSide) {
 
   // Write non-zero body data.
   const int kBodySize = 1 * 1024;  // 1 MB
-  stream_->WriteOrBufferData(string(kBodySize, 'x'), false, nullptr);
+  stream_->WriteOrBufferData(QuicString(kBodySize, 'x'), false, nullptr);
   EXPECT_EQ(0u, stream_->BufferedDataBytes());
 
   // Headers and body have been fully written, there is no queued data. Writing
@@ -927,7 +961,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersWithQueuedBytes) {
   const int kBodySize = 1 * 1024;  // 1 KB
   EXPECT_CALL(*session_, WritevData(_, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(kBodySize - 1, false)));
-  stream_->WriteOrBufferData(string(kBodySize, 'x'), false, nullptr);
+  stream_->WriteOrBufferData(QuicString(kBodySize, 'x'), false, nullptr);
   EXPECT_EQ(1u, stream_->BufferedDataBytes());
 
   // Writing trailers will send a FIN, but not close the write side of the
@@ -992,13 +1026,17 @@ TEST_P(QuicSpdyStreamTest, HeaderStreamNotiferCorrespondingSpdyStream) {
   session_->OnStreamFrameRetransmitted(frame1);
 
   EXPECT_CALL(*ack_listener1, OnPacketAcked(7, _));
-  session_->OnFrameAcked(QuicFrame(&frame1), QuicTime::Delta::Zero());
+  EXPECT_TRUE(
+      session_->OnFrameAcked(QuicFrame(&frame1), QuicTime::Delta::Zero()));
   EXPECT_CALL(*ack_listener1, OnPacketAcked(5, _));
-  session_->OnFrameAcked(QuicFrame(&frame2), QuicTime::Delta::Zero());
+  EXPECT_TRUE(
+      session_->OnFrameAcked(QuicFrame(&frame2), QuicTime::Delta::Zero()));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(7, _));
-  session_->OnFrameAcked(QuicFrame(&frame3), QuicTime::Delta::Zero());
+  EXPECT_TRUE(
+      session_->OnFrameAcked(QuicFrame(&frame3), QuicTime::Delta::Zero()));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(5, _));
-  session_->OnFrameAcked(QuicFrame(&frame4), QuicTime::Delta::Zero());
+  EXPECT_TRUE(
+      session_->OnFrameAcked(QuicFrame(&frame4), QuicTime::Delta::Zero()));
 }
 
 TEST_P(QuicSpdyStreamTest, StreamBecomesZombieWithWriteThatCloses) {
@@ -1013,6 +1051,34 @@ TEST_P(QuicSpdyStreamTest, StreamBecomesZombieWithWriteThatCloses) {
   EXPECT_TRUE(QuicContainsKey(QuicSessionPeer::zombie_streams(session_.get()),
                               stream_->id()));
   EXPECT_TRUE(QuicSessionPeer::closed_streams(session_.get()).empty());
+}
+
+TEST_P(QuicSpdyStreamTest, OnPriorityFrame) {
+  Initialize(kShouldProcessData);
+  stream_->OnPriorityFrame(kV3HighestPriority);
+  EXPECT_EQ(kV3HighestPriority, stream_->priority());
+}
+
+TEST_P(QuicSpdyStreamTest, SetPriorityBeforeUpdateStreamPriority) {
+  MockQuicConnection* connection = new testing::StrictMock<MockQuicConnection>(
+      &helper_, &alarm_factory_, Perspective::IS_SERVER,
+      SupportedVersions(GetParam()));
+  std::unique_ptr<TestMockUpdateStreamSession> session(
+      new testing::StrictMock<TestMockUpdateStreamSession>(connection));
+  TestStream* stream = new TestStream(GetNthClientInitiatedId(0), session.get(),
+                                      /*should_process_data=*/true);
+  session->ActivateStream(QuicWrapUnique(stream));
+
+  // QuicSpdyStream::SetPriority() should eventually call UpdateStreamPriority()
+  // on the session. Make sure stream->priority() returns the updated priority
+  // if called within UpdateStreamPriority(). This expectation is enforced in
+  // TestMockUpdateStreamSession::UpdateStreamPriority().
+  session->SetExpectedStream(stream);
+  session->SetExpectedPriority(kV3HighestPriority);
+  stream->SetPriority(kV3HighestPriority);
+
+  session->SetExpectedPriority(kV3LowestPriority);
+  stream->SetPriority(kV3LowestPriority);
 }
 
 }  // namespace

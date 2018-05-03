@@ -59,7 +59,7 @@ class SurfaceReferencesTest : public testing::Test {
   // Destroy Surface with |surface_id|.
   void DestroySurface(const SurfaceId& surface_id) {
     GetCompositorFrameSinkSupport(surface_id.frame_sink_id())
-        .EvictCurrentSurface();
+        .EvictLastActivatedSurface();
   }
 
   CompositorFrameSinkSupport& GetCompositorFrameSinkSupport(
@@ -119,6 +119,10 @@ class SurfaceReferencesTest : public testing::Test {
     return manager_->surface_manager()->valid_frame_sink_labels_;
   }
 
+  bool IsTemporaryReferenceTimerRunning() const {
+    return manager_->surface_manager()->expire_timer_->IsRunning();
+  }
+
  protected:
   // testing::Test:
   void SetUp() override {
@@ -129,8 +133,6 @@ class SurfaceReferencesTest : public testing::Test {
     manager_->SetLocalClient(frame_sink_manager_client_.get());
   }
   void TearDown() override {
-    for (auto& support : supports_)
-      support.second->EvictCurrentSurface();
     supports_.clear();
     manager_.reset();
   }
@@ -643,20 +645,27 @@ TEST_F(SurfaceReferencesTest, MarkOldTemporaryReferences) {
 
   constexpr base::TimeDelta kFastForwardTime = base::TimeDelta::FromSeconds(30);
 
-  // Creating the surface should create a temporary reference.
+  // There are no temporary references so the timer should be stopped.
+  EXPECT_FALSE(IsTemporaryReferenceTimerRunning());
+
+  // Creating the surface should create a temporary reference and start timer.
   const SurfaceId id = CreateSurface(kFrameSink2, 1);
   ASSERT_THAT(GetAllTempReferences(), UnorderedElementsAre(id));
+  EXPECT_TRUE(IsTemporaryReferenceTimerRunning());
 
   // The temporary reference should not be marked as old and then deleted
   // because the surface is still alive.
   task_runner_->FastForwardBy(kFastForwardTime);
   ASSERT_THAT(GetAllTempReferences(), UnorderedElementsAre(id));
+  EXPECT_TRUE(IsTemporaryReferenceTimerRunning());
 
   // After the surface is marked as destroyed, the temporary reference should
-  // be marked as old then deleted.
+  // be marked as old then deleted. The timer should stop because there are no
+  // temporary references.
   DestroySurface(id);
   task_runner_->FastForwardBy(kFastForwardTime);
   ASSERT_THAT(GetAllTempReferences(), IsEmpty());
+  EXPECT_FALSE(IsTemporaryReferenceTimerRunning());
 }
 
 }  // namespace test

@@ -23,6 +23,7 @@
 #include "core/fpdfdoc/ipvt_fontmap.h"
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxcrt/fx_fallthrough.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -125,8 +126,8 @@ IPVT_FontMap* CPWL_EditImpl_Provider::GetFontMap() const {
   return m_pFontMap;
 }
 
-int32_t CPWL_EditImpl_Provider::GetCharWidth(int32_t nFontIndex,
-                                             uint16_t word) {
+uint32_t CPWL_EditImpl_Provider::GetCharWidth(int32_t nFontIndex,
+                                              uint16_t word) {
   if (CPDF_Font* pPDFFont = m_pFontMap->GetPDFFont(nFontIndex)) {
     uint32_t charcode = word;
 
@@ -443,8 +444,8 @@ void CPWL_EditImpl::DrawEdit(CFX_RenderDevice* pDevice,
   FX_COLORREF crOldFill = crCurFill;
 
   bool bSelect = false;
-  static const FX_COLORREF crWhite = ArgbEncode(255, 255, 255, 255);
-  static const FX_COLORREF crSelBK = ArgbEncode(255, 0, 51, 113);
+  const FX_COLORREF crWhite = ArgbEncode(255, 255, 255, 255);
+  const FX_COLORREF crSelBK = ArgbEncode(255, 0, 51, 113);
 
   std::ostringstream sTextBuf;
   int32_t nFontIndex = -1;
@@ -1576,13 +1577,8 @@ bool CPWL_EditImpl::Backspace(bool bAddUndo, bool bPaint) {
     return false;
 
   if (bAddUndo && m_bEnableUndo) {
-    if (m_wpCaret.nSecIndex != m_wpOldCaret.nSecIndex) {
-      AddEditUndoItem(pdfium::MakeUnique<CFXEU_Backspace>(
-          this, m_wpOldCaret, m_wpCaret, word.Word, word.nCharset));
-    } else {
-      AddEditUndoItem(pdfium::MakeUnique<CFXEU_Backspace>(
-          this, m_wpOldCaret, m_wpCaret, word.Word, word.nCharset));
-    }
+    AddEditUndoItem(pdfium::MakeUnique<CFXEU_Backspace>(
+        this, m_wpOldCaret, m_wpCaret, word.Word, word.nCharset));
   }
   if (bPaint) {
     RearrangePart(CPVT_WordRange(m_wpCaret, m_wpOldCaret));
@@ -1822,6 +1818,7 @@ CPVT_WordPlace CPWL_EditImpl::DoInsertText(const CPVT_WordPlace& place,
           break;
         case 0x09:
           word = 0x20;
+          FX_FALLTHROUGH;
         default:
           wp =
               m_pVT->InsertWord(wp, word, GetCharSetFromUnicode(word, charset));

@@ -196,6 +196,14 @@ enum zcr_remote_shell_v1_state_type {
 	 * resizing window state
 	 */
 	ZCR_REMOTE_SHELL_V1_STATE_TYPE_RESIZING = 8,
+	/**
+	 * left snapped window state
+	 */
+	ZCR_REMOTE_SHELL_V1_STATE_TYPE_LEFT_SNAPPED = 9,
+	/**
+	 * right snapped window state
+	 */
+	ZCR_REMOTE_SHELL_V1_STATE_TYPE_RIGHT_SNAPPED = 10,
 };
 #endif /* ZCR_REMOTE_SHELL_V1_STATE_TYPE_ENUM */
 
@@ -664,7 +672,7 @@ struct zcr_remote_surface_v1_listener {
 	 * The compositor requested to change the bounds
 	 *
 	 * The compositor requested to change its bounds.
-	 * "bounds_chnage_reason" specifies the cause of the bounds change.
+	 * "bounds_change_reason" specifies the cause of the bounds change.
 	 * The client may apply the different move/resize strategy
 	 * depending on the reason.
 	 *
@@ -764,6 +772,9 @@ zcr_remote_surface_v1_add_listener(struct zcr_remote_surface_v1 *zcr_remote_surf
 #define ZCR_REMOTE_SURFACE_V1_UNSET_CAN_MAXIMIZE 30
 #define ZCR_REMOTE_SURFACE_V1_SET_MIN_SIZE 31
 #define ZCR_REMOTE_SURFACE_V1_SET_MAX_SIZE 32
+#define ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_LEFT 33
+#define ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_RIGHT 34
+#define ZCR_REMOTE_SURFACE_V1_START_RESIZE 35
 
 /**
  * @ingroup iface_zcr_remote_surface_v1
@@ -926,6 +937,18 @@ zcr_remote_surface_v1_add_listener(struct zcr_remote_surface_v1 *zcr_remote_surf
  * @ingroup iface_zcr_remote_surface_v1
  */
 #define ZCR_REMOTE_SURFACE_V1_SET_MAX_SIZE_SINCE_VERSION 10
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ */
+#define ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_LEFT_SINCE_VERSION 11
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ */
+#define ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_RIGHT_SINCE_VERSION 11
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ */
+#define ZCR_REMOTE_SURFACE_V1_START_RESIZE_SINCE_VERSION 12
 
 /** @ingroup iface_zcr_remote_surface_v1 */
 static inline void
@@ -1381,7 +1404,7 @@ zcr_remote_surface_v1_set_window_type(struct zcr_remote_surface_v1 *zcr_remote_s
 /**
  * @ingroup iface_zcr_remote_surface_v1
  *
- * Start an interactive, user-driven resize of the surface.
+ * [Deprecated] Start an interactive, user-driven resize of the surface.
  *
  * The compositor responds to this request with a configure event that
  * transitions to the "resizing" state. The client must only initiate
@@ -1393,10 +1416,10 @@ zcr_remote_surface_v1_set_window_type(struct zcr_remote_surface_v1 *zcr_remote_s
  * surface, e.g. fullscreen or maximized.
  */
 static inline void
-zcr_remote_surface_v1_resize(struct zcr_remote_surface_v1 *zcr_remote_surface_v1)
+zcr_remote_surface_v1_resize(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, uint32_t direction)
 {
 	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
-			 ZCR_REMOTE_SURFACE_V1_RESIZE);
+			 ZCR_REMOTE_SURFACE_V1_RESIZE, direction);
 }
 
 /**
@@ -1492,6 +1515,51 @@ zcr_remote_surface_v1_set_max_size(struct zcr_remote_surface_v1 *zcr_remote_surf
 {
 	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
 			 ZCR_REMOTE_SURFACE_V1_SET_MAX_SIZE, width, height);
+}
+
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ *
+ * Request that surface is snapped to left.
+ */
+static inline void
+zcr_remote_surface_v1_set_snapped_to_left(struct zcr_remote_surface_v1 *zcr_remote_surface_v1)
+{
+	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
+			 ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_LEFT);
+}
+
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ *
+ * Request that surface is snapped to right.
+ */
+static inline void
+zcr_remote_surface_v1_set_snapped_to_right(struct zcr_remote_surface_v1 *zcr_remote_surface_v1)
+{
+	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
+			 ZCR_REMOTE_SURFACE_V1_SET_SNAPPED_TO_RIGHT);
+}
+
+/**
+ * @ingroup iface_zcr_remote_surface_v1
+ *
+ * Request to start an interactive, user-driven resize of the surface.
+ *
+ * The compositor responds to this request with a "drag_started"
+ * event, followed by "bounds_changed" events, and ends the
+ * resize operation with a "drag_finhsed" event. The compositor
+ * determines the new bounds using the resize_direction and the
+ * pointer event location.
+ *
+ * The compositor may ignore resize requests depending on the state of the
+ * surface, e.g. fullscreen or maximized, or no drag event is in pregress.
+ */
+static inline void
+zcr_remote_surface_v1_start_resize(struct zcr_remote_surface_v1 *zcr_remote_surface_v1, uint32_t resize_direction)
+{
+	wl_proxy_marshal((struct wl_proxy *) zcr_remote_surface_v1,
+			 ZCR_REMOTE_SURFACE_V1_START_RESIZE, resize_direction);
 }
 
 #define ZCR_NOTIFICATION_SURFACE_V1_DESTROY 0

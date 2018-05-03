@@ -10,14 +10,14 @@
 #include <vector>
 
 #include "components/offline_pages/core/client_policy_controller.h"
-#include "components/offline_pages/core/offline_page_model_impl.h"
+#include "components/offline_pages/core/offline_page_model.h"
 
 namespace offline_pages {
 
 // Stub implementation of OfflinePageModel interface for testing. Besides using
 // as a stub for tests, it may also be subclassed to mock specific methods
 // needed for a set of tests.
-class StubOfflinePageModel : public OfflinePageModelImpl {
+class StubOfflinePageModel : public OfflinePageModel {
  public:
   StubOfflinePageModel();
   ~StubOfflinePageModel() override;
@@ -34,6 +34,10 @@ class StubOfflinePageModel : public OfflinePageModelImpl {
                               const DeletePageCallback& callback) override;
   void DeletePagesByClientIds(const std::vector<ClientId>& client_ids,
                               const DeletePageCallback& callback) override;
+  void DeletePagesByClientIdsAndOrigin(
+      const std::vector<ClientId>& client_ids,
+      const std::string& origin,
+      const DeletePageCallback& callback) override;
   void GetPagesByClientIds(
       const std::vector<ClientId>& client_ids,
       const MultipleOfflinePageItemCallback& callback) override;
@@ -54,6 +58,10 @@ class StubOfflinePageModel : public OfflinePageModelImpl {
   void GetPagesByRequestOrigin(
       const std::string& origin,
       const MultipleOfflinePageItemCallback& callback) override;
+  void GetPageBySizeAndDigest(
+      int64_t file_size,
+      const std::string& digest,
+      const SingleOfflinePageItemCallback& callback) override;
   void GetPagesRemovedOnCacheReset(
       const MultipleOfflinePageItemCallback& callback) override;
   void GetPagesByNamespace(

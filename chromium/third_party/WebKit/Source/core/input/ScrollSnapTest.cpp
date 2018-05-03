@@ -6,9 +6,9 @@
 #include "core/dom/NodeComputedStyle.h"
 #include "core/input/EventHandler.h"
 #include "core/input/ScrollManager.h"
+#include "core/layout/LayoutBox.h"
 #include "core/style/ComputedStyle.h"
 #include "core/testing/sim/SimCompositor.h"
-#include "core/testing/sim/SimDisplayItemList.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
 
@@ -86,7 +86,7 @@ void ScrollSnapTest::ScrollBegin(double x,
                                  double hint_y) {
   WebGestureEvent event(WebInputEvent::kGestureScrollBegin,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicks().InSeconds());
+                        CurrentTimeTicksInSeconds());
   event.x = event.global_x = x;
   event.y = event.global_y = y;
   event.source_device = WebGestureDevice::kWebGestureDeviceTouchscreen;
@@ -103,7 +103,7 @@ void ScrollSnapTest::ScrollUpdate(double x,
                                   double delta_y) {
   WebGestureEvent event(WebInputEvent::kGestureScrollUpdate,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicks().InSeconds());
+                        CurrentTimeTicksInSeconds());
   event.x = event.global_x = x;
   event.y = event.global_y = y;
   event.source_device = WebGestureDevice::kWebGestureDeviceTouchscreen;
@@ -116,7 +116,7 @@ void ScrollSnapTest::ScrollUpdate(double x,
 void ScrollSnapTest::ScrollEnd(double x, double y) {
   WebGestureEvent event(WebInputEvent::kGestureScrollEnd,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicks().InSeconds());
+                        CurrentTimeTicksInSeconds());
   event.x = event.global_x = x;
   event.y = event.global_y = y;
   event.source_device = WebGestureDevice::kWebGestureDeviceTouchscreen;
@@ -125,8 +125,8 @@ void ScrollSnapTest::ScrollEnd(double x, double y) {
 
 void ScrollSnapTest::SetInitialScrollOffset(double x, double y) {
   Element* scroller = GetDocument().getElementById("scroller");
-  scroller->setScrollLeft(x);
-  scroller->setScrollTop(y);
+  scroller->GetLayoutBox()->SetScrollLeft(LayoutUnit::FromFloatRound(x));
+  scroller->GetLayoutBox()->SetScrollTop(LayoutUnit::FromFloatRound(y));
   ASSERT_EQ(scroller->scrollLeft(), x);
   ASSERT_EQ(scroller->scrollTop(), y);
 }

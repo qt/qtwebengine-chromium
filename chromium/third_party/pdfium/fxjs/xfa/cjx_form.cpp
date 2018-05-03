@@ -32,12 +32,13 @@ CJX_Form::CJX_Form(CXFA_Form* form) : CJX_Model(form) {
 CJX_Form::~CJX_Form() {}
 
 CJS_Return CJX_Form::formNodes(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
-  CXFA_Node* pDataNode = ToNode(runtime->ToXFAObject(params[0]));
+  CXFA_Node* pDataNode =
+      ToNode(static_cast<CFXJSE_Engine*>(runtime)->ToXFAObject(params[0]));
   if (!pDataNode)
     return CJS_Return(JSGetStringFromID(JSMessage::kValueError));
 
@@ -52,7 +53,7 @@ CJS_Return CJX_Form::formNodes(
   return CJS_Return(value->DirectGetValue().Get(runtime->GetIsolate()));
 }
 
-CJS_Return CJX_Form::remerge(CJS_V8* runtime,
+CJS_Return CJX_Form::remerge(CFX_V8* runtime,
                              const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -62,19 +63,20 @@ CJS_Return CJX_Form::remerge(CJS_V8* runtime,
 }
 
 CJS_Return CJX_Form::execInitialize(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
   if (pNotify)
-    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Initialize);
+    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Initialize, false,
+                                  true);
   return CJS_Return(true);
 }
 
 CJS_Return CJX_Form::recalculate(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   CXFA_EventParam* pEventParam =
       GetDocument()->GetScriptContext()->GetEventParam();
@@ -89,26 +91,27 @@ CJS_Return CJX_Form::recalculate(
   if (!pNotify || runtime->ToInt32(params[0]) != 0)
     return CJS_Return(true);
 
-  pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate);
-  pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Validate);
-  pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Ready, true);
+  pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate, false, true);
+  pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Validate, false, true);
+  pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Ready, true, true);
   return CJS_Return(true);
 }
 
 CJS_Return CJX_Form::execCalculate(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
   if (pNotify)
-    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate);
+    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate, false,
+                                  true);
   return CJS_Return(true);
 }
 
 CJS_Return CJX_Form::execValidate(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 0)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -117,7 +120,7 @@ CJS_Return CJX_Form::execValidate(
   if (!pNotify)
     return CJS_Return(runtime->NewBoolean(false));
 
-  int32_t iRet =
-      pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Validate);
+  int32_t iRet = pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Validate,
+                                               false, true);
   return CJS_Return(runtime->NewBoolean(iRet != XFA_EVENTERROR_Error));
 }

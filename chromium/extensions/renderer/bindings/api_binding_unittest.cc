@@ -5,6 +5,7 @@
 #include "extensions/renderer/bindings/api_binding.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
@@ -83,11 +84,6 @@ void OnEventListenersChanged(const std::string& event_name,
                              const base::DictionaryValue* filter,
                              bool was_manual,
                              v8::Local<v8::Context> context) {}
-
-void DoNothingWithSilentRequest(
-    v8::Local<v8::Context> context,
-    const std::string& call_name,
-    const std::vector<v8::Local<v8::Value>>& arguments) {}
 
 }  // namespace
 
@@ -173,7 +169,7 @@ class APIBindingUnittest : public APIBindingTest {
     if (binding_hooks_delegate_)
       binding_hooks_->SetDelegate(std::move(binding_hooks_delegate_));
     if (!on_silent_request_)
-      on_silent_request_ = base::Bind(&DoNothingWithSilentRequest);
+      on_silent_request_ = base::DoNothing();
     if (!availability_callback_)
       availability_callback_ = base::Bind(&AllowAllFeatures);
     event_handler_ = std::make_unique<APIEventHandler>(
@@ -717,7 +713,10 @@ TEST_F(APIBindingUnittest, TestDisposedContext) {
       FunctionFromString(context, "(function(obj) { obj.oneString('foo'); })");
   v8::Local<v8::Value> argv[] = {binding_object};
   DisposeContext(context);
-  RunFunction(func, context, arraysize(argv), argv);
+
+  RunFunctionAndExpectError(func, context, arraysize(argv), argv,
+                            "Uncaught Error: Extension context invalidated.");
+
   EXPECT_FALSE(HandlerWasInvoked());
   // This test passes if this does not crash, even under AddressSanitizer
   // builds.
@@ -736,7 +735,10 @@ TEST_F(APIBindingUnittest, TestInvalidatedContext) {
       FunctionFromString(context, "(function(obj) { obj.oneString('foo'); })");
   v8::Local<v8::Value> argv[] = {binding_object};
   binding::InvalidateContext(context);
-  RunFunction(func, context, arraysize(argv), argv);
+
+  RunFunctionAndExpectError(func, context, arraysize(argv), argv,
+                            "Uncaught Error: Extension context invalidated.");
+
   EXPECT_FALSE(HandlerWasInvoked());
   // This test passes if this does not crash, even under AddressSanitizer
   // builds.
@@ -757,8 +759,8 @@ TEST_F(APIBindingUnittest, MultipleContexts) {
              false);
   ExpectPass(context_b, binding_object_b, "obj.oneString('foo');", "['foo']",
              false);
-  DisposeContext(context_a);
-  ExpectPass(context_b, binding_object_b, "obj.oneString('foo');", "['foo']",
+  DisposeContext(context_b);
+  ExpectPass(context_a, binding_object_a, "obj.oneString('foo');", "['foo']",
              false);
 }
 
@@ -1572,6 +1574,24 @@ TEST_F(APIBindingUnittest, TestHooksWithCustomCallback) {
 
   EXPECT_EQ("true", GetStringPropertyFromObject(context->Global(), context,
                                                 "calledCustomCallback"));
+}
+
+TEST_F(APIBindingUnittest, AccessAPIMethodsAndEventsAfterInvalidation) {
+  SetEvents(R"([{"name": "onFoo"}])");
+  InitializeBinding();
+
+  v8::HandleScope handle_scope(isolate());
+  v8::Local<v8::Context> context = MainContext();
+
+  v8::Local<v8::Object> binding_object = binding()->CreateInstance(context);
+
+  v8::Local<v8::Function> function = FunctionFromString(
+      context, "(function(obj) { obj.onFoo.addListener(function() {}); })");
+  binding::InvalidateContext(context);
+
+  v8::Local<v8::Value> argv[] = {binding_object};
+  RunFunctionAndExpectError(function, context, arraysize(argv), argv,
+                            "Uncaught Error: Extension context invalidated.");
 }
 
 }  // namespace extensions

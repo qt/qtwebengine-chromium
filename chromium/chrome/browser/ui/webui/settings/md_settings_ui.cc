@@ -54,6 +54,9 @@
 #include "chrome/browser/safe_browsing/chrome_cleaner/srt_field_trial_win.h"
 #include "chrome/browser/ui/webui/settings/chrome_cleanup_handler.h"
 #if defined(GOOGLE_CHROME_BUILD)
+#include "chrome/browser/conflicts/problematic_programs_updater_win.h"
+#include "chrome/browser/conflicts/token_util_win.h"
+#include "chrome/browser/ui/webui/settings/incompatible_applications_handler_win.h"
 #include "chrome/grit/chrome_unscaled_resources.h"
 #endif
 #endif  // defined(OS_WIN)
@@ -88,6 +91,7 @@
 #include "chrome/browser/ui/webui/settings/settings_default_browser_handler.h"
 #include "chrome/browser/ui/webui/settings/settings_manage_profile_handler.h"
 #include "chrome/browser/ui/webui/settings/system_handler.h"
+#include "components/signin/core/browser/profile_management_switches.h"
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(USE_NSS_CERTS)
@@ -222,8 +226,20 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   // should never change while Chrome is open.
   html_source->AddBoolean("userInitiatedCleanupsEnabled",
                           userInitiatedCleanupsEnabled);
-
 #endif  // defined(OS_WIN)
+
+#if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
+  bool has_incompatible_applications =
+      ProblematicProgramsUpdater::IsIncompatibleApplicationsWarningEnabled() &&
+      ProblematicProgramsUpdater::HasCachedPrograms();
+  html_source->AddBoolean("showIncompatibleApplications",
+                          has_incompatible_applications);
+  html_source->AddBoolean("hasAdminRights", HasAdminRights());
+
+  if (has_incompatible_applications)
+    AddSettingsPageUIHandler(
+        std::make_unique<IncompatibleApplicationsHandler>());
+#endif  // OS_WIN && defined(GOOGLE_CHROME_BUILD)
 
   bool password_protection_available = false;
 #if defined(SAFE_BROWSING_DB_LOCAL)
@@ -281,7 +297,10 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
     AddSettingsPageUIHandler(std::make_unique<chromeos::settings::PowerHandler>(
         profile->GetPrefs()));
   }
-#endif
+#else   // !defined(OS_CHROMEOS)
+  html_source->AddBoolean("diceEnabled",
+                          signin::IsDiceEnabledForProfile(profile->GetPrefs()));
+#endif  // defined(OS_CHROMEOS)
 
   html_source->AddBoolean("showExportPasswords",
                           base::FeatureList::IsEnabled(

@@ -12,7 +12,7 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "modules/webaudio/AudioContextOptions.h"
 #include "modules/webaudio/AudioTimestamp.h"
 #include "modules/webaudio/DefaultAudioDestinationNode.h"
@@ -26,10 +26,12 @@
 
 namespace blink {
 
-// Don't allow more than this number of simultaneous AudioContexts
-// talking to hardware.
-const unsigned kMaxHardwareContexts = 6;
+// Number of AudioContexts still alive.  It's incremented when an
+// AudioContext is created and decremented when the context is closed.
 static unsigned g_hardware_context_count = 0;
+
+// A context ID that is incremented for each context that is created.
+// This initializes the internal id for the context.
 static unsigned g_context_id = 0;
 
 AudioContext* AudioContext::Create(Document& document,
@@ -39,15 +41,6 @@ AudioContext* AudioContext::Create(Document& document,
 
   UseCounter::CountCrossOriginIframe(
       document, WebFeature::kAudioContextCrossOriginIframe);
-
-  if (g_hardware_context_count >= kMaxHardwareContexts) {
-    exception_state.ThrowDOMException(
-        kNotSupportedError,
-        ExceptionMessages::IndexExceedsMaximumBound(
-            "number of hardware contexts", g_hardware_context_count,
-            kMaxHardwareContexts));
-    return nullptr;
-  }
 
   WebAudioLatencyHint latency_hint(WebAudioLatencyHint::kCategoryInteractive);
   if (context_options.latencyHint().IsAudioContextLatencyCategory()) {
@@ -199,13 +192,13 @@ void AudioContext::getOutputTimestamp(ScriptState* script_state,
     return;
   }
 
-  Performance* performance = DOMWindowPerformance::performance(*window);
+  WindowPerformance* performance = DOMWindowPerformance::performance(*window);
   DCHECK(performance);
 
   AudioIOPosition position = OutputPosition();
 
-  double performance_time =
-      performance->MonotonicTimeToDOMHighResTimeStamp(position.timestamp);
+  double performance_time = performance->MonotonicTimeToDOMHighResTimeStamp(
+      TimeTicksFromSeconds(position.timestamp));
   if (performance_time < 0.0)
     performance_time = 0.0;
 
@@ -269,28 +262,6 @@ void AudioContext::StopRendering() {
 
 double AudioContext::baseLatency() const {
   return FramesPerBuffer() / static_cast<double>(sampleRate());
-}
-
-// TODO(crbug.com/764396): Remove these when fixed.
-void AudioContext::CountValueSetterConflict(bool does_conflict) {
-  ++count_value_setter_calls_;
-  if (does_conflict) {
-    ++count_value_setter_conflicts_;
-  }
-}
-
-void AudioContext::RecordValueSetterStatistics() {
-  DEFINE_STATIC_LOCAL(
-      LinearHistogram, value_setter_conflict_percentage_histogram,
-      ("WebAudio.AudioParam.ValueSetterConflictPercentage", 1, 100, 101));
-
-  value_setter_conflict_percentage_histogram.Count(static_cast<int32_t>(
-      0.5 + 100.0 * count_value_setter_conflicts_ / count_value_setter_calls_));
-
-  UMA_HISTOGRAM_COUNTS_10000("WebAudio.AudioParam.ValueSetterCount",
-                             count_value_setter_calls_);
-  UMA_HISTOGRAM_COUNTS_10000("WebAudio.AudioParam.ValueSetterConflictCount",
-                             count_value_setter_conflicts_);
 }
 
 }  // namespace blink

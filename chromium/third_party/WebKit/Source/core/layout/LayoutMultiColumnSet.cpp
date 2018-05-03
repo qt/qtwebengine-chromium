@@ -478,7 +478,7 @@ void LayoutMultiColumnSet::ComputeLogicalHeight(
 }
 
 PositionWithAffinity LayoutMultiColumnSet::PositionForPoint(
-    const LayoutPoint& point) {
+    const LayoutPoint& point) const {
   // Convert the visual point to a flow thread point.
   const MultiColumnFragmentainerGroup& row =
       FragmentainerGroupAtVisualPoint(point);
@@ -492,12 +492,13 @@ PositionWithAffinity LayoutMultiColumnSet::PositionForPoint(
 LayoutUnit LayoutMultiColumnSet::ColumnGap() const {
   LayoutBlockFlow* parent_block = MultiColumnBlockFlow();
 
-  if (parent_block->Style()->HasNormalColumnGap()) {
+  if (parent_block->Style()->ColumnGap().IsNormal()) {
     // "1em" is recommended as the normal gap setting. Matches <p> margins.
     return LayoutUnit(
         parent_block->Style()->GetFontDescription().ComputedPixelSize());
   }
-  return LayoutUnit(parent_block->Style()->ColumnGap());
+  return ValueForLength(parent_block->Style()->ColumnGap().GetLength(),
+                        AvailableLogicalWidth());
 }
 
 unsigned LayoutMultiColumnSet::ActualColumnCount() const {
@@ -652,7 +653,6 @@ void LayoutMultiColumnSet::UpdateFromNG() {
   auto& group = fragmentainer_groups_[0];
   group.UpdateFromNG(LogicalHeight());
   ComputeOverflow(LogicalHeight());
-  ClearNeedsLayout();
 }
 
 }  // namespace blink

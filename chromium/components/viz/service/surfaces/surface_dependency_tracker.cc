@@ -11,10 +11,8 @@
 namespace viz {
 
 SurfaceDependencyTracker::SurfaceDependencyTracker(
-    SurfaceManager* surface_manager,
-    uint32_t number_of_frames_to_deadline)
-    : surface_manager_(surface_manager),
-      number_of_frames_to_deadline_(number_of_frames_to_deadline) {}
+    SurfaceManager* surface_manager)
+    : surface_manager_(surface_manager) {}
 
 SurfaceDependencyTracker::~SurfaceDependencyTracker() = default;
 
@@ -115,7 +113,7 @@ void SurfaceDependencyTracker::ActivateLateSurfaceSubtree(Surface* surface) {
       ActivateLateSurfaceSubtree(dependency);
   }
 
-  surface->ActivatePendingFrameForDeadline();
+  surface->ActivatePendingFrameForDeadline(base::nullopt);
 }
 
 void SurfaceDependencyTracker::UpdateSurfaceDeadline(Surface* surface) {
@@ -135,21 +133,14 @@ void SurfaceDependencyTracker::UpdateSurfaceDeadline(Surface* surface) {
       Surface* parent = surface_manager_->GetSurfaceForId(parent_id);
       if (parent && parent->has_deadline() &&
           parent->activation_dependencies().count(surface->surface_id())) {
-        deadline_changed =
-            surface->InheritActivationDeadlineFrom(parent->deadline());
+        deadline_changed = surface->InheritActivationDeadlineFrom(parent);
         break;
       }
     }
   }
-  // If there are no CompositorFrames currently blocked on this surface, then
-  // set a default deadline for this surface.
-  if (!surface->has_deadline()) {
-    surface->SetActivationDeadline(number_of_frames_to_deadline_);
-    deadline_changed = true;
-  }
 
-  if (!deadline_changed)
-    return;
+  DCHECK(!surface_manager_->activation_deadline_in_frames() ||
+         surface->has_deadline());
 
   // Recursively propagate the newly set deadline to children.
   for (const SurfaceId& surface_id :

@@ -52,40 +52,6 @@ namespace WebCORS {
 
 namespace {
 
-// Fetch API Spec: https://fetch.spec.whatwg.org/#cors-preflight-fetch-0
-String CreateAccessControlRequestHeadersHeader(
-    const WebHTTPHeaderMap& headers) {
-  Vector<String> filtered_headers;
-  for (const auto& header : headers.GetHTTPHeaderMap()) {
-    if (FetchUtils::IsCORSSafelistedHeader(header.key, header.value)) {
-      // Exclude CORS-safelisted headers.
-      continue;
-    }
-    // TODO(hintzed) replace with EqualIgnoringASCIICase()
-    if (DeprecatedEqualIgnoringCase(header.key, "referer")) {
-      // When the request is from a Worker, referrer header was added by
-      // WorkerThreadableLoader. But it should not be added to
-      // Access-Control-Request-Headers header.
-      continue;
-    }
-    filtered_headers.push_back(header.key.DeprecatedLower());
-  }
-  if (!filtered_headers.size())
-    return g_null_atom;
-
-  // Sort header names lexicographically.
-  std::sort(filtered_headers.begin(), filtered_headers.end(),
-            WTF::CodePointCompareLessThan);
-  StringBuilder header_buffer;
-  for (const String& header : filtered_headers) {
-    if (!header_buffer.IsEmpty())
-      header_buffer.Append(",");
-    header_buffer.Append(header);
-  }
-
-  return header_buffer.ToString();
-}
-
 // A parser for the value of the Access-Control-Expose-Headers header.
 class HTTPHeaderNameListParser {
   STACK_ALLOCATED();
@@ -203,52 +169,11 @@ base::Optional<CORSError> HandleRedirect(
   }
 
   if (!current_security_origin.CanRequest(new_url)) {
-    new_request.ClearHTTPHeaderField(WebString(HTTPNames::Suborigin));
     new_request.SetHTTPHeaderField(WebString(HTTPNames::Origin),
                                    new_security_origin.ToString());
-    if (!new_security_origin.Suborigin().IsEmpty()) {
-      new_request.SetHTTPHeaderField(WebString(HTTPNames::Suborigin),
-                                     new_security_origin.Suborigin());
-    }
-
     options.cors_flag = true;
   }
   return base::nullopt;
-}
-
-WebURLRequest CreateAccessControlPreflightRequest(
-    const WebURLRequest& request) {
-  const KURL& request_url = request.Url();
-
-  DCHECK(request_url.User().IsEmpty());
-  DCHECK(request_url.Pass().IsEmpty());
-
-  WebURLRequest preflight_request(request_url);
-  preflight_request.SetHTTPMethod(HTTPNames::OPTIONS);
-  preflight_request.SetHTTPHeaderField(HTTPNames::Access_Control_Request_Method,
-                                       request.HttpMethod());
-  preflight_request.SetPriority(request.GetPriority());
-  preflight_request.SetRequestContext(request.GetRequestContext());
-  preflight_request.SetFetchCredentialsMode(
-      network::mojom::FetchCredentialsMode::kOmit);
-  preflight_request.SetServiceWorkerMode(
-      WebURLRequest::ServiceWorkerMode::kNone);
-  preflight_request.SetHTTPReferrer(request.HttpHeaderField(HTTPNames::Referer),
-                                    request.GetReferrerPolicy());
-
-  if (request.IsExternalRequest()) {
-    preflight_request.SetHTTPHeaderField(
-        HTTPNames::Access_Control_Request_External, "true");
-  }
-
-  String request_headers = CreateAccessControlRequestHeadersHeader(
-      request.ToResourceRequest().HttpHeaderFields());
-  if (request_headers != g_null_atom) {
-    preflight_request.SetHTTPHeaderField(
-        HTTPNames::Access_Control_Request_Headers, request_headers);
-  }
-
-  return preflight_request;
 }
 
 WebHTTPHeaderSet ExtractCorsExposedHeaderNamesList(
@@ -297,35 +222,28 @@ WebString ListOfCORSEnabledURLSchemes() {
   return SchemeRegistry::ListOfCORSEnabledURLSchemes();
 }
 
-// https://fetch.spec.whatwg.org/#cors-safelisted-method
-bool IsCORSSafelistedMethod(const WebString& method) {
-  return FetchUtils::IsCORSSafelistedMethod(method);
-}
-
 bool ContainsOnlyCORSSafelistedOrForbiddenHeaders(const WebHTTPHeaderMap& map) {
   return FetchUtils::ContainsOnlyCORSSafelistedOrForbiddenHeaders(
       map.GetHTTPHeaderMap());
 }
 
-// No-CORS requests are allowed for all these contexts, and plugin contexts with
-// private permission when we set ServiceWorkerMode to None in
-// PepperURLLoaderHost.
-bool IsNoCORSAllowedContext(
-    WebURLRequest::RequestContext context,
-    WebURLRequest::ServiceWorkerMode service_worker_mode) {
+// In the spec, https://fetch.spec.whatwg.org/#ref-for-concept-request-mode,
+// No-CORS mode is highly discouraged from using it for new features. Only
+// legacy usages for backward compatibility are allowed except for well-designed
+// usages over the fetch API.
+bool IsNoCORSAllowedContext(WebURLRequest::RequestContext context) {
   switch (context) {
     case WebURLRequest::kRequestContextAudio:
     case WebURLRequest::kRequestContextFavicon:
     case WebURLRequest::kRequestContextFetch:
     case WebURLRequest::kRequestContextImage:
     case WebURLRequest::kRequestContextObject:
+    case WebURLRequest::kRequestContextPlugin:
     case WebURLRequest::kRequestContextScript:
     case WebURLRequest::kRequestContextSharedWorker:
     case WebURLRequest::kRequestContextVideo:
     case WebURLRequest::kRequestContextWorker:
       return true;
-    case WebURLRequest::kRequestContextPlugin:
-      return service_worker_mode == WebURLRequest::ServiceWorkerMode::kNone;
     default:
       return false;
   }

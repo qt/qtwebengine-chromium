@@ -53,9 +53,8 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
 
   // Returns a CSSValue representing the origin <image> value. May not be the
   // actual CSSValue from which this StyleImage was originally created if the
-  // CSSValue can be recreated easily (like for StyleFetchedImage and
-  // StyleInvalidImage) and does not contain per-client state (like for
-  // StyleGeneratedImage.)
+  // CSSValue can be recreated easily (like for StyleFetchedImage) and does not
+  // contain per-client state (like for StyleGeneratedImage.)
   virtual CSSValue* CssValue() const = 0;
 
   // Returns a CSSValue suitable for using as part of a computed style
@@ -79,11 +78,13 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
   //
   // The default object size is context dependent, see for instance the
   // "Examples of CSS Object Sizing" section of the CSS images specification.
-  // https://drafts.csswg.org/css-images/#sizing
+  // https://drafts.csswg.org/css-images/#sizing.
   //
   // The |default_object_size| is assumed to be in the effective zoom level
   // given by multiplier, i.e. if multiplier is 1 the |default_object_size| is
-  // not zoomed.
+  // not zoomed. Note that the |default_object_size| has already been snapped
+  // to LayoutUnit resolution because it represents the target painted size of
+  // a container.
   virtual FloatSize ImageSize(const Document&,
                               float multiplier,
                               const LayoutSize& default_object_size) const = 0;
@@ -98,17 +99,20 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
   virtual void AddClient(ImageResourceObserver*) = 0;
   virtual void RemoveClient(ImageResourceObserver*) = 0;
 
-  // Retrieve an Image representation for painting this <image>, using a
-  // concrete object size (|container_size|.)
+  // Retrieve an Image representation for painting this <image>, at a particular
+  // target size. Most often, the target size is a concrete object size
+  // into which the image will be painted. But for background images the
+  // target size is the area to be filled with a single copy of the image,
+  // and can have a variety of relationships to the container's size. Hence
+  // it requires float resolution.
   //
-  // Note that the |container_size| is in the effective zoom level of the
+  // Note that the |target_size| is in the effective zoom level of the
   // computed style, i.e if the style has an effective zoom level of 1.0 the
-  // |container_size| is not zoomed.
-  virtual scoped_refptr<Image> GetImage(
-      const ImageResourceObserver&,
-      const Document&,
-      const ComputedStyle&,
-      const LayoutSize& container_size) const = 0;
+  // |target_size| is not zoomed.
+  virtual scoped_refptr<Image> GetImage(const ImageResourceObserver&,
+                                        const Document&,
+                                        const ComputedStyle&,
+                                        const FloatSize& target_size) const = 0;
 
   // Opaque handle representing the underlying value of this <image>.
   virtual WrappedImagePtr Data() const = 0;
@@ -131,7 +135,6 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
   ALWAYS_INLINE bool IsImageResourceSet() const {
     return is_image_resource_set_;
   }
-  ALWAYS_INLINE bool IsInvalidImage() const { return is_invalid_image_; }
   ALWAYS_INLINE bool IsPaintImage() const { return is_paint_image_; }
 
   virtual void Trace(blink::Visitor* visitor) {}
@@ -142,13 +145,11 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
         is_pending_image_(false),
         is_generated_image_(false),
         is_image_resource_set_(false),
-        is_invalid_image_(false),
         is_paint_image_(false) {}
   bool is_image_resource_ : 1;
   bool is_pending_image_ : 1;
   bool is_generated_image_ : 1;
   bool is_image_resource_set_ : 1;
-  bool is_invalid_image_ : 1;
   bool is_paint_image_ : 1;
 
   FloatSize ApplyZoom(const FloatSize&, float multiplier) const;

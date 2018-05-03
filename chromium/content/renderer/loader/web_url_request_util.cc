@@ -13,19 +13,19 @@
 #include "base/strings/string_util.h"
 #include "base/task_scheduler/post_task.h"
 #include "content/child/child_thread_impl.h"
-#include "content/public/common/content_features.h"
 #include "content/public/common/service_names.mojom.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_util.h"
-#include "services/network/public/interfaces/data_pipe_getter.mojom.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/public/mojom/data_pipe_getter.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/common/blob/blob.mojom.h"
-#include "third_party/WebKit/common/blob/blob_registry.mojom.h"
+#include "third_party/WebKit/public/mojom/blob/blob.mojom.h"
+#include "third_party/WebKit/public/mojom/blob/blob_registry.mojom.h"
 #include "third_party/WebKit/public/platform/FilePathConversion.h"
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/platform/WebData.h"
@@ -376,10 +376,13 @@ int GetLoadFlagsForWebURLRequest(const WebURLRequest& request) {
     load_flags |= net::LOAD_DO_NOT_SEND_AUTH_DATA;
   }
 
+  if (request.GetRequestContext() == WebURLRequest::kRequestContextPrefetch)
+    load_flags |= net::LOAD_PREFETCH;
+
   if (request.GetExtraData()) {
     RequestExtraData* extra_data =
         static_cast<RequestExtraData*>(request.GetExtraData());
-    if (extra_data->is_prefetch())
+    if (extra_data->is_for_no_state_prefetch())
       load_flags |= net::LOAD_PREFETCH;
   }
 
@@ -420,9 +423,6 @@ WebHTTPBody GetWebHTTPBodyForRequestBody(
         break;
       }
       case network::DataElement::TYPE_UNKNOWN:
-      case network::DataElement::TYPE_BYTES_DESCRIPTION:
-      case network::DataElement::TYPE_DISK_CACHE_ENTRY:
-      case network::DataElement::TYPE_FILE_FILESYSTEM:
       case network::DataElement::TYPE_RAW_FILE:
         NOTREACHED();
         break;
@@ -482,17 +482,8 @@ scoped_refptr<network::ResourceRequestBody> GetRequestBodyForWebHTTPBody(
               base::Time::FromDoubleT(element.modification_time));
         }
         break;
-      case WebHTTPBody::Element::kTypeFileSystemURL: {
-        GURL file_system_url = element.file_system_url;
-        DCHECK(file_system_url.SchemeIsFileSystem());
-        request_body->AppendFileSystemFileRange(
-            file_system_url, static_cast<uint64_t>(element.file_start),
-            static_cast<uint64_t>(element.file_length),
-            base::Time::FromDoubleT(element.modification_time));
-        break;
-      }
       case WebHTTPBody::Element::kTypeBlob: {
-        if (base::FeatureList::IsEnabled(features::kNetworkService)) {
+        if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
           if (!blob_registry.is_bound()) {
             if (ChildThreadImpl::current()) {
               ChildThreadImpl::current()->GetConnector()->BindInterface(
@@ -502,7 +493,7 @@ scoped_refptr<network::ResourceRequestBody> GetRequestBodyForWebHTTPBody(
               // InterfaceProvider instead (crbug.com/734210).
               blink::Platform::Current()
                   ->MainThread()
-                  ->GetSingleThreadTaskRunner()
+                  ->GetTaskRunner()
                   ->PostTask(FROM_HERE,
                              base::BindOnce(&GetBlobRegistry,
                                             MakeRequest(&blob_registry)));
@@ -640,16 +631,6 @@ blink::WebMixedContentContextType GetMixedContentContextTypeForWebURLRequest(
 
   return blink::WebMixedContent::ContextTypeFromRequestContext(
       request.GetRequestContext(), block_mixed_plugin_content);
-}
-
-STATIC_ASSERT_ENUM(ServiceWorkerMode::NONE,
-                   WebURLRequest::ServiceWorkerMode::kNone);
-STATIC_ASSERT_ENUM(ServiceWorkerMode::ALL,
-                   WebURLRequest::ServiceWorkerMode::kAll);
-
-ServiceWorkerMode GetServiceWorkerModeForWebURLRequest(
-    const WebURLRequest& request) {
-  return static_cast<ServiceWorkerMode>(request.GetServiceWorkerMode());
 }
 
 #undef STATIC_ASSERT_ENUM

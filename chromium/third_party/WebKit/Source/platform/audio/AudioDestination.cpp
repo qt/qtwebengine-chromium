@@ -115,7 +115,8 @@ void AudioDestination::Render(const WebVector<float*>& destination_data,
   // (crbug.com/692423)
   if (!fifo_ || fifo_->length() < number_of_frames) {
     TRACE_EVENT_INSTANT1(
-        "webaudio", "AudioDestination::Render - not enough data in fifo",
+        "webaudio",
+        "AudioDestination::Render - FIFO not ready or the size is too small",
         TRACE_EVENT_SCOPE_THREAD, "fifo length", fifo_ ? fifo_->length() : 0);
     TRACE_EVENT_END2("webaudio", "AudioDestination::Render", "timestamp (s)",
                      delay_timestamp, "delay (s)", delay);
@@ -133,7 +134,7 @@ void AudioDestination::Render(const WebVector<float*>& destination_data,
   // is available.
   if (worklet_backing_thread_) {
     PostCrossThreadTask(
-        *worklet_backing_thread_->GetWebTaskRunner(), FROM_HERE,
+        *worklet_backing_thread_->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(&AudioDestination::RequestRender, WrapRefCounted(this),
                         number_of_frames, frames_to_render, delay,
                         delay_timestamp, prior_frames_skipped));

@@ -13,7 +13,7 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-shared.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 
 #if INSIDE_BLINK
 #include <utility>
@@ -21,7 +21,7 @@
 #include "platform/weborigin/Referrer.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/text/StringHash.h"
-#include "third_party/WebKit/common/blob/blob.mojom-blink.h"  // nogncheck
+#include "third_party/WebKit/public/mojom/blob/blob.mojom-blink.h"  // nogncheck
 #endif
 
 namespace blink {

@@ -48,7 +48,7 @@ class MODULES_EXPORT AnimationWorkletGlobalScope
 
   // Registers a animator definition with the given name and constructor.
   void registerAnimator(const String& name,
-                        const ScriptValue& ctorValue,
+                        const ScriptValue& constructor_value,
                         ExceptionState&);
 
   AnimatorDefinition* FindDefinitionForTest(const String& name);
@@ -59,7 +59,7 @@ class MODULES_EXPORT AnimationWorkletGlobalScope
                               v8::Isolate*,
                               WorkerThread*);
 
-  Animator* GetAnimatorFor(int player_id, const String& name);
+  Animator* GetAnimatorFor(int animation_id, const String& name);
   typedef HeapHashMap<String, TraceWrapperMember<AnimatorDefinition>>
       DefinitionMap;
   DefinitionMap animator_definitions_;

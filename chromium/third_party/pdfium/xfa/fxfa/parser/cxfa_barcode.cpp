@@ -8,10 +8,11 @@
 
 #include "fxjs/xfa/cjx_barcode.h"
 #include "third_party/base/ptr_util.h"
+#include "xfa/fxfa/parser/cxfa_measurement.h"
 
 namespace {
 
-const CXFA_Node::AttributeData kAttributeData[] = {
+const CXFA_Node::AttributeData kBarcodeAttributeData[] = {
     {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
     {XFA_Attribute::DataRowCount, XFA_AttributeType::CData, nullptr},
     {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
@@ -39,7 +40,7 @@ const CXFA_Node::AttributeData kAttributeData[] = {
     {XFA_Attribute::EndChar, XFA_AttributeType::CData, nullptr},
     {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-constexpr wchar_t kName[] = L"barcode";
+constexpr wchar_t kBarcodeName[] = L"barcode";
 
 }  // namespace
 
@@ -50,8 +51,153 @@ CXFA_Barcode::CXFA_Barcode(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_ObjectType::Node,
                 XFA_Element::Barcode,
                 nullptr,
-                kAttributeData,
-                kName,
+                kBarcodeAttributeData,
+                kBarcodeName,
                 pdfium::MakeUnique<CJX_Barcode>(this)) {}
 
 CXFA_Barcode::~CXFA_Barcode() {}
+
+XFA_FFWidgetType CXFA_Barcode::GetDefaultFFWidgetType() const {
+  return XFA_FFWidgetType::kBarcode;
+}
+
+WideString CXFA_Barcode::GetBarcodeType() {
+  return WideString(JSObject()->GetCData(XFA_Attribute::Type));
+}
+
+Optional<BC_CHAR_ENCODING> CXFA_Barcode::GetCharEncoding() {
+  Optional<WideString> wsCharEncoding =
+      JSObject()->TryCData(XFA_Attribute::CharEncoding, true);
+  if (!wsCharEncoding)
+    return {};
+  if (wsCharEncoding->CompareNoCase(L"UTF-16"))
+    return {CHAR_ENCODING_UNICODE};
+  if (wsCharEncoding->CompareNoCase(L"UTF-8"))
+    return {CHAR_ENCODING_UTF8};
+  return {};
+}
+
+Optional<bool> CXFA_Barcode::GetChecksum() {
+  Optional<XFA_AttributeEnum> checksum =
+      JSObject()->TryEnum(XFA_Attribute::Checksum, true);
+  if (!checksum)
+    return {};
+
+  switch (*checksum) {
+    case XFA_AttributeEnum::None:
+      return {false};
+    case XFA_AttributeEnum::Auto:
+      return {true};
+    case XFA_AttributeEnum::Checksum_1mod10:
+    case XFA_AttributeEnum::Checksum_1mod10_1mod11:
+    case XFA_AttributeEnum::Checksum_2mod10:
+    default:
+      break;
+  }
+  return {};
+}
+
+Optional<int32_t> CXFA_Barcode::GetDataLength() {
+  Optional<WideString> wsDataLength =
+      JSObject()->TryCData(XFA_Attribute::DataLength, true);
+  if (!wsDataLength)
+    return {};
+
+  return {FXSYS_wtoi(wsDataLength->c_str())};
+}
+
+Optional<char> CXFA_Barcode::GetStartChar() {
+  Optional<WideString> wsStartEndChar =
+      JSObject()->TryCData(XFA_Attribute::StartChar, true);
+  if (!wsStartEndChar || wsStartEndChar->IsEmpty())
+    return {};
+
+  return {static_cast<char>((*wsStartEndChar)[0])};
+}
+
+Optional<char> CXFA_Barcode::GetEndChar() {
+  Optional<WideString> wsStartEndChar =
+      JSObject()->TryCData(XFA_Attribute::EndChar, true);
+  if (!wsStartEndChar || wsStartEndChar->IsEmpty())
+    return {};
+
+  return {static_cast<char>((*wsStartEndChar)[0])};
+}
+
+Optional<int32_t> CXFA_Barcode::GetECLevel() {
+  Optional<WideString> wsECLevel =
+      JSObject()->TryCData(XFA_Attribute::ErrorCorrectionLevel, true);
+  if (!wsECLevel)
+    return {};
+  return {FXSYS_wtoi(wsECLevel->c_str())};
+}
+
+Optional<int32_t> CXFA_Barcode::GetModuleWidth() {
+  Optional<CXFA_Measurement> moduleWidthHeight =
+      JSObject()->TryMeasure(XFA_Attribute::ModuleWidth, true);
+  if (!moduleWidthHeight)
+    return {};
+
+  return {static_cast<int32_t>(moduleWidthHeight->ToUnit(XFA_Unit::Pt))};
+}
+
+Optional<int32_t> CXFA_Barcode::GetModuleHeight() {
+  Optional<CXFA_Measurement> moduleWidthHeight =
+      JSObject()->TryMeasure(XFA_Attribute::ModuleHeight, true);
+  if (!moduleWidthHeight)
+    return {};
+
+  return {static_cast<int32_t>(moduleWidthHeight->ToUnit(XFA_Unit::Pt))};
+}
+
+Optional<bool> CXFA_Barcode::GetPrintChecksum() {
+  return JSObject()->TryBoolean(XFA_Attribute::PrintCheckDigit, true);
+}
+
+Optional<BC_TEXT_LOC> CXFA_Barcode::GetTextLocation() {
+  Optional<XFA_AttributeEnum> textLocation =
+      JSObject()->TryEnum(XFA_Attribute::TextLocation, true);
+  if (!textLocation)
+    return {};
+
+  switch (*textLocation) {
+    case XFA_AttributeEnum::None:
+      return {BC_TEXT_LOC_NONE};
+    case XFA_AttributeEnum::Above:
+      return {BC_TEXT_LOC_ABOVE};
+    case XFA_AttributeEnum::Below:
+      return {BC_TEXT_LOC_BELOW};
+    case XFA_AttributeEnum::AboveEmbedded:
+      return {BC_TEXT_LOC_ABOVEEMBED};
+    case XFA_AttributeEnum::BelowEmbedded:
+      return {BC_TEXT_LOC_BELOWEMBED};
+    default:
+      break;
+  }
+  return {};
+}
+
+Optional<bool> CXFA_Barcode::GetTruncate() {
+  return JSObject()->TryBoolean(XFA_Attribute::Truncate, true);
+}
+
+Optional<int8_t> CXFA_Barcode::GetWideNarrowRatio() {
+  Optional<WideString> wsWideNarrowRatio =
+      JSObject()->TryCData(XFA_Attribute::WideNarrowRatio, true);
+  if (!wsWideNarrowRatio)
+    return {};
+
+  Optional<size_t> ptPos = wsWideNarrowRatio->Find(':');
+  if (!ptPos)
+    return {static_cast<int8_t>(FXSYS_wtoi(wsWideNarrowRatio->c_str()))};
+
+  int32_t fB = FXSYS_wtoi(
+      wsWideNarrowRatio->Right(wsWideNarrowRatio->GetLength() - (*ptPos + 1))
+          .c_str());
+  if (!fB)
+    return {0};
+
+  int32_t fA = FXSYS_wtoi(wsWideNarrowRatio->Left(*ptPos).c_str());
+  float result = static_cast<float>(fA) / static_cast<float>(fB);
+  return {static_cast<int8_t>(result)};
+}

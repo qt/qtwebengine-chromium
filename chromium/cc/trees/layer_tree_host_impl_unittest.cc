@@ -41,7 +41,6 @@
 #include "cc/test/fake_layer_tree_frame_sink.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_mask_layer_impl.h"
-#include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/fake_raster_source.h"
 #include "cc/test/fake_recording_source.h"
@@ -51,7 +50,6 @@
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/skia_common.h"
 #include "cc/test/test_task_graph_runner.h"
-#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/draw_property_utils.h"
 #include "cc/trees/effect_node.h"
 #include "cc/trees/latency_info_swap_promise.h"
@@ -71,7 +69,9 @@
 #include "components/viz/common/quads/tile_draw_quad.h"
 #include "components/viz/service/display/gl_renderer.h"
 #include "components/viz/test/begin_frame_args_test.h"
+#include "components/viz/test/fake_output_surface.h"
 #include "components/viz/test/test_layer_tree_frame_sink.h"
+#include "components/viz/test/test_web_graphics_context_3d.h"
 #include "media/base/media.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -93,6 +93,7 @@ using ::testing::AnyNumber;
 using ::testing::AtLeast;
 using ::testing::_;
 using media::VideoFrame;
+using viz::TestWebGraphicsContext3D;
 
 namespace cc {
 namespace {
@@ -134,7 +135,6 @@ class LayerTreeHostImplTest : public testing::Test,
     LayerTreeSettings settings;
     settings.enable_surface_synchronization = true;
     settings.minimum_occlusion_tracking_size = gfx::Size();
-    settings.resource_settings.texture_id_allocation_chunk_size = 1;
     return settings;
   }
 
@@ -1876,8 +1876,8 @@ TEST_F(CommitToPendingTreeLayerTreeHostImplTest,
 
   host_impl_->pending_tree()->SetElementIdsForTesting();
 
-  AddAnimatedTransformToElementWithPlayer(child->element_id(), timeline(), 10.0,
-                                          3, 0);
+  AddAnimatedTransformToElementWithAnimation(child->element_id(), timeline(),
+                                             10.0, 3, 0);
   host_impl_->pending_tree()->BuildPropertyTreesForTesting();
 
   EXPECT_FALSE(did_request_next_frame_);
@@ -1937,8 +1937,8 @@ TEST_F(CommitToPendingTreeLayerTreeHostImplTest,
   start.AppendTranslate(6.f, 7.f, 0.f);
   TransformOperations end;
   end.AppendTranslate(8.f, 9.f, 0.f);
-  AddAnimatedTransformToElementWithPlayer(child->element_id(), timeline(), 4.0,
-                                          start, end);
+  AddAnimatedTransformToElementWithAnimation(child->element_id(), timeline(),
+                                             4.0, start, end);
   host_impl_->active_tree()->BuildPropertyTreesForTesting();
 
   base::TimeTicks now = base::TimeTicks::Now();
@@ -1999,8 +1999,8 @@ TEST_F(LayerTreeHostImplTest, AnimationSchedulingCommitToActiveTree) {
 
   host_impl_->active_tree()->SetElementIdsForTesting();
 
-  AddAnimatedTransformToElementWithPlayer(child->element_id(), timeline(), 10.0,
-                                          3, 0);
+  AddAnimatedTransformToElementWithAnimation(child->element_id(), timeline(),
+                                             10.0, 3, 0);
 
   // Set up the property trees so that UpdateDrawProperties will work in
   // CommitComplete below.
@@ -2048,8 +2048,8 @@ TEST_F(LayerTreeHostImplTest, AnimationSchedulingOnLayerDestruction) {
   start.AppendTranslate(6.f, 7.f, 0.f);
   TransformOperations end;
   end.AppendTranslate(8.f, 9.f, 0.f);
-  AddAnimatedTransformToElementWithPlayer(child->element_id(), timeline(), 4.0,
-                                          start, end);
+  AddAnimatedTransformToElementWithAnimation(child->element_id(), timeline(),
+                                             4.0, start, end);
   host_impl_->active_tree()->BuildPropertyTreesForTesting();
 
   base::TimeTicks now = base::TimeTicks::Now();
@@ -2175,6 +2175,81 @@ TEST_F(LayerTreeHostImplTest, ImplPinchZoom) {
         *scroll_info.get(), scroll_layer->element_id(),
         gfx::Vector2d(0, scroll_delta.y() / page_scale_delta)));
   }
+}
+
+TEST_F(LayerTreeHostImplTest, ViewportScrollbarGeometry) {
+  // Tests for correct behavior of solid color scrollbars on unscrollable pages
+  // under tricky fractional scale/size issues.
+
+  // Nexus 6 viewport size.
+  const gfx::Size viewport_size(412, 604);
+
+  // The content size of a non-scrollable page we'd expect given Android's
+  // behavior of a 980px layout width on non-mobile pages (often ceiled to 981
+  // due to fractions resulting from DSF). Due to floating point error,
+  // viewport_size.height() / minimum_scale ~= 1438.165 < 1439. Ensure we snap
+  // correctly and err on the side of not showing the scrollbars.
+  const gfx::Size content_size(981, 1439);
+  const float minimum_scale =
+      viewport_size.width() / static_cast<float>(content_size.width());
+
+  // Since the page is unscrollable, the outer viewport matches the content
+  // size.
+  const gfx::Size outer_viewport_size = content_size;
+
+  SolidColorScrollbarLayerImpl* v_scrollbar;
+  SolidColorScrollbarLayerImpl* h_scrollbar;
+
+  // Setup
+  {
+    LayerTreeSettings settings = DefaultSettings();
+    CreateHostImpl(settings, CreateLayerTreeFrameSink());
+    LayerTreeImpl* active_tree = host_impl_->active_tree();
+    active_tree->PushPageScaleFromMainThread(1.f, minimum_scale, 4.f);
+
+    CreateBasicVirtualViewportLayers(viewport_size, content_size);
+
+    // When Chrome on Android loads a non-mobile page, it resizes the main
+    // frame (outer viewport) such that it matches the width of the content,
+    // preventing horizontal scrolling. Replicate that behavior here.
+    host_impl_->OuterViewportScrollLayer()->SetScrollable(outer_viewport_size);
+    LayerImpl* outer_clip =
+        host_impl_->OuterViewportScrollLayer()->test_properties()->parent;
+    outer_clip->SetBounds(outer_viewport_size);
+
+    // Add scrollbars. They will always exist - even if unscrollable - but their
+    // visibility will be determined by whether the content can be scrolled.
+    {
+      std::unique_ptr<SolidColorScrollbarLayerImpl> v_scrollbar_unique =
+          SolidColorScrollbarLayerImpl::Create(active_tree, 400, VERTICAL, 10,
+                                               0, false, true);
+      std::unique_ptr<SolidColorScrollbarLayerImpl> h_scrollbar_unique =
+          SolidColorScrollbarLayerImpl::Create(active_tree, 401, HORIZONTAL, 10,
+                                               0, false, true);
+      v_scrollbar = v_scrollbar_unique.get();
+      h_scrollbar = h_scrollbar_unique.get();
+
+      LayerImpl* scroll = active_tree->OuterViewportScrollLayer();
+      LayerImpl* root = active_tree->InnerViewportContainerLayer();
+      v_scrollbar_unique->SetScrollElementId(scroll->element_id());
+      h_scrollbar_unique->SetScrollElementId(scroll->element_id());
+      root->test_properties()->AddChild(std::move(v_scrollbar_unique));
+      root->test_properties()->AddChild(std::move(h_scrollbar_unique));
+    }
+
+    host_impl_->active_tree()->BuildPropertyTreesForTesting();
+    host_impl_->active_tree()->DidBecomeActive();
+  }
+
+  // Zoom out to the minimum scale. The scrollbars shoud not be scrollable.
+  host_impl_->active_tree()->SetPageScaleOnActiveTree(0.f);
+  EXPECT_FALSE(v_scrollbar->CanScrollOrientation());
+  EXPECT_FALSE(h_scrollbar->CanScrollOrientation());
+
+  // Zoom in a little and confirm that they're now scrollable.
+  host_impl_->active_tree()->SetPageScaleOnActiveTree(minimum_scale * 1.05f);
+  EXPECT_TRUE(v_scrollbar->CanScrollOrientation());
+  EXPECT_TRUE(h_scrollbar->CanScrollOrientation());
 }
 
 TEST_F(LayerTreeHostImplTest, ViewportScrollOrder) {
@@ -4273,31 +4348,56 @@ TEST_F(LayerTreeHostImplTest, ActivationDependenciesInMetadata) {
     child->SetPosition(gfx::PointF(25.f * i, 0.f));
     child->SetBounds(gfx::Size(1, 1));
     child->SetDrawsContent(true);
-    child->SetPrimarySurfaceId(primary_surfaces[i], base::nullopt);
+    child->SetPrimarySurfaceId(primary_surfaces[i], 2u);
     child->SetFallbackSurfaceId(fallback_surfaces[i]);
     root->test_properties()->AddChild(std::move(child));
   }
 
   base::flat_set<viz::SurfaceId> fallback_surfaces_set;
-  for (size_t i = 0; i < fallback_surfaces.size(); ++i) {
+  for (size_t i = 0; i < fallback_surfaces.size(); ++i)
     fallback_surfaces_set.insert(fallback_surfaces[i]);
-  }
 
   host_impl_->active_tree()->BuildPropertyTreesForTesting();
   host_impl_->active_tree()->SetSurfaceLayerIds(fallback_surfaces_set);
+  host_impl_->SetFullViewportDamage();
   DrawFrame();
 
-  auto* fake_layer_tree_frame_sink =
-      static_cast<FakeLayerTreeFrameSink*>(host_impl_->layer_tree_frame_sink());
-  const viz::CompositorFrameMetadata& metadata =
-      fake_layer_tree_frame_sink->last_sent_frame()->metadata;
-  EXPECT_THAT(
-      metadata.activation_dependencies,
-      testing::UnorderedElementsAre(primary_surfaces[0], primary_surfaces[1]));
-  EXPECT_THAT(
-      metadata.referenced_surfaces,
-      testing::UnorderedElementsAre(fallback_surfaces[0], fallback_surfaces[1],
-                                    fallback_surfaces[2]));
+  {
+    auto* fake_layer_tree_frame_sink = static_cast<FakeLayerTreeFrameSink*>(
+        host_impl_->layer_tree_frame_sink());
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    EXPECT_THAT(metadata.activation_dependencies,
+                testing::UnorderedElementsAre(primary_surfaces[0],
+                                              primary_surfaces[1]));
+    EXPECT_THAT(
+        metadata.referenced_surfaces,
+        testing::UnorderedElementsAre(
+            fallback_surfaces[0], fallback_surfaces[1], fallback_surfaces[2]));
+    EXPECT_EQ(2u, metadata.deadline.deadline_in_frames());
+    EXPECT_FALSE(metadata.deadline.use_default_lower_bound_deadline());
+  }
+
+  // Verify that on the next frame generation that the deadline is reset.
+  host_impl_->SetFullViewportDamage();
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+  DrawFrame();
+
+  {
+    auto* fake_layer_tree_frame_sink = static_cast<FakeLayerTreeFrameSink*>(
+        host_impl_->layer_tree_frame_sink());
+    const viz::CompositorFrameMetadata& metadata =
+        fake_layer_tree_frame_sink->last_sent_frame()->metadata;
+    EXPECT_THAT(metadata.activation_dependencies,
+                testing::UnorderedElementsAre(primary_surfaces[0],
+                                              primary_surfaces[1]));
+    EXPECT_THAT(
+        metadata.referenced_surfaces,
+        testing::UnorderedElementsAre(
+            fallback_surfaces[0], fallback_surfaces[1], fallback_surfaces[2]));
+    EXPECT_EQ(0u, metadata.deadline.deadline_in_frames());
+    EXPECT_FALSE(metadata.deadline.use_default_lower_bound_deadline());
+  }
 }
 
 TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
@@ -4314,7 +4414,6 @@ TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
     EXPECT_EQ(gfx::SizeF(100.f, 100.f), metadata.root_layer_size);
     EXPECT_EQ(0.5f, metadata.min_page_scale_factor);
     EXPECT_EQ(4.f, metadata.max_page_scale_factor);
-    EXPECT_FALSE(metadata.root_overflow_x_hidden);
     EXPECT_FALSE(metadata.root_overflow_y_hidden);
   }
 
@@ -4347,7 +4446,6 @@ TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     viz::CompositorFrameMetadata metadata =
         host_impl_->MakeCompositorFrameMetadata();
-    EXPECT_TRUE(metadata.root_overflow_x_hidden);
     EXPECT_FALSE(metadata.root_overflow_y_hidden);
 
     host_impl_->active_tree()
@@ -4356,7 +4454,6 @@ TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
         ->user_scrollable_vertical = false;
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     metadata = host_impl_->MakeCompositorFrameMetadata();
-    EXPECT_TRUE(metadata.root_overflow_x_hidden);
     EXPECT_TRUE(metadata.root_overflow_y_hidden);
   }
 
@@ -4373,7 +4470,6 @@ TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     viz::CompositorFrameMetadata metadata =
         host_impl_->MakeCompositorFrameMetadata();
-    EXPECT_FALSE(metadata.root_overflow_x_hidden);
     EXPECT_FALSE(metadata.root_overflow_y_hidden);
   }
 
@@ -4387,7 +4483,6 @@ TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     viz::CompositorFrameMetadata metadata =
         host_impl_->MakeCompositorFrameMetadata();
-    EXPECT_TRUE(metadata.root_overflow_x_hidden);
     EXPECT_FALSE(metadata.root_overflow_y_hidden);
 
     host_impl_->active_tree()
@@ -4396,7 +4491,6 @@ TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
         ->user_scrollable_vertical = false;
     host_impl_->active_tree()->BuildPropertyTreesForTesting();
     metadata = host_impl_->MakeCompositorFrameMetadata();
-    EXPECT_TRUE(metadata.root_overflow_x_hidden);
     EXPECT_TRUE(metadata.root_overflow_y_hidden);
   }
 
@@ -4494,6 +4588,80 @@ class DidDrawCheckLayer : public LayerImpl {
   bool append_quads_called_;
   bool did_draw_called_;
 };
+
+TEST_F(LayerTreeHostImplTest, DamageShouldNotCareAboutContributingLayers) {
+  host_impl_->SetViewportSize(gfx::Size(10, 10));
+  host_impl_->active_tree()->SetRootLayerForTesting(
+      DidDrawCheckLayer::Create(host_impl_->active_tree(), 1));
+  auto* root =
+      static_cast<DidDrawCheckLayer*>(*host_impl_->active_tree()->begin());
+
+  // Make a child layer that draws.
+  root->test_properties()->AddChild(
+      SolidColorLayerImpl::Create(host_impl_->active_tree(), 2));
+  auto* layer =
+      static_cast<SolidColorLayerImpl*>(root->test_properties()->children[0]);
+  layer->SetBounds(gfx::Size(10, 10));
+  layer->SetDrawsContent(true);
+  layer->SetBackgroundColor(SK_ColorRED);
+
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+
+  {
+    TestFrameData frame;
+    EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
+
+    EXPECT_FALSE(frame.has_no_damage);
+    EXPECT_NE(frame.render_passes.size(), 0u);
+    size_t total_quad_count = 0;
+    for (const auto& pass : frame.render_passes)
+      total_quad_count += pass->quad_list.size();
+    EXPECT_NE(total_quad_count, 0u);
+    host_impl_->DrawLayers(&frame);
+    host_impl_->DidDrawAllLayers(frame);
+  }
+
+  // Stops the child layer from drawing. We should have damage from this but
+  // should not have any quads. This should clear the damaged area.
+  layer->SetDrawsContent(false);
+  root->test_properties()->opacity = 0.f;
+
+  host_impl_->active_tree()->BuildPropertyTreesForTesting();
+  // The background is default to transparent. If the background is opaque, we
+  // would fill the frame with background colour when no layers are contributing
+  // quads. This means we would end up with 0 quad.
+  EXPECT_EQ(host_impl_->active_tree()->background_color(), SK_ColorTRANSPARENT);
+
+  {
+    TestFrameData frame;
+    EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
+
+    EXPECT_FALSE(frame.has_no_damage);
+    EXPECT_NE(frame.render_passes.size(), 0u);
+    size_t total_quad_count = 0;
+    for (const auto& pass : frame.render_passes)
+      total_quad_count += pass->quad_list.size();
+    EXPECT_EQ(total_quad_count, 0u);
+    host_impl_->DrawLayers(&frame);
+    host_impl_->DidDrawAllLayers(frame);
+  }
+
+  // Now tries to draw again. Nothing changes, so should have no damage, no
+  // render pass, and no quad.
+  {
+    TestFrameData frame;
+    EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
+
+    EXPECT_TRUE(frame.has_no_damage);
+    EXPECT_EQ(frame.render_passes.size(), 0u);
+    size_t total_quad_count = 0;
+    for (const auto& pass : frame.render_passes)
+      total_quad_count += pass->quad_list.size();
+    EXPECT_EQ(total_quad_count, 0u);
+    host_impl_->DrawLayers(&frame);
+    host_impl_->DidDrawAllLayers(frame);
+  }
+}
 
 TEST_F(LayerTreeHostImplTest, WillDrawReturningFalseDoesNotCall) {
   // The root layer is always drawn, so run this test on a child layer that
@@ -4706,8 +4874,8 @@ class MissingTextureAnimatingLayer : public DidDrawCheckLayer {
         had_incomplete_tile_(had_incomplete_tile) {
     if (animating) {
       this->SetElementId(LayerIdToElementIdForTesting(id));
-      AddAnimatedTransformToElementWithPlayer(this->element_id(), timeline,
-                                              10.0, 3, 0);
+      AddAnimatedTransformToElementWithAnimation(this->element_id(), timeline,
+                                                 10.0, 3, 0);
     }
   }
 
@@ -4839,7 +5007,7 @@ TEST_F(CommitToPendingTreeLayerTreeHostImplTest,
       to_remove.push_back(child);
     for (auto* child : to_remove)
       root->test_properties()->RemoveChild(child);
-    timeline()->ClearPlayers();
+    timeline()->ClearAnimations();
 
     std::ostringstream scope;
     scope << "Test case: " << i;
@@ -8773,8 +8941,8 @@ class FakeDrawableLayerImpl : public LayerImpl {
 // submitted to the LayerTreeFrameSink, where it should request to swap only
 // the sub-buffer that is damaged.
 TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
-  scoped_refptr<TestContextProvider> context_provider(
-      TestContextProvider::Create());
+  scoped_refptr<viz::TestContextProvider> context_provider(
+      viz::TestContextProvider::Create());
   context_provider->BindToCurrentThread();
   context_provider->TestContext3d()->set_have_post_sub_buffer(true);
 
@@ -9246,30 +9414,20 @@ TEST_F(LayerTreeHostImplTest, MemoryLimits) {
   host_impl_ = nullptr;
 
   const size_t kGpuByteLimit = 1234321;
-  const size_t kSoftwareByteLimit = 4321234;
   const size_t kGpuResourceLimit = 2345432;
-  const size_t kSoftwareResourceLimit = 5432345;
   const gpu::MemoryAllocation::PriorityCutoff kGpuCutoff =
       gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING;
-  const gpu::MemoryAllocation::PriorityCutoff kSoftwareCutoff =
-      gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE;
 
   const TileMemoryLimitPolicy kGpuTileCutoff =
       ManagedMemoryPolicy::PriorityCutoffToTileMemoryLimitPolicy(kGpuCutoff);
-  const TileMemoryLimitPolicy kSoftwareTileCutoff =
-      ManagedMemoryPolicy::PriorityCutoffToTileMemoryLimitPolicy(
-          kSoftwareCutoff);
   const TileMemoryLimitPolicy kNothingTileCutoff =
       ManagedMemoryPolicy::PriorityCutoffToTileMemoryLimitPolicy(
           gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING);
   EXPECT_NE(kGpuTileCutoff, kNothingTileCutoff);
-  EXPECT_NE(kSoftwareTileCutoff, kNothingTileCutoff);
 
   LayerTreeSettings settings = DefaultSettings();
-  settings.gpu_memory_policy =
+  settings.memory_policy =
       ManagedMemoryPolicy(kGpuByteLimit, kGpuCutoff, kGpuResourceLimit);
-  settings.software_memory_policy = ManagedMemoryPolicy(
-      kSoftwareByteLimit, kSoftwareCutoff, kSoftwareResourceLimit);
   host_impl_ = LayerTreeHostImpl::Create(
       settings, this, &task_runner_provider_, &stats_instrumentation_,
       &task_graph_runner_,
@@ -9310,9 +9468,9 @@ TEST_F(LayerTreeHostImplTest, MemoryLimits) {
   host_impl_->InitializeRenderer(layer_tree_frame_sink_.get());
   {
     const auto& state = host_impl_->global_tile_state();
-    EXPECT_EQ(kSoftwareByteLimit, state.hard_memory_limit_in_bytes);
-    EXPECT_EQ(kSoftwareResourceLimit, state.num_resources_limit);
-    EXPECT_EQ(kSoftwareTileCutoff, state.memory_limit_policy);
+    EXPECT_EQ(kGpuByteLimit, state.hard_memory_limit_in_bytes);
+    EXPECT_EQ(kGpuResourceLimit, state.num_resources_limit);
+    EXPECT_EQ(kGpuTileCutoff, state.memory_limit_policy);
   }
 
   // Not visible, drops to 0.
@@ -9320,7 +9478,7 @@ TEST_F(LayerTreeHostImplTest, MemoryLimits) {
   {
     const auto& state = host_impl_->global_tile_state();
     EXPECT_EQ(0u, state.hard_memory_limit_in_bytes);
-    EXPECT_EQ(kSoftwareResourceLimit, state.num_resources_limit);
+    EXPECT_EQ(kGpuResourceLimit, state.num_resources_limit);
     EXPECT_EQ(kNothingTileCutoff, state.memory_limit_policy);
   }
 
@@ -9328,9 +9486,9 @@ TEST_F(LayerTreeHostImplTest, MemoryLimits) {
   host_impl_->SetVisible(true);
   {
     const auto& state = host_impl_->global_tile_state();
-    EXPECT_EQ(kSoftwareByteLimit, state.hard_memory_limit_in_bytes);
-    EXPECT_EQ(kSoftwareResourceLimit, state.num_resources_limit);
-    EXPECT_EQ(kSoftwareTileCutoff, state.memory_limit_policy);
+    EXPECT_EQ(kGpuByteLimit, state.hard_memory_limit_in_bytes);
+    EXPECT_EQ(kGpuResourceLimit, state.num_resources_limit);
+    EXPECT_EQ(kGpuTileCutoff, state.memory_limit_policy);
   }
 }
 
@@ -9555,7 +9713,8 @@ class FrameSinkClient : public viz::TestLayerTreeFrameSinkClient {
   std::unique_ptr<viz::OutputSurface> CreateDisplayOutputSurface(
       scoped_refptr<viz::ContextProvider> compositor_context_provider)
       override {
-    return FakeOutputSurface::Create3d(std::move(display_context_provider_));
+    return viz::FakeOutputSurface::Create3d(
+        std::move(display_context_provider_));
   }
 
   void DisplayReceivedLocalSurfaceId(
@@ -9572,17 +9731,18 @@ class FrameSinkClient : public viz::TestLayerTreeFrameSinkClient {
 };
 
 TEST_F(LayerTreeHostImplTest, ShutdownReleasesContext) {
-  scoped_refptr<TestContextProvider> context_provider =
-      TestContextProvider::Create();
+  scoped_refptr<viz::TestContextProvider> context_provider =
+      viz::TestContextProvider::Create();
   FrameSinkClient test_client(context_provider);
 
   constexpr bool synchronous_composite = true;
   constexpr bool disable_display_vsync = false;
   constexpr double refresh_rate = 60.0;
   auto layer_tree_frame_sink = std::make_unique<viz::TestLayerTreeFrameSink>(
-      context_provider, TestContextProvider::CreateWorker(), nullptr, nullptr,
-      viz::RendererSettings(), base::ThreadTaskRunnerHandle::Get().get(),
-      synchronous_composite, disable_display_vsync, refresh_rate);
+      context_provider, viz::TestContextProvider::CreateWorker(), nullptr,
+      nullptr, viz::RendererSettings(),
+      base::ThreadTaskRunnerHandle::Get().get(), synchronous_composite,
+      disable_display_vsync, refresh_rate);
   layer_tree_frame_sink->SetClient(&test_client);
 
   CreateHostImpl(DefaultSettings(), std::move(layer_tree_frame_sink));
@@ -12058,7 +12218,7 @@ TEST_F(LayerTreeHostImplTimelinesTest, ScrollAnimatedAborted) {
 
   // The instant scroll should have marked the smooth scroll animation as
   // aborted.
-  EXPECT_FALSE(GetImplAnimationHost()->HasTickingAnimationForTesting(
+  EXPECT_FALSE(GetImplAnimationHost()->HasTickingKeyframeModelForTesting(
       scrolling_layer->element_id()));
 
   EXPECT_VECTOR2DF_EQ(gfx::ScrollOffset(0, y + 50),
@@ -13537,11 +13697,12 @@ TEST_F(LayerTreeHostImplTest, RasterColorSpace) {
   LayerTreeSettings settings = DefaultSettings();
   CreateHostImpl(settings, CreateLayerTreeFrameSink());
   // The default raster color space should be sRGB.
-  EXPECT_EQ(host_impl_->GetRasterColorSpace(), gfx::ColorSpace::CreateSRGB());
+  EXPECT_EQ(host_impl_->GetRasterColorSpace().color_space,
+            gfx::ColorSpace::CreateSRGB());
   // The raster color space should update with tree activation.
   host_impl_->active_tree()->SetRasterColorSpace(
-      gfx::ColorSpace::CreateDisplayP3D65());
-  EXPECT_EQ(host_impl_->GetRasterColorSpace(),
+      2, gfx::ColorSpace::CreateDisplayP3D65());
+  EXPECT_EQ(host_impl_->GetRasterColorSpace().color_space,
             gfx::ColorSpace::CreateDisplayP3D65());
 }
 
@@ -13549,10 +13710,12 @@ TEST_F(LayerTreeHostImplTest, RasterColorSpaceSoftware) {
   LayerTreeSettings settings = DefaultSettings();
   CreateHostImpl(settings, FakeLayerTreeFrameSink::CreateSoftware());
   // Software composited resources should always use sRGB as their color space.
-  EXPECT_EQ(host_impl_->GetRasterColorSpace(), gfx::ColorSpace::CreateSRGB());
+  EXPECT_EQ(host_impl_->GetRasterColorSpace().color_space,
+            gfx::ColorSpace::CreateSRGB());
   host_impl_->active_tree()->SetRasterColorSpace(
-      gfx::ColorSpace::CreateDisplayP3D65());
-  EXPECT_EQ(host_impl_->GetRasterColorSpace(), gfx::ColorSpace::CreateSRGB());
+      2, gfx::ColorSpace::CreateDisplayP3D65());
+  EXPECT_EQ(host_impl_->GetRasterColorSpace().color_space,
+            gfx::ColorSpace::CreateSRGB());
 }
 
 TEST_F(LayerTreeHostImplTest, UpdatedTilingsForNonDrawingLayers) {
@@ -13597,7 +13760,7 @@ TEST_F(LayerTreeHostImplTest, UpdatedTilingsForNonDrawingLayers) {
   TransformOperations start_transform_operations;
   start_transform_operations.AppendMatrix(singular);
   TransformOperations end_transform_operations;
-  AddAnimatedTransformToElementWithPlayer(
+  AddAnimatedTransformToElementWithAnimation(
       animated_transform_layer->element_id(), timeline(), 10.0,
       start_transform_operations, end_transform_operations);
 

@@ -77,11 +77,11 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   USING_FAST_MALLOC(GraphicsLayer);
 
  public:
-  static std::unique_ptr<GraphicsLayer> Create(GraphicsLayerClient*);
+  static std::unique_ptr<GraphicsLayer> Create(GraphicsLayerClient&);
 
   ~GraphicsLayer() override;
 
-  GraphicsLayerClient* Client() const { return client_; }
+  GraphicsLayerClient& Client() const { return client_; }
 
   GraphicsLayerDebugInfo& DebugInfo();
 
@@ -254,7 +254,8 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
 
   IntRect InterestRect();
   void PaintRecursively();
-  void Paint(const IntRect* interest_rect,
+  // Returns true if this layer is repainted.
+  bool Paint(const IntRect* interest_rect,
              GraphicsContext::DisabledMode = GraphicsContext::kNothingDisabled);
 
   // cc::LayerClient implementation.
@@ -274,7 +275,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   WebContentLayerClient& WebContentLayerClientForTesting() { return *this; }
 
   // DisplayItemClient methods
-  String DebugName() const final { return client_->DebugName(this); }
+  String DebugName() const final { return client_.DebugName(this); }
   LayoutRect VisualRect() const override;
 
   void SetHasWillChangeTransformHint(bool);
@@ -286,16 +287,21 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void SetIsResizedByBrowserControls(bool);
   void SetIsContainerForFixedPositionLayers(bool);
 
-  void SetLayerState(PropertyTreeState&&, const IntPoint& layer_offset);
+  void SetLayerState(const PropertyTreeState&, const IntPoint& layer_offset);
 
-  // Capture the last painted result into a PaintRecord.
+  // Capture the last painted result into a PaintRecord. This GraphicsLayer
+  // must DrawsContent. The result is never nullptr.
   sk_sp<PaintRecord> CapturePaintRecord() const;
+
+  void SetNeedsCheckRasterInvalidation() {
+    needs_check_raster_invalidation_ = true;
+  }
 
  protected:
   String DebugName(cc::Layer*) const;
   bool ShouldFlattenTransform() const { return should_flatten_transform_; }
 
-  explicit GraphicsLayer(GraphicsLayerClient*);
+  explicit GraphicsLayer(GraphicsLayerClient&);
 
   friend class CompositedLayerMappingTest;
   friend class PaintControllerPaintTestBase;
@@ -308,7 +314,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
                      PaintingControlSetting = kPaintDefaultBehavior) final;
   size_t ApproximateUnsharedMemoryUsage() const final;
 
-  void PaintRecursivelyInternal();
+  void PaintRecursivelyInternal(Vector<GraphicsLayer*>& repainted_layers);
 
   // Returns true if PaintController::paintArtifact() changed and needs commit.
   bool PaintWithoutCommit(
@@ -351,7 +357,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   CompositedLayerRasterInvalidator& EnsureRasterInvalidator();
   void SetNeedsDisplayInRectInternal(const IntRect&);
 
-  GraphicsLayerClient* client_;
+  GraphicsLayerClient& client_;
 
   // Offset from the owning layoutObject
   DoubleSize offset_from_layout_object_;
@@ -376,6 +382,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   bool contents_visible_ : 1;
   bool is_root_for_isolated_group_ : 1;
   bool hit_testable_without_draws_content_ : 1;
+  bool needs_check_raster_invalidation_ : 1;
 
   bool has_scroll_parent_ : 1;
   bool has_clip_parent_ : 1;

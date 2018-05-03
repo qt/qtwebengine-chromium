@@ -58,7 +58,7 @@ ResourceRequest::ResourceRequest(const KURL& url)
       keepalive_(false),
       should_reset_app_cache_(false),
       cache_mode_(mojom::FetchCacheMode::kDefault),
-      service_worker_mode_(WebURLRequest::ServiceWorkerMode::kAll),
+      skip_service_worker_(false),
       priority_(ResourceLoadPriority::kLowest),
       intra_priority_value_(0),
       requestor_id_(0),
@@ -100,7 +100,7 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   SetUseStreamOnResponse(data->use_stream_on_response_);
   SetKeepalive(data->keepalive_);
   SetCacheMode(data->cache_mode_);
-  SetServiceWorkerMode(data->service_worker_mode_);
+  SetSkipServiceWorker(data->skip_service_worker_);
   SetShouldResetAppCache(data->should_reset_app_cache_);
   SetRequestorID(data->requestor_id_);
   SetPluginChildID(data->plugin_child_id_);
@@ -121,6 +121,7 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   input_perf_metric_report_policy_ = data->input_perf_metric_report_policy_;
   redirect_status_ = data->redirect_status_;
   suggested_filename_ = data->suggested_filename_;
+  is_ad_resource_ = data->is_ad_resource_;
 }
 
 ResourceRequest::ResourceRequest(const ResourceRequest&) = default;
@@ -133,7 +134,7 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
     const KURL& new_site_for_cookies,
     const String& new_referrer,
     ReferrerPolicy new_referrer_policy,
-    WebURLRequest::ServiceWorkerMode service_worker_mode) const {
+    bool skip_service_worker) const {
   std::unique_ptr<ResourceRequest> request =
       std::make_unique<ResourceRequest>(new_url);
   request->SetHTTPMethod(new_method);
@@ -142,7 +143,7 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
       new_referrer.IsEmpty() ? Referrer::NoReferrer() : String(new_referrer);
   request->SetHTTPReferrer(
       Referrer(referrer, static_cast<ReferrerPolicy>(new_referrer_policy)));
-  request->SetServiceWorkerMode(service_worker_mode);
+  request->SetSkipServiceWorker(skip_service_worker);
   request->SetRedirectStatus(RedirectStatus::kFollowedRedirect);
 
   // Copy from parameters for |this|.
@@ -187,7 +188,7 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->use_stream_on_response_ = use_stream_on_response_;
   data->keepalive_ = keepalive_;
   data->cache_mode_ = GetCacheMode();
-  data->service_worker_mode_ = service_worker_mode_;
+  data->skip_service_worker_ = skip_service_worker_;
   data->should_reset_app_cache_ = should_reset_app_cache_;
   data->requestor_id_ = requestor_id_;
   data->plugin_child_id_ = plugin_child_id_;
@@ -208,6 +209,7 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->input_perf_metric_report_policy_ = input_perf_metric_report_policy_;
   data->redirect_status_ = redirect_status_;
   data->suggested_filename_ = suggested_filename_;
+  data->is_ad_resource_ = is_ad_resource_;
   return data;
 }
 
@@ -303,25 +305,23 @@ void ResourceRequest::ClearHTTPReferrer() {
 
 void ResourceRequest::SetHTTPOrigin(const SecurityOrigin* origin) {
   SetHTTPHeaderField(HTTPNames::Origin, origin->ToAtomicString());
-  if (origin->HasSuborigin()) {
-    SetHTTPHeaderField(HTTPNames::Suborigin,
-                       AtomicString(origin->GetSuborigin()->GetName()));
-  }
 }
 
 void ResourceRequest::ClearHTTPOrigin() {
   http_header_fields_.Remove(HTTPNames::Origin);
-  http_header_fields_.Remove(HTTPNames::Suborigin);
 }
 
-void ResourceRequest::AddHTTPOriginIfNeeded(const SecurityOrigin* origin) {
+void ResourceRequest::SetHTTPOriginIfNeeded(const SecurityOrigin* origin) {
   if (NeedsHTTPOrigin())
     SetHTTPOrigin(origin);
 }
 
-void ResourceRequest::AddHTTPOriginIfNeeded(const String& origin_string) {
-  if (NeedsHTTPOrigin())
-    SetHTTPOrigin(SecurityOrigin::CreateFromString(origin_string).get());
+void ResourceRequest::SetHTTPOriginToMatchReferrerIfNeeded() {
+  if (NeedsHTTPOrigin()) {
+    SetHTTPOrigin(
+        SecurityOrigin::CreateFromString(HttpHeaderField(HTTPNames::Referer))
+            .get());
+  }
 }
 
 void ResourceRequest::ClearHTTPUserAgent() {

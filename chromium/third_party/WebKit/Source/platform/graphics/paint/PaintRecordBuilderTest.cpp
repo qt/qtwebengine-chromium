@@ -34,6 +34,11 @@ TEST_F(PaintRecordBuilderTest, TransientPaintController) {
 }
 
 TEST_F(PaintRecordBuilderTest, LastingPaintController) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+    GetPaintController().UpdateCurrentPaintChunkProperties(
+        WTF::nullopt, PaintChunkProperties(PropertyTreeState::Root()));
+  }
+
   PaintRecordBuilder builder(nullptr, nullptr, &GetPaintController());
   auto& context = builder.Context();
   EXPECT_EQ(&context.GetPaintController(), &GetPaintController());
@@ -53,6 +58,11 @@ TEST_F(PaintRecordBuilderTest, LastingPaintController) {
                       TestDisplayItem(client, kBackgroundType),
                       TestDisplayItem(client, kForegroundType));
 
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+    GetPaintController().UpdateCurrentPaintChunkProperties(
+        WTF::nullopt, PaintChunkProperties(PropertyTreeState::Root()));
+  }
+
   EXPECT_TRUE(DrawingRecorder::UseCachedDrawingIfPossible(context, client,
                                                           kBackgroundType));
   EXPECT_TRUE(DrawingRecorder::UseCachedDrawingIfPossible(context, client,
@@ -69,6 +79,7 @@ TEST_F(PaintRecordBuilderTest, LastingPaintController) {
 TEST_F(PaintRecordBuilderTest, TransientAndAnotherPaintController) {
   GraphicsContext context(GetPaintController());
 
+  InitRootChunk();
   FakeDisplayItemClient client("client", LayoutRect(10, 10, 20, 20));
   DrawRect(context, client, kBackgroundType, FloatRect(10, 10, 20, 20));
   DrawRect(context, client, kForegroundType, FloatRect(15, 15, 10, 10));

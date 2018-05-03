@@ -746,7 +746,7 @@ bool AllowedToUsePaymentRequest(const Frame* frame) {
   if (!frame)
     return false;
 
-  if (!IsSupportedInFeaturePolicy(FeaturePolicyFeature::kPayment)) {
+  if (!IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kPayment)) {
     // 2. If |document|'s browsing context is a top-level browsing context, then
     // return true.
     if (frame->IsMainFrame())
@@ -764,7 +764,7 @@ bool AllowedToUsePaymentRequest(const Frame* frame) {
   }
 
   // 2. If Feature Policy is enabled, return the policy for "payment" feature.
-  return frame->IsFeatureEnabled(FeaturePolicyFeature::kPayment);
+  return frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kPayment);
 }
 
 void WarnIgnoringQueryQuotaForCanMakePayment(
@@ -813,9 +813,9 @@ ScriptPromise PaymentRequest::show(ScriptState* script_state) {
                                            "Cannot show the payment request"));
   }
 
-  // VR mode uses popup suppression setting to disable html select element,
-  // date pickers, etc.
-  if (GetFrame()->GetDocument()->GetSettings()->GetPagePopupsSuppressed()) {
+  // TODO(crbug.com/779126): add support for handling payment requests in
+  // immersive mode.
+  if (GetFrame()->GetDocument()->GetSettings()->GetImmersiveModeEnabled()) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(kInvalidStateError, "Page popups are suppressed"));
@@ -1248,13 +1248,13 @@ void PaymentRequest::OnCanMakePayment(CanMakePaymentQueryResult result) {
   switch (result) {
     case CanMakePaymentQueryResult::WARNING_CAN_MAKE_PAYMENT:
       WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext());
-    // Intentionally fall through.
+      FALLTHROUGH;
     case CanMakePaymentQueryResult::CAN_MAKE_PAYMENT:
       can_make_payment_resolver_->Resolve(true);
       break;
     case CanMakePaymentQueryResult::WARNING_CANNOT_MAKE_PAYMENT:
       WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext());
-    // Intentionally fall through.
+      FALLTHROUGH;
     case CanMakePaymentQueryResult::CANNOT_MAKE_PAYMENT:
       can_make_payment_resolver_->Resolve(false);
       break;

@@ -113,19 +113,6 @@ class ContentViewCore : public WebContentsObserver {
                 jfloat y,
                 jfloat dx,
                 jfloat dy);
-  void FlingStart(JNIEnv* env,
-                  const base::android::JavaParamRef<jobject>& obj,
-                  jlong time_ms,
-                  jfloat x,
-                  jfloat y,
-                  jfloat vx,
-                  jfloat vy,
-                  jboolean target_viewport,
-                  jboolean from_gamepad);
-  void FlingCancel(JNIEnv* env,
-                   const base::android::JavaParamRef<jobject>& obj,
-                   jlong time_ms,
-                   jboolean from_gamepad);
   void DoubleTap(JNIEnv* env,
                  const base::android::JavaParamRef<jobject>& obj,
                  jlong time_ms,
@@ -157,7 +144,6 @@ class ContentViewCore : public WebContentsObserver {
                    jfloat dipScale);
 
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
-  void WasResized(JNIEnv* env, const base::android::JavaParamRef<jobject>& obj);
 
   void SetTextTrackSettings(
       JNIEnv* env,
@@ -174,10 +160,6 @@ class ContentViewCore : public WebContentsObserver {
   void SetBackgroundOpaque(JNIEnv* env,
                            const base::android::JavaParamRef<jobject>& jobj,
                            jboolean opaque);
-
-  jint GetCurrentRenderProcessId(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj);
 
   jboolean UsingSynchronousCompositing(
       JNIEnv* env,
@@ -218,13 +200,9 @@ class ContentViewCore : public WebContentsObserver {
   void RequestDisallowInterceptTouchEvent();
   bool FilterInputEvent(const blink::WebInputEvent& event);
 
-  void DidStopFlinging();
-
   // Returns the context with which the ContentViewCore was created, typically
   // the Activity context.
   base::android::ScopedJavaLocalRef<jobject> GetContext() const;
-
-  bool IsFullscreenRequiredForOrientationLock() const;
 
   // --------------------------------------------------------------------------
   // Methods called from native code

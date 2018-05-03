@@ -188,6 +188,20 @@ chromium_strings.grd. -->
           Chrome - <ph name="PAGE_TITLE">$1<ex>Google</ex></ph>
         </message>
       </if>
+      <!-- Accessible window title format - includes the channel, and the same
+           on all browser platforms rather than different on Chrome OS. -->
+      <message name="IDS_ACCESSIBLE_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window">
+        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Google Chrome
+      </message>
+      <message name="IDS_ACCESSIBLE_BETA_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window for the beta channel version of the browser">
+        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Google Chrome Beta
+      </message>
+      <message name="IDS_ACCESSIBLE_DEV_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window for the developer (dev) channel version of the browser">
+        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Google Chrome Dev
+      </message>
+      <message name="IDS_ACCESSIBLE_CANARY_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window for the canary (nightly build) channel version of the browser">
+        <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Google Chrome Canary
+      </message>
       <if expr="not chromeos">
         <message name="IDS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
           Get help with using Chrome
@@ -286,7 +300,7 @@ chromium_strings.grd. -->
       </if>
       <if expr="use_titlecase">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="In Title Case: The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
-          Let Google Chrome Run In The Background
+          Let Google Chrome Run in the Background
         </message>
       </if>
       <if expr="not use_titlecase">
@@ -351,10 +365,16 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT" desc="Text for the dialog box that prompts the user for their OS account password before revealing plaintext passwords on the password page.">
           Google Chrome is trying to show passwords.
         </message>
+        <message name="IDS_PASSWORDS_PAGE_EXPORT_AUTHENTICATION_PROMPT" desc="Text for the dialog box that prompts the user for their OS account password before exporting passwords to a file.">
+          Google Chrome wants to export your passwords.
+        </message>
       </if>
       <if expr="is_win">
         <message name="IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT" desc="Text for the dialog box that prompts the user for their OS account password before revealing plaintext passwords on the password page.">
           Google Chrome is trying to show passwords. Type your Windows password to allow this.
+        </message>
+        <message name="IDS_PASSWORDS_PAGE_EXPORT_AUTHENTICATION_PROMPT" desc="Text for the dialog box that prompts the user for their OS account password before exporting passwords to a file.">
+          Google Chrome wants to export your passwords. Type your Windows password to allow this.
         </message>
         <message name="IDS_INSTALL_HIGHER_VERSION" desc="Error displayed when higher version already exists.">
           This computer already has a more recent version of Google Chrome. If the software is not working, please uninstall Google Chrome and try again.
@@ -409,7 +429,7 @@ Google Chrome is unable to recover your settings.
         </message>
       </if>
       <message name="IDS_DEFAULT_BROWSER_INFOBAR_TEXT" desc="Text to show in an infobar when Google Chrome is not the current default browser.">
-        Google Chrome isn't your default browser.
+        Google Chrome isn't your default browser
       </message>
       <if expr="chromeos">
         <message name="IDS_SYNC_OVERVIEW" desc="Chrome OS: The message that appears in the options dialog when sync has not been set up by the user.">
@@ -478,12 +498,17 @@ Google Chrome is unable to recover your settings.
         This file may be dangerous, so Chrome has blocked it.
       </message>
 
-      <!-- Remove in-progress downloads confirmation dialog -->
-      <message name="IDS_DOWNLOAD_REMOVE_CONFIRM_EXPLANATION" desc="Explanation of the dialog asking for user confirmation to close the browser when one or more downloads are in progress. [ICU Syntax]">
-      {NUM_DOWNLOAD, plural,
-        =1 {A download is currently in progress. Do you want to cancel the download and exit Google Chrome?}
-        other {# downloads are currently in progress. Do you want to cancel the downloads and exit Google Chrome?}}
-      </message>
+      <!-- Abandon in-progress downloads confirmation dialog -->
+      <if expr="not is_macosx">
+        <message name="IDS_ABANDON_DOWNLOAD_DIALOG_BROWSER_MESSAGE" desc="Message on a dialog shown when the user closes the browser while one or more downloads are in progress. This string is shown on Windows, Chrome OS, and Linux, which all use 'Exit' to refer to closing a browser.">
+          Exit Chrome anyway?
+        </message>
+      </if>
+      <if expr="is_macosx">
+        <message name="IDS_ABANDON_DOWNLOAD_DIALOG_BROWSER_MESSAGE" desc="Mac OSX Only: Message on a dialog shown when the user closes the browser while one or more downloads are in progress. This string is shown on Mac OSX only, which uses 'Quit' to refer to closing a browser.">
+          Quit Chrome anyway?
+        </message>
+      </if>
 
       <!-- Quit all apps confirmation dialog -->
       <if expr="is_macosx">
@@ -544,16 +569,13 @@ Google Chrome is unable to recover your settings.
         Add to Chrome
       </message>
 
-      <!-- Extension installed bubble -->
       <if expr="enable_extensions">
-        <message name="IDS_EXTENSION_INSTALLED_HEADING" desc="First line in the content area of the extension installed bubble. Instructs that the extension was installed.">
-          <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to Chrome.
+        <!-- Extension installed bubble -->
+        <message name="IDS_EXTENSION_INSTALLED_HEADING" desc="Title of the extension-installed bubble. Instructs that the extension was installed.">
+          <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to Chrome
         </message>
         <message name="IDS_EXTENSION_INSTALLED_SYNC_PROMO_LINK_NEW" desc="Text of the link to sign in to Chrome from the extension installed bubble. This will be converted to a link, with additional text around it.">
           sign in to Chrome
-        </message>
-        <message name="IDS_EXTENSION_INSTALLED_SIGNIN_PROMO_LINK" desc="The first part of the sign-in promo paragraph. This part will be converted to a link and will get more text appended to it (see IDS_EXTENSION_INSTALLED_SIGNIN_PROMO). Keep this text short.">
-          Sign in to Chrome
         </message>
 
         <!-- Extension context menu -->
@@ -597,6 +619,10 @@ Google Chrome is unable to recover your settings.
       <!-- App menu -->
       <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
         Customize and control Google Chrome
+      </message>
+
+      <message name="IDS_APPMENU_TOOLTIP_UPDATE_AVAILABLE" desc="The tooltip to show for the browser menu when an update is available">
+        Customize and control Google Chrome. Update is available.
       </message>
 
       <message name="IDS_OPEN_IN_CHROME" desc="The text label of the Open in Chrome menu item for the Hosted App app menu">
@@ -645,6 +671,14 @@ Google Chrome is unable to recover your settings.
         Chrome
       </message>
 
+      <!-- DICE sign-in promo strings -->
+      <message name="IDS_PROFILES_DICE_SIGNIN_PROMO" desc="Text describing the benefits of signing in and turning on Sync.">
+        Sign in to sync and personalize Chrome across your devices
+      </message>
+      <message name="IDS_PROFILES_DICE_SYNC_PROMO" desc="Text describing the benefits of turning on Sync.">
+        Sync and personalize Chrome across your devices
+      </message>
+
       <!-- Tutorial card in the avatar menu bubble -->
       <message name="IDS_PROFILES_CONFIRM_SIGNIN_TUTORIAL_TITLE" desc="The title of the tutorial card in the avatar menu bubble view shown when a user signs in to Chrome.">
         You're now signed in to Chrome
@@ -690,7 +724,7 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       </if>
 
       <!-- Enterprise sign-in dialog -->
-      <if expr="toolkit_views or is_macosx">
+      <if expr="toolkit_views">
         <message name="IDS_ENTERPRISE_SIGNIN_TITLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
           Link your Chrome data to this account?
         </message>
@@ -1048,36 +1082,34 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@example.com</
       </if>
 
       <!-- Upgrade recovery bubble -->
-      <message name="IDS_RUN_RECOVERY" desc="Text for the button the user clicks to recover Chrome and its updater.">
-        Update Chrome
-      </message>
-      <message name="IDS_DECLINE_RECOVERY" desc="Text for the button the user clicks to decline recovery request.">
-        No, thanks
-      </message>
       <message name="IDS_RECOVERY_BUBBLE_TITLE" desc="Text for the title of the chrome recovery bubble view.">
         Chrome is out of date
       </message>
+      <if expr="use_titlecase">
+        <message name="IDS_RUN_RECOVERY" desc="In Title Case: Text for the button the user clicks to recover Chrome and its updater.">
+          Update Chrome
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_RUN_RECOVERY" desc="Text for the button the user clicks to recover Chrome and its updater.">
+          Update Chrome
+        </message>
+      </if>
       <message name="IDS_RECOVERY_BUBBLE_TEXT" desc="Text for the chrome recovery bubble view full description.">
         Important security improvements and new features are available in the latest version.
       </message>
 
       <!-- Critical Notification bubble -->
-      <message name="IDS_CRITICAL_NOTIFICATION_HEADLINE" desc="The headline for the critical notification">
+      <message name="IDS_CRITICAL_NOTIFICATION_TITLE" desc="The title for a bubble that appears when there is a critical update and Chrome must restart to install it. It counts down from # seconds and then Chrome automatically restarts.">
         {SECONDS, plural,
-         =1 {Google Chrome will restart in 1 second.}
-         other {Google Chrome will restart in # seconds.}}
+         =1 {Google Chrome will restart in 1 second}
+         other {Google Chrome will restart in # seconds}}
       </message>
-      <message name="IDS_CRITICAL_NOTIFICATION_HEADLINE_ALTERNATE" desc="The headline for the critical notification when the countdown reaches 0 (will only be seen if an onbeforeunload handler on a web page cancels the shutdown sequence.">
+      <message name="IDS_CRITICAL_NOTIFICATION_TITLE_ALTERNATE" desc="The title for a bubble that appears when there is a critical update and Chrome must restart to install it. The title was previously countng down to an automatic restart and now it has finished. Will only be seen if a web page stops the shutdown process.">
         You should restart Google Chrome now.
       </message>
-      <message name="IDS_CRITICAL_NOTIFICATION_TEXT" desc="The text of the critical update notification">
+      <message name="IDS_CRITICAL_NOTIFICATION_TEXT" desc="Explanation text for the bubble that appears when there is a critical update and Chrome must restart to install it.">
         A special security update for Google Chrome was just applied; you should restart now for it to take effect (we'll restore your tabs).
-      </message>
-      <message name="IDS_CRITICAL_NOTIFICATION_RESTART" desc="The restart button label">
-        OK - Restart now
-      </message>
-      <message name="IDS_CRITICAL_NOTIFICATION_DISMISS" desc="The dismiss button label">
-        Don't restart
       </message>
 
       <!-- Dialog that asks whether user wants to participate in Safe Browsing Extended Reporting -->
@@ -1123,19 +1155,19 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@example.com</
       <!-- Runtime permission strings -->
       <if expr="is_android">
         <message name="IDS_INFOBAR_MISSING_CAMERA_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the camera capabilities, but Chrome is missing the Android camera permission.">
-          Chrome needs permission to access your camera for this site.
+          Chrome needs permission to access your camera for this site
         </message>
         <message name="IDS_INFOBAR_MISSING_MICROPHONE_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the microphone capabilities, but Chrome is missing the Android microphone permission.">
-          Chrome needs permission to access your microphone for this site.
+          Chrome needs permission to access your microphone for this site
         </message>
         <message name="IDS_INFOBAR_MISSING_MICROPHONE_CAMERA_PERMISSIONS_TEXT" desc="Text shown in an infobar when a website has requested access to the microphone and camera capabilities, but Chrome is missing the Android microphone and camera permissions.">
-          Chrome needs permission to access your camera and microphone for this site.
+          Chrome needs permission to access your camera and microphone for this site
         </message>
         <message name="IDS_INFOBAR_MISSING_LOCATION_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the location capabilities, but Chrome is missing the Android location permission.">
-          Chrome needs access to your location to share your location with this site.
+          Chrome needs access to your location to share your location with this site
         </message>
         <message name="IDS_MISSING_STORAGE_PERMISSION_DOWNLOAD_EDUCATION_TEXT" desc="Text shown educating the user that Chrome is missing the Android storage permission, which is required to download files.">
-          Chrome needs storage access to download files.
+          Chrome needs storage access to download files
         </message>
       </if>
 
@@ -1212,6 +1244,49 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@example.com</
         </message>
         <message name="IDS_WIN10_WELCOME_CLICK_SWITCH_ANYWAY" desc="An instruction asking the user to click on the &quot;Switch anyway&quot; button. It's possible that the button doesn't appear for the user, hence the &quot;if it appears&quot;. The bold portion of this message must match IDS_WIN10_WELCOME_SWITCH_ANYWAY_LABEL.">
           Click <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Switch anyway<ph name="END_BOLD">&lt;/strong&gt;</ph>, if it appears
+        </message>
+      </if>
+
+      <!-- Native notifications for Windows 10 -->
+      <if expr="is_win">
+        <message name="IDS_WIN_NOTIFICATION_SETTINGS_CONTEXT_MENU_ITEM_NAME" desc="The name of the button in Windows Notification Center which leads to Chrome notification settings.">
+          Go to Chrome notification settings
+        </message>
+      </if>
+      <!-- Relaunch notification bubble and dialog. -->
+      <if expr="not is_android and not chromeos">
+        <message name="IDS_RELAUNCH_RECOMMENDED_TITLE" desc="The title of a dialog that tells users that a browser relaunch is recommended for an update available for some number of days.">
+          {0, plural,
+           =0 {A Chrome update is available}
+           =1 {A Chrome update is available}
+           other {A Chrome update has been available for # days}}
+        </message>
+        <message name="IDS_RELAUNCH_RECOMMENDED_BODY" desc="The body text of a dialog that tells users that a browser relaunch is recommended for an update.">
+          Your administrator asks that you relaunch Chrome to apply this update
+        </message>
+        <message name="IDS_RELAUNCH_REQUIRED_TITLE_DAYS" desc="The title of a dialog that tells users the browser must be relaunched within two or more days.">
+          {0, plural,
+           =1 {Relaunch Chrome within a day}
+           other {Relaunch Chrome within # days}}
+        </message>
+        <message name="IDS_RELAUNCH_REQUIRED_TITLE_HOURS" desc="The title of a dialog that tells users the browser must be relaunched within one or more hours.">
+          {0, plural,
+           =1 {Chrome will relaunch in an hour}
+           other {Chrome will relaunch in # hours}}
+        </message>
+        <message name="IDS_RELAUNCH_REQUIRED_TITLE_MINUTES" desc="The title of a dialog that tells users the browser must be relaunched within one or more minutes.">
+          {0, plural,
+           =1 {Chrome will relaunch in 1 minute}
+           other {Chrome will relaunch in # minutes}}
+        </message>
+        <message name="IDS_RELAUNCH_REQUIRED_TITLE_SECONDS" desc="The title of a dialog that tells users the browser must be relaunched within some number of seconds.">
+          {0, plural,
+           =0 {Chrome will relaunch now}
+           =1 {Chrome will relaunch in 1 second}
+           other {Chrome will relaunch in # seconds}}
+        </message>
+        <message name="IDS_RELAUNCH_REQUIRED_BODY" desc="The body text of a dialog that tells users the browser must be relaunched.">
+          Your administrator requires that you relaunch Chrome to apply an update
         </message>
       </if>
     </messages>

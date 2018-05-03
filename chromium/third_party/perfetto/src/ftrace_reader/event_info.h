@@ -14,25 +14,116 @@
  * limitations under the License.
  */
 
-#ifndef SRC_FTRACE_READER_EVENT_PROTO_INFO_H_
-#define SRC_FTRACE_READER_EVENT_PROTO_INFO_H_
+#ifndef SRC_FTRACE_READER_EVENT_INFO_H_
+#define SRC_FTRACE_READER_EVENT_INFO_H_
 
 #include <stdint.h>
 
 #include <string>
 #include <vector>
 
+#include "perfetto/base/logging.h"
+
 namespace perfetto {
 
 enum ProtoFieldType {
-  kProtoNumber = 1,
-  kProtoString,
+  kProtoDouble = 1,
+  kProtoFloat,
   kProtoInt32,
+  kProtoInt64,
+  kProtoUint32,
+  kProtoUint64,
+  kProtoSint32,
+  kProtoSint64,
+  kProtoFixed32,
+  kProtoFixed64,
+  kProtoSfixed32,
+  kProtoSfixed64,
+  kProtoBool,
+  kProtoString,
+  kProtoBytes,
 };
 
 enum FtraceFieldType {
-  kFtraceNumber = 1,
+  kFtraceUint32 = 1,
+  kFtraceUint64,
+  kFtraceInt32,
+  kFtraceInt64,
+  kFtraceFixedCString,
+  kFtraceCString,
 };
+
+// Joint enum of FtraceFieldType (left) and ProtoFieldType (right).
+// where there exists a way to convert from the FtraceFieldType
+// into the ProtoFieldType.
+enum TranslationStrategy {
+  kUint32ToUint32 = 1,
+  kUint32ToUint64,
+  kUint64ToUint64,
+  kInt32ToInt32,
+  kInt32ToInt64,
+  kInt64ToInt64,
+  kFixedCStringToString,
+  kCStringToString,
+};
+
+inline const char* ToString(ProtoFieldType v) {
+  switch (v) {
+    case kProtoDouble:
+      return "double";
+    case kProtoFloat:
+      return "float";
+    case kProtoInt32:
+      return "int32";
+    case kProtoInt64:
+      return "int64";
+    case kProtoUint32:
+      return "uint32";
+    case kProtoUint64:
+      return "uint64";
+    case kProtoSint32:
+      return "sint32";
+    case kProtoSint64:
+      return "sint64";
+    case kProtoFixed32:
+      return "fixed32";
+    case kProtoFixed64:
+      return "fixed64";
+    case kProtoSfixed32:
+      return "sfixed32";
+    case kProtoSfixed64:
+      return "sfixed64";
+    case kProtoBool:
+      return "bool";
+    case kProtoString:
+      return "string";
+    case kProtoBytes:
+      return "bytes";
+  }
+  // For gcc:
+  PERFETTO_CHECK(false);
+  return "";
+}
+
+inline const char* ToString(FtraceFieldType v) {
+  switch (v) {
+    case kFtraceUint32:
+      return "uint32";
+    case kFtraceUint64:
+      return "uint64";
+    case kFtraceInt32:
+      return "int32";
+    case kFtraceInt64:
+      return "int64";
+    case kFtraceFixedCString:
+      return "fixed length null terminated string";
+    case kFtraceCString:
+      return "null terminated string";
+  }
+  // For gcc:
+  PERFETTO_CHECK(false);
+  return "";
+}
 
 struct Field {
   Field() = default;
@@ -46,6 +137,8 @@ struct Field {
 
   uint32_t proto_field_id;
   ProtoFieldType proto_field_type;
+
+  TranslationStrategy strategy;
 };
 
 struct Event {
@@ -61,6 +154,11 @@ struct Event {
   // Field id of the subevent proto (e.g. PrintFtraceEvent) in the FtraceEvent
   // parent proto.
   uint32_t proto_field_id;
+
+  // 'Size' of the event. Some caveats: some events (e.g. print) end with a null
+  // terminated string of unknown size. This size doesn't include the length of
+  // that string.
+  uint16_t size;
 };
 
 // The compile time information needed to read the raw ftrace buffer.
@@ -76,6 +174,14 @@ struct Event {
 // are zeroed.
 std::vector<Event> GetStaticEventInfo();
 
+// The compile time information needed to read the common fields from
+// the raw ftrace buffer.
+std::vector<Field> GetStaticCommonFieldsInfo();
+
+bool SetTranslationStrategy(FtraceFieldType ftrace,
+                            ProtoFieldType proto,
+                            TranslationStrategy* out);
+
 }  // namespace perfetto
 
-#endif  // SRC_FTRACE_READER_EVENT_PROTO_INFO_H_
+#endif  // SRC_FTRACE_READER_EVENT_INFO_H_

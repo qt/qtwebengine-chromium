@@ -15,7 +15,6 @@
 #include "platform/PlatformExport.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/scheduler/child/web_scheduler.h"
-#include "platform/scheduler/child/web_task_runner_impl.h"
 #include "platform/scheduler/renderer/task_queue_throttler.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/scheduler/util/tracing_helper.h"
@@ -46,7 +45,7 @@ class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
 
   // WebViewScheduler implementation:
   void SetPageVisible(bool page_visible) override;
-  void SetPageStopped(bool) override;
+  void SetPageFrozen(bool) override;
   std::unique_ptr<WebFrameScheduler> CreateFrameScheduler(
       BlameContext* blame_context,
       WebFrameScheduler::FrameType frame_type) override;
@@ -54,6 +53,7 @@ class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
   void DisableVirtualTimeForTesting() override;
   bool VirtualTimeAllowedToAdvance() const override;
   void SetVirtualTimePolicy(VirtualTimePolicy virtual_time_policy) override;
+  void SetInitialVirtualTimeOffset(base::TimeDelta offset) override;
   void GrantVirtualTimeBudget(
       base::TimeDelta budget,
       base::OnceClosure budget_exhausted_callback) override;

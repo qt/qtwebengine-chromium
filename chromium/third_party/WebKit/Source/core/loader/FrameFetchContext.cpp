@@ -35,6 +35,7 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/dom/Document.h"
+#include "core/fileapi/PublicURLManager.h"
 #include "core/frame/ContentSettingsClient.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/FrameConsole.h"
@@ -43,7 +44,6 @@
 #include "core/frame/LocalFrameClient.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
-#include "core/frame/UseCounter.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/imports/HTMLImportsController.h"
 #include "core/inspector/ConsoleMessage.h"
@@ -66,7 +66,7 @@
 #include "core/svg/graphics/SVGImageChromeClient.h"
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
-#include "core/timing/PerformanceBase.h"
+#include "core/timing/WindowPerformance.h"
 #include "platform/Histogram.h"
 #include "platform/WebFrameScheduler.h"
 #include "platform/bindings/V8DOMActivityLogger.h"
@@ -94,8 +94,8 @@
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerNetworkProvider.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-blink.h"
-#include "third_party/WebKit/common/device_memory/approximated_device_memory.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
+#include "third_party/WebKit/public/common/device_memory/approximated_device_memory.h"
 
 namespace blink {
 
@@ -104,6 +104,23 @@ namespace {
 enum class RequestMethod { kIsPost, kIsNotPost };
 enum class RequestType { kIsConditional, kIsNotConditional };
 enum class ResourceType { kIsMainResource, kIsNotMainResource };
+
+void MaybeRecordCTPolicyComplianceUseCounter(
+    LocalFrame* frame,
+    Resource::Type resource_type,
+    ResourceResponse::CTPolicyCompliance compliance) {
+  if (compliance != ResourceResponse::kCTPolicyDoesNotComply)
+    return;
+  // Exclude main-frame navigation requests; those are tracked elsewhere.
+  if (!frame->Tree().Parent() && resource_type == Resource::kMainResource)
+    return;
+  UseCounter::Count(
+      frame,
+      frame->Tree().Parent()
+          ? WebFeature::kCertificateTransparencyNonCompliantResourceInSubframe
+          : WebFeature::
+                kCertificateTransparencyNonCompliantSubresourceInMainFrame);
+}
 
 // Determines FetchCacheMode for a main resource, or FetchCacheMode that is
 // corresponding to FrameLoadType.
@@ -176,12 +193,6 @@ mojom::FetchCacheMode DetermineFrameCacheMode(Frame* frame,
   return DetermineCacheMode(RequestMethod::kIsNotPost,
                             RequestType::kIsNotConditional,
                             ResourceType::kIsNotMainResource, load_type);
-}
-
-bool IsClientHintsAllowed(const KURL& url) {
-  return (url.ProtocolIs("http") || url.ProtocolIs("https")) &&
-         (SecurityOrigin::IsSecure(url) ||
-          SecurityOrigin::Create(url)->IsLocalhost());
 }
 
 }  // namespace
@@ -300,7 +311,8 @@ LocalFrame* FrameFetchContext::FrameOfImportsController() const {
   return frame;
 }
 
-scoped_refptr<WebTaskRunner> FrameFetchContext::GetLoadingTaskRunner() {
+scoped_refptr<base::SingleThreadTaskRunner>
+FrameFetchContext::GetLoadingTaskRunner() {
   if (IsDetached())
     return FetchContext::GetLoadingTaskRunner();
   return GetFrame()->GetTaskRunner(TaskType::kNetworking);
@@ -508,7 +520,8 @@ void FrameFetchContext::DispatchDidReceiveResponse(
   if (IsDetached())
     return;
 
-  ParseAndPersistClientHints(response);
+  MaybeRecordCTPolicyComplianceUseCounter(GetFrame(), resource->GetType(),
+                                          response.GetCTPolicyCompliance());
 
   if (response_type == ResourceResponseType::kFromMemoryCache) {
     // Note: probe::willSendRequest needs to precede before this probe method.
@@ -528,15 +541,28 @@ void FrameFetchContext::DispatchDidReceiveResponse(
                               ->Loader()
                               .GetProvisionalDocumentLoader()) {
     FrameClientHintsPreferencesContext hints_context(GetFrame());
-
-      document_loader_->GetClientHintsPreferences()
-          .UpdateFromAcceptClientHintsHeader(
-              response.HttpHeaderField(HTTPNames::Accept_CH), &hints_context);
+    document_loader_->GetClientHintsPreferences()
+        .UpdateFromAcceptClientHintsHeader(
+            response.HttpHeaderField(HTTPNames::Accept_CH), response.Url(),
+            &hints_context);
 
     // When response is received with a provisional docloader, the resource
     // haven't committed yet, and we cannot load resources, only preconnect.
     resource_loading_policy = LinkLoader::kDoNotLoadResources;
   }
+  // Client hints preferences should be persisted only from responses that were
+  // served by the same host as the host of the document-level origin.
+  KURL frame_url = Url();
+  if (frame_url == NullURL())
+    frame_url = document_loader_->Url();
+
+  // Check if |response| belongs to a resource in the main frame, and if belongs
+  // to the same origin as frame top request.
+  if (SecurityOrigin::AreSameSchemeHostPort(response.Url(), frame_url) &&
+      GetFrame()->IsMainFrame()) {
+    ParseAndPersistClientHints(response);
+  }
+
   LinkLoader::LoadLinksFromHeader(
       response.HttpHeaderField(HTTPNames::Link), response.Url(), *GetFrame(),
       document_, NetworkHintsInterfaceImpl(), resource_loading_policy,
@@ -548,8 +574,8 @@ void FrameFetchContext::DispatchDidReceiveResponse(
   }
 
   if (response.IsLegacySymantecCert()) {
-    GetLocalFrameClient()->ReportLegacySymantecCert(
-        response.Url(), response.CertValidityStart());
+    GetLocalFrameClient()->ReportLegacySymantecCert(response.Url(),
+                                                    false /* did_fail */);
   }
 
   GetFrame()->Loader().Progress().IncrementProgress(identifier, response);
@@ -614,12 +640,14 @@ void FrameFetchContext::DispatchDidFinishLoading(
     InteractiveDetector* interactive_detector(
         InteractiveDetector::From(*document_));
     if (interactive_detector) {
-      interactive_detector->OnResourceLoadEnd(finish_time);
+      interactive_detector->OnResourceLoadEnd(
+          TimeTicksFromSeconds(finish_time));
     }
   }
 }
 
-void FrameFetchContext::DispatchDidFail(unsigned long identifier,
+void FrameFetchContext::DispatchDidFail(const KURL& url,
+                                        unsigned long identifier,
                                         const ResourceError& error,
                                         int64_t encoded_data_length,
                                         bool is_internal_request) {
@@ -630,6 +658,12 @@ void FrameFetchContext::DispatchDidFail(unsigned long identifier,
     UseCounter::Count(
         GetFrame()->GetDocument(),
         WebFeature::kCertificateTransparencyRequiredErrorOnResourceLoad);
+  }
+
+  if (NetworkUtils::IsLegacySymantecCertError(error.ErrorCode())) {
+    UseCounter::Count(GetFrame()->GetDocument(),
+                      WebFeature::kDistrustedLegacySymantecSubresource);
+    GetLocalFrameClient()->ReportLegacySymantecCert(url, true /* did_fail */);
   }
 
   GetFrame()->Loader().Progress().CompleteProgress(identifier);
@@ -751,20 +785,6 @@ bool FrameFetchContext::IsControlledByServiceWorker() const {
 
   DCHECK(MasterDocumentLoader());
 
-  // Service workers are bypassed by suborigins (see
-  // https://w3c.github.io/webappsec-suborigins/). Since service worker
-  // controllers are assigned based on physical origin, without knowledge of
-  // whether the context is in a suborigin, it is necessary to explicitly bypass
-  // service workers on a per-request basis. Additionally, it is necessary to
-  // explicitly return |false| here so that it is clear that the SW will be
-  // bypassed. In particular, this is important for
-  // ResourceFetcher::getCacheIdentifier(), which will return the SW's cache if
-  // the context's isControlledByServiceWorker() returns |true|, and thus will
-  // returned cached resources from the service worker. That would have the
-  // effect of not bypassing the SW.
-  if (GetSecurityOrigin() && GetSecurityOrigin()->HasSuborigin())
-    return false;
-
   auto* service_worker_network_provider =
       MasterDocumentLoader()->GetServiceWorkerNetworkProvider();
   return service_worker_network_provider &&
@@ -845,17 +865,22 @@ void FrameFetchContext::AddClientHintsIfNecessary(
     const FetchParameters::ResourceWidth& resource_width,
     ResourceRequest& request) {
   WebEnabledClientHints enabled_hints;
-  // Check if |url| is allowed to run JavaScript. If not, client hints are not
-  // attached to the requests that initiate on the render side.
-  if (blink::RuntimeEnabledFeatures::ClientHintsPersistentEnabled() &&
-      IsClientHintsAllowed(request.Url()) && GetContentSettingsClient() &&
-      AllowScriptFromSource(request.Url())) {
-    // TODO(tbansal): crbug.com/735518 This code path is not executed for main
-    // frame navigations when browser side navigation is enabled. For main
-    // frame requests with browser side navigation enabled, the client hints
-    // should be attached by the browser process.
-    GetContentSettingsClient()->GetAllowedClientHintsFromSource(request.Url(),
-                                                                &enabled_hints);
+  if (blink::RuntimeEnabledFeatures::ClientHintsPersistentEnabled()) {
+    // If the feature is enabled, then client hints are allowed only on secure
+    // URLs.
+    if (!ClientHintsPreferences::IsClientHintsAllowed(request.Url()))
+      return;
+
+    // Check if |url| is allowed to run JavaScript. If not, client hints are not
+    // attached to the requests that initiate on the render side.
+    if (GetContentSettingsClient() && AllowScriptFromSource(request.Url())) {
+      // TODO(tbansal): crbug.com/735518 This code path is not executed for main
+      // frame navigations when browser side navigation is enabled. For main
+      // frame requests with browser side navigation enabled, the client hints
+      // should be attached by the browser process.
+      GetContentSettingsClient()->GetAllowedClientHintsFromSource(
+          request.Url(), &enabled_hints);
+    }
   }
 
   if (ShouldSendClientHint(mojom::WebClientHintsType::kDeviceMemory,
@@ -1137,6 +1162,16 @@ scoped_refptr<const SecurityOrigin> FrameFetchContext::GetRequestorOrigin() {
   if (IsDetached())
     return frozen_state_->requestor_origin;
 
+  // Should not be called during the document load, and |document_| should be
+  // always set beforehand for a subresource loading.
+  DCHECK(document_);
+
+  // If sandbox is enabled and allow-same-origin is not set in the attribute,
+  // |document|'s SecurityOrigin is set to the unique opaque origin, and
+  // FrameFetchContext::GetSecurityOrigin also respects the unique origin.
+  // But, we still need to set the unveiled document origin to the requestor
+  // origin. See also sandbox's spec;
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox.
   if (document_->IsSandboxed(kSandboxOrigin))
     return SecurityOrigin::Create(document_->Url());
 
@@ -1176,9 +1211,6 @@ bool FrameFetchContext::ShouldSendClientHint(
 
 void FrameFetchContext::ParseAndPersistClientHints(
     const ResourceResponse& response) {
-  if (!IsClientHintsAllowed(response.Url()))
-    return;
-
   ClientHintsPreferences hints_preferences;
   WebEnabledClientHints enabled_client_hints;
   TimeDelta persist_duration;
@@ -1200,9 +1232,32 @@ void FrameFetchContext::ParseAndPersistClientHints(
 
 std::unique_ptr<WebURLLoader> FrameFetchContext::CreateURLLoader(
     const ResourceRequest& request,
-    scoped_refptr<WebTaskRunner> task_runner) {
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    const ResourceLoaderOptions& options) {
   DCHECK(!IsDetached());
   WrappedResourceRequest webreq(request);
+
+  network::mojom::blink::URLLoaderFactoryPtr url_loader_factory;
+  if (options.url_loader_factory) {
+    options.url_loader_factory->data->Clone(MakeRequest(&url_loader_factory));
+  }
+  // Resolve any blob: URLs that haven't been resolved yet. The XHR and fetch()
+  // API implementations resolve blob URLs earlier because there can be
+  // arbitrarily long delays between creating requests with those APIs and
+  // actually creating the URL loader here. Other subresource loading will
+  // immediately create the URL loader so resolving those blob URLs here is
+  // simplest.
+  if (document_ && request.Url().ProtocolIs("blob") &&
+      RuntimeEnabledFeatures::MojoBlobURLsEnabled() && !url_loader_factory) {
+    document_->GetPublicURLManager().Resolve(request.Url(),
+                                             MakeRequest(&url_loader_factory));
+  }
+  if (url_loader_factory) {
+    return Platform::Current()
+        ->WrapURLLoaderFactory(url_loader_factory.PassInterface().PassHandle())
+        ->CreateURLLoader(webreq, task_runner);
+  }
+
   if (MasterDocumentLoader()->GetServiceWorkerNetworkProvider()) {
     auto loader = MasterDocumentLoader()
                       ->GetServiceWorkerNetworkProvider()
@@ -1251,7 +1306,7 @@ void FrameFetchContext::Trace(blink::Visitor* visitor) {
 }
 
 void FrameFetchContext::RecordDataUriWithOctothorpe() {
-  UseCounter::Count(GetFrame(), WebFeature::kDataUriHasOctothorpe);
+  CountDeprecation(WebFeature::kDataUriHasOctothorpe);
 }
 
 ResourceLoadPriority FrameFetchContext::ModifyPriorityForExperiments(
@@ -1292,6 +1347,12 @@ ResourceLoadPriority FrameFetchContext::ModifyPriorityForExperiments(
                        static_cast<int>(ResourceLoadPriority::kHighest) + 1));
   iframe_priority_histogram.Count(static_cast<int>(priority));
   // When enabled, the priority of all resources in subframe is dropped.
+  // Non-delayable resources are assigned a priority of kLow, and the rest of
+  // them are assigned a priority of kLowest. This ensures that if the webpage
+  // fetches most of its primary content using iframes, then high priority
+  // requests within the iframe go on the network first.
+  if (priority >= ResourceLoadPriority::kHigh)
+    return ResourceLoadPriority::kLow;
   return ResourceLoadPriority::kLowest;
 }
 

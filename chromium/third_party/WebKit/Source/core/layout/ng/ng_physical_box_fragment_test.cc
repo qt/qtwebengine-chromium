@@ -9,11 +9,9 @@
 
 namespace blink {
 
-class NGPhysicalBoxFragmentTest : public NGLayoutTest,
-                                  private ScopedLayoutNGPaintFragmentsForTest {
+class NGPhysicalBoxFragmentTest : public NGLayoutTest {
  public:
-  NGPhysicalBoxFragmentTest()
-      : NGLayoutTest(), ScopedLayoutNGPaintFragmentsForTest(true) {}
+  NGPhysicalBoxFragmentTest() : NGLayoutTest() {}
 
   const NGPhysicalBoxFragment& GetBodyFragment() const {
     return *ToLayoutBlockFlow(GetDocument().body()->GetLayoutObject())
@@ -57,7 +55,7 @@ TEST_F(NGPhysicalBoxFragmentTest, InlineBlockOldLayoutRoot) {
   const NGPhysicalFragment* fragment = line_box->Children().front().get();
   ASSERT_TRUE(fragment);
   EXPECT_TRUE(fragment->IsBox());
-  EXPECT_EQ(NGPhysicalFragment::kInlineBlock, fragment->BoxType());
+  EXPECT_EQ(NGPhysicalFragment::kAtomicInline, fragment->BoxType());
   EXPECT_TRUE(fragment->IsOldLayoutRoot());
   EXPECT_TRUE(fragment->IsBlockLayoutRoot());
 }

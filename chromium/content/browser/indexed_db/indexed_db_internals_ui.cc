@@ -20,7 +20,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
-#include "content/public/browser/download_url_parameters.h"
+#include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -117,7 +117,7 @@ void IndexedDBInternalsUI::GetAllOriginsOnIndexedDBThread(
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&IndexedDBInternalsUI::OnOriginsReady,
-                     base::Unretained(this), base::Passed(&info_list),
+                     base::Unretained(this), std::move(info_list),
                      is_incognito ? base::FilePath() : context_path));
 }
 
@@ -231,7 +231,7 @@ void IndexedDBInternalsUI::DownloadOriginDataOnIndexedDBThread(
   // This will get cleaned up after the download has completed.
   base::FilePath temp_path = temp_dir.Take();
 
-  std::string origin_id = storage::GetIdentifierFromOrigin(origin.GetURL());
+  std::string origin_id = storage::GetIdentifierFromOrigin(origin);
   base::FilePath zip_path =
       temp_path.AppendASCII(origin_id).AddExtension(FILE_PATH_LITERAL("zip"));
 
@@ -303,15 +303,18 @@ void IndexedDBInternalsUI::OnDownloadDataReady(
             "Not implemented. Indexed DB is Chrome's internal local data "
             "storage."
         })");
-  std::unique_ptr<DownloadUrlParameters> dl_params(
-      DownloadUrlParameters::CreateForWebContentsMainFrame(web_contents, url,
-                                                           traffic_annotation));
-  const GURL referrer(web_contents->GetLastCommittedURL());
-  dl_params->set_referrer(content::Referrer::SanitizeForRequest(
-      url, content::Referrer(referrer, blink::kWebReferrerPolicyDefault)));
+  std::unique_ptr<download::DownloadUrlParameters> dl_params(
+      DownloadRequestUtils::CreateDownloadForWebContentsMainFrame(
+          web_contents, url, traffic_annotation));
+  content::Referrer referrer = content::Referrer::SanitizeForRequest(
+      url, content::Referrer(web_contents->GetLastCommittedURL(),
+                             blink::kWebReferrerPolicyDefault));
+  dl_params->set_referrer(referrer.url);
+  dl_params->set_referrer_policy(
+      Referrer::ReferrerPolicyForUrlRequest(referrer.policy));
 
   // This is how to watch for the download to finish: first wait for it
-  // to start, then attach a DownloadItem::Observer to observe the
+  // to start, then attach a download::DownloadItem::Observer to observe the
   // state change to the finished state.
   dl_params->set_callback(base::Bind(&IndexedDBInternalsUI::OnDownloadStarted,
                                      base::Unretained(this), partition_path,
@@ -324,15 +327,15 @@ void IndexedDBInternalsUI::OnDownloadDataReady(
 
 // The entire purpose of this class is to delete the temp file after
 // the download is complete.
-class FileDeleter : public DownloadItem::Observer {
+class FileDeleter : public download::DownloadItem::Observer {
  public:
   explicit FileDeleter(const base::FilePath& temp_dir) : temp_dir_(temp_dir) {}
   ~FileDeleter() override;
 
-  void OnDownloadUpdated(DownloadItem* download) override;
-  void OnDownloadOpened(DownloadItem* item) override {}
-  void OnDownloadRemoved(DownloadItem* item) override {}
-  void OnDownloadDestroyed(DownloadItem* item) override {}
+  void OnDownloadUpdated(download::DownloadItem* download) override;
+  void OnDownloadOpened(download::DownloadItem* item) override {}
+  void OnDownloadRemoved(download::DownloadItem* item) override {}
+  void OnDownloadDestroyed(download::DownloadItem* item) override {}
 
  private:
   const base::FilePath temp_dir_;
@@ -340,13 +343,13 @@ class FileDeleter : public DownloadItem::Observer {
   DISALLOW_COPY_AND_ASSIGN(FileDeleter);
 };
 
-void FileDeleter::OnDownloadUpdated(DownloadItem* item) {
+void FileDeleter::OnDownloadUpdated(download::DownloadItem* item) {
   switch (item->GetState()) {
-    case DownloadItem::IN_PROGRESS:
+    case download::DownloadItem::IN_PROGRESS:
       break;
-    case DownloadItem::COMPLETE:
-    case DownloadItem::CANCELLED:
-    case DownloadItem::INTERRUPTED: {
+    case download::DownloadItem::COMPLETE:
+    case download::DownloadItem::CANCELLED:
+    case download::DownloadItem::INTERRUPTED: {
       item->RemoveObserver(this);
       delete this;
       break;
@@ -360,8 +363,8 @@ FileDeleter::~FileDeleter() {
   base::PostTaskWithTraits(FROM_HERE,
                            {base::MayBlock(), base::TaskPriority::BACKGROUND,
                             base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
-                           base::Bind(base::IgnoreResult(&base::DeleteFile),
-                                      std::move(temp_dir_), true));
+                           base::BindOnce(base::IgnoreResult(&base::DeleteFile),
+                                          std::move(temp_dir_), true));
 }
 
 void IndexedDBInternalsUI::OnDownloadStarted(
@@ -369,9 +372,9 @@ void IndexedDBInternalsUI::OnDownloadStarted(
     const Origin& origin,
     const base::FilePath& temp_path,
     size_t connection_count,
-    DownloadItem* item,
-    DownloadInterruptReason interrupt_reason) {
-  if (interrupt_reason != DOWNLOAD_INTERRUPT_REASON_NONE) {
+    download::DownloadItem* item,
+    download::DownloadInterruptReason interrupt_reason) {
+  if (interrupt_reason != download::DOWNLOAD_INTERRUPT_REASON_NONE) {
     LOG(ERROR) << "Error downloading database dump: "
                << DownloadInterruptReasonToString(interrupt_reason);
     return;

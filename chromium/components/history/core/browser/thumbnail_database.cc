@@ -427,7 +427,7 @@ ThumbnailDatabase::GetOldOnDemandFavicons(base::Time threshold) {
       "JOIN icon_mapping ON (icon_mapping.icon_id = favicon_bitmaps.icon_id) "
       "WHERE (favicon_bitmaps.last_requested > 0 AND "
       "       favicon_bitmaps.last_requested < ?)"));
-  old_icons.BindInt64(0, threshold.ToInternalValue());
+  old_icons.BindInt64(0, threshold.ToDeltaSinceWindowsEpoch().InMicroseconds());
 
   std::map<favicon_base::FaviconID, IconMappingsForExpiry> icon_mappings;
 
@@ -482,8 +482,8 @@ bool ThumbnailDatabase::GetFaviconBitmaps(
     FaviconBitmap favicon_bitmap;
     favicon_bitmap.bitmap_id = statement.ColumnInt64(0);
     favicon_bitmap.icon_id = icon_id;
-    favicon_bitmap.last_updated =
-        base::Time::FromInternalValue(statement.ColumnInt64(1));
+    favicon_bitmap.last_updated = base::Time::FromDeltaSinceWindowsEpoch(
+        base::TimeDelta::FromMicroseconds(statement.ColumnInt64(1)));
     if (statement.ColumnByteLength(2) > 0) {
       scoped_refptr<base::RefCountedBytes> data(new base::RefCountedBytes());
       statement.ColumnBlobAsVector(2, &data->data());
@@ -491,8 +491,8 @@ bool ThumbnailDatabase::GetFaviconBitmaps(
     }
     favicon_bitmap.pixel_size = gfx::Size(statement.ColumnInt(3),
                                           statement.ColumnInt(4));
-    favicon_bitmap.last_requested =
-        base::Time::FromInternalValue(statement.ColumnInt64(5));
+    favicon_bitmap.last_requested = base::Time::FromDeltaSinceWindowsEpoch(
+        base::TimeDelta::FromMicroseconds(statement.ColumnInt64(5)));
     favicon_bitmaps->push_back(favicon_bitmap);
   }
   return result;
@@ -513,8 +513,10 @@ bool ThumbnailDatabase::GetFaviconBitmap(
   if (!statement.Step())
     return false;
 
-  if (last_updated)
-    *last_updated = base::Time::FromInternalValue(statement.ColumnInt64(0));
+  if (last_updated) {
+    *last_updated = base::Time::FromDeltaSinceWindowsEpoch(
+        base::TimeDelta::FromMicroseconds(statement.ColumnInt64(0)));
+  }
 
   if (png_icon_data && statement.ColumnByteLength(1) > 0) {
     scoped_refptr<base::RefCountedBytes> data(new base::RefCountedBytes());
@@ -527,8 +529,10 @@ bool ThumbnailDatabase::GetFaviconBitmap(
                             statement.ColumnInt(3));
   }
 
-  if (last_requested)
-    *last_requested = base::Time::FromInternalValue(statement.ColumnInt64(4));
+  if (last_requested) {
+    *last_requested = base::Time::FromDeltaSinceWindowsEpoch(
+        base::TimeDelta::FromMicroseconds(statement.ColumnInt64(4)));
+  }
 
   return true;
 }
@@ -557,12 +561,16 @@ FaviconBitmapID ThumbnailDatabase::AddFaviconBitmap(
   // On-visit bitmaps:
   //  - keep track of last_updated: last write time is used for expiration;
   //  - always have last_requested==0: no need to keep track of last read time.
-  statement.BindInt64(2, type == ON_VISIT ? time.ToInternalValue() : 0);
+  statement.BindInt64(2, type == ON_VISIT
+                             ? time.ToDeltaSinceWindowsEpoch().InMicroseconds()
+                             : 0);
   // On-demand bitmaps:
   //  - always have last_updated==0: last write time is not stored as they are
   //    always expired and thus ready to be replaced by ON_VISIT icons;
   //  - keep track of last_requested: last read time is used for cache eviction.
-  statement.BindInt64(3, type == ON_DEMAND ? time.ToInternalValue() : 0);
+  statement.BindInt64(3, type == ON_DEMAND
+                             ? time.ToDeltaSinceWindowsEpoch().InMicroseconds()
+                             : 0);
 
   statement.BindInt(4, pixel_size.width());
   statement.BindInt(5, pixel_size.height());
@@ -590,7 +598,7 @@ bool ThumbnailDatabase::SetFaviconBitmap(
   } else {
     statement.BindNull(0);
   }
-  statement.BindInt64(1, time.ToInternalValue());
+  statement.BindInt64(1, time.ToDeltaSinceWindowsEpoch().InMicroseconds());
   statement.BindInt64(2, 0);
   statement.BindInt64(3, bitmap_id);
 
@@ -608,7 +616,7 @@ bool ThumbnailDatabase::SetFaviconBitmapLastUpdateTime(
       db_.GetCachedStatement(SQL_FROM_HERE,
                              "UPDATE favicon_bitmaps SET last_updated=?, "
                              "last_requested=? WHERE id=?"));
-  statement.BindInt64(0, time.ToInternalValue());
+  statement.BindInt64(0, time.ToDeltaSinceWindowsEpoch().InMicroseconds());
   statement.BindInt64(1, 0);
   statement.BindInt64(2, bitmap_id);
   return statement.Run();
@@ -635,9 +643,10 @@ bool ThumbnailDatabase::TouchOnDemandFavicon(const GURL& icon_url,
         SQL_FROM_HERE,
         "UPDATE favicon_bitmaps SET last_requested=? WHERE icon_id=? AND "
         "last_requested>0 AND last_requested<=?"));
-    statement.BindInt64(0, time.ToInternalValue());
+    statement.BindInt64(0, time.ToDeltaSinceWindowsEpoch().InMicroseconds());
     statement.BindInt64(1, icon_id);
-    statement.BindInt64(2, max_time.ToInternalValue());
+    statement.BindInt64(2,
+                        max_time.ToDeltaSinceWindowsEpoch().InMicroseconds());
     if (!statement.Run())
       return false;
   }
@@ -658,6 +667,28 @@ bool ThumbnailDatabase::SetFaviconOutOfDate(favicon_base::FaviconID icon_id) {
   statement.BindInt64(1, icon_id);
 
   return statement.Run();
+}
+
+bool ThumbnailDatabase::GetFaviconLastUpdatedTime(
+    favicon_base::FaviconID icon_id,
+    base::Time* last_updated) {
+  sql::Statement statement(db_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT MAX(last_updated) FROM favicon_bitmaps WHERE icon_id=?"));
+  statement.BindInt64(0, icon_id);
+
+  if (!statement.Step())
+    return false;
+
+  // Return false also if there there is no bitmap with |icon_id|.
+  if (statement.ColumnType(0) == sql::COLUMN_TYPE_NULL)
+    return false;
+
+  if (last_updated) {
+    *last_updated = base::Time::FromDeltaSinceWindowsEpoch(
+        base::TimeDelta::FromMicroseconds(statement.ColumnInt64(0)));
+  }
+  return true;
 }
 
 favicon_base::FaviconID ThumbnailDatabase::GetFaviconIDForFaviconURL(

@@ -19,6 +19,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "content/browser/service_worker/service_worker_handle.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_container.mojom.h"
@@ -26,18 +27,13 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/request_context_type.h"
 #include "content/public/common/resource_type.h"
-#include "content/public/common/service_worker_modes.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
-#include "services/network/public/interfaces/fetch_api.mojom.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_provider_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
-
-namespace blink {
-class MessagePortChannel;
-}
+#include "services/network/public/mojom/fetch_api.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_provider_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace network {
 class ResourceRequestBody;
@@ -275,11 +271,10 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       scoped_refptr<network::ResourceRequestBody> body,
       bool skip_service_worker);
 
-  // Used to get a ServiceWorkerObjectInfo to send to the renderer. Finds an
-  // existing ServiceWorkerHandle, and increments its reference count, or else
-  // creates a new one (initialized to ref count 1). Returns the
-  // ServiceWorkerObjectInfo from the handle. The renderer is expected to use
-  // ServiceWorkerHandleReference::Adopt to balance out the ref count.
+  // Used to get a ServiceWorkerObjectInfo to send to the renderer.
+  // The object info holds a Mojo connection to the ServiceWorkerHandle for the
+  // |version| to ensure the handle stays alive while the object info is alive.
+  // A new handle is created if one does not already exist.
   blink::mojom::ServiceWorkerObjectInfoPtr GetOrCreateServiceWorkerHandle(
       ServiceWorkerVersion* version);
 
@@ -296,10 +291,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   bool IsContextAlive();
 
   // Dispatches message event to the document.
-  void PostMessageToClient(
-      ServiceWorkerVersion* version,
-      const base::string16& message,
-      const std::vector<blink::MessagePortChannel>& sent_message_ports);
+  void PostMessageToClient(ServiceWorkerVersion* version,
+                           blink::TransferableMessage message);
 
   // Notifies the client that its controller used a feature, for UseCounter
   // purposes. This can only be called if IsProviderForClient() is true.
@@ -379,6 +372,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostTest, ContextSecurity);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerJobTest, Unregister);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerJobTest, RegisterDuplicateScript);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerJobTest,
+                           RegisterWithDifferentUpdateViaCache);
   FRIEND_TEST_ALL_PREFIXES(BackgroundSyncManagerTest,
                            RegisterWithoutLiveSWRegistration);
 
@@ -419,15 +414,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
 
   // Sends information about the controller to the providers of the service
   // worker clients in the renderer. If |notify_controllerchange| is true,
-  // instructs the renderer to dispatch a 'controllerchange' event.  If
-  // |version| is non-null, it must be the same as |controller_|. |version| can
-  // be null while |controller_| is non-null in the strange case of cross-site
-  // transfer, which will be removed when the non-PlzNavigate code path is
-  // removed.
-  // TODO(falken): As non-PlzNavigate and cross-site transfer were removed, see
-  // if this can be simplified.
-  void SendSetControllerServiceWorker(ServiceWorkerVersion* version,
-                                      bool notify_controllerchange);
+  // instructs the renderer to dispatch a 'controllerchange' event.
+  void SendSetControllerServiceWorker(bool notify_controllerchange);
 
   // Implements mojom::ServiceWorkerContainerHost.
   void Register(const GURL& script_url,
@@ -584,11 +572,10 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   std::vector<base::Closure> queued_events_;
 
   // S13nServiceWorker/NavigationMojoResponse:
-  // A service worker handle ID for the controller service worker that is
+  // A service worker handle for the controller service worker that is
   // pre-created before the renderer process (and therefore the dispatcher host)
   // is created.
-  int precreated_controller_handle_id_ =
-      blink::mojom::kInvalidServiceWorkerHandleId;
+  base::WeakPtr<ServiceWorkerHandle> precreated_controller_handle_;
 
   // For provider hosts that are hosting a running service worker.
   mojo::Binding<service_manager::mojom::InterfaceProvider>

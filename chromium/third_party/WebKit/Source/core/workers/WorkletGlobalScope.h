@@ -6,13 +6,13 @@
 #define WorkletGlobalScope_h
 
 #include <memory>
+#include "base/single_thread_task_runner.h"
 #include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
 #include "core/workers/WorkletModuleResponsesMapProxy.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
@@ -66,7 +66,7 @@ class CORE_EXPORT WorkletGlobalScope
       const KURL& module_url_record,
       WorkletModuleResponsesMap*,
       network::mojom::FetchCredentialsMode,
-      scoped_refptr<WebTaskRunner> outside_settings_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
       WorkletPendingTasks*);
 
   WorkletModuleResponsesMapProxy* ModuleResponsesMapProxy() const;
@@ -75,6 +75,15 @@ class CORE_EXPORT WorkletGlobalScope
   const SecurityOrigin* DocumentSecurityOrigin() const {
     return document_security_origin_.get();
   }
+
+  // Customize the security context used for origin trials.
+  // Origin trials are only enabled in secure contexts, but WorkletGlobalScopes
+  // are defined to have a unique, opaque origin, so are not secure:
+  // https://drafts.css-houdini.org/worklets/#script-settings-for-worklets
+  // For origin trials, instead consider the context of the document which
+  // created the worklet, since the origin trial tokens are inherited from the
+  // document.
+  bool DocumentSecureContext() const { return document_secure_context_; }
 
   void Trace(blink::Visitor*) override;
   void TraceWrappers(const ScriptWrappableVisitor*) const override;
@@ -94,8 +103,12 @@ class CORE_EXPORT WorkletGlobalScope
   const KURL url_;
   const String user_agent_;
 
-  // Used for module fetch.
+  // Used for module fetch and origin trials, inherited from the parent
+  // Document.
   const scoped_refptr<const SecurityOrigin> document_security_origin_;
+
+  // Used for origin trials, inherited from the parent Document.
+  const bool document_secure_context_;
 
   Member<WorkletModuleResponsesMapProxy> module_responses_map_proxy_;
 };

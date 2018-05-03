@@ -21,13 +21,14 @@
 #include "modules/device_orientation/DeviceOrientationData.h"
 #include "modules/media_controls/MediaControlsImpl.h"
 #include "modules/screen_orientation/ScreenOrientationControllerImpl.h"
+#include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "platform/testing/EmptyWebMediaPlayer.h"
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "public/platform/WebSize.h"
-#include "public/platform/modules/screen_orientation/WebScreenOrientationClient.h"
 #include "public/platform/modules/screen_orientation/WebScreenOrientationType.h"
+#include "services/device/public/mojom/screen_orientation.mojom-blink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -39,14 +40,6 @@ namespace blink {
 using namespace HTMLNames;
 
 namespace {
-
-class FakeWebScreenOrientationClient : public WebScreenOrientationClient {
- public:
-  // WebScreenOrientationClient overrides:
-  void LockOrientation(WebScreenOrientationLockType,
-                       std::unique_ptr<WebLockOrientationCallback>) override {}
-  void UnlockOrientation() override {}
-};
 
 class MockVideoWebMediaPlayer : public EmptyWebMediaPlayer {
  public:
@@ -61,8 +54,12 @@ class MockChromeClient : public EmptyChromeClient {
   // ChromeClient overrides:
   void InstallSupplements(LocalFrame& frame) override {
     EmptyChromeClient::InstallSupplements(frame);
-    ScreenOrientationControllerImpl::ProvideTo(frame,
-                                               &web_screen_orientation_client_);
+    ScreenOrientationControllerImpl::ProvideTo(frame);
+    device::mojom::blink::ScreenOrientationAssociatedPtr screen_orientation;
+    mojo::MakeRequestAssociatedWithDedicatedPipe(&screen_orientation);
+    ScreenOrientationControllerImpl::From(frame)
+        ->SetScreenOrientationAssociatedPtrForTests(
+            std::move(screen_orientation));
   }
   void EnterFullscreen(LocalFrame& frame) override {
     Fullscreen::From(*frame.GetDocument()).DidEnterFullscreen();
@@ -72,9 +69,6 @@ class MockChromeClient : public EmptyChromeClient {
   }
 
   MOCK_CONST_METHOD0(GetScreenInfo, WebScreenInfo());
-
- private:
-  FakeWebScreenOrientationClient web_screen_orientation_client_;
 };
 
 class StubLocalFrameClient : public EmptyLocalFrameClient {

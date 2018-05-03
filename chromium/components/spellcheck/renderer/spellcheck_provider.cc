@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/spellcheck/common/spellcheck.mojom.h"
-#include "components/spellcheck/common/spellcheck_messages.h"
 #include "components/spellcheck/common/spellcheck_result.h"
 #include "components/spellcheck/renderer/spellcheck.h"
 #include "components/spellcheck/renderer/spellcheck_language.h"
@@ -46,8 +45,10 @@ SpellCheckProvider::SpellCheckProvider(
     : content::RenderFrameObserver(render_frame),
       content::RenderFrameObserverTracker<SpellCheckProvider>(render_frame),
       spellcheck_(spellcheck),
-      embedder_provider_(embedder_provider) {
+      embedder_provider_(embedder_provider),
+      weak_factory_(this) {
   DCHECK(spellcheck_);
+  DCHECK(embedder_provider);
   if (render_frame)  // NULL in unit tests.
     render_frame->GetWebFrame()->SetTextCheckClient(this);
 }
@@ -59,9 +60,7 @@ spellcheck::mojom::SpellCheckHost& SpellCheckProvider::GetSpellCheckHost() {
   if (spell_check_host_)
     return *spell_check_host_;
 
-  // nullptr in tests.
-  if (embedder_provider_)
-    embedder_provider_->GetInterface(&spell_check_host_);
+  embedder_provider_->GetInterface(&spell_check_host_);
   return *spell_check_host_;
 }
 
@@ -85,33 +84,18 @@ void SpellCheckProvider::RequestTextChecking(
   last_identifier_ = text_check_completions_.Add(completion);
 
 #if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
-  // TODO(crbug.com/714480): convert the RequestTextCheck IPC to mojo.
   // Text check (unified request for grammar and spell check) is only
   // available for browser process, so we ask the system spellchecker
-  // over IPC or return an empty result if the checker is not available.
-  Send(new SpellCheckHostMsg_RequestTextCheck(routing_id(), last_identifier_,
-                                              text));
+  // over mojo or return an empty result if the checker is not available.
+  GetSpellCheckHost().RequestTextCheck(
+      text, routing_id(),
+      base::BindOnce(&SpellCheckProvider::OnRespondTextCheck,
+                     weak_factory_.GetWeakPtr(), last_identifier_, text));
 #else
-  if (!spell_check_host_ && !content::RenderThread::Get())
-    return;  // NULL in tests that do not provide a spell_check_host_.
   GetSpellCheckHost().CallSpellingService(
       text, base::BindOnce(&SpellCheckProvider::OnRespondSpellingService,
-                           base::Unretained(this), last_identifier_, text));
+                           weak_factory_.GetWeakPtr(), last_identifier_, text));
 #endif  // !USE_BROWSER_SPELLCHECKER
-}
-
-bool SpellCheckProvider::OnMessageReceived(const IPC::Message& message) {
-#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(SpellCheckProvider, message)
-    // TODO(crbug.com/714480): convert the RequestTextCheck IPC to mojo.
-    IPC_MESSAGE_HANDLER(SpellCheckMsg_RespondTextCheck, OnRespondTextCheck)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
-#else
-  return false;
-#endif
 }
 
 void SpellCheckProvider::FocusedNodeChanged(const blink::WebNode& unused) {
@@ -122,9 +106,7 @@ void SpellCheckProvider::FocusedNodeChanged(const blink::WebNode& unused) {
                            : frame->GetDocument().FocusedElement();
   bool enabled = !element.IsNull() && element.IsEditable();
   bool checked = enabled && IsSpellCheckingEnabled();
-
-  // TODO(crbug.com/714480): convert the ToggleSpellCheck IPC to mojo.
-  Send(new SpellCheckHostMsg_ToggleSpellCheck(routing_id(), enabled, checked));
+  GetSpellCheckHost().ToggleSpellCheck(enabled, checked);
 #endif  // USE_BROWSER_SPELLCHECKER
 }
 
@@ -154,8 +136,6 @@ void SpellCheckProvider::CheckSpelling(
     UMA_HISTOGRAM_COUNTS("SpellCheck.api.check", word.size());
     // If optional_suggestions is not requested, the API is called
     // for marking.  So we use this for counting markable words.
-    if (!spell_check_host_ && !content::RenderThread::Get())
-      return;  // NULL in tests that do not provide a spell_check_host_.
     GetSpellCheckHost().NotifyChecked(word, 0 < length);
   }
 }

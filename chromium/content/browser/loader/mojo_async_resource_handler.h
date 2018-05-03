@@ -13,16 +13,17 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "content/browser/loader/resource_handler.h"
 #include "content/common/content_export.h"
-#include "content/network/upload_progress_tracker.h"
 #include "content/public/common/resource_type.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
 #include "net/base/io_buffer.h"
 #include "net/base/request_priority.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/upload_progress_tracker.h"
 
 class GURL;
 
@@ -116,7 +117,7 @@ class CONTENT_EXPORT MojoAsyncResourceHandler
 
   bool CheckForSufficientResource();
   void OnWritable(MojoResult result);
-  void Cancel();
+  void Cancel(uint32_t custom_reason, const std::string& description);
   // Calculates the diff between URLRequest::GetTotalReceivedBytes() and
   // |reported_total_received_bytes_|, returns it, and updates
   // |reported_total_received_bytes_|.
@@ -124,9 +125,10 @@ class CONTENT_EXPORT MojoAsyncResourceHandler
 
   // These functions can be overriden only for tests.
   virtual void ReportBadMessage(const std::string& error);
-  virtual std::unique_ptr<UploadProgressTracker> CreateUploadProgressTracker(
+  virtual std::unique_ptr<network::UploadProgressTracker>
+  CreateUploadProgressTracker(
       const base::Location& from_here,
-      UploadProgressTracker::UploadProgressReportCallback callback);
+      network::UploadProgressTracker::UploadProgressReportCallback callback);
 
   void OnTransfer(network::mojom::URLLoaderRequest mojo_request,
                   network::mojom::URLLoaderClientPtr url_loader_client);
@@ -148,9 +150,12 @@ class CONTENT_EXPORT MojoAsyncResourceHandler
   bool did_defer_on_writing_ = false;
   bool did_defer_on_redirect_ = false;
   bool did_defer_on_response_started_ = false;
-  base::TimeTicks response_started_ticks_;
   int64_t reported_total_received_bytes_ = 0;
   int64_t total_written_bytes_ = 0;
+
+  // Used for UMA histograms.
+  base::TimeTicks time_response_started_;
+  base::TimeTicks time_proceed_with_response_;
 
   // Pointer to parent's information about the read buffer. Only non-null while
   // OnWillRead is deferred.
@@ -166,7 +171,7 @@ class CONTENT_EXPORT MojoAsyncResourceHandler
   scoped_refptr<SharedWriter> shared_writer_;
   mojo::ScopedDataPipeConsumerHandle response_body_consumer_handle_;
 
-  std::unique_ptr<UploadProgressTracker> upload_progress_tracker_;
+  std::unique_ptr<network::UploadProgressTracker> upload_progress_tracker_;
 
   base::WeakPtrFactory<MojoAsyncResourceHandler> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(MojoAsyncResourceHandler);

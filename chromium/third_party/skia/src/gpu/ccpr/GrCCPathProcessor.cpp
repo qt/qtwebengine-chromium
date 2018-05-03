@@ -42,13 +42,22 @@ sk_sp<const GrBuffer> GrCCPathProcessor::FindVertexBuffer(GrOnFlushResourceProvi
                                              kOctoEdgeNorms, gVertexBufferKey);
 }
 
-// Index buffer for the octagon defined above.
-static uint16_t kOctoIndices[GrCCPathProcessor::kPerInstanceIndexCount] = {
+static constexpr uint16_t kRestartStrip = 0xffff;
+
+static constexpr uint16_t kOctoIndicesAsStrips[] = {
+    1, 0, 2, 4, 3, kRestartStrip, // First half.
+    5, 4, 6, 0, 7 // Second half.
+};
+
+static constexpr uint16_t kOctoIndicesAsTris[] = {
+    // First half.
+    1, 0, 2,
     0, 4, 2,
-    0, 6, 4,
-    0, 2, 1,
     2, 4, 3,
-    4, 6, 5,
+
+    // Second half.
+    5, 4, 6,
+    4, 0, 6,
     6, 0, 7,
 };
 
@@ -56,12 +65,22 @@ GR_DECLARE_STATIC_UNIQUE_KEY(gIndexBufferKey);
 
 sk_sp<const GrBuffer> GrCCPathProcessor::FindIndexBuffer(GrOnFlushResourceProvider* onFlushRP) {
     GR_DEFINE_STATIC_UNIQUE_KEY(gIndexBufferKey);
-    return onFlushRP->findOrMakeStaticBuffer(kIndex_GrBufferType, sizeof(kOctoIndices),
-                                             kOctoIndices, gIndexBufferKey);
+    if (onFlushRP->caps()->usePrimitiveRestart()) {
+        return onFlushRP->findOrMakeStaticBuffer(kIndex_GrBufferType, sizeof(kOctoIndicesAsStrips),
+                                                 kOctoIndicesAsStrips, gIndexBufferKey);
+    } else {
+        return onFlushRP->findOrMakeStaticBuffer(kIndex_GrBufferType, sizeof(kOctoIndicesAsTris),
+                                                 kOctoIndicesAsTris, gIndexBufferKey);
+    }
 }
 
-GrCCPathProcessor::GrCCPathProcessor(GrResourceProvider* rp, sk_sp<GrTextureProxy> atlas,
-                                     SkPath::FillType fillType, const GrShaderCaps& shaderCaps)
+int GrCCPathProcessor::NumIndicesPerInstance(const GrCaps& caps) {
+    return caps.usePrimitiveRestart() ? SK_ARRAY_COUNT(kOctoIndicesAsStrips)
+                                      : SK_ARRAY_COUNT(kOctoIndicesAsTris);
+}
+
+GrCCPathProcessor::GrCCPathProcessor(GrResourceProvider* resourceProvider,
+                                     sk_sp<GrTextureProxy> atlas, SkPath::FillType fillType)
         : INHERITED(kGrCCPathProcessor_ClassID)
         , fFillType(fillType)
         , fAtlasAccess(std::move(atlas), GrSamplerState::Filter::kNearest,
@@ -91,8 +110,12 @@ GrCCPathProcessor::GrCCPathProcessor(GrResourceProvider* rp, sk_sp<GrTextureProx
 
     this->addVertexAttrib("edge_norms", kFloat4_GrVertexAttribType);
 
-    fAtlasAccess.instantiate(rp);
+    fAtlasAccess.instantiate(resourceProvider);
     this->addTextureSampler(&fAtlasAccess);
+
+    if (resourceProvider->caps()->usePrimitiveRestart()) {
+        this->setWillUsePrimitiveRestart();
+    }
 }
 
 void GrCCPathProcessor::getGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder* b) const {
@@ -123,6 +146,8 @@ GrGLSLPrimitiveProcessor* GrCCPathProcessor::createGLSLInstance(const GrShaderCa
 
 void GLSLPathProcessor::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     using InstanceAttribs = GrCCPathProcessor::InstanceAttribs;
+    using Interpolation = GrGLSLVaryingHandler::Interpolation;
+
     const GrCCPathProcessor& proc = args.fGP.cast<GrCCPathProcessor>();
     GrGLSLUniformHandler* uniHandler = args.fUniformHandler;
     GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
@@ -137,8 +162,8 @@ void GLSLPathProcessor::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     GrGLSLVarying texcoord(kFloat2_GrSLType);
     GrGLSLVarying color(kHalf4_GrSLType);
     varyingHandler->addVarying("texcoord", &texcoord);
-    varyingHandler->addFlatPassThroughAttribute(&proc.getInstanceAttrib(InstanceAttribs::kColor),
-                                                args.fOutputColor);
+    varyingHandler->addPassThroughAttribute(&proc.getInstanceAttrib(InstanceAttribs::kColor),
+                                            args.fOutputColor, Interpolation::kCanBeFlat);
 
     // The vertex shader bloats and intersects the devBounds and devBounds45 rectangles, in order to
     // find an octagon that circumscribes the (bloated) path.
@@ -154,14 +179,14 @@ void GLSLPathProcessor::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     // N[0] is the normal for the edge we are intersecting from the regular bounding box, pointing
     // out of the octagon.
-    v->codeAppendf("float2 refpt = (min(N[0].x, N[0].y) < 0) ? %s.xy : %s.zw;",
+    v->codeAppendf("float2 refpt = float2[2](%s.xy, %s.zw)[sk_VertexID >> 2];",
                    proc.getInstanceAttrib(InstanceAttribs::kDevBounds).fName,
                    proc.getInstanceAttrib(InstanceAttribs::kDevBounds).fName);
     v->codeAppendf("refpt += N[0] * %f;", kAABloatRadius); // bloat for AA.
 
     // N[1] is the normal for the edge we are intersecting from the 45-degree bounding box, pointing
     // out of the octagon.
-    v->codeAppendf("float2 refpt45 = (N[1].x < 0) ? %s.xy : %s.zw;",
+    v->codeAppendf("float2 refpt45 = float2[2](%s.xy, %s.zw)[((sk_VertexID + 1) >> 2) & 1];",
                    proc.getInstanceAttrib(InstanceAttribs::kDevBounds45).fName,
                    proc.getInstanceAttrib(InstanceAttribs::kDevBounds45).fName);
     v->codeAppendf("refpt45 *= float2x2(.5,.5,-.5,.5);"); // transform back to device space.
@@ -194,7 +219,7 @@ void GLSLPathProcessor::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          args.fFPCoordTransformHandler);
 
     // Fragment shader.
-    GrGLSLPPFragmentBuilder* f = args.fFragBuilder;
+    GrGLSLFPFragmentBuilder* f = args.fFragBuilder;
 
     f->codeAppend ("half coverage_count = ");
     f->appendTextureLookup(args.fTexSamplers[0], texcoord.fsIn(), kFloat2_GrSLType);

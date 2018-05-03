@@ -21,7 +21,31 @@ blink_core_sources("fileapi") {
     "FileReaderLoaderClient.h",
     "FileReaderSync.cpp",
     "FileReaderSync.h",
+    "PublicURLManager.cpp",
+    "PublicURLManager.h",
     "URLFileAPI.cpp",
     "URLFileAPI.h",
+    "URLRegistry.h",
+  ]
+}
+
+jumbo_source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "FileListTest.cpp",
+    "FileTest.cpp",
+    "PublicURLManagerTest.cpp",
+  ]
+
+  configs += [
+    "//third_party/WebKit/Source/core:blink_core_pch",
+    "//third_party/WebKit/Source:config",
+    "//third_party/WebKit/Source:inside_blink",
+  ]
+
+  deps = [
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/WebKit/Source/core",
   ]
 }

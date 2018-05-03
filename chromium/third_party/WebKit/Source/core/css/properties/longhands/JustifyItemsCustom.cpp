@@ -8,6 +8,7 @@
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/properties/CSSParsingUtils.h"
 #include "core/css/properties/ComputedStyleUtils.h"
+#include "core/frame/WebFeature.h"
 #include "core/style/ComputedStyle.h"
 
 namespace blink {
@@ -18,6 +19,9 @@ const CSSValue* JustifyItems::ParseSingleValue(
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {
   CSSParserTokenRange range_copy = range;
+  // justify-items property does not allow the 'auto' value.
+  if (CSSPropertyParserHelpers::IdentMatches<CSSValueAuto>(range.Peek().Id()))
+    return nullptr;
   CSSIdentifierValue* legacy =
       CSSPropertyParserHelpers::ConsumeIdent<CSSValueLegacy>(range_copy);
   CSSIdentifierValue* position_keyword =
@@ -25,12 +29,18 @@ const CSSValue* JustifyItems::ParseSingleValue(
                                              CSSValueRight>(range_copy);
   if (!legacy)
     legacy = CSSPropertyParserHelpers::ConsumeIdent<CSSValueLegacy>(range_copy);
-  if (legacy && position_keyword) {
+  if (legacy) {
     range = range_copy;
-    return CSSValuePair::Create(legacy, position_keyword,
-                                CSSValuePair::kDropIdenticalValues);
+    if (position_keyword) {
+      context.Count(WebFeature::kCSSLegacyAlignment);
+      return CSSValuePair::Create(legacy, position_keyword,
+                                  CSSValuePair::kDropIdenticalValues);
+    }
+    return legacy;
   }
-  return CSSParsingUtils::ConsumeSelfPositionOverflowPosition(range);
+
+  return CSSParsingUtils::ConsumeSelfPositionOverflowPosition(
+      range, CSSParsingUtils::IsSelfPositionOrLeftOrRightKeyword);
 }
 
 const CSSValue* JustifyItems::CSSValueFromComputedStyleInternal(

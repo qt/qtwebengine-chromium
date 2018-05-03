@@ -41,7 +41,6 @@
 namespace blink {
 
 class WebDocumentSubresourceFilter;
-class WebSecurityOrigin;
 class WebServiceWorkerNetworkProvider;
 class WebURL;
 class WebURLRequest;
@@ -58,12 +57,6 @@ class BLINK_EXPORT WebDocumentLoader {
    public:
     virtual ~ExtraData() = default;
   };
-
-  // Returns whether a user activation state should be persisted across
-  // navigation.
-  static bool ShouldPersistUserActivation(
-      const WebSecurityOrigin& previous_origin,
-      const WebSecurityOrigin& new_origin);
 
   // Returns the original request that resulted in this datasource.
   virtual const WebURLRequest& OriginalRequest() const = 0;
@@ -150,6 +143,15 @@ class BLINK_EXPORT WebDocumentLoader {
   // Mark that the load was user activated. This is meant to be used for browser
   // initiated loads that may have had a user activation from the browser UI.
   virtual void SetUserActivated() = 0;
+
+  // Sets if the document is an ad identified subframe.
+  virtual void SetIsAdSubframe(bool is_ad_subframe) = 0;
+  virtual bool GetIsAdSubframe() const = 0;
+
+  // Used to pause or resume the parser. The document loader is still allowed to
+  // fetch new data.
+  virtual void BlockParser() = 0;
+  virtual void ResumeParser() = 0;
 
  protected:
   ~WebDocumentLoader() = default;

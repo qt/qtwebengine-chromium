@@ -12,10 +12,12 @@
 #include "content/browser/android/content_view_core.h"
 #include "content/browser/android/gesture_listener_manager.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/drop_data.h"
@@ -37,19 +39,6 @@ using base::android::ScopedJavaLocalRef;
 namespace content {
 
 namespace {
-void DisplayToScreenInfo(const display::Display& display, ScreenInfo* results) {
-  results->rect = display.bounds();
-  // TODO(husky): Remove any system controls from availableRect.
-  results->available_rect = display.work_area();
-  results->device_scale_factor = display.device_scale_factor();
-  results->orientation_angle = display.RotationAsDegree();
-  results->orientation_type =
-      RenderWidgetHostViewBase::GetOrientationTypeForMobile(display);
-  results->depth = display.color_depth();
-  results->depth_per_component = display.depth_per_component();
-  results->is_monochrome = display.is_monochrome();
-  results->color_space = display.color_space();
-}
 
 RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid(
     WebContents* web_contents) {
@@ -66,12 +55,6 @@ RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid(
   }
   return static_cast<RenderWidgetHostViewAndroid*>(rwhv);
 }
-}
-
-// static
-void WebContentsView::GetDefaultScreenInfo(ScreenInfo* results) {
-  DisplayToScreenInfo(display::Screen::GetScreen()->GetPrimaryDisplay(),
-                      results);
 }
 
 // static
@@ -107,8 +90,7 @@ WebContentsViewAndroid::WebContentsViewAndroid(
       content_view_core_(NULL),
       delegate_(delegate),
       view_(this, ui::ViewAndroid::LayoutType::NORMAL),
-      synchronous_compositor_client_(nullptr),
-      gesture_listener_manager_(nullptr) {}
+      synchronous_compositor_client_(nullptr) {}
 
 WebContentsViewAndroid::~WebContentsViewAndroid() {
   if (view_.GetLayer())
@@ -177,27 +159,8 @@ WebContentsViewAndroid::GetRenderWidgetHostViewAndroid() {
       web_contents_->GetRenderWidgetHostView());
 }
 
-void WebContentsViewAndroid::SetGestureListenerManager(
-    std::unique_ptr<GestureListenerManager> manager) {
-  DCHECK(!gesture_listener_manager_);
-  gesture_listener_manager_ = std::move(manager);
-}
-
 gfx::NativeWindow WebContentsViewAndroid::GetTopLevelNativeWindow() const {
   return content_view_core_ ? content_view_core_->GetWindowAndroid() : nullptr;
-}
-
-void WebContentsViewAndroid::GetScreenInfo(ScreenInfo* result) const {
-  // Since API 17 Android supports multiple displays with different properties.
-
-  gfx::NativeView native_view = GetNativeView();
-  display::Display display =
-      native_view
-          ? display::Screen::GetScreen()->GetDisplayNearestView(native_view)
-          : display::Screen::GetScreen()->GetPrimaryDisplay();
-  DisplayToScreenInfo(display, result);
-  if (delegate_)
-    delegate_->OverrideDisplayColorSpace(&result->color_space);
 }
 
 void WebContentsViewAndroid::GetContainerBounds(gfx::Rect* out) const {
@@ -523,16 +486,8 @@ bool WebContentsViewAndroid::DoBrowserControlsShrinkBlinkSize() const {
   return delegate ? delegate->DoBrowserControlsShrinkBlinkSize() : false;
 }
 
-void WebContentsViewAndroid::GestureEventAck(
-    const blink::WebGestureEvent& event,
-    InputEventAckState ack_result) {
-  if (!gesture_listener_manager_)
-    return;
-  gesture_listener_manager_->GestureEventAck(event, ack_result);
-}
-
 bool WebContentsViewAndroid::OnTouchEvent(const ui::MotionEventAndroid& event) {
-  if (event.GetAction() == ui::MotionEventAndroid::ACTION_DOWN)
+  if (event.GetAction() == ui::MotionEventAndroid::Action::DOWN)
     content_view_core_->OnTouchDown(event.GetJavaObject());
   return false;  // let the children handle the actual event.
 }
@@ -540,9 +495,9 @@ bool WebContentsViewAndroid::OnTouchEvent(const ui::MotionEventAndroid& event) {
 bool WebContentsViewAndroid::OnMouseEvent(const ui::MotionEventAndroid& event) {
   // Hover events can be intercepted when in accessibility mode.
   auto action = event.GetAction();
-  if (action != ui::MotionEventAndroid::ACTION_HOVER_ENTER &&
-      action != ui::MotionEventAndroid::ACTION_HOVER_EXIT &&
-      action != ui::MotionEventAndroid::ACTION_HOVER_MOVE)
+  if (action != ui::MotionEventAndroid::Action::HOVER_ENTER &&
+      action != ui::MotionEventAndroid::Action::HOVER_EXIT &&
+      action != ui::MotionEventAndroid::Action::HOVER_MOVE)
     return false;
 
   auto* manager = static_cast<BrowserAccessibilityManagerAndroid*>(

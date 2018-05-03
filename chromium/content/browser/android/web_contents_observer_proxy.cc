@@ -199,6 +199,11 @@ void WebContentsObserverProxy::NavigationEntryCommitted(
   Java_WebContentsObserverProxy_navigationEntryCommitted(env, java_observer_);
 }
 
+void WebContentsObserverProxy::NavigationEntriesDeleted() {
+  JNIEnv* env = AttachCurrentThread();
+  Java_WebContentsObserverProxy_navigationEntriesDeleted(env, java_observer_);
+}
+
 void WebContentsObserverProxy::DidAttachInterstitialPage() {
   JNIEnv* env = AttachCurrentThread();
   Java_WebContentsObserverProxy_didAttachInterstitialPage(env, java_observer_);
@@ -227,14 +232,17 @@ void WebContentsObserverProxy::DidFirstVisuallyNonEmptyPaint() {
                                                               java_observer_);
 }
 
-void WebContentsObserverProxy::WasShown() {
-  JNIEnv* env = AttachCurrentThread();
-  Java_WebContentsObserverProxy_wasShown(env, java_observer_);
-}
+void WebContentsObserverProxy::OnVisibilityChanged(
+    content::Visibility visibility) {
+  // Occlusion is not supported on Android.
+  DCHECK_NE(visibility, content::Visibility::OCCLUDED);
 
-void WebContentsObserverProxy::WasHidden() {
   JNIEnv* env = AttachCurrentThread();
-  Java_WebContentsObserverProxy_wasHidden(env, java_observer_);
+
+  if (visibility == content::Visibility::VISIBLE)
+    Java_WebContentsObserverProxy_wasShown(env, java_observer_);
+  else
+    Java_WebContentsObserverProxy_wasHidden(env, java_observer_);
 }
 
 void WebContentsObserverProxy::TitleWasSet(NavigationEntry* entry) {

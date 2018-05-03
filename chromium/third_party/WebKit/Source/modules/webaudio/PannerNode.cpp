@@ -57,7 +57,6 @@ PannerHandler::PannerHandler(AudioNode& node,
       distance_model_(DistanceEffect::kModelInverse),
       is_azimuth_elevation_dirty_(true),
       is_distance_cone_gain_dirty_(true),
-      last_gain_(-1.0),
       cached_azimuth_(0),
       cached_elevation_(0),
       cached_distance_cone_gain_(1.0f),
@@ -151,10 +150,8 @@ void PannerHandler::Process(size_t frames_to_process) {
       // Get the distance and cone gain.
       float total_gain = DistanceConeGain();
 
-      last_gain_ = total_gain;
-
-      // Apply gain in-place with de-zippering.
-      destination->CopyWithGainFrom(*destination, &last_gain_, total_gain);
+      // Apply gain in-place.
+      destination->CopyWithGainFrom(*destination, total_gain);
     }
   } else {
     // Too bad - The tryLock() failed.  We must be in the middle of changing the
@@ -433,25 +430,35 @@ void PannerHandler::SetConeOuterGain(double angle) {
   MarkPannerAsDirty(PannerHandler::kDistanceConeGainDirty);
 }
 
-void PannerHandler::SetPosition(float x, float y, float z) {
+void PannerHandler::SetPosition(float x,
+                                float y,
+                                float z,
+                                ExceptionState& exceptionState) {
   // This synchronizes with process().
   MutexLocker process_locker(process_lock_);
 
-  position_x_->SetValue(x);
-  position_y_->SetValue(y);
-  position_z_->SetValue(z);
+  double now = Context()->currentTime();
+
+  position_x_->Timeline().SetValueAtTime(x, now, exceptionState);
+  position_y_->Timeline().SetValueAtTime(y, now, exceptionState);
+  position_z_->Timeline().SetValueAtTime(z, now, exceptionState);
 
   MarkPannerAsDirty(PannerHandler::kAzimuthElevationDirty |
                     PannerHandler::kDistanceConeGainDirty);
 }
 
-void PannerHandler::SetOrientation(float x, float y, float z) {
+void PannerHandler::SetOrientation(float x,
+                                   float y,
+                                   float z,
+                                   ExceptionState& exceptionState) {
   // This synchronizes with process().
   MutexLocker process_locker(process_lock_);
 
-  orientation_x_->SetValue(x);
-  orientation_y_->SetValue(y);
-  orientation_z_->SetValue(z);
+  double now = Context()->currentTime();
+
+  orientation_x_->Timeline().SetValueAtTime(x, now, exceptionState);
+  orientation_y_->Timeline().SetValueAtTime(y, now, exceptionState);
+  orientation_z_->Timeline().SetValueAtTime(z, now, exceptionState);
 
   MarkPannerAsDirty(PannerHandler::kDistanceConeGainDirty);
 }
@@ -732,12 +739,18 @@ void PannerNode::setPanningModel(const String& model) {
   GetPannerHandler().SetPanningModel(model);
 }
 
-void PannerNode::setPosition(float x, float y, float z) {
-  GetPannerHandler().SetPosition(x, y, z);
+void PannerNode::setPosition(float x,
+                             float y,
+                             float z,
+                             ExceptionState& exceptionState) {
+  GetPannerHandler().SetPosition(x, y, z, exceptionState);
 }
 
-void PannerNode::setOrientation(float x, float y, float z) {
-  GetPannerHandler().SetOrientation(x, y, z);
+void PannerNode::setOrientation(float x,
+                                float y,
+                                float z,
+                                ExceptionState& exceptionState) {
+  GetPannerHandler().SetOrientation(x, y, z, exceptionState);
 }
 
 String PannerNode::distanceModel() const {

@@ -30,8 +30,8 @@
 #include "content/test/test_content_client.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -245,33 +245,23 @@ class ServiceWorkerProviderHostTest : public testing::Test {
       const GURL& document_url,
       const GURL& topmost_frame_url,
       ServiceWorkerRemoteProviderEndpoint* remote_endpoint) {
-    std::unique_ptr<ServiceWorkerProviderHost> host;
-    if (IsBrowserSideNavigationEnabled()) {
-      host = ServiceWorkerProviderHost::PreCreateNavigationHost(
-          helper_->context()->AsWeakPtr(), true,
-          base::Callback<WebContents*(void)>());
-      ServiceWorkerProviderHostInfo info(
-          host->provider_id(), 1 /* route_id */,
-          blink::mojom::ServiceWorkerProviderType::kForWindow,
-          true /* is_parent_frame_secure */);
-      remote_endpoint->BindWithProviderHostInfo(&info);
-      host->CompleteNavigationInitialized(
-          helper_->mock_render_process_id(), std::move(info),
-          helper_
-              ->GetDispatcherHostForProcess(helper_->mock_render_process_id())
-              ->AsWeakPtr());
-    } else {
-      host = CreateProviderHostWithDispatcherHost(
-          helper_->mock_render_process_id(), next_renderer_provided_id_++,
-          helper_->context()->AsWeakPtr(), 1 /* route_id */,
-          helper_->GetDispatcherHostForProcess(
-              helper_->mock_render_process_id()),
-          remote_endpoint);
-    }
+    std::unique_ptr<ServiceWorkerProviderHost> host =
+        ServiceWorkerProviderHost::PreCreateNavigationHost(
+            helper_->context()->AsWeakPtr(), true,
+            base::Callback<WebContents*(void)>());
+    ServiceWorkerProviderHostInfo info(
+        host->provider_id(), 1 /* route_id */,
+        blink::mojom::ServiceWorkerProviderType::kForWindow,
+        true /* is_parent_frame_secure */);
+    remote_endpoint->BindWithProviderHostInfo(&info);
+    host->CompleteNavigationInitialized(
+        helper_->mock_render_process_id(), std::move(info),
+        helper_->GetDispatcherHostForProcess(helper_->mock_render_process_id())
+            ->AsWeakPtr());
 
-    ServiceWorkerProviderHost* host_raw = host.get();
     host->SetDocumentUrl(document_url);
     host->SetTopmostFrameUrl(topmost_frame_url);
+    ServiceWorkerProviderHost* host_raw = host.get();
     context_->AddProviderHost(std::move(host));
     return host_raw;
   }
@@ -394,10 +384,8 @@ class MockServiceWorkerContainer : public mojom::ServiceWorkerContainer {
                      bool should_notify_controllerchange) override {
     was_set_controller_called_ = true;
   }
-  void PostMessageToClient(
-      blink::mojom::ServiceWorkerObjectInfoPtr controller,
-      const base::string16& message,
-      std::vector<mojo::ScopedMessagePipeHandle> message_pipes) override {}
+  void PostMessageToClient(blink::mojom::ServiceWorkerObjectInfoPtr controller,
+                           blink::TransferableMessage message) override {}
   void CountFeature(blink::mojom::WebFeature feature) override {}
 
   bool was_set_controller_called() const { return was_set_controller_called_; }

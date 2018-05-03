@@ -38,11 +38,6 @@
 #include "modules/filesystem/FileEntry.h"
 #include "modules/filesystem/FileSystemCallbacks.h"
 #include "modules/filesystem/FileWriter.h"
-#include "modules/filesystem/FileWriterBaseCallback.h"
-#include "modules/filesystem/FileWriterCallback.h"
-#include "modules/filesystem/MetadataCallback.h"
-#include "platform/FileMetadata.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "platform/wtf/text/WTFString.h"
@@ -145,34 +140,10 @@ void DOMFileSystem::ReportError(ExecutionContext* execution_context,
                              WrapPersistent(error_callback), file_error));
 }
 
-namespace {
-
-class ConvertToFileWriterCallback : public FileWriterBaseCallback {
- public:
-  static ConvertToFileWriterCallback* Create(FileWriterCallback* callback) {
-    return new ConvertToFileWriterCallback(callback);
-  }
-
-  void Trace(blink::Visitor* visitor) override {
-    visitor->Trace(callback_);
-    FileWriterBaseCallback::Trace(visitor);
-  }
-
-  void handleEvent(FileWriterBase* file_writer_base) override {
-    callback_->handleEvent(static_cast<FileWriter*>(file_writer_base));
-  }
-
- private:
-  explicit ConvertToFileWriterCallback(FileWriterCallback* callback)
-      : callback_(callback) {}
-  Member<FileWriterCallback> callback_;
-};
-
-}  // namespace
-
-void DOMFileSystem::CreateWriter(const FileEntry* file_entry,
-                                 FileWriterCallback* success_callback,
-                                 ErrorCallbackBase* error_callback) {
+void DOMFileSystem::CreateWriter(
+    const FileEntry* file_entry,
+    FileWriterCallbacks::OnDidCreateFileWriterCallback* success_callback,
+    ErrorCallbackBase* error_callback) {
   DCHECK(file_entry);
 
   if (!FileSystem()) {
@@ -181,18 +152,17 @@ void DOMFileSystem::CreateWriter(const FileEntry* file_entry,
   }
 
   FileWriter* file_writer = FileWriter::Create(GetExecutionContext());
-  FileWriterBaseCallback* conversion_callback =
-      ConvertToFileWriterCallback::Create(success_callback);
   std::unique_ptr<AsyncFileSystemCallbacks> callbacks =
-      FileWriterBaseCallbacks::Create(file_writer, conversion_callback,
-                                      error_callback, context_);
+      FileWriterCallbacks::Create(file_writer, success_callback, error_callback,
+                                  context_);
   FileSystem()->CreateFileWriter(CreateFileSystemURL(file_entry), file_writer,
                                  std::move(callbacks));
 }
 
-void DOMFileSystem::CreateFile(const FileEntry* file_entry,
-                               FileCallback* success_callback,
-                               ErrorCallbackBase* error_callback) {
+void DOMFileSystem::CreateFile(
+    const FileEntry* file_entry,
+    SnapshotFileCallback::OnDidCreateSnapshotFileCallback* success_callback,
+    ErrorCallbackBase* error_callback) {
   KURL file_system_url = CreateFileSystemURL(file_entry);
   if (!FileSystem()) {
     ReportError(error_callback, FileError::kAbortErr);

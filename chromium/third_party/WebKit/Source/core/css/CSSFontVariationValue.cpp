@@ -4,9 +4,11 @@
 
 #include "core/css/CSSFontVariationValue.h"
 
+#include "core/css/CSSMarkup.h"
 #include "platform/wtf/text/StringBuilder.h"
 
 namespace blink {
+namespace cssvalue {
 
 CSSFontVariationValue::CSSFontVariationValue(const AtomicString& tag,
                                              float value)
@@ -14,9 +16,8 @@ CSSFontVariationValue::CSSFontVariationValue(const AtomicString& tag,
 
 String CSSFontVariationValue::CustomCSSText() const {
   StringBuilder builder;
-  builder.Append('\'');
-  builder.Append(tag_);
-  builder.Append("' ");
+  SerializeString(tag_, builder);
+  builder.Append(' ');
   builder.AppendNumber(value_);
   return builder.ToString();
 }
@@ -25,4 +26,5 @@ bool CSSFontVariationValue::Equals(const CSSFontVariationValue& other) const {
   return tag_ == other.tag_ && value_ == other.value_;
 }
 
+}  // namespace cssvalue
 }  // namespace blink

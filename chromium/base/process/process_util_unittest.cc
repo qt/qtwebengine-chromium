@@ -9,9 +9,11 @@
 
 #include <limits>
 
+#include "base/base_paths_fuchsia.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
@@ -46,7 +48,9 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
+#if !defined(OS_FUCHSIA)
 #include <sys/resource.h>
+#endif
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -63,6 +67,7 @@
 #include "third_party/lss/linux_syscall_support.h"
 #endif
 #if defined(OS_FUCHSIA)
+#include <fdio/limits.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
@@ -82,6 +87,7 @@ const char kSignalFileTerm[] = "TerminatedChildProcess.die";
 const char kShellPath[] = "/system/bin/sh";
 #elif defined(OS_FUCHSIA)
 const char kShellPath[] = "/boot/bin/sh";
+const char kSignalFileClone[] = "/tmp/ClonedTmpDir.die";
 #else
 const char kShellPath[] = "/bin/sh";
 #endif
@@ -209,6 +215,80 @@ TEST_F(ProcessUtilTest, DISABLED_GetTerminationStatusExit) {
   EXPECT_EQ(kSuccess, exit_code);
   remove(signal_file.c_str());
 }
+
+#if defined(OS_FUCHSIA)
+
+MULTIPROCESS_TEST_MAIN(CheckTmpFileExists) {
+  // Look through the filesystem to ensure that no other directories
+  // besides "tmp" are in the namespace.
+  base::FileEnumerator enumerator(
+      base::FilePath("/"), false,
+      base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
+  base::FilePath next_path;
+  while (!(next_path = enumerator.Next()).empty()) {
+    if (next_path != base::FilePath("/tmp")) {
+      LOG(ERROR) << "Clone policy violation: found non-tmp directory "
+                 << next_path.MaybeAsASCII();
+      return 1;
+    }
+  }
+  WaitToDie(ProcessUtilTest::GetSignalFilePath(kSignalFileClone).c_str());
+  return kSuccess;
+}
+
+TEST_F(ProcessUtilTest, SelectivelyClonedDir) {
+  // Selective cloning only works if the test executable is deployed as a
+  // package.
+  if (GetPackageRoot().empty())
+    return;
+
+  const std::string signal_file =
+      ProcessUtilTest::GetSignalFilePath(kSignalFileClone);
+  remove(signal_file.c_str());
+
+  LaunchOptions options;
+  options.paths_to_map.push_back("/tmp");
+  options.clone_flags = LP_CLONE_FDIO_STDIO;
+
+  Process process(SpawnChildWithOptions("CheckTmpFileExists", options));
+  ASSERT_TRUE(process.IsValid());
+
+  SignalChildren(signal_file.c_str());
+
+  int exit_code = 42;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_EQ(kSuccess, exit_code);
+}
+
+// Test that we can clone other directories. CheckTmpFileExists will return an
+// error code if it detects a directory other than "/tmp", so we can use that as
+// a signal that it successfully detected another entry in the root namespace.
+TEST_F(ProcessUtilTest, CloneAlternateDir) {
+  // Selective cloning only works if the test executable is deployed as a
+  // package.
+  if (GetPackageRoot().empty())
+    return;
+
+  const std::string signal_file =
+      ProcessUtilTest::GetSignalFilePath(kSignalFileClone);
+  remove(signal_file.c_str());
+
+  LaunchOptions options;
+  options.paths_to_map.push_back("/tmp");
+  options.paths_to_map.push_back("/data");
+  options.clone_flags = LP_CLONE_FDIO_STDIO;
+
+  Process process(SpawnChildWithOptions("CheckTmpFileExists", options));
+  ASSERT_TRUE(process.IsValid());
+
+  SignalChildren(signal_file.c_str());
+
+  int exit_code = 42;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_EQ(1, exit_code);
+}
+
+#endif
 
 // On Android SpawnProcess() doesn't use LaunchProcess() and doesn't support
 // LaunchOptions::current_directory.
@@ -500,6 +580,9 @@ namespace {
 // Returns the maximum number of files that a process can have open.
 // Returns 0 on error.
 int GetMaxFilesOpenInProcess() {
+#if defined(OS_FUCHSIA)
+  return FDIO_MAX_FD;
+#else
   struct rlimit rlim;
   if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
     return 0;
@@ -513,6 +596,7 @@ int GetMaxFilesOpenInProcess() {
   }
 
   return rlim.rlim_cur;
+#endif  // !defined(OS_FUCHSIA)
 }
 
 const int kChildPipe = 20;  // FD # for write end of pipe in child process.

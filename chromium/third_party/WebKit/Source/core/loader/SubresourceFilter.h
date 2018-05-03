@@ -6,9 +6,11 @@
 #define SubresourceFilter_h
 
 #include <memory>
+#include <utility>
 
 #include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
+#include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityViolationReportingPolicy.h"
 #include "public/platform/WebDocumentSubresourceFilter.h"
 #include "public/platform/WebURLRequest.h"
@@ -34,6 +36,15 @@ class CORE_EXPORT SubresourceFilter final
                  SecurityViolationReportingPolicy);
   bool AllowWebSocketConnection(const KURL&);
 
+  void SetIsAdSubframe(bool is_ad_subframe) {
+    is_ad_subframe_ = is_ad_subframe;
+  }
+
+  bool GetIsAdSubframe() { return is_ad_subframe_; }
+
+  // Returns if |resource_url| is an ad resource.
+  bool IsAdResource(const KURL& resource_url, WebURLRequest::RequestContext);
+
   virtual void Trace(blink::Visitor*);
 
  private:
@@ -45,6 +56,12 @@ class CORE_EXPORT SubresourceFilter final
 
   Member<ExecutionContext> execution_context_;
   std::unique_ptr<WebDocumentSubresourceFilter> subresource_filter_;
+  bool is_ad_subframe_;
+
+  // Save the last resource check's result in the single element cache.
+  std::pair<std::pair<KURL, WebURLRequest::RequestContext>,
+            WebDocumentSubresourceFilter::LoadPolicy>
+      last_resource_check_result_;
 };
 
 }  // namespace blink

@@ -29,10 +29,10 @@
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
-#include "net/proxy/mock_proxy_resolver.h"
-#include "net/proxy/proxy_config_service_fixed.h"
-#include "net/proxy/proxy_info.h"
-#include "net/proxy/proxy_service.h"
+#include "net/proxy_resolution/mock_proxy_resolver.h"
+#include "net/proxy_resolution/proxy_config_service_fixed.h"
+#include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_service.h"
 #include "net/quic/chromium/mock_crypto_client_stream_factory.h"
 #include "net/quic/chromium/mock_quic_data.h"
 #include "net/quic/chromium/quic_stream_factory.h"
@@ -47,7 +47,12 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
+using ::testing::Contains;
+using ::testing::ElementsAre;
 using ::testing::Invoke;
+using ::testing::IsEmpty;
+using ::testing::Key;
+using ::testing::SizeIs;
 
 namespace net {
 
@@ -226,9 +231,10 @@ class HttpStreamFactoryImplJobControllerTest : public ::testing::Test {
       session_deps_.socket_factory->AddSocketDataProvider(tcp_data_.get());
 
     if (use_alternative_proxy_) {
-      std::unique_ptr<ProxyService> proxy_service =
-          ProxyService::CreateFixedFromPacResult("HTTPS myproxy.org:443");
-      session_deps_.proxy_service = std::move(proxy_service);
+      std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
+          ProxyResolutionService::CreateFixedFromPacResult(
+              "HTTPS myproxy.org:443");
+      session_deps_.proxy_resolution_service = std::move(proxy_resolution_service);
     }
     session_deps_.net_log = net_log_.bound().net_log();
     HttpNetworkSession::Params params =
@@ -294,7 +300,7 @@ class HttpStreamFactoryImplJobControllerTest : public ::testing::Test {
 
   TestJobFactory job_factory_;
   MockHttpStreamRequestDelegate request_delegate_;
-  SpdySessionDependencies session_deps_{ProxyService::CreateDirect()};
+  SpdySessionDependencies session_deps_{ProxyResolutionService::CreateDirect()};
   std::unique_ptr<HttpNetworkSession> session_;
   HttpStreamFactoryImpl* factory_ = nullptr;
   HttpStreamFactoryImpl::JobController* job_controller_ = nullptr;
@@ -331,7 +337,7 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, ProxyResolutionFailsSync) {
   ProxyConfig proxy_config;
   proxy_config.set_pac_url(GURL("http://fooproxyurl"));
   proxy_config.set_pac_mandatory(true);
-  session_deps_.proxy_service.reset(new ProxyService(
+  session_deps_.proxy_resolution_service.reset(new ProxyResolutionService(
       std::make_unique<ProxyConfigServiceFixed>(proxy_config),
       std::make_unique<FailingProxyResolverFactory>(), nullptr));
   HttpRequestInfo request_info;
@@ -366,9 +372,9 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, ProxyResolutionFailsAsync) {
   MockAsyncProxyResolverFactory* proxy_resolver_factory =
       new MockAsyncProxyResolverFactory(false);
   MockAsyncProxyResolver resolver;
-  session_deps_.proxy_service.reset(
-      new ProxyService(std::make_unique<ProxyConfigServiceFixed>(proxy_config),
-                       base::WrapUnique(proxy_resolver_factory), nullptr));
+  session_deps_.proxy_resolution_service.reset(new ProxyResolutionService(
+      std::make_unique<ProxyConfigServiceFixed>(proxy_config),
+      base::WrapUnique(proxy_resolver_factory), nullptr));
   HttpRequestInfo request_info;
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
@@ -396,8 +402,8 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, ProxyResolutionFailsAsync) {
 }
 
 TEST_F(HttpStreamFactoryImplJobControllerTest, NoSupportedProxies) {
-  session_deps_.proxy_service =
-      ProxyService::CreateFixedFromPacResult("QUIC myproxy.org:443");
+  session_deps_.proxy_resolution_service =
+      ProxyResolutionService::CreateFixedFromPacResult("QUIC myproxy.org:443");
   session_deps_.enable_quic = false;
   HttpRequestInfo request_info;
   request_info.method = "GET";
@@ -423,10 +429,10 @@ class JobControllerReconsiderProxyAfterErrorTest
     : public HttpStreamFactoryImplJobControllerTest,
       public ::testing::WithParamInterface<::testing::tuple<bool, int>> {
  public:
-  void Initialize(std::unique_ptr<ProxyService> proxy_service,
+  void Initialize(std::unique_ptr<ProxyResolutionService> proxy_resolution_service,
                   std::unique_ptr<ProxyDelegate> proxy_delegate) {
     session_deps_.proxy_delegate = std::move(proxy_delegate);
-    session_deps_.proxy_service = std::move(proxy_service);
+    session_deps_.proxy_resolution_service = std::move(proxy_resolution_service);
     session_ = std::make_unique<HttpNetworkSession>(
         SpdySessionDependencies::CreateSessionParams(&session_deps_),
         SpdySessionDependencies::CreateSessionContext(&session_deps_));
@@ -463,14 +469,14 @@ INSTANTIATE_TEST_CASE_P(
 TEST_P(JobControllerReconsiderProxyAfterErrorTest, ReconsiderProxyAfterError) {
   const bool set_alternative_proxy_server = ::testing::get<0>(GetParam());
   const int mock_error = ::testing::get<1>(GetParam());
-  std::unique_ptr<ProxyService> proxy_service =
-      ProxyService::CreateFixedFromPacResult(
+  std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
+      ProxyResolutionService::CreateFixedFromPacResult(
           "HTTPS badproxy:99; HTTPS badfallbackproxy:98; DIRECT");
   auto test_proxy_delegate = std::make_unique<TestProxyDelegate>();
   TestProxyDelegate* test_proxy_delegate_raw = test_proxy_delegate.get();
 
   // Before starting the test, verify that there are no proxies marked as bad.
-  ASSERT_TRUE(proxy_service->proxy_retry_info().empty()) << mock_error;
+  ASSERT_TRUE(proxy_resolution_service->proxy_retry_info().empty()) << mock_error;
 
   StaticSocketDataProvider socket_data_proxy_main_job;
   socket_data_proxy_main_job.set_connect_data(MockConnect(ASYNC, mock_error));
@@ -518,7 +524,7 @@ TEST_P(JobControllerReconsiderProxyAfterErrorTest, ReconsiderProxyAfterError) {
   request_info.method = "GET";
   request_info.url = GURL("http://www.example.com");
 
-  Initialize(std::move(proxy_service), std::move(test_proxy_delegate));
+  Initialize(std::move(proxy_resolution_service), std::move(test_proxy_delegate));
   EXPECT_EQ(set_alternative_proxy_server,
             test_proxy_delegate_raw->alternative_proxy_server().is_quic());
 
@@ -536,23 +542,21 @@ TEST_P(JobControllerReconsiderProxyAfterErrorTest, ReconsiderProxyAfterError) {
 
     std::unique_ptr<HttpStreamRequest> request =
         CreateJobController(request_info);
-
     base::RunLoop().RunUntilIdle();
-    // The proxy that failed should now be known to the proxy_service as
-    // bad.
-    const ProxyRetryInfoMap retry_info =
-        session_->proxy_service()->proxy_retry_info();
-    EXPECT_EQ(2u, retry_info.size()) << mock_error;
-    EXPECT_NE(retry_info.end(), retry_info.find("https://badproxy:99"));
-    EXPECT_NE(retry_info.end(), retry_info.find("https://badfallbackproxy:98"));
 
     // Verify that request was fetched without proxy.
     EXPECT_TRUE(used_proxy_info.is_direct());
 
-    // If alternative proxy server was specified, it should have been marked
-    // as invalid so that it is not used for subsequent requests.
-    EXPECT_FALSE(
-        test_proxy_delegate_raw->alternative_proxy_server().is_valid());
+    // The proxies that failed should now be known to the proxy service as
+    // bad.
+    const ProxyRetryInfoMap& retry_info =
+        session_->proxy_resolution_service()->proxy_retry_info();
+    EXPECT_THAT(retry_info, SizeIs(set_alternative_proxy_server ? 3 : 2));
+    EXPECT_THAT(retry_info, Contains(Key("https://badproxy:99")));
+    EXPECT_THAT(retry_info, Contains(Key("https://badfallbackproxy:98")));
+
+    if (set_alternative_proxy_server)
+      EXPECT_THAT(retry_info, Contains(Key("quic://badproxy:99")));
   }
   EXPECT_TRUE(HttpStreamFactoryImplPeer::IsJobControllerDeleted(factory_));
 }
@@ -566,14 +570,15 @@ TEST_P(JobControllerReconsiderProxyAfterErrorTest, ReconsiderProxyAfterError) {
 TEST_F(JobControllerReconsiderProxyAfterErrorTest,
        SecondMainJobIsStartedAfterAltProxyServerJobFailed) {
   // Configure the proxies and initialize the test.
-  std::unique_ptr<ProxyService> proxy_service =
-      ProxyService::CreateFixedFromPacResult("HTTPS myproxy.org:443; DIRECT");
+  std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
+      ProxyResolutionService::CreateFixedFromPacResult(
+          "HTTPS myproxy.org:443; DIRECT");
 
   auto test_proxy_delegate = std::make_unique<TestProxyDelegate>();
   test_proxy_delegate->set_alternative_proxy_server(
       ProxyServer::FromPacString("QUIC myproxy.org:443"));
 
-  Initialize(std::move(proxy_service), std::move(test_proxy_delegate));
+  Initialize(std::move(proxy_resolution_service), std::move(test_proxy_delegate));
 
   // Enable delayed TCP and set time delay for waiting job.
   QuicStreamFactory* quic_stream_factory = session_->quic_stream_factory();
@@ -621,154 +626,6 @@ TEST_F(JobControllerReconsiderProxyAfterErrorTest,
   EXPECT_TRUE(tcp_data_1.AllWriteDataConsumed());
   EXPECT_TRUE(tcp_data_2.AllReadDataConsumed());
   EXPECT_TRUE(tcp_data_2.AllWriteDataConsumed());
-}
-
-// Tests that the second main (HTTP) job is resumed after change in proxy
-// configuration. When the proxy configuration changes, the job controller
-// retries the previously failed jobs with the new configuration. Since there is
-// an alternative job, the first and the second main jobs are delayed. The test
-// verifies that the jobs are resumed after the alternative jobs failed.
-// The result (OK) of the second main job should be returned to the delegate.
-// Regression test for crbug.com/787148.
-TEST_F(JobControllerReconsiderProxyAfterErrorTest,
-       SecondMainJobIsResumedAfterProxyConfigChange) {
-  // Initialize the test with direct connection.
-  std::unique_ptr<ProxyService> proxy_service = ProxyService::CreateDirect();
-  ProxyService* proxy_service_raw = proxy_service.get();
-  session_deps_.proxy_service = std::move(proxy_service);
-
-  // Create a request.
-  HttpRequestInfo request_info;
-  request_info.method = "GET";
-  request_info.url = GURL("https://www.example.com:443");
-
-  HttpStreamFactoryImplJobControllerTest::Initialize(request_info);
-
-  // Add QUIC hint.
-  AlternativeService alternative_service(kProtoQUIC, "www.example.com", 443);
-  SetAlternativeService(request_info, alternative_service);
-
-  // Enable delayed TCP and set time delay for waiting job.
-  QuicStreamFactory* quic_stream_factory = session_->quic_stream_factory();
-  quic_stream_factory->set_require_confirmation(false);
-  ServerNetworkStats stats1;
-  stats1.srtt = base::TimeDelta::FromSeconds(100);
-  session_->http_server_properties()->SetServerNetworkStats(
-      url::SchemeHostPort(GURL("https://www.example.com:443")), stats1);
-
-  // Prepare the mocked data.
-  crypto_client_stream_factory_.set_handshake_mode(
-      MockCryptoClientStream::COLD_START);
-  MockQuicData quic_data_1;
-  quic_data_1.AddRead(ASYNC, ERR_QUIC_PROTOCOL_ERROR);
-  quic_data_1.AddSocketDataToFactory(session_deps_.socket_factory.get());
-
-  StaticSocketDataProvider tcp_data_1;
-  tcp_data_1.set_connect_data(MockConnect(SYNCHRONOUS, ERR_CONNECTION_REFUSED));
-  session_deps_.socket_factory->AddSocketDataProvider(&tcp_data_1);
-
-  MockQuicData quic_data_2;
-  quic_data_2.AddRead(ASYNC, ERR_QUIC_PROTOCOL_ERROR);
-  quic_data_2.AddSocketDataToFactory(session_deps_.socket_factory.get());
-
-  StaticSocketDataProvider tcp_data_2;
-  tcp_data_2.set_connect_data(MockConnect(SYNCHRONOUS, OK));
-  session_deps_.socket_factory->AddSocketDataProvider(&tcp_data_2);
-  SSLSocketDataProvider ssl_data(SYNCHRONOUS, OK);
-  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl_data);
-
-  EXPECT_CALL(request_delegate_, OnStreamReadyImpl(_, _, _)).Times(1);
-  EXPECT_CALL(request_delegate_, OnStreamFailed(_, _, _)).Times(0);
-
-  // Create the job controller.
-  std::unique_ptr<HttpStreamRequest> request =
-      CreateJobController(request_info);
-
-  // Calling ForceReloadProxyConfig will cause the proxy configuration to
-  // change. It will still be the direct connection but the configuration
-  // version will be bumped. That is enough for the job controller to restart
-  // the jobs.
-  proxy_service_raw->ForceReloadProxyConfig();
-
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_TRUE(quic_data_1.AllReadDataConsumed());
-  EXPECT_TRUE(quic_data_1.AllWriteDataConsumed());
-  EXPECT_TRUE(quic_data_2.AllReadDataConsumed());
-  EXPECT_TRUE(quic_data_2.AllWriteDataConsumed());
-  EXPECT_TRUE(tcp_data_1.AllReadDataConsumed());
-  EXPECT_TRUE(tcp_data_1.AllWriteDataConsumed());
-  EXPECT_TRUE(tcp_data_2.AllReadDataConsumed());
-  EXPECT_TRUE(tcp_data_2.AllWriteDataConsumed());
-}
-
-// Regression test for crbug.com/723589.
-TEST_P(JobControllerReconsiderProxyAfterErrorTest,
-       ProxyResolutionSucceedsOnReconsiderAsync) {
-  const int mock_error = ::testing::get<1>(GetParam());
-  StaticSocketDataProvider failed_main_job;
-  failed_main_job.set_connect_data(MockConnect(ASYNC, mock_error));
-  session_deps_.socket_factory->AddSocketDataProvider(&failed_main_job);
-
-  StaticSocketDataProvider successful_fallback;
-  successful_fallback.set_connect_data(MockConnect(SYNCHRONOUS, OK));
-  session_deps_.socket_factory->AddSocketDataProvider(&successful_fallback);
-
-  ProxyConfig proxy_config;
-  GURL pac_url("http://fooproxyurl/old.pac");
-  proxy_config.set_pac_url(pac_url);
-  proxy_config.set_pac_mandatory(true);
-  MockAsyncProxyResolverFactory* proxy_resolver_factory =
-      new MockAsyncProxyResolverFactory(false);
-  ProxyService* proxy_service =
-      new ProxyService(std::make_unique<ProxyConfigServiceFixed>(proxy_config),
-                       base::WrapUnique(proxy_resolver_factory), nullptr);
-  HttpRequestInfo request_info;
-  request_info.method = "GET";
-  request_info.url = GURL("http://www.example.com");
-
-  Initialize(base::WrapUnique<ProxyService>(proxy_service), nullptr);
-  std::unique_ptr<HttpStreamRequest> request =
-      CreateJobController(request_info);
-  ASSERT_EQ(1u, proxy_resolver_factory->pending_requests().size());
-
-  EXPECT_CALL(request_delegate_, OnStreamFailed(_, _, _)).Times(0);
-  EXPECT_EQ(
-      pac_url,
-      proxy_resolver_factory->pending_requests()[0]->script_data()->url());
-  MockAsyncProxyResolver resolver;
-  proxy_resolver_factory->pending_requests()[0]->CompleteNowWithForwarder(
-      OK, &resolver);
-  ASSERT_EQ(1u, resolver.pending_jobs().size());
-  EXPECT_EQ(request_info.url, resolver.pending_jobs()[0]->url());
-  resolver.pending_jobs()[0]->results()->UsePacString("PROXY badproxy:10");
-  resolver.pending_jobs()[0]->CompleteNow(OK);
-  ASSERT_EQ(0u, proxy_resolver_factory->pending_requests().size());
-
-  ProxyConfig new_proxy_config;
-  GURL new_pac_url("http://fooproxyurl/new.pac");
-  new_proxy_config.set_pac_url(new_pac_url);
-  new_proxy_config.set_pac_mandatory(true);
-  auto new_proxy_config_service =
-      std::make_unique<ProxyConfigServiceFixed>(new_proxy_config);
-  proxy_service->ResetConfigService(std::move(new_proxy_config_service));
-  base::RunLoop().RunUntilIdle();
-  ASSERT_EQ(1u, proxy_resolver_factory->pending_requests().size());
-  EXPECT_EQ(
-      new_pac_url,
-      proxy_resolver_factory->pending_requests()[0]->script_data()->url());
-  proxy_resolver_factory->pending_requests()[0]->CompleteNowWithForwarder(
-      OK, &resolver);
-  ASSERT_EQ(1u, resolver.pending_jobs().size());
-  EXPECT_EQ(request_info.url, resolver.pending_jobs()[0]->url());
-  resolver.pending_jobs()[0]->results()->UsePacString(
-      "PROXY goodfallbackproxy:80");
-  resolver.pending_jobs()[0]->CompleteNow(OK);
-
-  EXPECT_CALL(request_delegate_, OnStreamReadyImpl(_, _, _));
-  base::RunLoop().RunUntilIdle();
-  request.reset();
-  EXPECT_TRUE(HttpStreamFactoryImplPeer::IsJobControllerDeleted(factory_));
 }
 
 TEST_F(HttpStreamFactoryImplJobControllerTest,
@@ -1526,9 +1383,10 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, DelayedTCP) {
 TEST_F(HttpStreamFactoryImplJobControllerTest, ResumeMainJobLaterCanceled) {
   NetTestSuite::SetScopedTaskEnvironment(
       base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME);
-  std::unique_ptr<ProxyService> proxy_service = ProxyService::CreateDirect();
-  ProxyService* proxy_service_raw = proxy_service.get();
-  session_deps_.proxy_service = std::move(proxy_service);
+  std::unique_ptr<ProxyResolutionService> proxy_resolution_service =
+      ProxyResolutionService::CreateDirect();
+  ProxyResolutionService* proxy_resolution_service_raw = proxy_resolution_service.get();
+  session_deps_.proxy_resolution_service = std::move(proxy_resolution_service);
 
   // Using hanging resolver will cause the alternative job to hang indefinitely.
   session_deps_.host_resolver = std::make_unique<HangingResolver>();
@@ -1574,7 +1432,7 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, ResumeMainJobLaterCanceled) {
   // change. It will still be the direct connection but the configuration
   // version will be bumped. That is enough for the job controller to restart
   // the jobs.
-  proxy_service_raw->ForceReloadProxyConfig();
+  proxy_resolution_service_raw->ForceReloadProxyConfig();
   HttpStreamFactoryImplJobPeer::SetShouldReconsiderProxy(
       job_factory_.main_job());
   // Now the alt service is marked as broken (e.g. through a different request),
@@ -1891,6 +1749,8 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, FailAlternativeProxy) {
   request_info.url = GURL("http://mail.example.org/");
   Initialize(request_info);
   EXPECT_TRUE(test_proxy_delegate()->alternative_proxy_server().is_quic());
+  EXPECT_THAT(
+      session_->proxy_resolution_service()->proxy_retry_info(), IsEmpty());
 
   // Enable delayed TCP and set time delay for waiting job.
   QuicStreamFactory* quic_stream_factory = session_->quic_stream_factory();
@@ -1914,7 +1774,8 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, FailAlternativeProxy) {
   EXPECT_TRUE(job_controller_->main_job());
 
   // The alternative proxy server should be marked as bad.
-  EXPECT_FALSE(test_proxy_delegate()->alternative_proxy_server().is_valid());
+  EXPECT_THAT(session_->proxy_resolution_service()->proxy_retry_info(),
+              ElementsAre(Key("quic://myproxy.org:443")));
   request_.reset();
   EXPECT_TRUE(HttpStreamFactoryImplPeer::IsJobControllerDeleted(factory_));
 }

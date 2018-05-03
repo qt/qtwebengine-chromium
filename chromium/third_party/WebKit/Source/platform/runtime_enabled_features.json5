@@ -84,6 +84,7 @@
     },
     {
       name: "AnimationWorklet",
+      origin_trial_feature_name: "AnimationWorklet",
       status: "experimental",
     },
     {
@@ -104,8 +105,8 @@
     },
     {
       name: "AudioWorklet",
-      origin_trial_feature_name: "AudioWorklet",
-      status: "experimental",
+      depends_on: ["Worklet"],
+      status: "stable",
     },
     {
       name: "AutomationControlled",
@@ -169,6 +170,9 @@
       name: "ClientPlaceholdersForServerLoFi",
     },
     {
+      name: "CodeCacheAfterExecute"
+    },
+    {
       name: "CompositedSelectionUpdate",
     },
     {
@@ -198,6 +202,10 @@
       status: "experimental",
     },
     {
+      name: "ConstructableStylesheets",
+      status: "experimental",
+    },
+    {
       name: "ContextMenu",
       status: "experimental",
     },
@@ -211,7 +219,6 @@
     {
       name: "CSSAdditiveAnimations",
       depends_on: ["StackedCSSPropertyAnimations"],
-      settable_from_internals: true,
       status: "experimental",
     },
     {
@@ -289,19 +296,11 @@
       status: "experimental",
     },
     {
-      name: "CSSStickyPosition",
-      status: "stable",
-    },
-    {
       name: "CSSTransformBox",
       status: "stable",
     },
     {
       name: "CSSTypedOM",
-      status: "experimental",
-    },
-    {
-      name: "CSSVariableFonts",
       status: "stable",
     },
     {
@@ -314,7 +313,7 @@
     },
     {
       name: "CustomElementsBuiltin",
-      status: "test",
+      status: "experimental",
     },
     {
       name: "CustomUserTiming",
@@ -386,6 +385,11 @@
       status: "experimental",
     },
     {
+      name: "ExperimentalHardwareEchoCancellation",
+      origin_trial_feature_name: "ExperimentalHardwareEchoCancellation",
+      status: "experimental",
+    },
+    {
       name: "ExperimentalV8Extras",
       status: "experimental",
     },
@@ -393,26 +397,23 @@
       name: "FastMobileScrolling",
     },
     {
-      name: "FeaturePolicy",
-      status: "stable",
-    },
-    {
       name: "FeaturePolicyAutoplayFeature",
-      status: "stable",
-      depends_on: ["FeaturePolicy"]
+      status: "stable"
     },
     {
       name: "FeaturePolicyExperimentalFeatures",
+      status: "experimental"
     },
     {
       name: "FeaturePolicyForPermissions",
-      status: "stable",
-      depends_on: ["FeaturePolicy"]
+      status: "stable"
     },
     {
       name: "FeaturePolicyJavaScriptInterface",
-      status: "experimental",
-      depends_on: ["FeaturePolicy"]
+      status: "experimental"
+    },
+    {
+      name: "FeaturePolicyVibrateFeature"
     },
     {
       name: "FetchRequestCache",
@@ -420,7 +421,11 @@
     },
     {
       name: "FetchRequestKeepalive",
-      status: "experimental",
+      status: "stable",
+    },
+    {
+      name: "FetchRequestSignal",
+      status: "stable",
     },
     {
       name: "FileSystem",
@@ -506,6 +511,11 @@
       status: "test",
     },
     {
+      name: "ImplicitRootScroller",
+      status: "experimental",
+      settable_from_internals: true,
+    },
+    {
       name: "IncrementalShadowDOM",
     },
     {
@@ -514,7 +524,7 @@
     },
     {
       name: "InputModeAttribute",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "InputMultipleFieldsUI",
@@ -543,9 +553,6 @@
       name: "LayoutNGFragmentCaching",
     },
     {
-      name: "LayoutNGPaintFragments",
-    },
-    {
       name: "LazyInitializeMediaControls",
       // This is enabled by features::kLazyInitializeMediaControls.
     },
@@ -556,10 +563,6 @@
     {
       name: "LoadingWithMojo",
       status: "stable",
-    },
-    {
-      name: "LocksAPI",
-      status: "experimental",
     },
     {
       name: "LongTaskObserver",
@@ -576,6 +579,10 @@
     {
       name: "MediaCapabilities",
       origin_trial_feature_name: "MediaCapabilities",
+      status: "stable",
+    },
+    {
+      name: "MediaCapabilitiesEncodingInfo",
       status: "experimental",
     },
     {
@@ -630,10 +637,6 @@
       name: "MediaStreamTrackContentHint",
       status: "experimental",
     },
-    {
-      name: "MemoryInfoInWorkers",
-      status: "experimental",
-    },
     // This is enabled by default on Windows only. The only part that's
     // "experimental" is the support on other platforms.
     {
@@ -648,7 +651,7 @@
     },
     {
       name: "ModulePreload",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "ModuleScriptsDynamicImport",
@@ -732,6 +735,14 @@
       status: "experimental",
     },
     {
+      name: "OffscreenCanvas",
+      status: "experimental",
+    },
+    {
+      name: "OffscreenCanvasText",
+      status: "experimental",
+    },
+    {
       name: "OnDeviceChange",
       status: "stable",
     },
@@ -766,7 +777,7 @@
     },
     {
       name: "PageLifecycle",
-      status: "test",
+      status: "experimental",
     },
     {
       name: "PagePopup",
@@ -822,6 +833,11 @@
     },
     {
       name: "PictureInPicture",
+      settable_from_internals: true,
+    },
+    {
+      name: "PictureInPictureAPI",
+      status: "test",
     },
     {
       name: "PreciseMemoryInfo",
@@ -839,6 +855,10 @@
     {
       name: "PreloadDefaultIsMetadata",
       status: "stable",
+    },
+    {
+      name: "PreloadImageSrcSet",
+      status: "experimental",
     },
     {
       name: "Presentation",
@@ -901,9 +921,12 @@
       status: "stable",
     },
     // Handles frame scrolling via the root PaintLayer instead of the FrameView.
-    // crbug.com/417782 tracks enabling this by default.
+    // The master bug for the root layer scrolling project is crbug.com/417782.
+    // This REF is enabled iff features::kRootLayerScrolling is on or
+    // experimental web platform features are enabled.
     {
       name: "RootLayerScrolling",
+      status: "stable",
     },
     {
       name: "RTCUnifiedPlan",
@@ -958,9 +981,6 @@
       name: "ServiceWorkerScriptFullCodeCache",
     },
     {
-      name: "ServiceWorkerScriptStreaming",
-    },
-    {
       name: "ServiceWorkerUpdateViaCache",
       status: "experimental",
     },
@@ -996,10 +1016,15 @@
     },
     {
       name: "SlimmingPaintV175",
-      implied_by: ["SlimmingPaintV2", "LayoutNGPaintFragments"],
+      status: "stable",
+      implied_by: ["SlimmingPaintV2", "LayoutNG"],
     },
     {
       name: "SlimmingPaintV2",
+    },
+    {
+      name: "SlotInFlatTree",
+      status: "experimental",
     },
     {
       name: "SMIL",
@@ -1031,10 +1056,6 @@
     {
       name: "StopNonTimersInBackground",
       status: "test",
-    },
-    {
-      name: "Suborigins",
-      status: "experimental",
     },
     {
       name: "TimerThrottlingForBackgroundTabs",
@@ -1085,6 +1106,10 @@
       status: "experimental",
     },
     {
+      name: "UnifiedTouchAdjustment",
+      status: "experimental",
+    },
+    {
       name: "UpdateHoverPostLayout",
       status: "stable",
     },
@@ -1129,7 +1154,6 @@
     },
     {
       name: "WebAnimationsAPI",
-      settable_from_internals: true,
       status: "experimental",
     },
     {
@@ -1159,6 +1183,11 @@
     },
     {
       name: "WebGLImageChromium",
+    },
+    {
+      name: "WebLocksAPI",
+      origin_trial_feature_name: "WebLocksAPI",
+      status: "experimental",
     },
     {
       name: "WebNFC",

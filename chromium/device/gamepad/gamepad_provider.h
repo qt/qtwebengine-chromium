@@ -19,7 +19,7 @@
 #include "device/gamepad/gamepad_pad_state_provider.h"
 #include "device/gamepad/gamepad_shared_buffer.h"
 #include "device/gamepad/public/cpp/gamepads.h"
-#include "device/gamepad/public/interfaces/gamepad.mojom.h"
+#include "device/gamepad/public/mojom/gamepad.mojom.h"
 #include "mojo/public/cpp/system/buffer.h"
 
 namespace base {
@@ -110,8 +110,9 @@ class DEVICE_GAMEPAD_EXPORT GamepadProvider
 
   void OnGamepadConnectionChange(bool connected, int index, const Gamepad& pad);
 
-  // Checks the gamepad state to see if the user has interacted with it.
-  void CheckForUserGesture();
+  // Checks the gamepad state to see if the user has interacted with it. Returns
+  // true if any user gesture observers were notified.
+  bool CheckForUserGesture();
 
   enum { kDesiredSamplingIntervalMs = 16 };
 

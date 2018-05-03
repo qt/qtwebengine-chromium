@@ -9,9 +9,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "content/common/possibly_associated_interface_ptr.h"
 #include "content/public/common/referrer.h"
-#include "content/public/renderer/child_url_loader_factory_getter.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "content/renderer/loader/web_url_request_util.h"
@@ -20,6 +18,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/url_request/url_request_context.h"
 #include "services/network/public/cpp/resource_request_body.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -49,11 +48,13 @@ class ResourceFetcherImpl::ClientImpl : public network::mojom::URLLoaderClient {
  public:
   ClientImpl(ResourceFetcherImpl* parent,
              Callback callback,
-             size_t maximum_download_size)
+             size_t maximum_download_size,
+             scoped_refptr<base::SingleThreadTaskRunner> task_runner)
       : parent_(parent),
         client_binding_(this),
         data_pipe_watcher_(FROM_HERE,
-                           mojo::SimpleWatcher::ArmingPolicy::MANUAL),
+                           mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                           std::move(task_runner)),
         status_(Status::kNotStarted),
         completed_(false),
         maximum_download_size_(maximum_download_size),
@@ -65,7 +66,7 @@ class ResourceFetcherImpl::ClientImpl : public network::mojom::URLLoaderClient {
   }
 
   void Start(const network::ResourceRequest& request,
-             network::mojom::URLLoaderFactory* url_loader_factory,
+             scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
              const net::NetworkTrafficAnnotationTag& annotation_tag,
              scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
     status_ = Status::kStarted;
@@ -230,8 +231,6 @@ class ResourceFetcherImpl::ClientImpl : public network::mojom::URLLoaderClient {
   mojo::Binding<network::mojom::URLLoaderClient> client_binding_;
   mojo::ScopedDataPipeConsumerHandle data_pipe_;
   mojo::SimpleWatcher data_pipe_watcher_;
-  PossiblyAssociatedInterfacePtr<network::mojom::URLLoaderFactory>
-      loader_factory_;
 
   Status status_;
 
@@ -289,7 +288,7 @@ void ResourceFetcherImpl::SetHeader(const std::string& header,
 void ResourceFetcherImpl::Start(
     blink::WebLocalFrame* frame,
     blink::WebURLRequest::RequestContext request_context,
-    network::mojom::URLLoaderFactory* url_loader_factory,
+    scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
     const net::NetworkTrafficAnnotationTag& annotation_tag,
     Callback callback,
     size_t maximum_download_size) {
@@ -315,11 +314,12 @@ void ResourceFetcherImpl::Start(
   }
   request_.resource_type = WebURLRequestContextToResourceType(request_context);
 
-  client_ = std::make_unique<ClientImpl>(this, std::move(callback),
-                                         maximum_download_size);
+  client_ = std::make_unique<ClientImpl>(
+      this, std::move(callback), maximum_download_size,
+      frame->GetTaskRunner(blink::TaskType::kNetworking));
   // TODO(kinuko, toyoshim): This task runner should be given by the consumer
   // of this class.
-  client_->Start(request_, url_loader_factory, annotation_tag,
+  client_->Start(request_, std::move(url_loader_factory), annotation_tag,
                  frame->GetTaskRunner(blink::TaskType::kNetworking));
 
   // No need to hold on to the request; reset it now.

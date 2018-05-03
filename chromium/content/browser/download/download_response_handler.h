@@ -7,18 +7,19 @@
 
 #include <vector>
 
-#include "content/browser/download/download_create_info.h"
-#include "content/public/browser/download_source.h"
-#include "content/public/common/download_stream.mojom.h"
+#include "components/download/public/common/download_create_info.h"
+#include "components/download/public/common/download_source.h"
+#include "components/download/public/common/download_stream.mojom.h"
 #include "content/public/common/referrer.h"
 #include "net/cert/cert_status_flags.h"
 #include "services/network/public/cpp/resource_response.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+
+namespace download {
+struct DownloadCreateInfo;
+}  // namespace download
 
 namespace content {
-
-struct DownloadCreateInfo;
-struct DownloadSaveInfo;
 
 // This class is responsible for handling the server response for a download.
 // It passes the DataPipeConsumerHandle and completion status to the download
@@ -30,18 +31,19 @@ class DownloadResponseHandler : public network::mojom::URLLoaderClient {
   class Delegate {
    public:
     virtual void OnResponseStarted(
-        std::unique_ptr<DownloadCreateInfo> download_create_info,
-        mojom::DownloadStreamHandlePtr stream_handle) = 0;
+        std::unique_ptr<download::DownloadCreateInfo> download_create_info,
+        download::mojom::DownloadStreamHandlePtr stream_handle) = 0;
     virtual void OnReceiveRedirect() = 0;
   };
 
   DownloadResponseHandler(network::ResourceRequest* resource_request,
                           Delegate* delegate,
-                          std::unique_ptr<DownloadSaveInfo> save_info,
+                          std::unique_ptr<download::DownloadSaveInfo> save_info,
                           bool is_parallel_request,
                           bool is_transient,
                           bool fetch_error_body,
-                          DownloadSource download_source,
+                          const std::string& request_origin,
+                          download::DownloadSource download_source,
                           std::vector<GURL> url_chain);
   ~DownloadResponseHandler() override;
 
@@ -63,36 +65,38 @@ class DownloadResponseHandler : public network::mojom::URLLoaderClient {
   void OnComplete(const network::URLLoaderCompletionStatus& status) override;
 
  private:
-  std::unique_ptr<DownloadCreateInfo> CreateDownloadCreateInfo(
+  std::unique_ptr<download::DownloadCreateInfo> CreateDownloadCreateInfo(
       const network::ResourceResponseHead& head);
 
   // Helper method that is called when response is received.
-  void OnResponseStarted(mojom::DownloadStreamHandlePtr stream_handle);
+  void OnResponseStarted(
+      download::mojom::DownloadStreamHandlePtr stream_handle);
 
   Delegate* const delegate_;
 
-  std::unique_ptr<DownloadCreateInfo> create_info_;
+  std::unique_ptr<download::DownloadCreateInfo> create_info_;
 
   bool started_;
 
   // Information needed to create DownloadCreateInfo when the time comes.
-  std::unique_ptr<DownloadSaveInfo> save_info_;
+  std::unique_ptr<download::DownloadSaveInfo> save_info_;
   std::vector<GURL> url_chain_;
   std::string method_;
   GURL referrer_;
   bool is_transient_;
   bool fetch_error_body_;
-  DownloadSource download_source_;
+  std::string request_origin_;
+  download::DownloadSource download_source_;
   net::CertStatus cert_status_;
   bool has_strong_validators_;
   GURL origin_;
   bool is_partial_request_;
 
   // The abort reason if this class decides to block the download.
-  DownloadInterruptReason abort_reason_;
+  download::DownloadInterruptReason abort_reason_;
 
   // Mojo interface ptr to send the completion status to the download sink.
-  mojom::DownloadStreamClientPtr client_ptr_;
+  download::mojom::DownloadStreamClientPtr client_ptr_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadResponseHandler);
 };

@@ -793,7 +793,7 @@ gl::Error TextureGL::copySubTextureHelper(const gl::Context *context,
     // Check if the destination is renderable and copy on the GPU
     const LevelInfoGL &destLevelInfo = getLevelInfo(target, level);
     if (!destSRGB &&
-        nativegl::SupportsNativeRendering(mFunctions, target, destLevelInfo.nativeInternalFormat))
+        nativegl::SupportsNativeRendering(mFunctions, getTarget(), destLevelInfo.nativeInternalFormat))
     {
         return mBlitter->copySubTexture(context, sourceGL, sourceLevel, sourceComponentType, this,
                                         target, level, destComponentType, sourceImageDesc.size,
@@ -1154,6 +1154,13 @@ void TextureGL::syncState(const gl::Texture::DirtyBits &dirtyBits)
                 mAppliedMaxLevel = mState.getEffectiveMaxLevel();
                 mFunctions->texParameteri(getTarget(), GL_TEXTURE_MAX_LEVEL, mAppliedMaxLevel);
                 break;
+            case gl::Texture::DIRTY_BIT_DEPTH_STENCIL_TEXTURE_MODE:
+            {
+                GLenum mDepthStencilTextureMode = mState.getDepthStencilTextureMode();
+                mFunctions->texParameteri(getTarget(), GL_DEPTH_STENCIL_TEXTURE_MODE,
+                                          mDepthStencilTextureMode);
+                break;
+            }
             case gl::Texture::DIRTY_BIT_USAGE:
                 break;
             case gl::Texture::DIRTY_BIT_LABEL:

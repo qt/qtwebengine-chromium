@@ -172,6 +172,7 @@ class CORE_EXPORT DocumentLoader
   HistoryItem* GetHistoryItem() const { return history_item_; }
 
   void StartLoading();
+  void StopLoading();
 
   DocumentLoadTiming& GetTiming() { return document_load_timing_; }
   const DocumentLoadTiming& GetTiming() const { return document_load_timing_; }
@@ -193,6 +194,7 @@ class CORE_EXPORT DocumentLoader
         : was_scrolled_by_user(false), did_restore_from_history(false) {}
 
     bool was_scrolled_by_user;
+    bool was_scrolled_by_js;
     bool did_restore_from_history;
   };
   InitialScrollState& GetInitialScrollState() { return initial_scroll_state_; }
@@ -224,6 +226,8 @@ class CORE_EXPORT DocumentLoader
 
   void SetUserActivated();
 
+  const AtomicString& RequiredCSP();
+
   void Trace(blink::Visitor*) override;
 
   // For automation driver-initiated navigations over the devtools protocol,
@@ -239,6 +243,10 @@ class CORE_EXPORT DocumentLoader
   const base::UnguessableToken& GetDevToolsNavigationToken() {
     return devtools_navigation_token_;
   }
+
+  // Can be used to block the parser.
+  void BlockParser();
+  void ResumeParser();
 
  protected:
   DocumentLoader(LocalFrame*,
@@ -284,7 +292,7 @@ class CORE_EXPORT DocumentLoader
 
   bool MaybeCreateArchive();
 
-  void FinishedLoading(double finish_time);
+  void FinishedLoading(TimeTicks finish_time);
   void CancelLoadAfterCSPDenied(const ResourceResponse&);
 
   enum class HistoryNavigationType {
@@ -316,6 +324,10 @@ class CORE_EXPORT DocumentLoader
   bool IsRedirectAfterPost(const ResourceRequest&, const ResourceResponse&);
 
   bool ShouldContinueForResponse() const;
+
+  // Processes the data stored in the data_buffer_, used to avoid appending data
+  // to the parser in a nested message loop.
+  void ProcessDataBuffer();
 
   Member<LocalFrame> frame_;
   Member<ResourceFetcher> fetcher_;
@@ -353,7 +365,7 @@ class CORE_EXPORT DocumentLoader
 
   DocumentLoadTiming document_load_timing_;
 
-  double time_of_last_data_received_;
+  TimeTicks time_of_last_data_received_;
 
   Member<ApplicationCacheHost> application_cache_host_;
 
@@ -373,6 +385,11 @@ class CORE_EXPORT DocumentLoader
 
   enum State { kNotStarted, kProvisional, kCommitted, kSentDidFinishLoad };
   State state_;
+
+  // Used to block the parser.
+  bool is_parser_blocked_ = false;
+  bool finished_loading_ = false;
+  scoped_refptr<SharedBuffer> committed_data_buffer_;
 
   // Used to protect against reentrancy into dataReceived().
   bool in_data_received_;

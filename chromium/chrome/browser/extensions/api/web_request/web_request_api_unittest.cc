@@ -139,6 +139,19 @@ void GetPartOfMessageArguments(IPC::Message* message,
   ASSERT_TRUE(list.GetDictionary(0, out));
 }
 
+base::Value FormBinaryValue(base::StringPiece str) {
+  base::Value list(base::Value::Type::LIST);
+  list.GetList().emplace_back(base::Value(
+      base::Value::BlobStorage(str.data(), str.data() + str.size())));
+  return list;
+}
+
+base::Value FormStringValue(base::StringPiece str) {
+  base::Value list(base::Value::Type::LIST);
+  list.GetList().emplace_back(base::Value(str));
+  return list;
+}
+
 }  // namespace
 
 // A mock event router that responds to events with a pre-arranged queue of
@@ -566,7 +579,7 @@ void ExtensionWebRequestTest::FireURLRequestWithData(
       &(bytes_2[0]), bytes_2.size()));
   request->set_upload(std::make_unique<net::ElementsUploadDataStream>(
       std::move(element_readers), 0));
-  ipc_sender_.PushTask(base::Bind(&base::DoNothing));
+  ipc_sender_.PushTask(base::DoNothing());
   request->Start();
 }
 
@@ -592,17 +605,26 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
   const size_t kPlainBlock2Length = sizeof(kPlainBlock2) - 1;
   std::vector<char> plain_2(kPlainBlock2, kPlainBlock2 + kPlainBlock2Length);
 #define kBoundary "THIS_IS_A_BOUNDARY"
-  const char kFormBlock1[] = "--" kBoundary "\r\n"
+  const char kFormBlock1[] =
+      "--" kBoundary
+      "\r\n"
       "Content-Disposition: form-data; name=\"A\"\r\n"
       "\r\n"
       "test text\r\n"
-      "--" kBoundary "\r\n"
+      "--" kBoundary
+      "\r\n"
       "Content-Disposition: form-data; name=\"B\"; filename=\"\"\r\n"
       "Content-Type: application/octet-stream\r\n"
-      "\r\n";
+      "\r\n"
+      "--" kBoundary
+      "\r\n"
+      "Content-Disposition: form-data; name=\"B_content\"\r\n"
+      "Content-Type: application/octet-stream\r\n"
+      "\r\n"
+      "\uffff\uffff\uffff\uffff\r\n"
+      "--" kBoundary "\r\n";
   std::vector<char> form_1(kFormBlock1, kFormBlock1 + sizeof(kFormBlock1) - 1);
-  const char kFormBlock2[] = "\r\n"
-      "--" kBoundary "\r\n"
+  const char kFormBlock2[] =
       "Content-Disposition: form-data; name=\"C\"\r\n"
       "\r\n"
       "test password\r\n"
@@ -623,10 +645,21 @@ TEST_F(ExtensionWebRequestTest, AccessRequestBodyData) {
     &kRawPath
   };
   // Contents of formData.
-  const char kFormData[] =
-      "{\"A\":[\"test text\"],\"B\":[\"\"],\"C\":[\"test password\"]}";
-  std::unique_ptr<const base::Value> form_data =
-      base::JSONReader::Read(kFormData);
+  struct KeyValuePairs {
+    const char* key;
+    base::Value value;
+  };
+  KeyValuePairs kFormDataPairs[] = {
+      {"A", FormStringValue("test text")},
+      {"B", FormStringValue("")},
+      {"B_content", FormBinaryValue("\uffff\uffff\uffff\uffff")},
+      {"C", FormStringValue("test password")}};
+  std::unique_ptr<base::Value> form_data =
+      std::make_unique<base::Value>(base::Value::Type::DICTIONARY);
+  for (auto& pair : kFormDataPairs) {
+    form_data->SetKey(pair.key, std::move(pair.value));
+  }
+
   ASSERT_TRUE(form_data.get() != NULL);
   ASSERT_TRUE(form_data->type() == base::Value::Type::DICTIONARY);
   // Contents of raw.
@@ -782,7 +815,7 @@ TEST_F(ExtensionWebRequestTest, MinimalAccessRequestBodyData) {
 
   // Only one request is sent, but more than one event will be triggered.
   for (size_t i = 1; i < arraysize(kExpected); ++i)
-    ipc_sender_.PushTask(base::Bind(&base::DoNothing));
+    ipc_sender_.PushTask(base::DoNothing());
 
   const std::vector<char> part_of_body(1);
   FireURLRequestWithData("POST", nullptr, part_of_body, part_of_body);
@@ -855,7 +888,7 @@ TEST_F(ExtensionWebRequestTest, ProperFilteringInPublicSession) {
 
   // Only one request is sent, but more than one event will be triggered.
   for (size_t i = 1; i < arraysize(kExpected); ++i)
-    ipc_sender_.PushTask(base::Bind(&base::DoNothing));
+    ipc_sender_.PushTask(base::DoNothing());
 
   const std::vector<char> part_of_body(1);
   FireURLRequestWithData("POST", nullptr, part_of_body, part_of_body);
@@ -920,7 +953,7 @@ TEST_F(ExtensionWebRequestTest, NoAccessRequestBodyData) {
         context_->CreateRequest(request_url, net::DEFAULT_PRIORITY, &delegate_,
                                 TRAFFIC_ANNOTATION_FOR_TESTS));
     request->set_method(kMethods[i]);
-    ipc_sender_.PushTask(base::Bind(&base::DoNothing));
+    ipc_sender_.PushTask(base::DoNothing());
     request->Start();
   }
 
@@ -1195,7 +1228,7 @@ TEST_P(ExtensionWebRequestHeaderModificationTest, TestModifications) {
   }
 
   // Don't do anything for the onSendHeaders message.
-  ipc_sender_.PushTask(base::Bind(&base::DoNothing));
+  ipc_sender_.PushTask(base::DoNothing());
 
   // Note that we mess up the headers slightly:
   // request->Start() will first add additional headers (e.g. the User-Agent)

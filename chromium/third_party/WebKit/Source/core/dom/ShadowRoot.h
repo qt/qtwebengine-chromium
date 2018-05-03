@@ -42,30 +42,19 @@ namespace blink {
 class Document;
 class ElementShadow;
 class ExceptionState;
-class HTMLShadowElement;
 class ShadowRootRareDataV0;
 class SlotAssignment;
 class StringOrTrustedHTML;
 class V0InsertionPoint;
 class WhitespaceAttacher;
 
-enum class ShadowRootType {
-  V0,
-  kOpen,
-  kClosed,
-  kUserAgentV1
-};
+enum class ShadowRootType { V0, kOpen, kClosed, kUserAgent };
 
 class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(ShadowRoot);
 
  public:
-  // FIXME: Current implementation does not work well if a shadow root is
-  // dynamically created.  So multiple shadow subtrees in several elements are
-  // prohibited.
-  // See https://github.com/w3c/webcomponents/issues/102 and
-  // http://crbug.com/234020
   static ShadowRoot* Create(Document& document, ShadowRootType type) {
     return new ShadowRoot(document, type);
   }
@@ -86,11 +75,24 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   ElementShadow* Owner() const { return host().Shadow(); }
   ShadowRootType GetType() const { return static_cast<ShadowRootType>(type_); }
   String mode() const {
-    return (GetType() == ShadowRootType::V0 ||
-            GetType() == ShadowRootType::kOpen)
-               ? "open"
-               : "closed";
-  };
+    switch (GetType()) {
+      case ShadowRootType::kUserAgent:
+        // UA ShadowRoot should not be exposed to the Web.
+        NOTREACHED();
+        return "";
+      case ShadowRootType::V0:
+        // v0 ShadowRoot shouldn't support |mode|, however, we must return
+        // something. Return "open" here for a historical reason.
+        return "open";
+      case ShadowRootType::kOpen:
+        return "open";
+      case ShadowRootType::kClosed:
+        return "closed";
+      default:
+        NOTREACHED();
+        return "";
+    }
+  }
 
   bool IsOpenOrV0() const {
     return GetType() == ShadowRootType::V0 ||
@@ -99,9 +101,9 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   bool IsV1() const {
     return GetType() == ShadowRootType::kOpen ||
            GetType() == ShadowRootType::kClosed ||
-           GetType() == ShadowRootType::kUserAgentV1;
+           GetType() == ShadowRootType::kUserAgent;
   }
-  bool IsUserAgent() const { return GetType() == ShadowRootType::kUserAgentV1; }
+  bool IsUserAgent() const { return GetType() == ShadowRootType::kUserAgent; }
 
   void AttachLayoutTree(AttachContext&) override;
   void DetachLayoutTree(const AttachContext& = AttachContext()) override;
@@ -112,20 +114,12 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   void SetNeedsAssignmentRecalc();
 
   // For V0
-  ShadowRoot* YoungerShadowRoot() const;
-  ShadowRoot* OlderShadowRoot() const;
-  void SetYoungerShadowRoot(ShadowRoot&);
-  void SetOlderShadowRoot(ShadowRoot&);
-  bool IsYoungest() const { return !YoungerShadowRoot(); }
-  bool IsOldest() const { return !OlderShadowRoot(); }
   bool ContainsShadowElements() const;
   bool ContainsContentElements() const;
   bool ContainsInsertionPoints() const {
     return ContainsShadowElements() || ContainsContentElements();
   }
   unsigned DescendantShadowElementCount() const;
-  HTMLShadowElement* ShadowInsertionPointOfYoungerShadowRoot() const;
-  void SetShadowInsertionPointOfYoungerShadowRoot(HTMLShadowElement*);
   void DidAddInsertionPoint(V0InsertionPoint*);
   void DidRemoveInsertionPoint(V0InsertionPoint*);
   const HeapVector<Member<V0InsertionPoint>>& DescendantInsertionPoints();
@@ -163,7 +157,7 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   void innerHTML(StringOrTrustedHTML&) const;
   void setInnerHTML(const StringOrTrustedHTML&, ExceptionState&);
 
-  Node* cloneNode(bool, ExceptionState&) override;
+  Node* Clone(Document&, CloneChildrenFlag) const override;
 
   void SetDelegatesFocus(bool flag) { delegates_focus_ = flag; }
   bool delegatesFocus() const { return delegates_focus_; }
@@ -198,23 +192,15 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   TraceWrapperMember<StyleSheetList> style_sheet_list_;
   Member<SlotAssignment> slot_assignment_;
   unsigned short child_shadow_root_count_;
-  // TODO(kochi): Once kUserAgentTypeV0 is gone, shrink this to 2.
-  unsigned short type_ : 3;
+  unsigned short type_ : 2;
   unsigned short registered_with_parent_shadow_root_ : 1;
   unsigned short descendant_insertion_points_is_valid_ : 1;
   unsigned short delegates_focus_ : 1;
-  unsigned short unused_ : 10;
+  unsigned short unused_ : 11;
 };
 
 inline Element* ShadowRoot::ActiveElement() const {
   return AdjustedFocusedElement();
-}
-
-inline ShadowRoot* Element::ShadowRootIfV1() const {
-  ShadowRoot* root = GetShadowRoot();
-  if (root && root->IsV1())
-    return root;
-  return nullptr;
 }
 
 inline bool Node::IsInUserAgentShadowRoot() const {

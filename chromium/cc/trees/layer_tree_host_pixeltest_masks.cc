@@ -113,8 +113,10 @@ TEST_P(LayerTreeHostMasksPixelTest, ImageMaskOfLayer) {
   mask_display_list->Raster(canvas);
   mask->SetImage(PaintImageBuilder::WithDefault()
                      .set_id(PaintImage::GetNextId())
-                     .set_image(surface->makeImageSnapshot())
-                     .TakePaintImage());
+                     .set_image(surface->makeImageSnapshot(),
+                                PaintImage::GetNextContentId())
+                     .TakePaintImage(),
+                 SkMatrix::I(), false);
 
   scoped_refptr<SolidColorLayer> green = CreateSolidColorLayerWithBorder(
       gfx::Rect(25, 25, 50, 50), kCSSGreen, 1, SK_ColorBLACK);

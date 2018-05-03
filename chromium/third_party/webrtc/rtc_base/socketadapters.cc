@@ -16,7 +16,6 @@
 #include <errno.h>
 
 #if defined(WEBRTC_WIN)
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -104,7 +103,7 @@ void BufferedReadAdapter::OnReadEvent(AsyncSocket * socket) {
   }
 
   if (data_len_ >= buffer_size_) {
-    RTC_LOG(INFO) << "Input buffer overflow";
+    RTC_LOG(LS_ERROR) << "Input buffer overflow";
     RTC_NOTREACHED();
     data_len_ = 0;
   }

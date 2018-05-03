@@ -11,8 +11,8 @@
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/modules/password_manager/WebFormElementObserver.h"
-#include "third_party/WebKit/public/web/modules/password_manager/WebFormElementObserverCallback.h"
+#include "third_party/WebKit/public/web/modules/autofill/WebFormElementObserver.h"
+#include "third_party/WebKit/public/web/modules/autofill/WebFormElementObserverCallback.h"
 #include "ui/base/page_transition_types.h"
 
 using blink::WebDocumentLoader;
@@ -78,7 +78,8 @@ void FormTracker::TextFieldDidChange(const WebFormControlElement& element) {
   // that pastes aren't necessarily user gestures because Blink's conception of
   // user gestures is centered around creating new windows/tabs.
   if (user_gesture_required_ &&
-      !blink::WebUserGestureIndicator::IsProcessingUserGesture() &&
+      !blink::WebUserGestureIndicator::IsProcessingUserGesture(
+          render_frame()->GetWebFrame()) &&
       !render_frame()->IsPasting())
     return;
 
@@ -151,11 +152,16 @@ void FormTracker::DidStartProvisionalLoad(WebDocumentLoader* document_loader) {
   if (!navigation_state)
     return;
 
-  ui::PageTransition type = navigation_state->GetTransitionType();
-  if (ui::PageTransitionIsWebTriggerable(type) &&
-      ui::PageTransitionIsNewNavigation(type) &&
-      !blink::WebUserGestureIndicator::IsProcessingUserGesture(
-          navigated_frame)) {
+  // We are interested only in content initiated navigations.  Explicit browser
+  // initiated navigations (e.g. via omnibox) are discarded here.  Similarly
+  // PlzNavigate navigations originating from the browser are discarded because
+  // they were already processed as a content initiated one
+  // (i.e. DidStartProvisionalLoad is called twice in this case).  The check for
+  // kWebNavigationTypeLinkClicked is reliable only for content initiated
+  // navigations.
+  if (navigation_state->IsContentInitiated() &&
+      document_loader->GetNavigationType() !=
+          blink::kWebNavigationTypeLinkClicked) {
     FireProbablyFormSubmitted();
   }
 }

@@ -14,7 +14,7 @@
 
 #include "libANGLE/renderer/SurfaceImpl.h"
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
-#include "libANGLE/renderer/vulkan/renderervk_utils.h"
+#include "libANGLE/renderer/vulkan/vk_utils.h"
 
 namespace rx
 {
@@ -116,7 +116,8 @@ class WindowSurfaceVk : public SurfaceImpl, public ResourceVk
 
     VkSwapchainKHR mSwapchain;
 
-    RenderTargetVk mRenderTarget;
+    RenderTargetVk mColorRenderTarget;
+    RenderTargetVk mDepthStencilRenderTarget;
 
     uint32_t mCurrentSwapchainImageIndex;
 
@@ -141,6 +142,10 @@ class WindowSurfaceVk : public SurfaceImpl, public ResourceVk
     };
 
     std::vector<SwapchainImage> mSwapchainImages;
+
+    vk::Image mDepthStencilImage;
+    vk::DeviceMemory mDepthStencilDeviceMemory;
+    vk::ImageView mDepthStencilImageView;
 };
 
 }  // namespace rx

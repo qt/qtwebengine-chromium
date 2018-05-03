@@ -17,20 +17,14 @@
          add_and_true_to_loop_condition)                     \
   GPU_OP(ADJUST_SRC_DST_REGION_FOR_BLITFRAMEBUFFER,          \
          adjust_src_dst_region_for_blitframebuffer)          \
-  GPU_OP(AVDA_DONT_COPY_PICTURES,                            \
-         avda_dont_copy_pictures)                            \
   GPU_OP(AVOID_EGL_IMAGE_TARGET_TEXTURE_REUSE,               \
          avoid_egl_image_target_texture_reuse)               \
   GPU_OP(AVOID_ONE_COMPONENT_EGL_IMAGES,                     \
          avoid_one_component_egl_images)                     \
   GPU_OP(AVOID_STENCIL_BUFFERS,                              \
          avoid_stencil_buffers)                              \
-  GPU_OP(AVOID_USING_IMAGE_FLUSH_EXTERNAL_WITH_EGL_CREATE_IMAGE, \
-         avoid_using_image_flush_external_with_egl_create_image) \
   GPU_OP(BROKEN_EGL_IMAGE_REF_COUNTING,                      \
          broken_egl_image_ref_counting)                      \
-  GPU_OP(CLEAR_ALPHA_IN_READPIXELS,                          \
-         clear_alpha_in_readpixels)                          \
   GPU_OP(CLEAR_TO_ZERO_OR_ONE_BROKEN,                        \
          clear_to_zero_or_one_broken)                        \
   GPU_OP(CLEAR_UNIFORMS_BEFORE_FIRST_PROGRAM_USE,            \
@@ -43,8 +37,6 @@
          depth_stencil_renderbuffer_resize_emulation)        \
   GPU_OP(DISABLE_ACCELERATED_VPX_DECODE,                     \
          disable_accelerated_vpx_decode)                     \
-  GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
-         disable_angle_instanced_arrays)                     \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
          disable_async_readpixels)                           \
   GPU_OP(DISABLE_AV_SAMPLE_BUFFER_DISPLAY_LAYER,             \
@@ -109,6 +101,8 @@
          dont_initialize_uninitialized_locals)               \
   GPU_OP(DONT_REMOVE_INVARIANT_FOR_FRAGMENT_INPUT,           \
          dont_remove_invariant_for_fragment_input)           \
+  GPU_OP(DONT_USE_EGLCLIENTWAITSYNC_WITH_TIMEOUT,            \
+         dont_use_eglclientwaitsync_with_timeout)            \
   GPU_OP(DONT_USE_LOOPS_TO_INITIALIZE_VARIABLES,             \
          dont_use_loops_to_initialize_variables)             \
   GPU_OP(ETC1_POWER_OF_TWO_ONLY,                             \
@@ -187,8 +181,6 @@
          reset_teximage2d_base_level)                        \
   GPU_OP(RESTORE_SCISSOR_ON_FBO_CHANGE,                      \
          restore_scissor_on_fbo_change)                      \
-  GPU_OP(REVERSE_POINT_SPRITE_COORD_ORIGIN,                  \
-         reverse_point_sprite_coord_origin)                  \
   GPU_OP(REWRITE_DO_WHILE_LOOPS,                             \
          rewrite_do_while_loops)                             \
   GPU_OP(REWRITE_FLOAT_UNARY_MINUS_OPERATOR,                 \
@@ -197,16 +189,10 @@
          rewrite_texelfetchoffset_to_texelfetch)             \
   GPU_OP(SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS,             \
          scalarize_vec_and_mat_constructor_args)             \
-  GPU_OP(SET_TEXTURE_FILTER_BEFORE_GENERATING_MIPMAP,        \
-         set_texture_filter_before_generating_mipmap)        \
   GPU_OP(SET_ZERO_LEVEL_BEFORE_GENERATING_MIPMAP,            \
          set_zero_level_before_generating_mipmap)            \
   GPU_OP(SIMULATE_OUT_OF_MEMORY_ON_LARGE_TEXTURES,           \
          simulate_out_of_memory_on_large_textures)           \
-  GPU_OP(SURFACE_TEXTURE_CANT_DETACH,                        \
-         surface_texture_cant_detach)                        \
-  GPU_OP(SWIZZLE_RGBA_FOR_ASYNC_READPIXELS,                  \
-         swizzle_rgba_for_async_readpixels)                  \
   GPU_OP(TEXSUBIMAGE_FASTER_THAN_TEXIMAGE,                   \
          texsubimage_faster_than_teximage)                   \
   GPU_OP(UNBIND_ATTACHMENTS_ON_BOUND_RENDER_FBO_DELETE,      \

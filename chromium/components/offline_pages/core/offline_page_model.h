@@ -14,10 +14,9 @@
 
 #include "base/supports_user_data.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/offline_pages/core/client_policy_controller.h"
 #include "components/offline_pages/core/offline_event_logger.h"
 #include "components/offline_pages/core/offline_page_archiver.h"
-#include "components/offline_pages/core/offline_page_model_query.h"
-#include "components/offline_pages/core/offline_page_storage_manager.h"
 #include "components/offline_pages/core/offline_page_types.h"
 
 class GURL;
@@ -80,10 +79,14 @@ class OfflinePageModel : public base::SupportsUserData, public KeyedService {
     DeletedPageInfo(const DeletedPageInfo& other);
     ~DeletedPageInfo();
     DeletedPageInfo(int64_t offline_id,
+                    int64_t system_download_id,
                     const ClientId& client_id,
                     const std::string& request_origin);
     // The ID of the deleted page.
     int64_t offline_id;
+    // The system download manager id of the deleted page.  This will be 0 if
+    // there is no system download manager assigned id.
+    int64_t system_download_id;
     // Client ID of the deleted page.
     ClientId client_id;
     // The origin that the page was saved on behalf of.
@@ -147,6 +150,13 @@ class OfflinePageModel : public base::SupportsUserData, public KeyedService {
   virtual void DeletePagesByClientIds(const std::vector<ClientId>& client_ids,
                                       const DeletePageCallback& callback) = 0;
 
+  // Deletes all pages associated with any of the |client_ids| provided the page
+  // also was created by origin.
+  virtual void DeletePagesByClientIdsAndOrigin(
+      const std::vector<ClientId>& client_ids,
+      const std::string& origin,
+      const DeletePageCallback& callback) = 0;
+
   // Deletes cached offline pages matching the URL predicate.
   virtual void DeleteCachedPagesByURLPredicate(
       const UrlPredicate& predicate,
@@ -189,6 +199,12 @@ class OfflinePageModel : public base::SupportsUserData, public KeyedService {
   virtual void GetPagesByRequestOrigin(
       const std::string& request_origin,
       const MultipleOfflinePageItemCallback& callback) = 0;
+
+  // Returns zero or one offline pages associated with a specified |digest|.
+  virtual void GetPageBySizeAndDigest(
+      int64_t file_size,
+      const std::string& digest,
+      const SingleOfflinePageItemCallback& callback) = 0;
 
   // Gets all offline ids where the offline page has the matching client id.
   virtual void GetOfflineIdsForClientId(

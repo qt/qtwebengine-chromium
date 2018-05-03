@@ -60,6 +60,7 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -210,6 +211,8 @@ class QuicHttpStreamTest
     peer_addr_ = IPEndPoint(ip, 443);
     self_addr_ = IPEndPoint(ip, 8435);
     clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(20));
+    request_.traffic_annotation =
+        MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
   }
 
   ~QuicHttpStreamTest() {
@@ -306,8 +309,8 @@ class QuicHttpStreamTest
         /*stream_factory=*/nullptr, &crypto_client_stream_factory_, &clock_,
         &transport_security_state_,
         base::WrapUnique(static_cast<QuicServerInfo*>(nullptr)),
-        QuicServerId(kDefaultServerHostName, kDefaultServerPort,
-                     PRIVACY_MODE_DISABLED),
+        QuicSessionKey(kDefaultServerHostName, kDefaultServerPort,
+                       PRIVACY_MODE_DISABLED, SocketTag()),
         /*require_confirmation=*/false, /*migrate_session_early*/ false,
         /*migrate_session_on_network_change*/ false,
         /*migrate_session_early_v2*/ false,
@@ -339,7 +342,7 @@ class QuicHttpStreamTest
     promised_response_[":version"] = "HTTP/1.1";
     promised_response_["content-type"] = "text/plain";
 
-    promise_url_ = SpdyUtils::GetUrlFromHeaderBlock(push_promise_);
+    promise_url_ = SpdyUtils::GetPromisedUrlFromHeaders(push_promise_);
   }
 
   void SetRequest(const string& method,
@@ -527,6 +530,19 @@ class QuicHttpStreamTest
     return server_maker_.MakeAckPacket(packet_number, largest_received,
                                        smallest_received, least_unacked,
                                        !kIncludeCongestionFeedback);
+  }
+
+  std::unique_ptr<QuicReceivedPacket> ConstructClientPriorityPacket(
+      QuicPacketNumber packet_number,
+      bool should_include_version,
+      QuicStreamId id,
+      QuicStreamId parent_stream_id,
+      RequestPriority request_priority,
+      QuicStreamOffset* header_stream_offset) {
+    return client_maker_.MakePriorityPacket(
+        packet_number, should_include_version, id, parent_stream_id,
+        ConvertRequestPriorityToQuicPriority(request_priority),
+        header_stream_offset);
   }
 
   std::unique_ptr<QuicReceivedPacket> ConstructInitialSettingsPacket(
@@ -1543,18 +1559,8 @@ TEST_P(QuicHttpStreamTest, Priority) {
             stream_->InitializeStream(&request_, true, MEDIUM, net_log_.bound(),
                                       callback_.callback()));
 
-  // Check that priority is highest.
-  QuicChromiumClientStream::Handle* reliable_stream =
-      QuicHttpStreamPeer::GetQuicChromiumClientStream(stream_.get());
-  DCHECK(reliable_stream);
-  DCHECK_EQ(kV3HighestPriority, reliable_stream->priority());
-
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
-
-  // Check that priority has now dropped back to MEDIUM.
-  DCHECK_EQ(MEDIUM,
-            ConvertQuicPriorityToRequestPriority(reliable_stream->priority()));
 
   // Ack the request.
   ProcessPacket(ConstructServerAckPacket(1, 0, 0, 0));
@@ -1873,7 +1879,7 @@ TEST_P(QuicHttpStreamTest, ServerPushCrossOriginOK) {
   // packet, but does it matter?
 
   push_promise_[":authority"] = "mail.example.org";
-  promise_url_ = SpdyUtils::GetUrlFromHeaderBlock(push_promise_);
+  promise_url_ = SpdyUtils::GetPromisedUrlFromHeaders(push_promise_);
 
   ReceivePromise(promise_id_);
   EXPECT_NE(session_->GetPromisedByUrl(promise_url_), nullptr);
@@ -1942,7 +1948,7 @@ TEST_P(QuicHttpStreamTest, ServerPushCrossOriginFail) {
   // TODO(ckrasic) - could do this via constructing a PUSH_PROMISE
   // packet, but does it matter?
   push_promise_[":authority"] = "www.notexample.org";
-  promise_url_ = SpdyUtils::GetUrlFromHeaderBlock(push_promise_);
+  promise_url_ = SpdyUtils::GetPromisedUrlFromHeaders(push_promise_);
 
   ReceivePromise(promise_id_);
   // The promise will have been rejected because the cert doesn't
@@ -2037,12 +2043,22 @@ TEST_P(QuicHttpStreamTest, ServerPushVaryCheckFail) {
   size_t spdy_request_header_frame_length;
   QuicStreamOffset header_stream_offset = 0;
   AddWrite(ConstructInitialSettingsPacket(&header_stream_offset));
-  AddWrite(ConstructClientRstStreamVaryMismatchPacket(2));
+
+  QuicPacketNumber client_packet_number = 2;
+  if (client_headers_include_h2_stream_dependency_ &&
+      version_ > QUIC_VERSION_42) {
+    AddWrite(ConstructClientPriorityPacket(
+        client_packet_number++, kIncludeVersion, promise_id_, 0,
+        DEFAULT_PRIORITY, &header_stream_offset));
+  }
+  AddWrite(ConstructClientRstStreamVaryMismatchPacket(client_packet_number++));
   AddWrite(InnerConstructRequestHeadersPacket(
-      3, stream_id_ + 2, !kIncludeVersion, kFin, DEFAULT_PRIORITY,
-      &spdy_request_header_frame_length, &header_stream_offset));
-  AddWrite(ConstructClientAckPacket(4, 3, 1, 1));
-  AddWrite(ConstructClientRstStreamCancelledPacket(5));
+      client_packet_number++, stream_id_ + 2, !kIncludeVersion, kFin,
+      DEFAULT_PRIORITY, promise_id_, &spdy_request_header_frame_length,
+      &header_stream_offset));
+  AddWrite(ConstructClientAckPacket(client_packet_number++, 3, 1, 1));
+  AddWrite(ConstructClientRstStreamCancelledPacket(client_packet_number++));
+
   Initialize();
 
   // Initialize the first stream, for receiving the promise on.

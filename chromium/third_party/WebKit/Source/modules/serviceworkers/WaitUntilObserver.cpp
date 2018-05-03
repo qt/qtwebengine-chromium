@@ -15,7 +15,7 @@
 #include "platform/bindings/Microtask.h"
 #include "platform/wtf/Assertions.h"
 #include "public/platform/Platform.h"
-#include "third_party/WebKit/common/service_worker/service_worker_event_status.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom-blink.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -146,15 +146,15 @@ void WaitUntilObserver::WaitUntil(ScriptState* script_state,
                 script_state->GetIsolate())) {
           break;
         }
-      // Fall through:
-      // didDispatchEvent() is called after both the event handler
-      // execution finished and microtasks queued by the event handler execution
-      // finished, it's hard to get the precise time point between the 2
-      // execution phases.
-      // So even in EventDispatchState::kDispatching state at this time point,
-      // running microtask indicates that event handler execution has actually
-      // finished, in such case if there aren't any outstanding extend lifetime
-      // promises, we should throw here.
+        // didDispatchEvent() is called after both the event handler
+        // execution finished and microtasks queued by the event handler execution
+        // finished, it's hard to get the precise time point between the 2
+        // execution phases.
+        // So even in EventDispatchState::kDispatching state at this time point,
+        // running microtask indicates that event handler execution has actually
+        // finished, in such case if there aren't any outstanding extend lifetime
+        // promises, we should throw here.
+        FALLTHROUGH;
       case EventDispatchState::kDispatched:
       case EventDispatchState::kFailed:
         exception_state.ThrowDOMException(
@@ -194,7 +194,7 @@ WaitUntilObserver::WaitUntilObserver(ExecutionContext* context,
       type_(type),
       event_id_(event_id),
       consume_window_interaction_timer_(
-          Platform::Current()->CurrentThread()->GetWebTaskRunner(),
+          Platform::Current()->CurrentThread()->GetTaskRunner(),
           this,
           &WaitUntilObserver::ConsumeWindowInteraction) {}
 

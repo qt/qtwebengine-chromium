@@ -15,7 +15,7 @@
 
 #include "base/allocator/allocator_check.h"
 #include "base/allocator/allocator_extension.h"
-#include "base/allocator/features.h"
+#include "base/allocator/buildflags.h"
 #include "base/at_exit.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
@@ -52,6 +52,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
+#include "content/public/common/zygote_features.h"
 #include "gin/v8_initializer.h"
 #include "media/base/media.h"
 #include "media/media_features.h"
@@ -86,6 +87,7 @@
 #endif
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #include "content/zygote/zygote_main.h"
+#include "sandbox/linux/services/libc_interceptor.h"
 #endif
 
 #endif  // OS_POSIX
@@ -169,39 +171,35 @@ void InitializeFieldTrialAndFeatureList(
 }
 
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)
-void LoadV8ContextSnapshotFile() {
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  base::FileDescriptorStore& file_descriptor_store =
-      base::FileDescriptorStore::GetInstance();
-  base::MemoryMappedFile::Region region;
-  base::ScopedFD fd = file_descriptor_store.MaybeTakeFD(
-      kV8ContextSnapshotDataDescriptor, &region);
-  if (fd.is_valid()) {
-    gin::V8Initializer::LoadV8ContextSnapshotFromFD(fd.get(), region.offset,
-                                                    region.size);
-    return;
-  }
-#endif  // OS_POSIX && !OS_MACOSX
-#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  gin::V8Initializer::LoadV8ContextSnapshot();
-#endif  // !CHROME_MULTIPLE_DLL_BROWSER
-}
-
 void LoadV8SnapshotFile() {
+#if defined(USE_V8_CONTEXT_SNAPSHOT)
+  static constexpr gin::V8Initializer::V8SnapshotFileType kSnapshotType =
+      gin::V8Initializer::V8SnapshotFileType::kWithAdditionalContext;
+  static const char* snapshot_data_descriptor =
+      kV8ContextSnapshotDataDescriptor;
+#else
+  static constexpr gin::V8Initializer::V8SnapshotFileType kSnapshotType =
+      gin::V8Initializer::V8SnapshotFileType::kDefault;
+  static const char* snapshot_data_descriptor = kV8SnapshotDataDescriptor;
+#endif  // USE_V8_CONTEXT_SNAPSHOT
+  ALLOW_UNUSED_LOCAL(kSnapshotType);
+  ALLOW_UNUSED_LOCAL(snapshot_data_descriptor);
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   base::FileDescriptorStore& file_descriptor_store =
       base::FileDescriptorStore::GetInstance();
   base::MemoryMappedFile::Region region;
   base::ScopedFD fd =
-      file_descriptor_store.MaybeTakeFD(kV8SnapshotDataDescriptor, &region);
+      file_descriptor_store.MaybeTakeFD(snapshot_data_descriptor, &region);
   if (fd.is_valid()) {
     gin::V8Initializer::LoadV8SnapshotFromFD(fd.get(), region.offset,
-                                             region.size);
+                                             region.size, kSnapshotType);
     return;
   }
 #endif  // OS_POSIX && !OS_MACOSX
+
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  gin::V8Initializer::LoadV8Snapshot();
+  gin::V8Initializer::LoadV8Snapshot(kSnapshotType);
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
 }
 
@@ -232,7 +230,6 @@ void InitializeV8IfNeeded(const base::CommandLine& command_line,
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)
   LoadV8SnapshotFile();
   LoadV8NativesFile();
-  LoadV8ContextSnapshotFile();
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 }
 
@@ -304,19 +301,18 @@ struct MainFunction {
   int (*function)(const MainFunctionParams&);
 };
 
-#if defined(OS_LINUX)
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
 // On platforms that use the zygote, we have a special subset of
 // subprocesses that are launched via the zygote.  This function
 // fills in some process-launching bits around ZygoteMain().
 // Returns the exit code of the subprocess.
-int RunZygote(const MainFunctionParams& main_function_params,
-              ContentMainDelegate* delegate) {
+int RunZygote(ContentMainDelegate* delegate) {
   static const MainFunction kMainFunctions[] = {
-    { switches::kRendererProcess,    RendererMain },
+    {switches::kRendererProcess, RendererMain},
+    {switches::kUtilityProcess, UtilityMain},
 #if BUILDFLAG(ENABLE_PLUGINS)
-    { switches::kPpapiPluginProcess, PpapiPluginMain },
+    {switches::kPpapiPluginProcess, PpapiPluginMain},
 #endif
-    { switches::kUtilityProcess,     UtilityMain },
   };
 
   std::vector<std::unique_ptr<ZygoteForkDelegate>> zygote_fork_delegates;
@@ -326,10 +322,11 @@ int RunZygote(const MainFunctionParams& main_function_params,
   }
 
   // This function call can return multiple times, once per fork().
-  if (!ZygoteMain(main_function_params, std::move(zygote_fork_delegates)))
+  if (!ZygoteMain(std::move(zygote_fork_delegates)))
     return 1;
 
-  if (delegate) delegate->ZygoteForked();
+  if (delegate)
+    delegate->ZygoteForked();
 
   // Zygote::HandleForkRequest may have reallocated the command
   // line so update it here with the new version.
@@ -348,7 +345,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
   service_manager::SandboxType sandbox_type =
       service_manager::SandboxTypeFromCommandLine(command_line);
   if (sandbox_type == service_manager::SANDBOX_TYPE_PROFILING)
-    content::DisableLocaltimeOverride();
+    sandbox::SetUseLocaltimeOverride(false);
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name)
@@ -361,7 +358,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
   NOTREACHED() << "Unknown zygote process type: " << process_type;
   return 1;
 }
-#endif  // defined(OS_LINUX)
+#endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
 static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
@@ -427,13 +424,12 @@ int RunNamedProcessTypeMain(
     }
   }
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(OS_FUCHSIA)
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
   // Zygote startup is special -- see RunZygote comments above
   // for why we don't use ZygoteMain directly.
   if (process_type == switches::kZygoteProcess)
-    return RunZygote(main_function_params, delegate);
-#endif
+    return RunZygote(delegate);
+#endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
   // If it's a process we don't know about, the embedder should know.
   if (delegate)
@@ -467,12 +463,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   int Initialize(const ContentMainParams& params) override {
     ui_task_ = params.ui_task;
     created_main_parts_closure_ = params.created_main_parts_closure;
-
-    create_discardable_memory_ = params.create_discardable_memory;
-
-#if defined(USE_AURA)
-    env_mode_ = params.env_mode;
-#endif
 
 #if defined(OS_WIN)
     sandbox_info_ = *params.sandbox_info;
@@ -709,10 +699,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #elif defined(OS_MACOSX)
     main_params.autorelease_pool = autorelease_pool_;
 #endif
-#if defined(USE_AURA)
-    main_params.env_mode = env_mode_;
-#endif
-    main_params.create_discardable_memory = create_discardable_memory_;
 
     return RunNamedProcessTypeMain(process_type, main_params, delegate_);
   }
@@ -768,12 +754,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   base::Closure* ui_task_ = nullptr;
 
   CreatedMainPartsClosure* created_main_parts_closure_ = nullptr;
-
-#if defined(USE_AURA)
-  aura::Env::Mode env_mode_ = aura::Env::Mode::LOCAL;
-#endif
-
-  bool create_discardable_memory_ = true;
 
   DISALLOW_COPY_AND_ASSIGN(ContentMainRunnerImpl);
 };

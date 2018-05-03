@@ -32,9 +32,8 @@
 #include <string>
 #include <type_traits>
 #include <vector>
-#include "perfetto/base/build_config.h"
 
-#include "include/perfetto/tracing/core/data_source_config.h"
+#include "perfetto/tracing/core/data_source_config.h"
 
 // Forward declarations for protobuf types.
 namespace perfetto {
@@ -43,6 +42,7 @@ class TraceConfig;
 class TraceConfig_BufferConfig;
 class TraceConfig_DataSource;
 class DataSourceConfig;
+class DataSourceConfig_FtraceConfig;
 }  // namespace protos
 }  // namespace perfetto
 
@@ -53,17 +53,19 @@ class TraceConfig {
   class BufferConfig {
    public:
     enum OptimizeFor {
-      ONE_SHOT_READ = 0,
+      DEFAULT = 0,
+      ONE_SHOT_READ = 1,
     };
     enum FillPolicy {
-      RING_BUFFER = 0,
+      UNSPECIFIED = 0,
+      RING_BUFFER = 1,
     };
     BufferConfig();
     ~BufferConfig();
     BufferConfig(BufferConfig&&) noexcept;
     BufferConfig& operator=(BufferConfig&&);
-    BufferConfig(const BufferConfig&) = delete;
-    BufferConfig& operator=(const BufferConfig&) = delete;
+    BufferConfig(const BufferConfig&);
+    BufferConfig& operator=(const BufferConfig&);
 
     // Conversion methods from/to the corresponding protobuf types.
     void FromProto(const perfetto::protos::TraceConfig_BufferConfig&);
@@ -94,8 +96,8 @@ class TraceConfig {
     ~DataSource();
     DataSource(DataSource&&) noexcept;
     DataSource& operator=(DataSource&&);
-    DataSource(const DataSource&) = delete;
-    DataSource& operator=(const DataSource&) = delete;
+    DataSource(const DataSource&);
+    DataSource& operator=(const DataSource&);
 
     // Conversion methods from/to the corresponding protobuf types.
     void FromProto(const perfetto::protos::TraceConfig_DataSource&);
@@ -128,8 +130,8 @@ class TraceConfig {
   ~TraceConfig();
   TraceConfig(TraceConfig&&) noexcept;
   TraceConfig& operator=(TraceConfig&&);
-  TraceConfig(const TraceConfig&) = delete;
-  TraceConfig& operator=(const TraceConfig&) = delete;
+  TraceConfig(const TraceConfig&);
+  TraceConfig& operator=(const TraceConfig&);
 
   // Conversion methods from/to the corresponding protobuf types.
   void FromProto(const perfetto::protos::TraceConfig&);

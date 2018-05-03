@@ -22,9 +22,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "components/download/public/common/download_item.h"
 #include "content/browser/download/save_types.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -91,8 +91,8 @@ class CONTENT_EXPORT SavePackage
   // Initialize the SavePackage. Returns true if it initializes properly.  Need
   // to make sure that this method must be called in the UI thread because using
   // g_browser_process on a non-UI thread can cause crashes during shutdown.
-  // |cb| will be called when the DownloadItem is created, before data is
-  // written to disk.
+  // |cb| will be called when the download::DownloadItem is created, before data
+  // is written to disk.
   bool Init(const SavePackageDownloadCreatedCallback& cb);
 
   // Cancel all in progress request, might be called by user or internal error.
@@ -323,33 +323,11 @@ class CONTENT_EXPORT SavePackage
   }
 
   // The current speed in files per second. This is used to update the
-  // DownloadItem associated to this SavePackage. The files per second is
-  // presented by the DownloadItem to the UI as bytes per second, which is
-  // not correct but matches the way the total and received number of files is
-  // presented as the total and received bytes.
+  // download::DownloadItem associated to this SavePackage. The files per second
+  // is presented by the download::DownloadItem to the UI as bytes per second,
+  // which is not correct but matches the way the total and received number of
+  // files is presented as the total and received bytes.
   int64_t CurrentSpeed() const;
-
-  // Helper function for preparing suggested name for the SaveAs Dialog. The
-  // suggested name is determined by the web document's title.
-  static base::FilePath GetSuggestedNameForSaveAs(
-      const base::string16& title,
-      const GURL& page_url,
-      bool can_save_as_complete,
-      const std::string& contents_mime_type);
-
-  // Ensures that the file name has a proper extension for HTML by adding ".htm"
-  // if necessary.
-  static base::FilePath EnsureHtmlExtension(const base::FilePath& name);
-
-  // Ensures that the file name has a proper extension for supported formats
-  // if necessary.
-  static base::FilePath EnsureMimeExtension(const base::FilePath& name,
-      const std::string& contents_mime_type);
-
-  // Returns extension for supported MIME types (for example, for "text/plain"
-  // it returns "txt").
-  static const base::FilePath::CharType* ExtensionForMimeType(
-      const std::string& contents_mime_type);
 
   // A queue for items we are about to start saving.
   base::circular_deque<std::unique_ptr<SaveItem>> waiting_item_queue_;
@@ -389,7 +367,7 @@ class CONTENT_EXPORT SavePackage
   // Non-owning pointer for handling file writing on the download sequence.
   SaveFileManager* file_manager_ = nullptr;
 
-  // DownloadManager owns the DownloadItem and handles history and UI.
+  // DownloadManager owns the download::DownloadItem and handles history and UI.
   DownloadManagerImpl* download_manager_ = nullptr;
   DownloadItemImpl* download_ = nullptr;
 

@@ -48,6 +48,7 @@
 #include "third_party/WebKit/public/platform/WebDisplayMode.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
+#include "third_party/WebKit/public/platform/WebIntrinsicSizingInfo.h"
 #include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
 #include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
@@ -162,7 +163,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
   IPC_STRUCT_TRAITS_MEMBER(screen_info)
   IPC_STRUCT_TRAITS_MEMBER(new_size)
-  IPC_STRUCT_TRAITS_MEMBER(physical_backing_size)
+  IPC_STRUCT_TRAITS_MEMBER(compositor_viewport_pixel_size)
   IPC_STRUCT_TRAITS_MEMBER(browser_controls_shrink_blink_size)
   IPC_STRUCT_TRAITS_MEMBER(scroll_focused_node_into_view)
   IPC_STRUCT_TRAITS_MEMBER(top_controls_height)
@@ -172,6 +173,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResizeParams)
   IPC_STRUCT_TRAITS_MEMBER(is_fullscreen_granted)
   IPC_STRUCT_TRAITS_MEMBER(display_mode)
   IPC_STRUCT_TRAITS_MEMBER(needs_resize_ack)
+  IPC_STRUCT_TRAITS_MEMBER(content_source_id)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
@@ -242,7 +244,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(arrow_bitmap_height_vertical_scroll_bar_in_dips)
   IPC_STRUCT_TRAITS_MEMBER(arrow_bitmap_width_horizontal_scroll_bar_in_dips)
 #endif
-  IPC_STRUCT_TRAITS_MEMBER(default_font_size)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::TextInputState)
@@ -344,12 +345,16 @@ IPC_MESSAGE_ROUTED1(ViewMsg_Resize, content::ResizeParams /* params */)
 
 // Tells the widget to use the provided viz::LocalSurfaceId to submit
 // CompositorFrames for autosize.
-IPC_MESSAGE_ROUTED5(ViewMsg_SetLocalSurfaceIdForAutoResize,
-                    uint64_t /* sequence_number */,
-                    gfx::Size /* min_size */,
-                    gfx::Size /* max_size */,
-                    content::ScreenInfo /* screen_info */,
-                    viz::LocalSurfaceId /* local_surface_id */)
+// TODO(fsamuel): Replace these parameters with ResizeParams eventually. After
+// surface sync is on by default everywhere, ResizeParams should be renamed to
+// SynchronizedVisualParams.
+IPC_MESSAGE_ROUTED(ViewMsg_SetLocalSurfaceIdForAutoResize,
+                   uint64_t /* sequence_number */,
+                   gfx::Size /* min_size */,
+                   gfx::Size /* max_size */,
+                   content::ScreenInfo /* screen_info */,
+                   uint32_t /* content_source_id */,
+                   viz::LocalSurfaceId /* local_surface_id */)
 
 // Enables device emulation. See WebDeviceEmulationParams for description.
 IPC_MESSAGE_ROUTED1(ViewMsg_EnableDeviceEmulation,
@@ -523,16 +528,6 @@ IPC_MESSAGE_ROUTED3(ViewMsg_ResolveTapDisambiguation,
 // Fetches complete rendered content of a web page as plain text.
 IPC_MESSAGE_ROUTED0(ViewMsg_GetRenderedText)
 
-#if defined(OS_ANDROID)
-// Notifies the renderer whether hiding/showing the browser controls is enabled
-// and whether or not to animate to the proper state.
-IPC_MESSAGE_ROUTED3(ViewMsg_UpdateBrowserControlsState,
-                    bool /* enable_hiding */,
-                    bool /* enable_showing */,
-                    bool /* animate */)
-
-#endif
-
 IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 
 // Sent by the browser to ask the renderer to redraw. Robust to events that can
@@ -540,12 +535,6 @@ IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 // etc.).
 IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw,
                     ui::LatencyInfo /* latency_info */)
-
-// Let renderer know begin frame messages won't be sent even if requested.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetBeginFramePaused, bool /* paused */)
-
-// Sent by the browser when the renderer should generate a new frame.
-IPC_MESSAGE_ROUTED1(ViewMsg_BeginFrame, viz::BeginFrameArgs /* args */)
 
 // Sets the viewport intersection on the widget for an out-of-process iframe.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetViewportIntersection,
@@ -561,12 +550,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_UpdateRenderThrottlingStatus,
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
-
-// Sent by renderer to request a ViewMsg_BeginFrame message for upcoming
-// display events. If |enabled| is true, the BeginFrame message will continue
-// to be be delivered until the notification is disabled.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrames,
-                    bool /* enabled */)
 
 // These two messages are sent to the parent RenderViewHost to display a widget
 // that was created by CreateWidget/CreateFullscreenWidget. |route_id| refers
@@ -722,11 +705,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_FrameSwapMessages,
                     uint32_t /* frame_token */,
                     std::vector<IPC::Message> /* messages */)
 
-// Sent if the BeginFrame did not cause a SwapCompositorFrame (e.g. because no
-// updates were required or because it was aborted in the renderer).
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidNotProduceFrame,
-                    viz::BeginFrameAck /* ack */)
-
 // Send back a string to be recorded by UserMetrics.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_UserMetricsRecordAction,
                      std::string /* action */)
@@ -743,6 +721,12 @@ IPC_MESSAGE_CONTROL1(ViewHostMsg_MediaLogEvents,
 IPC_MESSAGE_ROUTED2(ViewHostMsg_LockMouse,
                     bool /* user_gesture */,
                     bool /* privileged */)
+
+// Requests to tell the renderer for the containing frame of the current
+// renderer of a change in intrinsic sizing info parameters. This is only
+// used for SVG inside of <object>, and not for iframes.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_IntrinsicSizingInfoChanged,
+                    blink::WebIntrinsicSizingInfo)
 
 // Requests to unlock the mouse. A ViewMsg_MouseLockLost message will be sent
 // whenever the mouse is unlocked (which may or may not be caused by
@@ -768,10 +752,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_DidFirstVisuallyNonEmptyPaint)
 
 // Sent in reply to ViewMsg_WaitForNextFrameForTests.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_WaitForNextFrameForTests_ACK)
-
-// Sent once a frame with new RenderFrameMetadata has been submitted.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_OnRenderFrameSubmitted,
-                    cc::RenderFrameMetadata /* metadata */)
 
 // Acknowledges that a SelectWordAroundCaret completed with the specified
 // result and adjustments to the selection offsets.

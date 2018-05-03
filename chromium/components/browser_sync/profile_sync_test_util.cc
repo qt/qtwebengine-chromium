@@ -13,7 +13,6 @@
 #include "components/history/core/browser/history_model_worker.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "components/sync/base/sync_prefs.h"
 #include "components/sync/driver/signin_manager_wrapper.h"
@@ -166,17 +165,12 @@ bookmarks::BookmarkModel* BundleSyncClient::GetBookmarkModel() {
 
 }  // namespace
 
-void EmptyNetworkTimeUpdate(const base::Time&,
-                            const base::TimeDelta&,
-                            const base::TimeDelta&) {}
-
 void RegisterPrefsForProfileSyncService(
     user_prefs::PrefRegistrySyncable* registry) {
   syncer::SyncPrefs::RegisterProfilePrefs(registry);
   AccountTrackerService::RegisterPrefs(registry);
   SigninManagerBase::RegisterProfilePrefs(registry);
   SigninManagerBase::RegisterPrefs(registry);
-  signin::RegisterAccountConsistencyProfilePrefs(registry);
 }
 
 ProfileSyncServiceBundle::SyncClientBuilder::~SyncClientBuilder() = default;
@@ -229,7 +223,6 @@ ProfileSyncServiceBundle::SyncClientBuilder::Build() {
 
 ProfileSyncServiceBundle::ProfileSyncServiceBundle()
     : db_thread_(base::ThreadTaskRunnerHandle::Get()),
-      worker_pool_owner_(2, "sync test worker pool"),
       signin_client_(&pref_service_),
 #if defined(OS_CHROMEOS)
       signin_manager_(&signin_client_, &account_tracker_),
@@ -242,7 +235,6 @@ ProfileSyncServiceBundle::ProfileSyncServiceBundle()
       url_request_context_(new net::TestURLRequestContextGetter(
           base::ThreadTaskRunnerHandle::Get())) {
   RegisterPrefsForProfileSyncService(pref_service_.registry());
-  signin::SetGaiaOriginIsolatedCallback(base::Bind([] { return true; }));
   auth_service_.set_auto_post_fetch_response_on_message_loop(true);
   account_tracker_.Initialize(&signin_client_);
   signin_manager_.Initialize(&pref_service_);
@@ -260,8 +252,7 @@ ProfileSyncService::InitParams ProfileSyncServiceBundle::CreateBasicInitParams(
   init_params.signin_wrapper =
       std::make_unique<SigninManagerWrapper>(signin_manager());
   init_params.oauth2_token_service = auth_service();
-  init_params.network_time_update_callback =
-      base::Bind(&EmptyNetworkTimeUpdate);
+  init_params.network_time_update_callback = base::DoNothing();
   EXPECT_TRUE(base_directory_.CreateUniqueTempDir());
   init_params.base_directory = base_directory_.GetPath();
   init_params.url_request_context = url_request_context();

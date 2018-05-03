@@ -106,7 +106,9 @@ TEST(IsacFixTest, Kenny) {
   FILE *inp, *outp, *f_bn, *outbits;
   int endfile;
 
-  size_t i;
+  const char* chartjson_result_file = NULL;
+
+  int i;
   int errtype, h = 0, k, packetLossPercent = 0;
   int16_t CodingMode;
   int16_t bottleneck;
@@ -162,7 +164,7 @@ TEST(IsacFixTest, Kenny) {
   packetLossPercent = 0;
 
   /* Handling wrong input arguments in the command line */
-  if ((argc<3) || (argc>21))  {
+  if ((argc<3) || (argc>22))  {
     printf("\n\nWrong number of arguments or flag values.\n\n");
 
     printf("\n");
@@ -170,7 +172,7 @@ TEST(IsacFixTest, Kenny) {
     printf("iSAC version %s \n\n", version_number);
 
     printf("Usage:\n\n");
-    printf("%s [-F num][-I] bottleneck_value infile outfile \n\n", argv[0]);
+    printf("%s [-I] bottleneck_value infile outfile [-F num]\n\n", argv[0]);
     printf("with:\n");
     printf("[-I]             :if -I option is specified, the coder will use\n");
     printf("                  an instantaneous Bottleneck value. If not, it\n");
@@ -178,6 +180,8 @@ TEST(IsacFixTest, Kenny) {
     printf("bottleneck_value :the value of the bottleneck provided either\n");
     printf("                  as a fixed value (e.g. 25000) or\n");
     printf("                  read from a file (e.g. bottleneck.txt)\n\n");
+    printf("infile           :Normal speech input file\n\n");
+    printf("outfile          :Speech output file\n\n");
     printf("[-INITRATE num]  :Set a new value for initial rate. Note! Only used"
            " in adaptive mode.\n\n");
     printf("[-FL num]        :Set (initial) frame length in msec. Valid length"
@@ -207,28 +211,29 @@ TEST(IsacFixTest, Kenny) {
     printf("                        encoder/decoder instance\n");
     printf("                  F 9 - Call decodeB without calling decodeA\n");
     printf("                  F 10 - Call decodeB with garbage data\n");
-    printf("[-PL num]       : if -PL option is specified 0<num<100 will "
+    printf("[-PL num]        :if -PL option is specified 0<num<100 will "
            "specify the\n");
     printf("                  percentage of packet loss\n\n");
-    printf("[-G file]       : if -G option is specified the file given is"
+    printf("[-G file]        :if -G option is specified the file given is"
            " a .gns file\n");
     printf("                  that represents a network profile\n\n");
-    printf("[-NB num]       : if -NB option, use the narrowband interfaces\n");
+    printf("[-NB num]        :if -NB option, use the narrowband interfaces\n");
     printf("                  num=1 => encode with narrowband encoder"
            " (infile is narrowband)\n");
     printf("                  num=2 => decode with narrowband decoder"
            " (outfile is narrowband)\n\n");
-    printf("[-CE num]       : Test of APIs used by Conference Engine.\n");
+    printf("[-CE num]        :Test of APIs used by Conference Engine.\n");
     printf("                  CE 1 - createInternal, freeInternal,"
            " getNewBitstream \n");
     printf("                  CE 2 - transcode, getBWE \n");
     printf("                  CE 3 - getSendBWE, setSendBWE.  \n\n");
-    printf("[-RTP_INIT num] : if -RTP_INIT option is specified num will be"
+    printf("[-RTP_INIT num]  :if -RTP_INIT option is specified num will be"
            " the initial\n");
     printf("                  value of the rtp sequence number.\n\n");
-    printf("infile          : Normal speech input file\n\n");
-    printf("outfile         : Speech output file\n\n");
-    printf("Example usage   : \n\n");
+    printf("[--isolated-script-test-perf-output=file]\n");
+    printf("                 :If this option is specified, perf values will be"
+           " written to this file in a JSON format.\n\n");
+    printf("Example usage    :\n\n");
     printf("%s -I bottleneck.txt speechIn.pcm speechOut.pcm\n\n", argv[0]);
     exit(1);
 
@@ -242,16 +247,29 @@ TEST(IsacFixTest, Kenny) {
   CodingMode = 0;
   testNum = 0;
   testCE = 0;
-  for (i = 1; i + 2 < static_cast<size_t>(argc); i++) {
-    /* Instantaneous mode */
-    if (!strcmp ("-I", argv[i])) {
-      printf("\nInstantaneous BottleNeck\n");
-      CodingMode = 1;
-      i++;
-    }
+  i = 1;
 
+  /* Instantaneous mode */
+  if (!strcmp ("-I", argv[i])) {
+    printf("\nInstantaneous BottleNeck\n");
+    CodingMode = 1;
+    i++;
+  }
+
+  /* Bottleneck value is processed after the for */
+  i++;
+
+  /* Get Input and Output files */
+  sscanf(argv[i++], "%s", inname);
+  sscanf(argv[i++], "%s", outname);
+
+  for (; i < argc; i++) {
     /* Set (initial) bottleneck value */
     if (!strcmp ("-INITRATE", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-INITRATE requires a parameter.\n");
+        exit(1);
+      }
       rateBPS = atoi(argv[i + 1]);
       setControlBWE = 1;
       if ((rateBPS < 10000) || (rateBPS > 32000)) {
@@ -265,6 +283,10 @@ TEST(IsacFixTest, Kenny) {
 
     /* Set (initial) framelength */
     if (!strcmp ("-FL", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-FL requires a parameter.\n");
+        exit(1);
+      }
       framesize = atoi(argv[i + 1]);
       if ((framesize != 30) && (framesize != 60)) {
         printf("\n%d is not a valid frame length. "
@@ -283,6 +305,10 @@ TEST(IsacFixTest, Kenny) {
 
     /* Set maximum allowed payload size in bytes */
     if (!strcmp ("-MAX", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-MAX requires a parameter.\n");
+        exit(1);
+      }
       payloadSize = atoi(argv[i + 1]);
       printf("Maximum Payload Size: %d\n", payloadSize);
       i++;
@@ -290,6 +316,10 @@ TEST(IsacFixTest, Kenny) {
 
     /* Set maximum rate in bytes */
     if (!strcmp ("-MAXRATE", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-MAXRATE requires a parameter.\n");
+        exit(1);
+      }
       payloadRate = atoi(argv[i + 1]);
       printf("Maximum Rate in kbps: %d\n", payloadRate);
       i++;
@@ -297,6 +327,10 @@ TEST(IsacFixTest, Kenny) {
 
     /* Test of fault scenarious */
     if (!strcmp ("-F", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-F requires a parameter.");
+        exit(1);
+      }
       testNum = atoi(argv[i + 1]);
       printf("\nFault test: %d\n", testNum);
       if (testNum < 1 || testNum > 10) {
@@ -309,6 +343,10 @@ TEST(IsacFixTest, Kenny) {
 
     /* Packet loss test */
     if (!strcmp ("-PL", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-PL requires a parameter.\n");
+        exit(1);
+      }
       if( isdigit( *argv[i+1] ) ) {
         packetLossPercent = atoi( argv[i+1] );
         if( (packetLossPercent < 0) | (packetLossPercent > 100) ) {
@@ -342,6 +380,10 @@ TEST(IsacFixTest, Kenny) {
 
     /* Use gns file */
     if (!strcmp ("-G", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-G requires a parameter.\n");
+        exit(1);
+      }
       sscanf(argv[i + 1], "%s", gns_file);
       fp_gns = fopen(gns_file, "rb");
       if (fp_gns  == NULL) {
@@ -353,12 +395,20 @@ TEST(IsacFixTest, Kenny) {
 
     /* Run Narrowband interfaces (either encoder or decoder) */
     if (!strcmp ("-NB", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-NB requires a parameter.\n");
+        exit(1);
+      }
       nbTest = atoi(argv[i + 1]);
       i++;
     }
 
     /* Run Conference Engine APIs */
     if (!strcmp ("-CE", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-CE requires a parameter.\n");
+        exit(1);
+      }
       testCE = atoi(argv[i + 1]);
       if (testCE==1 || testCE==2) {
         i++;
@@ -373,7 +423,20 @@ TEST(IsacFixTest, Kenny) {
 
     /* Set initial RTP number */
     if (!strcmp ("-RTP_INIT", argv[i])) {
+      if (i + 1 >= argc) {
+        printf("-RTP_INIT requires a parameter.\n");
+        exit(1);
+      }
       i++;
+    }
+
+    if (strstr(argv[i], "--isolated-script-test-perf-output") == argv[i]) {
+      const char* filename_start = strstr(argv[i], "=");
+      if (!filename_start || strlen(filename_start) < 2) {
+        printf("Expected --isolated-script-test-perf-output=/some/filename\n");
+        exit(1);
+      }
+      chartjson_result_file = filename_start + 1;
     }
   }
 
@@ -412,10 +475,6 @@ TEST(IsacFixTest, Kenny) {
   if (CodingMode == 0) {
     printf("\nAdaptive BottleNeck\n");
   }
-
-  /* Get Input and Output files */
-  sscanf(argv[argc-2], "%s", inname);
-  sscanf(argv[argc-1], "%s", outname);
 
   /* Add '.bit' to output bitstream file */
   while ((int)outname[h] != 0) {
@@ -663,7 +722,7 @@ TEST(IsacFixTest, Kenny) {
 
     if (testNum == 6) {
       srand(time(NULL));
-      for (i = 0; i < stream_len; i++ ) {
+      for (i = 0; i < static_cast<int>(stream_len); i++ ) {
         streamdata[i] = rand();
       }
     }
@@ -693,7 +752,7 @@ TEST(IsacFixTest, Kenny) {
 
       /* Error test number 10, garbage data */
       if (testNum == 10) {
-        for ( i = 0; i < stream_len; i++) {
+        for ( i = 0; i < static_cast<int>(stream_len); i++) {
           streamdata[i] = (short) (streamdata[i] + (short) rand());
         }
       }
@@ -825,6 +884,10 @@ TEST(IsacFixTest, Kenny) {
   // Record the results with Perf test tools.
   webrtc::test::PrintResult("isac", "", "time_per_10ms_frame",
                             (runtime * 10000) / length_file, "us", false);
+
+  if (chartjson_result_file) {
+    webrtc::test::WritePerfResults(chartjson_result_file);
+  }
 
   fclose(inp);
   fclose(outp);

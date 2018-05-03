@@ -37,6 +37,7 @@ AC_SUBST(EXEEXT)
 PKG_PROG_PKG_CONFIG([0.24])
 
 LT_INIT(win32-dll)
+LT_PROG_RC
 
 
 # checks for native programs to generate building tool
@@ -296,6 +297,18 @@ else
 fi
 AC_SUBST([XX_CFLAGS])
 AC_SUBST([XX_ANSIFLAGS])
+
+
+# It is recommended that shared libraries hide symbols except those with
+# explicit __attribute__((visibility("default"))).
+#
+AC_MSG_CHECKING([for -fvisibility=hidden compiler flag])
+orig_CFLAGS="${CFLAGS}"
+CFLAGS="${CFLAGS} -fvisibility=hidden"
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],
+                  AC_MSG_RESULT(yes),
+                  CFLAGS="${orig_CFLAGS}"
+                  AC_MSG_RESULT(no))
 
 
 # All library tests below try `pkg-config' first.  If that fails, a function

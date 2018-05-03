@@ -44,6 +44,7 @@ SDK.NetworkRequest = class extends Common.Object {
     super();
 
     this._requestId = requestId;
+    this._backendRequestId = requestId;
     this.setUrl(url);
     this._documentURL = documentURL;
     this._frameId = frameId;
@@ -101,6 +102,11 @@ SDK.NetworkRequest = class extends Common.Object {
 
     /** @type {string} */
     this.connectionId = '0';
+    /** @type {?Promise<?Array.<!SDK.NetworkRequest.NameValue>>} */
+    this._formParametersPromise = null;
+    // Assume no body initially
+    /** @type {?Promise<?string>} */
+    this._requestFormDataPromise = /** @type {?Promise<?string>} */ (Promise.resolve(null));
   }
 
   /**
@@ -108,9 +114,11 @@ SDK.NetworkRequest = class extends Common.Object {
    * @return {number}
    */
   indentityCompare(other) {
-    if (this._requestId > other._requestId)
+    const thisId = this.requestId();
+    const thatId = other.requestId();
+    if (thisId > thatId)
       return 1;
-    if (this._requestId < other._requestId)
+    if (thisId < thatId)
       return -1;
     return 0;
   }
@@ -123,10 +131,10 @@ SDK.NetworkRequest = class extends Common.Object {
   }
 
   /**
-   * @param {!Protocol.Network.RequestId} requestId
+   * @return {!Protocol.Network.RequestId}
    */
-  setRequestId(requestId) {
-    this._requestId = requestId;
+  backendRequestId() {
+    return this._backendRequestId;
   }
 
   /**
@@ -478,7 +486,7 @@ SDK.NetworkRequest = class extends Common.Object {
     // Take startTime and responseReceivedTime from timing data for better accuracy.
     // Timing's requestTime is a baseline in seconds, rest of the numbers there are ticks in millis.
     this._startTime = timingInfo.requestTime;
-    var headersReceivedTime = timingInfo.requestTime + timingInfo.receiveHeadersEnd / 1000.0;
+    const headersReceivedTime = timingInfo.requestTime + timingInfo.receiveHeadersEnd / 1000.0;
     if ((this._responseReceivedTime || -1) < 0 || this._responseReceivedTime > headersReceivedTime)
       this._responseReceivedTime = headersReceivedTime;
     if (this._startTime > this._responseReceivedTime)
@@ -539,8 +547,8 @@ SDK.NetworkRequest = class extends Common.Object {
     } else {
       this._path = this._parsedURL.host + this._parsedURL.folderPathComponents;
 
-      var networkManager = SDK.NetworkManager.forRequest(this);
-      var inspectedURL = networkManager ? networkManager.target().inspectedURL().asParsedURL() : null;
+      const networkManager = SDK.NetworkManager.forRequest(this);
+      const inspectedURL = networkManager ? networkManager.target().inspectedURL().asParsedURL() : null;
       this._path = this._path.trimURL(inspectedURL ? inspectedURL.host : '');
       if (this._parsedURL.lastPathComponent || this._parsedURL.queryParams) {
         this._name =
@@ -561,11 +569,11 @@ SDK.NetworkRequest = class extends Common.Object {
    * @return {string}
    */
   get folder() {
-    var path = this._parsedURL.path;
-    var indexOfQuery = path.indexOf('?');
+    let path = this._parsedURL.path;
+    const indexOfQuery = path.indexOf('?');
     if (indexOfQuery !== -1)
       path = path.substring(0, indexOfQuery);
-    var lastSlashIndex = path.lastIndexOf('/');
+    const lastSlashIndex = path.lastIndexOf('/');
     return lastSlashIndex !== -1 ? path.substring(0, lastSlashIndex) : '';
   }
 
@@ -665,25 +673,28 @@ SDK.NetworkRequest = class extends Common.Object {
   }
 
   /**
-   * @return {string|undefined}
+   * @return {!Promise<?string>}
    */
-  get requestFormData() {
-    return this._requestFormData;
+  requestFormData() {
+    if (!this._requestFormDataPromise)
+      this._requestFormDataPromise = SDK.NetworkManager.requestPostData(this);
+    return this._requestFormDataPromise;
   }
 
   /**
-   * @param {string|undefined} x
+   * @param {boolean} hasData
+   * @param {?string} data
    */
-  set requestFormData(x) {
-    this._requestFormData = x;
-    delete this._parsedFormParameters;
+  setRequestFormData(hasData, data) {
+    this._requestFormDataPromise = (hasData && data === null) ? null : Promise.resolve(data);
+    this._formParametersPromise = null;
   }
 
   /**
    * @return {string}
    */
   _filteredProtocolName() {
-    var protocol = this.protocol.toLowerCase();
+    const protocol = this.protocol.toLowerCase();
     if (protocol === 'h2')
       return 'http/2.0';
     return protocol.replace(/^http\/2(\.0)?\+/, 'http/2.0+');
@@ -693,15 +704,15 @@ SDK.NetworkRequest = class extends Common.Object {
    * @return {string}
    */
   requestHttpVersion() {
-    var headersText = this.requestHeadersText();
+    const headersText = this.requestHeadersText();
     if (!headersText) {
-      var version = this.requestHeaderValue('version') || this.requestHeaderValue(':version');
+      const version = this.requestHeaderValue('version') || this.requestHeaderValue(':version');
       if (version)
         return version;
       return this._filteredProtocolName();
     }
-    var firstLine = headersText.split(/\r\n/)[0];
-    var match = firstLine.match(/(HTTP\/\d+\.\d+)$/);
+    const firstLine = headersText.split(/\r\n/)[0];
+    const match = firstLine.match(/(HTTP\/\d+\.\d+)$/);
     return match ? match[1] : 'HTTP/0.9';
   }
 
@@ -798,12 +809,12 @@ SDK.NetworkRequest = class extends Common.Object {
     if (this._queryString !== undefined)
       return this._queryString;
 
-    var queryString = null;
-    var url = this.url();
-    var questionMarkPosition = url.indexOf('?');
+    let queryString = null;
+    const url = this.url();
+    const questionMarkPosition = url.indexOf('?');
     if (questionMarkPosition !== -1) {
       queryString = url.substring(questionMarkPosition + 1);
-      var hashSignPosition = queryString.indexOf('#');
+      const hashSignPosition = queryString.indexOf('#');
       if (hashSignPosition !== -1)
         queryString = queryString.substring(0, hashSignPosition);
     }
@@ -817,7 +828,7 @@ SDK.NetworkRequest = class extends Common.Object {
   get queryParameters() {
     if (this._parsedQueryParameters)
       return this._parsedQueryParameters;
-    var queryString = this.queryString();
+    const queryString = this.queryString();
     if (!queryString)
       return null;
     this._parsedQueryParameters = this._parseParameters(queryString);
@@ -825,33 +836,40 @@ SDK.NetworkRequest = class extends Common.Object {
   }
 
   /**
-   * @return {?Array.<!SDK.NetworkRequest.NameValue>}
+   * @return {!Promise<?Array<!SDK.NetworkRequest.NameValue>>}
    */
-  get formParameters() {
-    if (this._parsedFormParameters)
-      return this._parsedFormParameters;
-    if (!this.requestFormData)
-      return null;
-    var requestContentType = this.requestContentType();
+  async _parseFormParameters() {
+    const requestContentType = this.requestContentType();
     if (!requestContentType || !requestContentType.match(/^application\/x-www-form-urlencoded\s*(;.*)?$/i))
       return null;
-    this._parsedFormParameters = this._parseParameters(this.requestFormData);
-    return this._parsedFormParameters;
+    const formData = await this.requestFormData();
+    if (formData)
+      return this._parseParameters(formData);
+    return null;
+  }
+
+  /**
+   * @return {!Promise<?Array<!SDK.NetworkRequest.NameValue>>}
+   */
+  formParameters() {
+    if (!this._formParametersPromise)
+      this._formParametersPromise = this._parseFormParameters();
+    return this._formParametersPromise;
   }
 
   /**
    * @return {string}
    */
   responseHttpVersion() {
-    var headersText = this._responseHeadersText;
+    const headersText = this._responseHeadersText;
     if (!headersText) {
-      var version = this.responseHeaderValue('version') || this.responseHeaderValue(':version');
+      const version = this.responseHeaderValue('version') || this.responseHeaderValue(':version');
       if (version)
         return version;
       return this._filteredProtocolName();
     }
-    var firstLine = headersText.split(/\r\n/)[0];
-    var match = firstLine.match(/^(HTTP\/\d+\.\d+)/);
+    const firstLine = headersText.split(/\r\n/)[0];
+    const match = firstLine.match(/^(HTTP\/\d+\.\d+)/);
     return match ? match[1] : 'HTTP/0.9';
   }
 
@@ -861,7 +879,7 @@ SDK.NetworkRequest = class extends Common.Object {
    */
   _parseParameters(queryString) {
     function parseNameValue(pair) {
-      var position = pair.indexOf('=');
+      const position = pair.indexOf('=');
       if (position === -1)
         return {name: pair, value: ''};
       else
@@ -878,8 +896,8 @@ SDK.NetworkRequest = class extends Common.Object {
   _computeHeaderValue(headers, headerName) {
     headerName = headerName.toLowerCase();
 
-    var values = [];
-    for (var i = 0; i < headers.length; ++i) {
+    const values = [];
+    for (let i = 0; i < headers.length; ++i) {
       if (headers[i].name.toLowerCase() === headerName)
         values.push(headers[i].value);
     }
@@ -1013,7 +1031,7 @@ SDK.NetworkRequest = class extends Common.Object {
      * @this {SDK.NetworkRequest}
      */
     function onResourceContent(content) {
-      var imageSrc = Common.ContentProvider.contentAsDataURL(content, this._mimeType, true);
+      let imageSrc = Common.ContentProvider.contentAsDataURL(content, this._mimeType, true);
       if (imageSrc === null)
         imageSrc = this._url;
       image.src = imageSrc;
@@ -1056,7 +1074,7 @@ SDK.NetworkRequest = class extends Common.Object {
    * @param {boolean} sent
    */
   addFrame(response, time, sent) {
-    var type = sent ? SDK.NetworkRequest.WebSocketFrameType.Send : SDK.NetworkRequest.WebSocketFrameType.Receive;
+    const type = sent ? SDK.NetworkRequest.WebSocketFrameType.Send : SDK.NetworkRequest.WebSocketFrameType.Receive;
     this._addFrame({
       type: type,
       text: response.payloadData,
@@ -1088,9 +1106,24 @@ SDK.NetworkRequest = class extends Common.Object {
    * @param {string} data
    */
   addEventSourceMessage(time, eventName, eventId, data) {
-    var message = {time: this.pseudoWallTime(time), eventName: eventName, eventId: eventId, data: data};
+    const message = {time: this.pseudoWallTime(time), eventName: eventName, eventId: eventId, data: data};
     this._eventSourceMessages.push(message);
     this.dispatchEventToListeners(SDK.NetworkRequest.Events.EventSourceMessageAdded, message);
+  }
+
+  /**
+   * @param {number} redirectCount
+   */
+  markAsRedirect(redirectCount) {
+    this._requestId = `${this._backendRequestId}:redirected.${redirectCount}`;
+  }
+
+  /**
+   * @param {string} requestId
+   */
+  setRequestIdForTest(requestId) {
+    this._backendRequestId = requestId;
+    this._requestId = requestId;
   }
 };
 

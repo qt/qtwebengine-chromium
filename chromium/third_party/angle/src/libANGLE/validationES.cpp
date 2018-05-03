@@ -33,7 +33,40 @@ namespace gl
 {
 namespace
 {
+bool CompressedTextureFormatRequiresExactSize(GLenum internalFormat)
+{
+    // List of compressed format that require that the texture size is smaller than or a multiple of
+    // the compressed block size.
+    switch (internalFormat)
+    {
+        case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+        case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+        case GL_COMPRESSED_RGBA_S3TC_DXT3_ANGLE:
+        case GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE:
+        case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:
+        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:
+        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:
+        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:
+        case GL_ETC1_RGB8_LOSSY_DECODE_ANGLE:
+        case GL_COMPRESSED_RGB8_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_SRGB8_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_LOSSY_DECODE_ETC2_ANGLE:
+        case GL_COMPRESSED_RGBA8_LOSSY_DECODE_ETC2_EAC_ANGLE:
+        case GL_COMPRESSED_SRGB8_ALPHA8_LOSSY_DECODE_ETC2_EAC_ANGLE:
+            return true;
 
+        default:
+            return false;
+    }
+}
+bool CompressedSubTextureFormatRequiresExactSize(GLenum internalFormat)
+{
+    // Compressed sub textures have additional formats that requires exact size.
+    // ES 3.1, Section 8.7, Page 171
+    return CompressedTextureFormatRequiresExactSize(internalFormat) ||
+           IsETC2EACFormat(internalFormat);
+}
 bool ValidateDrawAttribs(ValidationContext *context,
                          GLint primcount,
                          GLint maxVertex,
@@ -391,6 +424,35 @@ bool ValidateTextureSRGBDecodeValue(Context *context, ParamType *params)
     return true;
 }
 
+bool ValidateTextureMaxAnisotropyExtensionEnabled(Context *context)
+{
+    if (!context->getExtensions().textureFilterAnisotropic)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), ExtensionNotEnabled);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateTextureMaxAnisotropyValue(Context *context, GLfloat paramValue)
+{
+    if (!ValidateTextureMaxAnisotropyExtensionEnabled(context))
+    {
+        return false;
+    }
+
+    GLfloat largest = context->getExtensions().maxTextureAnisotropy;
+
+    if (paramValue < 1 || paramValue > largest)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), OutsideOfBounds);
+        return false;
+    }
+
+    return true;
+}
+
 bool ValidateFragmentShaderColorBufferTypeMatch(ValidationContext *context)
 {
     const Program *program         = context->getGLState().getProgram();
@@ -432,6 +494,28 @@ bool ValidateVertexShaderAttributeTypeMatch(ValidationContext *context)
 }
 
 }  // anonymous namespace
+
+bool IsETC2EACFormat(const GLenum format)
+{
+    // ES 3.1, Table 8.19
+    switch (format)
+    {
+        case GL_COMPRESSED_R11_EAC:
+        case GL_COMPRESSED_SIGNED_R11_EAC:
+        case GL_COMPRESSED_RG11_EAC:
+        case GL_COMPRESSED_SIGNED_RG11_EAC:
+        case GL_COMPRESSED_RGB8_ETC2:
+        case GL_COMPRESSED_SRGB8_ETC2:
+        case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:
+        case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:
+        case GL_COMPRESSED_RGBA8_ETC2_EAC:
+        case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:
+            return true;
+
+        default:
+            return false;
+    }
+}
 
 bool ValidTextureTarget(const ValidationContext *context, GLenum target)
 {
@@ -535,8 +619,7 @@ bool ValidateDrawElementsInstancedBase(ValidationContext *context,
         return false;
     }
 
-    // No-op zero primitive count
-    return (primcount > 0);
+    return true;
 }
 
 bool ValidateDrawArraysInstancedBase(Context *context,
@@ -556,8 +639,7 @@ bool ValidateDrawArraysInstancedBase(Context *context,
         return false;
     }
 
-    // No-op if zero primitive count
-    return (primcount > 0);
+    return true;
 }
 
 bool ValidateDrawInstancedANGLE(ValidationContext *context)
@@ -707,34 +789,6 @@ bool ValidImageSizeParameters(ValidationContext *context,
     return true;
 }
 
-bool CompressedTextureFormatRequiresExactSize(GLenum internalFormat)
-{
-    // List of compressed format that require that the texture size is smaller than or a multiple of
-    // the compressed block size.
-    switch (internalFormat)
-    {
-        case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
-        case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-        case GL_COMPRESSED_RGBA_S3TC_DXT3_ANGLE:
-        case GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE:
-        case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:
-        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:
-        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:
-        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:
-        case GL_ETC1_RGB8_LOSSY_DECODE_ANGLE:
-        case GL_COMPRESSED_RGB8_LOSSY_DECODE_ETC2_ANGLE:
-        case GL_COMPRESSED_SRGB8_LOSSY_DECODE_ETC2_ANGLE:
-        case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_LOSSY_DECODE_ETC2_ANGLE:
-        case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_LOSSY_DECODE_ETC2_ANGLE:
-        case GL_COMPRESSED_RGBA8_LOSSY_DECODE_ETC2_EAC_ANGLE:
-        case GL_COMPRESSED_SRGB8_ALPHA8_LOSSY_DECODE_ETC2_EAC_ANGLE:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
 bool ValidCompressedDimension(GLsizei size, GLuint blockSize, bool smallerThanBlockSizeAllowed)
 {
     return (smallerThanBlockSizeAllowed && (size > 0) && (blockSize % size == 0)) ||
@@ -797,7 +851,7 @@ bool ValidCompressedSubImageSize(const ValidationContext *context,
         return false;
     }
 
-    if (CompressedTextureFormatRequiresExactSize(internalFormat))
+    if (CompressedSubTextureFormatRequiresExactSize(internalFormat))
     {
         if (xoffset % formatInfo.compressedBlockWidth != 0 ||
             yoffset % formatInfo.compressedBlockHeight != 0)
@@ -1177,13 +1231,6 @@ bool ValidateBlitFramebufferParameters(Context *context,
         return false;
     }
 
-    if (mask == 0)
-    {
-        // ES3.0 spec, section 4.3.2 specifies that a mask of zero is valid and no
-        // buffers are copied.
-        return false;
-    }
-
     // ES3.0 spec, section 4.3.2 states that linear filtering is only available for the
     // color buffer, leaving only nearest being unfiltered from above
     if ((mask & ~GL_COLOR_BUFFER_BIT) != 0 && filter != GL_NEAREST)
@@ -1202,12 +1249,6 @@ bool ValidateBlitFramebufferParameters(Context *context,
         return false;
     }
 
-    if (readFramebuffer->id() == drawFramebuffer->id())
-    {
-        context->handleError(InvalidOperation());
-        return false;
-    }
-
     if (readFramebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(InvalidFramebufferOperation());
@@ -1217,6 +1258,12 @@ bool ValidateBlitFramebufferParameters(Context *context,
     if (drawFramebuffer->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(InvalidFramebufferOperation());
+        return false;
+    }
+
+    if (readFramebuffer->id() == drawFramebuffer->id())
+    {
+        context->handleError(InvalidOperation());
         return false;
     }
 
@@ -2598,8 +2645,7 @@ bool ValidateDrawBase(ValidationContext *context, GLenum mode, GLsizei count)
         }
     }
 
-    // No-op if zero count
-    return (count > 0);
+    return true;
 }
 
 bool ValidateDrawArraysCommon(ValidationContext *context,
@@ -2633,20 +2679,23 @@ bool ValidateDrawArraysCommon(ValidationContext *context,
     }
 
     // Check the computation of maxVertex doesn't overflow.
-    // - first < 0 or count < 0 have been checked as an error condition
-    // - count > 0 has been checked in ValidateDrawBase as it makes the call a noop
+    // - first < 0 has been checked as an error condition.
+    // - if count < 0, skip validating no-op draw calls.
     // From this we know maxVertex will be positive, and only need to check if it overflows GLint.
-    ASSERT(count > 0 && first >= 0);
-    int64_t maxVertex = static_cast<int64_t>(first) + static_cast<int64_t>(count) - 1;
-    if (maxVertex > static_cast<int64_t>(std::numeric_limits<GLint>::max()))
+    ASSERT(first >= 0);
+    if (count > 0)
     {
-        ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
-        return false;
-    }
+        int64_t maxVertex = static_cast<int64_t>(first) + static_cast<int64_t>(count) - 1;
+        if (maxVertex > static_cast<int64_t>(std::numeric_limits<GLint>::max()))
+        {
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
+            return false;
+        }
 
-    if (!ValidateDrawAttribs(context, primcount, static_cast<GLint>(maxVertex), count))
-    {
-        return false;
+        if (!ValidateDrawAttribs(context, primcount, static_cast<GLint>(maxVertex), count))
+        {
+            return false;
+        }
     }
 
     return true;
@@ -2778,52 +2827,50 @@ bool ValidateDrawElementsCommon(ValidationContext *context,
         }
     }
 
-    if (count > 0)
+    if (count > 0 && !elementArrayBuffer && !indices)
     {
-        if (elementArrayBuffer)
+        // This is an application error that would normally result in a crash, but we catch it and
+        // return an error
+        context->handleError(InvalidOperation() << "No element array buffer and no pointer.");
+        return false;
+    }
+
+    if (count > 0 && elementArrayBuffer)
+    {
+        // The max possible type size is 8 and count is on 32 bits so doing the multiplication
+        // in a 64 bit integer is safe. Also we are guaranteed that here count > 0.
+        static_assert(std::is_same<int, GLsizei>::value, "GLsizei isn't the expected type");
+        constexpr uint64_t kMaxTypeSize = 8;
+        constexpr uint64_t kIntMax      = std::numeric_limits<int>::max();
+        constexpr uint64_t kUint64Max   = std::numeric_limits<uint64_t>::max();
+        static_assert(kIntMax < kUint64Max / kMaxTypeSize, "");
+
+        uint64_t typeSize     = typeBytes;
+        uint64_t elementCount = static_cast<uint64_t>(count);
+        ASSERT(elementCount > 0 && typeSize <= kMaxTypeSize);
+
+        // Doing the multiplication here is overflow-safe
+        uint64_t elementDataSizeNoOffset = typeSize * elementCount;
+
+        // The offset can be any value, check for overflows
+        uint64_t offset = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(indices));
+        if (elementDataSizeNoOffset > kUint64Max - offset)
         {
-            // The max possible type size is 8 and count is on 32 bits so doing the multiplication
-            // in a 64 bit integer is safe. Also we are guaranteed that here count > 0.
-            static_assert(std::is_same<int, GLsizei>::value, "GLsizei isn't the expected type");
-            constexpr uint64_t kMaxTypeSize = 8;
-            constexpr uint64_t kIntMax      = std::numeric_limits<int>::max();
-            constexpr uint64_t kUint64Max   = std::numeric_limits<uint64_t>::max();
-            static_assert(kIntMax < kUint64Max / kMaxTypeSize, "");
-
-            uint64_t typeSize     = typeBytes;
-            uint64_t elementCount = static_cast<uint64_t>(count);
-            ASSERT(elementCount > 0 && typeSize <= kMaxTypeSize);
-
-            // Doing the multiplication here is overflow-safe
-            uint64_t elementDataSizeNoOffset = typeSize * elementCount;
-
-            // The offset can be any value, check for overflows
-            uint64_t offset = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(indices));
-            if (elementDataSizeNoOffset > kUint64Max - offset)
-            {
-                ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
-                return false;
-            }
-
-            uint64_t elementDataSizeWithOffset = elementDataSizeNoOffset + offset;
-            if (elementDataSizeWithOffset > static_cast<uint64_t>(elementArrayBuffer->getSize()))
-            {
-                ANGLE_VALIDATION_ERR(context, InvalidOperation(), InsufficientBufferSize);
-                return false;
-            }
-
-            ASSERT(isPow2(typeSize) && typeSize > 0);
-            if ((elementArrayBuffer->getSize() & (typeSize - 1)) != 0)
-            {
-                ANGLE_VALIDATION_ERR(context, InvalidOperation(), MismatchedByteCountType);
-                return false;
-            }
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
+            return false;
         }
-        else if (!indices)
+
+        uint64_t elementDataSizeWithOffset = elementDataSizeNoOffset + offset;
+        if (elementDataSizeWithOffset > static_cast<uint64_t>(elementArrayBuffer->getSize()))
         {
-            // This is an application error that would normally result in a crash,
-            // but we catch it and return an error
-            context->handleError(InvalidOperation() << "No element array buffer and no pointer.");
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), InsufficientBufferSize);
+            return false;
+        }
+
+        ASSERT(isPow2(typeSize) && typeSize > 0);
+        if ((elementArrayBuffer->getSize() & (typeSize - 1)) != 0)
+        {
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), MismatchedByteCountType);
             return false;
         }
     }
@@ -2833,6 +2880,15 @@ bool ValidateDrawElementsCommon(ValidationContext *context,
         // Here we use maxVertex = 0 and vertexCount = 1 to avoid retrieving IndexRange when robust
         // access is enabled.
         if (!ValidateDrawAttribs(context, primcount, 0, 1))
+        {
+            return false;
+        }
+    }
+    else if (count == 0)
+    {
+        // ValidateDrawAttribs also does some extra validation that is independent of the vertex
+        // count.
+        if (!ValidateDrawAttribs(context, 0, 0, 0))
         {
             return false;
         }
@@ -2922,7 +2978,7 @@ bool ValidateFramebufferTextureBase(Context *context,
     {
         gl::Texture *tex = context->getTexture(texture);
 
-        if (tex == NULL)
+        if (tex == nullptr)
         {
             context->handleError(InvalidOperation());
             return false;
@@ -4105,11 +4161,33 @@ bool ValidateGetProgramivBase(ValidationContext *context,
             break;
 
         case GL_PROGRAM_SEPARABLE:
-        case GL_COMPUTE_WORK_GROUP_SIZE:
         case GL_ACTIVE_ATOMIC_COUNTER_BUFFERS:
             if (context->getClientVersion() < Version(3, 1))
             {
                 ANGLE_VALIDATION_ERR(context, InvalidEnum(), ES31Required);
+                return false;
+            }
+            break;
+
+        case GL_COMPUTE_WORK_GROUP_SIZE:
+            if (context->getClientVersion() < Version(3, 1))
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), ES31Required);
+                return false;
+            }
+
+            // [OpenGL ES 3.1] Chapter 7.12 Page 122
+            // An INVALID_OPERATION error is generated if COMPUTE_WORK_GROUP_SIZE is queried for a
+            // program which has not been linked successfully, or which does not contain objects to
+            // form a compute shader.
+            if (!programObject->isLinked())
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidOperation(), ProgramNotLinked);
+                return false;
+            }
+            if (!programObject->hasLinkedComputeShader())
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoActiveComputeShaderStage);
                 return false;
             }
             break;
@@ -4890,9 +4968,8 @@ bool ValidateGetTexParameterBase(Context *context, GLenum target, GLenum pname, 
             break;
 
         case GL_TEXTURE_MAX_ANISOTROPY_EXT:
-            if (!context->getExtensions().textureFilterAnisotropic)
+            if (!ValidateTextureMaxAnisotropyExtensionEnabled(context))
             {
-                ANGLE_VALIDATION_ERR(context, InvalidEnum(), ExtensionNotEnabled);
                 return false;
             }
             break;
@@ -4928,6 +5005,14 @@ bool ValidateGetTexParameterBase(Context *context, GLenum target, GLenum pname, 
             if (!context->getExtensions().textureSRGBDecode)
             {
                 context->handleError(InvalidEnum() << "GL_EXT_texture_sRGB_decode is not enabled.");
+                return false;
+            }
+            break;
+
+        case GL_DEPTH_STENCIL_TEXTURE_MODE:
+            if (context->getClientVersion() < Version(3, 1))
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumRequiresGLES31);
                 return false;
             }
             break;
@@ -5211,7 +5296,7 @@ bool ValidateReadPixelsBase(Context *context,
         *length = static_cast<GLsizei>(endByte);
     }
 
-    auto getClippedExtent = [](GLint start, GLsizei length, int bufferSize) {
+    auto getClippedExtent = [](GLint start, GLsizei length, int bufferSize, GLsizei *outExtent) {
         angle::CheckedNumeric<int> clippedExtent(length);
         if (start < 0)
         {
@@ -5219,8 +5304,14 @@ bool ValidateReadPixelsBase(Context *context,
             clippedExtent += start;
         }
 
-        const int readExtent = start + length;
-        if (readExtent > bufferSize)
+        angle::CheckedNumeric<int> readExtent = start;
+        readExtent += length;
+        if (!readExtent.IsValid())
+        {
+            return false;
+        }
+
+        if (readExtent.ValueOrDie() > bufferSize)
         {
             // Subtract the region to the right of the read buffer
             clippedExtent -= (readExtent - bufferSize);
@@ -5228,20 +5319,35 @@ bool ValidateReadPixelsBase(Context *context,
 
         if (!clippedExtent.IsValid())
         {
-            return 0;
+            return false;
         }
 
-        return std::max(clippedExtent.ValueOrDie(), 0);
+        *outExtent = std::max(clippedExtent.ValueOrDie(), 0);
+        return true;
     };
+
+    GLsizei writtenColumns = 0;
+    if (!getClippedExtent(x, width, readBuffer->getSize().width, &writtenColumns))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
+        return false;
+    }
+
+    GLsizei writtenRows = 0;
+    if (!getClippedExtent(y, height, readBuffer->getSize().height, &writtenRows))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
+        return false;
+    }
 
     if (columns != nullptr)
     {
-        *columns = getClippedExtent(x, width, readBuffer->getSize().width);
+        *columns = writtenColumns;
     }
 
     if (rows != nullptr)
     {
-        *rows = getClippedExtent(y, height, readBuffer->getSize().height);
+        *rows = writtenRows;
     }
 
     return true;
@@ -5378,17 +5484,13 @@ bool ValidateTexParameterBase(Context *context,
             break;
 
         case GL_TEXTURE_MAX_ANISOTROPY_EXT:
-            if (!context->getExtensions().textureFilterAnisotropic)
             {
-                context->handleError(InvalidEnum() << "GL_EXT_texture_anisotropic is not enabled.");
-                return false;
-            }
-
-            // we assume the parameter passed to this validation method is truncated, not rounded
-            if (params[0] < 1)
-            {
-                context->handleError(InvalidValue() << "Max anisotropy must be at least 1.");
-                return false;
+                GLfloat paramValue = static_cast<GLfloat>(params[0]);
+                if (!ValidateTextureMaxAnisotropyValue(context, paramValue))
+                {
+                    return false;
+                }
+                ASSERT(static_cast<ParamType>(paramValue) == params[0]);
             }
             break;
 
@@ -5652,6 +5754,16 @@ bool ValidateSamplerParameterBase(Context *context,
             }
             break;
 
+        case GL_TEXTURE_MAX_ANISOTROPY_EXT:
+        {
+            GLfloat paramValue = static_cast<GLfloat>(params[0]);
+            if (!ValidateTextureMaxAnisotropyValue(context, paramValue))
+            {
+                return false;
+            }
+        }
+        break;
+
         default:
             ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
             return false;
@@ -5696,6 +5808,13 @@ bool ValidateGetSamplerParameterBase(Context *context,
         case GL_TEXTURE_MAX_LOD:
         case GL_TEXTURE_COMPARE_MODE:
         case GL_TEXTURE_COMPARE_FUNC:
+            break;
+
+        case GL_TEXTURE_MAX_ANISOTROPY_EXT:
+            if (!ValidateTextureMaxAnisotropyExtensionEnabled(context))
+            {
+                return false;
+            }
             break;
 
         case GL_TEXTURE_SRGB_DECODE_EXT:

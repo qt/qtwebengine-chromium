@@ -33,6 +33,8 @@ DtlsSrtpTransport::DtlsSrtpTransport(
       this, &DtlsSrtpTransport::OnPacketReceived);
   srtp_transport_->SignalReadyToSend.connect(this,
                                              &DtlsSrtpTransport::OnReadyToSend);
+  srtp_transport_->SignalNetworkRouteChanged.connect(
+      this, &DtlsSrtpTransport::OnNetworkRouteChanged);
   srtp_transport_->SignalWritableState.connect(
       this, &DtlsSrtpTransport::OnWritableState);
   srtp_transport_->SignalSentPacket.connect(this,
@@ -62,7 +64,7 @@ void DtlsSrtpTransport::SetDtlsTransports(
   // allowed according to the BUNDLE spec.
   RTC_CHECK(!(IsActive()))
       << "Setting RTCP for DTLS/SRTP after the DTLS is active "
-      << "should never happen.";
+         "should never happen.";
 
   RTC_LOG(LS_INFO) << "Setting RTCP Transport on " << transport_name
                    << " transport " << rtcp_dtls_transport;
@@ -261,8 +263,8 @@ bool DtlsSrtpTransport::ExtractParams(
   memcpy(&server_write_key[key_len], &dtls_buffer[offset], salt_len);
 
   rtc::SSLRole role;
-  if (!dtls_transport->GetSslRole(&role)) {
-    RTC_LOG(LS_WARNING) << "GetSslRole failed";
+  if (!dtls_transport->GetDtlsRole(&role)) {
+    RTC_LOG(LS_WARNING) << "Failed to get the DTLS role.";
     return false;
   }
 
@@ -354,6 +356,11 @@ void DtlsSrtpTransport::OnPacketReceived(bool rtcp,
 
 void DtlsSrtpTransport::OnReadyToSend(bool ready) {
   SignalReadyToSend(ready);
+}
+
+void DtlsSrtpTransport::OnNetworkRouteChanged(
+    rtc::Optional<rtc::NetworkRoute> network_route) {
+  SignalNetworkRouteChanged(network_route);
 }
 
 }  // namespace webrtc

@@ -9,7 +9,6 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button-light.html">
 <link rel="import" href="../clear_browsing_data_dialog/clear_browsing_data_dialog.html">
-<link rel="import" href="../clear_browsing_data_dialog/clear_browsing_data_dialog_tabs.html">
 <link rel="import" href="../controls/settings_toggle_button.html">
 <link rel="import" href="../lifetime_browser_proxy.html">
 <link rel="import" href="../route.html">
@@ -40,16 +39,9 @@
     <style include="settings-shared">
     </style>
     <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
-      <template is="dom-if" if="[[!tabsInCbd_]]" restamp>
-        <settings-clear-browsing-data-dialog prefs="{{prefs}}"
-            on-close="onDialogClosed_">
-        </settings-clear-browsing-data-dialog>
-      </template>
-      <template is="dom-if" if="[[tabsInCbd_]]" restamp>
-        <settings-clear-browsing-data-dialog-tabs prefs="{{prefs}}"
-            on-close="onDialogClosed_">
-        </settings-clear-browsing-data-dialog-tabs>
-      </template>
+      <settings-clear-browsing-data-dialog prefs="{{prefs}}"
+          on-close="onDialogClosed_">
+      </settings-clear-browsing-data-dialog>
     </template>
     <template id="doNotTrackDialogIf" is="dom-if"
         if="[[showDoNotTrackDialog_]]" notify-dom-change>
@@ -60,11 +52,11 @@
         <div slot="body">$i18nRaw{doNotTrackDialogMessage}</div>
         <div slot="button-container">
           <paper-button class="cancel-button"
-              on-tap="onDoNotTrackDialogCancel_">
+              on-click="onDoNotTrackDialogCancel_">
             $i18n{cancel}
           </paper-button>
           <paper-button class="action-button"
-              on-tap="onDoNotTrackDialogConfirm_">
+              on-click="onDoNotTrackDialogConfirm_">
             $i18n{confirm}
           </paper-button>
         </div>
@@ -141,7 +133,7 @@
 </if>
 <if expr="use_nss_certs or is_win or is_macosx">
         <div id="manageCertificates" class="settings-box two-line"
-            actionable on-tap="onManageCertificatesTap_">
+            actionable on-click="onManageCertificatesTap_">
           <div class="start">
             $i18n{manageCertificates}
             <div class="secondary" id="manageCertificatesSecondary">
@@ -162,7 +154,7 @@
 </if>
         <div id="site-settings-subpage-trigger"
             class="settings-box two-line" actionable
-            on-tap="onSiteSettingsTap_">
+            on-click="onSiteSettingsTap_">
           <div class="start">
             [[siteSettingsPageTitle_()]]
             <div class="secondary" id="siteSettingsSecondary">
@@ -174,7 +166,7 @@
               aria-describedby="siteSettingsSecondary"></button>
         </div>
         <div class="settings-box two-line" id="clearBrowsingData"
-            on-tap="onClearBrowsingDataTap_" actionable>
+            on-click="onClearBrowsingDataTap_" actionable>
           <div class="start">
             $i18n{clearBrowsingData}
             <div class="secondary" id="clearBrowsingDataSecondary">
@@ -265,7 +257,7 @@
               label="$i18n{thirdPartyCookie}"
               sub-label="$i18n{thirdPartyCookieSublabel}">
           </settings-toggle-button>
-          <div class="settings-box" actionable on-tap="onSiteDataTap_">
+          <div class="settings-box" actionable on-click="onSiteDataTap_">
              <div class="start" id="cookiesLink">
                $i18n{siteSettingsCookieLink}
              </div>
@@ -375,6 +367,21 @@
           </category-setting-exceptions>
         </settings-subpage>
       </template>
+      <template is="dom-if" if="[[enableSensorsContentSetting_]]" no-search>
+        <template is="dom-if" route-path="/content/sensors" no-search>
+          <settings-subpage page-title="$i18n{siteSettingsSensors}">
+            <category-default-setting
+                toggle-off-label="$i18n{siteSettingsSensorsBlock}"
+                toggle-on-label="$i18n{siteSettingsSensorsAllow}"
+                category="{{ContentSettingsTypes.SENSORS}}">
+            </category-default-setting>
+            <category-setting-exceptions
+                category="{{ContentSettingsTypes.SENSORS}}" read-only-list
+                block-header="$i18n{siteSettingsBlock}">
+            </category-setting-exceptions>
+          </settings-subpage>
+       </template>
+     </template>
       <template is="dom-if" route-path="/content/notifications" no-search>
         <settings-subpage page-title="$i18n{siteSettingsCategoryNotifications}">
           <category-default-setting
@@ -479,7 +486,7 @@
       <template is="dom-if" route-path="/cookies/detail" no-search>
         <settings-subpage page-title="[[pageTitle]]">
           <paper-button slot="subpage-title-extra" class="secondary-button"
-              on-tap="onRemoveAllCookiesFromSite_">
+              on-click="onRemoveAllCookiesFromSite_">
             $i18n{siteSettingsCookieRemoveAll}
           </paper-button>
           <site-data-details-subpage page-title="{{pageTitle}}">

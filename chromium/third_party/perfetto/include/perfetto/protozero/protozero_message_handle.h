@@ -19,11 +19,7 @@
 
 #include <functional>
 
-#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
-#define PROTOZERO_ENABLE_HANDLE_DEBUGGING() 0
-#else
-#define PROTOZERO_ENABLE_HANDLE_DEBUGGING() 1
-#endif
+#include "perfetto/protozero/protozero_message.h"
 
 namespace protozero {
 
@@ -48,13 +44,20 @@ class ProtoZeroMessageHandleBase {
   ProtoZeroMessageHandleBase(ProtoZeroMessageHandleBase&&) noexcept;
   ProtoZeroMessageHandleBase& operator=(ProtoZeroMessageHandleBase&&);
 
-  void Finalize();
-  void set_on_finalize(std::function<void(size_t)> f) { on_finalize_ = f; }
-
  protected:
   explicit ProtoZeroMessageHandleBase(ProtoZeroMessage* = nullptr);
-  ProtoZeroMessage& operator*() const { return *message_; }
-  ProtoZeroMessage* operator->() const { return message_; }
+  ProtoZeroMessage& operator*() const {
+#if PERFETTO_DCHECK_IS_ON()
+    PERFETTO_DCHECK(!message_ || generation_ == message_->generation_);
+#endif
+    return *message_;
+  }
+  ProtoZeroMessage* operator->() const {
+#if PERFETTO_DCHECK_IS_ON()
+    PERFETTO_DCHECK(!message_ || generation_ == message_->generation_);
+#endif
+    return message_;
+  }
 
  private:
   friend class ProtoZeroMessage;
@@ -66,7 +69,9 @@ class ProtoZeroMessageHandleBase {
   void Move(ProtoZeroMessageHandleBase&&);
 
   ProtoZeroMessage* message_;
-  std::function<void(size_t)> on_finalize_;
+#if PERFETTO_DCHECK_IS_ON()
+  uint32_t generation_;
+#endif
 };
 
 template <typename T>

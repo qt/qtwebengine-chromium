@@ -7,6 +7,7 @@
 
 #include "SkInternalAtlasTextContext.h"
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "SkAtlasTextContext.h"
 #include "SkAtlasTextRenderer.h"
 #include "text/GrAtlasGlyphCache.h"
@@ -36,22 +37,27 @@ SkInternalAtlasTextContext::SkInternalAtlasTextContext(sk_sp<SkAtlasTextRenderer
 
 SkInternalAtlasTextContext::~SkInternalAtlasTextContext() {
     if (fDistanceFieldAtlas.fProxy) {
-        SkASSERT(1 == fGrContext->getAtlasGlyphCache()->getAtlasPageCount(kA8_GrMaskFormat));
+#ifdef SK_DEBUG
+        auto atlasGlyphCache = fGrContext->contextPriv().getAtlasGlyphCache();
+        unsigned int numProxies;
+        atlasGlyphCache->getProxies(kA8_GrMaskFormat, &numProxies);
+        SkASSERT(1 == numProxies);
+#endif
         fRenderer->deleteTexture(fDistanceFieldAtlas.fTextureHandle);
     }
 }
 
 GrAtlasGlyphCache* SkInternalAtlasTextContext::atlasGlyphCache() {
-    return fGrContext->getAtlasGlyphCache();
+    return fGrContext->contextPriv().getAtlasGlyphCache();
 }
 
 GrTextBlobCache* SkInternalAtlasTextContext::textBlobCache() {
-    return fGrContext->getTextBlobCache();
+    return fGrContext->contextPriv().getTextBlobCache();
 }
 
 GrDeferredUploadToken SkInternalAtlasTextContext::addInlineUpload(
         GrDeferredTextureUploadFn&& upload) {
-    auto token = this->nextDrawToken();
+    auto token = fTokenTracker.nextDrawToken();
     fInlineUploads.append(&fArena, InlineUpload{std::move(upload), token});
     return token;
 }
@@ -59,7 +65,7 @@ GrDeferredUploadToken SkInternalAtlasTextContext::addInlineUpload(
 GrDeferredUploadToken SkInternalAtlasTextContext::addASAPUpload(
         GrDeferredTextureUploadFn&& upload) {
     fASAPUploads.append(&fArena, std::move(upload));
-    return this->nextTokenToFlush();
+    return fTokenTracker.nextTokenToFlush();
 }
 
 void SkInternalAtlasTextContext::recordDraw(const void* srcVertexData, int glyphCnt,
@@ -75,14 +81,17 @@ void SkInternalAtlasTextContext::recordDraw(const void* srcVertexData, int glyph
         vertex->fTextureCoord.fY /= 2;
         matrix.mapHomogeneousPoints(&vertex->fPosition, &vertex->fPosition, 1);
     }
-    fDraws.append(&fArena, Draw{glyphCnt, this->issueDrawToken(), targetHandle, vertexData});
+    fDraws.append(&fArena,
+                  Draw{glyphCnt, fTokenTracker.issueDrawToken(), targetHandle, vertexData});
 }
 
 void SkInternalAtlasTextContext::flush() {
-    auto* atlasGlyphCache = fGrContext->getAtlasGlyphCache();
+    auto* atlasGlyphCache = fGrContext->contextPriv().getAtlasGlyphCache();
     if (!fDistanceFieldAtlas.fProxy) {
-        SkASSERT(1 == atlasGlyphCache->getAtlasPageCount(kA8_GrMaskFormat));
-        fDistanceFieldAtlas.fProxy = atlasGlyphCache->getProxies(kA8_GrMaskFormat)->get();
+        unsigned int numProxies;
+        fDistanceFieldAtlas.fProxy = atlasGlyphCache->getProxies(kA8_GrMaskFormat,
+                                                                 &numProxies)->get();
+        SkASSERT(1 == numProxies);
         fDistanceFieldAtlas.fTextureHandle =
                 fRenderer->createTexture(SkAtlasTextRenderer::AtlasFormat::kA8,
                                          fDistanceFieldAtlas.fProxy->width(),
@@ -90,8 +99,8 @@ void SkInternalAtlasTextContext::flush() {
     }
     GrDeferredTextureUploadWritePixelsFn writePixelsFn =
             [this](GrTextureProxy* proxy, int left, int top, int width, int height,
-                   GrPixelConfig config, const void* data, size_t rowBytes) -> bool {
-        SkASSERT(kAlpha_8_GrPixelConfig == config);
+                   GrColorType colorType, const void* data, size_t rowBytes) -> bool {
+        SkASSERT(GrColorType::kAlpha_8 == colorType);
         SkASSERT(proxy == this->fDistanceFieldAtlas.fProxy);
         void* handle = fDistanceFieldAtlas.fTextureHandle;
         this->fRenderer->setTextureData(handle, data, left, top, width, height, rowBytes);
@@ -109,7 +118,7 @@ void SkInternalAtlasTextContext::flush() {
         auto vertices = reinterpret_cast<const SkAtlasTextRenderer::SDFVertex*>(draw.fVertexData);
         fRenderer->drawSDFGlyphs(draw.fTargetHandle, fDistanceFieldAtlas.fTextureHandle, vertices,
                                  draw.fGlyphCnt);
-        this->flushToken();
+        fTokenTracker.flushToken();
     }
     fASAPUploads.reset();
     fInlineUploads.reset();

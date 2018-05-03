@@ -46,12 +46,8 @@ class AURA_EXPORT WindowPortLocal : public WindowPort {
                          int64_t old_value,
                          std::unique_ptr<ui::PropertyData> data) override;
   std::unique_ptr<cc::LayerTreeFrameSink> CreateLayerTreeFrameSink() override;
-  viz::SurfaceId GetSurfaceId() const override;
   void AllocateLocalSurfaceId() override;
   const viz::LocalSurfaceId& GetLocalSurfaceId() override;
-  viz::FrameSinkId GetFrameSinkId() const override;
-  void OnWindowAddedToRootWindow() override;
-  void OnWillRemoveWindowFromRootWindow() override;
   void OnEventTargetingPolicyChanged() override;
   bool ShouldRestackTransientChildren() override;
 
@@ -59,12 +55,11 @@ class AURA_EXPORT WindowPortLocal : public WindowPort {
   void OnSurfaceChanged(const viz::SurfaceInfo& surface_info);
 
   Window* const window_;
-  viz::FrameSinkId frame_sink_id_;
   gfx::Size last_size_;
   float last_device_scale_factor_ = 1.0f;
   viz::LocalSurfaceId local_surface_id_;
   viz::ParentLocalSurfaceIdAllocator parent_local_surface_id_allocator_;
-  base::WeakPtr<aura::LayerTreeFrameSinkLocal> frame_sink_;
+  base::WeakPtr<cc::LayerTreeFrameSink> frame_sink_;
 
   base::WeakPtrFactory<WindowPortLocal> weak_factory_;
 

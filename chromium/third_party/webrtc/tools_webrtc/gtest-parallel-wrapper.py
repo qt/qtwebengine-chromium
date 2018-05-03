@@ -107,12 +107,6 @@ def _ParseArgs():
   parser.add_argument('--store-test-artifacts', action='store_true',
                       default=False)
 
-  # We don't need to implement this flag, and possibly can't, since it's
-  # intended for results of Telemetry tests. See
-  # https://chromium.googlesource.com/external/github.com/catapult-project/catapult/+/HEAD/dashboard/docs/data-format.md
-  parser.add_argument('--isolated-script-test-perf-output', type=str,
-                      default=None)
-
   # No-sandbox is a Chromium-specific flag, ignore it.
   # TODO(oprypin): Remove (bugs.webrtc.org/8115)
   parser.add_argument('--no-sandbox', action='store_true', default=False)
@@ -174,6 +168,9 @@ def main():
       sys.executable,
       gtest_parallel_path,
   ] + args.gtest_parallel_args
+
+  if args.output_dir and not os.path.isdir(args.output_dir):
+    os.makedirs(args.output_dir)
 
   print 'gtest-parallel-wrapper: Executing command %s' % ' '.join(command)
   sys.stdout.flush()

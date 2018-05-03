@@ -33,7 +33,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/url_constants.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -221,7 +221,7 @@ void GetRegistrationsOnIOThread(
     const GetRegistrationsCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   context->GetAllRegistrations(
-      base::Bind(DidGetStoredRegistrationsOnIOThread, context, callback));
+      base::BindOnce(DidGetStoredRegistrationsOnIOThread, context, callback));
 }
 
 void DidGetRegistrations(
@@ -499,7 +499,7 @@ void ServiceWorkerInternalsUI::StopWorker(const ListValue* args) {
   }
 
   base::OnceCallback<void(ServiceWorkerStatusCode)> callback =
-      base::Bind(OperationCompleteCallback, AsWeakPtr(), callback_id);
+      base::BindOnce(OperationCompleteCallback, AsWeakPtr(), callback_id);
   StopWorkerWithId(context, version_id, std::move(callback));
 }
 

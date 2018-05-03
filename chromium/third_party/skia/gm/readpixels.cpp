@@ -9,11 +9,11 @@
 #include "Resources.h"
 #include "SkCodec.h"
 #include "SkColorSpace.h"
-#include "SkColorSpace_Base.h"
 #include "SkColorSpaceXform.h"
 #include "SkColorSpaceXformPriv.h"
 #include "SkHalf.h"
 #include "SkImage.h"
+#include "SkImageInfoPriv.h"
 #include "SkPictureRecorder.h"
 
 static void clamp_if_necessary(const SkImageInfo& info, void* pixels) {

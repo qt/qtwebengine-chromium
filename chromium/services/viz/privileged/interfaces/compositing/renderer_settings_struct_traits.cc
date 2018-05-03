@@ -26,7 +26,8 @@ bool StructTraits<viz::mojom::RendererSettingsDataView, viz::RendererSettings>::
   out->slow_down_compositing_scale_factor =
       data.slow_down_compositing_scale_factor();
   out->use_skia_renderer = data.use_skia_renderer();
-  return data.ReadResourceSettings(&out->resource_settings);
+  out->allow_overlays = data.allow_overlays();
+  return true;
 }
 
 }  // namespace mojo

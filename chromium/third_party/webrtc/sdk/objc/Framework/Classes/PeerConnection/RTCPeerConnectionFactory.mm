@@ -13,7 +13,6 @@
 #import "RTCPeerConnectionFactoryOptions+Private.h"
 
 #import "NSString+StdString.h"
-#import "RTCAVFoundationVideoSource+Private.h"
 #import "RTCAudioSource+Private.h"
 #import "RTCAudioTrack+Private.h"
 #import "RTCMediaConstraints+Private.h"
@@ -24,15 +23,19 @@
 #import "WebRTC/RTCLogging.h"
 #import "WebRTC/RTCVideoCodecFactory.h"
 #ifndef HAVE_NO_MEDIA
-#include "VideoToolbox/objc_video_decoder_factory.h"
-#include "VideoToolbox/objc_video_encoder_factory.h"
 #import "WebRTC/RTCVideoCodecH264.h"
 // The no-media version PeerConnectionFactory doesn't depend on these files, but the gn check tool
 // is not smart enough to take the #ifdef into account.
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"     // nogncheck
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"     // nogncheck
+#include "media/engine/convert_legacy_video_factory.h"          // nogncheck
 #include "modules/audio_device/include/audio_device.h"          // nogncheck
 #include "modules/audio_processing/include/audio_processing.h"  // nogncheck
+
+#include "sdk/objc/Framework/Native/api/video_decoder_factory.h"
+#include "sdk/objc/Framework/Native/api/video_encoder_factory.h"
+#include "sdk/objc/Framework/Native/src/objc_video_decoder_factory.h"
+#include "sdk/objc/Framework/Native/src/objc_video_encoder_factory.h"
 #endif
 
 #include "Video/objcvideotracksource.h"
@@ -43,6 +46,7 @@
 // TODO(zhihuang): Remove nogncheck once MediaEngineInterface is moved to C++
 // API layer.
 #include "media/engine/webrtcmediaengine.h"  // nogncheck
+#include "rtc_base/ptr_util.h"
 
 @implementation RTCPeerConnectionFactory {
   std::unique_ptr<rtc::Thread> _networkThread;
@@ -56,7 +60,19 @@
 - (instancetype)init {
 #ifdef HAVE_NO_MEDIA
   return [self initWithNoMedia];
+#elif !defined(USE_BUILTIN_SW_CODECS)
+  return [self initWithNativeAudioEncoderFactory:webrtc::CreateBuiltinAudioEncoderFactory()
+                       nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
+                       nativeVideoEncoderFactory:webrtc::ObjCToNativeVideoEncoderFactory(
+                                                     [[RTCVideoEncoderFactoryH264 alloc] init])
+                       nativeVideoDecoderFactory:webrtc::ObjCToNativeVideoDecoderFactory(
+                                                     [[RTCVideoDecoderFactoryH264 alloc] init])
+                               audioDeviceModule:nullptr
+                           audioProcessingModule:nullptr];
 #else
+  // Here we construct webrtc::ObjCVideoEncoderFactory directly because we rely
+  // on the fact that they inherit from both webrtc::VideoEncoderFactory and
+  // cricket::WebRtcVideoEncoderFactory.
   return [self initWithNativeAudioEncoderFactory:webrtc::CreateBuiltinAudioEncoderFactory()
                        nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
                  legacyNativeVideoEncoderFactory:new webrtc::ObjCVideoEncoderFactory(
@@ -76,10 +92,10 @@
   std::unique_ptr<webrtc::VideoEncoderFactory> native_encoder_factory;
   std::unique_ptr<webrtc::VideoDecoderFactory> native_decoder_factory;
   if (encoderFactory) {
-    native_encoder_factory.reset(new webrtc::ObjCVideoEncoderFactory(encoderFactory));
+    native_encoder_factory = webrtc::ObjCToNativeVideoEncoderFactory(encoderFactory);
   }
   if (decoderFactory) {
-    native_decoder_factory.reset(new webrtc::ObjCVideoDecoderFactory(decoderFactory));
+    native_decoder_factory = webrtc::ObjCToNativeVideoDecoderFactory(decoderFactory);
   }
   return [self initWithNativeAudioEncoderFactory:webrtc::CreateBuiltinAudioEncoderFactory()
                        nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
@@ -137,6 +153,18 @@
   return [self initWithNoMedia];
 #else
   if (self = [self initNative]) {
+#if defined(USE_BUILTIN_SW_CODECS)
+    if (!videoEncoderFactory) {
+      auto legacy_video_encoder_factory = rtc::MakeUnique<webrtc::ObjCVideoEncoderFactory>(
+          [[RTCVideoEncoderFactoryH264 alloc] init]);
+      videoEncoderFactory = ConvertVideoEncoderFactory(std::move(legacy_video_encoder_factory));
+    }
+    if (!videoDecoderFactory) {
+      auto legacy_video_decoder_factory = rtc::MakeUnique<webrtc::ObjCVideoDecoderFactory>(
+          [[RTCVideoDecoderFactoryH264 alloc] init]);
+      videoDecoderFactory = ConvertVideoDecoderFactory(std::move(legacy_video_decoder_factory));
+    }
+#endif
     _nativeFactory = webrtc::CreatePeerConnectionFactory(_networkThread.get(),
                                                          _workerThread.get(),
                                                          _signalingThread.get(),
@@ -153,6 +181,7 @@
 #endif
 }
 
+#if defined(USE_BUILTIN_SW_CODECS)
 - (instancetype)
     initWithNativeAudioEncoderFactory:
         (rtc::scoped_refptr<webrtc::AudioEncoderFactory>)audioEncoderFactory
@@ -178,6 +207,7 @@
   return self;
 #endif
 }
+#endif
 
 - (RTCAudioSource *)audioSourceWithConstraints:(nullable RTCMediaConstraints *)constraints {
   std::unique_ptr<webrtc::MediaConstraints> nativeConstraints;
@@ -199,15 +229,6 @@
   return [[RTCAudioTrack alloc] initWithFactory:self
                                          source:source
                                         trackId:trackId];
-}
-
-- (RTCAVFoundationVideoSource *)avFoundationVideoSourceWithConstraints:
-    (nullable RTCMediaConstraints *)constraints {
-#ifdef HAVE_NO_MEDIA
-  return nil;
-#else
-  return [[RTCAVFoundationVideoSource alloc] initWithFactory:self constraints:constraints];
-#endif
 }
 
 - (RTCVideoSource *)videoSource {

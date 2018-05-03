@@ -26,3 +26,4 @@ interface Channel {
 
 // A strictly nominal interface used to identify Channel bootstrap requests.
 interface ChannelBootstrap {};
+

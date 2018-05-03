@@ -41,17 +41,13 @@
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
-#include "third_party/WebKit/common/origin_trials/trial_token_validator.h"
-#include "third_party/WebKit/common/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_client.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/WebKit/public/common/origin_trials/trial_token_validator.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_client.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
 #include "ui/base/mojo/window_open_disposition.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
-
-namespace blink {
-class MessagePortChannel;
-}
 
 namespace net {
 class HttpResponseInfo;
@@ -289,6 +285,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Same as StartRequest, but allows the caller to specify a custom timeout for
   // the event, as well as the behavior for when the request times out.
+  // S13nServiceWorker: |timeout| and |timeout_behavior| don't have any
+  // effect. They are just ignored. Timeouts can be added to the
+  // mojom::ServiceWorkerEventDispatcher interface instead (see
+  // DispatchSyncEvent for an example).
   int StartRequestWithCustomTimeout(ServiceWorkerMetrics::EventType event_type,
                                     StatusCallback error_callback,
                                     const base::TimeDelta& timeout,
@@ -578,9 +578,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
     std::set<InflightRequestTimeoutInfo>::iterator timeout_iter;
   };
 
-  using ServiceWorkerClientPtrs =
-      std::vector<blink::mojom::ServiceWorkerClientInfoPtr>;
-
   // The timeout timer interval.
   static constexpr base::TimeDelta kTimeoutTimerDelay =
       base::TimeDelta::FromSeconds(30);
@@ -629,49 +626,35 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void ClaimClients(ClaimClientsCallback callback) override;
   void GetClients(blink::mojom::ServiceWorkerClientQueryOptionsPtr options,
                   GetClientsCallback callback) override;
+  void GetClient(const std::string& client_uuid,
+                 GetClientCallback callback) override;
+  void OpenNewTab(const GURL& url, OpenNewTabCallback callback) override;
+  void OpenPaymentHandlerWindow(
+      const GURL& url,
+      OpenPaymentHandlerWindowCallback callback) override;
+  void FocusClient(const std::string& client_uuid,
+                   FocusClientCallback callback) override;
+  void NavigateClient(const std::string& client_uuid,
+                      const GURL& url,
+                      NavigateClientCallback callback) override;
+  void SkipWaiting(SkipWaitingCallback callback) override;
 
   void OnSetCachedMetadataFinished(int64_t callback_id,
                                    size_t size,
                                    int result);
   void OnClearCachedMetadataFinished(int64_t callback_id, int result);
+  void OpenWindow(GURL url,
+                  WindowOpenDisposition disposition,
+                  OpenNewTabCallback callback);
 
   // Message handlers.
 
-  // This corresponds to the spec's get(id) steps.
-  void OnGetClient(int request_id, const std::string& client_uuid);
-
-  // Currently used for Clients.openWindow() only.
-  void OnOpenNewTab(int request_id, const GURL& url);
-
-  // Currently used for PaymentRequestEvent.openWindow() only.
-  void OnOpenPaymentHandlerWindow(int request_id, const GURL& url);
-
-  void OnOpenWindow(int request_id,
-                    GURL url,
-                    WindowOpenDisposition disposition);
-  void OnOpenWindowFinished(
-      int request_id,
-      ServiceWorkerStatusCode status,
-      const blink::mojom::ServiceWorkerClientInfo& client_info);
-
   void OnPostMessageToClient(
       const std::string& client_uuid,
-      const base::string16& message,
-      const std::vector<blink::MessagePortChannel>& sent_message_ports);
-  void OnFocusClient(int request_id, const std::string& client_uuid);
-  void OnNavigateClient(int request_id,
-                        const std::string& client_uuid,
-                        const GURL& url);
-  void OnNavigateClientFinished(
-      int request_id,
-      ServiceWorkerStatusCode status,
-      const blink::mojom::ServiceWorkerClientInfo& client_info);
-  void OnSkipWaiting(int request_id);
-  void OnPongFromWorker();
+      const scoped_refptr<base::RefCountedData<blink::TransferableMessage>>&
+          message);
 
-  void OnFocusClientFinished(
-      int request_id,
-      const blink::mojom::ServiceWorkerClientInfo& client_info);
+  void OnPongFromWorker();
 
   void DidEnsureLiveRegistrationForStartWorker(
       ServiceWorkerMetrics::EventType purpose,
@@ -682,21 +665,12 @@ class CONTENT_EXPORT ServiceWorkerVersion
       scoped_refptr<ServiceWorkerRegistration> registration);
   void StartWorkerInternal();
 
-  void DidSkipWaiting(int request_id);
-
   // Callback function for simple events dispatched through mojo interface
   // mojom::ServiceWorkerEventDispatcher. Use CreateSimpleEventCallback() to
   // create a callback for a given |request_id|.
   void OnSimpleEventFinished(int request_id,
                              blink::mojom::ServiceWorkerEventStatus status,
                              base::Time dispatch_event_time);
-
-  void OnGetClientFinished(
-      int request_id,
-      blink::mojom::ServiceWorkerClientInfoPtr client_info);
-
-  void OnGetClientsFinished(GetClientsCallback callback,
-                            std::unique_ptr<ServiceWorkerClientPtrs> clients);
 
   // The timeout timer periodically calls OnTimeoutTimer, which stops the worker
   // if it is excessively idle or unresponsive to ping.
@@ -797,6 +771,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
   std::unique_ptr<ServiceWorkerInstalledScriptsSender>
       installed_scripts_sender_;
 
+  std::vector<SkipWaitingCallback> pending_skip_waiting_requests_;
+  base::TimeTicks skip_waiting_time_;
+  base::TimeTicks no_controllees_time_;
+
   mojo::AssociatedBinding<blink::mojom::ServiceWorkerHost> binding_;
 
   // The number of fetch event responses that the service worker is streaming to
@@ -847,10 +825,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool pause_after_download_ = false;
   bool is_update_scheduled_ = false;
   bool in_dtor_ = false;
-
-  std::vector<int> pending_skip_waiting_requests_;
-  base::TimeTicks skip_waiting_time_;
-  base::TimeTicks no_controllees_time_;
 
   std::unique_ptr<net::HttpResponseInfo> main_script_http_info_;
 

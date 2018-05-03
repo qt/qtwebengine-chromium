@@ -22,7 +22,7 @@
 #include "base/trace_event/trace_log.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/coordinator.h"
-#include "services/resource_coordinator/public/interfaces/memory_instrumentation/memory_instrumentation.mojom.h"
+#include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -115,6 +115,8 @@ class MockCoordinator : public Coordinator, public mojom::Coordinator {
   void RegisterClientProcess(mojom::ClientProcessPtr,
                              mojom::ProcessType) override {}
 
+  void RegisterHeapProfiler(mojom::HeapProfilerPtr heap_profiler) override {}
+
   void RequestGlobalMemoryDump(
       MemoryDumpType dump_type,
       MemoryDumpLevelOfDetail level_of_detail,
@@ -157,7 +159,7 @@ class MemoryTracingIntegrationTest : public testing::Test {
     client_process_.reset();
     coordinator_.reset();
     message_loop_.reset();
-    TraceLog::DeleteForTesting();
+    TraceLog::ResetForTesting();
   }
 
   // Blocks the current thread (spinning a nested message loop) until the

@@ -4,6 +4,8 @@
 
 #include "components/offline_items_collection/core/android/offline_content_aggregator_bridge.h"
 
+#include <memory>
+
 #include "base/android/callback_android.h"
 #include "base/android/jni_string.h"
 #include "base/bind.h"
@@ -81,7 +83,7 @@ OfflineContentAggregatorBridge::GetBridgeForOfflineContentAggregator(
 
 OfflineContentAggregatorBridge::OfflineContentAggregatorBridge(
     OfflineContentAggregator* aggregator)
-    : provider_(base::MakeUnique<ThrottledOfflineContentProvider>(aggregator)) {
+    : provider_(std::make_unique<ThrottledOfflineContentProvider>(aggregator)) {
   JNIEnv* env = AttachCurrentThread();
   java_ref_.Reset(Java_OfflineContentAggregatorBridge_create(
       env, reinterpret_cast<intptr_t>(this)));
@@ -96,12 +98,6 @@ OfflineContentAggregatorBridge::~OfflineContentAggregatorBridge() {
 
   Java_OfflineContentAggregatorBridge_onNativeDestroyed(AttachCurrentThread(),
                                                         java_ref_);
-}
-
-jboolean OfflineContentAggregatorBridge::AreItemsAvailable(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& jobj) {
-  return provider_->AreItemsAvailable();
 }
 
 void OfflineContentAggregatorBridge::OpenItem(
@@ -187,15 +183,6 @@ void OfflineContentAggregatorBridge::GetVisualsForItem(
                                                          j_id),
       base::Bind(&GetVisualsForItemHelperCallback,
                  ScopedJavaGlobalRef<jobject>(env, j_callback)));
-}
-
-void OfflineContentAggregatorBridge::OnItemsAvailable(
-    OfflineContentProvider* provider) {
-  if (java_ref_.is_null())
-    return;
-
-  JNIEnv* env = AttachCurrentThread();
-  Java_OfflineContentAggregatorBridge_onItemsAvailable(env, java_ref_);
 }
 
 void OfflineContentAggregatorBridge::OnItemsAdded(

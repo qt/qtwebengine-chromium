@@ -144,9 +144,9 @@ class CORE_EXPORT PaintLayerScrollableArea final
     void SetHasVerticalScrollbar(bool has_scrollbar) override;
 
     void DestroyDetachedScrollbars();
+    Scrollbar* CreateScrollbar(ScrollbarOrientation) override;
 
    protected:
-    Scrollbar* CreateScrollbar(ScrollbarOrientation) override;
     void DestroyScrollbar(ScrollbarOrientation) override;
 
     PaintLayerScrollableArea* ScrollableArea();
@@ -226,6 +226,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   ~PaintLayerScrollableArea() override;
   void Dispose();
+  bool HasBeenDisposed() const override;
 
   void ForceVerticalScrollbarForFirstLayout() { SetHasVerticalScrollbar(true); }
   bool HasHorizontalScrollbar() const { return HorizontalScrollbar(); }
@@ -237,6 +238,12 @@ class CORE_EXPORT PaintLayerScrollableArea final
   Scrollbar* VerticalScrollbar() const override {
     return scrollbar_manager_.VerticalScrollbar();
   }
+  Scrollbar* CreateScrollbar(ScrollbarOrientation orientation) override {
+    return scrollbar_manager_.CreateScrollbar(orientation);
+  }
+
+  void CalculateScrollbarModes(ScrollbarMode& h_mode,
+                               ScrollbarMode& v_mode) const;
 
   PlatformChromeClient* GetChromeClient() const override;
 
@@ -281,6 +288,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
   IntSize MaximumScrollOffsetInt() const override;
   IntRect VisibleContentRect(
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
+  LayoutRect VisibleScrollSnapportRect() const override;
   IntSize ContentsSize() const override;
   void ContentsResized() override;
   bool IsScrollable() const override;
@@ -424,6 +432,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   bool ScheduleAnimation() override;
   bool ShouldPerformScrollAnchoring() const override;
+  bool RestoreScrollAnchor(const SerializedAnchor&) override;
   ScrollAnchor* GetScrollAnchor() override { return &scroll_anchor_; }
   bool IsPaintLayerScrollableArea() const override { return true; }
 
@@ -433,7 +442,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
                                       const LayoutObject*,
                                       unsigned = 0) const final;
 
-  scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const final;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() const final;
 
   bool ShouldRebuildHorizontalScrollbarLayer() const {
     return rebuild_horizontal_scrollbar_layer_;
@@ -479,6 +488,8 @@ class CORE_EXPORT PaintLayerScrollableArea final
   void InvalidateStickyConstraintsFor(PaintLayer*,
                                       bool needs_compositing_update = true);
   void InvalidatePaintForStickyDescendants();
+  void UpdateLayerPositionForStickyDescendants();
+  bool HasStickyDescendants() const;
   bool HasNonCompositedStickyDescendants() const;
   uint32_t GetNonCompositedMainThreadScrollingReasons() {
     return non_composited_main_thread_scrolling_reasons_;
@@ -558,7 +569,10 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   IntRect CornerRect(const IntRect& bounds) const;
 
-  PaintLayer& layer_;
+  // PaintLayer is destructed before PaintLayerScrollable area, during this
+  // time before PaintLayerScrollableArea has been collected layer_ will
+  // be set to nullptr by the Dispose method.
+  PaintLayer* layer_;
 
   PaintLayer* next_topmost_scroll_child_;
   PaintLayer* topmost_scroll_child_;
@@ -615,8 +629,6 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   // MainThreadScrollingReason due to the properties of the LayoutObject
   uint32_t non_composited_main_thread_scrolling_reasons_;
-
-  bool has_been_disposed_;
 };
 
 DEFINE_TYPE_CASTS(PaintLayerScrollableArea,

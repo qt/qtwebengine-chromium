@@ -581,7 +581,7 @@ class DelayedHttpResponse : public BasicHttpResponse {
   void SendResponse(const SendBytesCallback& send,
                     const SendCompleteCallback& done) override {
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE, base::Bind(send, ToResponseString(), done),
+        FROM_HERE, base::BindOnce(send, ToResponseString(), done),
         base::TimeDelta::FromSecondsD(delay_));
   }
 
@@ -632,7 +632,7 @@ class HungAfterHeadersHttpResponse : public HttpResponse {
 
   void SendResponse(const SendBytesCallback& send,
                     const SendCompleteCallback& done) override {
-    send.Run("HTTP/1.1 OK\r\n\r\n", base::Bind(&base::DoNothing));
+    send.Run("HTTP/1.1 OK\r\n\r\n", base::DoNothing());
   }
 
  private:
@@ -644,6 +644,43 @@ class HungAfterHeadersHttpResponse : public HttpResponse {
 std::unique_ptr<HttpResponse> HandleHungAfterHeadersResponse(
     const HttpRequest& request) {
   return std::make_unique<HungAfterHeadersHttpResponse>();
+}
+
+// /exabyte_response
+// A HttpResponse that is almost never ending (with an Exabyte content-length).
+class ExabyteResponse : public net::test_server::BasicHttpResponse {
+ public:
+  ExabyteResponse() {}
+
+  void SendResponse(
+      const net::test_server::SendBytesCallback& send,
+      const net::test_server::SendCompleteCallback& done) override {
+    // Use 10^18 bytes (exabyte) as the content length so that the client will
+    // be expecting data.
+    send.Run("HTTP/1.1 200 OK\r\nContent-Length:1000000000000000000\r\n\r\n",
+             base::BindRepeating(&ExabyteResponse::SendExabyte, send));
+  }
+
+ private:
+  // Keeps sending the word "echo" over and over again. It can go further to
+  // limit the response to exactly an exabyte, but it shouldn't be necessary
+  // for the purpose of testing.
+  static void SendExabyte(const net::test_server::SendBytesCallback& send) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE,
+        base::BindRepeating(
+            send, "echo",
+            base::BindRepeating(&ExabyteResponse::SendExabyte, send)));
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(ExabyteResponse);
+};
+
+// /exabyte_response
+// Almost never ending response.
+std::unique_ptr<net::test_server::HttpResponse> HandleExabyteResponse(
+    const net::test_server::HttpRequest& request) {
+  return std::make_unique<ExabyteResponse>();
 }
 
 // /gzip-body?<body>
@@ -686,20 +723,22 @@ std::unique_ptr<HttpResponse> HandleSelfPac(const HttpRequest& request) {
 
 }  // anonymous namespace
 
-#define PREFIXED_HANDLER(prefix, handler) \
-  base::Bind(&HandlePrefixedRequest, prefix, base::Bind(handler))
+#define PREFIXED_HANDLER(prefix, handler)             \
+  base::BindRepeating(&HandlePrefixedRequest, prefix, \
+                      base::BindRepeating(handler))
 #define SERVER_REDIRECT_HANDLER(prefix, handler, status_code) \
-  base::Bind(&HandlePrefixedRequest, prefix, base::Bind(handler, status_code))
+  base::BindRepeating(&HandlePrefixedRequest, prefix,         \
+                      base::BindRepeating(handler, status_code))
 
 void RegisterDefaultHandlers(EmbeddedTestServer* server) {
-  server->RegisterDefaultHandler(base::Bind(&HandleDefaultConnect));
+  server->RegisterDefaultHandler(base::BindRepeating(&HandleDefaultConnect));
 
   server->RegisterDefaultHandler(
       PREFIXED_HANDLER("/cachetime", &HandleCacheTime));
   server->RegisterDefaultHandler(
-      base::Bind(&HandleEchoHeader, "/echoheader", "no-cache"));
-  server->RegisterDefaultHandler(
-      base::Bind(&HandleEchoHeader, "/echoheadercache", "max-age=60000"));
+      base::BindRepeating(&HandleEchoHeader, "/echoheader", "no-cache"));
+  server->RegisterDefaultHandler(base::BindRepeating(
+      &HandleEchoHeader, "/echoheadercache", "max-age=60000"));
   server->RegisterDefaultHandler(PREFIXED_HANDLER("/echo", &HandleEcho));
   server->RegisterDefaultHandler(
       PREFIXED_HANDLER("/echotitle", &HandleEchoTitle));
@@ -735,7 +774,8 @@ void RegisterDefaultHandlers(EmbeddedTestServer* server) {
   server->RegisterDefaultHandler(SERVER_REDIRECT_HANDLER(
       "/server-redirect-308", &HandleServerRedirect, HTTP_PERMANENT_REDIRECT));
 
-  server->RegisterDefaultHandler(base::Bind(&HandleCrossSiteRedirect, server));
+  server->RegisterDefaultHandler(
+      base::BindRepeating(&HandleCrossSiteRedirect, server));
   server->RegisterDefaultHandler(
       PREFIXED_HANDLER("/client-redirect", &HandleClientRedirect));
   server->RegisterDefaultHandler(
@@ -745,6 +785,8 @@ void RegisterDefaultHandlers(EmbeddedTestServer* server) {
       PREFIXED_HANDLER("/hung", &HandleHungResponse));
   server->RegisterDefaultHandler(
       PREFIXED_HANDLER("/hung-after-headers", &HandleHungAfterHeadersResponse));
+  server->RegisterDefaultHandler(
+      PREFIXED_HANDLER("/exabyte_response", &HandleExabyteResponse));
   server->RegisterDefaultHandler(
       PREFIXED_HANDLER("/gzip-body", &HandleGzipBody));
   server->RegisterDefaultHandler(PREFIXED_HANDLER("/self.pac", &HandleSelfPac));

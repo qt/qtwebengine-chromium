@@ -836,7 +836,12 @@ bool CCodec_ProgressiveDecoder::BmpReadMoreData(CCodec_BmpModule* pBmpModule,
     return false;
 
   dwSize = dwSize - m_offSet;
-  uint32_t dwAvail = pBmpModule->GetAvailInput(m_pBmpContext.get(), nullptr);
+  FX_SAFE_UINT32 avail_input =
+      pBmpModule->GetAvailInput(m_pBmpContext.get(), nullptr);
+  if (!avail_input.IsValid())
+    return false;
+
+  uint32_t dwAvail = avail_input.ValueOrDie();
   if (dwAvail == m_SrcSize) {
     if (dwSize > FXCODEC_BLOCK_SIZE) {
       dwSize = FXCODEC_BLOCK_SIZE;
@@ -1112,13 +1117,6 @@ bool CCodec_ProgressiveDecoder::JpegDetectImageType(
     CFX_DIBAttribute* pAttribute,
     uint32_t size) {
   CCodec_JpegModule* pJpegModule = m_pCodecMgr->GetJpegModule();
-  // Setting jump marker before calling Start or ReadHeader, since a longjmp
-  // to the marker indicates a fatal error in these functions.
-  if (setjmp(*m_pJpegContext->GetJumpMark()) == -1) {
-    m_status = FXCODEC_STATUS_ERROR;
-    return false;
-  }
-
   m_pJpegContext = pJpegModule->Start();
   if (!m_pJpegContext) {
     m_status = FXCODEC_STATUS_ERR_MEMORY;

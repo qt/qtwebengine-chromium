@@ -72,10 +72,11 @@ class VRDisplayFrameRequestCallback
       monotonic_time = WTF::CurrentTimeTicksInSeconds();
     } else {
       // Convert document-zero time back to monotonic time.
-      double reference_monotonic_time = vr_display_->GetDocument()
-                                            ->Loader()
-                                            ->GetTiming()
-                                            .ReferenceMonotonicTime();
+      double reference_monotonic_time =
+          TimeTicksInSeconds(vr_display_->GetDocument()
+                                 ->Loader()
+                                 ->GetTiming()
+                                 .ReferenceMonotonicTime());
       monotonic_time = (high_res_time_ms / 1000.0) + reference_monotonic_time;
     }
     vr_display_->OnMagicWindowVSync(monotonic_time);
@@ -483,7 +484,7 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
     device::mojom::blink::VRRequestPresentOptionsPtr options =
         device::mojom::blink::VRRequestPresentOptions::New();
     options->preserve_drawing_buffer =
-        rendering_context_->CreationAttributes().preserveDrawingBuffer();
+        rendering_context_->CreationAttributes().preserve_drawing_buffer;
 
     display_->RequestPresent(
         frame_transport_->GetSubmitFrameClient(),
@@ -610,7 +611,7 @@ void VRDisplay::BeginPresent() {
   // schedule a VRDisplay.rAF in case they do so only while presenting.
   if (!pending_vrdisplay_raf_ && !capabilities_->hasExternalDisplay()) {
     double timestamp = WTF::CurrentTimeTicksInSeconds();
-    Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+    Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
         FROM_HERE, WTF::Bind(&VRDisplay::ProcessScheduledWindowAnimations,
                              WrapWeakPersistent(this), timestamp));
   }
@@ -654,9 +655,12 @@ HeapVector<VRLayerInit> VRDisplay::getLayers() {
   return layers;
 }
 
-scoped_refptr<Image> VRDisplay::GetFrameImage() {
+scoped_refptr<Image> VRDisplay::GetFrameImage(
+    std::unique_ptr<viz::SingleReleaseCallback>* out_release_callback) {
   TRACE_EVENT_BEGIN0("gpu", "VRDisplay:GetStaticBitmapImage");
-  scoped_refptr<Image> image_ref = rendering_context_->GetStaticBitmapImage();
+
+  scoped_refptr<Image> image_ref =
+      rendering_context_->GetStaticBitmapImage(out_release_callback);
   TRACE_EVENT_END0("gpu", "VRDisplay::GetStaticBitmapImage");
 
   // Hardware-accelerated rendering should always be texture backed,
@@ -734,7 +738,8 @@ void VRDisplay::submitFrame() {
 
   frame_transport_->FramePreImage(context_gl_);
 
-  scoped_refptr<Image> image_ref = GetFrameImage();
+  std::unique_ptr<viz::SingleReleaseCallback> image_release_callback;
+  scoped_refptr<Image> image_ref = GetFrameImage(&image_release_callback);
   if (!image_ref)
     return;
 
@@ -743,7 +748,8 @@ void VRDisplay::submitFrame() {
 
   frame_transport_->FrameSubmit(vr_presentation_provider_.get(), context_gl_,
                                 drawing_buffer_client, std::move(image_ref),
-                                vr_frame_id_, present_image_needs_copy_);
+                                std::move(image_release_callback), vr_frame_id_,
+                                present_image_needs_copy_);
 
   did_submit_this_frame_ = true;
   // Reset our frame id, since anything we'd want to do (resizing/etc) can
@@ -938,7 +944,7 @@ void VRDisplay::OnPresentingVSync(
   // this is due to WaitForIncomingMethodCall receiving the OnVSync
   // but queueing it for immediate execution since it doesn't match
   // the interface being waited on.
-  Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+  Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&VRDisplay::ProcessScheduledAnimations,
                            WrapWeakPersistent(this), time_delta.InSecondsF()));
 }

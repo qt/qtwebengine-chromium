@@ -7,10 +7,10 @@
 #include <memory>
 
 #include "net/quic/platform/api/quic_arraysize.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_text_utils.h"
 #include "third_party/boringssl/src/include/openssl/sha.h"
 
-using std::string;
 
 namespace net {
 
@@ -24,7 +24,7 @@ class QuicCryptoServerHandshaker::ProcessClientHelloCallback
       : parent_(parent), result_(result) {}
 
   void Run(QuicErrorCode error,
-           const string& error_details,
+           const QuicString& error_details,
            std::unique_ptr<CryptoHandshakeMessage> message,
            std::unique_ptr<DiversificationNonce> diversification_nonce,
            std::unique_ptr<net::ProofSource::Details> proof_source_details)
@@ -50,7 +50,6 @@ QuicCryptoServerHandshaker::QuicCryptoServerHandshaker(
     const QuicCryptoServerConfig* crypto_config,
     QuicCryptoServerStream* stream,
     QuicCompressedCertsCache* compressed_certs_cache,
-    bool use_stateless_rejects_if_peer_supported,
     QuicSession* session,
     QuicCryptoServerStream::Helper* helper)
     : QuicCryptoHandshaker(stream, session),
@@ -64,9 +63,6 @@ QuicCryptoServerHandshaker::QuicCryptoServerHandshaker(
       num_handshake_messages_with_server_nonces_(0),
       send_server_config_update_cb_(nullptr),
       num_server_config_update_messages_sent_(0),
-      use_stateless_rejects_if_peer_supported_(
-          use_stateless_rejects_if_peer_supported),
-      peer_supports_stateless_rejects_(false),
       zero_rtt_attempted_(false),
       chlo_packet_size_(0),
       validate_client_hello_cb_(nullptr),
@@ -150,9 +146,9 @@ void QuicCryptoServerHandshaker::FinishProcessingHandshakeMessage(
   DCHECK(process_client_hello_cb_ == nullptr);
   validate_client_hello_cb_ = nullptr;
 
-  if (use_stateless_rejects_if_peer_supported_) {
-    peer_supports_stateless_rejects_ =
-        QuicCryptoServerStreamBase::DoesPeerSupportStatelessRejects(message);
+  if (stream_->UseStatelessRejectsIfPeerSupported()) {
+    stream_->SetPeerSupportsStatelessRejects(
+        QuicCryptoServerStreamBase::DoesPeerSupportStatelessRejects(message));
   }
 
   std::unique_ptr<ProcessClientHelloCallback> cb(
@@ -165,7 +161,7 @@ void QuicCryptoServerHandshaker::
     FinishProcessingHandshakeMessageAfterProcessClientHello(
         const ValidateClientHelloResultCallback::Result& result,
         QuicErrorCode error,
-        const string& error_details,
+        const QuicString& error_details,
         std::unique_ptr<CryptoHandshakeMessage> reply,
         std::unique_ptr<DiversificationNonce> diversification_nonce,
         std::unique_ptr<ProofSource::Details> proof_source_details) {
@@ -182,8 +178,8 @@ void QuicCryptoServerHandshaker::
 
   if (reply->tag() != kSHLO) {
     if (reply->tag() == kSREJ) {
-      DCHECK(use_stateless_rejects_if_peer_supported_);
-      DCHECK(peer_supports_stateless_rejects_);
+      DCHECK(stream_->UseStatelessRejectsIfPeerSupported());
+      DCHECK(stream_->PeerSupportsStatelessRejects());
       // Before sending the SREJ, cause the connection to save crypto packets
       // so that they can be added to the time wait list manager and
       // retransmitted.
@@ -192,8 +188,8 @@ void QuicCryptoServerHandshaker::
     SendHandshakeMessage(*reply);
 
     if (reply->tag() == kSREJ) {
-      DCHECK(use_stateless_rejects_if_peer_supported_);
-      DCHECK(peer_supports_stateless_rejects_);
+      DCHECK(stream_->UseStatelessRejectsIfPeerSupported());
+      DCHECK(stream_->PeerSupportsStatelessRejects());
       DCHECK(!handshake_confirmed());
       QUIC_DLOG(INFO) << "Closing connection "
                       << session()->connection()->connection_id()
@@ -210,7 +206,7 @@ void QuicCryptoServerHandshaker::
   // session config.
   QuicConfig* config = session()->config();
   OverrideQuicConfigDefaults(config);
-  string process_error_details;
+  QuicString process_error_details;
   const QuicErrorCode process_error =
       config->ProcessPeerHello(message, CLIENT, &process_error_details);
   if (process_error != QUIC_NO_ERROR) {
@@ -276,8 +272,7 @@ void QuicCryptoServerHandshaker::SendServerConfigUpdate(
       previous_source_address_tokens_, session()->connection()->self_address(),
       GetClientAddress().host(), session()->connection()->clock(),
       session()->connection()->random_generator(), compressed_certs_cache_,
-      *crypto_negotiated_params_, cached_network_params,
-      std::move(cb));
+      *crypto_negotiated_params_, cached_network_params, std::move(cb));
 }
 
 QuicCryptoServerHandshaker::SendServerConfigUpdateCallback::
@@ -337,21 +332,8 @@ QuicCryptoServerHandshaker::PreviousCachedNetworkParams() const {
   return previous_cached_network_params_.get();
 }
 
-bool QuicCryptoServerHandshaker::UseStatelessRejectsIfPeerSupported() const {
-  return use_stateless_rejects_if_peer_supported_;
-}
-
-bool QuicCryptoServerHandshaker::PeerSupportsStatelessRejects() const {
-  return peer_supports_stateless_rejects_;
-}
-
 bool QuicCryptoServerHandshaker::ZeroRttAttempted() const {
   return zero_rtt_attempted_;
-}
-
-void QuicCryptoServerHandshaker::SetPeerSupportsStatelessRejects(
-    bool peer_supports_stateless_rejects) {
-  peer_supports_stateless_rejects_ = peer_supports_stateless_rejects;
 }
 
 void QuicCryptoServerHandshaker::SetPreviousCachedNetworkParams(
@@ -365,13 +347,13 @@ bool QuicCryptoServerHandshaker::ShouldSendExpectCTHeader() const {
 }
 
 bool QuicCryptoServerHandshaker::GetBase64SHA256ClientChannelID(
-    string* output) const {
+    QuicString* output) const {
   if (!encryption_established() ||
       crypto_negotiated_params_->channel_id.empty()) {
     return false;
   }
 
-  const string& channel_id(crypto_negotiated_params_->channel_id);
+  const QuicString& channel_id(crypto_negotiated_params_->channel_id);
   uint8_t digest[SHA256_DIGEST_LENGTH];
   SHA256(reinterpret_cast<const uint8_t*>(channel_id.data()), channel_id.size(),
          digest);
@@ -403,7 +385,7 @@ void QuicCryptoServerHandshaker::ProcessClientHello(
     std::unique_ptr<ProofSource::Details> proof_source_details,
     std::unique_ptr<ProcessClientHelloResultCallback> done_cb) {
   const CryptoHandshakeMessage& message = result->client_hello;
-  string error_details;
+  QuicString error_details;
   if (!helper_->CanAcceptClientHello(
           message, session()->connection()->self_address(), &error_details)) {
     done_cb->Run(QUIC_HANDSHAKE_FAILED, error_details, nullptr, nullptr,
@@ -428,8 +410,8 @@ void QuicCryptoServerHandshaker::ProcessClientHello(
   previous_source_address_tokens_ = result->info.source_address_tokens;
 
   const bool use_stateless_rejects_in_crypto_config =
-      use_stateless_rejects_if_peer_supported_ &&
-      peer_supports_stateless_rejects_;
+      stream_->UseStatelessRejectsIfPeerSupported() &&
+      stream_->PeerSupportsStatelessRejects();
   QuicConnection* connection = session()->connection();
   const QuicConnectionId server_designated_connection_id =
       GenerateConnectionIdForReject(use_stateless_rejects_in_crypto_config);

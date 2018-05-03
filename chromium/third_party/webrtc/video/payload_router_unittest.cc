@@ -32,6 +32,7 @@ namespace {
 const int8_t kPayloadType = 96;
 const uint32_t kSsrc1 = 12345;
 const uint32_t kSsrc2 = 23456;
+const uint32_t kSsrc3 = 34567;
 const int16_t kPictureId = 123;
 const int16_t kTl0PicIdx = 20;
 const uint8_t kTemporalIdx = 1;
@@ -69,6 +70,7 @@ TEST(PayloadRouterTest, SendOnOneModule) {
                                     encoded_image._length, nullptr, _, _))
       .Times(1)
       .WillOnce(Return(true));
+  EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));
   EXPECT_EQ(
       EncodedImageCallback::Result::OK,
       payload_router.OnEncodedImage(encoded_image, nullptr, nullptr).error);
@@ -90,12 +92,13 @@ TEST(PayloadRouterTest, SendOnOneModule) {
                                     encoded_image._length, nullptr, _, _))
       .Times(1)
       .WillOnce(Return(true));
+  EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));
   EXPECT_EQ(
       EncodedImageCallback::Result::OK,
       payload_router.OnEncodedImage(encoded_image, nullptr, nullptr).error);
 }
 
-TEST(PayloadRouterTest, SendSimulcast) {
+TEST(PayloadRouterTest, SendSimulcastSetActive) {
   NiceMock<MockRtpRtcp> rtp_1;
   NiceMock<MockRtpRtcp> rtp_2;
   std::vector<RtpRtcp*> modules = {&rtp_1, &rtp_2};
@@ -116,6 +119,7 @@ TEST(PayloadRouterTest, SendSimulcast) {
   codec_info_1.codecSpecific.VP8.simulcastIdx = 0;
 
   payload_router.SetActive(true);
+  EXPECT_CALL(rtp_1, Sending()).WillOnce(Return(true));
   EXPECT_CALL(rtp_1, SendOutgoingData(encoded_image._frameType, kPayloadType,
                                       encoded_image._timeStamp,
                                       encoded_image.capture_time_ms_, &payload,
@@ -132,6 +136,7 @@ TEST(PayloadRouterTest, SendSimulcast) {
   codec_info_2.codecType = kVideoCodecVP8;
   codec_info_2.codecSpecific.VP8.simulcastIdx = 1;
 
+  EXPECT_CALL(rtp_2, Sending()).WillOnce(Return(true));
   EXPECT_CALL(rtp_2, SendOutgoingData(encoded_image._frameType, kPayloadType,
                                       encoded_image._timeStamp,
                                       encoded_image.capture_time_ms_, &payload,
@@ -150,6 +155,65 @@ TEST(PayloadRouterTest, SendSimulcast) {
       .Times(0);
   EXPECT_CALL(rtp_2, SendOutgoingData(_, _, _, _, _, _, _, _, _))
       .Times(0);
+  EXPECT_NE(EncodedImageCallback::Result::OK,
+            payload_router.OnEncodedImage(encoded_image, &codec_info_1, nullptr)
+                .error);
+  EXPECT_NE(EncodedImageCallback::Result::OK,
+            payload_router.OnEncodedImage(encoded_image, &codec_info_2, nullptr)
+                .error);
+}
+
+// Tests how setting individual rtp modules to active affects the overall
+// behavior of the payload router. First sets one module to active and checks
+// that outgoing data can be sent on this module, and checks that no data can be
+// sent if both modules are inactive.
+TEST(PayloadRouterTest, SendSimulcastSetActiveModules) {
+  NiceMock<MockRtpRtcp> rtp_1;
+  NiceMock<MockRtpRtcp> rtp_2;
+  std::vector<RtpRtcp*> modules = {&rtp_1, &rtp_2};
+
+  uint8_t payload = 'a';
+  EncodedImage encoded_image;
+  encoded_image._timeStamp = 1;
+  encoded_image.capture_time_ms_ = 2;
+  encoded_image._frameType = kVideoFrameKey;
+  encoded_image._buffer = &payload;
+  encoded_image._length = 1;
+  PayloadRouter payload_router(modules, {kSsrc1, kSsrc2}, kPayloadType, {});
+  CodecSpecificInfo codec_info_1;
+  memset(&codec_info_1, 0, sizeof(CodecSpecificInfo));
+  codec_info_1.codecType = kVideoCodecVP8;
+  codec_info_1.codecSpecific.VP8.simulcastIdx = 0;
+  CodecSpecificInfo codec_info_2;
+  memset(&codec_info_2, 0, sizeof(CodecSpecificInfo));
+  codec_info_2.codecType = kVideoCodecVP8;
+  codec_info_2.codecSpecific.VP8.simulcastIdx = 1;
+
+  // Only setting one stream to active will still set the payload router to
+  // active and allow sending data on the active stream.
+  std::vector<bool> active_modules({true, false});
+  payload_router.SetActiveModules(active_modules);
+
+  EXPECT_CALL(rtp_1, Sending()).WillOnce(Return(true));
+  EXPECT_CALL(rtp_1, SendOutgoingData(encoded_image._frameType, kPayloadType,
+                                      encoded_image._timeStamp,
+                                      encoded_image.capture_time_ms_, &payload,
+                                      encoded_image._length, nullptr, _, _))
+      .Times(1)
+      .WillOnce(Return(true));
+  EXPECT_EQ(EncodedImageCallback::Result::OK,
+            payload_router.OnEncodedImage(encoded_image, &codec_info_1, nullptr)
+                .error);
+
+  // Setting both streams to inactive will turn the payload router to inactive.
+  active_modules = {false, false};
+  payload_router.SetActiveModules(active_modules);
+  // An incoming encoded image will not ask the module to send outgoing data
+  // because the payload router is inactive.
+  EXPECT_CALL(rtp_1, SendOutgoingData(_, _, _, _, _, _, _, _, _)).Times(0);
+  EXPECT_CALL(rtp_1, Sending()).Times(0);
+  EXPECT_CALL(rtp_2, SendOutgoingData(_, _, _, _, _, _, _, _, _)).Times(0);
+  EXPECT_CALL(rtp_2, Sending()).Times(0);
   EXPECT_NE(EncodedImageCallback::Result::OK,
             payload_router.OnEncodedImage(encoded_image, &codec_info_1, nullptr)
                 .error);
@@ -186,23 +250,38 @@ TEST(PayloadRouterTest, SimulcastTargetBitrate) {
   payload_router.OnBitrateAllocationUpdated(bitrate);
 }
 
+// If the middle of three streams is inactive the first and last streams should
+// be asked to send the TargetBitrate message.
 TEST(PayloadRouterTest, SimulcastTargetBitrateWithInactiveStream) {
-  // Set up two active rtp modules.
+  // Set up three active rtp modules.
   NiceMock<MockRtpRtcp> rtp_1;
   NiceMock<MockRtpRtcp> rtp_2;
-  std::vector<RtpRtcp*> modules = {&rtp_1, &rtp_2};
-  PayloadRouter payload_router(modules, {kSsrc1, kSsrc2}, kPayloadType, {});
+  NiceMock<MockRtpRtcp> rtp_3;
+  std::vector<RtpRtcp*> modules = {&rtp_1, &rtp_2, &rtp_3};
+  PayloadRouter payload_router(modules, {kSsrc1, kSsrc2, kSsrc3}, kPayloadType,
+                               {});
   payload_router.SetActive(true);
 
-  // Create bitrate allocation with bitrate only for the first stream.
+  // Create bitrate allocation with bitrate only for the first and third stream.
   BitrateAllocation bitrate;
   bitrate.SetBitrate(0, 0, 10000);
   bitrate.SetBitrate(0, 1, 20000);
+  bitrate.SetBitrate(2, 0, 40000);
+  bitrate.SetBitrate(2, 1, 80000);
 
-  // Expect only the first rtp module to be asked to send a TargetBitrate
+  BitrateAllocation layer0_bitrate;
+  layer0_bitrate.SetBitrate(0, 0, 10000);
+  layer0_bitrate.SetBitrate(0, 1, 20000);
+
+  BitrateAllocation layer2_bitrate;
+  layer2_bitrate.SetBitrate(0, 0, 40000);
+  layer2_bitrate.SetBitrate(0, 1, 80000);
+
+  // Expect the first and third rtp module to be asked to send a TargetBitrate
   // message. (No target bitrate with 0bps sent from the second one.)
-  EXPECT_CALL(rtp_1, SetVideoBitrateAllocation(bitrate)).Times(1);
+  EXPECT_CALL(rtp_1, SetVideoBitrateAllocation(layer0_bitrate)).Times(1);
   EXPECT_CALL(rtp_2, SetVideoBitrateAllocation(_)).Times(0);
+  EXPECT_CALL(rtp_3, SetVideoBitrateAllocation(layer2_bitrate)).Times(1);
 
   payload_router.OnBitrateAllocationUpdated(bitrate);
 }
@@ -246,6 +325,7 @@ TEST(PayloadRouterTest, InfoMappedToRtpVideoHeader_Vp8) {
   codec_info.codecSpecific.VP8.layerSync = true;
   codec_info.codecSpecific.VP8.nonReference = true;
 
+  EXPECT_CALL(rtp2, Sending()).WillOnce(Return(true));
   EXPECT_CALL(rtp2, SendOutgoingData(_, _, _, _, _, _, nullptr, _, _))
       .WillOnce(Invoke([](Unused, Unused, Unused, Unused, Unused, Unused,
                           Unused, const RTPVideoHeader* header, Unused) {
@@ -280,6 +360,7 @@ TEST(PayloadRouterTest, InfoMappedToRtpVideoHeader_H264) {
   codec_info.codecSpecific.H264.packetization_mode =
       H264PacketizationMode::SingleNalUnit;
 
+  EXPECT_CALL(rtp1, Sending()).WillOnce(Return(true));
   EXPECT_CALL(rtp1, SendOutgoingData(_, _, _, _, _, _, nullptr, _, _))
       .WillOnce(Invoke([](Unused, Unused, Unused, Unused, Unused, Unused,
                           Unused, const RTPVideoHeader* header, Unused) {
@@ -373,6 +454,7 @@ TEST_F(TestWithForcedFallbackDisabled, PictureIdIsNotChangedForVp8) {
         EXPECT_EQ(kPictureId, header->codecHeader.VP8.pictureId);
         return true;
       }));
+  EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));
 
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             router.OnEncodedImage(image_, &codec_info_, nullptr).error);
@@ -392,6 +474,7 @@ TEST_F(TestWithForcedFallbackEnabled, PictureIdIsSetForVp8) {
   PayloadRouter router(modules, {kSsrc1, kSsrc2}, kPayloadType, states);
   router.SetActive(true);
 
+  // Modules are sending for this test.
   // OnEncodedImage, simulcastIdx: 0.
   codec_info_.codecType = kVideoCodecVP8;
   codec_info_.codecSpecific.VP8.pictureId = kPictureId;
@@ -404,6 +487,7 @@ TEST_F(TestWithForcedFallbackEnabled, PictureIdIsSetForVp8) {
         EXPECT_EQ(kInitialPictureId1, header->codecHeader.VP8.pictureId);
         return true;
       }));
+  EXPECT_CALL(rtp1, Sending()).WillOnce(Return(true));
 
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             router.OnEncodedImage(image_, &codec_info_, nullptr).error);
@@ -419,6 +503,7 @@ TEST_F(TestWithForcedFallbackEnabled, PictureIdIsSetForVp8) {
         EXPECT_EQ(kInitialPictureId2, header->codecHeader.VP8.pictureId);
         return true;
       }));
+  EXPECT_CALL(rtp2, Sending()).WillOnce(Return(true));
 
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             router.OnEncodedImage(image_, &codec_info_, nullptr).error);
@@ -449,6 +534,7 @@ TEST_F(TestWithForcedFallbackEnabled, PictureIdWraps) {
         EXPECT_EQ(kMaxTwoBytePictureId, header->codecHeader.VP8.pictureId);
         return true;
       }));
+  EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));
 
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             router.OnEncodedImage(image_, &codec_info_, nullptr).error);
@@ -475,6 +561,7 @@ TEST_F(TestWithForcedFallbackEnabled, PictureIdIsNotSetIfNoPictureId) {
         EXPECT_EQ(kNoPictureId, header->codecHeader.VP8.pictureId);
         return true;
       }));
+  EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));
 
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             router.OnEncodedImage(image_, &codec_info_, nullptr).error);
@@ -496,6 +583,7 @@ TEST_F(TestWithForcedFallbackEnabled, PictureIdIsNotSetForVp9) {
         EXPECT_EQ(kPictureId, header->codecHeader.VP9.picture_id);
         return true;
       }));
+  EXPECT_CALL(rtp, Sending()).WillOnce(Return(true));
 
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             router.OnEncodedImage(image_, &codec_info_, nullptr).error);

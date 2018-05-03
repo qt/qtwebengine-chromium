@@ -16,6 +16,8 @@
 
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/congestion_controller/delay_based_bwe.h"
+#include "modules/congestion_controller/include/network_changed_observer.h"
+#include "modules/congestion_controller/include/send_side_congestion_controller_interface.h"
 #include "modules/congestion_controller/transport_feedback_adapter.h"
 #include "modules/include/module.h"
 #include "modules/include/module_common_types.h"
@@ -38,33 +40,20 @@ class ProbeController;
 class RateLimiter;
 class RtcEventLog;
 
-class SendSideCongestionController : public CallStatsObserver,
-                                     public Module,
-                                     public TransportFeedbackObserver {
+class SendSideCongestionController
+    : public SendSideCongestionControllerInterface {
  public:
-  // Observer class for bitrate changes announced due to change in bandwidth
-  // estimate or due to that the send pacer is full. Fraction loss and rtt is
-  // also part of this callback to allow the observer to optimize its settings
-  // for different types of network environments. The bitrate does not include
-  // packet headers and is measured in bits per second.
-  class Observer {
-   public:
-    virtual void OnNetworkChanged(uint32_t bitrate_bps,
-                                  uint8_t fraction_loss,  // 0 - 255.
-                                  int64_t rtt_ms,
-                                  int64_t probing_interval_ms) = 0;
-
-   protected:
-    virtual ~Observer() {}
-  };
+  using Observer = NetworkChangedObserver;
   SendSideCongestionController(const Clock* clock,
                                Observer* observer,
                                RtcEventLog* event_log,
                                PacedSender* pacer);
   ~SendSideCongestionController() override;
 
-  void RegisterPacketFeedbackObserver(PacketFeedbackObserver* observer);
-  void DeRegisterPacketFeedbackObserver(PacketFeedbackObserver* observer);
+  void RegisterPacketFeedbackObserver(
+      PacketFeedbackObserver* observer) override;
+  void DeRegisterPacketFeedbackObserver(
+      PacketFeedbackObserver* observer) override;
 
   // Currently, there can be at most one observer.
   // TODO(nisse): The RegisterNetworkObserver method is needed because we first
@@ -72,35 +61,36 @@ class SendSideCongestionController : public CallStatsObserver,
   // reference to Call, which then registers itself as the observer. We should
   // try to break this circular chain of references, and make the observer a
   // construction time constant.
-  void RegisterNetworkObserver(Observer* observer);
-  void DeRegisterNetworkObserver(Observer* observer);
+  void RegisterNetworkObserver(Observer* observer) override;
+  void DeRegisterNetworkObserver(Observer* observer) override;
 
-  virtual void SetBweBitrates(int min_bitrate_bps,
-                              int start_bitrate_bps,
-                              int max_bitrate_bps);
+  void SetBweBitrates(int min_bitrate_bps,
+                      int start_bitrate_bps,
+                      int max_bitrate_bps) override;
   // Resets the BWE state. Note the first argument is the bitrate_bps.
-  virtual void OnNetworkRouteChanged(const rtc::NetworkRoute& network_route,
-                                     int bitrate_bps,
-                                     int min_bitrate_bps,
-                                     int max_bitrate_bps);
-  virtual void SignalNetworkState(NetworkState state);
-  virtual void SetTransportOverhead(size_t transport_overhead_bytes_per_packet);
+  void OnNetworkRouteChanged(const rtc::NetworkRoute& network_route,
+                             int bitrate_bps,
+                             int min_bitrate_bps,
+                             int max_bitrate_bps) override;
+  void SignalNetworkState(NetworkState state) override;
+  void SetTransportOverhead(
+      size_t transport_overhead_bytes_per_packet) override;
 
   // Deprecated: Use GetBandwidthObserver instead.
   RTC_DEPRECATED virtual BitrateController* GetBitrateController() const;
 
-  virtual RtcpBandwidthObserver* GetBandwidthObserver() const;
+  RtcpBandwidthObserver* GetBandwidthObserver() const override;
 
-  virtual bool AvailableBandwidth(uint32_t* bandwidth) const;
-  virtual int64_t GetPacerQueuingDelayMs() const;
-  virtual int64_t GetFirstPacketTimeMs() const;
+  bool AvailableBandwidth(uint32_t* bandwidth) const override;
+  int64_t GetPacerQueuingDelayMs() const override;
+  int64_t GetFirstPacketTimeMs() const override;
 
-  virtual TransportFeedbackObserver* GetTransportFeedbackObserver();
+  TransportFeedbackObserver* GetTransportFeedbackObserver() override;
 
-  RateLimiter* GetRetransmissionRateLimiter();
-  void EnablePeriodicAlrProbing(bool enable);
+  RateLimiter* GetRetransmissionRateLimiter() override;
+  void EnablePeriodicAlrProbing(bool enable) override;
 
-  virtual void OnSentPacket(const rtc::SentPacket& sent_packet);
+  void OnSentPacket(const rtc::SentPacket& sent_packet) override;
 
   // Implements CallStatsObserver.
   void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
@@ -152,6 +142,8 @@ class SendSideCongestionController : public CallStatsObserver,
   bool in_cwnd_experiment_;
   int64_t accepted_queue_ms_;
   bool was_in_alr_;
+  const bool send_side_bwe_with_overhead_;
+  size_t transport_overhead_bytes_per_packet_ RTC_GUARDED_BY(bwe_lock_);
 
   rtc::RaceChecker worker_race_;
 

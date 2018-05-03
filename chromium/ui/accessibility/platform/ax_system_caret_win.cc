@@ -7,7 +7,7 @@
 #include <windows.h>
 
 #include "base/logging.h"
-#include "ui/accessibility/ax_enums.h"
+#include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/platform/ax_platform_node_win.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -21,7 +21,7 @@ AXSystemCaretWin::AXSystemCaretWin(gfx::AcceleratedWidget event_target)
   // a node ID. A globally unique ID is used when firing Win events, retrieved
   // via |unique_id|.
   data_.id = -1;
-  data_.role = AX_ROLE_CARET;
+  data_.role = ax::mojom::Role::kCaret;
   // |get_accState| should return 0 which means that the caret is visible.
   data_.state = 0;
   // According to MSDN, "Edit" should be the name of the caret object.
@@ -95,9 +95,13 @@ gfx::NativeViewAccessible AXSystemCaretWin::ChildAtIndex(int index) {
   return nullptr;
 }
 
-gfx::Rect AXSystemCaretWin::GetScreenBoundsRect() const {
-  gfx::Rect bounds = ToEnclosingRect(data_.location);
-  return bounds;
+gfx::Rect AXSystemCaretWin::GetClippedScreenBoundsRect() const {
+  // We could optionally add clipping here if ever needed.
+  return ToEnclosingRect(data_.location);
+}
+
+gfx::Rect AXSystemCaretWin::GetUnclippedScreenBoundsRect() const {
+  return ToEnclosingRect(data_.location);
 }
 
 gfx::NativeViewAccessible AXSystemCaretWin::HitTestSync(int x, int y) {
@@ -133,13 +137,15 @@ bool AXSystemCaretWin::IsOffscreen() const {
   return false;
 }
 
-std::set<int32_t> AXSystemCaretWin::GetReverseRelations(AXIntAttribute attr,
-                                                        int32_t dst_id) {
+std::set<int32_t> AXSystemCaretWin::GetReverseRelations(
+    ax::mojom::IntAttribute attr,
+    int32_t dst_id) {
   return std::set<int32_t>();
 }
 
-std::set<int32_t> AXSystemCaretWin::GetReverseRelations(AXIntListAttribute attr,
-                                                        int32_t dst_id) {
+std::set<int32_t> AXSystemCaretWin::GetReverseRelations(
+    ax::mojom::IntListAttribute attr,
+    int32_t dst_id) {
   return std::set<int32_t>();
 }
 

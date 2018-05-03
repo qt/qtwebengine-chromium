@@ -51,6 +51,8 @@ enum QuicRstStreamErrorCode {
   QUIC_PUSH_STREAM_TIMED_OUT,
   // Received headers were too large.
   QUIC_HEADERS_TOO_LARGE,
+  // The data is not likely arrive in time.
+  QUIC_STREAM_TTL_EXPIRED,
   // No error. Used as bound while iterating.
   QUIC_STREAM_LAST_ERROR,
 };
@@ -261,6 +263,10 @@ enum QuicErrorCode {
   QUIC_CONNECTION_MIGRATION_NO_NEW_NETWORK = 83,
   // Network changed, but connection had one or more non-migratable streams.
   QUIC_CONNECTION_MIGRATION_NON_MIGRATABLE_STREAM = 84,
+  // Network changed, but connection migration was disabled by config.
+  QUIC_CONNECTION_MIGRATION_DISABLED_BY_CONFIG = 99,
+  // Network changed, but error was encountered on the alternative network.
+  QUIC_CONNECTION_MIGRATION_INTERNAL_ERROR = 100,
 
   // Stream frames arrived too discontiguously so that stream sequencer buffer
   // maintains too many intervals.
@@ -277,7 +283,7 @@ enum QuicErrorCode {
   QUIC_STREAM_LENGTH_OVERFLOW = 98,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 99,
+  QUIC_LAST_ERROR = 101,
 };
 // QuicErrorCodes is encoded as a single octet on-the-wire.
 static_assert(static_cast<int>(QUIC_LAST_ERROR) <=
@@ -290,6 +296,41 @@ QUIC_EXPORT_PRIVATE const char* QuicRstStreamErrorCodeToString(
 
 // Returns the name of the QuicErrorCode as a char*
 QUIC_EXPORT_PRIVATE const char* QuicErrorCodeToString(QuicErrorCode error);
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// TODO(rch): Remove this once the cause of the INTERNAL_ERROR increase is
+// determined.
+enum QuicInternalErrorLocation {
+  QUIC_CHROMIUM_CLIENT_SESSION = 0,
+  QUIC_CONNECTION_1 = 1,
+  QUIC_CONNECTION_2 = 2,
+  QUIC_CONNECTION_3 = 3,
+  QUIC_CONNECTION_4 = 4,
+  QUIC_CONTROL_FRAME_MANAGER_1 = 5,
+  QUIC_CONTROL_FRAME_MANAGER_2 = 6,
+  QUIC_CONTROL_FRAME_MANAGER_3 = 7,
+  QUIC_CONTROL_FRAME_MANAGER_4 = 8,
+  QUIC_CRYPTO_CLIENT_HANDSHAKER_1 = 9,
+  QUIC_CRYPTO_CLIENT_HANDSHAKER_2 = 10,
+  QUIC_ERROR_CODES = 11,
+  QUIC_FRAMER = 12,
+  QUIC_HEADERS_STREAM = 13,
+  QUIC_SESSION_1 = 14,
+  QUIC_SESSION_2 = 15,
+  QUIC_SESSION_3 = 16,
+  QUIC_SPDY_SESSION = 17,
+  QUIC_STREAM_1 = 18,
+  QUIC_STREAM_2 = 19,
+  QUIC_STREAM_SEQUENCER_BUFFER = 20,
+  INTERNAL_ERROR_LOCATION_MAX
+};
+
+// Records the location of a QUIC internal error into a histogram.
+// TODO(rch): Remove this once the cause of the INTERNAL_ERROR increase is
+// determined.
+QUIC_EXPORT_PRIVATE
+void RecordInternalErrorLocation(QuicInternalErrorLocation location);
 
 }  // namespace net
 

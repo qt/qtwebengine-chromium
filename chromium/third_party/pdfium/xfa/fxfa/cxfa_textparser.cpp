@@ -245,9 +245,8 @@ void CXFA_TextParser::ParseRichText(CFX_XMLNode* pXMLNode,
     m_mapXMLNodeToParseContext[pXMLNode] = std::move(pTextContext);
   }
 
-  for (CFX_XMLNode* pXMLChild = pXMLNode->GetNodeItem(CFX_XMLNode::FirstChild);
-       pXMLChild;
-       pXMLChild = pXMLChild->GetNodeItem(CFX_XMLNode::NextSibling)) {
+  for (CFX_XMLNode* pXMLChild = pXMLNode->GetFirstChild(); pXMLChild;
+       pXMLChild = pXMLChild->GetNextSibling()) {
     ParseRichText(pXMLChild, pNewStyle.Get());
   }
 }
@@ -382,7 +381,7 @@ int32_t CXFA_TextParser::GetHorScale(CXFA_TextProvider* pTextProvider,
           return wsValue.GetInteger();
         }
       }
-      pXMLNode = pXMLNode->GetNodeItem(CFX_XMLNode::Parent);
+      pXMLNode = pXMLNode->GetParent();
     }
   }
 
@@ -435,9 +434,11 @@ void CXFA_TextParser::GetUnderline(CXFA_TextProvider* pTextProvider,
 void CXFA_TextParser::GetLinethrough(CXFA_TextProvider* pTextProvider,
                                      CFX_CSSComputedStyle* pStyle,
                                      int32_t& iLinethrough) const {
+  iLinethrough = 0;
   if (pStyle) {
     uint32_t dwDecoration = pStyle->GetTextDecoration();
-    iLinethrough = (dwDecoration & CFX_CSSTEXTDECORATION_LineThrough) ? 1 : 0;
+    if (dwDecoration & CFX_CSSTEXTDECORATION_LineThrough)
+      iLinethrough = 1;
     return;
   }
 

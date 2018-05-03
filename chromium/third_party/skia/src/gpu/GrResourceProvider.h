@@ -9,9 +9,10 @@
 #define GrResourceProvider_DEFINED
 
 #include "GrBuffer.h"
+#include "GrContextOptions.h"
 #include "GrPathRange.h"
 #include "GrResourceCache.h"
-#include "SkImageInfo.h"
+#include "SkImageInfoPriv.h"
 #include "SkScalerContext.h"
 
 class GrBackendRenderTarget;
@@ -39,7 +40,8 @@ class SkTypeface;
  */
 class GrResourceProvider {
 public:
-    GrResourceProvider(GrGpu* gpu, GrResourceCache* cache, GrSingleOwner* owner);
+    GrResourceProvider(GrGpu*, GrResourceCache*, GrSingleOwner*,
+                       GrContextOptions::Enable explicitlyAllocateGPUResources);
 
     /**
      * Finds a resource in the cache, based on the specified key. Prior to calling this, the caller
@@ -71,7 +73,8 @@ public:
                                    SkDestinationSurfaceColorMode mipColorMode);
 
     // Create a potentially loose fit texture with the provided data
-    sk_sp<GrTexture> createTexture(const GrSurfaceDesc&, SkBudgeted, const GrMipLevel&);
+    sk_sp<GrTexture> createTexture(const GrSurfaceDesc&, SkBudgeted, SkBackingFit,
+                                   const GrMipLevel&);
 
     ///////////////////////////////////////////////////////////////////////////
     // Wrapped Backend Surfaces
@@ -88,7 +91,7 @@ public:
                                         GrWrapOwnership = kBorrow_GrWrapOwnership);
 
     /**
-     * This makes the backend texture be renderable. If sampleCnt is > 0 and the underlying API
+     * This makes the backend texture be renderable. If sampleCnt is > 1 and the underlying API
      * uses separate MSAA render buffers then a MSAA render buffer is created that resolves
      * to the texture.
      */
@@ -257,6 +260,10 @@ public:
     inline GrResourceProviderPriv priv();
     inline const GrResourceProviderPriv priv() const;
 
+    bool explicitlyAllocateGPUResources() const { return fExplicitlyAllocateGPUResources; }
+
+    bool testingOnly_setExplicitlyAllocateGPUResources(bool newValue);
+
 private:
     sk_sp<GrGpuResource> findResourceByUniqueKey(const GrUniqueKey&);
 
@@ -296,6 +303,7 @@ private:
     GrGpu*              fGpu;
     sk_sp<const GrCaps> fCaps;
     GrUniqueKey         fQuadIndexBufferKey;
+    bool                fExplicitlyAllocateGPUResources;
 
     // In debug builds we guard against improper thread handling
     SkDEBUGCODE(mutable GrSingleOwner* fSingleOwner;)

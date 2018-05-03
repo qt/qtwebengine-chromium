@@ -34,6 +34,10 @@ class WebSurfaceLayerBridge;
 class WebSurfaceLayerBridgeObserver;
 }  // namespace blink
 
+namespace viz {
+class SurfaceId;
+}
+
 namespace media {
 
 class SwitchableAudioRendererSink;
@@ -45,6 +49,11 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
  public:
   typedef base::Callback<void(const base::Closure&)> DeferLoadCB;
   typedef base::Callback<Context3D()> Context3DCB;
+
+  // Callback to obtain the video SurfaceInfo to trigger Picture-in-Picture
+  // mode.
+  using PipSurfaceInfoCB =
+      base::RepeatingCallback<void(const viz::SurfaceId& surface_id)>;
 
   // Callback to obtain the media ContextProvider.
   // Requires being called on the media thread.
@@ -82,7 +91,9 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
       mojom::MediaMetricsProviderPtr metrics_provider,
       base::Callback<std::unique_ptr<blink::WebSurfaceLayerBridge>(
           blink::WebSurfaceLayerBridgeObserver*)> bridge_callback,
-      scoped_refptr<viz::ContextProvider> context_provider);
+      scoped_refptr<viz::ContextProvider> context_provider,
+      bool use_surface_layer_for_video,
+      const PipSurfaceInfoCB& surface_info_cb);
 
   ~WebMediaPlayerParams();
 
@@ -161,6 +172,14 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
     return context_provider_;
   }
 
+  bool use_surface_layer_for_video() const {
+    return use_surface_layer_for_video_;
+  }
+
+  const PipSurfaceInfoCB pip_surface_info_cb() const {
+    return pip_surface_info_cb_;
+  }
+
  private:
   DeferLoadCB defer_load_cb_;
   scoped_refptr<SwitchableAudioRendererSink> audio_renderer_sink_;
@@ -185,6 +204,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerParams {
       blink::WebSurfaceLayerBridgeObserver*)>
       create_bridge_callback_;
   scoped_refptr<viz::ContextProvider> context_provider_;
+  bool use_surface_layer_for_video_;
+  PipSurfaceInfoCB pip_surface_info_cb_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(WebMediaPlayerParams);
 };

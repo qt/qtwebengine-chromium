@@ -31,17 +31,17 @@
 #ifndef WebServiceWorker_h
 #define WebServiceWorker_h
 
+#include "public/platform/WebCallbacks.h"
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
-#include "third_party/WebKit/common/service_worker/service_worker_state.mojom-shared.h"
+#include "third_party/WebKit/public/common/message_port/transferable_message.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_state.mojom-shared.h"
 
 namespace blink {
 
-class MessagePortChannel;
 class WebSecurityOrigin;
-class WebServiceWorkerProvider;
 class WebServiceWorkerProxy;
 
 class WebServiceWorker {
@@ -70,14 +70,12 @@ class WebServiceWorker {
     return mojom::ServiceWorkerState::kUnknown;
   }
 
-  // Callee receives ownership of the passed vector.
-  // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
-  virtual void PostMessageToWorker(WebServiceWorkerProvider*,
-                                   const WebString&,
-                                   const WebSecurityOrigin&,
-                                   WebVector<MessagePortChannel>) = 0;
+  virtual void PostMessageToServiceWorker(TransferableMessage,
+                                          const WebSecurityOrigin&) = 0;
 
-  virtual void Terminate() {}
+  using TerminateForTestingCallback = WebCallbacks<void, void>;
+  virtual void TerminateForTesting(
+      std::unique_ptr<TerminateForTestingCallback>) {}
 };
 }
 

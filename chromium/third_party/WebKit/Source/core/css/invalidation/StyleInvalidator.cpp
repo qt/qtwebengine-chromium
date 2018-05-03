@@ -342,15 +342,18 @@ bool StyleInvalidator::InvalidateShadowRootChildren(
     Element& element,
     RecursionData& recursion_data) {
   bool some_children_need_style_recalc = false;
-  for (ShadowRoot* root = element.YoungestShadowRoot(); root;
-       root = root->OlderShadowRoot()) {
+  if (ShadowRoot* root = element.GetShadowRoot()) {
     if (!recursion_data.TreeBoundaryCrossing() &&
         !root->ChildNeedsStyleInvalidation() && !root->NeedsStyleInvalidation())
-      continue;
+      return false;
     RecursionCheckpoint checkpoint(&recursion_data);
     SiblingData sibling_data;
-    if (UNLIKELY(root->NeedsStyleInvalidation()))
-      PushInvalidationSetsForContainerNode(*root, recursion_data, sibling_data);
+    if (!recursion_data.WholeSubtreeInvalid()) {
+      if (UNLIKELY(root->NeedsStyleInvalidation())) {
+        PushInvalidationSetsForContainerNode(*root, recursion_data,
+                                             sibling_data);
+      }
+    }
     for (Element* child = ElementTraversal::FirstChild(*root); child;
          child = ElementTraversal::NextSibling(*child)) {
       bool child_recalced = Invalidate(*child, recursion_data, sibling_data);
@@ -367,7 +370,7 @@ bool StyleInvalidator::InvalidateChildren(Element& element,
                                           RecursionData& recursion_data) {
   SiblingData sibling_data;
   bool some_children_need_style_recalc = false;
-  if (UNLIKELY(!!element.YoungestShadowRoot())) {
+  if (UNLIKELY(!!element.GetShadowRoot())) {
     some_children_need_style_recalc =
         InvalidateShadowRootChildren(element, recursion_data);
   }
@@ -419,7 +422,7 @@ bool StyleInvalidator::Invalidate(Element& element,
 void StyleInvalidator::InvalidateSlotDistributedElements(
     HTMLSlotElement& slot,
     const RecursionData& recursion_data) const {
-  for (auto& distributed_node : slot.GetDistributedNodes()) {
+  for (auto& distributed_node : slot.FlattenedAssignedNodes()) {
     if (distributed_node->NeedsStyleRecalc())
       continue;
     if (!distributed_node->IsElementNode())

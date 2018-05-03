@@ -42,7 +42,7 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIOptions.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
+#include "third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 
 namespace blink {
 namespace {
@@ -62,16 +62,14 @@ void NavigatorWebMIDI::Trace(blink::Visitor* visitor) {
   Supplement<Navigator>::Trace(visitor);
 }
 
-const char* NavigatorWebMIDI::SupplementName() {
-  return "NavigatorWebMIDI";
-}
+const char NavigatorWebMIDI::kSupplementName[] = "NavigatorWebMIDI";
 
 NavigatorWebMIDI& NavigatorWebMIDI::From(Navigator& navigator) {
-  NavigatorWebMIDI* supplement = static_cast<NavigatorWebMIDI*>(
-      Supplement<Navigator>::From(navigator, SupplementName()));
+  NavigatorWebMIDI* supplement =
+      Supplement<Navigator>::From<NavigatorWebMIDI>(navigator);
   if (!supplement) {
     supplement = new NavigatorWebMIDI(navigator);
-    ProvideTo(navigator, SupplementName(), supplement);
+    ProvideTo(navigator, supplement);
   }
   return *supplement;
 }
@@ -106,7 +104,7 @@ ScriptPromise NavigatorWebMIDI::requestMIDIAccess(ScriptState* script_state,
 
   if (RuntimeEnabledFeatures::FeaturePolicyForPermissionsEnabled()) {
     if (!document.GetFrame()->IsFeatureEnabled(
-            FeaturePolicyFeature::kMidiFeature)) {
+            mojom::FeaturePolicyFeature::kMidiFeature)) {
       UseCounter::Count(document, WebFeature::kMidiDisabledByFeaturePolicy);
       document.AddConsoleMessage(
           ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
@@ -117,7 +115,7 @@ ScriptPromise NavigatorWebMIDI::requestMIDIAccess(ScriptState* script_state,
     }
   } else {
     Deprecation::CountDeprecationFeaturePolicy(
-        document, FeaturePolicyFeature::kMidiFeature);
+        document, mojom::FeaturePolicyFeature::kMidiFeature);
   }
 
   return MIDIAccessInitializer::Start(script_state, options);

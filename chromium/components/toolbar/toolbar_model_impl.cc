@@ -4,7 +4,9 @@
 
 #include "components/toolbar/toolbar_model_impl.h"
 
+#include "base/feature_list.h"
 #include "base/logging.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -12,6 +14,7 @@
 #include "components/security_state/core/security_state.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/toolbar/features.h"
+#include "components/toolbar/toolbar_field_trial.h"
 #include "components/toolbar/toolbar_model_delegate.h"
 #include "components/url_formatter/elide_url.h"
 #include "components/url_formatter/url_formatter.h"
@@ -37,7 +40,7 @@ ToolbarModelImpl::~ToolbarModelImpl() {
 }
 
 // ToolbarModelImpl Implementation.
-base::string16 ToolbarModelImpl::GetFormattedURL(size_t* prefix_end) const {
+base::string16 ToolbarModelImpl::GetFormattedFullURL() const {
   GURL url(GetURL());
   // Note that we can't unescape spaces here, because if the user copies this
   // and pastes it into another program, that program may think the URL ends at
@@ -46,18 +49,28 @@ base::string16 ToolbarModelImpl::GetFormattedURL(size_t* prefix_end) const {
       delegate_->FormattedStringWithEquivalentMeaning(
           url, url_formatter::FormatUrl(
                    url, url_formatter::kFormatUrlOmitDefaults,
-                   net::UnescapeRule::NORMAL, nullptr, prefix_end, nullptr));
-  if (formatted_text.length() <= max_url_display_chars_)
-    return formatted_text;
+                   net::UnescapeRule::NORMAL, nullptr, nullptr, nullptr));
 
   // Truncating the URL breaks editing and then pressing enter, but hopefully
   // people won't try to do much with such enormous URLs anyway. If this becomes
   // a real problem, we could perhaps try to keep some sort of different "elided
   // visible URL" where editing affects and reloads the "real underlying URL",
   // but this seems very tricky for little gain.
-  return gfx::TruncateString(formatted_text, max_url_display_chars_ - 1,
-                             gfx::CHARACTER_BREAK) +
-         gfx::kEllipsisUTF16;
+  return gfx::TruncateString(formatted_text, max_url_display_chars_,
+                             gfx::CHARACTER_BREAK);
+}
+
+base::string16 ToolbarModelImpl::GetURLForDisplay() const {
+  url_formatter::FormatUrlTypes format_types =
+      url_formatter::kFormatUrlOmitDefaults |
+      url_formatter::kFormatUrlOmitHTTPS |
+      url_formatter::kFormatUrlOmitTrivialSubdomains;
+  base::string16 result = url_formatter::FormatUrl(GetURL(), format_types,
+                                                   net::UnescapeRule::NORMAL,
+                                                   nullptr, nullptr, nullptr);
+
+  return gfx::TruncateString(result, max_url_display_chars_,
+                             gfx::CHARACTER_BREAK);
 }
 
 GURL ToolbarModelImpl::GetURL() const {
@@ -127,10 +140,33 @@ base::string16 ToolbarModelImpl::GetSecureVerboseText() const {
   if (IsOfflinePage())
     return l10n_util::GetStringUTF16(IDS_OFFLINE_VERBOSE_STATE);
 
+  // Security UI study (https://crbug.com/803501): Change EV/Secure text.
+  const std::string parameter =
+      base::FeatureList::IsEnabled(toolbar::features::kSimplifyHttpsIndicator)
+          ? base::GetFieldTrialParamValueByFeature(
+                toolbar::features::kSimplifyHttpsIndicator,
+                toolbar::features::kSimplifyHttpsIndicatorParameterName)
+          : std::string();
   switch (GetSecurityLevel(false)) {
     case security_state::HTTP_SHOW_WARNING:
       return l10n_util::GetStringUTF16(IDS_NOT_SECURE_VERBOSE_STATE);
+    case security_state::EV_SECURE:
+      if (parameter ==
+          toolbar::features::kSimplifyHttpsIndicatorParameterEvToSecure) {
+        return l10n_util::GetStringUTF16(IDS_SECURE_VERBOSE_STATE);
+      }
+      if (parameter ==
+          toolbar::features::kSimplifyHttpsIndicatorParameterBothToLock) {
+        return base::string16();
+      }
+      return GetEVCertName();
     case security_state::SECURE:
+      if (parameter ==
+              toolbar::features::kSimplifyHttpsIndicatorParameterSecureToLock ||
+          parameter ==
+              toolbar::features::kSimplifyHttpsIndicatorParameterBothToLock) {
+        return base::string16();
+      }
       return l10n_util::GetStringUTF16(IDS_SECURE_VERBOSE_STATE);
     case security_state::DANGEROUS:
       return l10n_util::GetStringUTF16(delegate_->FailsMalwareCheck()

@@ -4,21 +4,21 @@
  * This package is an SSL implementation written
  * by Eric Young (eay@cryptsoft.com).
  * The implementation was written so as to conform with Netscapes SSL.
- * 
+ *
  * This library is free for commercial and non-commercial use as long as
  * the following conditions are aheared to.  The following conditions
  * apply to all code found in this distribution, be it the RC4, RSA,
  * lhash, DES, etc., code; not just the SSL code.  The SSL documentation
  * included with this distribution is covered by the same copyright terms
  * except that the holder is Tim Hudson (tjh@cryptsoft.com).
- * 
+ *
  * Copyright remains Eric Young's, and as such any Copyright notices in
  * the code are not to be removed.
  * If this package is used in a product, Eric Young should be given attribution
  * as the author of the parts of the library used.
  * This can be in the form of a textual message at program startup or
  * in documentation (online or textual) provided with the package.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -33,10 +33,10 @@
  *     Eric Young (eay@cryptsoft.com)"
  *    The word 'cryptographic' can be left out if the rouines from the library
  *    being used are not cryptographic related :-).
- * 4. If you include any Windows specific code (or a derivative thereof) from 
+ * 4. If you include any Windows specific code (or a derivative thereof) from
  *    the apps directory (application code) you must include an acknowledgement:
  *    "This product includes software written by Tim Hudson (tjh@cryptsoft.com)"
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY ERIC YOUNG ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -48,7 +48,7 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- * 
+ *
  * The licence and distribution terms for any publically available version or
  * derivative of this code cannot be changed.  i.e. this code cannot simply be
  * copied and put under another distribution licence
@@ -62,7 +62,7 @@
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer. 
+ *    notice, this list of conditions and the following disclaimer.
  *
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in
@@ -464,29 +464,30 @@ static const uint16_t kSignSignatureAlgorithms[] = {
     SSL_SIGN_RSA_PKCS1_SHA1,
 };
 
-int tls12_add_verify_sigalgs(const SSL *ssl, CBB *out) {
-  const uint16_t *sigalgs = kVerifySignatureAlgorithms;
-  size_t num_sigalgs = OPENSSL_ARRAY_SIZE(kVerifySignatureAlgorithms);
-  if (ssl->ctx->num_verify_sigalgs != 0) {
-    sigalgs = ssl->ctx->verify_sigalgs;
-    num_sigalgs = ssl->ctx->num_verify_sigalgs;
+bool tls12_add_verify_sigalgs(const SSL *ssl, CBB *out) {
+  bool use_default = ssl->ctx->num_verify_sigalgs == 0;
+  Span<const uint16_t> sigalgs = kVerifySignatureAlgorithms;
+  if (!use_default) {
+    sigalgs = MakeConstSpan(ssl->ctx->verify_sigalgs,
+                            ssl->ctx->num_verify_sigalgs);
   }
 
-  for (size_t i = 0; i < num_sigalgs; i++) {
-    if (sigalgs == kVerifySignatureAlgorithms &&
-        sigalgs[i] == SSL_SIGN_ED25519 &&
+  for (uint16_t sigalg : sigalgs) {
+    if (use_default &&
+        sigalg == SSL_SIGN_ED25519 &&
         !ssl->ctx->ed25519_enabled) {
       continue;
     }
-    if (!CBB_add_u16(out, sigalgs[i])) {
-      return 0;
+    if (!CBB_add_u16(out, sigalg)) {
+      return false;
     }
   }
 
-  return 1;
+  return true;
 }
 
-int tls12_check_peer_sigalg(SSL *ssl, uint8_t *out_alert, uint16_t sigalg) {
+bool tls12_check_peer_sigalg(const SSL *ssl, uint8_t *out_alert,
+                             uint16_t sigalg) {
   const uint16_t *sigalgs = kVerifySignatureAlgorithms;
   size_t num_sigalgs = OPENSSL_ARRAY_SIZE(kVerifySignatureAlgorithms);
   if (ssl->ctx->num_verify_sigalgs != 0) {
@@ -501,13 +502,13 @@ int tls12_check_peer_sigalg(SSL *ssl, uint8_t *out_alert, uint16_t sigalg) {
       continue;
     }
     if (sigalg == sigalgs[i]) {
-      return 1;
+      return true;
     }
   }
 
   OPENSSL_PUT_ERROR(SSL, SSL_R_WRONG_SIGNATURE_TYPE);
   *out_alert = SSL_AD_ILLEGAL_PARAMETER;
-  return 0;
+  return false;
 }
 
 // tls_extension represents a TLS extension that is handled internally. The
@@ -550,18 +551,9 @@ static bool forbid_parse_serverhello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
   return true;
 }
 
-static bool dont_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
-  return true;
-}
-
 static bool ignore_parse_clienthello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
                                     CBS *contents) {
   // This extension from the client is handled elsewhere.
-  return true;
-}
-
-static bool ignore_parse_serverhello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
-                                     CBS *contents) {
   return true;
 }
 
@@ -1820,7 +1812,6 @@ static bool ext_pre_shared_key_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
   // selected cipher in HelloRetryRequest does not match. This avoids performing
   // the transcript hash transformation for multiple hashes.
   if (hs->received_hello_retry_request &&
-      ssl_is_draft22(ssl->version) &&
       ssl->session->cipher->algorithm_prf != hs->new_cipher->algorithm_prf) {
     return true;
   }
@@ -2090,9 +2081,7 @@ static bool ext_key_share_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
   }
 
   CBB contents, kse_bytes;
-  if (!CBB_add_u16(out, ssl_is_draft23_variant(ssl->tls13_variant)
-                            ? TLSEXT_TYPE_new_key_share
-                            : TLSEXT_TYPE_old_key_share) ||
+  if (!CBB_add_u16(out, TLSEXT_TYPE_key_share) ||
       !CBB_add_u16_length_prefixed(out, &contents) ||
       !CBB_add_u16_length_prefixed(&contents, &kse_bytes)) {
     return false;
@@ -2115,7 +2104,7 @@ static bool ext_key_share_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
     // Add a fake group. See draft-davidben-tls-grease-01.
     if (ssl->ctx->grease_enabled &&
         (!CBB_add_u16(&kse_bytes,
-                      ssl_get_grease_value(ssl, ssl_grease_group)) ||
+                      ssl_get_grease_value(hs, ssl_grease_group)) ||
          !CBB_add_u16(&kse_bytes, 1 /* length */) ||
          !CBB_add_u8(&kse_bytes, 0 /* one byte key share */))) {
       return false;
@@ -2249,9 +2238,7 @@ bool ssl_ext_key_share_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
   uint16_t group_id;
   CBB kse_bytes, public_key;
   if (!tls1_get_shared_group(hs, &group_id) ||
-      !CBB_add_u16(out, ssl_is_draft23(hs->ssl->version)
-                            ? TLSEXT_TYPE_new_key_share
-                            : TLSEXT_TYPE_old_key_share) ||
+      !CBB_add_u16(out, TLSEXT_TYPE_key_share) ||
       !CBB_add_u16_length_prefixed(out, &kse_bytes) ||
       !CBB_add_u16(&kse_bytes, group_id) ||
       !CBB_add_u16_length_prefixed(&kse_bytes, &public_key) ||
@@ -2287,7 +2274,7 @@ static bool ext_supported_versions_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) 
 
   // Add a fake version. See draft-davidben-tls-grease-01.
   if (ssl->ctx->grease_enabled &&
-      !CBB_add_u16(&versions, ssl_get_grease_value(ssl, ssl_grease_version))) {
+      !CBB_add_u16(&versions, ssl_get_grease_value(hs, ssl_grease_version))) {
     return false;
   }
 
@@ -2332,12 +2319,7 @@ static bool ext_cookie_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
 // key-exchange and so enable measurement of the latency impact of the
 // additional bandwidth.
 
-static bool ext_dummy_pq_padding_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
-  const size_t len = hs->ssl->dummy_pq_padding_len;
-  if (len == 0) {
-    return true;
-  }
-
+static bool ext_dummy_pq_padding_add(CBB *out, size_t len) {
   CBB contents;
   uint8_t *buffer;
   if (!CBB_add_u16(out, TLSEXT_TYPE_dummy_pq_padding) ||
@@ -2359,6 +2341,48 @@ static bool ext_dummy_pq_padding_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
   return CBB_flush(out);
 }
 
+static bool ext_dummy_pq_padding_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
+  const size_t len = hs->ssl->dummy_pq_padding_len;
+  if (len == 0) {
+    return true;
+  }
+
+  return ext_dummy_pq_padding_add(out, len);
+}
+
+static bool ext_dummy_pq_padding_parse_serverhello(SSL_HANDSHAKE *hs,
+                                                   uint8_t *out_alert,
+                                                   CBS *contents) {
+  if (contents == nullptr) {
+    return true;
+  }
+
+  if (CBS_len(contents) != hs->ssl->dummy_pq_padding_len) {
+    return false;
+  }
+
+  hs->ssl->did_dummy_pq_padding = true;
+  return true;
+}
+
+static bool ext_dummy_pq_padding_parse_clienthello(SSL_HANDSHAKE *hs,
+                                                   uint8_t *out_alert,
+                                                   CBS *contents) {
+  if (contents != nullptr &&
+      0 < CBS_len(contents) && CBS_len(contents) < (1 << 12)) {
+    hs->dummy_pq_padding_len = CBS_len(contents);
+  }
+
+  return true;
+}
+
+static bool ext_dummy_pq_padding_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
+  if (!hs->dummy_pq_padding_len) {
+    return true;
+  }
+
+  return ext_dummy_pq_padding_add(out, hs->dummy_pq_padding_len);
+}
 
 // Negotiated Groups
 //
@@ -2377,7 +2401,7 @@ static bool ext_supported_groups_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
   // Add a fake group. See draft-davidben-tls-grease-01.
   if (ssl->ctx->grease_enabled &&
       !CBB_add_u16(&groups_bytes,
-                   ssl_get_grease_value(ssl, ssl_grease_group))) {
+                   ssl_get_grease_value(hs, ssl_grease_group))) {
     return false;
   }
 
@@ -2433,6 +2457,224 @@ static bool ext_supported_groups_parse_clienthello(SSL_HANDSHAKE *hs,
       CBS_len(&supported_group_list) == 0 ||
       CBS_len(contents) != 0 ||
       !parse_u16_array(&supported_group_list, &hs->peer_supported_group_list)) {
+    return false;
+  }
+
+  return true;
+}
+
+// Token Binding
+//
+// https://tools.ietf.org/html/draft-ietf-tokbind-negotiation-10
+
+// The Token Binding version number currently matches the draft number of
+// draft-ietf-tokbind-protocol, and when published as an RFC it will be 0x0100.
+// Since there are no wire changes to the protocol from draft 13 through the
+// current draft (16), this implementation supports all versions in that range.
+static uint16_t kTokenBindingMaxVersion = 16;
+static uint16_t kTokenBindingMinVersion = 13;
+
+static bool ext_token_binding_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
+  SSL *const ssl = hs->ssl;
+  if (ssl->token_binding_params == nullptr || SSL_is_dtls(ssl)) {
+    return true;
+  }
+
+  CBB contents, params;
+  if (!CBB_add_u16(out, TLSEXT_TYPE_token_binding) ||
+      !CBB_add_u16_length_prefixed(out, &contents) ||
+      !CBB_add_u16(&contents, kTokenBindingMaxVersion) ||
+      !CBB_add_u8_length_prefixed(&contents, &params) ||
+      !CBB_add_bytes(&params, ssl->token_binding_params,
+                     ssl->token_binding_params_len) ||
+      !CBB_flush(out)) {
+    return false;
+  }
+
+  return true;
+}
+
+static bool ext_token_binding_parse_serverhello(SSL_HANDSHAKE *hs,
+                                                uint8_t *out_alert,
+                                                CBS *contents) {
+  SSL *const ssl = hs->ssl;
+  if (contents == nullptr) {
+    return true;
+  }
+
+  CBS params_list;
+  uint16_t version;
+  uint8_t param;
+  if (!CBS_get_u16(contents, &version) ||
+      !CBS_get_u8_length_prefixed(contents, &params_list) ||
+      !CBS_get_u8(&params_list, &param) ||
+      CBS_len(&params_list) > 0 ||
+      CBS_len(contents) > 0) {
+    *out_alert = SSL_AD_DECODE_ERROR;
+    return false;
+  }
+
+  // The server-negotiated version must be less than or equal to our version.
+  if (version > kTokenBindingMaxVersion) {
+    *out_alert = SSL_AD_ILLEGAL_PARAMETER;
+    return false;
+  }
+
+  // If the server-selected version is less than what we support, then Token
+  // Binding wasn't negotiated (but the extension was parsed successfully).
+  if (version < kTokenBindingMinVersion) {
+    return true;
+  }
+
+  for (size_t i = 0; i < ssl->token_binding_params_len; ++i) {
+    if (param == ssl->token_binding_params[i]) {
+      ssl->negotiated_token_binding_param = param;
+      ssl->token_binding_negotiated = true;
+      return true;
+    }
+  }
+
+  *out_alert = SSL_AD_ILLEGAL_PARAMETER;
+  return false;
+}
+
+// select_tb_param looks for the first token binding param in
+// |ssl->token_binding_params| that is also in |params| and puts it in
+// |ssl->negotiated_token_binding_param|. It returns true if a token binding
+// param is found, and false otherwise.
+static bool select_tb_param(SSL *ssl, Span<const uint8_t> peer_params) {
+  for (size_t i = 0; i < ssl->token_binding_params_len; ++i) {
+    uint8_t tb_param = ssl->token_binding_params[i];
+    for (uint8_t peer_param : peer_params) {
+      if (tb_param == peer_param) {
+        ssl->negotiated_token_binding_param = tb_param;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+static bool ext_token_binding_parse_clienthello(SSL_HANDSHAKE *hs,
+                                                uint8_t *out_alert,
+                                                CBS *contents) {
+  SSL *const ssl = hs->ssl;
+  if (contents == nullptr || ssl->token_binding_params == nullptr) {
+    return true;
+  }
+
+  CBS params;
+  uint16_t version;
+  if (!CBS_get_u16(contents, &version) ||
+      !CBS_get_u8_length_prefixed(contents, &params) ||
+      CBS_len(&params) == 0 ||
+      CBS_len(contents) > 0) {
+    *out_alert = SSL_AD_DECODE_ERROR;
+    return false;
+  }
+
+  // If the client-selected version is less than what we support, then Token
+  // Binding wasn't negotiated (but the extension was parsed successfully).
+  if (version < kTokenBindingMinVersion) {
+    return true;
+  }
+
+  // If the client-selected version is higher than we support, use our max
+  // version. Otherwise, use the client's version.
+  hs->negotiated_token_binding_version =
+      std::min(version, kTokenBindingMaxVersion);
+  if (!select_tb_param(ssl, params)) {
+    return true;
+  }
+
+  ssl->token_binding_negotiated = true;
+  return true;
+}
+
+static bool ext_token_binding_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
+  SSL *const ssl = hs->ssl;
+
+  if (!ssl->token_binding_negotiated) {
+    return true;
+  }
+
+  CBB contents, params;
+  if (!CBB_add_u16(out, TLSEXT_TYPE_token_binding) ||
+      !CBB_add_u16_length_prefixed(out, &contents) ||
+      !CBB_add_u16(&contents, hs->negotiated_token_binding_version) ||
+      !CBB_add_u8_length_prefixed(&contents, &params) ||
+      !CBB_add_u8(&params, ssl->negotiated_token_binding_param) ||
+      !CBB_flush(out)) {
+    return false;
+  }
+
+  return true;
+}
+
+// QUIC Transport Parameters
+
+static bool ext_quic_transport_params_add_clienthello(SSL_HANDSHAKE *hs,
+                                                      CBB *out) {
+  SSL *const ssl = hs->ssl;
+  if (!ssl->quic_transport_params || hs->max_version <= TLS1_2_VERSION) {
+    return true;
+  }
+
+  CBB contents;
+  if (!CBB_add_u16(out, TLSEXT_TYPE_quic_transport_parameters) ||
+      !CBB_add_u16_length_prefixed(out, &contents) ||
+      !CBB_add_bytes(&contents, ssl->quic_transport_params,
+                     ssl->quic_transport_params_len) ||
+      !CBB_flush(out)) {
+    return false;
+  }
+  return true;
+}
+
+static bool ext_quic_transport_params_parse_serverhello(SSL_HANDSHAKE *hs,
+                                                        uint8_t *out_alert,
+                                                        CBS *contents) {
+  SSL *const ssl = hs->ssl;
+  if (contents == nullptr) {
+    return true;
+  }
+  // QUIC requires TLS 1.3.
+  if (ssl_protocol_version(ssl) < TLS1_3_VERSION) {
+    *out_alert = SSL_AD_UNSUPPORTED_EXTENSION;
+    return false;
+  }
+
+  return ssl->s3->peer_quic_transport_params.CopyFrom(*contents);
+}
+
+static bool ext_quic_transport_params_parse_clienthello(SSL_HANDSHAKE *hs,
+                                                        uint8_t *out_alert,
+                                                        CBS *contents) {
+  SSL *const ssl = hs->ssl;
+  if (!contents || !ssl->quic_transport_params) {
+    return true;
+  }
+  // Ignore the extension before TLS 1.3.
+  if (ssl_protocol_version(ssl) < TLS1_3_VERSION) {
+    return true;
+  }
+
+  return ssl->s3->peer_quic_transport_params.CopyFrom(*contents);
+}
+
+static bool ext_quic_transport_params_add_serverhello(SSL_HANDSHAKE *hs,
+                                                      CBB *out) {
+  SSL *const ssl = hs->ssl;
+  if (!ssl->quic_transport_params) {
+    return true;
+  }
+
+  CBB contents;
+  if (!CBB_add_u16(out, TLSEXT_TYPE_quic_transport_parameters) ||
+      !CBB_add_u16_length_prefixed(out, &contents) ||
+      !CBB_add_bytes(&contents, ssl->quic_transport_params,
+                     ssl->quic_transport_params_len) ||
+      !CBB_flush(out)) {
     return false;
   }
 
@@ -2541,16 +2783,7 @@ static const struct tls_extension kExtensions[] = {
     ext_ec_point_add_serverhello,
   },
   {
-    TLSEXT_TYPE_old_key_share,
-    // This is added by TLSEXT_TYPE_new_key_share's callback.
-    NULL,
-    dont_add_clienthello,
-    forbid_parse_serverhello,
-    ignore_parse_clienthello,
-    dont_add_serverhello,
-  },
-  {
-    TLSEXT_TYPE_new_key_share,
+    TLSEXT_TYPE_key_share,
     NULL,
     ext_key_share_add_clienthello,
     forbid_parse_serverhello,
@@ -2593,9 +2826,17 @@ static const struct tls_extension kExtensions[] = {
     TLSEXT_TYPE_dummy_pq_padding,
     NULL,
     ext_dummy_pq_padding_add_clienthello,
-    ignore_parse_serverhello,
-    ignore_parse_clienthello,
-    dont_add_serverhello,
+    ext_dummy_pq_padding_parse_serverhello,
+    ext_dummy_pq_padding_parse_clienthello,
+    ext_dummy_pq_padding_add_serverhello,
+  },
+  {
+    TLSEXT_TYPE_quic_transport_parameters,
+    NULL,
+    ext_quic_transport_params_add_clienthello,
+    ext_quic_transport_params_parse_serverhello,
+    ext_quic_transport_params_parse_clienthello,
+    ext_quic_transport_params_add_serverhello,
   },
   // The final extension must be non-empty. WebSphere Application Server 7.0 is
   // intolerant to the last extension being zero-length. See
@@ -2607,6 +2848,14 @@ static const struct tls_extension kExtensions[] = {
     ext_supported_groups_parse_serverhello,
     ext_supported_groups_parse_clienthello,
     dont_add_serverhello,
+  },
+  {
+    TLSEXT_TYPE_token_binding,
+    NULL,
+    ext_token_binding_add_clienthello,
+    ext_token_binding_parse_serverhello,
+    ext_token_binding_parse_clienthello,
+    ext_token_binding_add_serverhello,
   },
 };
 
@@ -2658,7 +2907,7 @@ int ssl_add_clienthello_tlsext(SSL_HANDSHAKE *hs, CBB *out, size_t header_len) {
   uint16_t grease_ext1 = 0;
   if (ssl->ctx->grease_enabled) {
     // Add a fake empty extension. See draft-davidben-tls-grease-01.
-    grease_ext1 = ssl_get_grease_value(ssl, ssl_grease_extension1);
+    grease_ext1 = ssl_get_grease_value(hs, ssl_grease_extension1);
     if (!CBB_add_u16(&extensions, grease_ext1) ||
         !CBB_add_u16(&extensions, 0 /* zero length */)) {
       OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
@@ -2686,7 +2935,7 @@ int ssl_add_clienthello_tlsext(SSL_HANDSHAKE *hs, CBB *out, size_t header_len) {
 
   if (ssl->ctx->grease_enabled) {
     // Add a fake non-empty extension. See draft-davidben-tls-grease-01.
-    uint16_t grease_ext2 = ssl_get_grease_value(ssl, ssl_grease_extension2);
+    uint16_t grease_ext2 = ssl_get_grease_value(hs, ssl_grease_extension2);
 
     // The two fake extensions must not have the same value. GREASE values are
     // of the form 0x1a1a, 0x2a2a, 0x3a3a, etc., so XOR to generate a different
@@ -2970,6 +3219,15 @@ static int ssl_scan_serverhello_tlsext(SSL_HANDSHAKE *hs, CBS *cbs,
 
 static int ssl_check_clienthello_tlsext(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
+
+  if (ssl->token_binding_negotiated &&
+      !(SSL_get_secure_renegotiation_support(ssl) &&
+        SSL_get_extms_support(ssl))) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_NEGOTIATED_TB_WITHOUT_EMS_OR_RI);
+    ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNSUPPORTED_EXTENSION);
+    return -1;
+  }
+
   int ret = SSL_TLSEXT_ERR_NOACK;
   int al = SSL_AD_UNRECOGNIZED_NAME;
 
@@ -3205,29 +3463,29 @@ enum ssl_ticket_aead_result_t ssl_process_ticket(
   return ssl_ticket_aead_success;
 }
 
-int tls1_parse_peer_sigalgs(SSL_HANDSHAKE *hs, const CBS *in_sigalgs) {
+bool tls1_parse_peer_sigalgs(SSL_HANDSHAKE *hs, const CBS *in_sigalgs) {
   // Extension ignored for inappropriate versions
   if (ssl_protocol_version(hs->ssl) < TLS1_2_VERSION) {
-    return 1;
+    return true;
   }
 
   return parse_u16_array(in_sigalgs, &hs->peer_sigalgs);
 }
 
-int tls1_get_legacy_signature_algorithm(uint16_t *out, const EVP_PKEY *pkey) {
+bool tls1_get_legacy_signature_algorithm(uint16_t *out, const EVP_PKEY *pkey) {
   switch (EVP_PKEY_id(pkey)) {
     case EVP_PKEY_RSA:
       *out = SSL_SIGN_RSA_PKCS1_MD5_SHA1;
-      return 1;
+      return true;
     case EVP_PKEY_EC:
       *out = SSL_SIGN_ECDSA_SHA1;
-      return 1;
+      return true;
     default:
-      return 0;
+      return false;
   }
 }
 
-int tls1_choose_signature_algorithm(SSL_HANDSHAKE *hs, uint16_t *out) {
+bool tls1_choose_signature_algorithm(SSL_HANDSHAKE *hs, uint16_t *out) {
   SSL *const ssl = hs->ssl;
   CERT *cert = ssl->cert;
 
@@ -3236,9 +3494,9 @@ int tls1_choose_signature_algorithm(SSL_HANDSHAKE *hs, uint16_t *out) {
   if (ssl_protocol_version(ssl) < TLS1_2_VERSION) {
     if (!tls1_get_legacy_signature_algorithm(out, hs->local_pubkey.get())) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_NO_COMMON_SIGNATURE_ALGORITHMS);
-      return 0;
+      return false;
     }
-    return 1;
+    return true;
   }
 
   Span<const uint16_t> sigalgs = kSignSignatureAlgorithms;
@@ -3267,13 +3525,13 @@ int tls1_choose_signature_algorithm(SSL_HANDSHAKE *hs, uint16_t *out) {
     for (uint16_t peer_sigalg : peer_sigalgs) {
       if (sigalg == peer_sigalg) {
         *out = sigalg;
-        return 1;
+        return true;
       }
     }
   }
 
   OPENSSL_PUT_ERROR(SSL, SSL_R_NO_COMMON_SIGNATURE_ALGORITHMS);
-  return 0;
+  return false;
 }
 
 int tls1_verify_channel_id(SSL_HANDSHAKE *hs, const SSLMessage &msg) {

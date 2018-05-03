@@ -146,7 +146,22 @@ enum class TaskType : unsigned {
   // * //content/renderer/indexed_db
   kInternalIndexedDB = 28,
 
-  kCount = 29,
+  // Tasks to execute media-related things like logging or playback. Tasks with
+  // this type are mainly posted by:
+  // * //content/renderer/media
+  // * //media
+  kInternalMedia = 29,
+
+  // Tasks to execute things for real-time media processing like recording.
+  // Tasks with this type are mainly posted by:
+  // * //content/renderer/media
+  // * //media
+  kInternalMediaRealTime = 30,
+
+  // Tasks to execute IPC (legacy IPC and mojo).
+  kInternalIPC = 31,
+
+  kCount = 32,
 };
 
 }  // namespace blink

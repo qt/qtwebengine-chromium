@@ -335,6 +335,8 @@ scoped_refptr<StaticBitmapImage> ScaleImage(
   }
   sk_sp<SkImage> resized_sk_image =
       SkImage::MakeFromRaster(resized_pixmap, freePixels, pixels);
+  if (!resized_sk_image)
+    return nullptr;
   return StaticBitmapImage::Create(resized_sk_image,
                                    image->ContextProviderWrapper());
 }
@@ -593,7 +595,10 @@ ImageBitmap::ImageBitmap(const void* pixel_data,
                                                       : kUnpremul_SkAlphaType,
                         color_params.GetSkColorSpaceForSkSurfaces());
   SkPixmap pixmap(info, pixel_data, info.bytesPerPixel() * width);
-  image_ = StaticBitmapImage::Create(SkImage::MakeRasterCopy(pixmap));
+  sk_sp<SkImage> raster_copy = SkImage::MakeRasterCopy(pixmap);
+  if (!raster_copy)
+    return;
+  image_ = StaticBitmapImage::Create(std::move(raster_copy));
   if (!image_)
     return;
   image_->SetOriginClean(is_image_bitmap_origin_clean);
@@ -819,15 +824,8 @@ void ImageBitmap::ResolvePromiseOnOriginalThread(
     return;
   }
   ImageBitmap* bitmap = new ImageBitmap(image);
-  if (bitmap && bitmap->BitmapImage())
-    bitmap->BitmapImage()->SetOriginClean(origin_clean);
-  if (bitmap && bitmap->BitmapImage()) {
-    resolver->Resolve(bitmap);
-  } else {
-    resolver->Reject(
-        ScriptValue(resolver->GetScriptState(),
-                    v8::Null(resolver->GetScriptState()->GetIsolate())));
-  }
+  bitmap->BitmapImage()->SetOriginClean(origin_clean);
+  resolver->Resolve(bitmap);
 }
 
 void ImageBitmap::RasterizeImageOnBackgroundThread(
@@ -850,8 +848,8 @@ void ImageBitmap::RasterizeImageOnBackgroundThread(
     paint_record->Playback(surface->getCanvas());
     skia_image = surface->makeImageSnapshot();
   }
-  scoped_refptr<WebTaskRunner> task_runner =
-      Platform::Current()->MainThread()->GetWebTaskRunner();
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      Platform::Current()->MainThread()->GetTaskRunner();
   PostCrossThreadTask(*task_runner, FROM_HERE,
                       CrossThreadBind(&ResolvePromiseOnOriginalThread,
                                       WrapCrossThreadPersistent(resolver),
@@ -885,11 +883,9 @@ ScriptPromise ImageBitmap::CreateAsync(ImageElementBase* image,
   // poremultiply_alpha.
   if (src_rect.IsEmpty()) {
     ImageBitmap* bitmap = new ImageBitmap(MakeBlankImage(parsed_options));
-    if (bitmap && bitmap->BitmapImage()) {
+    if (bitmap->BitmapImage()) {
       bitmap->BitmapImage()->SetOriginClean(
           !image->WouldTaintOrigin(document->GetSecurityOrigin()));
-    }
-    if (bitmap && bitmap->BitmapImage()) {
       resolver->Resolve(bitmap);
     } else {
       resolver->Reject(

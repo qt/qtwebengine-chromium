@@ -75,6 +75,7 @@ class PendingTreeRasterDurationHistogramTimer;
 class RasterTilePriorityQueue;
 class RasterBufferProvider;
 class RenderFrameMetadata;
+class RenderFrameMetadataObserver;
 class RenderingStatsInstrumentation;
 class ResourcePool;
 class ScrollElasticityHelper;
@@ -250,6 +251,7 @@ class CC_EXPORT LayerTreeHostImpl
 
     std::vector<viz::SurfaceId> activation_dependencies;
     base::Optional<uint32_t> deadline_in_frames;
+    bool use_default_lower_bound_deadline = false;
     std::vector<gfx::Rect> occluding_screen_space_rects;
     std::vector<gfx::Rect> non_occluding_screen_space_rects;
     viz::RenderPassList render_passes;
@@ -284,6 +286,7 @@ class CC_EXPORT LayerTreeHostImpl
   // add impl-side invalidations to it.
   // virtual for testing.
   virtual void InvalidateContentOnImplSide();
+  virtual void InvalidateLayerTreeFrameSink();
 
   void SetTreeLayerScrollOffsetMutated(ElementId element_id,
                                        LayerTreeImpl* tree,
@@ -370,7 +373,7 @@ class CC_EXPORT LayerTreeHostImpl
   std::unique_ptr<EvictionTilePriorityQueue> BuildEvictionQueue(
       TreePriority tree_priority) override;
   void SetIsLikelyToRequireADraw(bool is_likely_to_require_a_draw) override;
-  gfx::ColorSpace GetRasterColorSpace() const override;
+  RasterColorSpace GetRasterColorSpace() const override;
   void RequestImplSideInvalidationForCheckerImagedTiles() override;
   size_t GetFrameIndexForImage(const PaintImage& paint_image,
                                WhichTree tree) const override;
@@ -454,7 +457,7 @@ class CC_EXPORT LayerTreeHostImpl
     return &image_animation_controller_.value();
   }
 
-  virtual void WillBeginImplFrame(const viz::BeginFrameArgs& args);
+  virtual bool WillBeginImplFrame(const viz::BeginFrameArgs& args);
   virtual void DidFinishImplFrame();
   void DidNotProduceFrame(const viz::BeginFrameAck& ack);
   void DidModifyTilePriorities();
@@ -603,9 +606,8 @@ class CC_EXPORT LayerTreeHostImpl
   bool SupportsImplScrolling() const;
   bool CommitToActiveTree() const;
 
-  virtual void CreateResourceAndRasterBufferProvider(
-      std::unique_ptr<RasterBufferProvider>* raster_buffer_provider,
-      std::unique_ptr<ResourcePool>* resource_pool);
+  // Virtual so tests can inject their own.
+  virtual std::unique_ptr<RasterBufferProvider> CreateRasterBufferProvider();
 
   bool prepare_tiles_needed() const { return tile_priorities_dirty_; }
 
@@ -653,6 +655,9 @@ class CC_EXPORT LayerTreeHostImpl
   UkmManager* ukm_manager() { return ukm_manager_.get(); }
 
   void RenewTreePriorityForTesting() { client_->RenewTreePriority(); }
+
+  void SetRenderFrameObserver(
+      std::unique_ptr<RenderFrameMetadataObserver> observer);
 
  protected:
   LayerTreeHostImpl(
@@ -730,11 +735,10 @@ class CC_EXPORT LayerTreeHostImpl
 
   void UpdateTileManagerMemoryPolicy(const ManagedMemoryPolicy& policy);
 
-  // Returns true if the damage rect is non-empty. Takes as input whether or
-  // not the touch handle visibility has changed. This check includes damage
+  // Returns true if the damage rect is non-empty. This check includes damage
   // from the HUD. Should only be called when the active tree's draw properties
   // are valid and after updating the damage.
-  bool HasDamage(bool handle_visibility_changed) const;
+  bool HasDamage() const;
 
   // This function should only be called from PrepareToDraw, as DidDrawAllLayers
   // must be called if this helper function is called.  Returns DRAW_SUCCESS if
@@ -791,6 +795,12 @@ class CC_EXPORT LayerTreeHostImpl
   // Request an impl-side invalidation to animate an image.
   void RequestInvalidationForAnimatedImages();
 
+  // Pushes state for image animations and checkerboarded images from the
+  // pending to active tree. This is called during activation when a pending
+  // tree exists, and during the commit if we are committing directly to the
+  // active tree.
+  void ActivateStateForImages();
+
   using UIResourceMap = std::unordered_map<UIResourceId, UIResourceData>;
   UIResourceMap ui_resource_map_;
 
@@ -800,8 +810,6 @@ class CC_EXPORT LayerTreeHostImpl
   std::set<UIResourceId> evicted_ui_resources_;
 
   LayerTreeFrameSink* layer_tree_frame_sink_;
-
-  viz::LocalSurfaceId local_surface_id_;
 
   // The following scoped variables must not outlive the
   // |layer_tree_frame_sink_|.
@@ -934,6 +942,12 @@ class CC_EXPORT LayerTreeHostImpl
   // it's lost instead of having this bool.
   bool has_valid_layer_tree_frame_sink_;
 
+  // If it is enabled in the LayerTreeSettings, we can check damage in
+  // WillBeginImplFrame and abort early if there is no damage. We only check
+  // damage in WillBeginImplFrame if a recent frame had no damage. We keep
+  // track of this with |consecutive_frame_with_damage_count_|.
+  int consecutive_frame_with_damage_count_;
+
   std::unique_ptr<Viewport> viewport_;
 
   std::unique_ptr<PendingTreeDurationHistogramTimer>
@@ -966,6 +980,10 @@ class CC_EXPORT LayerTreeHostImpl
 
   std::unique_ptr<UkmManager> ukm_manager_;
 
+  // Provides RenderFrameMetadata to the Browser process upon the submission of
+  // each CompositorFrame.
+  std::unique_ptr<RenderFrameMetadataObserver> render_frame_metadata_observer_;
+
   // Maps from presentation_token set on CF to the source frame that requested
   // it. Presentation tokens are requested if the active tree has
   // request_presentation_time() set.
@@ -976,6 +994,9 @@ class CC_EXPORT LayerTreeHostImpl
   uint32_t last_presentation_token_ = 0u;
 
   viz::LocalSurfaceId last_draw_local_surface_id_;
+
+  const int default_color_space_id_;
+  const gfx::ColorSpace default_color_space_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

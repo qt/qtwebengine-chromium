@@ -7,6 +7,9 @@
 #include <memory>
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "core/dom/AbortSignal.h"
+#include "core/dom/DOMException.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fetch/Body.h"
 #include "core/fetch/BodyStreamBuffer.h"
@@ -30,7 +33,9 @@
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8ThrowException.h"
 #include "platform/exported/WrappedResourceResponse.h"
+#include "platform/heap/Persistent.h"
 #include "platform/loader/SubresourceIntegrity.h"
+#include "platform/loader/cors/CORS.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
@@ -42,16 +47,25 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "platform/wtf/Assertions.h"
+#include "platform/wtf/Functional.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebCORS.h"
 #include "public/platform/WebURLRequest.h"
-#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
+#include "services/network/public/mojom/fetch_api.mojom-blink.h"
 
 namespace blink {
 
 namespace {
+
+bool HasNonEmptyLocationHeader(const FetchHeaderList* headers) {
+  String value;
+  if (!headers->Get(HTTPNames::Location, value))
+    return false;
+  return !value.IsEmpty();
+}
 
 class SRIBytesConsumer final : public BytesConsumer {
  public:
@@ -151,9 +165,10 @@ class FetchManager::Loader final
                         FetchManager* fetch_manager,
                         ScriptPromiseResolver* resolver,
                         FetchRequestData* request,
-                        bool is_isolated_world) {
+                        bool is_isolated_world,
+                        AbortSignal* signal) {
     return new Loader(execution_context, fetch_manager, resolver, request,
-                      is_isolated_world);
+                      is_isolated_world, signal);
   }
 
   ~Loader() override;
@@ -169,6 +184,7 @@ class FetchManager::Loader final
 
   void Start();
   void Dispose();
+  void Abort();
 
   class SRIVerifier final : public GarbageCollectedFinalized<SRIVerifier>,
                             public WebDataConsumerHandle::Client {
@@ -183,15 +199,18 @@ class FetchManager::Loader final
                 Response* response,
                 FetchManager::Loader* loader,
                 String integrity_metadata,
-                const KURL& url)
+                const KURL& url,
+                network::mojom::FetchResponseType response_type,
+                scoped_refptr<base::SingleThreadTaskRunner> task_runner)
         : handle_(std::move(handle)),
           updater_(updater),
           response_(response),
           loader_(loader),
           integrity_metadata_(integrity_metadata),
           url_(url),
+          response_type_(response_type),
           finished_(false) {
-      reader_ = handle_->ObtainReader(this);
+      reader_ = handle_->ObtainReader(this, std::move(task_runner));
     }
 
     void Cancel() {
@@ -222,9 +241,21 @@ class FetchManager::Loader final
       finished_ = true;
       if (r == WebDataConsumerHandle::kDone) {
         SubresourceIntegrity::ReportInfo report_info;
-        bool check_result = SubresourceIntegrity::CheckSubresourceIntegrity(
-            integrity_metadata_, buffer_.data(), buffer_.size(), url_,
-            report_info);
+        bool check_result = true;
+        if (response_type_ != network::mojom::FetchResponseType::kBasic &&
+            response_type_ != network::mojom::FetchResponseType::kCORS &&
+            response_type_ != network::mojom::FetchResponseType::kDefault) {
+          report_info.AddConsoleErrorMessage(
+              "Subresource Integrity: The resource '" + url_.ElidedString() +
+              "' has an integrity attribute, but the response is not "
+              "eligible for integrity validation.");
+          check_result = false;
+        }
+        if (check_result) {
+          check_result = SubresourceIntegrity::CheckSubresourceIntegrity(
+              integrity_metadata_,
+              buffer_.data(), buffer_.size(), url_, report_info);
+        }
         SubresourceIntegrityHelper::DoReport(*loader_->GetExecutionContext(),
                                              report_info);
         if (check_result) {
@@ -265,6 +296,7 @@ class FetchManager::Loader final
     Member<FetchManager::Loader> loader_;
     String integrity_metadata_;
     KURL url_;
+    const network::mojom::FetchResponseType response_type_;
     std::unique_ptr<WebDataConsumerHandle::Reader> reader_;
     Vector<char> buffer_;
     bool finished_;
@@ -275,7 +307,8 @@ class FetchManager::Loader final
          FetchManager*,
          ScriptPromiseResolver*,
          FetchRequestData*,
-         bool is_isolated_world);
+         bool is_isolated_world,
+         AbortSignal*);
 
   void PerformSchemeFetch();
   void PerformNetworkError(const String& message);
@@ -297,6 +330,7 @@ class FetchManager::Loader final
   Member<SRIVerifier> integrity_verifier_;
   bool did_finish_loading_;
   bool is_isolated_world_;
+  Member<AbortSignal> signal_;
   Vector<KURL> url_list_;
   Member<ExecutionContext> execution_context_;
 };
@@ -305,7 +339,8 @@ FetchManager::Loader::Loader(ExecutionContext* execution_context,
                              FetchManager* fetch_manager,
                              ScriptPromiseResolver* resolver,
                              FetchRequestData* request,
-                             bool is_isolated_world)
+                             bool is_isolated_world,
+                             AbortSignal* signal)
     : fetch_manager_(fetch_manager),
       resolver_(resolver),
       request_(request),
@@ -315,6 +350,7 @@ FetchManager::Loader::Loader(ExecutionContext* execution_context,
       integrity_verifier_(nullptr),
       did_finish_loading_(false),
       is_isolated_world_(is_isolated_world),
+      signal_(signal),
       execution_context_(execution_context) {
   url_list_.push_back(request->Url());
 }
@@ -329,6 +365,7 @@ void FetchManager::Loader::Trace(blink::Visitor* visitor) {
   visitor->Trace(request_);
   visitor->Trace(loader_);
   visitor->Trace(integrity_verifier_);
+  visitor->Trace(signal_);
   visitor->Trace(execution_context_);
 }
 
@@ -346,18 +383,6 @@ void FetchManager::Loader::DidReceiveResponse(
   DCHECK(response.Url() == url_list_.back());
   ScriptState* script_state = resolver_->GetScriptState();
   ScriptState::Scope scope(script_state);
-
-  if (response.Url().ProtocolIs("blob") && response.HttpStatusCode() == 404) {
-    // "If |blob| is null, return a network error."
-    // https://fetch.spec.whatwg.org/#concept-scheme-fetch
-    PerformNetworkError("Blob not found.");
-    return;
-  }
-
-  if (response.Url().ProtocolIs("blob") && response.HttpStatusCode() == 405) {
-    PerformNetworkError("Only 'GET' method is allowed for blob URLs.");
-    return;
-  }
 
   response_http_status_code_ = response.HttpStatusCode();
   FetchRequestData::Tainting tainting = request_->ResponseTainting();
@@ -437,11 +462,12 @@ void FetchManager::Loader::DidReceiveResponse(
     response_data = FetchResponseData::CreateWithBuffer(new BodyStreamBuffer(
         script_state,
         new BytesConsumerForDataConsumerHandle(
-            ExecutionContext::From(script_state), std::move(handle))));
+            ExecutionContext::From(script_state), std::move(handle)),
+        signal_));
   } else {
     sri_consumer = new SRIBytesConsumer();
     response_data = FetchResponseData::CreateWithBuffer(
-        new BodyStreamBuffer(script_state, sri_consumer));
+        new BodyStreamBuffer(script_state, sri_consumer, signal_));
   }
   response_data->SetStatus(response.HttpStatusCode());
   response_data->SetStatusMessage(response.HttpStatusText());
@@ -462,7 +488,7 @@ void FetchManager::Loader::DidReceiveResponse(
   FetchResponseData* tainted_response = nullptr;
 
   DCHECK(!(NetworkUtils::IsRedirectResponseCode(response_http_status_code_) &&
-           response_data->HeaderList()->Has(HTTPNames::Location) &&
+           HasNonEmptyLocationHeader(response_data->HeaderList()) &&
            request_->Redirect() != network::mojom::FetchRedirectMode::kManual));
 
   if (NetworkUtils::IsRedirectResponseCode(response_http_status_code_) &&
@@ -506,9 +532,10 @@ void FetchManager::Loader::DidReceiveResponse(
     resolver_.Clear();
   } else {
     DCHECK(!integrity_verifier_);
-    integrity_verifier_ =
-        new SRIVerifier(std::move(handle), sri_consumer, r, this,
-                        request_->Integrity(), response.Url());
+    integrity_verifier_ = new SRIVerifier(
+        std::move(handle), sri_consumer, r, this, request_->Integrity(),
+        response.Url(), r->GetResponse()->GetType(),
+        resolver_->GetExecutionContext()->GetTaskRunner(TaskType::kNetworking));
   }
 }
 
@@ -596,7 +623,7 @@ void FetchManager::Loader::Start() {
   // Note we don't support to call this method with |CORS flag|
   // "- |request|'s mode is |navigate|".
   if ((SecurityOrigin::Create(request_->Url())
-           ->IsSameSchemeHostPortAndSuborigin(request_->Origin().get())) ||
+           ->IsSameSchemeHostPort(request_->Origin().get())) ||
       (request_->Url().ProtocolIsData() && request_->SameOriginDataURLFlag()) ||
       (request_->Mode() == network::mojom::FetchRequestMode::kNavigate)) {
     // "The result of performing a scheme fetch using request."
@@ -657,6 +684,22 @@ void FetchManager::Loader::Dispose() {
   if (integrity_verifier_)
     integrity_verifier_->Cancel();
   execution_context_ = nullptr;
+}
+
+void FetchManager::Loader::Abort() {
+  if (resolver_) {
+    resolver_->Reject(DOMException::Create(kAbortError));
+    resolver_.Clear();
+  }
+  if (loader_) {
+    // Prevent re-entrancy.
+    auto loader = loader_;
+    loader_ = nullptr;
+    loader->Cancel();
+  }
+  // TODO(ricea): Maybe a more specific probe is needed?
+  probe::didFailFetch(execution_context_, this);
+  NotifyFinished();
 }
 
 void FetchManager::Loader::PerformSchemeFetch() {
@@ -748,12 +791,10 @@ void FetchManager::Loader::PerformHTTPFetch() {
   // referrer string (i.e. String()).
   request.SetHTTPReferrer(SecurityPolicy::GenerateReferrer(
       referrer_policy, request_->Url(), referrer_string));
-  request.SetServiceWorkerMode(is_isolated_world_
-                                   ? WebURLRequest::ServiceWorkerMode::kNone
-                                   : WebURLRequest::ServiceWorkerMode::kAll);
+  request.SetSkipServiceWorker(is_isolated_world_);
 
   if (request_->Keepalive()) {
-    if (!WebCORS::IsCORSSafelistedMethod(request.HttpMethod()) ||
+    if (!CORS::IsCORSSafelistedMethod(request.HttpMethod()) ||
         !WebCORS::ContainsOnlyCORSSafelistedOrForbiddenHeaders(
             request.HttpHeaderFields())) {
       PerformNetworkError(
@@ -763,6 +804,7 @@ void FetchManager::Loader::PerformHTTPFetch() {
     }
     request.SetKeepalive(true);
   }
+
   // "3. Append `Host`, ..."
   // FIXME: Implement this when the spec is fixed.
 
@@ -779,6 +821,13 @@ void FetchManager::Loader::PerformHTTPFetch() {
   ResourceLoaderOptions resource_loader_options;
   resource_loader_options.data_buffering_policy = kDoNotBufferData;
   resource_loader_options.security_origin = request_->Origin().get();
+  if (request_->URLLoaderFactory()) {
+    network::mojom::blink::URLLoaderFactoryPtr factory_clone;
+    request_->URLLoaderFactory()->Clone(MakeRequest(&factory_clone));
+    resource_loader_options.url_loader_factory = base::MakeRefCounted<
+        base::RefCountedData<network::mojom::blink::URLLoaderFactoryPtr>>(
+        std::move(factory_clone));
+  }
 
   ThreadableLoaderOptions threadable_loader_options;
 
@@ -851,16 +900,25 @@ FetchManager::FetchManager(ExecutionContext* execution_context)
     : ContextLifecycleObserver(execution_context) {}
 
 ScriptPromise FetchManager::Fetch(ScriptState* script_state,
-                                  FetchRequestData* request) {
+                                  FetchRequestData* request,
+                                  AbortSignal* signal) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
+
+  DCHECK(signal);
+  if (signal->aborted()) {
+    resolver->Reject(DOMException::Create(kAbortError));
+    return promise;
+  }
 
   request->SetContext(WebURLRequest::kRequestContextFetch);
 
   Loader* loader =
       Loader::Create(GetExecutionContext(), this, resolver, request,
-                     script_state->World().IsIsolatedWorld());
+                     script_state->World().IsIsolatedWorld(), signal);
   loaders_.insert(loader);
+  signal->AddAlgorithm(WTF::Bind(&Loader::Abort, WrapWeakPersistent(loader)));
+  // TODO(ricea): Reject the Response body with AbortError, not TypeError.
   loader->Start();
   return promise;
 }

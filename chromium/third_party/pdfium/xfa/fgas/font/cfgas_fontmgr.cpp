@@ -67,20 +67,16 @@ const FX_CHARSET_MAP g_FXCharset2CodePageTable[] = {
 };
 
 uint16_t GetCodePageFromCharset(uint8_t charset) {
-  int32_t iEnd = sizeof(g_FXCharset2CodePageTable) / sizeof(FX_CHARSET_MAP) - 1;
-  ASSERT(iEnd >= 0);
-
-  int32_t iStart = 0, iMid;
-  do {
-    iMid = (iStart + iEnd) / 2;
-    const FX_CHARSET_MAP& cp = g_FXCharset2CodePageTable[iMid];
-    if (charset == cp.charset)
-      return cp.codepage;
-    if (charset < cp.charset)
-      iEnd = iMid - 1;
-    else
-      iStart = iMid + 1;
-  } while (iStart <= iEnd);
+  auto* result =
+      std::lower_bound(std::begin(g_FXCharset2CodePageTable),
+                       std::end(g_FXCharset2CodePageTable), charset,
+                       [](const FX_CHARSET_MAP& iter, const uint16_t& charset) {
+                         return iter.charset < charset;
+                       });
+  if (result != std::end(g_FXCharset2CodePageTable) &&
+      result->charset == charset) {
+    return result->codepage;
+  }
   return 0xFFFF;
 }
 
@@ -173,23 +169,20 @@ int32_t CALLBACK GdiFontEnumProc(ENUMLOGFONTEX* lpelfe,
   const LOGFONTW& lf = ((LPENUMLOGFONTEXW)lpelfe)->elfLogFont;
   if (lf.lfFaceName[0] == L'@')
     return 1;
-  FX_FONTDESCRIPTOR* pFont = FX_Alloc(FX_FONTDESCRIPTOR, 1);
-  memset(pFont, 0, sizeof(FX_FONTDESCRIPTOR));
-  pFont->uCharSet = lf.lfCharSet;
-  pFont->dwFontStyles = GetGdiFontStyles(lf);
-  FXSYS_wcsncpy(pFont->wsFontFace, (const wchar_t*)lf.lfFaceName, 31);
-  pFont->wsFontFace[31] = 0;
-  memcpy(&pFont->FontSignature, &lpntme->ntmFontSig,
-         sizeof(lpntme->ntmFontSig));
-  reinterpret_cast<std::deque<FX_FONTDESCRIPTOR>*>(lParam)->push_back(*pFont);
-  FX_Free(pFont);
+  FX_FONTDESCRIPTOR font;
+  memset(&font, 0, sizeof(FX_FONTDESCRIPTOR));
+  font.uCharSet = lf.lfCharSet;
+  font.dwFontStyles = GetGdiFontStyles(lf);
+  FXSYS_wcsncpy(font.wsFontFace, (const wchar_t*)lf.lfFaceName, 31);
+  font.wsFontFace[31] = 0;
+  memcpy(&font.FontSignature, &lpntme->ntmFontSig, sizeof(lpntme->ntmFontSig));
+  reinterpret_cast<std::deque<FX_FONTDESCRIPTOR>*>(lParam)->push_back(font);
   return 1;
 }
 
-void EnumGdiFonts(std::deque<FX_FONTDESCRIPTOR>* fonts,
-                  const wchar_t* pwsFaceName,
-                  wchar_t wUnicode) {
-  HDC hDC = ::GetDC(nullptr);
+std::deque<FX_FONTDESCRIPTOR> EnumGdiFonts(const wchar_t* pwsFaceName,
+                                           wchar_t wUnicode) {
+  std::deque<FX_FONTDESCRIPTOR> fonts;
   LOGFONTW lfFind;
   memset(&lfFind, 0, sizeof(lfFind));
   lfFind.lfCharSet = DEFAULT_CHARSET;
@@ -197,19 +190,18 @@ void EnumGdiFonts(std::deque<FX_FONTDESCRIPTOR>* fonts,
     FXSYS_wcsncpy(lfFind.lfFaceName, pwsFaceName, 31);
     lfFind.lfFaceName[31] = 0;
   }
+  HDC hDC = ::GetDC(nullptr);
   EnumFontFamiliesExW(hDC, (LPLOGFONTW)&lfFind, (FONTENUMPROCW)GdiFontEnumProc,
-                      (LPARAM)fonts, 0);
+                      (LPARAM)&fonts, 0);
   ::ReleaseDC(nullptr, hDC);
+  return fonts;
 }
 
 }  // namespace
 
-CFGAS_FontMgr::CFGAS_FontMgr() : m_pEnumerator(EnumGdiFonts), m_FontFaces(100) {
-  if (m_pEnumerator)
-    m_pEnumerator(&m_FontFaces, nullptr, 0xFEFF);
-}
+CFGAS_FontMgr::CFGAS_FontMgr() : m_FontFaces(EnumGdiFonts(nullptr, 0xFEFF)) {}
 
-CFGAS_FontMgr::~CFGAS_FontMgr() {}
+CFGAS_FontMgr::~CFGAS_FontMgr() = default;
 
 bool CFGAS_FontMgr::EnumFonts() {
   return true;
@@ -229,17 +221,16 @@ const FX_FONTDESCRIPTOR* CFGAS_FontMgr::FindFont(const wchar_t* pszFontFamily,
   params.pwsFamily = pszFontFamily;
   params.dwFontStyles = dwFontStyles;
   params.matchParagraphStyle = matchParagraphStyle;
+
   const FX_FONTDESCRIPTOR* pDesc = MatchDefaultFont(&params, m_FontFaces);
   if (pDesc)
     return pDesc;
 
-  if (!pszFontFamily || !m_pEnumerator)
+  if (!pszFontFamily)
     return nullptr;
 
-  std::deque<FX_FONTDESCRIPTOR> namedFonts;
-  m_pEnumerator(&namedFonts, pszFontFamily, wUnicode);
   params.pwsFamily = nullptr;
-  pDesc = MatchDefaultFont(&params, namedFonts);
+  pDesc = MatchDefaultFont(&params, EnumGdiFonts(pszFontFamily, wUnicode));
   if (!pDesc)
     return nullptr;
 
@@ -955,9 +946,14 @@ RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::GetFontByCodePage(
   ByteString bsHash = ByteString::Format("%d, %d", wCodePage, dwFontStyles);
   bsHash += FX_UTF8Encode(WideStringView(pszFontFamily));
   uint32_t dwHash = FX_HashCode_GetA(bsHash.AsStringView(), false);
-  std::vector<RetainPtr<CFGAS_GEFont>>* pFontArray = &m_Hash2Fonts[dwHash];
-  if (!pFontArray->empty())
-    return (*pFontArray)[0];
+  auto* pFontVector = &m_Hash2Fonts[dwHash];
+  if (!pFontVector->empty()) {
+    for (auto iter = pFontVector->begin(); iter != pFontVector->end(); ++iter) {
+      if (*iter != nullptr)
+        return *iter;
+    }
+    return nullptr;
+  }
 
 #if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const FX_FONTDESCRIPTOR* pFD =
@@ -993,7 +989,7 @@ RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::GetFontByCodePage(
     return nullptr;
 
   pFont->SetLogicalFontStyle(dwFontStyles);
-  pFontArray->push_back(pFont);
+  pFontVector->push_back(pFont);
   return pFont;
 }
 

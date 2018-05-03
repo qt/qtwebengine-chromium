@@ -116,11 +116,13 @@ Polymer({
     },
   },
 
+  // <if expr="not is_macosx">
   observers: [
     'updateSpellcheckLanguages_(languages.enabled.*, ' +
         'languages.forcedSpellCheckLanguages.*)',
     'updateSpellcheckEnabled_(prefs.browser.enable_spellchecking.*)',
   ],
+  // </if>
 
   /**
    * Stamps and opens the Add Languages dialog, registering a listener to
@@ -628,7 +630,7 @@ Polymer({
 
   /**
    * Closes the shared action menu after a short delay, so when a checkbox is
-   * tapped it can be seen to change state before disappearing.
+   * clicked it can be seen to change state before disappearing.
    * @private
    */
   closeMenuSoon_: function() {

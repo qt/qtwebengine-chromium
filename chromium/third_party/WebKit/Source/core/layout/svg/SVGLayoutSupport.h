@@ -57,14 +57,15 @@ class CORE_EXPORT SVGLayoutSupport {
                              bool layout_size_changed);
 
   // Layout resources used by this node.
-  static void LayoutResourcesIfNeeded(const LayoutObject*);
+  static void LayoutResourcesIfNeeded(const LayoutObject&);
 
   // Helper function determining whether overflow is hidden.
-  static bool IsOverflowHidden(const LayoutObject*);
+  static bool IsOverflowHidden(const LayoutObject&);
+  static bool IsOverflowHidden(const ComputedStyle&);
 
   // Adjusts the visualRect in combination with filter, clipper and masker
   // in local coordinates.
-  static void AdjustVisualRectWithResources(const LayoutObject*, FloatRect&);
+  static void AdjustVisualRectWithResources(const LayoutObject&, FloatRect&);
 
   // Determine if the LayoutObject references a filter resource object.
   static bool HasFilterResource(const LayoutObject&);
@@ -149,7 +150,7 @@ class CORE_EXPORT SVGLayoutSupport {
       const LayoutObject*);
   static float CalculateScreenFontSizeScalingFactor(const LayoutObject*);
 
-  static LayoutObject* FindClosestLayoutSVGText(LayoutObject*,
+  static LayoutObject* FindClosestLayoutSVGText(const LayoutObject*,
                                                 const FloatPoint&);
 
  private:

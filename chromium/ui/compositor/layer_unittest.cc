@@ -26,17 +26,14 @@
 #include "build/build_config.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/animation_host.h"
-#include "cc/animation/animation_player.h"
-#include "cc/animation/animation_ticker.h"
+#include "cc/animation/keyframe_effect.h"
+#include "cc/animation/single_keyframe_effect_animation.h"
 #include "cc/layers/layer.h"
 #include "cc/test/pixel_test_utils.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/resources/transferable_resource.h"
-#include "components/viz/common/surfaces/sequence_surface_reference_factory.h"
 #include "components/viz/common/surfaces/surface_id.h"
-#include "components/viz/common/surfaces/surface_reference_factory.h"
-#include "components/viz/common/surfaces/surface_sequence.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -1833,26 +1830,6 @@ TEST_F(LayerWithDelegateTest, SetBoundsWhenInvisible) {
   EXPECT_TRUE(delegate.painted());
 }
 
-namespace {
-
-class TestSurfaceReferenceFactory
-    : public viz::SequenceSurfaceReferenceFactory {
- public:
-  TestSurfaceReferenceFactory() = default;
-
- private:
-  ~TestSurfaceReferenceFactory() override = default;
-
-  // cc::SequenceSurfaceReferenceFactory implementation:
-  void SatisfySequence(const viz::SurfaceSequence& seq) const override {}
-  void RequireSequence(const viz::SurfaceId& id,
-                       const viz::SurfaceSequence& seq) const override {}
-
-  DISALLOW_COPY_AND_ASSIGN(TestSurfaceReferenceFactory);
-};
-
-}  // namespace
-
 TEST_F(LayerWithDelegateTest, ExternalContent) {
   std::unique_ptr<Layer> root(
       CreateNoTextureLayer(gfx::Rect(0, 0, 1000, 1000)));
@@ -1865,6 +1842,7 @@ TEST_F(LayerWithDelegateTest, ExternalContent) {
   // The layer is already showing solid color content, so the cc layer won't
   // change.
   scoped_refptr<cc::Layer> before = child->cc_layer_for_testing();
+
   child->SetShowSolidColorContent();
   EXPECT_TRUE(child->cc_layer_for_testing());
   EXPECT_EQ(before.get(), child->cc_layer_for_testing());
@@ -1873,9 +1851,17 @@ TEST_F(LayerWithDelegateTest, ExternalContent) {
   before = child->cc_layer_for_testing();
   child->SetShowPrimarySurface(viz::SurfaceId(), gfx::Size(10, 10),
                                SK_ColorWHITE,
-                               new TestSurfaceReferenceFactory());
-  EXPECT_TRUE(child->cc_layer_for_testing());
-  EXPECT_NE(before.get(), child->cc_layer_for_testing());
+                               cc::DeadlinePolicy::UseDefaultDeadline());
+  scoped_refptr<cc::Layer> after = child->cc_layer_for_testing();
+  const auto* surface = static_cast<cc::SurfaceLayer*>(after.get());
+  EXPECT_TRUE(after.get());
+  EXPECT_NE(before.get(), after.get());
+  EXPECT_EQ(base::nullopt, surface->deadline_in_frames());
+
+  child->SetShowPrimarySurface(viz::SurfaceId(), gfx::Size(10, 10),
+                               SK_ColorWHITE,
+                               cc::DeadlinePolicy::UseSpecifiedDeadline(4u));
+  EXPECT_EQ(4u, surface->deadline_in_frames());
 
   // Changing to painted content should change the underlying cc layer.
   before = child->cc_layer_for_testing();
@@ -1886,14 +1872,12 @@ TEST_F(LayerWithDelegateTest, ExternalContent) {
 
 TEST_F(LayerWithDelegateTest, ExternalContentMirroring) {
   std::unique_ptr<Layer> layer(CreateLayer(LAYER_SOLID_COLOR));
-  scoped_refptr<viz::SurfaceReferenceFactory> reference_factory(
-      new TestSurfaceReferenceFactory());
 
   viz::SurfaceId surface_id(
       viz::FrameSinkId(0, 1),
       viz::LocalSurfaceId(2, base::UnguessableToken::Create()));
   layer->SetShowPrimarySurface(surface_id, gfx::Size(10, 10), SK_ColorWHITE,
-                               reference_factory);
+                               cc::DeadlinePolicy::UseDefaultDeadline());
 
   const auto mirror = layer->Mirror();
   auto* const cc_layer = mirror->cc_layer_for_testing();
@@ -1906,12 +1890,12 @@ TEST_F(LayerWithDelegateTest, ExternalContentMirroring) {
       viz::SurfaceId(viz::FrameSinkId(1, 2),
                      viz::LocalSurfaceId(3, base::UnguessableToken::Create()));
   layer->SetShowPrimarySurface(surface_id, gfx::Size(20, 20), SK_ColorWHITE,
-                               reference_factory);
+                               cc::DeadlinePolicy::UseDefaultDeadline());
 
   // The mirror should continue to use the same cc_layer.
   EXPECT_EQ(cc_layer, mirror->cc_layer_for_testing());
   layer->SetShowPrimarySurface(surface_id, gfx::Size(20, 20), SK_ColorWHITE,
-                               reference_factory);
+                               cc::DeadlinePolicy::UseDefaultDeadline());
 
   // Surface updates propagate to the mirror.
   EXPECT_EQ(surface_id, surface->primary_surface_id());
@@ -1933,7 +1917,7 @@ TEST_F(LayerWithDelegateTest, LayerFiltersSurvival) {
   scoped_refptr<cc::Layer> before = layer->cc_layer_for_testing();
   layer->SetShowPrimarySurface(viz::SurfaceId(), gfx::Size(10, 10),
                                SK_ColorWHITE,
-                               new TestSurfaceReferenceFactory());
+                               cc::DeadlinePolicy::UseDefaultDeadline());
   EXPECT_EQ(layer->layer_grayscale(), 0.5f);
   EXPECT_TRUE(layer->cc_layer_for_testing());
   EXPECT_NE(before.get(), layer->cc_layer_for_testing());
@@ -1949,43 +1933,43 @@ TEST_F(LayerWithRealCompositorTest, AddRemoveThreadedAnimations) {
   l1->SetAnimator(LayerAnimator::CreateImplicitAnimator());
   l2->SetAnimator(LayerAnimator::CreateImplicitAnimator());
 
-  auto* player1 = l1->GetAnimator()->GetAnimationPlayerForTesting();
-  auto* player2 = l2->GetAnimator()->GetAnimationPlayerForTesting();
+  auto* animation1 = l1->GetAnimator()->GetAnimationForTesting();
+  auto* animation2 = l2->GetAnimator()->GetAnimationForTesting();
 
-  EXPECT_FALSE(player1->has_any_animation());
+  EXPECT_FALSE(animation1->keyframe_effect()->has_any_keyframe_model());
 
   // Trigger a threaded animation.
   l1->SetOpacity(0.5f);
 
-  EXPECT_TRUE(player1->has_any_animation());
+  EXPECT_TRUE(animation1->keyframe_effect()->has_any_keyframe_model());
 
   // Ensure we can remove a pending threaded animation.
   l1->GetAnimator()->StopAnimating();
 
-  EXPECT_FALSE(player1->has_any_animation());
+  EXPECT_FALSE(animation1->keyframe_effect()->has_any_keyframe_model());
 
   // Trigger another threaded animation.
   l1->SetOpacity(0.2f);
 
-  EXPECT_TRUE(player1->has_any_animation());
+  EXPECT_TRUE(animation1->keyframe_effect()->has_any_keyframe_model());
 
   root->Add(l1.get());
   GetCompositor()->SetRootLayer(root.get());
 
   // Now l1 is part of a tree.
-  EXPECT_TRUE(player1->has_any_animation());
+  EXPECT_TRUE(animation1->keyframe_effect()->has_any_keyframe_model());
 
   l1->SetOpacity(0.1f);
   // IMMEDIATELY_SET_NEW_TARGET is a default preemption strategy for conflicting
   // animations.
-  EXPECT_FALSE(player1->has_any_animation());
+  EXPECT_FALSE(animation1->keyframe_effect()->has_any_keyframe_model());
 
   // Adding a layer to an existing tree.
   l2->SetOpacity(0.5f);
-  EXPECT_TRUE(player2->has_any_animation());
+  EXPECT_TRUE(animation2->keyframe_effect()->has_any_keyframe_model());
 
   l1->Add(l2.get());
-  EXPECT_TRUE(player2->has_any_animation());
+  EXPECT_TRUE(animation2->keyframe_effect()->has_any_keyframe_model());
 }
 
 // Tests that in-progress threaded animations complete when a Layer's
@@ -2222,7 +2206,7 @@ TEST_F(LayerWithDelegateTest, NonAnimatingAnimatorsAreRemovedFromCollection) {
 
 namespace {
 
-std::string Vector2dFTo100thPercisionString(const gfx::Vector2dF& vector) {
+std::string Vector2dFTo100thPrecisionString(const gfx::Vector2dF& vector) {
   return base::StringPrintf("%.2f %0.2f", vector.x(), vector.y());
 }
 
@@ -2245,21 +2229,68 @@ TEST_F(LayerWithRealCompositorTest, SnapLayerToPixels) {
   SnapLayerToPhysicalPixelBoundary(root.get(), c11.get());
   // 0.5 at 1.25 scale : (1 - 0.25 + 0.25) / 1.25 = 0.4
   EXPECT_EQ("0.40 0.40",
-            Vector2dFTo100thPercisionString(c11->subpixel_position_offset()));
+            Vector2dFTo100thPrecisionString(c11->subpixel_position_offset()));
 
   GetCompositor()->SetScaleAndSize(1.5f, gfx::Size(100, 100),
                                    viz::LocalSurfaceId());
   SnapLayerToPhysicalPixelBoundary(root.get(), c11.get());
   // c11 must already be aligned at 1.5 scale.
   EXPECT_EQ("0.00 0.00",
-            Vector2dFTo100thPercisionString(c11->subpixel_position_offset()));
+            Vector2dFTo100thPrecisionString(c11->subpixel_position_offset()));
 
   c11->SetBounds(gfx::Rect(2, 2, 10, 10));
   SnapLayerToPhysicalPixelBoundary(root.get(), c11.get());
   // c11 is now off the pixel.
   // 0.5 / 1.5 = 0.333...
   EXPECT_EQ("0.33 0.33",
-            Vector2dFTo100thPercisionString(c11->subpixel_position_offset()));
+            Vector2dFTo100thPrecisionString(c11->subpixel_position_offset()));
+}
+
+TEST_F(LayerWithRealCompositorTest, SnapLayerToPixelsWithScaleTransform) {
+  std::unique_ptr<Layer> root(CreateLayer(LAYER_TEXTURED));
+  std::unique_ptr<Layer> c1(CreateLayer(LAYER_TEXTURED));
+  std::unique_ptr<Layer> c11(CreateLayer(LAYER_TEXTURED));
+  std::unique_ptr<Layer> c111(CreateLayer(LAYER_TEXTURED));
+
+  GetCompositor()->SetScaleAndSize(1.0f, gfx::Size(100, 100),
+                                   viz::LocalSurfaceId());
+  GetCompositor()->SetRootLayer(root.get());
+  root->Add(c1.get());
+  c1->Add(c11.get());
+  c11->Add(c111.get());
+
+  root->SetBounds(gfx::Rect(0, 0, 100, 100));
+  c1->SetBounds(gfx::Rect(0, 0, 10, 10));
+  c11->SetBounds(gfx::Rect(0, 0, 10, 10));
+  c111->SetBounds(gfx::Rect(2, 2, 5, 5));
+
+  gfx::Transform transform;
+  transform.Scale(1.25f, 1.25f);
+
+  c1->SetTransform(transform);
+  SnapLayerToPhysicalPixelBoundary(root.get(), c111.get());
+
+  // c111 ends up at 2.5, and is supposed to be snapped to 3.0. So subpixel
+  // offset is expected to be:
+  // 0.5 / 1.25 = 0.40
+  EXPECT_EQ("0.40 0.40",
+            Vector2dFTo100thPrecisionString(c111->subpixel_position_offset()));
+
+  c11->SetTransform(transform);
+  SnapLayerToPhysicalPixelBoundary(root.get(), c111.get());
+
+  // c111 ends up at 3.125, and is supposed to be snapped to 3.0. So subpixel
+  // offset is expected to be:
+  // -0.125 / (1.25 * 1.25) = -0.08
+  EXPECT_EQ("-0.08 -0.08",
+            Vector2dFTo100thPrecisionString(c111->subpixel_position_offset()));
+
+  // A transform on c111 should not affect the subpixel offset so expect it to
+  // be the same as before.
+  c111->SetTransform(transform);
+  SnapLayerToPhysicalPixelBoundary(root.get(), c111.get());
+  EXPECT_EQ("-0.08 -0.08",
+            Vector2dFTo100thPrecisionString(c111->subpixel_position_offset()));
 }
 
 // Verify that LayerDelegate::OnLayerBoundsChanged() is called when the bounds

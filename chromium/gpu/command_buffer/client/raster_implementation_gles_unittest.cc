@@ -9,6 +9,7 @@
 #include <GLES2/gl2extchromium.h>
 #include <GLES3/gl3.h>
 
+#include "cc/paint/color_space_transfer_cache_entry.h"
 #include "cc/paint/display_item_list.h"
 #include "components/viz/common/resources/resource_format_utils.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -137,13 +138,14 @@ class RasterMockGLES2Interface : public gles2::GLES2InterfaceStub {
   MOCK_METHOD1(LockDiscardableTextureCHROMIUM, bool(GLuint texture_id));
 
   // OOP-Raster
-  MOCK_METHOD6(BeginRasterCHROMIUM,
+  MOCK_METHOD7(BeginRasterCHROMIUM,
                void(GLuint texture_id,
                     GLuint sk_color,
                     GLuint msaa_sample_count,
                     GLboolean can_use_lcd_text,
                     GLboolean use_distance_field_text,
-                    GLint pixel_config));
+                    GLint color_type,
+                    GLuint color_space_id));
   MOCK_METHOD2(RasterCHROMIUM, void(GLsizeiptr size, const void* list));
   MOCK_METHOD1(MapRasterCHROMIUM, void*(GLsizeiptr size));
   MOCK_METHOD1(UnmapRasterCHROMIUM, void(GLsizeiptr written));
@@ -194,18 +196,23 @@ class ContextSupportStub : public ContextSupport {
       uint32_t texture_id) override {
     return false;
   }
-  void CreateTransferCacheEntry(
-      const cc::ClientTransferCacheEntry& entry) override {}
-  bool ThreadsafeLockTransferCacheEntry(cc::TransferCacheEntryType type,
-                                        uint32_t id) override {
+  void* MapTransferCacheEntry(size_t serialized_size) override {
+    mapped_transfer_cache_entry_.reset(new char[serialized_size]);
+    return mapped_transfer_cache_entry_.get();
+  }
+  void UnmapAndCreateTransferCacheEntry(uint32_t type, uint32_t id) override {
+    mapped_transfer_cache_entry_.reset();
+  }
+  bool ThreadsafeLockTransferCacheEntry(uint32_t type, uint32_t id) override {
     return true;
   }
   void UnlockTransferCacheEntries(
-      const std::vector<std::pair<cc::TransferCacheEntryType, uint32_t>>&
-          entries) override {}
-  void DeleteTransferCacheEntry(cc::TransferCacheEntryType type,
-                                uint32_t id) override {}
+      const std::vector<std::pair<uint32_t, uint32_t>>& entries) override {}
+  void DeleteTransferCacheEntry(uint32_t type, uint32_t id) override {}
   unsigned int GetTransferBufferFreeSize() const override { return 0; }
+
+ private:
+  std::unique_ptr<char[]> mapped_transfer_cache_entry_;
 };
 
 class ImageProviderStub : public cc::ImageProvider {
@@ -666,14 +673,16 @@ TEST_F(RasterImplementationGLESTest, BeginRasterCHROMIUM) {
   const GLuint msaa_sample_count = 4;
   const GLboolean can_use_lcd_text = GL_TRUE;
   const GLboolean use_distance_field_text = GL_FALSE;
-  const GLint pixel_config = kRGBA_8888_GrPixelConfig;
+  const GLint color_type = kRGBA_8888_SkColorType;
+  const auto raster_color_space =
+      cc::RasterColorSpace(gfx::ColorSpace::CreateSRGB(), 2);
   EXPECT_CALL(*gl_, BeginRasterCHROMIUM(texture_id, sk_color, msaa_sample_count,
                                         can_use_lcd_text,
-                                        use_distance_field_text, pixel_config))
+                                        use_distance_field_text, color_type, 2))
       .Times(1);
   ri_->BeginRasterCHROMIUM(texture_id, sk_color, msaa_sample_count,
                            can_use_lcd_text, use_distance_field_text,
-                           pixel_config);
+                           color_type, raster_color_space);
 }
 
 TEST_F(RasterImplementationGLESTest, RasterCHROMIUM) {
@@ -684,10 +693,12 @@ TEST_F(RasterImplementationGLESTest, RasterCHROMIUM) {
   display_list->Finalize();
 
   ImageProviderStub image_provider;
-  const gfx::Vector2d translate(1, 2);
+  const gfx::Size content_size(100, 200);
+  const gfx::Rect full_raster_rect(2, 3, 8, 9);
   const gfx::Rect playback_rect(3, 4, 5, 6);
   const gfx::Vector2dF post_translate(7.0f, 8.0f);
   const GLfloat post_scale = 9.0f;
+  bool requires_clear = false;
 
   constexpr const GLsizeiptr kBufferSize = 16 << 10;
   char buffer[kBufferSize];
@@ -695,8 +706,10 @@ TEST_F(RasterImplementationGLESTest, RasterCHROMIUM) {
   EXPECT_CALL(*gl_, MapRasterCHROMIUM(Le(kBufferSize)))
       .WillOnce(Return(buffer));
   EXPECT_CALL(*gl_, UnmapRasterCHROMIUM(Gt(0))).Times(1);
-  ri_->RasterCHROMIUM(display_list.get(), &image_provider, translate,
-                      playback_rect, post_translate, post_scale);
+
+  ri_->RasterCHROMIUM(display_list.get(), &image_provider, content_size,
+                      full_raster_rect, playback_rect, post_translate,
+                      post_scale, requires_clear);
 }
 
 TEST_F(RasterImplementationGLESTest, EndRasterCHROMIUM) {

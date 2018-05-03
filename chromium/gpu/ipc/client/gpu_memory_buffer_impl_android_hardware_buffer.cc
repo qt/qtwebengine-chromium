@@ -8,6 +8,7 @@
 
 #include "base/android/android_hardware_buffer_compat.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory_handle.h"
@@ -150,7 +151,7 @@ base::Closure GpuMemoryBufferImplAndroidHardwareBuffer::AllocateForTesting(
   DCHECK(buffer);
   handle->handle =
       base::SharedMemoryHandle(buffer, 0, base::UnguessableToken::Create());
-  return base::Bind(&base::DoNothing);
+  return base::DoNothing();
 }
 
 }  // namespace gpu

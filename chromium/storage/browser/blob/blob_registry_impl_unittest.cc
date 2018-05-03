@@ -11,8 +11,10 @@
 #include "base/rand_util.h"
 #include "base/run_loop.h"
 #include "base/task_scheduler/post_task.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_restrictions.h"
+#include "mojo/common/data_pipe_utils.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "storage/browser/blob/blob_data_builder.h"
@@ -124,16 +126,16 @@ class BlobRegistryImplTest : public testing::Test {
   std::unique_ptr<BlobDataHandle> CreateBlobFromString(
       const std::string& uuid,
       const std::string& contents) {
-    BlobDataBuilder builder(uuid);
-    builder.set_content_type("text/plain");
-    builder.AppendData(contents);
-    return context_->AddFinishedBlob(builder);
+    auto builder = std::make_unique<BlobDataBuilder>(uuid);
+    builder->set_content_type("text/plain");
+    builder->AppendData(contents);
+    return context_->AddFinishedBlob(std::move(builder));
   }
 
   std::string UUIDFromBlob(blink::mojom::Blob* blob) {
     base::RunLoop loop;
     std::string received_uuid;
-    blob->GetInternalUUID(base::Bind(
+    blob->GetInternalUUID(base::BindOnce(
         [](base::Closure quit_closure, std::string* uuid_out,
            const std::string& uuid) {
           *uuid_out = uuid;
@@ -150,7 +152,7 @@ class BlobRegistryImplTest : public testing::Test {
 
   void WaitForBlobCompletion(BlobDataHandle* blob_handle) {
     base::RunLoop loop;
-    blob_handle->RunOnConstructionComplete(base::Bind(
+    blob_handle->RunOnConstructionComplete(base::BindOnce(
         [](const base::Closure& closure, BlobStatus status) { closure.Run(); },
         loop.QuitClosure()));
     loop.Run();
@@ -839,7 +841,7 @@ TEST_F(BlobRegistryImplTest, Register_ValidBytesAsFile) {
   EXPECT_EQ(expected_file_count, snapshot->items().size());
   size_t remaining_size = kData.size();
   for (const auto& item : snapshot->items()) {
-    EXPECT_EQ(network::DataElement::TYPE_FILE, item->type());
+    EXPECT_EQ(BlobDataItem::Type::kFile, item->type());
     EXPECT_EQ(0u, item->offset());
     if (remaining_size > kTestBlobStorageMaxFileSizeBytes)
       EXPECT_EQ(kTestBlobStorageMaxFileSizeBytes, item->length());
@@ -943,10 +945,10 @@ TEST_F(BlobRegistryImplTest,
   EXPECT_FALSE(context_->registry().HasEntry(kId));
 
   // Now cause construction to complete, if it would still be going on.
-  BlobDataBuilder builder(kDepId);
-  builder.AppendData(kData);
+  auto builder = std::make_unique<BlobDataBuilder>(kDepId);
+  builder->AppendData(kData);
   context_->BuildPreregisteredBlob(
-      builder, BlobStorageContext::TransportAllowedCallback());
+      std::move(builder), BlobStorageContext::TransportAllowedCallback());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(0u, BlobsUnderConstruction());
 }
@@ -984,6 +986,34 @@ TEST_F(BlobRegistryImplTest,
   scoped_task_environment_.RunUntilIdle();
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(0u, BlobsUnderConstruction());
+}
+
+TEST_F(BlobRegistryImplTest, RegisterFromStream) {
+  const std::string kData = "hello world, this is a blob";
+  const std::string kContentType = "content/type";
+  const std::string kContentDisposition = "disposition";
+
+  mojo::DataPipe pipe;
+  blink::mojom::SerializedBlobPtr blob;
+  base::RunLoop loop;
+  registry_->RegisterFromStream(
+      kContentType, kContentDisposition, kData.length(),
+      std::move(pipe.consumer_handle),
+      base::BindLambdaForTesting([&](blink::mojom::SerializedBlobPtr result) {
+        blob = std::move(result);
+        loop.Quit();
+      }));
+  mojo::common::BlockingCopyFromString(kData, pipe.producer_handle);
+  pipe.producer_handle.reset();
+  loop.Run();
+
+  ASSERT_TRUE(blob);
+  EXPECT_FALSE(blob->uuid.empty());
+  EXPECT_EQ(kContentType, blob->content_type);
+  EXPECT_EQ(kData.length(), blob->size);
+  ASSERT_TRUE(blob->blob);
+  blink::mojom::BlobPtr blob_ptr(std::move(blob->blob));
+  EXPECT_EQ(blob->uuid, UUIDFromBlob(blob_ptr.get()));
 }
 
 }  // namespace storage

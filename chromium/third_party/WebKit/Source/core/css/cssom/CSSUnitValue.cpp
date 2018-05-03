@@ -5,6 +5,7 @@
 #include "core/css/cssom/CSSUnitValue.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/animation/LengthPropertyFunctions.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSResolutionUnits.h"
 #include "core/css/cssom/CSSMathInvert.h"
@@ -13,6 +14,7 @@
 #include "core/css/cssom/CSSMathProduct.h"
 #include "core/css/cssom/CSSMathSum.h"
 #include "core/css/cssom/CSSNumericSumValue.h"
+#include "core/css/properties/CSSProperty.h"
 #include "platform/wtf/MathExtras.h"
 
 namespace blink {
@@ -30,6 +32,23 @@ CSSPrimitiveValue::UnitType ToCanonicalUnitIfPossible(
   if (canonical_unit == CSSPrimitiveValue::UnitType::kUnknown)
     return unit;
   return canonical_unit;
+}
+
+bool IsValueOutOfRangeForProperty(CSSPropertyID property_id, double value) {
+  // FIXME: Avoid this CSSProperty::Get call as it can be costly.
+  // The caller often has a CSSProperty already, so we can just pass it here.
+  if (LengthPropertyFunctions::GetValueRange(CSSProperty::Get(property_id)) ==
+          kValueRangeNonNegative &&
+      value < 0)
+    return true;
+
+  // For non-length properties and special cases.
+  switch (property_id) {
+    case CSSPropertyFontWeight:
+      return value < 0 || value > 1000;
+    default:
+      return false;
+  }
 }
 
 }  // namespace
@@ -61,17 +80,6 @@ CSSUnitValue* CSSUnitValue::FromCSSValue(const CSSPrimitiveValue& value) {
   return new CSSUnitValue(value.GetDoubleValue(), unit);
 }
 
-void CSSUnitValue::setUnit(const String& unit_name,
-                           ExceptionState& exception_state) {
-  CSSPrimitiveValue::UnitType unit = UnitFromName(unit_name);
-  if (!IsValidUnit(unit)) {
-    exception_state.ThrowTypeError("Invalid unit: " + unit_name);
-    return;
-  }
-
-  unit_ = unit;
-}
-
 String CSSUnitValue::unit() const {
   if (unit_ == CSSPrimitiveValue::UnitType::kNumber)
     return "number";
@@ -81,24 +89,7 @@ String CSSUnitValue::unit() const {
 }
 
 CSSStyleValue::StyleValueType CSSUnitValue::GetType() const {
-  if (unit_ == CSSPrimitiveValue::UnitType::kNumber)
-    return StyleValueType::kNumberType;
-  if (unit_ == CSSPrimitiveValue::UnitType::kPercentage)
-    return StyleValueType::kPercentType;
-  if (CSSPrimitiveValue::IsLength(unit_))
-    return StyleValueType::kLengthType;
-  if (CSSPrimitiveValue::IsAngle(unit_))
-    return StyleValueType::kAngleType;
-  if (CSSPrimitiveValue::IsTime(unit_))
-    return StyleValueType::kTimeType;
-  if (CSSPrimitiveValue::IsFrequency(unit_))
-    return StyleValueType::kFrequencyType;
-  if (CSSPrimitiveValue::IsResolution(unit_))
-    return StyleValueType::kResolutionType;
-  if (CSSPrimitiveValue::IsFlex(unit_))
-    return StyleValueType::kFlexType;
-  NOTREACHED();
-  return StyleValueType::kUnknownType;
+  return StyleValueType::kUnitType;
 }
 
 CSSUnitValue* CSSUnitValue::ConvertTo(
@@ -145,6 +136,18 @@ const CSSPrimitiveValue* CSSUnitValue::ToCSSValue() const {
   return CSSPrimitiveValue::Create(value_, unit_);
 }
 
+const CSSPrimitiveValue* CSSUnitValue::ToCSSValueWithProperty(
+    CSSPropertyID property_id) const {
+  if (IsValueOutOfRangeForProperty(property_id, value_)) {
+    // Wrap out of range values with a calc.
+    CSSCalcExpressionNode* node = ToCalcExpressionNode();
+    node->SetIsNestedCalc();
+    return CSSPrimitiveValue::Create(CSSCalcValue::Create(node));
+  }
+
+  return CSSPrimitiveValue::Create(value_, unit_);
+}
+
 CSSCalcExpressionNode* CSSUnitValue::ToCalcExpressionNode() const {
   return CSSCalcValue::CreateExpressionNode(
       CSSPrimitiveValue::Create(value_, unit_));
@@ -155,9 +158,18 @@ CSSNumericValue* CSSUnitValue::Negate() {
 }
 
 CSSNumericValue* CSSUnitValue::Invert() {
-  if (unit_ == CSSPrimitiveValue::UnitType::kNumber)
+  if (unit_ == CSSPrimitiveValue::UnitType::kNumber) {
+    if (value_ == 0)
+      return nullptr;
     return CSSUnitValue::Create(1.0 / value_, unit_);
+  }
   return CSSMathInvert::Create(this);
+}
+
+void CSSUnitValue::BuildCSSText(Nested,
+                                ParenLess,
+                                StringBuilder& result) const {
+  result.Append(ToCSSValue()->CssText());
 }
 
 }  // namespace blink

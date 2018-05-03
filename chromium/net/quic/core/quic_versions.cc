@@ -12,8 +12,7 @@
 #include "net/quic/platform/api/quic_flag_utils.h"
 #include "net/quic/platform/api/quic_flags.h"
 #include "net/quic/platform/api/quic_logging.h"
-
-using std::string;
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
 namespace {
@@ -63,6 +62,8 @@ QuicVersionLabel CreateQuicVersionLabel(ParsedQuicVersion parsed_version) {
       return MakeVersionLabel(proto, '0', '4', '2');
     case QUIC_VERSION_43:
       return MakeVersionLabel(proto, '0', '4', '3');
+    case QUIC_VERSION_99:
+      return MakeVersionLabel(proto, '0', '9', '9');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicTransportVersion to be written to the wire.
@@ -142,13 +143,31 @@ ParsedQuicVersionVector FilterSupportedVersions(
   ParsedQuicVersionVector filtered_versions;
   filtered_versions.reserve(versions.size());
   for (ParsedQuicVersion version : versions) {
-    if (version.transport_version == QUIC_VERSION_43) {
-      if (GetQuicFlag(FLAGS_quic_enable_version_43) &&
-          GetQuicFlag(FLAGS_quic_enable_version_42)) {
+    if (version.transport_version == QUIC_VERSION_99) {
+      if (GetQuicFlag(FLAGS_quic_enable_version_99) &&
+          GetQuicReloadableFlag(quic_enable_version_43) &&
+          GetQuicReloadableFlag(quic_enable_version_42_2)) {
+        filtered_versions.push_back(version);
+      }
+    } else if (version.transport_version == QUIC_VERSION_43) {
+      if (GetQuicReloadableFlag(quic_enable_version_43) &&
+          GetQuicReloadableFlag(quic_enable_version_42_2)) {
         filtered_versions.push_back(version);
       }
     } else if (version.transport_version == QUIC_VERSION_42) {
-      if (GetQuicFlag(FLAGS_quic_enable_version_42)) {
+      if (GetQuicReloadableFlag(quic_enable_version_42_2)) {
+        filtered_versions.push_back(version);
+      }
+    } else if (version.transport_version == QUIC_VERSION_41) {
+      if (!GetQuicReloadableFlag(quic_disable_version_41)) {
+        filtered_versions.push_back(version);
+      }
+    } else if (version.transport_version == QUIC_VERSION_38) {
+      if (!GetQuicReloadableFlag(quic_disable_version_38)) {
+        filtered_versions.push_back(version);
+      }
+    } else if (version.transport_version == QUIC_VERSION_37) {
+      if (!GetQuicReloadableFlag(quic_disable_version_37)) {
         filtered_versions.push_back(version);
       }
     } else {
@@ -201,7 +220,7 @@ QuicVersionLabel QuicVersionToQuicVersionLabel(
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, transport_version));
 }
 
-string QuicVersionLabelToString(QuicVersionLabel version_label) {
+QuicString QuicVersionLabelToString(QuicVersionLabel version_label) {
   return QuicTagToString(QuicEndian::HostToNet32(version_label));
 }
 
@@ -219,7 +238,7 @@ HandshakeProtocol QuicVersionLabelToHandshakeProtocol(
   case x:                        \
     return #x
 
-string QuicVersionToString(QuicTransportVersion transport_version) {
+QuicString QuicVersionToString(QuicTransportVersion transport_version) {
   switch (transport_version) {
     RETURN_STRING_LITERAL(QUIC_VERSION_35);
     RETURN_STRING_LITERAL(QUIC_VERSION_37);
@@ -228,18 +247,19 @@ string QuicVersionToString(QuicTransportVersion transport_version) {
     RETURN_STRING_LITERAL(QUIC_VERSION_41);
     RETURN_STRING_LITERAL(QUIC_VERSION_42);
     RETURN_STRING_LITERAL(QUIC_VERSION_43);
+    RETURN_STRING_LITERAL(QUIC_VERSION_99);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
 }
 
-string ParsedQuicVersionToString(ParsedQuicVersion version) {
+QuicString ParsedQuicVersionToString(ParsedQuicVersion version) {
   return QuicVersionLabelToString(CreateQuicVersionLabel(version));
 }
 
-string QuicTransportVersionVectorToString(
+QuicString QuicTransportVersionVectorToString(
     const QuicTransportVersionVector& versions) {
-  string result = "";
+  QuicString result = "";
   for (size_t i = 0; i < versions.size(); ++i) {
     if (i != 0) {
       result.append(",");
@@ -249,9 +269,9 @@ string QuicTransportVersionVectorToString(
   return result;
 }
 
-string ParsedQuicVersionVectorToString(
+QuicString ParsedQuicVersionVectorToString(
     const ParsedQuicVersionVector& versions) {
-  string result = "";
+  QuicString result = "";
   for (size_t i = 0; i < versions.size(); ++i) {
     if (i != 0) {
       result.append(",");

@@ -48,7 +48,8 @@
     "channel": "stable",
     "extension_types": ["extension"],
     "whitelist": [
-      "0D209B5E4401BB8E7873B5AB5B1346A1CB067015"  // Autotest: crbug.com/654525
+      "0D209B5E4401BB8E7873B5AB5B1346A1CB067015", // http://crbug.com/654525
+      "93CFDA3681E923AD7AB291CEDD98248396B5496C"  // http://crbug.com/803543
     ]
   },
   "background": {
@@ -297,13 +298,6 @@
       "2C18988BCDC297196D5D6893005175DA1BC1E893"   // http://crbug.com/570127
     ]
   },
-  "experienceSamplingPrivate": {
-    "channel": "stable",
-    "extension_types": ["extension"],
-    "whitelist": [
-      "0B5B953E53AC1859AC1DD3F67E115D1A5C2D6123"  // https://crbug.com/384635
-    ]
-  },
   "experimental": {
     "channel": "stable",
     "command_line_switch": "experimental-extension-apis",
@@ -478,6 +472,11 @@
       "whitelist": [
         "B44D08FD98F1523ED5837D78D0A606EA9D6206E5"  // Web Store
       ]
+    },
+    {
+      "channel": "dev",
+      "extension_types": ["platform_app"],
+      "session_types": ["kiosk"]
     }
   ],
   "mediaGalleries": {
@@ -682,7 +681,8 @@
   "screenlockPrivate": {
     "channel": "stable",
     "extension_types": ["platform_app"],
-    "location": "component"
+    "location": "component",
+    "platforms": ["chromeos"]
   },
   "sessions": {
     "channel": "stable",
@@ -699,6 +699,22 @@
     "whitelist": [
       "63ED55E43214C211F82122ED56407FF1A807F2A3",  // Media Router Dev
       "226CF815E39A363090A1E547D53063472B8279FA"   // Media Router Release
+    ]
+  },
+  {
+    "channel": "stable",
+    "extension_types": ["platform_app"],
+    "platforms": ["chromeos"],
+    "session_types": ["kiosk"],
+    "whitelist": [
+      "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB",  // https://crbug.com/803362
+      "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // https://crbug.com/803362
+      "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // https://crbug.com/803362
+      "307E96539209F95A1A8740C713E6998A73657D96",  // https://crbug.com/803362
+      "4F25792AF1AA7483936DE29C07806F203C7170A0",  // https://crbug.com/803362
+      "BD8781D757D830FC2E85470A1B6E8A718B7EE0D9",  // https://crbug.com/803362
+      "4AC2B6C63C6480D150DFDA13E4A5956EB1D0DDBB",  // https://crbug.com/803362
+      "81986D4F846CEDDDB962643FA501D1780DD441BB"   // https://crbug.com/803362
     ]
   }],
   "signedInDevices": {

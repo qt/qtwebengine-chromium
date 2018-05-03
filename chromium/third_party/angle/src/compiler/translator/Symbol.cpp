@@ -12,6 +12,7 @@
 
 #include "compiler/translator/Symbol.h"
 
+#include "compiler/translator/ImmutableStringBuilder.h"
 #include "compiler/translator/SymbolTable.h"
 
 namespace sh
@@ -20,12 +21,17 @@ namespace sh
 namespace
 {
 
+constexpr const ImmutableString kMainName("main");
+constexpr const ImmutableString kImageLoadName("imageLoad");
+constexpr const ImmutableString kImageStoreName("imageStore");
+constexpr const ImmutableString kImageSizeName("imageSize");
+
 static const char kFunctionMangledNameSeparator = '(';
 
 }  // anonymous namespace
 
 TSymbol::TSymbol(TSymbolTable *symbolTable,
-                 const TString *name,
+                 const ImmutableString &name,
                  SymbolType symbolType,
                  TExtension extension)
     : mName(name),
@@ -34,47 +40,49 @@ TSymbol::TSymbol(TSymbolTable *symbolTable,
       mExtension(extension)
 {
     ASSERT(mSymbolType == SymbolType::BuiltIn || mExtension == TExtension::UNDEFINED);
-    ASSERT(mName != nullptr || mSymbolType == SymbolType::AngleInternal ||
-           mSymbolType == SymbolType::NotResolved || mSymbolType == SymbolType::Empty);
-    ASSERT(mName == nullptr || *mName != "");
+    ASSERT(mName != "" || mSymbolType == SymbolType::AngleInternal ||
+           mSymbolType == SymbolType::Empty);
 }
 
-const TString &TSymbol::name() const
+ImmutableString TSymbol::name() const
 {
-    if (mName != nullptr)
+    if (mName != "")
     {
-        return *mName;
+        return mName;
     }
     ASSERT(mSymbolType == SymbolType::AngleInternal);
-    TInfoSinkBase symbolNameOut;
-    symbolNameOut << "s" << mUniqueId.get();
-    return *NewPoolTString(symbolNameOut.c_str());
+    int uniqueId = mUniqueId.get();
+    ImmutableStringBuilder symbolNameOut(sizeof(uniqueId) * 2u + 1u);
+    symbolNameOut << 's';
+    symbolNameOut.appendHex(mUniqueId.get());
+    return symbolNameOut;
 }
 
-const TString &TSymbol::getMangledName() const
+ImmutableString TSymbol::getMangledName() const
 {
     ASSERT(mSymbolType != SymbolType::Empty);
     return name();
 }
 
 TVariable::TVariable(TSymbolTable *symbolTable,
-                     const TString *name,
-                     const TType &t,
+                     const ImmutableString &name,
+                     const TType *type,
                      SymbolType symbolType,
                      TExtension extension)
-    : TSymbol(symbolTable, name, symbolType, extension), type(t), unionArray(nullptr)
+    : TSymbol(symbolTable, name, symbolType, extension), mType(type), unionArray(nullptr)
 {
+    ASSERT(mType);
 }
 
 TStructure::TStructure(TSymbolTable *symbolTable,
-                       const TString *name,
+                       const ImmutableString &name,
                        const TFieldList *fields,
                        SymbolType symbolType)
     : TSymbol(symbolTable, name, symbolType), TFieldListCollection(fields)
 {
 }
 
-void TStructure::createSamplerSymbols(const TString &namePrefix,
+void TStructure::createSamplerSymbols(const char *namePrefix,
                                       const TString &apiNamePrefix,
                                       TVector<const TVariable *> *outputSymbols,
                                       TMap<const TVariable *, TString> *outputSymbolsToAPINames,
@@ -86,22 +94,24 @@ void TStructure::createSamplerSymbols(const TString &namePrefix,
         const TType *fieldType = field->type();
         if (IsSampler(fieldType->getBasicType()) || fieldType->isStructureContainingSamplers())
         {
-            TString fieldName    = namePrefix + "_" + field->name();
-            TString fieldApiName = apiNamePrefix + "." + field->name();
-            fieldType->createSamplerSymbols(fieldName, fieldApiName, outputSymbols,
-                                            outputSymbolsToAPINames, symbolTable);
+            std::stringstream fieldName;
+            fieldName << namePrefix << "_" << field->name();
+            TString fieldApiName = apiNamePrefix + ".";
+            fieldApiName += field->name().data();
+            fieldType->createSamplerSymbols(ImmutableString(fieldName.str()), fieldApiName,
+                                            outputSymbols, outputSymbolsToAPINames, symbolTable);
         }
     }
 }
 
-void TStructure::setName(const TString &name)
+void TStructure::setName(const ImmutableString &name)
 {
-    TString *mutableName = const_cast<TString *>(mName);
+    ImmutableString *mutableName = const_cast<ImmutableString *>(&mName);
     *mutableName         = name;
 }
 
 TInterfaceBlock::TInterfaceBlock(TSymbolTable *symbolTable,
-                                 const TString *name,
+                                 const ImmutableString &name,
                                  const TFieldList *fields,
                                  const TLayoutQualifier &layoutQualifier,
                                  SymbolType symbolType,
@@ -115,84 +125,90 @@ TInterfaceBlock::TInterfaceBlock(TSymbolTable *symbolTable,
 }
 
 TFunction::TFunction(TSymbolTable *symbolTable,
-                     const TString *name,
-                     const TType *retType,
+                     const ImmutableString &name,
                      SymbolType symbolType,
-                     bool knownToNotHaveSideEffects,
-                     TOperator tOp,
-                     TExtension extension)
-    : TSymbol(symbolTable, name, symbolType, extension),
+                     const TType *retType,
+                     bool knownToNotHaveSideEffects)
+    : TSymbol(symbolTable, name, symbolType, TExtension::UNDEFINED),
+      mParametersVector(new TParamVector()),
+      mParameters(nullptr),
+      mParamCount(0u),
       returnType(retType),
-      mangledName(nullptr),
-      op(tOp),
+      mMangledName(""),
+      mOp(EOpNull),
       defined(false),
       mHasPrototypeDeclaration(false),
       mKnownToNotHaveSideEffects(knownToNotHaveSideEffects)
 {
     // Functions with an empty name are not allowed.
     ASSERT(symbolType != SymbolType::Empty);
-    ASSERT(name != nullptr || symbolType == SymbolType::AngleInternal || tOp != EOpNull);
+    ASSERT(name != nullptr || symbolType == SymbolType::AngleInternal);
 }
 
-//
-// Functions have buried pointers to delete.
-//
-TFunction::~TFunction()
+TFunction::TFunction(TSymbolTable *symbolTable,
+                     const ImmutableString &name,
+                     TExtension extension,
+                     TConstParameter *parameters,
+                     size_t paramCount,
+                     const TType *retType,
+                     TOperator op,
+                     bool knownToNotHaveSideEffects)
+    : TSymbol(symbolTable, name, SymbolType::BuiltIn, extension),
+      mParametersVector(nullptr),
+      mParameters(parameters),
+      mParamCount(paramCount),
+      returnType(retType),
+      mMangledName(""),
+      mOp(op),
+      defined(false),
+      mHasPrototypeDeclaration(false),
+      mKnownToNotHaveSideEffects(knownToNotHaveSideEffects)
 {
-    clearParameters();
+    ASSERT(name != nullptr);
+    ASSERT(op != EOpNull);
+    ASSERT(paramCount == 0 || parameters != nullptr);
+    mMangledName = buildMangledName();
 }
 
-void TFunction::clearParameters()
+void TFunction::addParameter(const TConstParameter &p)
 {
-    for (TParamList::iterator i = parameters.begin(); i != parameters.end(); ++i)
-        delete (*i).type;
-    parameters.clear();
-    mangledName = nullptr;
+    ASSERT(mParametersVector);
+    mParametersVector->push_back(p);
+    mParameters  = mParametersVector->data();
+    mParamCount  = mParametersVector->size();
+    mMangledName = ImmutableString("");
 }
 
-void TFunction::swapParameters(const TFunction &parametersSource)
+void TFunction::shareParameters(const TFunction &parametersSource)
 {
-    clearParameters();
-    for (auto parameter : parametersSource.parameters)
-    {
-        addParameter(parameter);
-    }
+    mParametersVector = nullptr;
+    mParameters       = parametersSource.mParameters;
+    mParamCount       = parametersSource.mParamCount;
+    ASSERT(parametersSource.name() == name());
+    mMangledName = parametersSource.mMangledName;
 }
 
-const TString *TFunction::buildMangledName() const
+ImmutableString TFunction::buildMangledName() const
 {
-    std::string newName = name().c_str();
+    std::string newName(name().data(), name().length());
     newName += kFunctionMangledNameSeparator;
 
-    for (const auto &p : parameters)
+    for (size_t i = 0u; i < mParamCount; ++i)
     {
-        newName += p.type->getMangledName();
+        newName += mParameters[i].type->getMangledName();
     }
-    return NewPoolTString(newName.c_str());
-}
-
-const TString &TFunction::GetMangledNameFromCall(const TString &functionName,
-                                                 const TIntermSequence &arguments)
-{
-    std::string newName = functionName.c_str();
-    newName += kFunctionMangledNameSeparator;
-
-    for (TIntermNode *argument : arguments)
-    {
-        newName += argument->getAsTyped()->getType().getMangledName();
-    }
-    return *NewPoolTString(newName.c_str());
+    return ImmutableString(newName);
 }
 
 bool TFunction::isMain() const
 {
-    return symbolType() == SymbolType::UserDefined && name() == "main";
+    return symbolType() == SymbolType::UserDefined && name() == kMainName;
 }
 
 bool TFunction::isImageFunction() const
 {
     return symbolType() == SymbolType::BuiltIn &&
-           (name() == "imageSize" || name() == "imageLoad" || name() == "imageStore");
+           (name() == kImageSizeName || name() == kImageLoadName || name() == kImageStoreName);
 }
 
 }  // namespace sh

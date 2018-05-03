@@ -6,36 +6,35 @@
 
 #include "xfa/fxfa/cxfa_ffimage.h"
 
+#include "core/fxge/dib/cfx_dibitmap.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
-#include "xfa/fxfa/cxfa_ffdraw.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/parser/cxfa_image.h"
 #include "xfa/fxfa/parser/cxfa_para.h"
 #include "xfa/fxfa/parser/cxfa_value.h"
 
-CXFA_FFImage::CXFA_FFImage(CXFA_Node* pNode) : CXFA_FFDraw(pNode) {}
+CXFA_FFImage::CXFA_FFImage(CXFA_Node* pNode) : CXFA_FFWidget(pNode) {}
 
 CXFA_FFImage::~CXFA_FFImage() {
   CXFA_FFImage::UnloadWidget();
 }
 
 bool CXFA_FFImage::IsLoaded() {
-  return !!GetNode()->GetWidgetAcc()->GetImageImage();
+  return !!GetNode()->GetImageImage();
 }
 
 bool CXFA_FFImage::LoadWidget() {
-  if (GetNode()->GetWidgetAcc()->GetImageImage())
+  if (GetNode()->GetImageImage())
     return true;
 
-  return GetNode()->GetWidgetAcc()->LoadImageImage(GetDoc())
-             ? CXFA_FFDraw::LoadWidget()
-             : false;
+  return GetNode()->LoadImageImage(GetDoc()) ? CXFA_FFWidget::LoadWidget()
+                                             : false;
 }
 
 void CXFA_FFImage::UnloadWidget() {
-  GetNode()->GetWidgetAcc()->SetImageImage(nullptr);
+  GetNode()->SetImageImage(nullptr);
 }
 
 void CXFA_FFImage::RenderWidget(CXFA_Graphics* pGS,
@@ -49,8 +48,7 @@ void CXFA_FFImage::RenderWidget(CXFA_Graphics* pGS,
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
 
-  RetainPtr<CFX_DIBitmap> pDIBitmap =
-      GetNode()->GetWidgetAcc()->GetImageImage();
+  RetainPtr<CFX_DIBitmap> pDIBitmap = GetNode()->GetImageImage();
   if (!pDIBitmap)
     return;
 
@@ -69,7 +67,7 @@ void CXFA_FFImage::RenderWidget(CXFA_Graphics* pGS,
 
   int32_t iImageXDpi = 0;
   int32_t iImageYDpi = 0;
-  m_pNode->GetWidgetAcc()->GetImageDpi(iImageXDpi, iImageYDpi);
+  m_pNode->GetImageDpi(iImageXDpi, iImageYDpi);
 
   auto* value = m_pNode->GetFormValueIfExists();
   CXFA_Image* image = value ? value->GetImageIfExists() : nullptr;

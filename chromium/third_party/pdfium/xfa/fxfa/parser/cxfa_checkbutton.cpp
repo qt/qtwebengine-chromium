@@ -11,11 +11,12 @@
 
 namespace {
 
-const CXFA_Node::PropertyData kPropertyData[] = {{XFA_Element::Margin, 1, 0},
-                                                 {XFA_Element::Border, 1, 0},
-                                                 {XFA_Element::Extras, 1, 0},
-                                                 {XFA_Element::Unknown, 0, 0}};
-const CXFA_Node::AttributeData kAttributeData[] = {
+const CXFA_Node::PropertyData kCheckButtonPropertyData[] = {
+    {XFA_Element::Margin, 1, 0},
+    {XFA_Element::Border, 1, 0},
+    {XFA_Element::Extras, 1, 0},
+    {XFA_Element::Unknown, 0, 0}};
+const CXFA_Node::AttributeData kCheckButtonAttributeData[] = {
     {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
     {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
     {XFA_Attribute::AllowNeutral, XFA_AttributeType::Boolean, (void*)0},
@@ -27,7 +28,7 @@ const CXFA_Node::AttributeData kAttributeData[] = {
     {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
     {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-constexpr wchar_t kName[] = L"checkButton";
+constexpr wchar_t kCheckButtonName[] = L"checkButton";
 
 }  // namespace
 
@@ -37,9 +38,25 @@ CXFA_CheckButton::CXFA_CheckButton(CXFA_Document* doc, XFA_PacketType packet)
                 (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
                 XFA_ObjectType::Node,
                 XFA_Element::CheckButton,
-                kPropertyData,
-                kAttributeData,
-                kName,
+                kCheckButtonPropertyData,
+                kCheckButtonAttributeData,
+                kCheckButtonName,
                 pdfium::MakeUnique<CJX_CheckButton>(this)) {}
 
 CXFA_CheckButton::~CXFA_CheckButton() {}
+
+XFA_FFWidgetType CXFA_CheckButton::GetDefaultFFWidgetType() const {
+  return XFA_FFWidgetType::kCheckButton;
+}
+
+bool CXFA_CheckButton::IsRound() {
+  return JSObject()->GetEnum(XFA_Attribute::Shape) == XFA_AttributeEnum::Round;
+}
+
+XFA_AttributeEnum CXFA_CheckButton::GetMark() {
+  return JSObject()->GetEnum(XFA_Attribute::Mark);
+}
+
+bool CXFA_CheckButton::IsAllowNeutral() {
+  return JSObject()->GetBoolean(XFA_Attribute::AllowNeutral);
+}

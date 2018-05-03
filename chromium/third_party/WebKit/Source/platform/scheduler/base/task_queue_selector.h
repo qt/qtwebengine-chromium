@@ -38,10 +38,7 @@ class PLATFORM_EXPORT TaskQueueSelector {
   // thread. Must only be called if |queue| is disabled.
   void EnableQueue(internal::TaskQueueImpl* queue);
 
-  // Disable selection from |queue|. If task blocking is enabled for the queue,
-  // Observer::OnTriedToSelectBlockedWorkQueue will be emitted if the
-  // SelectWorkQueueToService tries to select this disabled queue for execution.
-  // Must only be called if |queue| is enabled.
+  // Disable selection from |queue|. Must only be called if |queue| is enabled.
   void DisableQueue(internal::TaskQueueImpl* queue);
 
   // Called get or set the priority of |queue|.
@@ -64,15 +61,6 @@ class PLATFORM_EXPORT TaskQueueSelector {
 
     // Called when |queue| transitions from disabled to enabled.
     virtual void OnTaskQueueEnabled(internal::TaskQueueImpl* queue) = 0;
-
-    // Called when the selector tried to select a task from a disabled work
-    // queue. See
-    // TaskQueue::QueueCreationParams::SetShouldReportWhenExecutionBlocked. A
-    // single call to SelectWorkQueueToService will only result in up to one
-    // blocking notification even if multiple disabled queues could have been
-    // selected.
-    virtual void OnTriedToSelectBlockedWorkQueue(
-        internal::WorkQueue* work_queue) = 0;
   };
 
   // Called once to set the Observer. This function is called
@@ -81,7 +69,7 @@ class PLATFORM_EXPORT TaskQueueSelector {
 
   // Returns true if all the enabled work queues are empty. Returns false
   // otherwise.
-  bool EnabledWorkQueuesEmpty() const;
+  bool AllEnabledWorkQueuesAreEmpty() const;
 
  protected:
   class PLATFORM_EXPORT PrioritizingSelector {
@@ -154,8 +142,8 @@ class PLATFORM_EXPORT TaskQueueSelector {
   // starved by delayed tasks.
   void SetImmediateStarvationCountForTest(size_t immediate_starvation_count);
 
-  PrioritizingSelector* enabled_selector_for_test() {
-    return &enabled_selector_;
+  PrioritizingSelector* prioritizing_selector_for_test() {
+    return &prioritizing_selector_;
   }
 
  private:
@@ -169,15 +157,6 @@ class PLATFORM_EXPORT TaskQueueSelector {
   // priority |priority|.
   void DidSelectQueueWithPriority(TaskQueue::QueuePriority priority,
                                   bool chose_delayed_over_immediate);
-
-  // No enabled queue could be selected, check if we could have chosen a
-  // disabled (blocked) work queue instead.
-  void TrySelectingBlockedQueue();
-
-  // Check if we could have chosen a disabled (blocked) work queue instead.
-  // |chosen_enabled_queue| is the enabled queue that got chosen.
-  void TrySelectingBlockedQueueOverEnabledQueue(
-      const WorkQueue& chosen_enabled_queue);
 
   // Maximum score to accumulate before normal priority tasks are run even in
   // the presence of high priority tasks.
@@ -210,12 +189,10 @@ class PLATFORM_EXPORT TaskQueueSelector {
  private:
   base::ThreadChecker main_thread_checker_;
 
-  PrioritizingSelector enabled_selector_;
-  PrioritizingSelector blocked_selector_;
+  PrioritizingSelector prioritizing_selector_;
   size_t immediate_starvation_count_;
   size_t normal_priority_starvation_score_;
   size_t low_priority_starvation_score_;
-  size_t num_blocked_queues_to_report_;
 
   Observer* task_queue_selector_observer_;  // NOT OWNED
   DISALLOW_COPY_AND_ASSIGN(TaskQueueSelector);

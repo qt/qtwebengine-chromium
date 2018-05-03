@@ -26,13 +26,14 @@ class RemoteFrameClientImpl final : public RemoteFrameClient {
   Frame* NextSibling() const override;
   Frame* FirstChild() const override;
   void FrameFocused() const override;
-  String GetDevToolsFrameToken() const override;
+  base::UnguessableToken GetDevToolsFrameToken() const override;
 
   // RemoteFrameClient overrides:
   void Navigate(const ResourceRequest&,
                 bool should_replace_current_entry) override;
   void Reload(FrameLoadType, ClientRedirectPolicy) override;
   unsigned BackForwardLength() override;
+  void CheckCompleted() override;
   void ForwardPostMessage(MessageEvent*,
                           scoped_refptr<const SecurityOrigin> target,
                           LocalFrame* source) const override;
@@ -44,6 +45,7 @@ class RemoteFrameClientImpl final : public RemoteFrameClient {
   void SetIsInert(bool) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,
                                     bool subtree_throttled) override;
+  uint32_t Print(const IntRect&, WebCanvas*) const override;
 
   WebRemoteFrameImpl* GetWebFrame() const { return web_frame_; }
 

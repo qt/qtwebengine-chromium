@@ -15,13 +15,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
-#include "net/base/completion_callback.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_request_info.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
+#include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/chromium/buffered_spdy_framer.h"
 #include "net/spdy/chromium/http2_push_promise_index.h"
@@ -76,7 +76,7 @@ class SpdyStreamTest : public ::testing::Test {
 
   base::WeakPtr<SpdySession> CreateDefaultSpdySession() {
     SpdySessionKey key(HostPortPair::FromURL(url_), ProxyServer::Direct(),
-                       PRIVACY_MODE_DISABLED);
+                       PRIVACY_MODE_DISABLED, SocketTag());
     return CreateSpdySession(session_.get(), key, NetLogWithSource());
   }
 
@@ -170,11 +170,11 @@ TEST_F(SpdyStreamTest, SendDataAfterOpen) {
   AddRead(resp);
 
   SpdySerializedFrame msg(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddWrite(msg);
 
   SpdySerializedFrame echo(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddRead(echo);
 
   AddReadEOF();
@@ -239,14 +239,14 @@ TEST_F(SpdyStreamTest, Trailers) {
   AddWrite(req);
 
   SpdySerializedFrame msg(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddWrite(msg);
 
   SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
   AddRead(resp);
 
   SpdySerializedFrame echo(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddRead(echo);
 
   SpdyHeaderBlock late_headers;
@@ -295,8 +295,7 @@ TEST_F(SpdyStreamTest, Trailers) {
 }
 
 TEST_F(SpdyStreamTest, PushedStream) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdySerializedFrame reply(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
@@ -313,13 +312,12 @@ TEST_F(SpdyStreamTest, PushedStream) {
   AddReadPause();
 
   SpdyStringPiece pushed_msg("foo");
-  SpdySerializedFrame pushed_body(spdy_util_.ConstructSpdyDataFrame(
-      2, pushed_msg.data(), pushed_msg.size(), true));
+  SpdySerializedFrame pushed_body(
+      spdy_util_.ConstructSpdyDataFrame(2, pushed_msg, true));
   AddRead(pushed_body);
 
   SpdyStringPiece msg("bar");
-  SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, msg.data(), msg.size(), true));
+  SpdySerializedFrame body(spdy_util_.ConstructSpdyDataFrame(1, msg, true));
   AddRead(body);
 
   AddReadEOF();
@@ -356,7 +354,7 @@ TEST_F(SpdyStreamTest, PushedStream) {
   data.RunUntilPaused();
 
   const SpdySessionKey key(HostPortPair::FromURL(url_), ProxyServer::Direct(),
-                           PRIVACY_MODE_DISABLED);
+                           PRIVACY_MODE_DISABLED, SocketTag());
   const GURL pushed_url(kPushUrl);
   HttpRequestInfo push_request;
   push_request.url = pushed_url;
@@ -408,11 +406,11 @@ TEST_F(SpdyStreamTest, StreamError) {
   AddRead(resp);
 
   SpdySerializedFrame msg(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddWrite(msg);
 
   SpdySerializedFrame echo(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddRead(echo);
 
   AddReadEOF();
@@ -476,13 +474,13 @@ TEST_F(SpdyStreamTest, SendLargeDataAfterOpenRequestResponse) {
   AddWrite(req);
 
   SpdyString chunk_data(kMaxSpdyFrameChunkSize, 'x');
-  SpdySerializedFrame chunk(spdy_util_.ConstructSpdyDataFrame(
-      1, chunk_data.data(), chunk_data.length(), false));
+  SpdySerializedFrame chunk(
+      spdy_util_.ConstructSpdyDataFrame(1, chunk_data, false));
   AddWrite(chunk);
   AddWrite(chunk);
 
-  SpdySerializedFrame last_chunk(spdy_util_.ConstructSpdyDataFrame(
-      1, chunk_data.data(), chunk_data.length(), true));
+  SpdySerializedFrame last_chunk(
+      spdy_util_.ConstructSpdyDataFrame(1, chunk_data, true));
   AddWrite(last_chunk);
 
   SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
@@ -535,8 +533,8 @@ TEST_F(SpdyStreamTest, SendLargeDataAfterOpenBidirectional) {
   AddRead(resp);
 
   SpdyString chunk_data(kMaxSpdyFrameChunkSize, 'x');
-  SpdySerializedFrame chunk(spdy_util_.ConstructSpdyDataFrame(
-      1, chunk_data.data(), chunk_data.length(), false));
+  SpdySerializedFrame chunk(
+      spdy_util_.ConstructSpdyDataFrame(1, chunk_data, false));
   AddWrite(chunk);
   AddWrite(chunk);
   AddWrite(chunk);
@@ -579,8 +577,7 @@ TEST_F(SpdyStreamTest, SendLargeDataAfterOpenBidirectional) {
 
 // Receiving a header with uppercase ASCII should result in a protocol error.
 TEST_F(SpdyStreamTest, UpperCaseHeaders) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   const char* const kExtraHeaders[] = {"X-UpperCase", "yes"};
@@ -631,8 +628,7 @@ TEST_F(SpdyStreamTest, UpperCaseHeaders) {
 // Receiving a header with uppercase ASCII should result in a protocol error
 // even for a push stream.
 TEST_F(SpdyStreamTest, UpperCaseHeadersOnPush) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdySerializedFrame reply(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
@@ -693,8 +689,7 @@ TEST_F(SpdyStreamTest, UpperCaseHeadersOnPush) {
 }
 
 TEST_F(SpdyStreamTest, HeadersMustHaveStatus) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   // Response headers without ":status" header field: protocol error.
@@ -747,8 +742,7 @@ TEST_F(SpdyStreamTest, HeadersMustHaveStatus) {
 }
 
 TEST_F(SpdyStreamTest, HeadersMustHaveStatusOnPushedStream) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdySerializedFrame reply(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
@@ -777,7 +771,7 @@ TEST_F(SpdyStreamTest, HeadersMustHaveStatusOnPushedStream) {
   AddWrite(rst);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddRead(body);
 
   AddReadEOF();
@@ -820,13 +814,12 @@ TEST_F(SpdyStreamTest, HeadersMustHaveStatusOnPushedStream) {
 }
 
 TEST_F(SpdyStreamTest, HeadersMustPreceedData) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   // Response body not preceeded by headers: protocol error.
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddRead(body);
 
   SpdySerializedFrame rst(
@@ -863,8 +856,7 @@ TEST_F(SpdyStreamTest, HeadersMustPreceedData) {
 }
 
 TEST_F(SpdyStreamTest, HeadersMustPreceedDataOnPushedStream) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdySerializedFrame reply(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
@@ -879,7 +871,7 @@ TEST_F(SpdyStreamTest, HeadersMustPreceedDataOnPushedStream) {
   AddWrite(priority);
 
   SpdySerializedFrame pushed_body(
-      spdy_util_.ConstructSpdyDataFrame(2, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(2, kPostBodyStringPiece, true));
   AddRead(pushed_body);
 
   SpdySerializedFrame rst(
@@ -887,7 +879,7 @@ TEST_F(SpdyStreamTest, HeadersMustPreceedDataOnPushedStream) {
   AddWrite(rst);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddRead(body);
 
   AddReadEOF();
@@ -930,15 +922,14 @@ TEST_F(SpdyStreamTest, HeadersMustPreceedDataOnPushedStream) {
 }
 
 TEST_F(SpdyStreamTest, TrailersMustNotFollowTrailers) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdySerializedFrame reply(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
   AddRead(reply);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddRead(body);
 
   SpdyHeaderBlock trailers_block;
@@ -992,15 +983,14 @@ TEST_F(SpdyStreamTest, TrailersMustNotFollowTrailers) {
 }
 
 TEST_F(SpdyStreamTest, DataMustNotFollowTrailers) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdySerializedFrame reply(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
   AddRead(reply);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddRead(body);
 
   SpdyHeaderBlock trailers_block;
@@ -1052,8 +1042,7 @@ TEST_F(SpdyStreamTest, DataMustNotFollowTrailers) {
 }
 
 TEST_F(SpdyStreamTest, InformationalHeaders) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdyHeaderBlock informational_headers;
@@ -1067,7 +1056,7 @@ TEST_F(SpdyStreamTest, InformationalHeaders) {
   AddRead(reply);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddRead(body);
 
   AddReadEOF();
@@ -1109,8 +1098,7 @@ TEST_F(SpdyStreamTest, InformationalHeaders) {
 }
 
 TEST_F(SpdyStreamTest, StatusMustBeNumber) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdyHeaderBlock incorrect_headers;
@@ -1159,8 +1147,7 @@ TEST_F(SpdyStreamTest, StatusMustBeNumber) {
 }
 
 TEST_F(SpdyStreamTest, StatusCannotHaveExtraText) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdyHeaderBlock headers_with_status_text;
@@ -1171,7 +1158,7 @@ TEST_F(SpdyStreamTest, StatusCannotHaveExtraText) {
   AddRead(reply);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddRead(body);
 
   SpdySerializedFrame rst(
@@ -1214,8 +1201,7 @@ TEST_F(SpdyStreamTest, StatusCannotHaveExtraText) {
 }
 
 TEST_F(SpdyStreamTest, StatusMustBePresent) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   SpdyHeaderBlock headers_without_status;
@@ -1224,7 +1210,7 @@ TEST_F(SpdyStreamTest, StatusMustBePresent) {
   AddRead(reply);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddRead(body);
 
   SpdySerializedFrame rst(
@@ -1362,7 +1348,7 @@ void SpdyStreamTest::RunResumeAfterUnstallRequestResponseTest(
   AddWrite(req);
 
   SpdySerializedFrame body(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, true));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
   AddWrite(body);
 
   SpdySerializedFrame resp(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
@@ -1438,11 +1424,11 @@ void SpdyStreamTest::RunResumeAfterUnstallBidirectionalTest(
   AddRead(resp);
 
   SpdySerializedFrame msg(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddWrite(msg);
 
   SpdySerializedFrame echo(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddRead(echo);
 
   AddReadEOF();
@@ -1508,8 +1494,7 @@ TEST_F(SpdyStreamTest, ResumeAfterSendWindowSizeAdjustBidirectional) {
 
 // Test calculation of amount of bytes received from network.
 TEST_F(SpdyStreamTest, ReceivedBytes) {
-  SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
   AddWrite(req);
 
   AddReadPause();
@@ -1520,7 +1505,7 @@ TEST_F(SpdyStreamTest, ReceivedBytes) {
   AddReadPause();
 
   SpdySerializedFrame msg(
-      spdy_util_.ConstructSpdyDataFrame(1, kPostBody, kPostBodyLength, false));
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, false));
   AddRead(msg);
 
   AddReadPause();
@@ -1576,6 +1561,61 @@ TEST_F(SpdyStreamTest, ReceivedBytes) {
   // FIN
   data.Resume();
   EXPECT_THAT(delegate.WaitForClose(), IsError(ERR_CONNECTION_CLOSED));
+}
+
+// Regression test for https://crbug.com/810763.
+TEST_F(SpdyStreamTest, DataOnHalfClosedRemoveStream) {
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyPost(
+      kDefaultUrl, 1, kPostBodyLength, LOWEST, nullptr, 0));
+  AddWrite(req);
+
+  SpdyHeaderBlock response_headers;
+  response_headers[kHttp2StatusHeader] = "200";
+  SpdySerializedFrame resp(spdy_util_.ConstructSpdyResponseHeaders(
+      1, std::move(response_headers), /* fin = */ true));
+  AddRead(resp);
+
+  SpdySerializedFrame data_frame(
+      spdy_util_.ConstructSpdyDataFrame(1, kPostBodyStringPiece, true));
+  AddRead(data_frame);
+
+  SpdySerializedFrame rst(
+      spdy_util_.ConstructSpdyRstStream(1, ERROR_CODE_STREAM_CLOSED));
+  AddWrite(rst);
+
+  AddReadEOF();
+
+  SequencedSocketData data(GetReads(), GetNumReads(), GetWrites(),
+                           GetNumWrites());
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  data.set_connect_data(connect_data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  AddSSLSocketData();
+
+  base::WeakPtr<SpdySession> session(CreateDefaultSpdySession());
+
+  base::WeakPtr<SpdyStream> stream = CreateStreamSynchronously(
+      SPDY_BIDIRECTIONAL_STREAM, session, url_, LOWEST, NetLogWithSource());
+  ASSERT_TRUE(stream);
+
+  StreamDelegateDoNothing delegate(stream);
+  stream->SetDelegate(&delegate);
+
+  EXPECT_TRUE(stream->GetUrlFromHeaders().is_empty());
+
+  SpdyHeaderBlock headers(
+      spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kPostBodyLength));
+  EXPECT_THAT(stream->SendRequestHeaders(std::move(headers), MORE_DATA_TO_SEND),
+              IsError(ERR_IO_PENDING));
+  EXPECT_EQ(kDefaultUrl, stream->GetUrlFromHeaders().spec());
+
+  EXPECT_THAT(delegate.WaitForClose(), IsError(ERR_SPDY_PROTOCOL_ERROR));
+
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(data.AllReadDataConsumed());
+  EXPECT_TRUE(data.AllWriteDataConsumed());
 }
 
 }  // namespace test

@@ -35,6 +35,7 @@
 #include "core/editing/Editor.h"
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/RevealSelectionScope.h"
 #include "core/editing/SelectionTemplate.h"
 #include "core/editing/SetSelectionOptions.h"
 #include "core/editing/commands/TypingCommand.h"
@@ -318,18 +319,14 @@ StyleableMarker::Thickness BoolIsThickToStyleableMarkerThickness(
 }
 
 int ComputeAutocapitalizeFlags(const Element* element) {
-  const TextControlElement* const text_control =
-      ToTextControlElementOrNull(element);
-  if (!text_control)
-    return 0;
-
-  if (!text_control->SupportsAutocapitalize())
+  const HTMLElement* const html_element = ToHTMLElementOrNull(element);
+  if (!html_element)
     return 0;
 
   // We set the autocapitalization flag corresponding to the "used
   // autocapitalization hint" for the focused element:
   // https://html.spec.whatwg.org/multipage/interaction.html#used-autocapitalization-hint
-  if (auto* input = ToHTMLInputElementOrNull(*element)) {
+  if (auto* input = ToHTMLInputElementOrNull(*html_element)) {
     const AtomicString& input_type = input->type();
     if (input_type == InputTypeNames::email ||
         input_type == InputTypeNames::url ||
@@ -347,17 +344,23 @@ int ComputeAutocapitalizeFlags(const Element* element) {
   DEFINE_STATIC_LOCAL(const AtomicString, words, ("words"));
   DEFINE_STATIC_LOCAL(const AtomicString, sentences, ("sentences"));
 
-  const AtomicString& autocapitalize = text_control->autocapitalize();
-  if (autocapitalize == none)
+  const AtomicString& autocapitalize = html_element->autocapitalize();
+  if (autocapitalize == none) {
     flags |= kWebTextInputFlagAutocapitalizeNone;
-  else if (autocapitalize == characters)
+  } else if (autocapitalize == characters) {
     flags |= kWebTextInputFlagAutocapitalizeCharacters;
-  else if (autocapitalize == words)
+  } else if (autocapitalize == words) {
     flags |= kWebTextInputFlagAutocapitalizeWords;
-  else if (autocapitalize == sentences)
+  } else if (autocapitalize == sentences || autocapitalize == "") {
+    // Note: we tell the IME to enable autocapitalization for both the default
+    // state ("") and the sentences states. We could potentially treat these
+    // differently if we had a platform that supported autocapitalization but
+    // didn't want to enable it unless explicitly requested by a web page, but
+    // this so far has not been necessary.
     flags |= kWebTextInputFlagAutocapitalizeSentences;
-  else
+  } else {
     NOTREACHED();
+  }
 
   return flags;
 }
@@ -462,7 +465,7 @@ bool InputMethodController::FinishComposingText(
     const bool is_handle_visible = GetFrame().Selection().IsHandleVisible();
 
     const PlainTextRange& old_offsets = GetSelectionOffsets();
-    Editor::RevealSelectionScope reveal_selection_scope(&GetEditor());
+    RevealSelectionScope reveal_selection_scope(GetFrame());
 
     if (is_too_long) {
       ignore_result(ReplaceComposition(ComposingText()));
@@ -704,7 +707,7 @@ void InputMethodController::CancelComposition() {
   if (!HasComposition())
     return;
 
-  Editor::RevealSelectionScope reveal_selection_scope(&GetEditor());
+  RevealSelectionScope reveal_selection_scope(GetFrame());
 
   if (GetFrame()
           .Selection()
@@ -746,7 +749,7 @@ void InputMethodController::SetComposition(
     const Vector<ImeTextSpan>& ime_text_spans,
     int selection_start,
     int selection_end) {
-  Editor::RevealSelectionScope reveal_selection_scope(&GetEditor());
+  RevealSelectionScope reveal_selection_scope(GetFrame());
 
   // Updates styles before setting selection for composition to prevent
   // inserting the previous composition text into text nodes oddly.
@@ -792,7 +795,7 @@ void InputMethodController::SetComposition(
     // to the new position.
     EventQueueScope scope;
     if (HasComposition()) {
-      Editor::RevealSelectionScope reveal_selection_scope(&GetEditor());
+      RevealSelectionScope reveal_selection_scope(GetFrame());
       // Do not attempt to apply IME selection offsets if ReplaceComposition()
       // fails (we compute the new range assuming the replacement will succeed).
       if (!ReplaceComposition(g_empty_string))
@@ -852,7 +855,8 @@ void InputMethodController::SetComposition(
   }
 
   // Find out what node has the composition now.
-  const Position base = MostForwardCaretPosition(selection.Base());
+  const Position base =
+      MostForwardCaretPosition(selection.Base(), kCanSkipOverEditingBoundary);
   Node* base_node = base.AnchorNode();
   if (!base_node || !base_node->IsTextNode())
     return;

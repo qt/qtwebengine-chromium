@@ -24,15 +24,14 @@
 #include "content/common/service_worker/embedded_worker.mojom.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
-#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -65,12 +64,6 @@ class ProviderHostEndpoints : public mojom::ServiceWorkerContainerHost {
         blink::mojom::ServiceWorkerRegistrationOptions::New();
     registration_object_host_request_ =
         mojo::MakeRequest(&(provider_info->registration->host_ptr_info));
-    provider_info->registration->installing =
-        blink::mojom::ServiceWorkerObjectInfo::New();
-    provider_info->registration->waiting =
-        blink::mojom::ServiceWorkerObjectInfo::New();
-    provider_info->registration->active =
-        blink::mojom::ServiceWorkerObjectInfo::New();
     binding_.Bind(mojo::MakeRequest(&provider_info->host_ptr_info));
     provider_info->client_request = mojo::MakeRequest(&client_);
     mojo::MakeRequest(&provider_info->interface_provider);
@@ -574,9 +567,9 @@ TEST_F(EmbeddedWorkerInstanceTest, DetachDuringProcessAllocation) {
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, scope, url);
-  worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&SaveStatusAndCall, &status,
-                               base::BindOnce(&base::DoNothing)));
+  worker->Start(
+      std::move(params), CreateProviderInfoGetter(),
+      base::BindOnce(&SaveStatusAndCall, &status, base::DoNothing::Once<>()));
   worker->Detach();
   base::RunLoop().RunUntilIdle();
 
@@ -608,9 +601,9 @@ TEST_F(EmbeddedWorkerInstanceTest, DetachAfterSendingStartWorkerMessage) {
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, scope, url);
-  worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&SaveStatusAndCall, &status,
-                               base::BindOnce(&base::DoNothing)));
+  worker->Start(
+      std::move(params), CreateProviderInfoGetter(),
+      base::BindOnce(&SaveStatusAndCall, &status, base::DoNothing::Once<>()));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(2u, events_.size());
@@ -649,9 +642,9 @@ TEST_F(EmbeddedWorkerInstanceTest, StopDuringProcessAllocation) {
 
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, scope, url);
-  worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&SaveStatusAndCall, &status,
-                               base::BindOnce(&base::DoNothing)));
+  worker->Start(
+      std::move(params), CreateProviderInfoGetter(),
+      base::BindOnce(&SaveStatusAndCall, &status, base::DoNothing::Once<>()));
   worker->Stop();
   base::RunLoop().RunUntilIdle();
 
@@ -725,9 +718,9 @@ TEST_F(EmbeddedWorkerInstanceTest, StopDuringPausedAfterDownload) {
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, scope, url);
   params->pause_after_download = true;
-  worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&SaveStatusAndCall, &status,
-                               base::BindOnce(&base::DoNothing)));
+  worker->Start(
+      std::move(params), CreateProviderInfoGetter(),
+      base::BindOnce(&SaveStatusAndCall, &status, base::DoNothing::Once<>()));
   base::RunLoop().RunUntilIdle();
 
   // Make the worker stopping and attempt to send a resume after download
@@ -756,9 +749,9 @@ TEST_F(EmbeddedWorkerInstanceTest, StopAfterSendingStartWorkerMessage) {
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, scope, url);
-  worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&SaveStatusAndCall, &status,
-                               base::BindOnce(&base::DoNothing)));
+  worker->Start(
+      std::move(params), CreateProviderInfoGetter(),
+      base::BindOnce(&SaveStatusAndCall, &status, base::DoNothing::Once<>()));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(2u, events_.size());
@@ -855,7 +848,7 @@ TEST_F(EmbeddedWorkerInstanceTest, FailToSendStartIPC) {
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, pattern, url);
   worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&ServiceWorkerUtils::NoOpStatusCallback));
+                base::DoNothing());
   base::RunLoop().RunUntilIdle();
 
   // Worker should handle the failure of binding on the remote side as detach.
@@ -900,7 +893,7 @@ TEST_F(EmbeddedWorkerInstanceTest, RemoveRemoteInterface) {
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, pattern, url);
   worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&ServiceWorkerUtils::NoOpStatusCallback));
+                base::DoNothing());
   base::RunLoop().RunUntilIdle();
 
   // Worker should handle the sudden shutdown as detach.
@@ -955,7 +948,7 @@ TEST_F(EmbeddedWorkerInstanceTest, AddMessageToConsole) {
   mojom::EmbeddedWorkerStartParamsPtr params =
       CreateStartParams(version_id, pattern, url);
   worker->Start(std::move(params), CreateProviderInfoGetter(),
-                base::BindOnce(&ServiceWorkerUtils::NoOpStatusCallback));
+                base::DoNothing());
   worker->AddMessageToConsole(test_message.first, test_message.second);
   base::RunLoop().RunUntilIdle();
 

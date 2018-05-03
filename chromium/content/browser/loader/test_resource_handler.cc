@@ -91,6 +91,8 @@ void TestResourceHandler::OnResponseStarted(
   EXPECT_FALSE(resource_response_);
   resource_response_ = response;
 
+  response_started_run_loop_.Quit();
+
   if (!on_response_started_result_) {
     canceled_ = true;
     controller->Cancel();
@@ -189,6 +191,7 @@ void TestResourceHandler::OnReadCompleted(
   ScopedCallDepthTracker call_depth_tracker(&call_depth_);
 
   ++on_read_completed_called_;
+  EXPECT_EQ(on_read_completed_called_, on_will_read_called_);
   if (bytes_read == 0)
     ++on_read_eof_called_;
 
@@ -289,6 +292,10 @@ void TestResourceHandler::SetBufferSize(int buffer_size) {
 void TestResourceHandler::WaitUntilDeferred() {
   deferred_run_loop_->Run();
   deferred_run_loop_.reset(new base::RunLoop());
+}
+
+void TestResourceHandler::WaitUntilResponseStarted() {
+  response_started_run_loop_.Run();
 }
 
 void TestResourceHandler::WaitUntilResponseComplete() {

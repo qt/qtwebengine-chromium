@@ -37,7 +37,7 @@ using namespace HTMLNames;
 
 HTMLSummaryElement* HTMLSummaryElement::Create(Document& document) {
   HTMLSummaryElement* summary = new HTMLSummaryElement(document);
-  summary->EnsureUserAgentShadowRootV1();
+  summary->EnsureUserAgentShadowRoot();
   return summary;
 }
 
@@ -46,9 +46,14 @@ HTMLSummaryElement::HTMLSummaryElement(Document& document)
 
 LayoutObject* HTMLSummaryElement::CreateLayoutObject(
     const ComputedStyle& style) {
+  // See: crbug.com/603928 - We manually check for other dislay types, then
+  // fallback to a regular LayoutBlockFlow as "display: inline;" should behave
+  // as an "inline-block".
   EDisplay display = style.Display();
   if (display == EDisplay::kFlex || display == EDisplay::kInlineFlex ||
-      display == EDisplay::kGrid || display == EDisplay::kInlineGrid)
+      display == EDisplay::kGrid || display == EDisplay::kInlineGrid ||
+      display == EDisplay::kLayoutCustom ||
+      display == EDisplay::kInlineLayoutCustom)
     return LayoutObject::CreateObject(this, style);
   return new LayoutBlockFlow(this);
 }
@@ -70,7 +75,7 @@ HTMLDetailsElement* HTMLSummaryElement::DetailsElement() const {
 }
 
 Element* HTMLSummaryElement::MarkerControl() {
-  return EnsureUserAgentShadowRootV1().getElementById(
+  return EnsureUserAgentShadowRoot().getElementById(
       ShadowElementNames::DetailsMarker());
 }
 

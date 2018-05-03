@@ -10,6 +10,7 @@
 #include "components/ui_devtools/views/ui_element_delegate.h"
 #include "ui/aura/env_observer.h"
 #include "ui/compositor/layer_delegate.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -69,8 +70,8 @@ class DOMAgent : public UiDevToolsBaseAgent<protocol::DOM::Metainfo>,
   void AddObserver(DOMAgentObserver* observer);
   void RemoveObserver(DOMAgentObserver* observer);
   UIElement* GetElementFromNodeId(int node_id);
-  UIElement* window_element_root() const { return window_element_root_.get(); };
-  const std::vector<aura::Window*>& root_windows() const {
+  UIElement* element_root() const { return element_root_.get(); };
+  const std::vector<gfx::NativeWindow>& root_windows() const {
     return root_windows_;
   };
   HighlightRectsConfiguration highlight_rect_config() const {
@@ -84,7 +85,7 @@ class DOMAgent : public UiDevToolsBaseAgent<protocol::DOM::Metainfo>,
   // exists), then the targeted view (if one exists). Return 0 if no valid
   // target is found.
   int FindElementIdTargetedByPoint(const gfx::Point& p,
-                                   aura::Window* root_window) const;
+                                   gfx::NativeWindow root_window) const;
 
   // Shows the distances between the nodes identified by |pinned_id| and
   // |element_id| in the highlight overlay.
@@ -119,14 +120,14 @@ class DOMAgent : public UiDevToolsBaseAgent<protocol::DOM::Metainfo>,
   void RemoveDomNode(UIElement* ui_element);
   void Reset();
   void UpdateHighlight(
-      const std::pair<aura::Window*, gfx::Rect>& window_and_bounds);
+      const std::pair<gfx::NativeWindow, gfx::Rect>& window_and_bounds);
 
   std::unique_ptr<gfx::RenderText> render_text_;
   bool is_building_tree_;
   bool show_size_on_canvas_ = false;
   HighlightRectsConfiguration highlight_rect_config_;
   bool is_swap_ = false;
-  std::unique_ptr<UIElement> window_element_root_;
+  std::unique_ptr<UIElement> element_root_;
   std::unordered_map<int, UIElement*> node_id_to_ui_element_;
 
   // TODO(thanhph): |layer_for_highlighting_| should be owned by the overlay

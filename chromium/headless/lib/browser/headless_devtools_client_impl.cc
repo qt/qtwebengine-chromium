@@ -139,7 +139,6 @@ void HeadlessDevToolsClientImpl::DispatchProtocolMessage(
     content::DevToolsAgentHost* agent_host,
     const std::string& json_message) {
   DCHECK_EQ(agent_host_, agent_host);
-
   std::unique_ptr<base::Value> message =
       base::JSONReader::Read(json_message, base::JSON_PARSE_RFC);
   const base::DictionaryValue* message_dict;
@@ -201,7 +200,8 @@ bool HeadlessDevToolsClientImpl::DispatchEvent(
     renderer_crashed_ = true;
   EventHandlerMap::const_iterator it = event_handlers_.find(method);
   if (it == event_handlers_.end()) {
-    NOTREACHED() << "Unknown event: " << method;
+    if (method != "Inspector.targetCrashed")
+      NOTREACHED() << "Unknown event: " << method;
     return false;
   }
   if (!it->second.is_null()) {

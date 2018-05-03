@@ -10,10 +10,10 @@
 
 #include "modules/audio_processing/aec3/residual_echo_estimator.h"
 
+#include "api/audio/echo_canceller3_config.h"
 #include "modules/audio_processing/aec3/aec3_fft.h"
 #include "modules/audio_processing/aec3/aec_state.h"
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
-#include "modules/audio_processing/include/audio_processing.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
 #include "rtc_base/random.h"
 #include "test/gtest.h"
@@ -63,6 +63,7 @@ TEST(ResidualEchoEstimator, DISABLED_BasicTest) {
   Random random_generator(42U);
   std::array<float, kBlockSize> s;
   Aec3Fft fft;
+  rtc::Optional<DelayEstimate> delay_estimate;
 
   for (auto& H2_k : H2) {
     H2_k.fill(0.01f);
@@ -92,8 +93,8 @@ TEST(ResidualEchoEstimator, DISABLED_BasicTest) {
     render_delay_buffer->PrepareCaptureProcessing();
 
     aec_state.HandleEchoPathChange(echo_path_variability);
-    aec_state.Update(H2, h, true, *render_delay_buffer->GetRenderBuffer(),
-                     E2_main, Y2, s, false);
+    aec_state.Update(delay_estimate, H2, h, true, false,
+                     *render_delay_buffer->GetRenderBuffer(), E2_main, Y2, s);
 
     estimator.Estimate(aec_state, *render_delay_buffer->GetRenderBuffer(),
                        S2_linear, Y2, &R2);

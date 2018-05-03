@@ -6,7 +6,6 @@
 #define THIRD_PARTY_WEBKIT_SOURCE_PLATFORM_SCHEDULER_RENDERER_WEB_FRAME_SCHEDULER_IMPL_H_
 
 #include <memory>
-#include <set>
 
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
@@ -15,7 +14,10 @@
 #include "platform/PlatformExport.h"
 #include "platform/WebFrameScheduler.h"
 #include "platform/scheduler/base/task_queue.h"
+#include "platform/scheduler/child/page_visibility_state.h"
+#include "platform/scheduler/child/worker_scheduler_proxy.h"
 #include "platform/scheduler/util/tracing_helper.h"
+#include "platform/wtf/HashSet.h"
 
 namespace base {
 namespace trace_event {
@@ -54,29 +56,33 @@ class PLATFORM_EXPORT WebFrameSchedulerImpl : public WebFrameScheduler {
   ~WebFrameSchedulerImpl() override;
 
   // WebFrameScheduler implementation:
-  void AddThrottlingObserver(ObserverType, Observer*) override;
-  void RemoveThrottlingObserver(ObserverType, Observer*) override;
+  std::unique_ptr<ThrottlingObserverHandle> AddThrottlingObserver(
+      ObserverType,
+      Observer*) override;
   void SetFrameVisible(bool frame_visible) override;
   bool IsFrameVisible() const override;
   void SetPageVisible(bool page_visible) override;
   bool IsPageVisible() const override;
   void SetPaused(bool frame_paused) override;
-  void SetPageStopped(bool) override;
+  void SetPageFrozen(bool) override;
 
   void SetCrossOrigin(bool cross_origin) override;
   bool IsCrossOrigin() const override;
   WebFrameScheduler::FrameType GetFrameType() const override;
-  scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType) override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType) override;
   WebViewScheduler* GetWebViewScheduler() const override;
   void DidStartProvisionalLoad(bool is_main_frame) override;
   void DidCommitProvisionalLoad(bool is_web_history_inert_commit,
                                 bool is_reload,
                                 bool is_main_frame) override;
-  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser() override;
+  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
+      WebScopedVirtualTimePauser::VirtualTaskDuration duration) override;
   void OnFirstMeaningfulPaint() override;
   std::unique_ptr<ActiveConnectionHandle> OnActiveConnectionCreated() override;
   void AsValueInto(base::trace_event::TracedValue* state) const;
   bool IsExemptFromBudgetBasedThrottling() const override;
+
+  scoped_refptr<TaskQueue> ControlTaskQueue();
 
   bool has_active_connection() const { return active_connection_count_; }
 
@@ -101,6 +107,19 @@ class PLATFORM_EXPORT WebFrameSchedulerImpl : public WebFrameScheduler {
     DISALLOW_COPY_AND_ASSIGN(ActiveConnectionHandleImpl);
   };
 
+  class ThrottlingObserverHandleImpl : public ThrottlingObserverHandle {
+   public:
+    ThrottlingObserverHandleImpl(WebFrameSchedulerImpl* frame_scheduler,
+                                 Observer* observer);
+    ~ThrottlingObserverHandleImpl() override;
+
+   private:
+    base::WeakPtr<WebFrameSchedulerImpl> frame_scheduler_;
+    Observer* observer_;
+
+    DISALLOW_COPY_AND_ASSIGN(ThrottlingObserverHandleImpl);
+  };
+
   void DetachFromWebViewScheduler();
   void RemoveThrottleableQueueFromBackgroundCPUTimeBudgetPool();
   void ApplyPolicyToThrottleableQueue();
@@ -108,6 +127,7 @@ class PLATFORM_EXPORT WebFrameSchedulerImpl : public WebFrameScheduler {
   void UpdateThrottling(bool was_throttled);
   WebFrameScheduler::ThrottlingState CalculateThrottlingState() const;
   void UpdateThrottlingState();
+  void RemoveThrottlingObserver(Observer* observer);
 
   void DidOpenActiveConnection();
   void DidCloseActiveConnection();
@@ -119,7 +139,7 @@ class PLATFORM_EXPORT WebFrameSchedulerImpl : public WebFrameScheduler {
   scoped_refptr<TaskQueue> PausableTaskQueue();
   scoped_refptr<TaskQueue> UnpausableTaskQueue();
 
-  base::WeakPtr<WebFrameSchedulerImpl> AsWeakPtr();
+  base::WeakPtr<WebFrameSchedulerImpl> GetWeakPtr();
 
   TraceableVariableController tracing_controller_;
   scoped_refptr<MainThreadTaskQueue> loading_task_queue_;
@@ -141,8 +161,9 @@ class PLATFORM_EXPORT WebFrameSchedulerImpl : public WebFrameScheduler {
   std::set<Observer*> loader_observers_;             // NOT OWNED
   WebFrameScheduler::ThrottlingState throttling_state_;
   TraceableState<bool, kTracingCategoryNameInfo> frame_visible_;
-  TraceableState<bool, kTracingCategoryNameInfo> page_visible_;
-  TraceableState<bool, kTracingCategoryNameInfo> page_stopped_;
+  TraceableState<PageVisibilityState, kTracingCategoryNameInfo>
+      page_visibility_;
+  TraceableState<bool, kTracingCategoryNameInfo> page_frozen_;
   TraceableState<bool, kTracingCategoryNameInfo> frame_paused_;
   TraceableState<bool, kTracingCategoryNameInfo> cross_origin_;
   WebFrameScheduler::FrameType frame_type_;

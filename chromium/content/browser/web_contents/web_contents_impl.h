@@ -22,6 +22,7 @@
 #include "base/process/process.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
@@ -37,7 +38,6 @@
 #include "content/browser/wake_lock/wake_lock_context_host.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/color_chooser.h"
-#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
@@ -50,10 +50,10 @@
 #include "net/base/load_states.h"
 #include "net/http/http_response_headers.h"
 #include "ppapi/features/features.h"
-#include "services/device/public/interfaces/geolocation_context.mojom.h"
-#include "services/device/public/interfaces/wake_lock.mojom.h"
+#include "services/device/public/mojom/geolocation_context.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
-#include "third_party/WebKit/common/color_chooser/color_chooser.mojom.h"
+#include "third_party/WebKit/public/mojom/color_chooser/color_chooser.mojom.h"
 #include "third_party/WebKit/public/platform/WebDragOperation.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/base/page_transition_types.h"
@@ -170,11 +170,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // TODO(creis): Remove this now that we can get to it via FrameTreeNode.
   RenderFrameHostManager* GetRenderManagerForTesting();
 
-  // Returns the outer WebContents of this WebContents if any.
-  // Note that without --site-per-process, this will return the WebContents
-  // of the BrowserPluginEmbedder, if |this| is a guest.
-  WebContentsImpl* GetOuterWebContents();
-
   // Returns guest browser plugin object, or NULL if this WebContents is not a
   // guest.
   BrowserPluginGuest* GetBrowserPluginGuest() const;
@@ -210,6 +205,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                         const net::LoadStateWithParam& load_state,
                         uint64_t upload_position,
                         uint64_t upload_size);
+
+  // Notify observers that the visibility changed.
+  void NotifyVisibilityChanged(Visibility previous_visibility);
 
   // Notify observers that the web contents has been focused.
   void NotifyWebContentsFocused(RenderWidgetHost* render_widget_host);
@@ -358,15 +356,17 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void SetLastActiveTime(base::TimeTicks last_active_time) override;
   void WasShown() override;
   void WasHidden() override;
-  bool IsVisible() const override;
   void WasOccluded() override;
   void WasUnOccluded() override;
+  Visibility GetVisibility() const override;
   bool NeedToFireBeforeUnload() override;
   void DispatchBeforeUnload() override;
   void AttachToOuterWebContentsFrame(
       WebContents* outer_web_contents,
       RenderFrameHost* outer_contents_frame) override;
+  WebContentsImpl* GetOuterWebContents() override;
   void DidChangeVisibleSecurityState() override;
+
   void Stop() override;
   WebContents* Clone() override;
   void ReloadFocusedFrame(bool bypass_cache) override;
@@ -489,7 +489,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void RunJavaScriptDialog(RenderFrameHost* render_frame_host,
                            const base::string16& message,
                            const base::string16& default_prompt,
-                           const GURL& frame_url,
                            JavaScriptDialogType dialog_type,
                            IPC::Message* reply_msg) override;
   void RunBeforeUnloadConfirm(RenderFrameHost* render_frame_host,
@@ -534,6 +533,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   std::unique_ptr<WebUIImpl> CreateWebUIForRenderFrameHost(
       const GURL& url) override;
   void SetFocusedFrame(FrameTreeNode* node, SiteInstance* source) override;
+  void DidCallFocus() override;
   RenderFrameHost* GetFocusedFrameIncludingInnerWebContents() override;
   void OnFocusedElementChangedInFrame(
       RenderFrameHostImpl* frame,
@@ -560,6 +560,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                                          const url::Origin& origin,
                                          const GURL& resource_url) override;
   void ViewSource(RenderFrameHostImpl* frame) override;
+  void PrintCrossProcessSubframe(const gfx::Rect& rect,
+                                 int document_cookie,
+                                 RenderFrameHost* render_frame_host) override;
 #if defined(OS_ANDROID)
   base::android::ScopedJavaLocalRef<jobject> GetJavaRenderFrameHostDelegate()
       override;
@@ -570,6 +573,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                                   ResourceType resource_type,
                                   const std::string& ip,
                                   net::CertStatus cert_status) override;
+  void UpdatePictureInPictureSurfaceId(viz::SurfaceId surface_id) override;
 
   // RenderViewHostDelegate ----------------------------------------------------
   RenderViewHostDelegateView* GetDelegateView() override;
@@ -674,13 +678,13 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void RenderWidgetGotFocus(RenderWidgetHostImpl* render_widget_host) override;
   void RenderWidgetLostFocus(RenderWidgetHostImpl* render_widget_host) override;
   void RenderWidgetWasResized(RenderWidgetHostImpl* render_widget_host,
+                              const ScreenInfo& screen_info,
                               bool width_changed) override;
   void ResizeDueToAutoResize(RenderWidgetHostImpl* render_widget_host,
                              const gfx::Size& new_size,
                              uint64_t sequence_number) override;
   gfx::Size GetAutoResizeSize() override;
   void ResetAutoResizeSize() override;
-  void GetScreenInfo(ScreenInfo* screen_info) override;
   KeyboardEventProcessingResult PreHandleKeyboardEvent(
       const NativeWebKeyboardEvent& event) override;
   void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) override;
@@ -798,6 +802,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void NotifyNavigationEntryChanged(
       const EntryChangedDetails& change_details) override;
   void NotifyNavigationListPruned(const PrunedDetails& pruned_details) override;
+  void NotifyNavigationEntriesDeleted() override;
 
   // Invoked before a form repost warning is shown.
   void NotifyBeforeFormRepostWarningShow() override;
@@ -897,6 +902,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // |IsFullscreen| must return |true| when this method is called.
   bool HasActiveEffectivelyFullscreenVideo() const;
 
+  // Whether the WebContents effectively fullscreen active player allows
+  // Picture-in-Picture.
+  // |IsFullscreen| must return |true| when this method is called.
+  bool IsPictureInPictureAllowedForFullscreenVideo() const;
+
   // When inner or outer WebContents are present, become the focused
   // WebContentsImpl. This will activate this content's main frame RenderWidget
   // and indirectly all its subframe widgets.  GetFocusedRenderWidgetHost will
@@ -952,6 +962,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                            DialogsFromJavaScriptEndFullscreen);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            PopupsFromJavaScriptEndFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
+                           FocusFromJavaScriptEndsFullscreen);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBrowserTest,
                            IframeBeforeUnloadParentHang);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBrowserTest,
@@ -964,6 +976,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   FRIEND_TEST_ALL_PREFIXES(DevToolsProtocolTest, PageDisableWithOpenedDialog);
   FRIEND_TEST_ALL_PREFIXES(DevToolsProtocolTest,
                            PageDisableWithNoDialogManager);
+  FRIEND_TEST_ALL_PREFIXES(PointerLockBrowserTest,
+                           PointerLockInnerContentsCrashes);
 
   // So |find_request_manager_| can be accessed for testing.
   friend class FindRequestManagerTest;
@@ -1316,8 +1330,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Format of |headers| is a new line separated list of key value pairs:
   // "<key1>: <value1>\r\n<key2>: <value2>".
-  static DownloadUrlParameters::RequestHeadersType ParseDownloadHeaders(
-      const std::string& headers);
+  static download::DownloadUrlParameters::RequestHeadersType
+  ParseDownloadHeaders(const std::string& headers);
 
   // Sets the visibility of immediate child views, i.e. views whose parent view
   // is that of the main frame.

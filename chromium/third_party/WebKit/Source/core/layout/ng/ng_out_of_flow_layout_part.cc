@@ -265,18 +265,10 @@ void NGOutOfFlowLayoutPart::ComputeInlineContainingBlocks(
       inline_content_physical_offset =
           NGPhysicalOffset(physical_borders.left, physical_borders.top);
 
-      if (RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled()) {
         // NGPaint offset is wrt parent fragment.
-        default_container_offset = start_fragment_logical_offset_wrt_box -
-                                   default_containing_block_.content_offset;
-        default_container_offset += inline_cb_borders.StartOffset();
-      } else {
-        // Legacy offset is wrt inline container.
-        default_container_offset =
-            NGLogicalOffset(inline_cb_borders.inline_start,
-                            inline_cb_borders.block_start) -
-            default_containing_block_.content_offset;
-      }
+      default_container_offset = start_fragment_logical_offset_wrt_box -
+                                 default_containing_block_.content_offset;
+      default_container_offset += inline_cb_borders.StartOffset();
     }
     containing_blocks_map_.insert(
         block_info.key, ContainingBlockInfo{inline_cb_style, inline_cb_size,
@@ -314,20 +306,39 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
 
   NGBlockNode node = descendant.node;
   if (AbsoluteNeedsChildInlineSize(descendant.node.Style()) ||
-      NeedMinMaxSize(descendant.node.Style())) {
-    min_max_size = node.ComputeMinMaxSize();
+      NeedMinMaxSize(descendant.node.Style()) ||
+      descendant.node.ShouldBeConsideredAsReplaced()) {
+    // This is a new formatting context, so whatever happened on the outside
+    // doesn't concern us.
+    MinMaxSizeInput zero_input;
+    min_max_size = node.ComputeMinMaxSize(zero_input);
   }
 
   Optional<NGLogicalSize> replaced_size;
-  if (descendant.node.IsReplaced())
+  if (descendant.node.IsReplaced()) {
     replaced_size = ComputeReplacedSize(
         descendant.node, *descendant_constraint_space, min_max_size);
-
+  } else if (descendant.node.ShouldBeConsideredAsReplaced()) {
+    NGBoxStrut border_scrollbar_padding = CalculateBorderScrollbarPadding(
+        *descendant_constraint_space, descendant.node.Style(), descendant.node);
+    MinMaxSize min_max_border_box(*min_max_size);
+    min_max_border_box += border_scrollbar_padding.InlineSum();
+    replaced_size = NGLogicalSize{
+        min_max_border_box.ShrinkToFit(
+            descendant_constraint_space->AvailableSize().inline_size),
+        NGSizeIndefinite};
+  }
   NGAbsolutePhysicalPosition node_position =
       ComputePartialAbsoluteWithChildInlineSize(
           *descendant_constraint_space, descendant.node.Style(),
           static_position, min_max_size, replaced_size, container_writing_mode,
           container_info.style->Direction());
+
+  // ShouldBeConsideredAsReplaced sets inline size.
+  // It does not set block size. This is a compatiblity quirk.
+  if (!descendant.node.IsReplaced() &&
+      descendant.node.ShouldBeConsideredAsReplaced())
+    replaced_size.reset();
 
   if (AbsoluteNeedsChildBlockSize(descendant.node.Style())) {
     layout_result = GenerateFragment(descendant.node, container_info,

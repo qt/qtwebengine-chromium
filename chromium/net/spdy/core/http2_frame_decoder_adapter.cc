@@ -160,10 +160,7 @@ const char* Http2DecoderAdapter::SpdyFramerErrorToString(
   return "UNKNOWN_ERROR";
 }
 
-Http2DecoderAdapter::Http2DecoderAdapter() : Http2DecoderAdapter(false) {}
-
-Http2DecoderAdapter::Http2DecoderAdapter(bool h2_on_stream_pad_length)
-    : h2_on_stream_pad_length_(h2_on_stream_pad_length) {
+Http2DecoderAdapter::Http2DecoderAdapter() {
   DVLOG(1) << "Http2DecoderAdapter ctor";
   ResetInternal();
 }
@@ -441,11 +438,7 @@ void Http2DecoderAdapter::OnPadLength(size_t trailing_length) {
   opt_pad_length_ = trailing_length;
   DCHECK_LT(trailing_length, 256u);
   if (frame_header_.type == Http2FrameType::DATA) {
-    if (h2_on_stream_pad_length_) {
-      visitor()->OnStreamPadLength(stream_id(), trailing_length);
-    } else {
-      visitor()->OnStreamPadding(stream_id(), 1);
-    }
+    visitor()->OnStreamPadLength(stream_id(), trailing_length);
   }
 }
 
@@ -480,8 +473,8 @@ void Http2DecoderAdapter::OnSettingsStart(const Http2FrameHeader& header) {
 
 void Http2DecoderAdapter::OnSetting(const Http2SettingFields& setting_fields) {
   DVLOG(1) << "OnSetting: " << setting_fields;
-  const uint16_t parameter = static_cast<uint16_t>(setting_fields.parameter);
-  SpdySettingsIds setting_id;
+  const auto parameter = static_cast<SpdySettingsId>(setting_fields.parameter);
+  SpdyKnownSettingsId setting_id;
   if (!ParseSettingsId(parameter, &setting_id)) {
     if (extension_ == nullptr) {
       DVLOG(1) << "Ignoring unknown setting id: " << setting_fields;
@@ -804,7 +797,7 @@ void Http2DecoderAdapter::ResetInternal() {
   CorruptFrameHeader(&frame_header_);
   CorruptFrameHeader(&hpack_first_frame_header_);
 
-  frame_decoder_.reset(new Http2FrameDecoder(this));
+  frame_decoder_ = SpdyMakeUnique<Http2FrameDecoder>(this);
   hpack_decoder_ = nullptr;
 }
 

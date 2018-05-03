@@ -29,8 +29,10 @@
 #include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutEmbeddedContent.h"
 #include "core/layout/LayoutView.h"
+#include "core/layout/svg/LayoutSVGResourceMasker.h"
 #include "core/layout/svg/LayoutSVGText.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
+#include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/SVGRootPainter.h"
@@ -100,6 +102,9 @@ bool LayoutSVGRoot::IsEmbeddedThroughFrameContainingSVGDocument() const {
   LocalFrame* frame = GetNode()->GetDocument().GetFrame();
   if (!frame || !frame->GetDocument()->IsSVGDocument())
     return false;
+
+  if (frame->Owner() && frame->Owner()->IsRemote())
+    return true;
 
   // If our frame has an owner layoutObject, we're embedded through eg.
   // object/embed/iframe, but we only negotiate if we're in an SVG document
@@ -171,7 +176,7 @@ void LayoutSVGRoot::UpdateLayout() {
   did_screen_scale_factor_change_ =
       transform_change == SVGTransformChange::kFull;
 
-  SVGLayoutSupport::LayoutResourcesIfNeeded(this);
+  SVGLayoutSupport::LayoutResourcesIfNeeded(*this);
 
   // selfNeedsLayout() will cover changes to one (or more) of viewBox,
   // current{Scale,Translate}, decorations and 'overflow'.
@@ -245,7 +250,7 @@ void LayoutSVGRoot::PaintReplaced(const PaintInfo& paint_info,
 }
 
 void LayoutSVGRoot::WillBeDestroyed() {
-  SVGResourcesCache::ClientDestroyed(this);
+  SVGResourcesCache::ClientDestroyed(*this);
   LayoutReplaced::WillBeDestroyed();
 }
 
@@ -272,14 +277,15 @@ bool LayoutSVGRoot::StyleChangeAffectsIntrinsicSize(
   return false;
 }
 
-void LayoutSVGRoot::IntrinsicDimensionsChanged() const {
+void LayoutSVGRoot::IntrinsicSizingInfoChanged() const {
   // TODO(fs): Merge with IntrinsicSizeChanged()? (from LayoutReplaced)
   // Ignore changes to intrinsic dimensions if the <svg> is not in an SVG
   // document, or not embedded in a way that supports/allows size negotiation.
   if (!IsEmbeddedThroughFrameContainingSVGDocument())
     return;
-  if (FrameOwner* frame_owner = GetFrame()->Owner())
-    frame_owner->IntrinsicDimensionsChanged();
+  IntrinsicSizingInfo sizing_info;
+  ComputeIntrinsicSizingInfo(sizing_info);
+  GetFrame()->IntrinsicSizingInfoChanged(sizing_info);
 }
 
 void LayoutSVGRoot::StyleDidChange(StyleDifference diff,
@@ -295,10 +301,10 @@ void LayoutSVGRoot::StyleDidChange(StyleDifference diff,
   // able to determine our intrinsic dimensions, so in that case always
   // initiate a size negotiation.
   if (!old_style || StyleChangeAffectsIntrinsicSize(*old_style))
-    IntrinsicDimensionsChanged();
+    IntrinsicSizingInfoChanged();
 
   LayoutReplaced::StyleDidChange(diff, old_style);
-  SVGResourcesCache::ClientStyleChanged(this, diff, StyleRef());
+  SVGResourcesCache::ClientStyleChanged(*this, diff, StyleRef());
 }
 
 bool LayoutSVGRoot::IsChildAllowed(LayoutObject* child,
@@ -308,7 +314,7 @@ bool LayoutSVGRoot::IsChildAllowed(LayoutObject* child,
 
 void LayoutSVGRoot::AddChild(LayoutObject* child, LayoutObject* before_child) {
   LayoutReplaced::AddChild(child, before_child);
-  SVGResourcesCache::ClientWasAddedToTree(child, child->StyleRef());
+  SVGResourcesCache::ClientWasAddedToTree(*child, child->StyleRef());
 
   bool should_isolate_descendants =
       (child->IsBlendingAllowed() && child->Style()->HasBlendMode()) ||
@@ -318,7 +324,7 @@ void LayoutSVGRoot::AddChild(LayoutObject* child, LayoutObject* before_child) {
 }
 
 void LayoutSVGRoot::RemoveChild(LayoutObject* child) {
-  SVGResourcesCache::ClientWillBeRemovedFromTree(child);
+  SVGResourcesCache::ClientWillBeRemovedFromTree(*child);
   LayoutReplaced::RemoveChild(child);
 
   bool had_non_isolated_descendants =
@@ -353,15 +359,16 @@ void LayoutSVGRoot::DescendantIsolationRequirementsChanged(
 
 void LayoutSVGRoot::InsertedIntoTree() {
   LayoutReplaced::InsertedIntoTree();
-  SVGResourcesCache::ClientWasAddedToTree(this, StyleRef());
+  SVGResourcesCache::ClientWasAddedToTree(*this, StyleRef());
 }
 
 void LayoutSVGRoot::WillBeRemovedFromTree() {
-  SVGResourcesCache::ClientWillBeRemovedFromTree(this);
+  SVGResourcesCache::ClientWillBeRemovedFromTree(*this);
   LayoutReplaced::WillBeRemovedFromTree();
 }
 
-PositionWithAffinity LayoutSVGRoot::PositionForPoint(const LayoutPoint& point) {
+PositionWithAffinity LayoutSVGRoot::PositionForPoint(
+    const LayoutPoint& point) const {
   FloatPoint absolute_point = FloatPoint(point);
   absolute_point =
       local_to_border_box_transform_.Inverse().MapPoint(absolute_point);
@@ -448,6 +455,19 @@ LayoutRect LayoutSVGRoot::LocalVisualRectIgnoringVisibility() const {
   }
 
   return LayoutRect(EnclosingIntRect(visual_rect));
+}
+
+bool LayoutSVGRoot::PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const {
+  // The rule extends LayoutBox's instead of LayoutReplaced's.
+  if (!LayoutBox::PaintedOutputOfObjectHasNoEffectRegardlessOfSize())
+    return false;
+
+  if (SVGResources* resources =
+          SVGResourcesCache::CachedResourcesForLayoutObject(*this)) {
+    if (resources->Masker())
+      return false;
+  }
+  return true;
 }
 
 // This method expects local CSS box coordinates.

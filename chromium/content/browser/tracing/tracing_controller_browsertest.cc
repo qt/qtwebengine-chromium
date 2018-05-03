@@ -23,7 +23,7 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/test_content_browser_client.h"
-#include "services/resource_coordinator/public/cpp/tracing/chrome_trace_event_agent.h"
+#include "services/tracing/public/cpp/chrome_trace_event_agent.h"
 
 using base::trace_event::RECORD_CONTINUOUSLY;
 using base::trace_event::RECORD_UNTIL_FULL;
@@ -80,10 +80,9 @@ class TracingControllerTestEndpoint
     scoped_refptr<base::RefCountedString> chunk_ptr =
         base::RefCountedString::TakeString(&trace_);
 
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::BindOnce(done_callback_, base::Passed(std::move(metadata)),
-                       base::RetainedRef(chunk_ptr)));
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::BindOnce(done_callback_, std::move(metadata),
+                                           base::RetainedRef(chunk_ptr)));
   }
 
  protected:
@@ -471,6 +470,23 @@ IN_PROC_BROWSER_TEST_F(TracingControllerTest,
              std::unique_ptr<const base::DictionaryValue> metadata,
              base::RefCountedString* trace_str) { quit_closure.Run(); },
           run_loop.QuitClosure()))));
+  run_loop.Run();
+}
+
+IN_PROC_BROWSER_TEST_F(TracingControllerTest, DoubleStopTracing) {
+  Navigate(shell());
+
+  base::RunLoop run_loop;
+  TracingController* controller = TracingController::GetInstance();
+  EXPECT_TRUE(controller->StartTracing(
+      TraceConfig(), TracingController::StartTracingDoneCallback()));
+  EXPECT_TRUE(controller->StopTracing(
+      TracingControllerImpl::CreateCallbackEndpoint(base::BindRepeating(
+          [](base::Closure quit_closure,
+             std::unique_ptr<const base::DictionaryValue> metadata,
+             base::RefCountedString* trace_str) { quit_closure.Run(); },
+          run_loop.QuitClosure()))));
+  EXPECT_FALSE(controller->StopTracing(nullptr));
   run_loop.Run();
 }
 

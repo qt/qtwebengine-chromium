@@ -107,10 +107,17 @@ def _MakeTargetImageName(common_prefix, output_directory, location):
   loc = location[len(common_prefix):]
   if loc.startswith(output_dir_no_common_prefix):
     loc = loc[len(output_dir_no_common_prefix)+1:]
-  # TODO(fuchsia): The requirements for finding/loading .so are in flux, so this
-  # ought to be reconsidered at some point. See https://crbug.com/732897.
-  if location.endswith('.so'):
-    loc = 'lib/' + loc
+
+  if loc.startswith('lib.unstripped'):
+    # TODO(fuchsia): The requirements for finding/loading .so are in flux, so this
+    # ought to be reconsidered at some point. See https://crbug.com/732897.
+    loc = 'lib/' + loc[len('lib.unstripped') + 1:]
+
+  if loc.startswith('exe.unstripped'):
+    # TODO(fuchsia): The requirements for finding/loading .so are in flux, so this
+    # ought to be reconsidered at some point. See https://crbug.com/732897.
+    loc = loc[len('lib.unstripped') + 1:]
+
   return loc
 
 
@@ -211,6 +218,9 @@ def AddRunnerCommandLineArguments(parser):
                            'one from the SDK')
   parser.add_argument('--device', '-d', action='store_true', default=False,
                       help='Run on hardware device instead of QEMU.')
+  parser.add_argument('--vm-cpu-cores', type=int, default=4,
+                      help='Sets the number of CPU cores to provide if '
+                      'launching in a VM with QEMU.')
   parser.add_argument('--dry-run', '-n', action='store_true', default=False,
                       help='Just print commands, don\'t execute them.')
   parser.add_argument('--kernel', type=os.path.realpath,
@@ -613,7 +623,8 @@ def _HandleOutputFromProcess(process, symbols_mapping):
 
 
 def RunFuchsia(bootfs_data, use_device, kernel_path, dry_run,
-               test_launcher_summary_output=None, forward_ssh_port=None):
+               test_launcher_summary_output=None, forward_ssh_port=None,
+               vm_cpu_cores=4):
   if not kernel_path:
     # TODO(wez): Parameterize this on the |target_cpu| from GN.
     kernel_path = os.path.join(_TargetCpuToSdkBinPath(bootfs_data.target_cpu),
@@ -655,7 +666,7 @@ def RunFuchsia(bootfs_data, use_device, kernel_path, dry_run,
         '-nographic',
         '-kernel', kernel_path,
         '-initrd', bootfs_data.bootfs,
-        '-smp', '4',
+        '-smp', str(vm_cpu_cores),
 
         # Use stdio for the guest OS only; don't attach the QEMU interactive
         # monitor.

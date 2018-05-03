@@ -14,8 +14,7 @@
 #include "net/quic/platform/api/quic_flags.h"
 #include "net/quic/platform/api/quic_logging.h"
 #include "net/quic/platform/api/quic_str_cat.h"
-
-using std::string;
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
 
@@ -54,7 +53,7 @@ QuicCryptoClientHandshaker::ProofVerifierCallbackImpl::
 
 void QuicCryptoClientHandshaker::ProofVerifierCallbackImpl::Run(
     bool ok,
-    const string& error_details,
+    const QuicString& error_details,
     std::unique_ptr<ProofVerifyDetails>* details) {
   if (parent_ == nullptr) {
     return;
@@ -162,7 +161,7 @@ bool QuicCryptoClientHandshaker::WasChannelIDSourceCallbackRun() const {
   return channel_id_source_callback_run_;
 }
 
-string QuicCryptoClientHandshaker::chlo_hash() const {
+QuicString QuicCryptoClientHandshaker::chlo_hash() const {
   return chlo_hash_;
 }
 
@@ -186,7 +185,7 @@ CryptoMessageParser* QuicCryptoClientHandshaker::crypto_message_parser() {
 void QuicCryptoClientHandshaker::HandleServerConfigUpdateMessage(
     const CryptoHandshakeMessage& server_config_update) {
   DCHECK(server_config_update.tag() == kSCUP);
-  string error_details;
+  QuicString error_details;
   QuicCryptoClientConfig::CachedState* cached =
       crypto_config_->LookupOrCreate(server_id_);
   QuicErrorCode error = crypto_config_->ProcessServerConfigUpdate(
@@ -329,12 +328,14 @@ void QuicCryptoClientHandshaker::DoSendCHLO(
     if (max_packet_size <= kFramingOverhead) {
       QUIC_DLOG(DFATAL) << "max_packet_length (" << max_packet_size
                         << ") has no room for framing overhead.";
+      RecordInternalErrorLocation(QUIC_CRYPTO_CLIENT_HANDSHAKER_1);
       stream_->CloseConnectionWithDetails(QUIC_INTERNAL_ERROR,
                                           "max_packet_size too smalll");
       return;
     }
     if (kClientHelloMinimumSize > max_packet_size - kFramingOverhead) {
       QUIC_DLOG(DFATAL) << "Client hello won't fit in a single packet.";
+      RecordInternalErrorLocation(QUIC_CRYPTO_CLIENT_HANDSHAKER_2);
       stream_->CloseConnectionWithDetails(QUIC_INTERNAL_ERROR,
                                           "CHLO too large");
       return;
@@ -358,7 +359,7 @@ void QuicCryptoClientHandshaker::DoSendCHLO(
     DCHECK(!crypto_negotiated_params_->server_nonce.empty());
   }
 
-  string error_details;
+  QuicString error_details;
   QuicErrorCode error = crypto_config_->FillClientHello(
       server_id_, session()->connection()->connection_id(),
       session()->connection()->supported_versions().front().transport_version,
@@ -439,7 +440,7 @@ void QuicCryptoClientHandshaker::DoReceiveREJ(
   session()->NeuterUnencryptedData();
 
   stateless_reject_received_ = in->tag() == kSREJ;
-  string error_details;
+  QuicString error_details;
   QuicErrorCode error = crypto_config_->ProcessRejection(
       *in, session()->connection()->clock()->WallNow(),
       session()->connection()->transport_version(), chlo_hash_, cached,
@@ -616,7 +617,7 @@ void QuicCryptoClientHandshaker::DoReceiveSHLO(
     return;
   }
 
-  string error_details;
+  QuicString error_details;
   QuicErrorCode error = crypto_config_->ProcessServerHello(
       *in, session()->connection()->connection_id(),
       session()->connection()->transport_version(),

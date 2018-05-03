@@ -62,13 +62,23 @@ DEFINE_int(runtime_ms, 10000, "Simulated runtime (milliseconds).");
 
 DEFINE_int(packet_loss_rate, 10, "Percentile of packet loss.");
 
-DEFINE_int(random_loss_mode, 1,
-    "Random loss mode: 0--no loss, 1--uniform loss, 2--Gilbert Elliot loss.");
+DEFINE_int(random_loss_mode,
+           kUniformLoss,
+           "Random loss mode: 0--no loss, 1--uniform loss, 2--Gilbert Elliot "
+           "loss, 3--fixed loss.");
 
 DEFINE_int(burst_length, 30,
     "Burst length in milliseconds, only valid for Gilbert Elliot loss.");
 
 DEFINE_float(drift_factor, 0.0, "Time drift factor.");
+
+DEFINE_int(preload_packets, 0, "Preload the buffer with this many packets.");
+
+DEFINE_string(loss_events,
+              "",
+              "List of loss events time and duration separated by comma: "
+              "<first_event_time> <first_event_duration>, <second_event_time> "
+              "<second_event_duration>, ...");
 
 // ProbTrans00Solver() is to calculate the transition probability from no-loss
 // state to itself in a modified Gilbert Elliot packet loss model. The result is
@@ -155,8 +165,9 @@ NetEqQualityTest::NetEqQualityTest(int block_duration_ms,
   RTC_CHECK(FLAG_packet_loss_rate >= 0 && FLAG_packet_loss_rate <= 100)
       << "Invalid packet loss percentile, should be between 0 and 100.";
 
-  RTC_CHECK(FLAG_random_loss_mode >= 0 && FLAG_random_loss_mode <= 2)
-      << "Invalid random packet loss mode, should be between 0 and 2.";
+  RTC_CHECK(FLAG_random_loss_mode >= 0 && FLAG_random_loss_mode < kLastLossMode)
+      << "Invalid random packet loss mode, should be between 0 and "
+      << kLastLossMode - 1 << ".";
 
   RTC_CHECK_GE(FLAG_burst_length, kPacketLossTimeUnitMs)
       << "Invalid burst length, should be greater than or equal to "
@@ -164,6 +175,9 @@ NetEqQualityTest::NetEqQualityTest(int block_duration_ms,
 
   RTC_CHECK_GT(FLAG_drift_factor, -0.1)
       << "Invalid drift factor, should be greater than -0.1.";
+
+  RTC_CHECK_GE(FLAG_preload_packets, 0)
+      << "Invalid number of packets to preload; must be non-negative.";
 
   const std::string out_filename = FLAG_out_filename;
   const std::string log_filename = out_filename + ".log";
@@ -192,7 +206,7 @@ NetEqQualityTest::~NetEqQualityTest() {
   log_file_.close();
 }
 
-bool NoLoss::Lost() {
+bool NoLoss::Lost(int now_ms) {
   return false;
 }
 
@@ -200,7 +214,7 @@ UniformLoss::UniformLoss(double loss_rate)
     : loss_rate_(loss_rate) {
 }
 
-bool UniformLoss::Lost() {
+bool UniformLoss::Lost(int now_ms) {
   int drop_this = rand();
   return (drop_this < loss_rate_ * RAND_MAX);
 }
@@ -214,18 +228,39 @@ GilbertElliotLoss::GilbertElliotLoss(double prob_trans_11, double prob_trans_01)
 
 GilbertElliotLoss::~GilbertElliotLoss() {}
 
-bool GilbertElliotLoss::Lost() {
+bool GilbertElliotLoss::Lost(int now_ms) {
   // Simulate bursty channel (Gilbert model).
   // (1st order) Markov chain model with memory of the previous/last
   // packet state (lost or received).
   if (lost_last_) {
     // Previous packet was not received.
     uniform_loss_model_->set_loss_rate(prob_trans_11_);
-    return lost_last_ = uniform_loss_model_->Lost();
+    return lost_last_ = uniform_loss_model_->Lost(now_ms);
   } else {
     uniform_loss_model_->set_loss_rate(prob_trans_01_);
-    return lost_last_ = uniform_loss_model_->Lost();
+    return lost_last_ = uniform_loss_model_->Lost(now_ms);
   }
+}
+
+FixedLossModel::FixedLossModel(
+    std::set<FixedLossEvent, FixedLossEventCmp> loss_events)
+    : loss_events_(loss_events) {
+  loss_events_it_ = loss_events_.begin();
+}
+
+FixedLossModel::~FixedLossModel() {}
+
+bool FixedLossModel::Lost(int now_ms) {
+  if (loss_events_it_ != loss_events_.end() &&
+      now_ms > loss_events_it_->start_ms) {
+    if (now_ms <= loss_events_it_->start_ms + loss_events_it_->duration_ms) {
+      return true;
+    } else {
+      ++loss_events_it_;
+      return false;
+    }
+  }
+  return false;
 }
 
 void NetEqQualityTest::SetUp() {
@@ -235,7 +270,7 @@ void NetEqQualityTest::SetUp() {
 
   int units = block_duration_ms_ / kPacketLossTimeUnitMs;
   switch (FLAG_random_loss_mode) {
-    case 1: {
+    case kUniformLoss: {
       // |unit_loss_rate| is the packet loss rate for each unit time interval
       // (kPacketLossTimeUnitMs). Since a packet loss event is generated if any
       // of |block_duration_ms_ / kPacketLossTimeUnitMs| unit time intervals of
@@ -247,7 +282,7 @@ void NetEqQualityTest::SetUp() {
       loss_model_.reset(new UniformLoss(unit_loss_rate));
       break;
     }
-    case 2: {
+    case kGilbertElliotLoss: {
       // |FLAG_burst_length| should be integer times of kPacketLossTimeUnitMs.
       ASSERT_EQ(0, FLAG_burst_length % kPacketLossTimeUnitMs);
 
@@ -273,6 +308,25 @@ void NetEqQualityTest::SetUp() {
                                               1.0f - prob_trans_00));
       break;
     }
+    case kFixedLoss: {
+      std::istringstream loss_events_stream(FLAG_loss_events);
+      std::string loss_event_string;
+      std::set<FixedLossEvent, FixedLossEventCmp> loss_events;
+      while (std::getline(loss_events_stream, loss_event_string, ',')) {
+        std::vector<int> loss_event_params;
+        std::istringstream loss_event_params_stream(loss_event_string);
+        std::copy(std::istream_iterator<int>(loss_event_params_stream),
+                  std::istream_iterator<int>(),
+                  std::back_inserter(loss_event_params));
+        RTC_CHECK_EQ(loss_event_params.size(), 2);
+        auto result = loss_events.insert(
+            FixedLossEvent(loss_event_params[0], loss_event_params[1]));
+        RTC_CHECK(result.second);
+      }
+      RTC_CHECK_GT(loss_events.size(), 0);
+      loss_model_.reset(new FixedLossModel(loss_events));
+      break;
+    }
     default: {
       loss_model_.reset(new NoLoss);
       break;
@@ -294,7 +348,7 @@ bool NetEqQualityTest::PacketLost() {
   // same packet loss profile.
   bool lost = false;
   for (int idx = 0; idx < cycles; idx ++) {
-    if (loss_model_->Lost()) {
+    if (loss_model_->Lost(decoded_time_ms_)) {
       // The packet will be lost if any of the drawings indicates a loss, but
       // the loop has to go on to make sure that codecs with different block
       // lengths keep the same pace.
@@ -352,8 +406,9 @@ void NetEqQualityTest::Simulate() {
   int audio_size_samples;
 
   while (decoded_time_ms_ < FLAG_runtime_ms) {
-    // Assume 10 packets in packets buffer.
-    while (decodable_time_ms_ - 10 * block_duration_ms_ < decoded_time_ms_) {
+    // Preload the buffer if needed.
+    while (decodable_time_ms_ - FLAG_preload_packets * block_duration_ms_ <
+           decoded_time_ms_) {
       ASSERT_TRUE(in_file_->Read(in_size_samples_ * channels_, &in_data_[0]));
       payload_.Clear();
       payload_size_bytes_ = EncodeBlock(&in_data_[0],

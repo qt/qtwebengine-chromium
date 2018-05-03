@@ -95,7 +95,8 @@ void FetchContext::DispatchDidFinishLoading(unsigned long,
                                             int64_t,
                                             bool) {}
 
-void FetchContext::DispatchDidFail(unsigned long,
+void FetchContext::DispatchDidFail(const KURL&,
+                                   unsigned long,
                                    const ResourceError&,
                                    int64_t,
                                    bool) {}
@@ -118,7 +119,5 @@ void FetchContext::PopulateResourceRequest(
     const ClientHintsPreferences&,
     const FetchParameters::ResourceWidth&,
     ResourceRequest&) {}
-
-void FetchContext::SetFirstPartyCookieAndRequestorOrigin(ResourceRequest&) {}
 
 }  // namespace blink

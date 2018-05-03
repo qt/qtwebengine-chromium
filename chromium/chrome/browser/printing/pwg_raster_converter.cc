@@ -21,9 +21,8 @@
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "chrome/common/chrome_utility_printing_messages.h"
-#include "chrome/services/printing/public/interfaces/constants.mojom.h"
-#include "chrome/services/printing/public/interfaces/pdf_to_pwg_raster_converter.mojom.h"
+#include "chrome/services/printing/public/mojom/constants.mojom.h"
+#include "chrome/services/printing/public/mojom/pdf_to_pwg_raster_converter.mojom.h"
 #include "components/cloud_devices/common/cloud_device_description.h"
 #include "components/cloud_devices/common/printer_description.h"
 #include "content/public/browser/browser_thread.h"
@@ -208,63 +207,64 @@ class PwgRasterConverterImpl : public PwgRasterConverter {
              ResultCallback callback) override;
 
  private:
-  // TODO (rbpotter): Once CancelableOnceCallback is added, remove this and
-  // change callback_ to a CancelableOnceCallback.
-  void RunCallback(bool success, const base::FilePath& temp_file);
-
   scoped_refptr<PwgRasterConverterHelper> utility_client_;
-  ResultCallback callback_;
-  base::WeakPtrFactory<PwgRasterConverterImpl> weak_ptr_factory_;
+
+  // Cancelable version of ResultCallback.
+  base::CancelableOnceCallback<void(bool, const base::FilePath&)> callback_;
 
   DISALLOW_COPY_AND_ASSIGN(PwgRasterConverterImpl);
 };
 
-PwgRasterConverterImpl::PwgRasterConverterImpl() : weak_ptr_factory_(this) {}
+PwgRasterConverterImpl::PwgRasterConverterImpl() = default;
 
-PwgRasterConverterImpl::~PwgRasterConverterImpl() {}
+PwgRasterConverterImpl::~PwgRasterConverterImpl() = default;
 
 void PwgRasterConverterImpl::Start(base::RefCountedMemory* data,
                                    const PdfRenderSettings& conversion_settings,
                                    const PwgRasterSettings& bitmap_settings,
                                    ResultCallback callback) {
-  // Bind callback here and pass a wrapper to the utility client to avoid
-  // calling callback if PwgRasterConverterImpl is destroyed.
-  callback_ = std::move(callback);
+  callback_.Reset(std::move(callback));
   utility_client_ = base::MakeRefCounted<PwgRasterConverterHelper>(
       conversion_settings, bitmap_settings);
-  utility_client_->Convert(data,
-                           base::BindOnce(&PwgRasterConverterImpl::RunCallback,
-                                          weak_ptr_factory_.GetWeakPtr()));
-}
-
-void PwgRasterConverterImpl::RunCallback(bool success,
-                                         const base::FilePath& temp_file) {
-  std::move(callback_).Run(success, temp_file);
+  utility_client_->Convert(data, callback_.callback());
 }
 
 }  // namespace
 
 // static
 std::unique_ptr<PwgRasterConverter> PwgRasterConverter::CreateDefault() {
-  return base::MakeUnique<PwgRasterConverterImpl>();
+  return std::make_unique<PwgRasterConverterImpl>();
 }
 
 // static
 PdfRenderSettings PwgRasterConverter::GetConversionSettings(
     const cloud_devices::CloudDeviceDescription& printer_capabilities,
     const gfx::Size& page_size) {
-  int dpi = kDefaultPdfDpi;
+  gfx::Size dpi = gfx::Size(kDefaultPdfDpi, kDefaultPdfDpi);
   cloud_devices::printer::DpiCapability dpis;
   if (dpis.LoadFrom(printer_capabilities))
-    dpi = std::max(dpis.GetDefault().horizontal, dpis.GetDefault().vertical);
+    dpi = gfx::Size(dpis.GetDefault().horizontal, dpis.GetDefault().vertical);
 
-  const double scale = static_cast<double>(dpi) / kPointsPerInch;
+  bool page_is_landscape =
+      static_cast<double>(page_size.width()) / dpi.width() >
+      static_cast<double>(page_size.height()) / dpi.height();
+
+  // Pdfium assumes that page width is given in dpi.width(), and height in
+  // dpi.height(). If we rotate the page, we need to also swap the DPIs.
+  gfx::Size final_page_size = page_size;
+  if (page_is_landscape) {
+    final_page_size = gfx::Size(page_size.height(), page_size.width());
+    dpi = gfx::Size(dpi.height(), dpi.width());
+  }
+  double scale_x = static_cast<double>(dpi.width()) / kPointsPerInch;
+  double scale_y = static_cast<double>(dpi.height()) / kPointsPerInch;
 
   // Make vertical rectangle to optimize streaming to printer. Fix orientation
   // by autorotate.
-  gfx::Rect area(std::min(page_size.width(), page_size.height()) * scale,
-                 std::max(page_size.width(), page_size.height()) * scale);
-  return PdfRenderSettings(area, gfx::Point(0, 0), dpi, /*autorotate=*/true,
+  gfx::Rect area(final_page_size.width() * scale_x,
+                 final_page_size.height() * scale_y);
+  return PdfRenderSettings(area, gfx::Point(0, 0), dpi,
+                           /*autorotate=*/true,
                            PdfRenderSettings::Mode::NORMAL);
 }
 

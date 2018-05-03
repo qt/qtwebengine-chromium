@@ -11,6 +11,7 @@
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
+#include "fxjs/cfxjs_engine.h"
 #include "fxjs/cfxjse_class.h"
 #include "fxjs/cfxjse_resolveprocessor.h"
 #include "fxjs/cfxjse_value.h"
@@ -91,10 +92,12 @@ CXFA_Object* CFXJSE_Engine::ToObject(CFXJSE_Value* pValue,
   return static_cast<CXFA_Object*>(pHostObj);
 }
 
-CFXJSE_Engine::CFXJSE_Engine(CXFA_Document* pDocument, v8::Isolate* pIsolate)
-    : CJS_V8(pIsolate),
+CFXJSE_Engine::CFXJSE_Engine(CXFA_Document* pDocument,
+                             CFXJS_Engine* fxjs_engine)
+    : CFX_V8(fxjs_engine->GetIsolate()),
       m_pDocument(pDocument),
-      m_JsContext(CFXJSE_Context::Create(pIsolate,
+      m_JsContext(CFXJSE_Context::Create(fxjs_engine->GetIsolate(),
+                                         fxjs_engine,
                                          &GlobalClassDescriptor,
                                          pDocument->GetRoot())),
       m_pJsClass(nullptr),
@@ -199,8 +202,8 @@ void CFXJSE_Engine::GlobalPropertySetter(CFXJSE_Value* pObject,
   if (!pNotify)
     return;
 
-  pNotify->GetDocEnvironment()->SetGlobalProperty(pNotify->GetHDOC(),
-                                                  szPropName, pValue);
+  pNotify->GetDocEnvironment()->SetPropertyInNonXFAGlobalObject(
+      pNotify->GetHDOC(), szPropName, pValue);
 }
 
 void CFXJSE_Engine::GlobalPropertyGetter(CFXJSE_Value* pObject,
@@ -256,8 +259,8 @@ void CFXJSE_Engine::GlobalPropertyGetter(CFXJSE_Value* pObject,
   if (!pNotify)
     return;
 
-  pNotify->GetDocEnvironment()->GetGlobalProperty(pNotify->GetHDOC(),
-                                                  szPropName, pValue);
+  pNotify->GetDocEnvironment()->GetPropertyFromNonXFAGlobalObject(
+      pNotify->GetHDOC(), szPropName, pValue);
 }
 
 int32_t CFXJSE_Engine::GlobalPropTypeGetter(CFXJSE_Value* pOriginalValue,
@@ -429,7 +432,7 @@ CFXJSE_Context* CFXJSE_Engine::CreateVariablesContext(CXFA_Node* pScriptNode,
     return nullptr;
 
   auto pNewContext =
-      CFXJSE_Context::Create(GetIsolate(), &VariablesClassDescriptor,
+      CFXJSE_Context::Create(GetIsolate(), nullptr, &VariablesClassDescriptor,
                              new CXFA_ThisProxy(pSubform, pScriptNode));
   RemoveBuiltInObjs(pNewContext.get());
   pNewContext->EnableCompatibleMode();
@@ -518,7 +521,7 @@ bool CFXJSE_Engine::QueryVariableValue(CXFA_Node* pScriptNode,
 }
 
 void CFXJSE_Engine::RemoveBuiltInObjs(CFXJSE_Context* pContext) const {
-  static const ByteStringView OBJ_NAME[2] = {"Number", "Date"};
+  const ByteStringView OBJ_NAME[2] = {"Number", "Date"};
   std::unique_ptr<CFXJSE_Value> pObject = pContext->GetGlobalObject();
   auto hProp = pdfium::MakeUnique<CFXJSE_Value>(GetIsolate());
   for (int i = 0; i < 2; ++i) {
@@ -752,4 +755,28 @@ void CFXJSE_Engine::SetNodesOfRunScript(std::vector<CXFA_Node*>* pArray) {
 void CFXJSE_Engine::AddNodesOfRunScript(CXFA_Node* pNode) {
   if (m_pScriptNodeArray && !pdfium::ContainsValue(*m_pScriptNodeArray, pNode))
     m_pScriptNodeArray->push_back(pNode);
+}
+
+CXFA_Object* CFXJSE_Engine::ToXFAObject(v8::Local<v8::Value> obj) {
+  ASSERT(!obj.IsEmpty());
+
+  if (!obj->IsObject())
+    return nullptr;
+
+  CFXJSE_HostObject* hostObj =
+      FXJSE_RetrieveObjectBinding(obj.As<v8::Object>(), nullptr);
+  if (!hostObj || hostObj->type() != CFXJSE_HostObject::kXFA)
+    return nullptr;
+  return static_cast<CXFA_Object*>(hostObj);
+}
+
+v8::Local<v8::Value> CFXJSE_Engine::NewXFAObject(
+    CXFA_Object* obj,
+    v8::Global<v8::FunctionTemplate>& tmpl) {
+  v8::EscapableHandleScope scope(GetIsolate());
+  v8::Local<v8::FunctionTemplate> klass =
+      v8::Local<v8::FunctionTemplate>::New(GetIsolate(), tmpl);
+  v8::Local<v8::Object> object = klass->InstanceTemplate()->NewInstance();
+  FXJSE_UpdateObjectBinding(object, obj);
+  return scope.Escape(object);
 }

@@ -18,6 +18,7 @@
 #include "components/offline_pages/core/prefetch/download_archives_task.h"
 #include "components/offline_pages/core/prefetch/download_cleanup_task.h"
 #include "components/offline_pages/core/prefetch/download_completed_task.h"
+#include "components/offline_pages/core/prefetch/finalize_dismissed_url_suggestion_task.h"
 #include "components/offline_pages/core/prefetch/generate_page_bundle_reconcile_task.h"
 #include "components/offline_pages/core/prefetch/generate_page_bundle_task.h"
 #include "components/offline_pages/core/prefetch/get_operation_task.h"
@@ -120,8 +121,9 @@ void PrefetchDispatcherImpl::RemovePrefetchURLsByClientId(
     const ClientId& client_id) {
   if (!service_->GetPrefetchConfiguration()->IsPrefetchingEnabled())
     return;
-
-  NOTIMPLEMENTED();
+  PrefetchStore* prefetch_store = service_->GetPrefetchStore();
+  task_queue_.AddTask(std::make_unique<FinalizeDismissedUrlSuggestionTask>(
+      prefetch_store, client_id));
 }
 
 void PrefetchDispatcherImpl::BeginBackgroundTask(
@@ -195,9 +197,8 @@ void PrefetchDispatcherImpl::QueueActionTasks() {
   task_queue_.AddTask(std::move(download_archives_task));
 
   // The following tasks should not be run unless we are in the background task,
-  // as we need to ensure WiFi access at that time. Schedule them anyway if
-  // limitless prefetching is enabled.
-  if (!background_task_ && !offline_pages::IsLimitlessPrefetchingEnabled())
+  // as we need to ensure WiFi access at that time.
+  if (!background_task_)
     return;
 
   std::unique_ptr<Task> get_operation_task = std::make_unique<GetOperationTask>(
@@ -216,7 +217,6 @@ void PrefetchDispatcherImpl::QueueActionTasks() {
               &PrefetchDispatcherImpl::DidGenerateBundleOrGetOperationRequest,
               weak_factory_.GetWeakPtr(), "GeneratePageBundleRequest"));
   task_queue_.AddTask(std::move(generate_page_bundle_task));
-
 }
 
 void PrefetchDispatcherImpl::StopBackgroundTask() {
@@ -247,8 +247,8 @@ void PrefetchDispatcherImpl::DisposeTask() {
 
   // Delay the deletion till the caller finishes.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&DeleteBackgroundTaskHelper,
-                            base::Passed(std::move(background_task_))));
+      FROM_HERE,
+      base::BindOnce(&DeleteBackgroundTaskHelper, std::move(background_task_)));
 }
 
 void PrefetchDispatcherImpl::GCMOperationCompletedMessageReceived(

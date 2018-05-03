@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -11,14 +11,17 @@ namespace blink {
 
 namespace {
 
-FeaturePolicyFeature kDefaultOnFeature = static_cast<FeaturePolicyFeature>(
-    static_cast<int>(FeaturePolicyFeature::LAST_FEATURE) + 1);
+mojom::FeaturePolicyFeature kDefaultOnFeature =
+    static_cast<mojom::FeaturePolicyFeature>(
+        static_cast<int>(mojom::FeaturePolicyFeature::kLastFeature) + 1);
 
-FeaturePolicyFeature kDefaultSelfFeature = static_cast<FeaturePolicyFeature>(
-    static_cast<int>(FeaturePolicyFeature::LAST_FEATURE) + 2);
+mojom::FeaturePolicyFeature kDefaultSelfFeature =
+    static_cast<mojom::FeaturePolicyFeature>(
+        static_cast<int>(mojom::FeaturePolicyFeature::kLastFeature) + 2);
 
-FeaturePolicyFeature kDefaultOffFeature = static_cast<FeaturePolicyFeature>(
-    static_cast<int>(FeaturePolicyFeature::LAST_FEATURE) + 3);
+mojom::FeaturePolicyFeature kDefaultOffFeature =
+    static_cast<mojom::FeaturePolicyFeature>(
+        static_cast<int>(mojom::FeaturePolicyFeature::kLastFeature) + 3);
 
 }  // namespace
 

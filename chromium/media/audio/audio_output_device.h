@@ -160,6 +160,8 @@ class MEDIA_EXPORT AudioOutputDevice : public AudioRendererSink,
       const std::string& matched_device_id,
       bool timed_out);
 
+  void NotifyRenderCallbackOfError();
+
   // base::MessageLoop::DestructionObserver implementation for the IO loop.
   // If the IO loop dies before we do, we shut down the audio thread from here.
   void WillDestroyCurrentMessageLoop() override;
@@ -180,6 +182,9 @@ class MEDIA_EXPORT AudioOutputDevice : public AudioRendererSink,
   // State of Start() calls before OnDeviceAuthorized() is called.
   bool start_on_authorized_;
 
+  // For UMA stats. May only be accessed on the IO thread.
+  bool had_callback_error_ = false;
+
   // State of Play() / Pause() calls before OnStreamCreated() is called.
   bool play_on_start_;
 
@@ -187,7 +192,7 @@ class MEDIA_EXPORT AudioOutputDevice : public AudioRendererSink,
   // Only used by Unified IO.
   int session_id_;
 
-  // ID of hardware output device to be used (provided session_id_ is zero)
+  // ID of hardware output device to be used (provided |session_id_| is zero)
   const std::string device_id_;
   const url::Origin security_origin_;
 

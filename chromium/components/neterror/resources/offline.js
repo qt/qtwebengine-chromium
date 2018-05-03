@@ -94,9 +94,6 @@ var IS_IOS = /iPad|iPhone|iPod/.test(window.navigator.platform);
 var IS_MOBILE = /Android/.test(window.navigator.userAgent) || IS_IOS;
 
 /** @const */
-var IS_TOUCH_ENABLED = 'ontouchstart' in window;
-
-/** @const */
 var ARCADE_MODE_URL = 'chrome://dino/';
 
 /**
@@ -220,8 +217,8 @@ Runner.events = {
   CLICK: 'click',
   KEYDOWN: 'keydown',
   KEYUP: 'keyup',
-  MOUSEDOWN: 'mousedown',
-  MOUSEUP: 'mouseup',
+  POINTERDOWN: 'pointerdown',
+  POINTERUP: 'pointerup',
   RESIZE: 'resize',
   TOUCHEND: 'touchend',
   TOUCHSTART: 'touchstart',
@@ -382,10 +379,6 @@ Runner.prototype = {
 
     this.outerContainerEl.appendChild(this.containerEl);
 
-    if (IS_MOBILE) {
-      this.createTouchController();
-    }
-
     this.startListening();
     this.update();
 
@@ -399,6 +392,8 @@ Runner.prototype = {
   createTouchController: function() {
     this.touchController = document.createElement('div');
     this.touchController.className = Runner.classes.TOUCH_CONTROLLER;
+    this.touchController.addEventListener(Runner.events.TOUCHSTART, this);
+    this.touchController.addEventListener(Runner.events.TOUCHEND, this);
   },
 
   /**
@@ -615,12 +610,12 @@ Runner.prototype = {
       switch (evtType) {
         case events.KEYDOWN:
         case events.TOUCHSTART:
-        case events.MOUSEDOWN:
+        case events.POINTERDOWN:
           this.onKeyDown(e);
           break;
         case events.KEYUP:
         case events.TOUCHEND:
-        case events.MOUSEUP:
+        case events.POINTERUP:
           this.onKeyUp(e);
           break;
       }
@@ -635,16 +630,10 @@ Runner.prototype = {
     document.addEventListener(Runner.events.KEYDOWN, this);
     document.addEventListener(Runner.events.KEYUP, this);
 
-    if (IS_MOBILE) {
-      // Mobile only touch devices.
-      this.touchController.addEventListener(Runner.events.TOUCHSTART, this);
-      this.touchController.addEventListener(Runner.events.TOUCHEND, this);
-      this.containerEl.addEventListener(Runner.events.TOUCHSTART, this);
-    } else {
-      // Mouse.
-      document.addEventListener(Runner.events.MOUSEDOWN, this);
-      document.addEventListener(Runner.events.MOUSEUP, this);
-    }
+    // Touch / pointer.
+    this.containerEl.addEventListener(Runner.events.TOUCHSTART, this);
+    document.addEventListener(Runner.events.POINTERDOWN, this);
+    document.addEventListener(Runner.events.POINTERUP, this);
   },
 
   /**
@@ -654,14 +643,14 @@ Runner.prototype = {
     document.removeEventListener(Runner.events.KEYDOWN, this);
     document.removeEventListener(Runner.events.KEYUP, this);
 
-    if (IS_MOBILE) {
+    if (this.touchController) {
       this.touchController.removeEventListener(Runner.events.TOUCHSTART, this);
       this.touchController.removeEventListener(Runner.events.TOUCHEND, this);
-      this.containerEl.removeEventListener(Runner.events.TOUCHSTART, this);
-    } else {
-      document.removeEventListener(Runner.events.MOUSEDOWN, this);
-      document.removeEventListener(Runner.events.MOUSEUP, this);
     }
+
+    this.containerEl.removeEventListener(Runner.events.TOUCHSTART, this);
+    document.removeEventListener(Runner.events.POINTERDOWN, this);
+    document.removeEventListener(Runner.events.POINTERUP, this);
   },
 
   /**
@@ -680,6 +669,10 @@ Runner.prototype = {
         e.preventDefault();
         // Starting the game for the first time.
         if (!this.playing) {
+          // Started by touch so create a touch controller.
+          if (!this.touchController && e.type == Runner.events.TOUCHSTART) {
+            this.createTouchController();
+          }
           this.loadSounds();
           this.playing = true;
           this.update();
@@ -717,7 +710,7 @@ Runner.prototype = {
     var keyCode = String(e.keyCode);
     var isjumpKey = Runner.keycodes.JUMP[keyCode] ||
        e.type == Runner.events.TOUCHEND ||
-       e.type == Runner.events.MOUSEDOWN;
+       e.type == Runner.events.POINTERUP;
 
     if (this.isRunning() && isjumpKey) {
       this.tRex.endJump();
@@ -748,7 +741,7 @@ Runner.prototype = {
    */
   isLeftClickOnCanvas: function(e) {
     return e.button != null && e.button < 2 &&
-        e.type == Runner.events.MOUSEUP && e.target == this.canvas;
+        e.type == Runner.events.POINTERUP && e.target == this.canvas;
   },
 
   /**

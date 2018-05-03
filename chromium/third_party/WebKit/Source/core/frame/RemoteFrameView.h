@@ -10,6 +10,7 @@
 #include "core/frame/LocalFrameView.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebCanvas.h"
 
 namespace blink {
 
@@ -41,10 +42,10 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   void FrameRectsChanged() override;
   void InvalidateRect(const IntRect&);
   void SetFrameRect(const IntRect&) override;
-  const IntRect& FrameRect() const override { return frame_rect_; }
+  IntRect FrameRect() const override;
   void Paint(GraphicsContext&,
              const GlobalPaintFlags,
-             const CullRect&) const override {}
+             const CullRect&) const override;
   void UpdateGeometry() override;
   void Hide() override;
   void Show() override;
@@ -52,6 +53,13 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
 
   void UpdateViewportIntersectionsForSubtree(
       DocumentLifecycle::LifecycleState) override;
+
+  bool GetIntrinsicSizingInfo(IntrinsicSizingInfo&) const override;
+
+  void SetIntrinsicSizeInfo(const IntrinsicSizingInfo& size_info);
+  bool HasIntrinsicSizingInfo() const override;
+
+  uint32_t Print(const IntRect&, WebCanvas*) const;
 
   virtual void Trace(blink::Visitor*);
 
@@ -79,6 +87,8 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   Member<ElementVisibilityObserver> visibility_observer_;
   bool subtree_throttled_ = false;
   bool hidden_for_throttling_ = false;
+  IntrinsicSizingInfo intrinsic_sizing_info_;
+  bool has_intrinsic_sizing_info_ = false;
 };
 
 }  // namespace blink

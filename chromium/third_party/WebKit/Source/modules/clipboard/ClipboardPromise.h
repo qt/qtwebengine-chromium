@@ -9,7 +9,7 @@
 #include "core/CoreExport.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "public/platform/modules/permissions/permission.mojom-blink.h"
-#include "third_party/WebKit/common/clipboard/clipboard.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/clipboard/clipboard.mojom-blink.h"
 
 namespace blink {
 
@@ -36,7 +36,7 @@ class ClipboardPromise final
  private:
   ClipboardPromise(ScriptState*);
 
-  scoped_refptr<WebTaskRunner> GetTaskRunner();
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner();
   mojom::blink::PermissionService* GetPermissionService();
 
   bool IsFocusedDocument(ExecutionContext*);

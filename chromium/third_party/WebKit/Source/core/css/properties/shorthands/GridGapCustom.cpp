@@ -7,6 +7,7 @@
 #include "core/StylePropertyShorthand.h"
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
+#include "core/css/properties/CSSParsingUtils.h"
 #include "core/css/properties/ComputedStyleUtils.h"
 #include "core/style/ComputedStyle.h"
 
@@ -20,19 +21,17 @@ bool GridGap::ParseShorthand(
     const CSSParserLocalContext&,
     HeapVector<CSSPropertyValue, 256>& properties) const {
   DCHECK_EQ(shorthandForProperty(CSSPropertyGridGap).length(), 2u);
-  CSSValue* row_gap = CSSPropertyParserHelpers::ConsumeLengthOrPercent(
-      range, context.Mode(), kValueRangeNonNegative);
-  CSSValue* column_gap = CSSPropertyParserHelpers::ConsumeLengthOrPercent(
-      range, context.Mode(), kValueRangeNonNegative);
+  CSSValue* row_gap = CSSParsingUtils::ConsumeGapLength(range, context);
+  CSSValue* column_gap = CSSParsingUtils::ConsumeGapLength(range, context);
   if (!row_gap || !range.AtEnd())
     return false;
   if (!column_gap)
     column_gap = row_gap;
   CSSPropertyParserHelpers::AddProperty(
-      CSSPropertyGridRowGap, CSSPropertyGridGap, *row_gap, important,
+      CSSPropertyRowGap, CSSPropertyGap, *row_gap, important,
       CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit, properties);
   CSSPropertyParserHelpers::AddProperty(
-      CSSPropertyGridColumnGap, CSSPropertyGridGap, *column_gap, important,
+      CSSPropertyColumnGap, CSSPropertyGap, *column_gap, important,
       CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit, properties);
   return true;
 }

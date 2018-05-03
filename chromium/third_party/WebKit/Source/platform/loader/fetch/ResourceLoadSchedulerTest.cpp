@@ -305,7 +305,7 @@ TEST_F(ResourceLoadSchedulerTest, PriotrityIsNotConsidered) {
   EXPECT_TRUE(Release(id1));
 }
 
-TEST_F(RendererSideResourceSchedulerTest, PriotrityIsConsidered) {
+TEST_F(RendererSideResourceSchedulerTest, PriorityIsConsidered) {
   // Push three requests.
   MockClient* client1 = new MockClient;
 
@@ -343,14 +343,14 @@ TEST_F(RendererSideResourceSchedulerTest, PriotrityIsConsidered) {
   EXPECT_FALSE(client3->WasRun());
   EXPECT_TRUE(client4->WasRun());
 
-  Scheduler()->SetOutstandingLimitForTesting(2);
+  Scheduler()->SetOutstandingLimitForTesting(1);
 
   EXPECT_FALSE(client1->WasRun());
   EXPECT_FALSE(client2->WasRun());
   EXPECT_TRUE(client3->WasRun());
   EXPECT_TRUE(client4->WasRun());
 
-  Scheduler()->SetOutstandingLimitForTesting(3);
+  Scheduler()->SetOutstandingLimitForTesting(2);
 
   EXPECT_FALSE(client1->WasRun());
   EXPECT_TRUE(client2->WasRun());
@@ -378,8 +378,7 @@ TEST_F(RendererSideResourceSchedulerTest, IsThrottablePriority) {
   EXPECT_TRUE(
       Scheduler()->IsThrottablePriority(ResourceLoadPriority::kVeryLow));
   EXPECT_TRUE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kLow));
-  EXPECT_FALSE(
-      Scheduler()->IsThrottablePriority(ResourceLoadPriority::kMedium));
+  EXPECT_TRUE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kMedium));
   EXPECT_FALSE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kHigh));
   EXPECT_FALSE(
       Scheduler()->IsThrottablePriority(ResourceLoadPriority::kVeryHigh));
@@ -495,14 +494,13 @@ TEST_F(RendererSideResourceSchedulerTest, LoosenThrottlingPolicy) {
   // Now let's tighten the limit again.
   Scheduler()->SetOutstandingLimitForTesting(0, 0);
 
-  // ...and change the scheduling policy to |kNormal|, where priority >=
-  // |kMedium| requests are not throttled.
+  // ...and change the scheduling policy to |kNormal|.
   Scheduler()->LoosenThrottlingPolicy();
 
   EXPECT_FALSE(client1->WasRun());
   EXPECT_FALSE(client2->WasRun());
   EXPECT_FALSE(client3->WasRun());
-  EXPECT_TRUE(client4->WasRun());
+  EXPECT_FALSE(client4->WasRun());
 
   Scheduler()->SetOutstandingLimitForTesting(0, 2);
 

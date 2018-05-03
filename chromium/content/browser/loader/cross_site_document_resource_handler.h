@@ -33,10 +33,22 @@ namespace content {
 // from sites that require dedicated renderer processes, though it could be
 // expanded to apply to all sites.
 //
-// When a response is blocked, the renderer is sent an empty response body
-// instead of seeing a failed request.  A failed request would change page-
-// visible behavior (e.g., for a blocked XHR).  An empty response can generally
-// be consumed by the renderer without noticing the difference.
+// When a response is blocked, the renderer is sent an empty response body (with
+// stripped down set of response headers) instead of seeing a failed request.  A
+// failed request would change page- visible behavior (e.g., for a blocked XHR).
+// An empty response can generally be consumed by the renderer without noticing
+// the difference.
+//
+// To allow stripping response headers of a blocked response,
+// CrossSiteDocumentResourceHandler holds onto ResourceResponse received in
+// OnResponseStarted and replays it only after making the final block-or-allow
+// decision (this may require sniffing - processing the first few OnWillRead
+// and OnReadCompleted calls).  Note that the first OnWillRead is forwarded into
+// the downstream handler (to use a single buffer from the downstream handler,
+// rather than allocating a separate buffer and copying the data between the
+// buffers) and this leads to perturbed order of calls (that is OnWillRead is
+// received by the downstream handler *before* OnResponseStarted) - this
+// behavior is very similar to what MimeSniffingResourceHandler does.
 //
 // For more details, see:
 // http://chromium.org/developers/design-documents/blocking-cross-site-documents
@@ -84,11 +96,21 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
       const net::URLRequestStatus& status,
       std::unique_ptr<ResourceController> controller) override;
 
+  // Returns explicitly named headers from
+  // https://fetch.spec.whatwg.org/#cors-safelisted-response-header-name.
+  //
+  // Note that XSDB doesn't block responses allowed through CORS - this means
+  // that the list of allowed headers below doesn't have to consider header
+  // names listed in the Access-Control-Expose-Headers header.
+  static std::vector<std::string> GetCorsSafelistedHeadersForTesting();
+
  private:
   FRIEND_TEST_ALL_PREFIXES(CrossSiteDocumentResourceHandlerTest,
                            ResponseBlocking);
   FRIEND_TEST_ALL_PREFIXES(CrossSiteDocumentResourceHandlerTest,
                            OnWillReadDefer);
+  FRIEND_TEST_ALL_PREFIXES(CrossSiteDocumentResourceHandlerTest,
+                           MimeSnifferInterop);
 
   // A ResourceController subclass for running deferred operations.
   class Controller;
@@ -103,21 +125,33 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   // Called by the OnWillReadController.
   void ResumeOnWillRead(scoped_refptr<net::IOBuffer>* buf, int* buf_size);
 
+  // Stops local buffering and optionally copies the data from the
+  // |local_buffer_| into the |next_handler_|'s buffer that was returned by the
+  // |next_handler_| in response to OnWillRead.
+  void StopLocalBuffering(bool copy_data_to_next_handler);
+
   // Helpers for UMA and UKM logging.
   static void LogBlockedResponseOnUIThread(
       ResourceRequestInfo::WebContentsGetter web_contents_getter,
       bool needed_sniffing,
       CrossSiteDocumentMimeType canonical_mime_type,
       ResourceType resource_type,
-      int http_response_code);
+      int http_response_code,
+      int64_t content_length);
   static void LogBlockedResponse(ResourceRequestInfoImpl* resource_request_info,
                                  bool needed_sniffing,
                                  bool found_parser_breaker,
                                  CrossSiteDocumentMimeType canonical_mime_type,
-                                 int http_response_code);
+                                 int http_response_code,
+                                 int64_t content_length);
 
   // WeakPtrFactory for |next_handler_|.
   base::WeakPtrFactory<ResourceHandler> weak_next_handler_;
+
+  // Temporary storage for response headers, while we haven't yet made the
+  // allow-vs-block decisions and haven't yet passed the response headers down
+  // to the next handler.
+  scoped_refptr<network::ResourceResponse> pending_response_start_;
 
   // A local buffer for sniffing content and using for throwaway reads.
   // This is not shared with the renderer process.
@@ -137,6 +171,9 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   // response is needed, as well as which type of sniffing to perform.
   CrossSiteDocumentMimeType canonical_mime_type_ =
       CROSS_SITE_DOCUMENT_MIME_TYPE_OTHERS;
+
+  // True if the response had a non-empty Content-Type other than text/css.
+  bool non_stylesheet_mime_type_ = false;
 
   // Indicates whether this request was made by a plugin and was not using CORS.
   // Such requests are exempt from blocking, while other plugin requests must be
@@ -173,6 +210,9 @@ class CONTENT_EXPORT CrossSiteDocumentResourceHandler
   // The HTTP response code (e.g. 200 or 404) received in response to this
   // resource request.
   int http_response_code_ = 0;
+
+  // Content length if available. -1 if not available.
+  int64_t content_length_ = -1;
 
   base::WeakPtrFactory<CrossSiteDocumentResourceHandler> weak_this_;
 

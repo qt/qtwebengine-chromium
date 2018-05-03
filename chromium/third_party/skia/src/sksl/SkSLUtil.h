@@ -83,10 +83,6 @@ public:
         return false;
     }
 
-    bool bindlessTextureSupport() const {
-        return false;
-    }
-
     bool dropsTileOnZeroDivide() const {
         return false;
     }
@@ -100,14 +96,6 @@ public:
     }
 
     bool multisampleInterpolationSupport() const {
-        return true;
-    }
-
-    bool sampleVariablesSupport() const {
-        return true;
-    }
-
-    bool sampleMaskOverrideCoverageSupport() const {
         return true;
     }
 

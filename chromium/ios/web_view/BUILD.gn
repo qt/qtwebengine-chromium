@@ -4,12 +4,21 @@
 
 import("//build/config/ios/ios_sdk.gni")
 import("//build/config/ios/rules.gni")
+import("//components/cronet/native/include/headers.gni")
 import("//components/grpc_support/include/headers.gni")
 import("//ios/build/config.gni")
 import("//ios/web/js_compile.gni")
 import("//ios/web_view/features.gni")
 import("//testing/test.gni")
 import("//tools/grit/repack.gni")
+
+group("all_tests") {
+  testonly = true
+  deps = [
+    ":ios_web_view_inttests",
+    ":ios_web_view_unittests",
+  ]
+}
 
 config("config") {
   defines = [ "CWV_IMPLEMENTATION" ]
@@ -108,6 +117,8 @@ ios_web_view_sources = [
   "internal/signin/web_view_account_tracker_service_factory.mm",
   "internal/signin/web_view_gaia_cookie_manager_service_factory.h",
   "internal/signin/web_view_gaia_cookie_manager_service_factory.mm",
+  "internal/signin/web_view_identity_manager_factory.h",
+  "internal/signin/web_view_identity_manager_factory.mm",
   "internal/signin/web_view_oauth2_token_service_factory.h",
   "internal/signin/web_view_oauth2_token_service_factory.mm",
   "internal/signin/web_view_profile_oauth2_token_service_ios_provider_impl.h",
@@ -173,6 +184,7 @@ ios_web_view_deps = [
   "//components/autofill/ios/browser",
   "//components/content_settings/core/browser",
   "//components/flags_ui",
+  "//components/image_fetcher/ios",
   "//components/infobars/core",
   "//components/keyed_service/core",
   "//components/keyed_service/ios",
@@ -200,6 +212,7 @@ ios_web_view_deps = [
   "//ios/web/public/global_state",
   "//net",
   "//net:extras",
+  "//services/identity/public/cpp",
   "//ui/base",
   "//url",
 ]
@@ -212,6 +225,7 @@ ios_framework_bundle("web_view") {
   if (ios_web_view_include_cronet) {
     public_headers += [ "//components/cronet/ios/Cronet.h" ]
     public_headers += grpc_public_headers
+    public_headers += cronet_native_public_headers
   }
 
   public = [
@@ -249,6 +263,9 @@ test("ios_web_view_unittests") {
     "internal/cwv_html_element_unittest.mm",
     "internal/cwv_preferences_unittest.mm",
     "internal/cwv_preview_element_info_unittest.mm",
+    "internal/translate/cwv_translation_controller_unittest.mm",
+    "internal/translate/cwv_translation_language_unittest.mm",
+    "internal/translate/cwv_translation_policy_unittest.mm",
     "internal/web_view_web_client_unittest.mm",
   ]
   sources += ios_web_view_sources
@@ -270,10 +287,25 @@ test("ios_web_view_unittests") {
   assert_no_deps = ios_assert_no_deps
 }
 
+test("ios_web_view_inttests") {
+  testonly = true
+
+  deps = [
+    "//ios/web_view/test:inttests",
+  ]
+
+  bundle_deps = [ ":web_view+bundle" ]
+
+  configs += [ "//build/config/compiler:enable_arc" ]
+
+  assert_no_deps = ios_assert_no_deps
+}
+
 js_compile_bundle("web_view_bundle") {
   closure_entry_point = "__crWeb.webViewBundle"
   sources = [
     "//components/autofill/ios/browser/resources/autofill_controller.js",
+    "//components/autofill/ios/fill/resources/fill.js",
     "resources/web_view_bundle.js",
   ]
 }

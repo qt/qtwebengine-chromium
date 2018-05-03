@@ -15,12 +15,12 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/test/browser_side_navigation_test_utils.h"
 #include "content/public/test/web_contents_tester.h"
 #include "extensions/browser/api_test_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_builder.h"
+#include "ui/display/test/test_screen.h"
 
 namespace extensions {
 
@@ -34,8 +34,7 @@ std::unique_ptr<base::ListValue> RunTabsQueryFunction(
   function->set_extension(extension);
   std::unique_ptr<base::Value> value(
       extension_function_test_utils::RunFunctionAndReturnSingleResult(
-          function.get(), query_info, browser,
-          extension_function_test_utils::NONE));
+          function.get(), query_info, browser, api_test_utils::NONE));
   return base::ListValue::From(std::move(value));
 }
 
@@ -57,28 +56,28 @@ class TabsApiUnitTest : public ExtensionServiceTestBase {
   std::unique_ptr<TestBrowserWindow> browser_window_;
   std::unique_ptr<Browser> browser_;
 
+  display::test::TestScreen test_screen_;
+
   DISALLOW_COPY_AND_ASSIGN(TabsApiUnitTest);
 };
 
 void TabsApiUnitTest::SetUp() {
   ExtensionServiceTestBase::SetUp();
   InitializeEmptyExtensionService();
-
-  if (content::IsBrowserSideNavigationEnabled())
-    content::BrowserSideNavigationSetUp();
+  content::BrowserSideNavigationSetUp();
 
   browser_window_.reset(new TestBrowserWindow());
   Browser::CreateParams params(profile(), true);
   params.type = Browser::TYPE_TABBED;
   params.window = browser_window_.get();
   browser_.reset(new Browser(params));
+  display::Screen::SetScreenInstance(&test_screen_);
 }
 
 void TabsApiUnitTest::TearDown() {
   browser_.reset();
   browser_window_.reset();
-  if (content::IsBrowserSideNavigationEnabled())
-    content::BrowserSideNavigationTearDown();
+  content::BrowserSideNavigationTearDown();
   ExtensionServiceTestBase::TearDown();
 }
 
@@ -293,7 +292,7 @@ TEST_F(TabsApiUnitTest, ExecuteScriptNoTabIsNonFatalError) {
   std::string error = extension_function_test_utils::RunFunctionAndReturnError(
       function.get(), kArgs,
       browser(),  // browser() doesn't have any tabs.
-      extension_function_test_utils::NONE);
+      api_test_utils::NONE);
   EXPECT_EQ(tabs_constants::kNoTabInBrowserWindowError, error);
 }
 

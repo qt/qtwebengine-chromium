@@ -12,13 +12,12 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/renderer/service_worker/service_worker_dispatcher.h"
-#include "content/renderer/service_worker/service_worker_handle_reference.h"
 #include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "content/renderer/service_worker/web_service_worker_impl.h"
 #include "content/renderer/service_worker/web_service_worker_registration_impl.h"
-#include "third_party/WebKit/common/message_port/message_port_channel.h"
-#include "third_party/WebKit/common/service_worker/service_worker_provider_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_provider_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 
@@ -64,10 +63,13 @@ void WebServiceWorkerProviderImpl::SetClient(
   if (!provider_client_)
     return;
 
-  std::unique_ptr<ServiceWorkerHandleReference> controller =
+  blink::mojom::ServiceWorkerObjectInfoPtr controller =
       context_->TakeController();
   if (!controller)
     return;
+  DCHECK_NE(blink::mojom::kInvalidServiceWorkerHandleId, controller->handle_id);
+  DCHECK_NE(blink::mojom::kInvalidServiceWorkerVersionId,
+            controller->version_id);
   SetController(std::move(controller), context_->used_features(),
                 false /* notify_controllerchange */);
 }
@@ -190,7 +192,7 @@ bool WebServiceWorkerProviderImpl::ValidateScopeAndScriptURL(
 }
 
 void WebServiceWorkerProviderImpl::SetController(
-    std::unique_ptr<ServiceWorkerHandleReference> controller,
+    blink::mojom::ServiceWorkerObjectInfoPtr controller,
     const std::set<blink::mojom::WebFeature>& features,
     bool should_notify_controller_change) {
   if (!provider_client_)
@@ -205,19 +207,16 @@ void WebServiceWorkerProviderImpl::SetController(
 }
 
 void WebServiceWorkerProviderImpl::PostMessageToClient(
-    std::unique_ptr<ServiceWorkerHandleReference> source_handle,
-    const base::string16& message,
-    std::vector<mojo::ScopedMessagePipeHandle> message_pipes) {
+    blink::mojom::ServiceWorkerObjectInfoPtr source,
+    blink::TransferableMessage message) {
   if (!provider_client_)
     return;
 
   scoped_refptr<WebServiceWorkerImpl> source_worker =
-      GetDispatcher()->GetOrCreateServiceWorker(std::move(source_handle));
-  auto message_ports =
-      blink::MessagePortChannel::CreateFromHandles(std::move(message_pipes));
+      GetDispatcher()->GetOrCreateServiceWorker(std::move(source));
   provider_client_->DispatchMessageEvent(
       WebServiceWorkerImpl::CreateHandle(std::move(source_worker)),
-      blink::WebString::FromUTF16(message), std::move(message_ports));
+      std::move(message));
 }
 
 void WebServiceWorkerProviderImpl::CountFeature(

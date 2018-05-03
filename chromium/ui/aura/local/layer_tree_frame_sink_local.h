@@ -42,8 +42,6 @@ class LayerTreeFrameSinkLocal : public cc::LayerTreeFrameSink,
   // Set a callback which will be called when the surface is changed.
   void SetSurfaceChangedCallback(const SurfaceChangedCallback& callback);
 
-  base::WeakPtr<LayerTreeFrameSinkLocal> GetWeakPtr();
-
   const viz::LocalSurfaceId& local_surface_id() const {
     return local_surface_id_;
   }
@@ -54,6 +52,9 @@ class LayerTreeFrameSinkLocal : public cc::LayerTreeFrameSink,
   void SetLocalSurfaceId(const viz::LocalSurfaceId& local_surface_id) override;
   void SubmitCompositorFrame(viz::CompositorFrame frame) override;
   void DidNotProduceFrame(const viz::BeginFrameAck& ack) override;
+  void DidAllocateSharedBitmap(mojo::ScopedSharedBufferHandle buffer,
+                               const viz::SharedBitmapId& id) override;
+  void DidDeleteSharedBitmap(const viz::SharedBitmapId& id) override;
 
   // viz::mojom::CompositorFrameSinkClient:
   void DidReceiveCompositorFrameAck(
@@ -84,7 +85,6 @@ class LayerTreeFrameSinkLocal : public cc::LayerTreeFrameSink,
   std::unique_ptr<viz::ExternalBeginFrameSource> begin_frame_source_;
   std::unique_ptr<base::ThreadChecker> thread_checker_;
   SurfaceChangedCallback surface_changed_callback_;
-  base::WeakPtrFactory<LayerTreeFrameSinkLocal> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeFrameSinkLocal);
 };

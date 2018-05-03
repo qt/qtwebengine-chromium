@@ -423,13 +423,10 @@ enum VP8ResilienceMode {
 class TemporalLayersFactory;
 // VP8 specific
 struct VideoCodecVP8 {
-  // TODO(nisse): Unused, delete?
-  bool pictureLossIndicationOn;
   VideoCodecComplexity complexity;
   VP8ResilienceMode resilience;
   unsigned char numberOfTemporalLayers;
   bool denoisingOn;
-  bool errorConcealmentOn;
   bool automaticResizeOn;
   bool frameDroppingOn;
   int keyFrameInterval;
@@ -485,7 +482,7 @@ enum VideoCodecType {
   kVideoCodecULPFEC,
   kVideoCodecFlexfec,
   kVideoCodecGeneric,
-  kVideoCodecStereo,
+  kVideoCodecMultiplex,
   kVideoCodecUnknown
 };
 
@@ -509,6 +506,7 @@ struct SimulcastStream {
   unsigned int targetBitrate;  // kilobits/sec.
   unsigned int minBitrate;     // kilobits/sec.
   unsigned int qpMax;          // minimum quality
+  bool active;                 // encoded and sent.
 };
 
 struct SpatialLayer {
@@ -539,6 +537,10 @@ class VideoCodec {
   unsigned int targetBitrate;  // kilobits/sec.
 
   uint32_t maxFramerate;
+
+  // This enables/disables encoding and sending when there aren't multiple
+  // simulcast streams,by allocating 0 bitrate if inactive.
+  bool active;
 
   unsigned int qpMax;
   unsigned char numberOfSimulcastStreams;

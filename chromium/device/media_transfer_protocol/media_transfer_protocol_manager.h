@@ -15,8 +15,8 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "build/build_config.h"
-#include "device/media_transfer_protocol/public/interfaces/mtp_file_entry.mojom.h"
-#include "device/media_transfer_protocol/public/interfaces/mtp_storage_info.mojom.h"
+#include "device/media_transfer_protocol/public/mojom/mtp_file_entry.mojom.h"
+#include "device/media_transfer_protocol/public/mojom/mtp_storage_info.mojom.h"
 
 #if !defined(OS_CHROMEOS)
 #error "Only used on ChromeOS"
@@ -28,10 +28,22 @@ namespace device {
 // Other classes can add themselves as observers.
 class MediaTransferProtocolManager {
  public:
+  // A callback to handle the result of AddObserverAndEnumerateStorages().
+  // The argument is the returned vector of available MTP storages info.
+  // The pointers in the vector are guaranteed to be non-NULL.
+  using EnumerateStoragesCallback = base::OnceCallback<void(
+      std::vector<const mojom::MtpStorageInfo*> storage_info_list)>;
+
   // A callback to handle the result of GetStorages().
   // The argument is the returned vector of available MTP storage names.
   using GetStoragesCallback =
       base::OnceCallback<void(const std::vector<std::string>& storages)>;
+
+  // A callback to receive the result of GetStorageInfo().
+  // On success, the |storage_info| argument contains the storage metadata.
+  // Otherwise, |storage_info| is a nullptr.
+  using GetStorageInfoCallback =
+      base::OnceCallback<void(const mojom::MtpStorageInfo* storage_info)>;
 
   // A callback to handle the result of GetStorageInfoFromDevice.
   // The first argument is the returned storage info.
@@ -93,15 +105,18 @@ class MediaTransferProtocolManager {
    public:
     virtual ~Observer() {}
 
-    // A function called after a MTP storage has been attached / detached.
-    virtual void StorageChanged(bool is_attached,
-                                const std::string& storage_name) = 0;
+    // Functions called after a MTP storage has been attached / detached.
+    virtual void StorageAttached(
+        const device::mojom::MtpStorageInfo& storage_info) = 0;
+    virtual void StorageDetached(const std::string& storage_name) = 0;
   };
 
   virtual ~MediaTransferProtocolManager() {}
 
-  // Adds an observer.
-  virtual void AddObserver(Observer* observer) = 0;
+  // Adds an observer and runs |callback| with a list of existing storages.
+  virtual void AddObserverAndEnumerateStorages(
+      Observer* observer,
+      EnumerateStoragesCallback callback) = 0;
 
   // Removes an observer.
   virtual void RemoveObserver(Observer* observer) = 0;
@@ -109,10 +124,9 @@ class MediaTransferProtocolManager {
   // Gets all available MTP storages and runs |callback|.
   virtual void GetStorages(GetStoragesCallback callback) const = 0;
 
-  // On success, returns the metadata for |storage_name|.
-  // Otherwise returns NULL.
-  virtual const mojom::MtpStorageInfo* GetStorageInfo(
-      const std::string& storage_name) const = 0;
+  // Gets the metadata for |storage_name| and runs |callback| synchronously.
+  virtual void GetStorageInfo(const std::string& storage_name,
+                              GetStorageInfoCallback callback) const = 0;
 
   // Read the metadata of |storage_name| from device and runs |callback|.
   virtual void GetStorageInfoFromDevice(

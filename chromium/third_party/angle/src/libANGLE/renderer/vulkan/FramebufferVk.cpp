@@ -18,13 +18,13 @@
 #include "libANGLE/Display.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/renderer_utils.h"
-#include "libANGLE/renderer/vulkan/CommandBufferNode.h"
+#include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "libANGLE/renderer/vulkan/SurfaceVk.h"
-#include "libANGLE/renderer/vulkan/formatutilsvk.h"
+#include "libANGLE/renderer/vulkan/vk_format_utils.h"
 
 namespace rx
 {
@@ -136,24 +136,19 @@ gl::Error FramebufferVk::clear(const gl::Context *context, GLbitfield mask)
         return gl::NoError();
     }
 
-    const auto &glState    = context->getGLState();
-    const auto &clearColor = glState.getColorClearValue();
-    VkClearColorValue clearColorValue;
-    clearColorValue.float32[0] = clearColor.red;
-    clearColorValue.float32[1] = clearColor.green;
-    clearColorValue.float32[2] = clearColor.blue;
-    clearColorValue.float32[3] = clearColor.alpha;
-
     // TODO(jmadill): Scissored clears.
     const auto *attachment = mState.getFirstNonNullAttachment();
     ASSERT(attachment && attachment->isAttached());
     const auto &size = attachment->getSize();
     const gl::Rectangle renderArea(0, 0, size.width, size.height);
 
-    RendererVk *renderer = vk::GetImpl(context)->getRenderer();
+    ContextVk *contextVk = vk::GetImpl(context);
+    RendererVk *renderer = contextVk->getRenderer();
 
     vk::CommandBuffer *commandBuffer = nullptr;
-    ANGLE_TRY(recordWriteCommands(renderer, &commandBuffer));
+    ANGLE_TRY(beginWriteResource(renderer, &commandBuffer));
+
+    Serial currentSerial = renderer->getCurrentQueueSerial();
 
     for (const auto &colorAttachment : mState.getColorAttachments())
     {
@@ -162,13 +157,19 @@ gl::Error FramebufferVk::clear(const gl::Context *context, GLbitfield mask)
             RenderTargetVk *renderTarget = nullptr;
             ANGLE_TRY(colorAttachment.getRenderTarget(context, &renderTarget));
 
+            renderTarget->resource->onWriteResource(getCurrentWritingNode(currentSerial),
+                                                    currentSerial);
+
             renderTarget->image->changeLayoutWithStages(
                 VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, commandBuffer);
 
-            commandBuffer->clearSingleColorImage(*renderTarget->image, clearColorValue);
+            commandBuffer->clearSingleColorImage(*renderTarget->image,
+                                                 contextVk->getClearColorValue().color);
         }
     }
+
+    // TODO(jmadill): Depth/stencil clear.
 
     return gl::NoError();
 }
@@ -257,12 +258,11 @@ gl::Error FramebufferVk::readPixels(const gl::Context *context,
 
     vk::Image *readImage = renderTarget->image;
     vk::StagingImage stagingImage;
-    ANGLE_TRY(renderer->createStagingImage(TextureDimension::TEX_2D, *renderTarget->format,
-                                           renderTarget->extents, vk::StagingUsage::Read,
-                                           &stagingImage));
+    ANGLE_TRY(stagingImage.init(contextVk, TextureDimension::TEX_2D, *renderTarget->format,
+                                renderTarget->extents, vk::StagingUsage::Read));
 
     vk::CommandBuffer *commandBuffer = nullptr;
-    ANGLE_TRY(recordWriteCommands(renderer, &commandBuffer));
+    ANGLE_TRY(beginWriteResource(renderer, &commandBuffer));
 
     stagingImage.getImage().changeLayoutTop(VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL,
                                             commandBuffer);
@@ -353,7 +353,6 @@ void FramebufferVk::syncState(const gl::Context *context,
     // Trigger a new set of secondary commands next time we render to this FBO,.
     mLastRenderNodeSerial = Serial();
 
-    // TODO(jmadill): Use pipeline cache.
     contextVk->invalidateCurrentPipeline();
 }
 
@@ -468,39 +467,25 @@ gl::Error FramebufferVk::getSamplePosition(size_t index, GLfloat *xy) const
     return gl::InternalError() << "getSamplePosition is unimplemented.";
 }
 
-gl::Error FramebufferVk::getRenderNode(const gl::Context *context, vk::CommandBufferNode **nodeOut)
+gl::Error FramebufferVk::getRenderNode(const gl::Context *context, vk::CommandGraphNode **nodeOut)
 {
     ContextVk *contextVk = vk::GetImpl(context);
     RendererVk *renderer = contextVk->getRenderer();
     Serial currentSerial = renderer->getCurrentQueueSerial();
 
-    if (isCurrentlyRecording(currentSerial) && mLastRenderNodeSerial == currentSerial)
+    if (hasCurrentWritingNode(currentSerial) && mLastRenderNodeSerial == currentSerial)
     {
-        *nodeOut = getCurrentWriteNode(currentSerial);
+        *nodeOut = getCurrentWritingNode(currentSerial);
         ASSERT((*nodeOut)->getInsideRenderPassCommands()->valid());
         return gl::NoError();
     }
 
-    vk::CommandBufferNode *node = getNewWriteNode(renderer);
+    vk::CommandGraphNode *node = getNewWritingNode(renderer);
 
     vk::Framebuffer *framebuffer = nullptr;
     ANGLE_TRY_RESULT(getFramebuffer(context, renderer), framebuffer);
 
-    const gl::State &glState = context->getGLState();
-
-    // Hard-code RenderPass to clear the first render target to the current clear value.
-    // TODO(jmadill): Proper clear value implementation.
-    VkClearColorValue colorClear;
-    memset(&colorClear, 0, sizeof(VkClearColorValue));
-    colorClear.float32[0] = glState.getColorClearValue().red;
-    colorClear.float32[1] = glState.getColorClearValue().green;
-    colorClear.float32[2] = glState.getColorClearValue().blue;
-    colorClear.float32[3] = glState.getColorClearValue().alpha;
-
     std::vector<VkClearValue> attachmentClearValues;
-    attachmentClearValues.push_back({colorClear});
-
-    node->storeRenderPassInfo(*framebuffer, glState.getViewport(), attachmentClearValues);
 
     // Initialize RenderPass info.
     // TODO(jmadill): Could cache this info, would require dependent state change messaging.
@@ -516,6 +501,7 @@ gl::Error FramebufferVk::getRenderNode(const gl::Context *context, vk::CommandBu
             // TODO(jmadill): May need layout transition.
             renderTarget->image->updateLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
             node->appendColorRenderTarget(currentSerial, renderTarget);
+            attachmentClearValues.emplace_back(contextVk->getClearColorValue());
         }
     }
 
@@ -528,8 +514,13 @@ gl::Error FramebufferVk::getRenderNode(const gl::Context *context, vk::CommandBu
         // TODO(jmadill): May need layout transition.
         renderTarget->image->updateLayout(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
         node->appendDepthStencilRenderTarget(currentSerial, renderTarget);
+        attachmentClearValues.emplace_back(contextVk->getClearDepthStencilValue());
     }
 
+    // Hard-code RenderPass to clear the first render target to the current clear value.
+    // TODO(jmadill): Proper clear value implementation. http://anglebug.com/2361
+    const gl::State &glState = context->getGLState();
+    node->storeRenderPassInfo(*framebuffer, glState.getViewport(), attachmentClearValues);
     mLastRenderNodeSerial = currentSerial;
 
     *nodeOut = node;

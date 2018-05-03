@@ -1488,7 +1488,6 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   int skip_ref_find_pred[4] = { 0 };
   unsigned int sse_zeromv_normalized = UINT_MAX;
   unsigned int best_sse_sofar = UINT_MAX;
-  unsigned int thresh_svc_skip_golden = 500;
 #if CONFIG_VP9_TEMPORAL_DENOISING
   VP9_PICKMODE_CTX_DEN ctx_den;
   int64_t zero_last_cost_orig = INT64_MAX;
@@ -1496,11 +1495,23 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
 #endif
   INTERP_FILTER filter_gf_svc = EIGHTTAP;
   MV_REFERENCE_FRAME best_second_ref_frame = NONE;
+  const struct segmentation *const seg = &cm->seg;
   int comp_modes = 0;
   int num_inter_modes = (cpi->use_svc) ? RT_INTER_MODES_SVC : RT_INTER_MODES;
   int flag_svc_subpel = 0;
   int svc_mv_col = 0;
   int svc_mv_row = 0;
+  unsigned int thresh_svc_skip_golden = 500;
+  // Lower the skip threshold if lower spatial layer is better quality relative
+  // to current layer.
+  if (cpi->svc.spatial_layer_id > 0 && cm->base_qindex > 150 &&
+      cm->base_qindex > cpi->svc.lower_layer_qindex + 15)
+    thresh_svc_skip_golden = 100;
+  // Increase skip threshold if lower spatial layer is lower quality relative
+  // to current layer.
+  else if (cpi->svc.spatial_layer_id > 0 && cm->base_qindex < 140 &&
+           cm->base_qindex < cpi->svc.lower_layer_qindex - 20)
+    thresh_svc_skip_golden = 1000;
 
   init_ref_frame_cost(cm, xd, ref_frame_cost);
 
@@ -1638,6 +1649,16 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       cpi->sf.use_compound_nonrd_pickmode && usable_ref_frame == ALTREF_FRAME)
     comp_modes = 2;
 
+  // If the segment reference frame feature is enabled and it's set to GOLDEN
+  // reference, then make sure we don't skip checking GOLDEN, this is to
+  // prevent possibility of not picking any mode.
+  if (segfeature_active(seg, mi->segment_id, SEG_LVL_REF_FRAME) &&
+      get_segdata(seg, mi->segment_id, SEG_LVL_REF_FRAME) == GOLDEN_FRAME) {
+    usable_ref_frame = GOLDEN_FRAME;
+    skip_ref_find_pred[GOLDEN_FRAME] = 0;
+    thresh_svc_skip_golden = 0;
+  }
+
   for (ref_frame = LAST_FRAME; ref_frame <= usable_ref_frame; ++ref_frame) {
     if (!skip_ref_find_pred[ref_frame]) {
       find_predictors(cpi, x, ref_frame, frame_mv, const_motion,
@@ -1699,6 +1720,12 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     if (ref_frame > usable_ref_frame) continue;
     if (skip_ref_find_pred[ref_frame]) continue;
 
+    // If the segment reference frame feature is enabled then do nothing if the
+    // current ref frame is not allowed.
+    if (segfeature_active(seg, mi->segment_id, SEG_LVL_REF_FRAME) &&
+        get_segdata(seg, mi->segment_id, SEG_LVL_REF_FRAME) != (int)ref_frame)
+      continue;
+
     if (flag_svc_subpel && ref_frame == GOLDEN_FRAME) {
       force_gf_mv = 1;
       // Only test mode if NEARESTMV/NEARMV is (svc_mv_col, svc_mv_row),
@@ -1713,7 +1740,6 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     }
 
     if (comp_pred) {
-      const struct segmentation *const seg = &cm->seg;
       if (!cpi->allow_comp_inter_inter) continue;
       // Skip compound inter modes if ARF is not available.
       if (!(cpi->ref_frame_flags & flag_list[second_ref_frame])) continue;
@@ -1785,29 +1811,34 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
         continue;
     }
 
-    if (sf->reference_masking &&
-        !(frame_mv[this_mode][ref_frame].as_int == 0 &&
-          ref_frame == LAST_FRAME)) {
-      if (usable_ref_frame < ALTREF_FRAME) {
-        if (!force_skip_low_temp_var && usable_ref_frame > LAST_FRAME) {
-          i = (ref_frame == LAST_FRAME) ? GOLDEN_FRAME : LAST_FRAME;
-          if ((cpi->ref_frame_flags & flag_list[i]))
-            if (x->pred_mv_sad[ref_frame] > (x->pred_mv_sad[i] << 1))
-              ref_frame_skip_mask |= (1 << ref_frame);
+    // Disable this drop out case if the ref frame segment level feature is
+    // enabled for this segment. This is to prevent the possibility that we end
+    // up unable to pick any mode.
+    if (!segfeature_active(seg, mi->segment_id, SEG_LVL_REF_FRAME)) {
+      if (sf->reference_masking &&
+          !(frame_mv[this_mode][ref_frame].as_int == 0 &&
+            ref_frame == LAST_FRAME)) {
+        if (usable_ref_frame < ALTREF_FRAME) {
+          if (!force_skip_low_temp_var && usable_ref_frame > LAST_FRAME) {
+            i = (ref_frame == LAST_FRAME) ? GOLDEN_FRAME : LAST_FRAME;
+            if ((cpi->ref_frame_flags & flag_list[i]))
+              if (x->pred_mv_sad[ref_frame] > (x->pred_mv_sad[i] << 1))
+                ref_frame_skip_mask |= (1 << ref_frame);
+          }
+        } else if (!cpi->rc.is_src_frame_alt_ref &&
+                   !(frame_mv[this_mode][ref_frame].as_int == 0 &&
+                     ref_frame == ALTREF_FRAME)) {
+          int ref1 = (ref_frame == GOLDEN_FRAME) ? LAST_FRAME : GOLDEN_FRAME;
+          int ref2 = (ref_frame == ALTREF_FRAME) ? LAST_FRAME : ALTREF_FRAME;
+          if (((cpi->ref_frame_flags & flag_list[ref1]) &&
+               (x->pred_mv_sad[ref_frame] > (x->pred_mv_sad[ref1] << 1))) ||
+              ((cpi->ref_frame_flags & flag_list[ref2]) &&
+               (x->pred_mv_sad[ref_frame] > (x->pred_mv_sad[ref2] << 1))))
+            ref_frame_skip_mask |= (1 << ref_frame);
         }
-      } else if (!cpi->rc.is_src_frame_alt_ref &&
-                 !(frame_mv[this_mode][ref_frame].as_int == 0 &&
-                   ref_frame == ALTREF_FRAME)) {
-        int ref1 = (ref_frame == GOLDEN_FRAME) ? LAST_FRAME : GOLDEN_FRAME;
-        int ref2 = (ref_frame == ALTREF_FRAME) ? LAST_FRAME : ALTREF_FRAME;
-        if (((cpi->ref_frame_flags & flag_list[ref1]) &&
-             (x->pred_mv_sad[ref_frame] > (x->pred_mv_sad[ref1] << 1))) ||
-            ((cpi->ref_frame_flags & flag_list[ref2]) &&
-             (x->pred_mv_sad[ref_frame] > (x->pred_mv_sad[ref2] << 1))))
-          ref_frame_skip_mask |= (1 << ref_frame);
       }
+      if (ref_frame_skip_mask & (1 << ref_frame)) continue;
     }
-    if (ref_frame_skip_mask & (1 << ref_frame)) continue;
 
     // Select prediction reference frames.
     for (i = 0; i < MAX_MB_PLANE; i++) {
@@ -2202,9 +2233,11 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
 
   // For spatial enhancemanent layer: perform intra prediction only if base
   // layer is chosen as the reference. Always perform intra prediction if
-  // LAST is the only reference or is_key_frame is set.
+  // LAST is the only reference, or is_key_frame is set, or on base
+  // temporal layer.
   if (cpi->svc.spatial_layer_id) {
     perform_intra_pred =
+        cpi->svc.temporal_layer_id == 0 ||
         cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame ||
         !(cpi->ref_frame_flags & flag_list[GOLDEN_FRAME]) ||
         (!cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame &&
@@ -2214,6 +2247,13 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   if (cpi->oxcf.lag_in_frames > 0 && cpi->oxcf.rc_mode == VPX_VBR &&
       cpi->rc.is_src_frame_alt_ref)
     perform_intra_pred = 0;
+
+  // If the segment reference frame feature is enabled and set then
+  // skip the intra prediction.
+  if (segfeature_active(seg, mi->segment_id, SEG_LVL_REF_FRAME) &&
+      get_segdata(seg, mi->segment_id, SEG_LVL_REF_FRAME) > 0)
+    perform_intra_pred = 0;
+
   // Perform intra prediction search, if the best SAD is above a certain
   // threshold.
   if (best_rdc.rdcost == INT64_MAX ||

@@ -41,7 +41,7 @@ _IMPLEMENTATION_EXTENSIONS = r'\.(cc|cpp|cxx|mm)$'
 _TEST_CODE_EXCLUDED_PATHS = (
     r'.*[\\\/](fake_|test_|mock_).+%s' % _IMPLEMENTATION_EXTENSIONS,
     r'.+_test_(base|support|util)%s' % _IMPLEMENTATION_EXTENSIONS,
-    r'.+_(api|browser|eg|perf|pixel|unit|ui)?test(_[a-z]+)?%s' %
+    r'.+_(api|browser|eg|int|perf|pixel|unit|ui)?test(_[a-z]+)?%s' %
         _IMPLEMENTATION_EXTENSIONS,
     r'.+profile_sync_service_harness%s' % _IMPLEMENTATION_EXTENSIONS,
     r'.*[\\\/](test|tool(s)?)[\\\/].*',
@@ -176,6 +176,28 @@ _BANNED_OBJC_FUNCTIONS = (
         'Please use __weak in files build with ARC, nothing otherwise.',
       ),
       False,
+    ),
+)
+
+_BANNED_IOS_OBJC_FUNCTIONS = (
+    (
+      r'/\bTEST[(]',
+      (
+        'TEST() macro should not be used in Objective-C++ code as it does not ',
+        'drain the autorelease pool at the end of the test. Use TEST_F() ',
+        'macro instead with a fixture inheriting from PlatformTest (or a ',
+        'typedef).'
+      ),
+      True,
+    ),
+    (
+      r'/\btesting::Test\b',
+      (
+        'testing::Test should not be used in Objective-C++ code as it does ',
+        'not drain the autorelease pool at the end of the test. Use ',
+        'PlatformTest instead.'
+      ),
+      True,
     ),
 )
 
@@ -318,16 +340,6 @@ _BANNED_CPP_FUNCTIONS = (
       (),
     ),
     (
-      r'/(WebThread|BrowserThread)::(FILE|FILE_USER_BLOCKING|DB|CACHE)',
-      (
-        'The non-UI/IO BrowserThreads are deprecated, please migrate this',
-        'code to TaskScheduler. See https://goo.gl/mDSxKl for details.',
-        'For questions, contact base/task_scheduler/OWNERS.',
-      ),
-      True,
-      (),
-    ),
-    (
       'base::SequenceChecker',
       (
         'Consider using SEQUENCE_CHECKER macros instead of the class directly.',
@@ -398,10 +410,10 @@ _BANNED_CPP_FUNCTIONS = (
     (
       'MessageLoop::QuitWhenIdleClosure',
       (
-        'MessageLoop::QuitWhenIdleClosure is deprecated. Please migrate to',
-        'Runloop.',
+        'MessageLoop::QuitWhenIdleClosure is deprecated. Please use a',
+        'QuitWhenIdleClosure obtained from a specific RunLoop instance.',
       ),
-      True,
+      False,
       (),
     ),
     (
@@ -466,6 +478,18 @@ _BANNED_CPP_FUNCTIONS = (
       False,
       (),
     ),
+    (
+      'sqlite3_initialize',
+      (
+        'Instead of sqlite3_initialize, depend on //sql, ',
+        '#include "sql/initialize.h" and use sql::EnsureSqliteInitialized().',
+      ),
+      True,
+      (
+        r'^sql/initialization\.(cc|h)$',
+        r'^third_party/sqlite/.*\.(c|cc|h)$',
+      ),
+    ),
 )
 
 
@@ -491,6 +515,7 @@ _VALID_OS_MACROS = (
     # Please keep sorted.
     'OS_AIX',
     'OS_ANDROID',
+    'OS_ASMJS',
     'OS_BSD',
     'OS_CAT',       # For testing.
     'OS_CHROMEOS',
@@ -521,10 +546,18 @@ _ANDROID_SPECIFIC_PYDEPS_FILES = [
 
 
 _GENERIC_PYDEPS_FILES = [
+    'chrome/test/chromedriver/test/run_py_tests.pydeps',
 ]
 
 
 _ALL_PYDEPS_FILES = _ANDROID_SPECIFIC_PYDEPS_FILES + _GENERIC_PYDEPS_FILES
+
+
+# Bypass the AUTHORS check for these accounts.
+_KNOWN_ROBOTS = set(
+  '%s-chromium-autoroll@skia-buildbots.google.com.iam.gserviceaccount.com' % s
+  for s in ('afdo', 'angle', 'catapult', 'depot-tools', 'nacl', 'pdfium',
+            'skia', 'src-internal', 'webrtc'))
 
 
 def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
@@ -775,6 +808,18 @@ def _CheckNoBannedFunctions(input_api, output_api):
         return True
     return False
 
+  def IsIosObcjFile(affected_file):
+    local_path = affected_file.LocalPath()
+    if input_api.os_path.splitext(local_path)[-1] not in ('.mm', '.m', '.h'):
+      return False
+    basename = input_api.os_path.basename(local_path)
+    if 'ios' in basename.split('_'):
+      return True
+    for sep in (input_api.os_path.sep, input_api.os_path.altsep):
+      if sep and 'ios' in local_path.split(sep):
+        return True
+    return False
+
   def CheckForMatch(affected_file, line_num, line, func_name, message, error):
     matched = False
     if func_name[0:1] == '/':
@@ -801,6 +846,11 @@ def _CheckNoBannedFunctions(input_api, output_api):
   for f in input_api.AffectedFiles(file_filter=file_filter):
     for line_num, line in f.ChangedContents():
       for func_name, message, error in _BANNED_OBJC_FUNCTIONS:
+        CheckForMatch(f, line_num, line, func_name, message, error)
+
+  for f in input_api.AffectedFiles(file_filter=IsIosObcjFile):
+    for line_num, line in f.ChangedContents():
+      for func_name, message, error in _BANNED_IOS_OBJC_FUNCTIONS:
         CheckForMatch(f, line_num, line, func_name, message, error)
 
   file_filter = lambda f: f.LocalPath().endswith(('.cc', '.mm', '.h'))
@@ -1389,6 +1439,40 @@ def _CheckForAnonymousVariables(input_api, output_api):
   return []
 
 
+def _CheckUniquePtr(input_api, output_api):
+  file_inclusion_pattern = r'.+%s' % _IMPLEMENTATION_EXTENSIONS
+  sources = lambda affected_file: input_api.FilterSourceFile(
+      affected_file,
+      black_list=(_EXCLUDED_PATHS + _TEST_CODE_EXCLUDED_PATHS +
+                  input_api.DEFAULT_BLACK_LIST),
+      white_list=(file_inclusion_pattern,))
+  return_construct_pattern = input_api.re.compile(
+      r'(=|\breturn)\s*std::unique_ptr<.*?(?<!])>\([^)]+\)')
+  null_construct_pattern = input_api.re.compile(
+      r'\b(?<!<)std::unique_ptr<.*?>\(\)')
+  errors = []
+  for f in input_api.AffectedSourceFiles(sources):
+    for line_number, line in f.ChangedContents():
+      # Disallow:
+      # return std::unique_ptr<T>(foo);
+      # bar = std::unique_ptr<T>(foo);
+      # But allow:
+      # return std::unique_ptr<T[]>(foo);
+      # bar = std::unique_ptr<T[]>(foo);
+      if return_construct_pattern.search(line):
+        errors.append(output_api.PresubmitError(
+          ('%s:%d uses explicit std::unique_ptr constructor. ' +
+           'Use std::make_unique<T>() instead.') %
+          (f.LocalPath(), line_number)))
+      # Disallow:
+      # std::unique_ptr<T>()
+      if null_construct_pattern.search(line):
+        errors.append(output_api.PresubmitError(
+          '%s:%d uses std::unique_ptr<T>(). Use nullptr instead.' %
+          (f.LocalPath(), line_number)))
+  return errors
+
+
 def _CheckUserActionUpdate(input_api, output_api):
   """Checks if any new user action has been added."""
   if any('actions.xml' == input_api.os_path.basename(f) for f in
@@ -1553,6 +1637,7 @@ def _GetOwnersFilesToCheckForIpcOwners(input_api):
       '*_param_traits*.*',
       # Mojo IPC:
       '*.mojom',
+      '*_mojom_traits*.*',
       '*_struct_traits*.*',
       '*_type_converter*.*',
       '*.typemap',
@@ -1560,6 +1645,7 @@ def _GetOwnersFilesToCheckForIpcOwners(input_api):
       '*.aidl',
       # Blink uses a different file naming convention:
       '*EnumTraits*.*',
+      "*MojomTraits*.*",
       '*StructTraits*.*',
       '*TypeConverter*.*',
   ]
@@ -2066,13 +2152,14 @@ class PydepsChecker(object):
   def DetermineIfStale(self, pydeps_path):
     """Runs print_python_deps.py to see if the files is stale."""
     import difflib
+    import os
+
     old_pydeps_data = self._LoadFile(pydeps_path).splitlines()
     cmd = old_pydeps_data[1][1:].strip()
-    env = {
-      'PYTHONDONTWRITEBYTECODE': '1'
-    }
+    env = dict(os.environ)
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
     new_pydeps_data = self._input_api.subprocess.check_output(
-        cmd  + ' --output ""', shell=True, env=env)
+        cmd + ' --output ""', shell=True, env=env)
     old_contents = old_pydeps_data[2:]
     new_contents = new_pydeps_data.splitlines()[2:]
     if old_pydeps_data[2:] != new_pydeps_data.splitlines()[2:]:
@@ -2081,9 +2168,9 @@ class PydepsChecker(object):
 
 def _CheckPydepsNeedsUpdating(input_api, output_api, checker_for_tests=None):
   """Checks if a .pydeps file needs to be regenerated."""
-  # This check is mainly for Android, and involves paths not only in the
-  # PRESUBMIT.py, but also in the .pydeps files. It doesn't work on Windows and
-  # Mac, so skip it on other platforms.
+  # This check is for Python dependency lists (.pydeps files), and involves
+  # paths not only in the PRESUBMIT.py, but also in the .pydeps files. It
+  # doesn't work on Windows and Mac, so skip it on other platforms.
   if input_api.platform != 'linux2':
     return []
   # TODO(agrieve): Update when there's a better way to detect
@@ -2481,8 +2568,12 @@ def _CommonChecks(input_api, output_api):
   results.extend(input_api.canned_checks.PanProjectChecks(
       input_api, output_api,
       excluded_paths=_EXCLUDED_PATHS))
-  results.extend(
-      input_api.canned_checks.CheckAuthorizedAuthor(input_api, output_api))
+
+  author = input_api.change.author_email
+  if author and author not in _KNOWN_ROBOTS:
+    results.extend(
+        input_api.canned_checks.CheckAuthorizedAuthor(input_api, output_api))
+
   results.extend(
       _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api))
   results.extend(_CheckNoIOStreamInHeaders(input_api, output_api))
@@ -2513,6 +2604,7 @@ def _CommonChecks(input_api, output_api):
           source_file_filter=lambda x: x.LocalPath().endswith('.grd')))
   results.extend(_CheckSpamLogging(input_api, output_api))
   results.extend(_CheckForAnonymousVariables(input_api, output_api))
+  results.extend(_CheckUniquePtr(input_api, output_api))
   results.extend(_CheckUserActionUpdate(input_api, output_api))
   results.extend(_CheckNoDeprecatedCss(input_api, output_api))
   results.extend(_CheckNoDeprecatedJs(input_api, output_api))

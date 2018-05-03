@@ -7,7 +7,8 @@
 typedef (CanvasRenderingContext2D or
          WebGLRenderingContext or
          WebGL2RenderingContext or
-         ImageBitmapRenderingContext) RenderingContext;
+         ImageBitmapRenderingContext or
+         XRPresentationContext) RenderingContext;
 
 [
     ImplementedAs=HTMLCanvasElementModule
@@ -18,6 +19,6 @@ typedef (CanvasRenderingContext2D or
     // requires throwing TypeError if the incoming argument is not an object type
     // (and is not undefined or null). The binding must ignore this.
     // Related spec issue: https://github.com/whatwg/html/issues/595
-    [RaisesException] RenderingContext? getContext(DOMString contextId, [PermissiveDictionaryConversion] optional CanvasContextCreationAttributes attributes);
-    [RuntimeEnabled=ExperimentalCanvasFeatures, RaisesException, MeasureAs=OffscreenCanvas] OffscreenCanvas transferControlToOffscreen();
+    [RaisesException] RenderingContext? getContext(DOMString contextId, [PermissiveDictionaryConversion] optional CanvasContextCreationAttributesModule attributes);
+    [RuntimeEnabled=OffscreenCanvas, RaisesException, MeasureAs=OffscreenCanvas] OffscreenCanvas transferControlToOffscreen();
 };

@@ -12,39 +12,64 @@
 namespace content {
 
 SessionStorageContextMojo::SessionStorageContextMojo(
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
     service_manager::Connector* connector,
-    base::FilePath subdirectory)
+    base::Optional<base::FilePath> partition_directory,
+    std::string leveldb_name)
     : connector_(connector ? connector->Clone() : nullptr),
-      subdirectory_(std::move(subdirectory)),
+      partition_directory_path_(std::move(partition_directory)),
+      leveldb_name_(std::move(leveldb_name)),
       weak_ptr_factory_(this) {
   DCHECK(base::FeatureList::IsEnabled(features::kMojoSessionStorage));
 }
-
 SessionStorageContextMojo::~SessionStorageContextMojo() {}
 
 void SessionStorageContextMojo::OpenSessionStorage(
-    int64_t namespace_id,
-    const url::Origin& origin,
-    mojom::LevelDBWrapperRequest request) {
+    int process_id,
+    const std::string& namespace_id,
+    mojom::SessionStorageNamespaceRequest request) {
+  // TODO(dmurph): Check the process ID against the origin like so:
+  // if (!ChildProcessSecurityPolicy::GetInstance()->CanAccessDataForOrigin(
+  //         process_id, origin.GetURL())) {
+  //   bindings_.ReportBadMessage("Access denied for sessionStorage request");
+  //   return;
+  // }
   NOTREACHED();
 }
 
 void SessionStorageContextMojo::CreateSessionNamespace(
-    int64_t namespace_id,
-    const std::string& persistent_namespace_id) {
+    const std::string& namespace_id) {
   NOTREACHED();
 }
 
 void SessionStorageContextMojo::CloneSessionNamespace(
-    int64_t namespace_id_to_clone,
-    int64_t clone_namespace_id,
-    const std::string& clone_persistent_namespace_id) {
+    const std::string& namespace_id_to_clone,
+    const std::string& clone_namespace_id) {
   NOTREACHED();
 }
 
-void SessionStorageContextMojo::DeleteSessionNamespace(int64_t namespace_id,
-                                                       bool should_persist) {
+void SessionStorageContextMojo::DeleteSessionNamespace(
+    const std::string& namespace_id,
+    bool should_persist) {
   NOTREACHED();
+}
+
+void SessionStorageContextMojo::Flush() {
+  NOTREACHED();
+}
+
+void SessionStorageContextMojo::GetStorageUsage(
+    GetStorageUsageCallback callback) {
+  NOTREACHED();
+}
+void SessionStorageContextMojo::DeleteStorage(
+    const GURL& origin,
+    const std::string& persistent_namespace_id) {
+  NOTREACHED();
+}
+
+void SessionStorageContextMojo::ShutdownAndDelete() {
+  delete this;
 }
 
 void SessionStorageContextMojo::PurgeMemory() {

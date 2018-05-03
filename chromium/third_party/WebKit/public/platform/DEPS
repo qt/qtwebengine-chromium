@@ -18,17 +18,22 @@ include_rules = [
     "+cc",
     "-cc/blink",
     "+components/viz/common",
+    "+media/base/video_rotation.h",
     "+mojo/public",
+    "+net/cert",
     "+net/http",
     "+public/platform",
     "-public/web",
+    "+services/network/public/cpp/cors/cors_error_status.h",
+    "+services/network/public/cpp/cors/preflight_result.h",
+
     # Enforce to use mojom-shared.h in WebKit/public so that it can compile
     # inside and outside Blink.
-    "+services/network/public/cpp/cors/cors_error_status.h",
-    "+services/network/public/interfaces/cors.mojom-shared.h",
-    "+services/network/public/interfaces/fetch_api.mojom-shared.h",
-    "+services/network/public/interfaces/request_context_frame_type.mojom-shared.h",
-    "+services/service_manager/public/interfaces",
+    "+services/network/public/mojom/cors.mojom-shared.h",
+    "+services/network/public/mojom/fetch_api.mojom-shared.h",
+    "+services/network/public/mojom/request_context_frame_type.mojom-shared.h",
+
+    "+services/service_manager/public/mojom",
     "+third_party/skia",
     "+ui/gfx",
     "+url",

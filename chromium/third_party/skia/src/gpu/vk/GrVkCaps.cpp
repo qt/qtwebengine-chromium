@@ -6,9 +6,9 @@
  */
 
 #include "GrVkCaps.h"
-
 #include "GrBackendSurface.h"
 #include "GrRenderTargetProxy.h"
+#include "GrRenderTarget.h"
 #include "GrShaderCaps.h"
 #include "GrVkUtil.h"
 #include "vk/GrVkBackendContext.h"
@@ -19,10 +19,11 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     : INHERITED(contextOptions) {
     fCanUseGLSLForShaderModule = false;
     fMustDoCopiesFromOrigin = false;
-    fSupportsCopiesAsDraws = false;
+    fSupportsCopiesAsDraws = true;
     fMustSubmitCommandsBeforeCopyOp = false;
     fMustSleepOnTearDown  = false;
     fNewCBOnPipelineChange = false;
+    fCanUseWholeSizeOnFlushMappedMemory = true;
 
     /**************************************************************************
     * GrDrawTargetCaps fields
@@ -39,15 +40,13 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
 
     fBlacklistCoverageCounting = true; // blacklisting ccpr until we work through a few issues.
     fFenceSyncSupport = true;   // always available in Vulkan
-    fCrossContextTextureSupport = false;
+    fCrossContextTextureSupport = true;
 
     fMapBufferFlags = kNone_MapFlags; //TODO: figure this out
     fBufferMapThreshold = SK_MaxS32;  //TODO: figure this out
 
     fMaxRenderTargetSize = 4096; // minimum required by spec
     fMaxTextureSize = 4096; // minimum required by spec
-    fMaxColorSampleCount = 4; // minimum required by spec
-    fMaxStencilSampleCount = 4; // minimum required by spec
 
     fShaderCaps.reset(new GrShaderCaps(contextOptions));
 
@@ -89,12 +88,15 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
     this->initConfigTable(vkInterface, physDev, properties);
     this->initStencilFormat(vkInterface, physDev);
 
-    if (SkToBool(extensionFlags & kNV_glsl_shader_GrVkExtensionFlag)) {
-        // Currently disabling this feature since it does not play well with validation layers which
-        // expect a SPIR-V shader
-        // fCanUseGLSLForShaderModule = true;
+    if (!contextOptions.fDisableDriverCorrectnessWorkarounds) {
+        this->applyDriverCorrectnessWorkarounds(properties);
     }
 
+    this->applyOptionsOverrides(contextOptions);
+    fShaderCaps->applyOptionsOverrides(contextOptions);
+}
+
+void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDeviceProperties& properties) {
     if (kQualcomm_VkVendor == properties.vendorID) {
         fMustDoCopiesFromOrigin = true;
     }
@@ -103,12 +105,15 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
         fMustSubmitCommandsBeforeCopyOp = true;
     }
 
-    if (kQualcomm_VkVendor != properties.vendorID) {
-        fSupportsCopiesAsDraws = true;
+    if (kQualcomm_VkVendor == properties.vendorID ||
+        kARM_VkVendor == properties.vendorID) {
+        fSupportsCopiesAsDraws = false;
+        // We require copies as draws to support cross context textures.
+        fCrossContextTextureSupport = false;
     }
 
-    if (fSupportsCopiesAsDraws) {
-        fCrossContextTextureSupport = true;
+    if (kARM_VkVendor == properties.vendorID) {
+        fInstanceAttribSupport = false;
     }
 
 #if defined(SK_BUILD_FOR_WIN)
@@ -120,9 +125,6 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
         fMustSleepOnTearDown = true;
     }
 #endif
-
-    this->applyOptionsOverrides(contextOptions);
-    fShaderCaps->applyOptionsOverrides(contextOptions);
 }
 
 int get_max_sample_count(VkSampleCountFlags flags) {
@@ -148,17 +150,6 @@ int get_max_sample_count(VkSampleCountFlags flags) {
     return 64;
 }
 
-void GrVkCaps::initSampleCount(const VkPhysicalDeviceProperties& properties) {
-    VkSampleCountFlags colorSamples = properties.limits.framebufferColorSampleCounts;
-    VkSampleCountFlags stencilSamples = properties.limits.framebufferStencilSampleCounts;
-
-    fMaxColorSampleCount = get_max_sample_count(colorSamples);
-    if (kImagination_VkVendor == properties.vendorID) {
-        fMaxColorSampleCount = 0;
-    }
-    fMaxStencilSampleCount = get_max_sample_count(stencilSamples);
-}
-
 void GrVkCaps::initGrCaps(const VkPhysicalDeviceProperties& properties,
                           const VkPhysicalDeviceMemoryProperties& memoryProperties,
                           uint32_t featureFlags) {
@@ -178,7 +169,8 @@ void GrVkCaps::initGrCaps(const VkPhysicalDeviceProperties& properties,
     fMaxRenderTargetSize = SkTMin(properties.limits.maxImageDimension2D, (uint32_t)INT_MAX);
     fMaxTextureSize = SkTMin(properties.limits.maxImageDimension2D, (uint32_t)INT_MAX);
 
-    this->initSampleCount(properties);
+    // TODO: check if RT's larger than 4k incur a performance cost on ARM.
+    fMaxPreferredRenderTargetSize = fMaxRenderTargetSize;
 
     // Assuming since we will always map in the end to upload the data we might as well just map
     // from the get go. There is no hard data to suggest this is faster or slower.
@@ -193,6 +185,10 @@ void GrVkCaps::initGrCaps(const VkPhysicalDeviceProperties& properties,
     // Current workaround is to use a different secondary command buffer for each new VkPipeline.
     if (kAMD_VkVendor == properties.vendorID) {
         fNewCBOnPipelineChange = true;
+    }
+
+    if (kIntel_VkVendor == properties.vendorID) {
+        fCanUseWholeSizeOnFlushMappedMemory = false;
     }
 
 #if defined(SK_CPU_X86)
@@ -361,7 +357,7 @@ void GrVkCaps::ConfigInfo::initSampleCounts(const GrVkInterface* interface,
                                                                  &properties));
     VkSampleCountFlags flags = properties.sampleCounts;
     if (flags & VK_SAMPLE_COUNT_1_BIT) {
-        fColorSampleCounts.push(0);
+        fColorSampleCounts.push(1);
     }
     if (kImagination_VkVendor == physProps.vendorID) {
         // MSAA does not work on imagination
@@ -401,10 +397,18 @@ void GrVkCaps::ConfigInfo::init(const GrVkInterface* interface,
     }
 }
 
-int GrVkCaps::getSampleCount(int requestedCount, GrPixelConfig config) const {
+int GrVkCaps::getRenderTargetSampleCount(int requestedCount, GrPixelConfig config) const {
+    requestedCount = SkTMax(1, requestedCount);
     int count = fConfigTable[config].fColorSampleCounts.count();
-    if (!count || !this->isConfigRenderable(config, true)) {
+
+    if (!count) {
         return 0;
+    }
+
+    if (1 == requestedCount) {
+        SkASSERT(fConfigTable[config].fColorSampleCounts.count() &&
+                 fConfigTable[config].fColorSampleCounts[0] == 1);
+        return 1;
     }
 
     for (int i = 0; i < count; ++i) {
@@ -412,14 +416,25 @@ int GrVkCaps::getSampleCount(int requestedCount, GrPixelConfig config) const {
             return fConfigTable[config].fColorSampleCounts[i];
         }
     }
-    return fConfigTable[config].fColorSampleCounts[count-1];
+    return 0;
 }
 
-bool validate_image_info(const GrVkImageInfo* imageInfo, SkColorType ct, GrPixelConfig* config) {
-    if (!imageInfo) {
-        return false;
+int GrVkCaps::maxRenderTargetSampleCount(GrPixelConfig config) const {
+    const auto& table = fConfigTable[config].fColorSampleCounts;
+    if (!table.count()) {
+        return 0;
     }
-    VkFormat format = imageInfo->fFormat;
+    return table[table.count() - 1];
+}
+
+bool GrVkCaps::surfaceSupportsWritePixels(const GrSurface* surface) const {
+    if (auto rt = surface->asRenderTarget()) {
+        return rt->numColorSamples() <= 1 && SkToBool(surface->asTexture());
+    }
+    return true;
+}
+
+bool validate_image_info(VkFormat format, SkColorType ct, GrPixelConfig* config) {
     *config = kUnknown_GrPixelConfig;
 
     switch (ct) {
@@ -477,11 +492,30 @@ bool validate_image_info(const GrVkImageInfo* imageInfo, SkColorType ct, GrPixel
 
 bool GrVkCaps::validateBackendTexture(const GrBackendTexture& tex, SkColorType ct,
                                       GrPixelConfig* config) const {
-    return validate_image_info(tex.getVkImageInfo(), ct, config);
+    const GrVkImageInfo* imageInfo = tex.getVkImageInfo();
+    if (!imageInfo) {
+        return false;
+    }
+
+    return validate_image_info(imageInfo->fFormat, ct, config);
 }
 
 bool GrVkCaps::validateBackendRenderTarget(const GrBackendRenderTarget& rt, SkColorType ct,
                                            GrPixelConfig* config) const {
-    return validate_image_info(rt.getVkImageInfo(), ct, config);
+    const GrVkImageInfo* imageInfo = rt.getVkImageInfo();
+    if (!imageInfo) {
+        return false;
+    }
+
+    return validate_image_info(imageInfo->fFormat, ct, config);
+}
+
+bool GrVkCaps::getConfigFromBackendFormat(const GrBackendFormat& format, SkColorType ct,
+                                          GrPixelConfig* config) const {
+    const VkFormat* vkFormat = format.getVkFormat();
+    if (!vkFormat) {
+        return false;
+    }
+    return validate_image_info(*vkFormat, ct, config);
 }
 

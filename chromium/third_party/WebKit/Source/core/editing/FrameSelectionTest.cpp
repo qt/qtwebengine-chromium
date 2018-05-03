@@ -26,12 +26,21 @@
 #include "core/testing/DummyPageHolder.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintController.h"
+#include "platform/testing/FakeDisplayItemClient.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
 class FrameSelectionTest : public EditingTestBase {
+ public:
+  FrameSelectionTest()
+      : root_paint_property_client_("root"),
+        root_paint_chunk_id_(root_paint_property_client_,
+                             DisplayItem::kUninitializedType) {}
+  FakeDisplayItemClient root_paint_property_client_;
+  PaintChunk::Id root_paint_chunk_id_;
+
  protected:
   VisibleSelection VisibleSelectionInDOMTree() const {
     return Selection().ComputeVisibleSelectionInDOMTree();
@@ -53,6 +62,14 @@ class FrameSelectionTest : public EditingTestBase {
 
   // Returns if a word is is selected.
   bool SelectWordAroundPosition(const Position&);
+
+  void MoveRangeSelectionInternal(const Position& base,
+                                  const Position& extent,
+                                  TextGranularity granularity) {
+    Selection().MoveRangeSelectionInternal(
+        SelectionInDOMTree::Builder().SetBaseAndExtent(base, extent).Build(),
+        granularity);
+  }
 
  private:
   Persistent<Text> text_node_;
@@ -127,6 +144,15 @@ TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout) {
   std::unique_ptr<PaintController> paint_controller = PaintController::Create();
   {
     GraphicsContext context(*paint_controller);
+
+    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+      paint_controller->UpdateCurrentPaintChunkProperties(
+          root_paint_chunk_id_,
+          PaintChunkProperties(PropertyTreeState(
+              TransformPaintPropertyNode::Root(), ClipPaintPropertyNode::Root(),
+              EffectPaintPropertyNode::Root())));
+    }
+
     Selection().PaintCaret(context, LayoutPoint());
   }
   paint_controller->CommitNewDisplayItems();
@@ -224,24 +250,20 @@ TEST_F(FrameSelectionTest, MoveRangeSelectionTest) {
   EXPECT_EQ_SELECTED_TEXT("a");
 
   // "Foo B|ar B>az," with the Character granularity.
-  Selection().MoveRangeSelection(CreateVisiblePosition(Position(text, 5)),
-                                 CreateVisiblePosition(Position(text, 9)),
-                                 TextGranularity::kCharacter);
+  MoveRangeSelectionInternal(Position(text, 5), Position(text, 9),
+                             TextGranularity::kCharacter);
   EXPECT_EQ_SELECTED_TEXT("ar B");
   // "Foo B|ar B>az," with the Word granularity.
-  Selection().MoveRangeSelection(CreateVisiblePosition(Position(text, 5)),
-                                 CreateVisiblePosition(Position(text, 9)),
-                                 TextGranularity::kWord);
+  MoveRangeSelectionInternal(Position(text, 5), Position(text, 9),
+                             TextGranularity::kWord);
   EXPECT_EQ_SELECTED_TEXT("Bar Baz");
   // "Fo<o B|ar Baz," with the Character granularity.
-  Selection().MoveRangeSelection(CreateVisiblePosition(Position(text, 5)),
-                                 CreateVisiblePosition(Position(text, 2)),
-                                 TextGranularity::kCharacter);
+  MoveRangeSelectionInternal(Position(text, 5), Position(text, 2),
+                             TextGranularity::kCharacter);
   EXPECT_EQ_SELECTED_TEXT("o B");
   // "Fo<o B|ar Baz," with the Word granularity.
-  Selection().MoveRangeSelection(CreateVisiblePosition(Position(text, 5)),
-                                 CreateVisiblePosition(Position(text, 2)),
-                                 TextGranularity::kWord);
+  MoveRangeSelectionInternal(Position(text, 5), Position(text, 2),
+                             TextGranularity::kWord);
   EXPECT_EQ_SELECTED_TEXT("Foo Bar");
 }
 
@@ -249,10 +271,9 @@ TEST_F(FrameSelectionTest, MoveRangeSelectionNoLiveness) {
   SetBodyContent("<span id=sample>xyz</span>");
   Element* const sample = GetDocument().getElementById("sample");
   // Select as: <span id=sample>^xyz|</span>
-  Selection().MoveRangeSelection(
-      CreateVisiblePosition(Position(sample->firstChild(), 1)),
-      CreateVisiblePosition(Position(sample->firstChild(), 1)),
-      TextGranularity::kWord);
+  MoveRangeSelectionInternal(Position(sample->firstChild(), 1),
+                             Position(sample->firstChild(), 1),
+                             TextGranularity::kWord);
   EXPECT_EQ("xyz", Selection().SelectedText());
   sample->insertBefore(Text::Create(GetDocument(), "abc"),
                        sample->firstChild());
@@ -289,7 +310,7 @@ TEST_F(FrameSelectionTest, SelectAllWithInputElement) {
 }
 
 TEST_F(FrameSelectionTest, SelectAllWithUnselectableRoot) {
-  Element* select = GetDocument().createElement("select");
+  Element* select = GetDocument().CreateRawElement(HTMLNames::selectTag);
   GetDocument().ReplaceChild(select, GetDocument().documentElement());
   GetDocument().UpdateStyleAndLayout();
   Selection().SelectAll();
@@ -591,7 +612,7 @@ TEST_F(FrameSelectionTest, FocusingButtonHidesRangeInDisabledTextControl) {
   // been shorter, but currently that doesn't work on a *disabled* text control.
   const IntRect elem_bounds = textarea->BoundsInViewport();
   WebMouseEvent double_click(WebMouseEvent::kMouseDown, 0,
-                             WebInputEvent::kTimeStampForTesting);
+                             WebInputEvent::GetStaticTimeStampForTests());
   double_click.SetPositionInWidget(elem_bounds.X(), elem_bounds.Y());
   double_click.SetPositionInScreen(elem_bounds.X(), elem_bounds.Y());
   double_click.button = WebMouseEvent::Button::kLeft;
@@ -1041,7 +1062,7 @@ TEST_F(FrameSelectionTest, SelectionBounds) {
   // The top of the node should be visible but the bottom should be outside
   // by the viewport. The unclipped selection bounds should not be clipped.
   EXPECT_EQ(LayoutRect(0, node_margin_top, node_width, node_height),
-            Selection().UnclippedBounds());
+            Selection().AbsoluteUnclippedBounds());
 
   // Scroll 500px down so the top of the node is outside the viewport and the
   // bottom is visible. The unclipped selection bounds should not be clipped.
@@ -1049,15 +1070,17 @@ TEST_F(FrameSelectionTest, SelectionBounds) {
   LocalFrameView* frame_view = GetDocument().View();
   frame_view->LayoutViewportScrollableArea()->SetScrollOffset(
       ScrollOffset(0, scroll_offset), kProgrammaticScroll);
-  EXPECT_EQ(LayoutRect(0, node_margin_top, node_width, node_height),
-            Selection().UnclippedBounds());
+  EXPECT_EQ(
+      LayoutRect(0, node_margin_top, node_width, node_height),
+      frame_view->AbsoluteToDocument(Selection().AbsoluteUnclippedBounds()));
 
   // Adjust the page scale factor which changes the selection bounds as seen
   // through the viewport. The unclipped selection bounds should not be clipped.
   const int page_scale_factor = 2;
   GetPage().SetPageScaleFactor(page_scale_factor);
-  EXPECT_EQ(LayoutRect(0, node_margin_top, node_width, node_height),
-            Selection().UnclippedBounds());
+  EXPECT_EQ(
+      LayoutRect(0, node_margin_top, node_width, node_height),
+      frame_view->AbsoluteToDocument(Selection().AbsoluteUnclippedBounds()));
 }
 
 }  // namespace blink

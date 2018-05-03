@@ -41,10 +41,12 @@ enum {
 };
 // clang-format on
 
-const static uint32_t render_target_formats[] = { DRM_FORMAT_ARGB8888, DRM_FORMAT_XBGR8888,
+const static uint32_t render_target_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORMAT_ARGB8888,
+						  DRM_FORMAT_RGB565, DRM_FORMAT_XBGR8888,
 						  DRM_FORMAT_XRGB8888 };
 
-const static uint32_t texture_source_formats[] = { DRM_FORMAT_NV21, DRM_FORMAT_NV12 };
+const static uint32_t texture_source_formats[] = { DRM_FORMAT_GR88, DRM_FORMAT_R8, DRM_FORMAT_NV21,
+						   DRM_FORMAT_NV12 };
 
 static int amdgpu_set_metadata(int fd, uint32_t handle, struct amdgpu_bo_metadata *info)
 {
@@ -135,7 +137,7 @@ static ADDR_E_RETURNCODE ADDR_API free_sys_mem(const ADDR_FREESYSMEM_INPUT *in)
 }
 
 static int amdgpu_addrlib_compute(void *addrlib, uint32_t width, uint32_t height, uint32_t format,
-				  uint32_t usage, uint32_t *tiling_flags,
+				  uint64_t use_flags, uint32_t *tiling_flags,
 				  ADDR_COMPUTE_SURFACE_INFO_OUTPUT *addr_out)
 {
 	ADDR_COMPUTE_SURFACE_INFO_INPUT addr_surf_info_in = { 0 };
@@ -147,7 +149,8 @@ static int amdgpu_addrlib_compute(void *addrlib, uint32_t width, uint32_t height
 
 	/* Set the requested tiling mode. */
 	addr_surf_info_in.tileMode = ADDR_TM_2D_TILED_THIN1;
-	if (usage & (BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN))
+	if (use_flags &
+	    (BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN))
 		addr_surf_info_in.tileMode = ADDR_TM_LINEAR_ALIGNED;
 	else if (width <= 16 || height <= 16)
 		addr_surf_info_in.tileMode = ADDR_TM_1D_TILED_THIN1;
@@ -166,7 +169,7 @@ static int amdgpu_addrlib_compute(void *addrlib, uint32_t width, uint32_t height
 	addr_surf_info_in.flags.noStencil = 1;
 
 	/* Set the micro tile type. */
-	if (usage & BO_USE_SCANOUT)
+	if (use_flags & BO_USE_SCANOUT)
 		addr_surf_info_in.tileType = ADDR_DISPLAYABLE;
 	else
 		addr_surf_info_in.tileType = ADDR_NON_DISPLAYABLE;
@@ -270,10 +273,9 @@ static void *amdgpu_addrlib_init(int fd)
 
 static int amdgpu_init(struct driver *drv)
 {
-	int ret;
 	void *addrlib;
 	struct format_metadata metadata;
-	uint32_t flags = BO_USE_RENDER_MASK;
+	uint64_t use_flags = BO_USE_RENDER_MASK;
 
 	addrlib = amdgpu_addrlib_init(drv_get_fd(drv));
 	if (!addrlib)
@@ -281,22 +283,28 @@ static int amdgpu_init(struct driver *drv)
 
 	drv->priv = addrlib;
 
-	ret = drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
-				   &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
+			     &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
+
+	/* YUV format for camera */
+	drv_modify_combination(drv, DRM_FORMAT_NV12, &LINEAR_METADATA,
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
+	/*
+	 * R8 format is used for Android's HAL_PIXEL_FORMAT_BLOB and is used for JPEG snapshots
+	 * from camera.
+	 */
+	drv_modify_combination(drv, DRM_FORMAT_R8, &LINEAR_METADATA,
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
 
 	drv_modify_combination(drv, DRM_FORMAT_NV21, &LINEAR_METADATA, BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_NV12, &LINEAR_METADATA, BO_USE_SCANOUT);
 
 	metadata.tiling = ADDR_DISPLAYABLE << 16 | ADDR_TM_LINEAR_ALIGNED;
 	metadata.priority = 2;
-	metadata.modifier = DRM_FORMAT_MOD_NONE;
+	metadata.modifier = DRM_FORMAT_MOD_LINEAR;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, use_flags);
 
 	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
@@ -304,24 +312,20 @@ static int amdgpu_init(struct driver *drv)
 
 	metadata.tiling = ADDR_NON_DISPLAYABLE << 16 | ADDR_TM_LINEAR_ALIGNED;
 	metadata.priority = 3;
-	metadata.modifier = DRM_FORMAT_MOD_NONE;
+	metadata.modifier = DRM_FORMAT_MOD_LINEAR;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, use_flags);
 
-	flags &= ~BO_USE_SW_WRITE_OFTEN;
-	flags &= ~BO_USE_SW_READ_OFTEN;
-	flags &= ~BO_USE_LINEAR;
+	use_flags &= ~BO_USE_SW_WRITE_OFTEN;
+	use_flags &= ~BO_USE_SW_READ_OFTEN;
+	use_flags &= ~BO_USE_LINEAR;
 
 	metadata.tiling = ADDR_DISPLAYABLE << 16 | ADDR_TM_2D_TILED_THIN1;
 	metadata.priority = 4;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, use_flags);
 
 	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &metadata, BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_SCANOUT);
@@ -330,12 +334,10 @@ static int amdgpu_init(struct driver *drv)
 	metadata.tiling = ADDR_NON_DISPLAYABLE << 16 | ADDR_TM_2D_TILED_THIN1;
 	metadata.priority = 5;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, use_flags);
 
-	return ret;
+	return 0;
 }
 
 static void amdgpu_close(struct driver *drv)
@@ -345,21 +347,20 @@ static void amdgpu_close(struct driver *drv)
 }
 
 static int amdgpu_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
-			    uint32_t usage)
+			    uint64_t use_flags)
 {
 	void *addrlib = bo->drv->priv;
 	union drm_amdgpu_gem_create gem_create;
 	struct amdgpu_bo_metadata metadata = { 0 };
 	ADDR_COMPUTE_SURFACE_INFO_OUTPUT addr_out = { 0 };
 	uint32_t tiling_flags = 0;
-	uint32_t gem_create_flags = 0;
 	size_t plane;
 	int ret;
 
 	if (format == DRM_FORMAT_NV12 || format == DRM_FORMAT_NV21) {
 		drv_bo_from_format(bo, ALIGN(width, 64), height, format);
 	} else {
-		if (amdgpu_addrlib_compute(addrlib, width, height, format, usage, &tiling_flags,
+		if (amdgpu_addrlib_compute(addrlib, width, height, format, use_flags, &tiling_flags,
 					   &addr_out) < 0)
 			return -EINVAL;
 
@@ -370,19 +371,25 @@ static int amdgpu_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint
 		bo->strides[0] = addr_out.pixelPitch * DIV_ROUND_UP(addr_out.pixelBits, 8);
 	}
 
-	if (usage & (BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		     BO_USE_SW_WRITE_RARELY | BO_USE_SW_READ_RARELY))
-		gem_create_flags |= AMDGPU_GEM_CREATE_CPU_ACCESS_REQUIRED;
-	else
-		gem_create_flags |= AMDGPU_GEM_CREATE_NO_CPU_ACCESS;
-
 	memset(&gem_create, 0, sizeof(gem_create));
 
 	gem_create.in.bo_size = bo->total_size;
 	gem_create.in.alignment = addr_out.baseAlign;
 	/* Set the placement. */
-	gem_create.in.domains = AMDGPU_GEM_DOMAIN_VRAM;
-	gem_create.in.domain_flags = gem_create_flags;
+
+	gem_create.in.domain_flags = 0;
+	if (use_flags & (BO_USE_LINEAR | BO_USE_SW))
+		gem_create.in.domain_flags |= AMDGPU_GEM_CREATE_CPU_ACCESS_REQUIRED;
+
+	if (use_flags & (BO_USE_SCANOUT | BO_USE_CURSOR)) {
+		/* TODO(dbehr) do not use VRAM after we enable display VM */
+		gem_create.in.domains = AMDGPU_GEM_DOMAIN_VRAM;
+	} else {
+		gem_create.in.domains = AMDGPU_GEM_DOMAIN_GTT;
+		if (!(use_flags & BO_USE_SW_READ_OFTEN))
+			gem_create.in.domain_flags |= AMDGPU_GEM_CREATE_CPU_GTT_USWC;
+	}
+
 	/* Allocate the buffer with the preferred heap. */
 	ret = drmCommandWriteRead(drv_get_fd(bo->drv), DRM_AMDGPU_GEM_CREATE, &gem_create,
 				  sizeof(gem_create));
@@ -400,7 +407,7 @@ static int amdgpu_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint
 	return ret;
 }
 
-static void *amdgpu_bo_map(struct bo *bo, struct map_info *data, size_t plane, int prot)
+static void *amdgpu_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
 {
 	int ret;
 	union drm_amdgpu_gem_mmap gem_map;
@@ -413,14 +420,22 @@ static void *amdgpu_bo_map(struct bo *bo, struct map_info *data, size_t plane, i
 		fprintf(stderr, "drv: DRM_IOCTL_AMDGPU_GEM_MMAP failed\n");
 		return MAP_FAILED;
 	}
-	data->length = bo->total_size;
 
-	return mmap(0, bo->total_size, prot, MAP_SHARED, bo->drv->fd, gem_map.out.addr_ptr);
+	vma->length = bo->total_size;
+
+	return mmap(0, bo->total_size, drv_get_prot(map_flags), MAP_SHARED, bo->drv->fd,
+		    gem_map.out.addr_ptr);
 }
 
-static uint32_t amdgpu_resolve_format(uint32_t format, uint64_t usage)
+static uint32_t amdgpu_resolve_format(uint32_t format, uint64_t use_flags)
 {
 	switch (format) {
+	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
+		/* Camera subsystem requires NV12. */
+		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
+			return DRM_FORMAT_NV12;
+		/*HACK: See b/28671744 */
+		return DRM_FORMAT_XBGR8888;
 	case DRM_FORMAT_FLEX_YCbCr_420_888:
 		return DRM_FORMAT_NV12;
 	default:
@@ -428,7 +443,7 @@ static uint32_t amdgpu_resolve_format(uint32_t format, uint64_t usage)
 	}
 }
 
-struct backend backend_amdgpu = {
+const struct backend backend_amdgpu = {
 	.name = "amdgpu",
 	.init = amdgpu_init,
 	.close = amdgpu_close,
@@ -436,6 +451,7 @@ struct backend backend_amdgpu = {
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_import = drv_prime_bo_import,
 	.bo_map = amdgpu_bo_map,
+	.bo_unmap = drv_bo_munmap,
 	.resolve_format = amdgpu_resolve_format,
 };
 

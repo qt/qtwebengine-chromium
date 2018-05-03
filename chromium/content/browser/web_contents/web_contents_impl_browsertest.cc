@@ -39,7 +39,6 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/shell/browser/shell_resource_dispatcher_host_delegate.h"
 #include "content/test/content_browser_test_utils_internal.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -250,6 +249,92 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_EQ(0, load_observer.session_index_);
   EXPECT_EQ(&shell()->web_contents()->GetController(),
             load_observer.controller_);
+}
+
+namespace {
+
+// Class that waits for a particular load to finish in any frame.  This happens
+// after the commit event.
+class LoadFinishedWaiter : public WebContentsObserver {
+ public:
+  LoadFinishedWaiter(WebContents* web_contents, const GURL& expected_url)
+      : WebContentsObserver(web_contents),
+        expected_url_(expected_url),
+        run_loop_(new base::RunLoop()) {
+    EXPECT_TRUE(web_contents != nullptr);
+  }
+
+  void Wait() { run_loop_->Run(); }
+
+ private:
+  void DidFinishLoad(RenderFrameHost* render_frame_host,
+                     const GURL& url) override {
+    if (url == expected_url_)
+      run_loop_->Quit();
+  }
+
+  GURL expected_url_;
+  std::unique_ptr<base::RunLoop> run_loop_;
+};
+
+}  // namespace
+
+// Ensure that cross-site subframes always notify their parents when they finish
+// loading, so that the page eventually reaches DidStopLoading.  There was a bug
+// where an OOPIF would not notify its parent if (1) it finished loading, but
+// (2) later added a subframe that kept the main frame in the loading state, and
+// (3) all subframes then finished loading.
+// Note that this test makes sense to run with and without OOPIFs.
+// See https://crbug.com/822013#c12.
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       DidStopLoadingWithNestedFrames) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  // Navigate to an A(B, C) page where B is slow to load.  Wait for C to reach
+  // load stop.  A will still be loading due to B.
+  GURL url_a = embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b,c)");
+  GURL url_b = embedded_test_server()->GetURL(
+      "b.com", "/cross_site_iframe_factory.html?b()");
+  GURL url_c = embedded_test_server()->GetURL(
+      "c.com", "/cross_site_iframe_factory.html?c()");
+  TestNavigationManager delayer_b(web_contents, url_b);
+  LoadFinishedWaiter load_waiter_c(web_contents, url_c);
+  shell()->LoadURL(url_a);
+  EXPECT_TRUE(delayer_b.WaitForRequestStart());
+  load_waiter_c.Wait();
+  EXPECT_TRUE(web_contents->IsLoading());
+
+  // At this point, C has finished loading and B is stalled.  Add a slow D frame
+  // within C.
+  GURL url_d = embedded_test_server()->GetURL("d.com", "/title1.html");
+  FrameTreeNode* subframe_c = web_contents->GetFrameTree()->root()->child_at(1);
+  EXPECT_EQ(url_c, subframe_c->current_url());
+  TestNavigationManager delayer_d(web_contents, url_d);
+  const std::string add_d_script = base::StringPrintf(
+      "var f = document.createElement('iframe');"
+      "f.src='%s';"
+      "document.body.appendChild(f);",
+      url_d.spec().c_str());
+  EXPECT_TRUE(content::ExecuteScript(subframe_c, add_d_script));
+  EXPECT_TRUE(delayer_d.WaitForRequestStart());
+  EXPECT_TRUE(web_contents->IsLoading());
+
+  // Let B finish and wait for another load stop.  A will still be loading due
+  // to D.
+  LoadFinishedWaiter load_waiter_b(web_contents, url_b);
+  delayer_b.WaitForNavigationFinished();
+  load_waiter_b.Wait();
+  EXPECT_TRUE(web_contents->IsLoading());
+
+  // Let D finish.  We should get a load stop in the main frame.
+  LoadFinishedWaiter load_waiter_d(web_contents, url_d);
+  delayer_d.WaitForNavigationFinished();
+  load_waiter_d.Wait();
+  EXPECT_TRUE(WaitForLoadStop(web_contents));
+  EXPECT_FALSE(web_contents->IsLoading());
 }
 
 // Test that a renderer-initiated navigation to an invalid URL does not leave
@@ -1026,13 +1111,16 @@ namespace {
 class TestWCDelegateForDialogsAndFullscreen : public JavaScriptDialogManager,
                                               public WebContentsDelegate {
  public:
-  TestWCDelegateForDialogsAndFullscreen()
-      : is_fullscreen_(false), message_loop_runner_(new MessageLoopRunner) {}
-  ~TestWCDelegateForDialogsAndFullscreen() override {}
+  TestWCDelegateForDialogsAndFullscreen() = default;
+  ~TestWCDelegateForDialogsAndFullscreen() override = default;
+
+  void WillWaitForDialog() { waiting_for_ = kDialog; }
+  void WillWaitForNewContents() { waiting_for_ = kNewContents; }
+  void WillWaitForFullscreenExit() { waiting_for_ = kFullscreenExit; }
 
   void Wait() {
-    message_loop_runner_->Run();
-    message_loop_runner_ = new MessageLoopRunner;
+    run_loop_->Run();
+    run_loop_ = std::make_unique<base::RunLoop>();
   }
 
   std::string last_message() { return last_message_; }
@@ -1051,6 +1139,9 @@ class TestWCDelegateForDialogsAndFullscreen : public JavaScriptDialogManager,
 
   void ExitFullscreenModeForTab(WebContents*) override {
     is_fullscreen_ = false;
+
+    if (waiting_for_ == kFullscreenExit)
+      run_loop_->Quit();
   }
 
   bool IsFullscreenForTabOrPending(
@@ -1064,14 +1155,16 @@ class TestWCDelegateForDialogsAndFullscreen : public JavaScriptDialogManager,
                       const gfx::Rect& initial_rect,
                       bool user_gesture,
                       bool* was_blocked) override {
-    delete new_contents;
-    message_loop_runner_->Quit();
+    popup_.reset(new_contents);
+
+    if (waiting_for_ == kNewContents)
+      run_loop_->Quit();
   }
 
   // JavaScriptDialogManager
 
   void RunJavaScriptDialog(WebContents* web_contents,
-                           const GURL& alerting_frame_url,
+                           RenderFrameHost* render_frame_host,
                            JavaScriptDialogType dialog_type,
                            const base::string16& message_text,
                            const base::string16& default_prompt_text,
@@ -1080,15 +1173,18 @@ class TestWCDelegateForDialogsAndFullscreen : public JavaScriptDialogManager,
     last_message_ = base::UTF16ToUTF8(message_text);
     *did_suppress_message = true;
 
-    message_loop_runner_->Quit();
-  };
+    if (waiting_for_ == kDialog)
+      run_loop_->Quit();
+  }
 
   void RunBeforeUnloadDialog(WebContents* web_contents,
                              RenderFrameHost* render_frame_host,
                              bool is_reload,
                              DialogClosedCallback callback) override {
     std::move(callback).Run(true, base::string16());
-    message_loop_runner_->Quit();
+
+    if (waiting_for_ == kDialog)
+      run_loop_->Quit();
   }
 
   bool HandleJavaScriptDialog(WebContents* web_contents,
@@ -1101,12 +1197,15 @@ class TestWCDelegateForDialogsAndFullscreen : public JavaScriptDialogManager,
                      bool reset_state) override {}
 
  private:
+  enum { kDialog, kNewContents, kFullscreenExit } waiting_for_;
+
   std::string last_message_;
 
-  bool is_fullscreen_;
+  bool is_fullscreen_ = false;
 
-  // The MessageLoopRunner used to spin the message loop.
-  scoped_refptr<MessageLoopRunner> message_loop_runner_;
+  std::unique_ptr<WebContents> popup_;
+
+  std::unique_ptr<base::RunLoop> run_loop_ = std::make_unique<base::RunLoop>();
 
   DISALLOW_COPY_AND_ASSIGN(TestWCDelegateForDialogsAndFullscreen);
 };
@@ -1143,6 +1242,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 
   // A dialog from the main frame.
   std::string alert_location = "alert(document.location)";
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(
       content::ExecuteScript(root->current_frame_host(), alert_location));
   test_delegate.Wait();
@@ -1150,6 +1250,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
             GURL(test_delegate.last_message()).ReplaceComponents(clear_port));
 
   // A dialog from the subframe.
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(
       content::ExecuteScript(frame->current_frame_host(), alert_location));
   test_delegate.Wait();
@@ -1161,6 +1262,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_TRUE(WaitForLoadStop(wc));
 
   // A dialog from the subframe.
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(
       content::ExecuteScript(frame->current_frame_host(), alert_location));
   test_delegate.Wait();
@@ -1168,6 +1270,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
             GURL(test_delegate.last_message()).ReplaceComponents(clear_port));
 
   // A dialog from the main frame.
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(
       content::ExecuteScript(root->current_frame_host(), alert_location));
   test_delegate.Wait();
@@ -1178,6 +1281,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   NavigateToURL(shell(),
                 embedded_test_server()->GetURL("c.com", "/title3.html"));
   EXPECT_TRUE(WaitForLoadStop(wc));
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(
       content::ExecuteScript(root->current_frame_host(), alert_location));
   test_delegate.Wait();
@@ -1187,6 +1291,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   // Navigate back; ensure that dialogs work.
   wc->GetController().GoBack();
   EXPECT_TRUE(WaitForLoadStop(wc));
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(
       content::ExecuteScript(root->current_frame_host(), alert_location));
   test_delegate.Wait();
@@ -1199,11 +1304,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
                        CreateWebContentsWithRendererProcess) {
-  GURL url("http://c.com/title3.html");
   ASSERT_TRUE(embedded_test_server()->Start());
   WebContents* base_web_contents = shell()->web_contents();
   ASSERT_TRUE(base_web_contents);
 
+  GURL url(embedded_test_server()->GetURL("c.com", "/title3.html"));
   WebContents::CreateParams create_params(
       base_web_contents->GetBrowserContext());
   create_params.initialize_renderer = true;
@@ -1220,12 +1325,13 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_TRUE(web_contents->GetController().IsInitialBlankNavigation());
   int renderer_id = web_contents->GetMainFrame()->GetProcess()->GetID();
 
-  TestNavigationObserver same_tab_observer(web_contents.get(), 1);
+  TestNavigationObserver same_tab_observer(web_contents.get());
   NavigationController::LoadURLParams params(url);
   params.transition_type = ui::PageTransitionFromInt(
       ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR);
   web_contents->GetController().LoadURLWithParams(params);
   same_tab_observer.Wait();
+  EXPECT_TRUE(same_tab_observer.last_navigation_succeeded());
 
   // Check that pre-warmed process is used.
   EXPECT_EQ(renderer_id, web_contents->GetMainFrame()->GetProcess()->GetID());
@@ -1443,55 +1549,29 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_TRUE(delegate.get()->request_to_lock_mouse_called_);
 }
 
-namespace {
-class TestResourceDispatcherHostDelegate
-    : public ShellResourceDispatcherHostDelegate {
- public:
-  explicit TestResourceDispatcherHostDelegate(bool* saw_override)
-      : saw_override_(saw_override) {}
-
-  void RequestBeginning(
-      net::URLRequest* request,
-      ResourceContext* resource_context,
-      AppCacheService* appcache_service,
-      ResourceType resource_type,
-      std::vector<std::unique_ptr<ResourceThrottle>>* throttles) override {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    ShellResourceDispatcherHostDelegate::RequestBeginning(
-        request, resource_context, appcache_service, resource_type, throttles);
-
-    net::HttpRequestHeaders headers = request->extra_request_headers();
-    std::string user_agent;
-    CHECK(headers.GetHeader(net::HttpRequestHeaders::kUserAgent, &user_agent));
-    if (user_agent.find("foo") != std::string::npos)
-      *saw_override_ = true;
-  }
-
- private:
-  bool* saw_override_;
-};
-}  // namespace
-
 // Checks that user agent override string is only used when it's overridden.
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, UserAgentOverride) {
-  bool saw_override = false;
-  TestResourceDispatcherHostDelegate new_delegate(&saw_override);
-  ResourceDispatcherHostDelegate* old_delegate =
-      ResourceDispatcherHostImpl::Get()->delegate();
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(&ResourceDispatcherHost::SetDelegate,
-                     base::Unretained(ResourceDispatcherHostImpl::Get()),
-                     &new_delegate));
-
   ASSERT_TRUE(embedded_test_server()->Start());
-  const GURL kUrl(embedded_test_server()->GetURL("/simple_page.html"));
+  const std::string kHeaderPath =
+      std::string("/echoheader?") + net::HttpRequestHeaders::kUserAgent;
+  const GURL kUrl(embedded_test_server()->GetURL(kHeaderPath));
+  const std::string kUserAgentOverride = "foo";
+
   NavigateToURL(shell(), kUrl);
-  ASSERT_FALSE(saw_override);
+  std::string header_value;
+  EXPECT_TRUE(ExecuteScriptAndExtractString(
+      shell()->web_contents(),
+      "window.domAutomationController.send(document.body.textContent);",
+      &header_value));
+  EXPECT_NE(kUserAgentOverride, header_value);
 
   shell()->web_contents()->SetUserAgentOverride("foo");
   NavigateToURL(shell(), kUrl);
-  ASSERT_FALSE(saw_override);
+  EXPECT_TRUE(ExecuteScriptAndExtractString(
+      shell()->web_contents(),
+      "window.domAutomationController.send(document.body.textContent);",
+      &header_value));
+  EXPECT_NE(kUserAgentOverride, header_value);
 
   shell()
       ->web_contents()
@@ -1501,13 +1581,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, UserAgentOverride) {
   TestNavigationObserver tab_observer(shell()->web_contents(), 1);
   shell()->web_contents()->GetController().Reload(ReloadType::NORMAL, false);
   tab_observer.Wait();
-  ASSERT_TRUE(saw_override);
-
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(&ResourceDispatcherHost::SetDelegate,
-                     base::Unretained(ResourceDispatcherHostImpl::Get()),
-                     old_delegate));
+  EXPECT_TRUE(ExecuteScriptAndExtractString(
+      shell()->web_contents(),
+      "window.domAutomationController.send(document.body.textContent);",
+      &header_value));
+  EXPECT_EQ(kUserAgentOverride, header_value);
 }
 
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
@@ -1523,6 +1601,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   wc->EnterFullscreenMode(url);
   EXPECT_TRUE(wc->IsFullscreenForCurrentTab());
   std::string script = "alert('hi')";
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(content::ExecuteScript(wc, script));
   test_delegate.Wait();
   EXPECT_FALSE(wc->IsFullscreenForCurrentTab());
@@ -1531,6 +1610,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   wc->EnterFullscreenMode(url);
   EXPECT_TRUE(wc->IsFullscreenForCurrentTab());
   script = "confirm('hi')";
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(content::ExecuteScript(wc, script));
   test_delegate.Wait();
   EXPECT_FALSE(wc->IsFullscreenForCurrentTab());
@@ -1539,6 +1619,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   wc->EnterFullscreenMode(url);
   EXPECT_TRUE(wc->IsFullscreenForCurrentTab());
   script = "prompt('hi')";
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(content::ExecuteScript(wc, script));
   test_delegate.Wait();
   EXPECT_FALSE(wc->IsFullscreenForCurrentTab());
@@ -1554,6 +1635,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
       base::string16());
   script = "window.onbeforeunload=function(e){ return 'x' };";
   EXPECT_TRUE(content::ExecuteScript(wc, script));
+  test_delegate.WillWaitForDialog();
   EXPECT_TRUE(NavigateToURL(shell(), url));
   test_delegate.Wait();
   EXPECT_FALSE(wc->IsFullscreenForCurrentTab());
@@ -1575,6 +1657,40 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   wc->EnterFullscreenMode(url);
   EXPECT_TRUE(wc->IsFullscreenForCurrentTab());
   std::string script = "window.open('', '', 'width=200,height=100')";
+  test_delegate.WillWaitForNewContents();
+  EXPECT_TRUE(content::ExecuteScript(wc, script));
+  test_delegate.Wait();
+  EXPECT_FALSE(wc->IsFullscreenForCurrentTab());
+
+  wc->SetDelegate(nullptr);
+  wc->SetJavaScriptDialogManagerForTesting(nullptr);
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       FocusFromJavaScriptEndsFullscreen) {
+  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
+  TestWCDelegateForDialogsAndFullscreen test_delegate;
+  wc->SetDelegate(&test_delegate);
+
+  GURL url("about:blank");
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+
+  // Make a popup.
+  std::string script =
+      "window.FocusFromJavaScriptEndsFullscreen = "
+      "window.open('', '', 'width=200,height=100')";
+  test_delegate.WillWaitForNewContents();
+  EXPECT_TRUE(content::ExecuteScript(wc, script));
+  test_delegate.Wait();
+
+  // Put the main contents into fullscreen ...
+  wc->EnterFullscreenMode(url);
+  EXPECT_TRUE(wc->IsFullscreenForCurrentTab());
+
+  // ... and ensure that a call to window.focus() from it causes loss of
+  // ... fullscreen.
+  script = "window.FocusFromJavaScriptEndsFullscreen.focus()";
+  test_delegate.WillWaitForFullscreenExit();
   EXPECT_TRUE(content::ExecuteScript(wc, script));
   test_delegate.Wait();
   EXPECT_FALSE(wc->IsFullscreenForCurrentTab());

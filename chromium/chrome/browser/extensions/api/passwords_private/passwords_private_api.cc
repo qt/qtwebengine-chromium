@@ -192,8 +192,50 @@ PasswordsPrivateExportPasswordsFunction::Run() {
   PasswordsPrivateDelegate* delegate =
       PasswordsPrivateDelegateFactory::GetForBrowserContext(browser_context(),
                                                             true /* create */);
-  delegate->ExportPasswords(GetAssociatedWebContents());
+  delegate->ExportPasswords(
+      base::BindOnce(
+          &PasswordsPrivateExportPasswordsFunction::ExportRequestCompleted,
+          this),
+      GetAssociatedWebContents());
+  return RespondLater();
+}
+
+void PasswordsPrivateExportPasswordsFunction::ExportRequestCompleted(
+    const std::string& error) {
+  if (error.empty())
+    Respond(NoArguments());
+  else
+    Error(error);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PasswordsPrivateCancelExportPasswordsFunction
+
+PasswordsPrivateCancelExportPasswordsFunction::
+    ~PasswordsPrivateCancelExportPasswordsFunction() {}
+
+ExtensionFunction::ResponseAction
+PasswordsPrivateCancelExportPasswordsFunction::Run() {
+  PasswordsPrivateDelegate* delegate =
+      PasswordsPrivateDelegateFactory::GetForBrowserContext(browser_context(),
+                                                            true /* create */);
+  delegate->CancelExportPasswords();
   return RespondNow(NoArguments());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PasswordsPrivateRequestExportProgressStatusFunction
+
+PasswordsPrivateRequestExportProgressStatusFunction::
+    ~PasswordsPrivateRequestExportProgressStatusFunction() {}
+
+ExtensionFunction::ResponseAction
+PasswordsPrivateRequestExportProgressStatusFunction::Run() {
+  PasswordsPrivateDelegate* delegate =
+      PasswordsPrivateDelegateFactory::GetForBrowserContext(browser_context(),
+                                                            true /* create */);
+  return RespondNow(OneArgument(std::make_unique<base::Value>(
+      ToString(delegate->GetExportProgressStatus()))));
 }
 
 }  // namespace extensions

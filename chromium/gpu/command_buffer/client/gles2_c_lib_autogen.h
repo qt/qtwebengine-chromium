@@ -1444,6 +1444,15 @@ void GL_APIENTRY GLES2VerifySyncTokensCHROMIUM(GLbyte** sync_tokens,
 void GL_APIENTRY GLES2WaitSyncTokenCHROMIUM(const GLbyte* sync_token) {
   gles2::GetGLContext()->WaitSyncTokenCHROMIUM(sync_token);
 }
+void GL_APIENTRY GLES2UnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
+                                                         GLuint dest_id,
+                                                         GLint x,
+                                                         GLint y,
+                                                         GLsizei width,
+                                                         GLsizei height) {
+  gles2::GetGLContext()->UnpremultiplyAndDitherCopyCHROMIUM(
+      source_id, dest_id, x, y, width, height);
+}
 void GL_APIENTRY GLES2DrawBuffersEXT(GLsizei count, const GLenum* bufs) {
   gles2::GetGLContext()->DrawBuffersEXT(count, bufs);
 }
@@ -1755,15 +1764,17 @@ void GL_APIENTRY GLES2UnlockDiscardableTextureCHROMIUM(GLuint texture_id) {
 bool GL_APIENTRY GLES2LockDiscardableTextureCHROMIUM(GLuint texture_id) {
   return gles2::GetGLContext()->LockDiscardableTextureCHROMIUM(texture_id);
 }
-void GL_APIENTRY GLES2BeginRasterCHROMIUM(GLuint texture_id,
-                                          GLuint sk_color,
-                                          GLuint msaa_sample_count,
-                                          GLboolean can_use_lcd_text,
-                                          GLboolean use_distance_field_text,
-                                          GLint pixel_config) {
+void GL_APIENTRY
+GLES2BeginRasterCHROMIUM(GLuint texture_id,
+                         GLuint sk_color,
+                         GLuint msaa_sample_count,
+                         GLboolean can_use_lcd_text,
+                         GLboolean use_distance_field_text,
+                         GLint color_type,
+                         GLuint color_space_transfer_cache_id) {
   gles2::GetGLContext()->BeginRasterCHROMIUM(
       texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-      use_distance_field_text, pixel_config);
+      use_distance_field_text, color_type, color_space_transfer_cache_id);
 }
 void* GL_APIENTRY GLES2MapRasterCHROMIUM(GLsizeiptr size) {
   return gles2::GetGLContext()->MapRasterCHROMIUM(size);
@@ -2906,6 +2917,11 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
         "glWaitSyncTokenCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glWaitSyncTokenCHROMIUM),
+    },
+    {
+        "glUnpremultiplyAndDitherCopyCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glUnpremultiplyAndDitherCopyCHROMIUM),
     },
     {
         "glDrawBuffersEXT",

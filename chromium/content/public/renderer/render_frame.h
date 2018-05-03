@@ -18,9 +18,9 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "ppapi/features/features.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/TaskType.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebTriggeringEventInfo.h"
@@ -54,6 +54,7 @@ class PluginInstanceThrottler;
 class RenderAccessibility;
 class RenderFrameVisitor;
 class RenderView;
+class SharedURLLoaderFactory;
 struct ContextMenuParams;
 struct WebPluginInfo;
 struct WebPreferences;
@@ -261,9 +262,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Set the accessibility mode to force creation of RenderAccessibility.
   virtual void SetAccessibilityModeForTest(ui::AXMode new_mode) = 0;
 
-  // Returns the URLLoaderFactory for the given GURL
-  virtual network::mojom::URLLoaderFactory* GetURLLoaderFactory(
-      const GURL& request_url) = 0;
+  virtual scoped_refptr<SharedURLLoaderFactory> GetURLLoaderFactory() = 0;
 
  protected:
   ~RenderFrame() override {}

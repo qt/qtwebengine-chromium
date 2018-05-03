@@ -2,10 +2,10 @@ include_rules = [
   "+mojo",
   "+net",
   "+services/network/public/cpp",
-  "+services/network/public/interfaces",
+  "+services/network/public/mojom",
   "+sql",
   "+third_party/leveldatabase",
   "+third_party/sqlite",
-  "+third_party/WebKit/common",
+  "+third_party/WebKit/public/mojom",
   "+third_party/WebKit/public/platform",
 ]

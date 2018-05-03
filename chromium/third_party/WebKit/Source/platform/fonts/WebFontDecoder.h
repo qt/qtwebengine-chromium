@@ -34,7 +34,8 @@
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/text/WTFString.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
-#include "third_party/skia/include/core/SkTypeface.h"
+
+class SkTypeface;
 
 namespace blink {
 
@@ -49,7 +50,6 @@ class WebFontDecoder final {
   sk_sp<SkTypeface> Decode(SharedBuffer*);
   size_t DecodedSize() const { return decoded_size_; }
 
-  static bool SupportsFormat(const String&);
   String GetErrorString() const { return ots_error_string_; }
 
  private:

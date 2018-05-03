@@ -34,7 +34,6 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/SubresourceFilter.h"
-#include "platform/network/NetworkUtils.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebDocumentSubresourceFilter.h"
 #include "public/platform/WebURL.h"
@@ -43,35 +42,6 @@
 #include "public/platform/modules/serviceworker/WebServiceWorkerNetworkProvider.h"
 
 namespace blink {
-
-namespace {
-
-bool IsHttpOrHttpsOrigin(const WebSecurityOrigin& origin) {
-  return origin.Protocol() == "http" || origin.Protocol() == "https";
-}
-
-}  // anonymous namespace
-
-// static
-bool WebDocumentLoader::ShouldPersistUserActivation(
-    const WebSecurityOrigin& previous_origin,
-    const WebSecurityOrigin& new_origin) {
-  if (previous_origin.IsNull() || new_origin.IsNull())
-    return false;
-
-  if (!IsHttpOrHttpsOrigin(previous_origin) || !IsHttpOrHttpsOrigin(new_origin))
-    return false;
-
-  if (previous_origin.Host() == new_origin.Host())
-    return true;
-
-  String previous_domain = NetworkUtils::GetDomainAndRegistry(
-      previous_origin.Host(), NetworkUtils::kIncludePrivateRegistries);
-  String new_domain = NetworkUtils::GetDomainAndRegistry(
-      new_origin.Host(), NetworkUtils::kIncludePrivateRegistries);
-
-  return !previous_domain.IsEmpty() && previous_domain == new_domain;
-}
 
 WebDocumentLoaderImpl* WebDocumentLoaderImpl::Create(
     LocalFrame* frame,
@@ -116,10 +86,10 @@ void WebDocumentLoaderImpl::UpdateNavigation(double redirect_start_time,
   // Updates the redirection timing if there is at least one redirection
   // (between two URLs).
   if (has_redirect) {
-    GetTiming().SetRedirectStart(redirect_start_time);
-    GetTiming().SetRedirectEnd(redirect_end_time);
+    GetTiming().SetRedirectStart(TimeTicksFromSeconds(redirect_start_time));
+    GetTiming().SetRedirectEnd(TimeTicksFromSeconds(redirect_end_time));
   }
-  GetTiming().SetFetchStart(fetch_start_time);
+  GetTiming().SetFetchStart(TimeTicksFromSeconds(fetch_start_time));
 }
 
 void WebDocumentLoaderImpl::RedirectChain(WebVector<WebURL>& result) const {
@@ -149,7 +119,7 @@ void WebDocumentLoaderImpl::SetExtraData(ExtraData* extra_data) {
 }
 
 void WebDocumentLoaderImpl::SetNavigationStartTime(double navigation_start) {
-  GetTiming().SetNavigationStart(navigation_start);
+  GetTiming().SetNavigationStart(TimeTicksFromSeconds(navigation_start));
 }
 
 WebNavigationType WebDocumentLoaderImpl::ToWebNavigationType(
@@ -226,6 +196,22 @@ void WebDocumentLoaderImpl::ResetSourceLocation() {
 
 void WebDocumentLoaderImpl::SetUserActivated() {
   DocumentLoader::SetUserActivated();
+}
+
+void WebDocumentLoaderImpl::SetIsAdSubframe(bool is_ad_subframe) {
+  GetSubresourceFilter()->SetIsAdSubframe(is_ad_subframe);
+}
+
+bool WebDocumentLoaderImpl::GetIsAdSubframe() const {
+  return GetSubresourceFilter()->GetIsAdSubframe();
+}
+
+void WebDocumentLoaderImpl::BlockParser() {
+  DocumentLoader::BlockParser();
+}
+
+void WebDocumentLoaderImpl::ResumeParser() {
+  DocumentLoader::ResumeParser();
 }
 
 void WebDocumentLoaderImpl::Trace(blink::Visitor* visitor) {

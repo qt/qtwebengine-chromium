@@ -102,11 +102,11 @@ void RemoteFrameClientImpl::FrameFocused() const {
     web_frame_->Client()->FrameFocused();
 }
 
-String RemoteFrameClientImpl::GetDevToolsFrameToken() const {
+base::UnguessableToken RemoteFrameClientImpl::GetDevToolsFrameToken() const {
   if (web_frame_->Client()) {
     return web_frame_->Client()->GetDevToolsFrameToken();
   }
-  return g_empty_string;
+  return base::UnguessableToken::Create();
 }
 
 void RemoteFrameClientImpl::Navigate(const ResourceRequest& request,
@@ -135,14 +135,29 @@ unsigned RemoteFrameClientImpl::BackForwardLength() {
   return 2;
 }
 
+void RemoteFrameClientImpl::CheckCompleted() {
+  web_frame_->Client()->CheckCompleted();
+}
+
 void RemoteFrameClientImpl::ForwardPostMessage(
     MessageEvent* event,
     scoped_refptr<const SecurityOrigin> target,
     LocalFrame* source_frame) const {
+  // Restrict the user gesture to be forwarded cross-process at most once. This
+  // helps avoid unbounded usage of the same user gesture by issuing multiple
+  // postMessages to OOPIFs from this process.  A complementary restriction on
+  // the receiver side prevents unbounded chaining of user gestures across
+  // processes.
+  bool has_user_gesture = UserGestureIndicator::ProcessingUserGesture() &&
+                          !UserGestureIndicator::WasForwardedCrossProcess();
+  if (has_user_gesture)
+    UserGestureIndicator::SetWasForwardedCrossProcess();
+
   if (web_frame_->Client()) {
     web_frame_->Client()->ForwardPostMessage(
         WebLocalFrameImpl::FromFrame(source_frame), web_frame_,
-        WebSecurityOrigin(std::move(target)), WebDOMMessageEvent(event));
+        WebSecurityOrigin(std::move(target)), WebDOMMessageEvent(event),
+        has_user_gesture);
   }
 }
 
@@ -176,6 +191,11 @@ void RemoteFrameClientImpl::UpdateRenderThrottlingStatus(
     bool subtree_throttled) {
   web_frame_->Client()->UpdateRenderThrottlingStatus(is_throttled,
                                                      subtree_throttled);
+}
+
+uint32_t RemoteFrameClientImpl::Print(const IntRect& rect,
+                                      WebCanvas* canvas) const {
+  return web_frame_->Client()->Print(rect, canvas);
 }
 
 }  // namespace blink

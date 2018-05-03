@@ -16,6 +16,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/user_action_tester.h"
 #include "build/build_config.h"
 #include "components/password_manager/core/browser/form_fetcher_impl.h"
 #include "components/password_manager/core/browser/mock_password_store.h"
@@ -48,9 +49,7 @@ namespace {
 
 class MockStoreResultFilter : public StubCredentialsFilter {
  public:
-  MOCK_CONST_METHOD2(ShouldSave,
-                     bool(const autofill::PasswordForm& form,
-                          const GURL& main_frame_url));
+  MOCK_CONST_METHOD1(ShouldSave, bool(const autofill::PasswordForm& form));
   MOCK_CONST_METHOD1(ReportFormLoginSuccess,
                      void(const PasswordFormManager& form_manager));
 };
@@ -61,7 +60,7 @@ class MockPasswordManagerClient : public StubPasswordManagerClient {
     EXPECT_CALL(*this, GetStoreResultFilter())
         .Times(AnyNumber())
         .WillRepeatedly(Return(&filter_));
-    ON_CALL(filter_, ShouldSave(_, _)).WillByDefault(Return(true));
+    ON_CALL(filter_, ShouldSave(_)).WillByDefault(Return(true));
   }
 
   MOCK_CONST_METHOD0(IsSavingAndFillingEnabledForCurrentPage, bool());
@@ -100,7 +99,7 @@ class MockPasswordManagerClient : public StubPasswordManagerClient {
   }
 
   void FilterAllResultsForSaving() {
-    EXPECT_CALL(filter_, ShouldSave(_, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(filter_, ShouldSave(_)).WillRepeatedly(Return(false));
   }
 
  private:
@@ -535,6 +534,8 @@ TEST_F(PasswordManagerTest, DontSaveAlreadySavedCredential) {
   EXPECT_THAT(form_manager_to_save->pending_credentials(),
               FormMatches(incomplete_match));
 
+  base::UserActionTester user_action_tester;
+
   // The user completes typing the credential. No fallback should be available,
   // because the credential is already in the store.
   EXPECT_CALL(client_, ShowManualFallbackForSavingPtr(_, false, true)).Times(0);
@@ -549,6 +550,8 @@ TEST_F(PasswordManagerTest, DontSaveAlreadySavedCredential) {
   observed.clear();
   manager()->OnPasswordFormsParsed(&driver_, observed);
   manager()->OnPasswordFormsRendered(&driver_, observed, true);
+  EXPECT_EQ(1,
+            user_action_tester.GetActionCount("PasswordManager_LoginPassed"));
 }
 
 TEST_F(PasswordManagerTest, FormSeenThenLeftPage) {
@@ -761,7 +764,7 @@ TEST_F(PasswordManagerTest, SyncCredentialsNotSaved) {
   EXPECT_CALL(client_, PromptUserToSaveOrUpdatePasswordPtr(_)).Times(0);
   EXPECT_CALL(*store_, AddLogin(_)).Times(0);
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
-  EXPECT_CALL(*store_, SaveSyncPasswordHash(form.password_value));
+  EXPECT_CALL(*store_, SaveSyncPasswordHash(form.password_value, _));
 #endif
   // Prefs are needed for failure logging about sync credentials.
   EXPECT_CALL(client_, GetPrefs()).WillRepeatedly(Return(nullptr));
@@ -809,7 +812,7 @@ TEST_F(PasswordManagerTest, ReportFormLoginSuccessAndShouldSaveCalled) {
 
   PasswordForm submitted_form = observed_form;
   submitted_form.preferred = true;
-  EXPECT_CALL(*client_.GetStoreResultFilter(), ShouldSave(submitted_form, _));
+  EXPECT_CALL(*client_.GetStoreResultFilter(), ShouldSave(submitted_form));
   EXPECT_CALL(*store_, UpdateLogin(_));
   observed.clear();
   manager()->OnPasswordFormsParsed(&driver_, observed);
@@ -839,7 +842,7 @@ TEST_F(PasswordManagerTest, SyncCredentialsNotDroppedIfUpToDate) {
       .WillRepeatedly(Return(true));
   EXPECT_CALL(client_, GetPrefs()).WillRepeatedly(Return(nullptr));
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
-  EXPECT_CALL(*store_, SaveSyncPasswordHash(form.password_value));
+  EXPECT_CALL(*store_, SaveSyncPasswordHash(form.password_value, _));
 #endif
   manager()->ProvisionallySavePassword(form, nullptr);
 
@@ -875,7 +878,7 @@ TEST_F(PasswordManagerTest, SyncCredentialsDroppedWhenObsolete) {
       .WillRepeatedly(Return(true));
   EXPECT_CALL(client_, GetPrefs()).WillRepeatedly(Return(nullptr));
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
-  EXPECT_CALL(*store_, SaveSyncPasswordHash(ASCIIToUTF16("n3w passw0rd")));
+  EXPECT_CALL(*store_, SaveSyncPasswordHash(ASCIIToUTF16("n3w passw0rd"), _));
 #endif
   manager()->ProvisionallySavePassword(updated_form, nullptr);
 
@@ -1135,7 +1138,7 @@ TEST_F(PasswordManagerTest, FillPasswordOnManyFrames) {
   manager()->OnPasswordFormsParsed(&driver_b, observed);
 }
 
-TEST_F(PasswordManagerTest, InPageNavigation) {
+TEST_F(PasswordManagerTest, SameDocumentNavigation) {
   // Test that observing a newly submitted form shows the save password bar on
   // call in page navigation.
   std::vector<PasswordForm> observed;
@@ -1153,7 +1156,7 @@ TEST_F(PasswordManagerTest, InPageNavigation) {
   EXPECT_CALL(client_, PromptUserToSaveOrUpdatePasswordPtr(_))
       .WillOnce(WithArg<0>(SaveToScopedPtr(&form_manager_to_save)));
 
-  manager()->OnInPageNavigation(&driver_, form);
+  manager()->OnSameDocumentNavigation(&driver_, form);
   ASSERT_TRUE(form_manager_to_save);
 
   // Simulate saving the form, as if the info bar was accepted.
@@ -1164,7 +1167,7 @@ TEST_F(PasswordManagerTest, InPageNavigation) {
   form_manager_to_save->Save();
 }
 
-TEST_F(PasswordManagerTest, InPageNavigationBlacklistedSite) {
+TEST_F(PasswordManagerTest, SameDocumentBlacklistedSite) {
   // Test that observing a newly submitted form on blacklisted site does notify
   // the embedder on call in page navigation.
   std::vector<PasswordForm> observed;
@@ -1188,7 +1191,7 @@ TEST_F(PasswordManagerTest, InPageNavigationBlacklistedSite) {
   EXPECT_CALL(client_, PromptUserToSaveOrUpdatePasswordPtr(_))
       .WillOnce(WithArg<0>(SaveToScopedPtr(&form_manager_to_save)));
 
-  manager()->OnInPageNavigation(&driver_, form);
+  manager()->OnSameDocumentNavigation(&driver_, form);
   EXPECT_TRUE(form_manager_to_save->IsBlacklisted());
 }
 
@@ -1951,7 +1954,7 @@ TEST_F(PasswordManagerTest, NotSavingSyncPasswordHash_NoUsername) {
   client_.FilterAllResultsForSaving();
 
   // Check that no sync credential password hash is saved.
-  EXPECT_CALL(*store_, SaveSyncPasswordHash(_)).Times(0);
+  EXPECT_CALL(*store_, SaveSyncPasswordHash(_, _)).Times(0);
   OnPasswordFormSubmitted(form);
   observed.clear();
   manager()->OnPasswordFormsRendered(&driver_, observed, true);
@@ -1973,7 +1976,7 @@ TEST_F(PasswordManagerTest, NotSavingSyncPasswordHash_NotSyncCredentials) {
 
   // Check that no sync credential password hash is saved since these
   // credentials are eligible for saving.
-  EXPECT_CALL(*store_, SaveSyncPasswordHash(_)).Times(0);
+  EXPECT_CALL(*store_, SaveSyncPasswordHash(_, _)).Times(0);
 
   std::unique_ptr<PasswordFormManager> form_manager_to_save;
   EXPECT_CALL(client_, PromptUserToSaveOrUpdatePasswordPtr(_))
@@ -2202,7 +2205,11 @@ TEST_F(PasswordManagerTest, SaveSyncPasswordHashOnChangePasswordPage) {
       .WillRepeatedly(Return(true));
   EXPECT_CALL(client_, GetPrefs()).WillRepeatedly(Return(nullptr));
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
-  EXPECT_CALL(*store_, SaveSyncPasswordHash(form.new_password_value));
+  EXPECT_CALL(
+      *store_,
+      SaveSyncPasswordHash(
+          form.new_password_value,
+          metrics_util::SyncPasswordHashChange::CHANGED_IN_CONTENT_AREA));
 #endif
   client_.FilterAllResultsForSaving();
   OnPasswordFormSubmitted(form);

@@ -22,6 +22,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "base/version.h"
+#include "build/build_config.h"
 #include "components/component_updater/component_updater_paths.h"
 #include "components/component_updater/component_updater_service.h"
 #include "components/update_client/component_unpacker.h"
@@ -182,7 +183,7 @@ void ComponentInstaller::Install(const base::FilePath& unpack_path,
   // returned.
   main_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&ComponentInstaller::ComponentReady, this,
-                                base::Passed(std::move(manifest))));
+                                std::move(manifest)));
   main_task_runner_->PostTask(FROM_HERE,
                               base::BindOnce(std::move(callback), result));
 }
@@ -205,7 +206,7 @@ bool ComponentInstaller::Uninstall() {
 
 bool ComponentInstaller::FindPreinstallation(
     const base::FilePath& root,
-    const scoped_refptr<RegistrationInfo>& registration_info) {
+    scoped_refptr<RegistrationInfo> registration_info) {
   base::FilePath path = root.Append(installer_policy_->GetRelativeInstallDir());
   if (!base::PathExists(path)) {
     DVLOG(1) << "Relative install dir does not exist: " << path.MaybeAsASCII();
@@ -248,7 +249,7 @@ bool ComponentInstaller::FindPreinstallation(
 }
 
 void ComponentInstaller::StartRegistration(
-    const scoped_refptr<RegistrationInfo>& registration_info) {
+    scoped_refptr<RegistrationInfo> registration_info) {
   VLOG(1) << __func__ << " for " << installer_policy_->GetName();
   DCHECK(task_runner_.get());
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
@@ -390,7 +391,7 @@ void ComponentInstaller::UninstallOnTaskRunner() {
 }
 
 void ComponentInstaller::FinishRegistration(
-    const scoped_refptr<RegistrationInfo>& registration_info,
+    scoped_refptr<RegistrationInfo> registration_info,
     ComponentUpdateService* cus,
     base::OnceClosure callback) {
   VLOG(1) << __func__ << " for " << installer_policy_->GetName();

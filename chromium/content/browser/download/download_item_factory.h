@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// The DownloadItemFactory is used to produce different DownloadItems.
+// The DownloadItemFactory is used to produce different download::DownloadItems.
 // It is separate from the DownloadManager to allow download manager
 // unit tests to control the items produced.
 
@@ -15,21 +15,23 @@
 #include <string>
 #include <vector>
 
-#include "content/public/browser/download_item.h"
+#include "components/download/public/common/download_item.h"
 
 class GURL;
 
 namespace base {
 class FilePath;
-}
+}  // namespace base
+
+namespace download {
+struct DownloadCreateInfo;
+class DownloadRequestHandleInterface;
+}  // namespace download
 
 namespace content {
 
-class DownloadItem;
 class DownloadItemImpl;
 class DownloadItemImplDelegate;
-class DownloadRequestHandleInterface;
-struct DownloadCreateInfo;
 
 class DownloadItemFactory {
 public:
@@ -55,18 +57,19 @@ public:
       int64_t received_bytes,
       int64_t total_bytes,
       const std::string& hash,
-      DownloadItem::DownloadState state,
-      DownloadDangerType danger_type,
-      DownloadInterruptReason interrupt_reason,
+      download::DownloadItem::DownloadState state,
+      download::DownloadDangerType danger_type,
+      download::DownloadInterruptReason interrupt_reason,
       bool opened,
       base::Time last_access_time,
       bool transient,
-      const std::vector<DownloadItem::ReceivedSlice>& received_slices) = 0;
+      const std::vector<download::DownloadItem::ReceivedSlice>&
+          received_slices) = 0;
 
   virtual DownloadItemImpl* CreateActiveItem(
       DownloadItemImplDelegate* delegate,
       uint32_t download_id,
-      const DownloadCreateInfo& info) = 0;
+      const download::DownloadCreateInfo& info) = 0;
 
   virtual DownloadItemImpl* CreateSavePageItem(
       DownloadItemImplDelegate* delegate,
@@ -74,7 +77,8 @@ public:
       const base::FilePath& path,
       const GURL& url,
       const std::string& mime_type,
-      std::unique_ptr<DownloadRequestHandleInterface> request_handle) = 0;
+      std::unique_ptr<download::DownloadRequestHandleInterface>
+          request_handle) = 0;
 };
 
 }  // namespace content

@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "base/bind_helpers.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
@@ -119,15 +120,13 @@ TEST_F(MediaStorageUtilTest, DetectDeviceFiltered) {
   MediaStorageUtil::DeviceIdSet devices;
   devices.insert(kImageCaptureDeviceId);
 
-  MediaStorageUtil::FilterAttachedDevices(&devices,
-                                          base::Bind(&base::DoNothing));
+  MediaStorageUtil::FilterAttachedDevices(&devices, base::DoNothing());
   RunUntilIdle();
   EXPECT_FALSE(devices.find(kImageCaptureDeviceId) != devices.end());
 
   ProcessAttach(kImageCaptureDeviceId, FILE_PATH_LITERAL("/location"));
   devices.insert(kImageCaptureDeviceId);
-  MediaStorageUtil::FilterAttachedDevices(&devices,
-                                          base::Bind(&base::DoNothing));
+  MediaStorageUtil::FilterAttachedDevices(&devices, base::DoNothing());
   RunUntilIdle();
 
   EXPECT_TRUE(devices.find(kImageCaptureDeviceId) != devices.end());

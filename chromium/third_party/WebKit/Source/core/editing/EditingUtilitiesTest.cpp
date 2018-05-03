@@ -110,7 +110,7 @@ TEST_F(EditingUtilitiesTest, isEditablePositionWithTable) {
   // However, |setBodyContent()| automatically creates HTML, HEAD and BODY
   // element. So, we build DOM tree manually.
   // Note: This is unusual HTML taken from http://crbug.com/574230
-  Element* table = GetDocument().createElement("table");
+  Element* table = GetDocument().CreateRawElement(HTMLNames::tableTag);
   table->SetInnerHTMLFromString("<caption>foo</caption>");
   while (GetDocument().firstChild())
     GetDocument().firstChild()->remove();
@@ -242,36 +242,6 @@ TEST_F(EditingUtilitiesTest, NextVisuallyDistinctCandidate) {
             NextVisuallyDistinctCandidate(Position(one, 1)));
   EXPECT_EQ(PositionInFlatTree(three->firstChild(), 1),
             NextVisuallyDistinctCandidate(PositionInFlatTree(one, 1)));
-}
-
-TEST_F(EditingUtilitiesTest, AreaIdenticalElements) {
-  SetBodyContent(
-      "<style>li:nth-child(even) { -webkit-user-modify: read-write; "
-      "}</style><ul><li>first item</li><li>second item</li><li "
-      "class=foo>third</li><li>fourth</li></ul>");
-  StaticElementList* items =
-      GetDocument().QuerySelectorAll("li", ASSERT_NO_EXCEPTION);
-  DCHECK_EQ(items->length(), 4u);
-
-  EXPECT_FALSE(AreIdenticalElements(*items->item(0)->firstChild(),
-                                    *items->item(1)->firstChild()))
-      << "Can't merge non-elements.  e.g. Text nodes";
-
-  // Compare a LI and a UL.
-  EXPECT_FALSE(
-      AreIdenticalElements(*items->item(0), *items->item(0)->parentNode()))
-      << "Can't merge different tag names.";
-
-  EXPECT_FALSE(AreIdenticalElements(*items->item(0), *items->item(2)))
-      << "Can't merge a element with no attributes and another element with an "
-         "attribute.";
-
-  // We can't use contenteditable attribute to make editability difference
-  // because the hasEquivalentAttributes check is done earier.
-  EXPECT_FALSE(AreIdenticalElements(*items->item(0), *items->item(1)))
-      << "Can't merge non-editable nodes.";
-
-  EXPECT_TRUE(AreIdenticalElements(*items->item(1), *items->item(3)));
 }
 
 TEST_F(EditingUtilitiesTest, uncheckedPreviousNextOffset_FirstLetter) {
@@ -799,6 +769,12 @@ TEST_F(EditingUtilitiesTest, previousPositionOf_Backspace_TextTransform) {
   EXPECT_EQ(Position(node, 0),
             PreviousPositionOf(Position(node, 1),
                                PositionMoveType::kBackwardDeletion));
+}
+
+TEST_F(EditingUtilitiesTest, IsTabHTMLSpanElementOnDisplayNone) {
+  SetBodyContent("<span style=\"display:none\">\t</span>");
+  const Node* const node = GetDocument().QuerySelector("span");
+  EXPECT_EQ(false, IsTabHTMLSpanElement(node));
 }
 
 TEST_F(EditingUtilitiesTest, previousPositionOf_Backspace_SurrogatePairs) {

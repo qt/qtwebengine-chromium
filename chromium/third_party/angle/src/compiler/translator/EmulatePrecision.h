@@ -24,7 +24,7 @@ namespace sh
 class EmulatePrecision : public TLValueTrackingTraverser
 {
   public:
-    EmulatePrecision(TSymbolTable *symbolTable, int shaderVersion);
+    EmulatePrecision(TSymbolTable *symbolTable);
 
     void visitSymbol(TIntermSymbol *node) override;
     bool visitBinary(Visit visit, TIntermBinary *node) override;
@@ -59,10 +59,11 @@ class EmulatePrecision : public TLValueTrackingTraverser
         }
     };
 
-    TFunction *getInternalFunction(TString *functionName,
-                                   const TType &returnType,
-                                   TIntermSequence *arguments,
-                                   bool knownToNotHaveSideEffects);
+    const TFunction *getInternalFunction(const ImmutableString &functionName,
+                                         const TType &returnType,
+                                         TIntermSequence *arguments,
+                                         const TVector<TConstParameter> &parameters,
+                                         bool knownToNotHaveSideEffects);
     TIntermAggregate *createRoundingFunctionCallNode(TIntermTyped *roundedChild);
     TIntermAggregate *createCompoundAssignmentFunctionCallNode(TIntermTyped *left,
                                                                TIntermTyped *right,
@@ -75,7 +76,7 @@ class EmulatePrecision : public TLValueTrackingTraverser
     EmulationSet mEmulateCompoundDiv;
 
     // Map from mangled name to function.
-    TMap<TString, TFunction *> mInternalFunctions;
+    TMap<ImmutableString, const TFunction *> mInternalFunctions;
 
     bool mDeclaringVariables;
 };

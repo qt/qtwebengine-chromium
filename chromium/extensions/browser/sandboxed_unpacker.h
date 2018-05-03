@@ -14,11 +14,16 @@
 #include "base/memory/ref_counted_delete_on_sequence.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
+#include "base/strings/string_piece.h"
 #include "base/time/time.h"
 #include "content/public/browser/utility_process_mojo_client.h"
 #include "extensions/browser/crx_file_info.h"
+#include "extensions/browser/image_sanitizer.h"
 #include "extensions/browser/install/crx_install_error.h"
+#include "extensions/browser/json_file_sanitizer.h"
 #include "extensions/common/manifest.h"
+#include "services/data_decoder/public/mojom/json_parser.mojom.h"
+#include "services/service_manager/public/cpp/identity.h"
 
 class SkBitmap;
 
@@ -26,6 +31,10 @@ namespace base {
 class DictionaryValue;
 class ListValue;
 class SequencedTaskRunner;
+}
+
+namespace service_manager {
+class Connector;
 }
 
 namespace extensions {
@@ -101,6 +110,8 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   // passing the |location| and |creation_flags| to Extension::Create. The
   // |extensions_dir| parameter should specify the directory under which we'll
   // create a subdirectory to write the unpacked extension contents.
+  // |connector| must be a fresh connector (not yet associated to any thread) to
+  // the service manager.
   // Note: Because this requires disk I/O, the task runner passed should use
   // TaskShutdownBehavior::SKIP_ON_SHUTDOWN to ensure that either the task is
   // fully run (if initiated before shutdown) or not run at all (if shutdown is
@@ -110,6 +121,7 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   // TODO(devlin): SKIP_ON_SHUTDOWN is also not quite sufficient for this. We
   // should probably instead be using base::ImportantFileWriter or similar.
   SandboxedUnpacker(
+      std::unique_ptr<service_manager::Connector> connector,
       Manifest::Location location,
       int creation_flags,
       const base::FilePath& extensions_dir,
@@ -168,8 +180,8 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
     ERROR_SAVING_MANIFEST_JSON,
 
     // SandboxedUnpacker::RewriteImageFiles()
-    COULD_NOT_READ_IMAGE_DATA_FROM_DISK,
-    DECODED_IMAGES_DO_NOT_MATCH_THE_MANIFEST,
+    COULD_NOT_READ_IMAGE_DATA_FROM_DISK_UNUSED,
+    DECODED_IMAGES_DO_NOT_MATCH_THE_MANIFEST_UNUSED,
     INVALID_PATH_FOR_BROWSER_IMAGE,
     ERROR_REMOVING_OLD_IMAGE_FILE,
     INVALID_PATH_FOR_BITMAP_IMAGE,
@@ -178,9 +190,9 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
     DEPRECATED_ABORTED_DUE_TO_SHUTDOWN,  // No longer used; kept for UMA.
 
     // SandboxedUnpacker::RewriteCatalogFiles()
-    COULD_NOT_READ_CATALOG_DATA_FROM_DISK,
+    COULD_NOT_READ_CATALOG_DATA_FROM_DISK_UNUSED,
     INVALID_CATALOG_DATA,
-    INVALID_PATH_FOR_CATALOG,
+    INVALID_PATH_FOR_CATALOG_UNUSED,
     ERROR_SERIALIZING_CATALOG,
     ERROR_SAVING_CATALOG,
 
@@ -229,16 +241,36 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
 
   // Unpacks the extension in directory and returns the manifest.
   void Unpack(const base::FilePath& directory);
-  void UnpackDone(const base::string16& error,
-                  std::unique_ptr<base::DictionaryValue> manifest,
-                  std::unique_ptr<base::ListValue> json_ruleset);
-  void UnpackExtensionSucceeded(std::unique_ptr<base::DictionaryValue> manifest,
-                                std::unique_ptr<base::ListValue> json_ruleset);
+  void ReadManifestDone(std::unique_ptr<base::Value> manifest,
+                        const base::Optional<std::string>& error);
+  void UnpackExtensionSucceeded(
+      std::unique_ptr<base::DictionaryValue> manifest);
   void UnpackExtensionFailed(const base::string16& error);
+
+  void ReportUnpackingError(base::StringPiece error);
+
+  void ImageSanitizationDone(std::unique_ptr<base::DictionaryValue> manifest,
+                             ImageSanitizer::Status status,
+                             const base::FilePath& path);
+  void ImageSanitizerDecodedImage(const base::FilePath& path, SkBitmap image);
+
+  void ReadMessageCatalogs(std::unique_ptr<base::DictionaryValue> manifest);
+
+  void SanitizeMessageCatalogs(
+      std::unique_ptr<base::DictionaryValue> manifest,
+      const std::set<base::FilePath>& message_catalog_paths);
+
+  void MessageCatalogsSanitized(std::unique_ptr<base::DictionaryValue> manifest,
+                                JsonFileSanitizer::Status status,
+                                const std::string& error_msg);
+
+  void ReadJSONRulesetIfNeeded(std::unique_ptr<base::DictionaryValue> manifest);
+  void ReadJSONRulesetDone(std::unique_ptr<base::DictionaryValue> manifest,
+                           std::unique_ptr<base::Value> json_ruleset,
+                           const base::Optional<std::string>& error);
 
   // Reports unpack success or failure, or unzip failure.
   void ReportSuccess(std::unique_ptr<base::DictionaryValue> original_manifest,
-                     const SkBitmap& install_icon,
                      const base::Optional<int>& dnr_ruleset_checksum);
   void ReportFailure(FailureReason reason, const base::string16& error);
 
@@ -246,11 +278,6 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   // Returns NULL on error. Caller owns the returned object.
   base::DictionaryValue* RewriteManifestFile(
       const base::DictionaryValue& manifest);
-
-  // Overwrites original files with safe results from utility process.
-  // Reports error and returns false if it fails.
-  bool RewriteImageFiles(SkBitmap* install_icon);
-  bool RewriteCatalogFiles();
 
   // Cleans up temp directory artifacts.
   void Cleanup();
@@ -262,6 +289,18 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   bool IndexAndPersistRulesIfNeeded(
       std::unique_ptr<base::ListValue> json_ruleset,
       base::Optional<int>* dnr_ruleset_checksum);
+
+  // Returns a JsonParser that can be used on the |unpacker_io_task_runner|.
+  data_decoder::mojom::JsonParser* GetJsonParserPtr();
+
+  // Parses the JSON file at |path| and invokes |callback| when done. |callback|
+  // is called with a null parameter if parsing failed.
+  // This must be called from the |unpacker_io_task_runner_|.
+  void ParseJsonFile(const base::FilePath& path,
+                     data_decoder::mojom::JsonParser::ParseCallback callback);
+
+  // Connector to the ServiceManager required by the Unzip API.
+  std::unique_ptr<service_manager::Connector> connector_;
 
   // If we unpacked a CRX file, we hold on to the path name for use
   // in various histograms.
@@ -306,6 +345,28 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   // Utility client used for sending tasks to the utility process.
   std::unique_ptr<content::UtilityProcessMojoClient<mojom::ExtensionUnpacker>>
       utility_process_mojo_client_;
+
+  // The normalized path of the install icon path, retrieved from the manifest.
+  base::FilePath install_icon_path_;
+
+  // The decoded install icon.
+  SkBitmap install_icon_;
+
+  // The identity used to connect to the data decoder service. It is unique to
+  // this SandboxedUnpacker instance so that data decoder operations for
+  // unpacking this extension share the same process, and so that no unrelated
+  // data decoder operation use that process.
+  service_manager::Identity data_decoder_identity_;
+
+  // The JSONParser interface pointer from the data decoder service.
+  data_decoder::mojom::JsonParserPtr json_parser_ptr_;
+
+  // The ImageSanitizer used to clean-up images.
+  std::unique_ptr<ImageSanitizer> image_sanitizer_;
+
+  // Used during the message catalog rewriting phase to sanitize the extension
+  // provided message catalogs.
+  std::unique_ptr<JsonFileSanitizer> json_file_sanitizer_;
 
   DISALLOW_COPY_AND_ASSIGN(SandboxedUnpacker);
 };

@@ -182,11 +182,6 @@ EGLenum Surface::getSurfaceType() const
 	return config->mSurfaceType;
 }
 
-sw::Format Surface::getInternalFormat() const
-{
-	return config->mRenderTargetFormat;
-}
-
 EGLint Surface::getWidth() const
 {
 	return width;
@@ -274,7 +269,9 @@ bool WindowSurface::checkForResize()
 {
 	#if defined(_WIN32)
 		RECT client;
-		if(!GetClientRect(window, &client))
+		BOOL status = GetClientRect(window, &client);
+
+		if(status == 0)
 		{
 			return error(EGL_BAD_NATIVE_WINDOW, false);
 		}
@@ -286,7 +283,12 @@ bool WindowSurface::checkForResize()
 		int windowHeight; window->query(window, NATIVE_WINDOW_HEIGHT, &windowHeight);
 	#elif defined(__linux__)
 		XWindowAttributes windowAttributes;
-		libX11->XGetWindowAttributes((::Display*)display->getNativeDisplay(), window, &windowAttributes);
+		Status status = libX11->XGetWindowAttributes((::Display*)display->getNativeDisplay(), window, &windowAttributes);
+
+		if(status == 0)
+		{
+			return error(EGL_BAD_NATIVE_WINDOW, false);
+		}
 
 		int windowWidth = windowAttributes.width;
 		int windowHeight = windowAttributes.height;
@@ -294,6 +296,10 @@ bool WindowSurface::checkForResize()
 		int windowWidth;
 		int windowHeight;
 		sw::OSX::GetNativeWindowSize(window, windowWidth, windowHeight);
+	#elif defined(__Fuchsia__)
+		// TODO(crbug.com/800951): Integrate with Mozart.
+		int windowWidth = 100;
+		int windowHeight = 100;
 	#else
 		#error "WindowSurface::checkForResize unimplemented for this platform"
 	#endif

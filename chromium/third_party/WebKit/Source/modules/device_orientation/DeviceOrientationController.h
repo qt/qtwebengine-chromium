@@ -20,9 +20,10 @@ class MODULES_EXPORT DeviceOrientationController
   USING_GARBAGE_COLLECTED_MIXIN(DeviceOrientationController);
 
  public:
+  static const char kSupplementName[];
+
   ~DeviceOrientationController() override;
 
-  static const char* SupplementName();
   static DeviceOrientationController& From(Document&);
 
   // Inherited from DeviceSingleWindowEventController.
@@ -34,6 +35,10 @@ class MODULES_EXPORT DeviceOrientationController
   void ClearOverride();
 
   virtual void Trace(blink::Visitor*);
+
+  static void LogToConsolePolicyFeaturesDisabled(
+      LocalFrame*,
+      const AtomicString& event_name);
 
  protected:
   explicit DeviceOrientationController(Document&);

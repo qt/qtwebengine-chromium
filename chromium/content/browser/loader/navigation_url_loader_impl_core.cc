@@ -22,7 +22,7 @@
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "services/network/public/cpp/resource_response.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "storage/browser/fileapi/file_system_context.h"
 
 namespace content {
@@ -143,8 +143,8 @@ void NavigationURLLoaderImplCore::NotifyResponseStarted(
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&NavigationURLLoaderImpl::NotifyResponseStarted, loader_,
-                     response->DeepCopy(), base::Passed(&body), ssl_info,
-                     base::Passed(&navigation_data), request_id, is_download,
+                     response->DeepCopy(), std::move(body), ssl_info,
+                     std::move(navigation_data), request_id, is_download,
                      is_stream));
 }
 

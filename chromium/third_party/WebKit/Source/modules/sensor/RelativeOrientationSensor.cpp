@@ -10,7 +10,7 @@ namespace blink {
 
 RelativeOrientationSensor* RelativeOrientationSensor::Create(
     ExecutionContext* execution_context,
-    const SensorOptions& options,
+    const SpatialSensorOptions& options,
     ExceptionState& exception_state) {
   return new RelativeOrientationSensor(execution_context, options,
                                        exception_state);
@@ -20,19 +20,19 @@ RelativeOrientationSensor* RelativeOrientationSensor::Create(
 RelativeOrientationSensor* RelativeOrientationSensor::Create(
     ExecutionContext* execution_context,
     ExceptionState& exception_state) {
-  return Create(execution_context, SensorOptions(), exception_state);
+  return Create(execution_context, SpatialSensorOptions(), exception_state);
 }
 
 RelativeOrientationSensor::RelativeOrientationSensor(
     ExecutionContext* execution_context,
-    const SensorOptions& options,
+    const SpatialSensorOptions& options,
     ExceptionState& exception_state)
     : OrientationSensor(execution_context,
                         options,
                         exception_state,
                         SensorType::RELATIVE_ORIENTATION_QUATERNION,
-                        {FeaturePolicyFeature::kAccelerometer,
-                         FeaturePolicyFeature::kGyroscope}) {}
+                        {mojom::FeaturePolicyFeature::kAccelerometer,
+                         mojom::FeaturePolicyFeature::kGyroscope}) {}
 
 void RelativeOrientationSensor::Trace(blink::Visitor* visitor) {
   OrientationSensor::Trace(visitor);

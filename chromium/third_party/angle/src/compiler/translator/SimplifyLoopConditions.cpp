@@ -13,6 +13,7 @@
 #include "compiler/translator/IntermNodePatternMatcher.h"
 #include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/IntermTraverse.h"
+#include "compiler/translator/StaticType.h"
 
 namespace sh
 {
@@ -24,8 +25,7 @@ class SimplifyLoopConditionsTraverser : public TLValueTrackingTraverser
 {
   public:
     SimplifyLoopConditionsTraverser(unsigned int conditionsToSimplifyMask,
-                                    TSymbolTable *symbolTable,
-                                    int shaderVersion);
+                                    TSymbolTable *symbolTable);
 
     void traverseLoop(TIntermLoop *node) override;
 
@@ -47,9 +47,8 @@ class SimplifyLoopConditionsTraverser : public TLValueTrackingTraverser
 
 SimplifyLoopConditionsTraverser::SimplifyLoopConditionsTraverser(
     unsigned int conditionsToSimplifyMask,
-    TSymbolTable *symbolTable,
-    int shaderVersion)
-    : TLValueTrackingTraverser(true, false, false, symbolTable, shaderVersion),
+    TSymbolTable *symbolTable)
+    : TLValueTrackingTraverser(true, false, false, symbolTable),
       mFoundLoopToChange(false),
       mInsideLoopInitConditionOrExpression(false),
       mConditionsToSimplify(conditionsToSimplifyMask)
@@ -151,7 +150,7 @@ void SimplifyLoopConditionsTraverser::traverseLoop(TIntermLoop *node)
 
     if (mFoundLoopToChange)
     {
-        TType boolType(EbtBool, EbpUndefined, EvqTemporary);
+        const TType *boolType        = StaticType::Get<EbtBool, EbpUndefined, EvqTemporary, 1, 1>();
         TVariable *conditionVariable = CreateTempVariable(mSymbolTable, boolType);
 
         // Replace the loop condition with a boolean variable that's updated on each iteration.
@@ -291,10 +290,9 @@ void SimplifyLoopConditionsTraverser::traverseLoop(TIntermLoop *node)
 
 void SimplifyLoopConditions(TIntermNode *root,
                             unsigned int conditionsToSimplifyMask,
-                            TSymbolTable *symbolTable,
-                            int shaderVersion)
+                            TSymbolTable *symbolTable)
 {
-    SimplifyLoopConditionsTraverser traverser(conditionsToSimplifyMask, symbolTable, shaderVersion);
+    SimplifyLoopConditionsTraverser traverser(conditionsToSimplifyMask, symbolTable);
     root->traverse(&traverser);
     traverser.updateTree();
 }

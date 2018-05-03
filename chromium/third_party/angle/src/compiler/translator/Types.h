@@ -12,6 +12,7 @@
 
 #include "compiler/translator/BaseTypes.h"
 #include "compiler/translator/Common.h"
+#include "compiler/translator/ImmutableString.h"
 #include "compiler/translator/SymbolUniqueId.h"
 
 namespace sh
@@ -30,22 +31,21 @@ class TField : angle::NonCopyable
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
-    TField(TType *type, const TString *name, const TSourceLoc &line)
+    TField(TType *type, const ImmutableString &name, const TSourceLoc &line)
         : mType(type), mName(name), mLine(line)
     {
-        ASSERT(mName);
     }
 
     // TODO(alokp): We should only return const type.
     // Fix it by tweaking grammar.
     TType *type() { return mType; }
     const TType *type() const { return mType; }
-    const TString &name() const { return *mName; }
+    const ImmutableString &name() const { return mName; }
     const TSourceLoc &line() const { return mLine; }
 
   private:
     TType *mType;
-    const TString *mName;
+    const ImmutableString mName;
     const TSourceLoc mLine;
 };
 
@@ -98,7 +98,7 @@ class TType
           unsigned char ss = 1);
     explicit TType(const TPublicType &p);
     explicit TType(const TStructure *userDef);
-    TType(TInterfaceBlock *interfaceBlockIn,
+    TType(const TInterfaceBlock *interfaceBlockIn,
           TQualifier qualifierIn,
           TLayoutQualifier layoutQualifierIn);
     TType(const TType &t);
@@ -213,8 +213,8 @@ class TType
     // Note that the array element type might still be an array type in GLSL ES version >= 3.10.
     void toArrayElementType();
 
-    TInterfaceBlock *getInterfaceBlock() const { return mInterfaceBlock; }
-    void setInterfaceBlock(TInterfaceBlock *interfaceBlockIn);
+    const TInterfaceBlock *getInterfaceBlock() const { return mInterfaceBlock; }
+    void setInterfaceBlock(const TInterfaceBlock *interfaceBlockIn);
     bool isInterfaceBlock() const { return type == EbtInterfaceBlock; }
 
     bool isVector() const { return primarySize > 1 && secondarySize == 1; }
@@ -309,7 +309,8 @@ class TType
     // several copies of it in the output code is undesirable for performance.
     bool canReplaceWithConstantUnion() const;
 
-    void createSamplerSymbols(const TString &namePrefix,
+    // The char arrays passed in must be pool allocated or static.
+    void createSamplerSymbols(const ImmutableString &namePrefix,
                               const TString &apiNamePrefix,
                               TVector<const TVariable *> *outputSymbols,
                               TMap<const TVariable *, TString> *outputSymbolsToAPINames,
@@ -317,6 +318,8 @@ class TType
 
     // Initializes all lazily-initialized members.
     void realize();
+
+    bool isRealized() const;
 
   private:
     void invalidateMangledName();
@@ -339,7 +342,7 @@ class TType
     // 1) Represents an interface block.
     // 2) Represents the member variable of an unnamed interface block.
     // It's nullptr also for members of named interface blocks.
-    TInterfaceBlock *mInterfaceBlock;
+    const TInterfaceBlock *mInterfaceBlock;
 
     // nullptr unless this is a struct
     const TStructure *mStructure;
@@ -355,7 +358,7 @@ struct TTypeSpecifierNonArray
     TBasicType type;
     unsigned char primarySize;    // size of vector or cols of matrix
     unsigned char secondarySize;  // rows of matrix
-    TStructure *userDef;
+    const TStructure *userDef;
     TSourceLoc line;
 
     // true if the type was defined by a struct specifier rather than a reference to a type name.
@@ -372,7 +375,9 @@ struct TTypeSpecifierNonArray
         isStructSpecifier = false;
     }
 
-    void initializeStruct(TStructure *aUserDef, bool aIsStructSpecifier, const TSourceLoc &aLine)
+    void initializeStruct(const TStructure *aUserDef,
+                          bool aIsStructSpecifier,
+                          const TSourceLoc &aLine)
     {
         type              = EbtStruct;
         primarySize       = 1;
@@ -419,7 +424,7 @@ struct TPublicType
     unsigned char getPrimarySize() const { return typeSpecifierNonArray.primarySize; }
     unsigned char getSecondarySize() const { return typeSpecifierNonArray.secondarySize; }
 
-    TStructure *getUserDef() const { return typeSpecifierNonArray.userDef; }
+    const TStructure *getUserDef() const { return typeSpecifierNonArray.userDef; }
     const TSourceLoc &getLine() const { return typeSpecifierNonArray.line; }
 
     bool isStructSpecifier() const { return typeSpecifierNonArray.isStructSpecifier; }

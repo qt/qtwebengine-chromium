@@ -14,6 +14,7 @@
 
 #include "api/mediastreaminterface.h"
 #include "pc/localaudiosource.h"
+#include "pc/statscollector.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/trace_event.h"
@@ -110,11 +111,11 @@ bool AudioRtpSender::CanInsertDtmf() {
 
 bool AudioRtpSender::InsertDtmf(int code, int duration) {
   if (!media_channel_) {
-    RTC_LOG(LS_ERROR) << "CanInsertDtmf: No audio channel exists.";
+    RTC_LOG(LS_ERROR) << "InsertDtmf: No audio channel exists.";
     return false;
   }
   if (!ssrc_) {
-    RTC_LOG(LS_ERROR) << "CanInsertDtmf: Sender does not have SSRC.";
+    RTC_LOG(LS_ERROR) << "InsertDtmf: Sender does not have SSRC.";
     return false;
   }
   bool success = worker_thread_->Invoke<bool>(RTC_FROM_HERE, [&] {
@@ -198,12 +199,12 @@ RtpParameters AudioRtpSender::GetParameters() const {
   });
 }
 
-bool AudioRtpSender::SetParameters(const RtpParameters& parameters) {
+RTCError AudioRtpSender::SetParameters(const RtpParameters& parameters) {
   TRACE_EVENT0("webrtc", "AudioRtpSender::SetParameters");
   if (!media_channel_ || stopped_) {
-    return false;
+    return RTCError(RTCErrorType::INVALID_STATE);
   }
-  return worker_thread_->Invoke<bool>(RTC_FROM_HERE, [&] {
+  return worker_thread_->Invoke<RTCError>(RTC_FROM_HERE, [&] {
     return media_channel_->SetRtpSendParameters(ssrc_, parameters);
   });
 }
@@ -249,6 +250,7 @@ void AudioRtpSender::Stop() {
       stats_->RemoveLocalAudioTrack(track_.get(), ssrc_);
     }
   }
+  media_channel_ = nullptr;
   stopped_ = true;
 }
 
@@ -390,12 +392,12 @@ RtpParameters VideoRtpSender::GetParameters() const {
   });
 }
 
-bool VideoRtpSender::SetParameters(const RtpParameters& parameters) {
+RTCError VideoRtpSender::SetParameters(const RtpParameters& parameters) {
   TRACE_EVENT0("webrtc", "VideoRtpSender::SetParameters");
   if (!media_channel_ || stopped_) {
-    return false;
+    return RTCError(RTCErrorType::INVALID_STATE);
   }
-  return worker_thread_->Invoke<bool>(RTC_FROM_HERE, [&] {
+  return worker_thread_->Invoke<RTCError>(RTC_FROM_HERE, [&] {
     return media_channel_->SetRtpSendParameters(ssrc_, parameters);
   });
 }
@@ -432,6 +434,7 @@ void VideoRtpSender::Stop() {
   if (can_send_track()) {
     ClearVideoSend();
   }
+  media_channel_ = nullptr;
   stopped_ = true;
 }
 

@@ -79,8 +79,10 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
                        blink::WebTouchEvent *event,
                        const ui::LatencyInfo& latency);
 
+  // |event| is in root coordinates.
   void BubbleScrollEvent(RenderWidgetHostViewBase* target_view,
-                         const blink::WebGestureEvent& event);
+                         const blink::WebGestureEvent& event,
+                         const RenderWidgetHostViewBase* resending_view);
   void CancelScrollBubbling(RenderWidgetHostViewBase* target_view);
 
   void AddFrameSinkIdOwner(const viz::FrameSinkId& id,
@@ -165,7 +167,7 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
   // in different processes for MouseEnter and MouseLeave event handlers to
   // properly fire. This method determines which RenderWidgetHostViews other
   // than the actual target require notification, and sends the appropriate
-  // events to them.
+  // events to them. |event| should be in |root_view|'s coordinate space.
   void SendMouseEnterOrLeaveEvents(const blink::WebMouseEvent& event,
                                    RenderWidgetHostViewBase* target,
                                    RenderWidgetHostViewBase* root_view);
@@ -194,11 +196,12 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
       RenderWidgetHostViewBase* root_view,
       const blink::WebGestureEvent& gesture_event);
 
-  // |mouse_event| is in the coord-space of |target|.
+  // |mouse_event| is in the coord-space of |root_view|.
   void DispatchMouseEvent(RenderWidgetHostViewBase* root_view,
                           RenderWidgetHostViewBase* target,
                           const blink::WebMouseEvent& mouse_event,
-                          const ui::LatencyInfo& latency);
+                          const ui::LatencyInfo& latency,
+                          const base::Optional<gfx::PointF>& target_location);
   // |mouse_wheel_event| is in the coord-space of |root_view|.
   void DispatchMouseWheelEvent(
       RenderWidgetHostViewBase* root_view,
@@ -219,6 +222,19 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
       const blink::WebGestureEvent& gesture_event,
       const ui::LatencyInfo& latency,
       const base::Optional<gfx::PointF>& target_location);
+
+  // Transforms |point| from |root_view| coord space to |target| coord space.
+  // Result is stored in |transformed_point|. Returns true if the transform
+  // is successful, false otherwise.
+  bool TransformPointToTargetCoordSpace(RenderWidgetHostViewBase* root_view,
+                                        RenderWidgetHostViewBase* target,
+                                        const gfx::PointF& point,
+                                        gfx::PointF* transformed_point,
+                                        viz::EventSource source) const;
+
+  // TODO(828422): Remove once this issue no longer occurs.
+  void ReportBubblingScrollToSameView(const blink::WebGestureEvent& event,
+                                      const RenderWidgetHostViewBase* view);
 
   // RenderWidgetTargeter::Delegate:
   RenderWidgetTargetResult FindTargetSynchronously(
@@ -260,19 +276,19 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
       hittest_data_;
 
   std::unique_ptr<RenderWidgetTargeter> event_targeter_;
-  bool enable_viz_ = false;
+  bool use_viz_hit_test_ = false;
 
   base::WeakPtrFactory<RenderWidgetHostInputEventRouter> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostInputEventRouter);
   friend class RenderWidgetHostInputEventRouterTest;
-  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessHitTestBrowserTest,
                            InputEventRouterGestureTargetMapTest);
-  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessHitTestBrowserTest,
                            InputEventRouterGesturePreventDefaultTargetMapTest);
-  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessHitTestBrowserTest,
                            InputEventRouterTouchpadGestureTargetTest);
-  FRIEND_TEST_ALL_PREFIXES(SitePerProcessMouseWheelBrowserTest,
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessMouseWheelHitTestBrowserTest,
                            InputEventRouterWheelTargetTest);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessMacBrowserTest,
                            InputEventRouterTouchpadGestureTargetTest);

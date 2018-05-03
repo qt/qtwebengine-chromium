@@ -44,7 +44,8 @@ CoalesceScrollAndPinch(const blink::WebGestureEvent* second_last_event,
 
 blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
     const MotionEvent& event,
-    bool may_cause_scrolling);
+    bool may_cause_scrolling,
+    bool hovering);
 
 blink::WebGestureEvent CreateWebGestureEvent(const GestureEventDetails& details,
                                              base::TimeTicks timestamp,
@@ -85,7 +86,7 @@ void SetWebPointerPropertiesFromMotionEventData(
     float tilt_x,
     float tilt_y,
     int android_buttons_changed,
-    int tool_type);
+    MotionEvent::ToolType tool_type);
 
 int WebEventModifiersToEventFlags(int modifiers);
 

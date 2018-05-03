@@ -87,6 +87,10 @@ enum {
   // the application to work in a wider variety of environments, at the expense
   // of having to allocate additional candidates.
   PORTALLOCATOR_ENABLE_ANY_ADDRESS_PORTS = 0x8000,
+
+  // Exclude link-local network interfaces
+  // from considertaion after adapter enumeration.
+  PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS = 0x10000,
 };
 
 // Defines various reasons that have caused ICE regathering.
@@ -240,7 +244,16 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   virtual void RegatherOnFailedNetworks() {}
   // Re-gathers candidates on all networks.
   virtual void RegatherOnAllNetworks() {}
-
+  // Get candidate-level stats from all candidates on the ready ports and return
+  // the stats to the given list.
+  virtual void GetCandidateStatsFromReadyPorts(
+      CandidateStatsList* candidate_stats_list) const;
+  // Set the interval at which STUN candidates will resend STUN binding requests
+  // on the underlying ports to keep NAT bindings open.
+  // The default value of the interval in implementation is restored if a null
+  // optional value is passed.
+  virtual void SetStunKeepaliveIntervalForReadyPorts(
+      const rtc::Optional<int>& stun_keepalive_interval) {}
   // Another way of getting the information provided by the signals below.
   //
   // Ports and candidates are not guaranteed to be in the same order as the
@@ -343,7 +356,9 @@ class PortAllocator : public sigslot::has_slots<> {
                         const std::vector<RelayServerConfig>& turn_servers,
                         int candidate_pool_size,
                         bool prune_turn_ports,
-                        webrtc::TurnCustomizer* turn_customizer = nullptr);
+                        webrtc::TurnCustomizer* turn_customizer = nullptr,
+                        const rtc::Optional<int>&
+                            stun_candidate_keepalive_interval = rtc::nullopt);
 
   const ServerAddresses& stun_servers() const { return stun_servers_; }
 
@@ -352,6 +367,9 @@ class PortAllocator : public sigslot::has_slots<> {
   }
 
   int candidate_pool_size() const { return candidate_pool_size_; }
+  const rtc::Optional<int>& stun_candidate_keepalive_interval() const {
+    return stun_candidate_keepalive_interval_;
+  }
 
   // Sets the network types to ignore.
   // Values are defined by the AdapterType enum.
@@ -462,6 +480,14 @@ class PortAllocator : public sigslot::has_slots<> {
     return turn_customizer_;
   }
 
+  // Collect candidate stats from pooled allocator sessions. This can be used to
+  // collect candidate stats without creating an offer/answer or setting local
+  // description. After the local description is set, the ownership of the
+  // pooled session is taken by P2PTransportChannel, and the
+  // candidate stats can be collected from P2PTransportChannel::GetStats.
+  virtual void GetCandidateStatsFromPooledSessions(
+      CandidateStatsList* candidate_stats_list);
+
  protected:
   virtual PortAllocatorSession* CreateSessionInternal(
       const std::string& content_name,
@@ -502,6 +528,8 @@ class PortAllocator : public sigslot::has_slots<> {
   // The instance is owned by application and will be shared among
   // all TurnPort(s) created.
   webrtc::TurnCustomizer* turn_customizer_ = nullptr;
+
+  rtc::Optional<int> stun_candidate_keepalive_interval_;
 };
 
 }  // namespace cricket

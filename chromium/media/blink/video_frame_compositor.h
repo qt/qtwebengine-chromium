@@ -80,7 +80,8 @@ class MEDIA_BLINK_EXPORT VideoFrameCompositor : public VideoRendererSink,
 
   // Signals the VideoFrameSubmitter to prepare to receive BeginFrames and
   // submit video frames given by VideoFrameCompositor.
-  virtual void EnableSubmission(const viz::FrameSinkId& id);
+  virtual void EnableSubmission(const viz::FrameSinkId& id,
+                                media::VideoRotation rotation);
 
   // cc::VideoFrameProvider implementation. These methods must be called on the
   // |task_runner_|.
@@ -122,6 +123,9 @@ class MEDIA_BLINK_EXPORT VideoFrameCompositor : public VideoRendererSink,
   // callback is only run once and then reset.
   // Must be called on the compositor thread.
   virtual void SetOnNewProcessedFrameCallback(OnNewProcessedFrameCB cb);
+
+  // Updates the rotation information for frames given to |submitter_|.
+  void UpdateRotation(media::VideoRotation rotation);
 
   void set_tick_clock_for_testing(base::TickClock* tick_clock) {
     tick_clock_ = tick_clock;
@@ -209,9 +213,6 @@ class MEDIA_BLINK_EXPORT VideoFrameCompositor : public VideoRendererSink,
   // AutoOpenCloseEvent for begin/end events.
   std::unique_ptr<base::trace_event::AutoOpenCloseEvent> auto_open_close_;
   std::unique_ptr<blink::WebVideoFrameSubmitter> submitter_;
-
-  // Whether the use of a surface layer instead of a video layer is enabled.
-  bool surface_layer_for_video_enabled_ = false;
 
   base::WeakPtrFactory<VideoFrameCompositor> weak_ptr_factory_;
 

@@ -63,6 +63,7 @@ class CORE_EXPORT RootFrameViewport final
                             const WebScrollIntoViewParams& params) override;
   IntRect VisibleContentRect(
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
+  LayoutRect VisibleScrollSnapportRect() const override;
   bool ShouldUseIntegerScrollOffset() const override;
   bool IsActive() const override;
   int ScrollSize(ScrollbarOrientation) const override;
@@ -105,7 +106,7 @@ class CORE_EXPORT RootFrameViewport final
   FloatQuad LocalToVisibleContentQuad(const FloatQuad&,
                                       const LayoutObject*,
                                       unsigned = 0) const final;
-  scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const final;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() const final;
   ScrollbarTheme& GetPageScrollbarTheme() const override;
 
  private:

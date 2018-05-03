@@ -102,10 +102,10 @@ class ShaderState final : angle::NonCopyable
     int mNumViews;
 
     // Geometry Shader.
-    GLenum mGeometryShaderInputPrimitiveType;
-    GLenum mGeometryShaderOutputPrimitiveType;
+    Optional<GLenum> mGeometryShaderInputPrimitiveType;
+    Optional<GLenum> mGeometryShaderOutputPrimitiveType;
+    Optional<GLint> mGeometryShaderMaxVertices;
     int mGeometryShaderInvocations;
-    int mGeometryShaderMaxVertices;
 
     // Indicates if this shader has been successfully compiled
     CompileStatus mCompileStatus;
@@ -177,6 +177,11 @@ class Shader final : angle::NonCopyable, public LabeledObject
 
     int getNumViews(const Context *context);
 
+    Optional<GLenum> getGeometryShaderInputPrimitiveType(const Context *context);
+    Optional<GLenum> getGeometryShaderOutputPrimitiveType(const Context *context);
+    int getGeometryShaderInvocations(const Context *context);
+    Optional<GLint> getGeometryShaderMaxVertices(const Context *context);
+
     const std::string &getCompilerResourcesString() const;
 
   private:
@@ -207,6 +212,8 @@ class Shader final : angle::NonCopyable, public LabeledObject
 };
 
 bool CompareShaderVar(const sh::ShaderVariable &x, const sh::ShaderVariable &y);
+
+const char *GetShaderTypeString(GLenum type);
 }  // namespace gl
 
 #endif   // LIBANGLE_SHADER_H_

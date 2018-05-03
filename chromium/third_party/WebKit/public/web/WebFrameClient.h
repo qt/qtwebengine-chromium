@@ -48,6 +48,7 @@
 #include "WebNavigationType.h"
 #include "WebTextDirection.h"
 #include "WebTriggeringEventInfo.h"
+#include "base/unguessable_token.h"
 #include "public/platform/BlameContext.h"
 #include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebColor.h"
@@ -69,10 +70,9 @@
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebWorkerFetchContext.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-shared.h"
-#include "third_party/WebKit/common/quota/quota_types.mojom-shared.h"
-#include "third_party/WebKit/common/sandbox_flags.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-shared.h"
 #include "v8/include/v8.h"
 
 namespace service_manager {
@@ -88,6 +88,7 @@ enum class WebTreeScopeType;
 class AssociatedInterfaceProvider;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
+class WebComputedAXTree;
 class WebContentDecryptionModule;
 class WebCookieJar;
 class WebDocumentLoader;
@@ -108,7 +109,6 @@ class WebPresentationClient;
 class WebPushClient;
 class WebRTCPeerConnectionHandler;
 class WebRelatedAppsFetcher;
-class WebScreenOrientationClient;
 class WebString;
 class WebURL;
 class WebURLResponse;
@@ -346,6 +346,7 @@ class BLINK_EXPORT WebFrameClient {
     WebTriggeringEventInfo triggering_event_info;
     WebFormElement form;
     WebSourceLocation source_location;
+    WebString devtools_initiator_info;
     WebContentSecurityPolicyDisposition
         should_check_main_world_content_security_policy;
 
@@ -512,10 +513,12 @@ class BLINK_EXPORT WebFrameClient {
   // ever having received a user gesture.
   virtual void DidBlockFramebust(const WebURL&) {}
 
-  // Returns string to be used as a frame id in the devtools protocol.
+  // Returns token to be used as a frame id in the devtools protocol.
   // It is derived from the content's devtools_frame_token, is
   // defined by the browser and passed into Blink upon frame creation.
-  virtual WebString GetDevToolsFrameToken() { return WebString(); }
+  virtual base::UnguessableToken GetDevToolsFrameToken() {
+    return base::UnguessableToken::Create();
+  }
 
   // PlzNavigate
   // Called to abort a navigation that is being handled by the browser process.
@@ -598,6 +601,9 @@ class BLINK_EXPORT WebFrameClient {
   // A data url from <canvas> or <img> is passed to the method's argument.
   virtual void SaveImageFromDataURL(const WebString&) {}
 
+  // Called when the frame rects changed.
+  virtual void FrameRectsChanged(const WebRect&) {}
+
   // Low-level resource notifications ------------------------------------
 
   // A request is about to be sent out, and the client may modify it.  Request
@@ -639,15 +645,9 @@ class BLINK_EXPORT WebFrameClient {
   virtual void DidRunContentWithCertificateErrors() {}
 
   // This frame loaded a resource with an otherwise-valid legacy Symantec
-  // certificate that is slated for distrust. Returns true and populates
-  // |console_message| to override the console message warning that is printed
-  // about the certificate. If it returns false, a generic warning will be
-  // printed.
-  virtual bool OverrideLegacySymantecCertConsoleMessage(const WebURL&,
-                                                        base::Time,
-                                                        WebString*) {
-    return false;
-  }
+  // certificate that is slated for distrust (|did_fail|=false) or has already
+  // been distrusted (|did_fail|=true).
+  virtual void ReportLegacySymantecCert(const WebURL&, bool did_fail) {}
 
   // A performance timing event (e.g. first paint) occurred
   virtual void DidChangePerformanceTiming() {}
@@ -714,21 +714,6 @@ class BLINK_EXPORT WebFrameClient {
                                          int active_match_ordinal,
                                          const WebRect& selection) {}
 
-  // Quota ---------------------------------------------------------
-
-  // Requests a new quota size for the origin's storage.
-  // |newQuotaInBytes| indicates how much storage space (in bytes) the caller
-  // expects to need.
-  // The callback will be called when a new quota is granted, with kOk as the
-  // status code if successful or with an error code otherwise.
-  // Note that the requesting quota size may not always be granted and a smaller
-  // amount of quota than requested might be returned.
-  using RequestStorageQuotaCallback =
-      base::OnceCallback<void(mojom::QuotaStatusCode, int64_t, int64_t)>;
-  virtual void RequestStorageQuota(mojom::StorageType,
-                                   unsigned long long new_quota_in_bytes,
-                                   RequestStorageQuotaCallback) {}
-
   // MediaStream -----------------------------------------------------
 
   // A new WebRTCPeerConnectionHandler is created.
@@ -761,13 +746,6 @@ class BLINK_EXPORT WebFrameClient {
   // implemented in content/, and putting it here avoids adding more public
   // content/ APIs.
   virtual bool ShouldBlockWebGL() { return false; }
-
-  // Screen Orientation --------------------------------------------------
-
-  // Access the embedder API for (client-based) screen orientation client .
-  virtual WebScreenOrientationClient* GetWebScreenOrientationClient() {
-    return nullptr;
-  }
 
   // Accessibility -------------------------------------------------------
 
@@ -845,6 +823,12 @@ class BLINK_EXPORT WebFrameClient {
     NOTREACHED();
     return nullptr;
   }
+
+  // Accessibility Object Model -------------------------------------------
+
+  // This method is used to expose the AX Tree stored in content/renderer to the
+  // DOM as part of AOM Phase 4.
+  virtual WebComputedAXTree* GetOrCreateWebComputedAXTree() { return nullptr; }
 };
 
 }  // namespace blink

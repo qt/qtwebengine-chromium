@@ -57,12 +57,14 @@ class MediaControlPanelEnclosureElement;
 class MediaControlPictureInPictureButtonElement;
 class MediaControlPlayButtonElement;
 class MediaControlRemainingTimeDisplayElement;
+class MediaControlScrubbingMessageElement;
 class MediaControlTextTrackListElement;
 class MediaControlTimelineElement;
 class MediaControlToggleClosedCaptionsButtonElement;
 class MediaControlVolumeSliderElement;
 class MediaDownloadInProductHelpManager;
 class ShadowRoot;
+class TextTrack;
 
 // Default implementation of the core/ MediaControls interface used by
 // HTMLMediaElement.
@@ -113,6 +115,10 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void ToggleTextTrackList();
   void ShowTextTrackAtIndex(unsigned);
   void DisableShowingTextTracks();
+
+  // Returns the label for the track when a valid track is passed in and "Off"
+  // when the parameter is null.
+  String GetTextTrackLabel(TextTrack*) const;
 
   // Methods related to the overflow menu.
   void ToggleOverflowMenu();
@@ -202,6 +208,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   explicit MediaControlsImpl(HTMLMediaElement&);
 
   void InitializeControls();
+  void PopulatePanel();
 
   void MakeOpaque();
   void MakeOpaqueFromPointerEvent();
@@ -237,12 +244,19 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void ComputeWhichControlsFit();
 
   void UpdateOverflowMenuWanted() const;
+  void UpdateScrubbingMessageFits() const;
   void MaybeRecordElementsDisplayed() const;
 
   // Takes a popup menu (caption, overflow) and position on the screen. This is
   // used because these menus use a fixed position in order to appear over all
   // content.
   void PositionPopupMenu(Element*);
+
+  // When a video element has an audio track but no video track, we modify the
+  // controls to display like audio controls.
+  bool ShouldActAsAudioControls() const;
+  void StartActingAsAudioControls();
+  void StopActingAsAudioControls();
 
   // Node
   bool IsMediaControls() const override { return true; }
@@ -283,6 +297,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   Member<MediaControlPanelElement> panel_;
   Member<MediaControlPlayButtonElement> play_button_;
   Member<MediaControlTimelineElement> timeline_;
+  Member<MediaControlScrubbingMessageElement> scrubbing_message_;
   Member<MediaControlCurrentTimeDisplayElement> current_time_display_;
   Member<MediaControlRemainingTimeDisplayElement> duration_display_;
   Member<MediaControlMuteButtonElement> mute_button_;
@@ -328,6 +343,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   bool pointer_event_did_show_controls_ = false;
 
   Member<MediaDownloadInProductHelpManager> download_iph_manager_;
+
+  bool is_acting_as_audio_controls_ = false;
 };
 
 DEFINE_ELEMENT_TYPE_CASTS(MediaControlsImpl, IsMediaControls());

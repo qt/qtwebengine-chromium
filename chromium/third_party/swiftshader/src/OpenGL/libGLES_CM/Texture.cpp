@@ -227,51 +227,36 @@ egl::Image *Texture::createSharedImage(GLenum target, unsigned int level)
 	return image;
 }
 
-void Texture::setImage(egl::Context *context, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels, egl::Image *image)
+void Texture::setImage(GLenum format, GLenum type, GLint unpackAlignment, const void *pixels, egl::Image *image)
 {
 	if(pixels && image)
 	{
-		egl::Image::UnpackInfo unpackInfo;
-		unpackInfo.alignment = unpackAlignment;
-		image->loadImageData(context, 0, 0, 0, image->getWidth(), image->getHeight(), 1, format, type, unpackInfo, pixels);
+		gl::PixelStorageModes unpackParameters;
+		unpackParameters.alignment = unpackAlignment;
+		image->loadImageData(0, 0, 0, image->getWidth(), image->getHeight(), 1, format, type, unpackParameters, pixels);
 	}
 }
 
 void Texture::setCompressedImage(GLsizei imageSize, const void *pixels, egl::Image *image)
 {
-	if(pixels && image && (imageSize > 0)) // imageSize's correlation to width and height is already validated with egl::ComputeCompressedSize() at the API level
+	if(pixels && image && (imageSize > 0)) // imageSize's correlation to width and height is already validated with gl::ComputeCompressedSize() at the API level
 	{
 		image->loadCompressedData(0, 0, 0, image->getWidth(), image->getHeight(), 1, imageSize, pixels);
 	}
 }
 
-void Texture::subImage(egl::Context *context, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels, egl::Image *image)
+void Texture::subImage(GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels, egl::Image *image)
 {
 	if(!image)
 	{
 		return error(GL_INVALID_OPERATION);
 	}
 
-	if(width + xoffset > image->getWidth() || height + yoffset > image->getHeight())
-	{
-		return error(GL_INVALID_VALUE);
-	}
-
-	if(IsCompressed(image->getFormat()))
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
-	if(format != image->getFormat())
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
 	if(pixels)
 	{
-		egl::Image::UnpackInfo unpackInfo;
-		unpackInfo.alignment = unpackAlignment;
-		image->loadImageData(context, xoffset, yoffset, 0, width, height, 1, format, type, unpackInfo, pixels);
+		gl::PixelStorageModes unpackParameters;
+		unpackParameters.alignment = unpackAlignment;
+		image->loadImageData(xoffset, yoffset, 0, width, height, 1, format, type, unpackParameters, pixels);
 	}
 }
 
@@ -282,17 +267,7 @@ void Texture::subImageCompressed(GLint xoffset, GLint yoffset, GLsizei width, GL
 		return error(GL_INVALID_OPERATION);
 	}
 
-	if(width + xoffset > image->getWidth() || height + yoffset > image->getHeight())
-	{
-		return error(GL_INVALID_VALUE);
-	}
-
-	if(format != image->getFormat())
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
-	if(pixels && (imageSize > 0)) // imageSize's correlation to width and height is already validated with egl::ComputeCompressedSize() at the API level
+	if(pixels && (imageSize > 0)) // imageSize's correlation to width and height is already validated with gl::ComputeCompressedSize() at the API level
 	{
 		image->loadCompressedData(xoffset, yoffset, 0, width, height, 1, imageSize, pixels);
 	}
@@ -426,22 +401,10 @@ GLsizei Texture2D::getHeight(GLenum target, GLint level) const
 	return image[level] ? image[level]->getHeight() : 0;
 }
 
-GLenum Texture2D::getFormat(GLenum target, GLint level) const
+GLint Texture2D::getFormat(GLenum target, GLint level) const
 {
 	ASSERT(target == GL_TEXTURE_2D);
 	return image[level] ? image[level]->getFormat() : GL_NONE;
-}
-
-GLenum Texture2D::getType(GLenum target, GLint level) const
-{
-	ASSERT(target == GL_TEXTURE_2D);
-	return image[level] ? image[level]->getType() : GL_NONE;
-}
-
-sw::Format Texture2D::getInternalFormat(GLenum target, GLint level) const
-{
-	ASSERT(target == GL_TEXTURE_2D);
-	return image[level] ? image[level]->getInternalFormat() : sw::FORMAT_NULL;
 }
 
 int Texture2D::getTopLevel() const
@@ -457,37 +420,25 @@ int Texture2D::getTopLevel() const
 	return level - 1;
 }
 
-void Texture2D::setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels)
+void Texture2D::setImage(GLint level, GLsizei width, GLsizei height, GLint internalformat, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels)
 {
 	if(image[level])
 	{
 		image[level]->release();
 	}
 
-	image[level] = egl::Image::create(this, width, height, format, type);
+	image[level] = egl::Image::create(this, width, height, internalformat);
 
 	if(!image[level])
 	{
 		return error(GL_OUT_OF_MEMORY);
 	}
 
-	Texture::setImage(context, format, type, unpackAlignment, pixels, image[level]);
+	Texture::setImage(format, type, unpackAlignment, pixels, image[level]);
 }
 
 void Texture2D::bindTexImage(gl::Surface *surface)
 {
-	switch(surface->getInternalFormat())
-	{
-	case sw::FORMAT_A8R8G8B8:
-	case sw::FORMAT_A8B8G8R8:
-	case sw::FORMAT_X8B8G8R8:
-	case sw::FORMAT_X8R8G8B8:
-		break;
-	default:
-		UNIMPLEMENTED();
-		return;
-	}
-
 	for(int level = 0; level < IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
 	{
 		if(image[level])
@@ -522,7 +473,7 @@ void Texture2D::setCompressedImage(GLint level, GLenum format, GLsizei width, GL
 		image[level]->release();
 	}
 
-	image[level] = egl::Image::create(this, width, height, format, GL_UNSIGNED_BYTE);
+	image[level] = egl::Image::create(this, width, height, format);
 
 	if(!image[level])
 	{
@@ -532,9 +483,9 @@ void Texture2D::setCompressedImage(GLint level, GLenum format, GLsizei width, GL
 	Texture::setCompressedImage(imageSize, pixels, image[level]);
 }
 
-void Texture2D::subImage(egl::Context *context, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels)
+void Texture2D::subImage(GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels)
 {
-	Texture::subImage(context, xoffset, yoffset, width, height, format, type, unpackAlignment, pixels, image[level]);
+	Texture::subImage(xoffset, yoffset, width, height, format, type, unpackAlignment, pixels, image[level]);
 }
 
 void Texture2D::subImageCompressed(GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const void *pixels)
@@ -557,7 +508,7 @@ void Texture2D::copyImage(GLint level, GLenum format, GLint x, GLint y, GLsizei 
 		image[level]->release();
 	}
 
-	image[level] = egl::Image::create(this, width, height, format, GL_UNSIGNED_BYTE);
+	image[level] = egl::Image::create(this, width, height, format);
 
 	if(!image[level])
 	{
@@ -662,11 +613,6 @@ bool Texture2D::isMipmapComplete() const
 			return false;
 		}
 
-		if(image[level]->getType() != image[0]->getType())
-		{
-			return false;
-		}
-
 		if(image[level]->getWidth() != std::max(1, width >> level))
 		{
 			return false;
@@ -707,7 +653,7 @@ void Texture2D::generateMipmaps()
 			image[i]->release();
 		}
 
-		image[i] = egl::Image::create(this, std::max(image[0]->getWidth() >> i, 1), std::max(image[0]->getHeight() >> i, 1), image[0]->getFormat(), image[0]->getType());
+		image[i] = egl::Image::create(this, std::max(image[0]->getWidth() >> i, 1), std::max(image[0]->getHeight() >> i, 1), image[0]->getFormat());
 
 		if(!image[i])
 		{
@@ -805,7 +751,9 @@ egl::Image *createBackBuffer(int width, int height, sw::Format format, int multi
 		return nullptr;
 	}
 
-	return egl::Image::create(width, height, format, multiSampleDepth, false);
+	GLenum internalformat = sw2es::ConvertBackBufferFormat(format);
+
+	return egl::Image::create(width, height, internalformat, multiSampleDepth, false);
 }
 
 egl::Image *createDepthStencil(int width, int height, sw::Format format, int multiSampleDepth)
@@ -841,7 +789,9 @@ egl::Image *createDepthStencil(int width, int height, sw::Format format, int mul
 		UNREACHABLE(format);
 	}
 
-	egl::Image *surface = egl::Image::create(width, height, format, multiSampleDepth, lockable);
+	GLenum internalformat = sw2es::ConvertDepthStencilFormat(format);
+
+	egl::Image *surface = egl::Image::create(width, height, internalformat, multiSampleDepth, lockable);
 
 	if(!surface)
 	{

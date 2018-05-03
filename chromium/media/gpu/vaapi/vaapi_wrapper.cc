@@ -13,6 +13,7 @@
 #include <va/va_version.h>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
 #include "base/environment.h"
 #include "base/logging.h"
@@ -48,6 +49,11 @@ using media_gpu_vaapi::kModuleVa_drm;
 using media_gpu_vaapi::kModuleVa_x11;
 #endif
 using media_gpu_vaapi::InitializeStubs;
+using media_gpu_vaapi::IsVaInitialized;
+#if defined(USE_X11)
+using media_gpu_vaapi::IsVa_x11Initialized;
+#endif
+using media_gpu_vaapi::IsVa_drmInitialized;
 using media_gpu_vaapi::StubPathMap;
 
 #define LOG_VA_ERROR_AND_REPORT(va_error, err_msg)                  \
@@ -119,14 +125,6 @@ namespace {
 // and not taken from HW documentation.
 const int kMaxEncoderFramerate = 30;
 
-// Attributes required for encode. This only applies to video encode, not JPEG
-// encode.
-static const VAConfigAttrib kVideoEncodeVAConfigAttribs[] = {
-    {VAConfigAttribRateControl, VA_RC_CBR},
-    {VAConfigAttribEncPackedHeaders,
-     VA_ENC_PACKED_HEADER_SEQUENCE | VA_ENC_PACKED_HEADER_PICTURE},
-};
-
 // A map between VideoCodecProfile and VAProfile.
 static const struct {
   VideoCodecProfile profile;
@@ -166,9 +164,6 @@ class VADisplayState {
   void SetDrmFd(base::PlatformFile fd) { drm_fd_.reset(HANDLE_EINTR(dup(fd))); }
 
  private:
-  // Returns false on init failure.
-  static bool PostSandboxInitialization();
-
   // Protected by |va_lock_|.
   int refcount_;
 
@@ -203,41 +198,17 @@ void VADisplayState::PreSandboxInitialization() {
     VADisplayState::Get()->SetDrmFd(drm_file.GetPlatformFile());
 }
 
-// static
-bool VADisplayState::PostSandboxInitialization() {
-  const std::string va_suffix(std::to_string(VA_MAJOR_VERSION + 1));
-  StubPathMap paths;
-
-  paths[kModuleVa].push_back(std::string("libva.so.") + va_suffix);
-  paths[kModuleVa_drm].push_back(std::string("libva-drm.so.") + va_suffix);
-#if defined(USE_X11)
-  // libva-x11 does not exist on libva >= 2
-  if (VA_MAJOR_VERSION == 0)
-    paths[kModuleVa_x11].push_back("libva-x11.so.1");
-#endif
-
-  const bool success = InitializeStubs(paths);
-  if (!success) {
-    static const char kErrorMsg[] = "Failed to initialize VAAPI libs";
-#if defined(OS_CHROMEOS)
-    // When Chrome runs on Linux with target_os="chromeos", do not log error
-    // message without VAAPI libraries.
-    LOG_IF(ERROR, base::SysInfo::IsRunningOnChromeOS()) << kErrorMsg;
-#else
-    DVLOG(1) << kErrorMsg;
-#endif
-  }
-  return success;
-}
-
 VADisplayState::VADisplayState()
     : refcount_(0), va_display_(nullptr), va_initialized_(false) {}
 
 bool VADisplayState::Initialize() {
   va_lock_.AssertAcquired();
 
-  static bool result = PostSandboxInitialization();
-  if (!result)
+  if (!IsVaInitialized() ||
+#if defined(USE_X11)
+      !IsVa_x11Initialized() ||
+#endif
+      !IsVa_drmInitialized())
     return false;
 
   if (refcount_++ > 0)
@@ -322,6 +293,7 @@ static std::vector<VAConfigAttrib> GetRequiredAttribs(
     VaapiWrapper::CodecMode mode,
     VAProfile profile) {
   std::vector<VAConfigAttrib> required_attribs;
+
   // VAConfigAttribRTFormat is common to both encode and decode |mode|s.
   if (profile == VAProfileVP9Profile2 || profile == VAProfileVP9Profile3) {
     required_attribs.push_back(
@@ -329,11 +301,21 @@ static std::vector<VAConfigAttrib> GetRequiredAttribs(
   } else {
     required_attribs.push_back({VAConfigAttribRTFormat, VA_RT_FORMAT_YUV420});
   }
-  if (mode == VaapiWrapper::kEncode && profile != VAProfileJPEGBaseline) {
-    required_attribs.insert(
-        required_attribs.end(), kVideoEncodeVAConfigAttribs,
-        kVideoEncodeVAConfigAttribs + arraysize(kVideoEncodeVAConfigAttribs));
+
+  if (mode != VaapiWrapper::kEncode)
+    return required_attribs;
+
+  // All encoding use constant bit rate except for JPEG.
+  if (profile != VAProfileJPEGBaseline)
+    required_attribs.push_back({VAConfigAttribRateControl, VA_RC_CBR});
+
+  // VAConfigAttribEncPackedHeaders is H.264 specific.
+  if (profile >= VAProfileH264Baseline && profile <= VAProfileH264High) {
+    required_attribs.push_back(
+        {VAConfigAttribEncPackedHeaders,
+         VA_ENC_PACKED_HEADER_SEQUENCE | VA_ENC_PACKED_HEADER_PICTURE});
   }
+
   return required_attribs;
 }
 
@@ -430,7 +412,7 @@ bool VASupportedProfiles::IsProfileSupported(VaapiWrapper::CodecMode mode,
 VASupportedProfiles::VASupportedProfiles()
     : va_lock_(VADisplayState::Get()->va_lock()),
       va_display_(nullptr),
-      report_error_to_uma_cb_(base::Bind(&base::DoNothing)) {
+      report_error_to_uma_cb_(base::DoNothing()) {
   static_assert(arraysize(supported_profiles_) == VaapiWrapper::kCodecModeMax,
                 "The array size of supported profile is incorrect.");
   {
@@ -1169,6 +1151,38 @@ bool VaapiWrapper::BlitSurface(
 // static
 void VaapiWrapper::PreSandboxInitialization() {
   VADisplayState::PreSandboxInitialization();
+
+  const std::string va_suffix(std::to_string(VA_MAJOR_VERSION + 1));
+  StubPathMap paths;
+
+  paths[kModuleVa].push_back(std::string("libva.so.") + va_suffix);
+  paths[kModuleVa_drm].push_back(std::string("libva-drm.so.") + va_suffix);
+#if defined(USE_X11)
+  paths[kModuleVa_x11].push_back(std::string("libva-x11.so.") + va_suffix);
+#endif
+
+  // InitializeStubs dlopen() VA-API libraries
+  // libva.so
+  // libva-x11.so (X11)
+  // libva-drm.so (X11 and Ozone).
+  static bool result = InitializeStubs(paths);
+  if (!result) {
+    static const char kErrorMsg[] = "Failed to initialize VAAPI libs";
+#if defined(OS_CHROMEOS)
+    // When Chrome runs on Linux with target_os="chromeos", do not log error
+    // message without VAAPI libraries.
+    LOG_IF(ERROR, base::SysInfo::IsRunningOnChromeOS()) << kErrorMsg;
+#else
+    DVLOG(1) << kErrorMsg;
+#endif
+  }
+
+  // VASupportedProfiles::Get creates VADisplayState and in so doing
+  // driver associated libraries are dlopen(), to know:
+  // i965_drv_video.so
+  // hybrid_drv_video.so (platforms that support it)
+  // libcmrt.so (platforms that support it)
+  VASupportedProfiles::Get();
 }
 
 VaapiWrapper::VaapiWrapper()

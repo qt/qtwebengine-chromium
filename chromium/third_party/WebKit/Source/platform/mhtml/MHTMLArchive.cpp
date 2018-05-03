@@ -51,7 +51,6 @@ namespace blink {
 namespace {
 
 const size_t kMaximumLineLength = 76;
-const char kCrlfLineEnding[] = "\r\n";
 
 const char kRFC2047EncodingPrefix[] = "=?utf-8?Q?";
 const size_t kRFC2047EncodingPrefixLength = 10;
@@ -86,7 +85,7 @@ class QuotedPrintableEncodeBodyDelegate : public QuotedPrintableEncodeDelegate {
   void DidFinishLine(bool last_line, Vector<char>& out) override {
     if (!last_line) {
       out.push_back('=');
-      out.Append(kCrlfLineEnding, strlen(kCrlfLineEnding));
+      out.Append("\r\n", 2);
     }
   }
 };
@@ -115,7 +114,7 @@ class QuotedPrintableEncodeHeaderDelegate
   void DidFinishLine(bool last_line, Vector<char>& out) override {
     out.Append(kRFC2047EncodingSuffix, kRFC2047EncodingSuffixLength);
     if (!last_line) {
-      out.Append(kCrlfLineEnding, strlen(kCrlfLineEnding));
+      out.Append("\r\n", 2);
       out.push_back(' ');
     }
   }
@@ -262,7 +261,8 @@ void MHTMLArchive::GenerateMHTMLPart(const String& boundary,
   DCHECK(content_id.IsEmpty() || content_id[0] == '<');
 
   StringBuilder string_builder;
-  string_builder.Append("--");
+  // Per the spec, the boundary must occur at the beginning of a line.
+  string_builder.Append("\r\n--");
   string_builder.Append(boundary);
   string_builder.Append("\r\n");
 
@@ -319,7 +319,6 @@ void MHTMLArchive::GenerateMHTMLPart(const String& boundary,
       QuotedPrintableEncodeBodyDelegate body_delegate;
       QuotedPrintableEncode(data, data_length, &body_delegate, encoded_data);
       output_buffer.Append(encoded_data.data(), encoded_data.size());
-      output_buffer.Append("\r\n", 2u);
     } else {
       DCHECK(!strcmp(content_encoding, kBase64));
       // We are not specifying insertLFs = true below as it would cut the lines
@@ -341,7 +340,7 @@ void MHTMLArchive::GenerateMHTMLPart(const String& boundary,
 void MHTMLArchive::GenerateMHTMLFooterForTesting(const String& boundary,
                                                  Vector<char>& output_buffer) {
   DCHECK(!boundary.IsEmpty());
-  CString ascii_string = String("--" + boundary + "--\r\n").Utf8();
+  CString ascii_string = String("\r\n--" + boundary + "--\r\n").Utf8();
   output_buffer.Append(ascii_string.data(), ascii_string.length());
 }
 

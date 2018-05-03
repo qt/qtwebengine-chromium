@@ -50,11 +50,10 @@ namespace blink {
 
 class WebCompositeAndReadbackAsyncCallback;
 class WebCoalescedInputEvent;
+class WebLayerTreeView;
 class WebLayoutAndPaintAsyncCallback;
 class WebPagePopup;
 struct WebPoint;
-template <typename T>
-class WebVector;
 
 class WebWidget {
  public:
@@ -98,17 +97,27 @@ class WebWidget {
   virtual void UpdateLifecycle(
       LifecycleUpdate requested_update = LifecycleUpdate::kAll) {}
 
+  // Performs the complete set of document lifecycle phases, including updates
+  // to the compositor state except rasterization.
+  virtual void UpdateAllLifecyclePhasesAndCompositeForTesting() {}
+
   // Called to paint the rectangular region within the WebWidget
-  // onto the specified canvas at (viewPort.x,viewPort.y). You MUST call
-  // Layout before calling this method. It is okay to call paint
-  // multiple times once layout has been called, assuming no other
-  // changes are made to the WebWidget (e.g., once events are
-  // processed, it should be assumed that another call to layout is
-  // warranted before painting again).
+  // onto the specified canvas at (viewPort.x,viewPort.y).
+  //
+  // Before calling Paint(), you must call
+  // UpdateLifecycle(LifecycleUpdate::All): this method assumes the lifecycle is
+  // clean. It is okay to call paint multiple times once the lifecycle is
+  // updated, assuming no other changes are made to the WebWidget (e.g., once
+  // events are processed, it should be assumed that another call to
+  // UpdateLifecycle is warranted before painting again).
   virtual void Paint(WebCanvas*, const WebRect& view_port) {}
 
   // Similar to paint() but ignores compositing decisions, squashing all
   // contents of the WebWidget into the output given to the WebCanvas.
+  //
+  // Before calling PaintIgnoringCompositing(), you must call
+  // UpdateLifecycle(LifecycleUpdate::All): this method assumes the lifecycle is
+  // clean.
   virtual void PaintIgnoringCompositing(WebCanvas*, const WebRect&) {}
 
   // Run layout and paint of all pending document changes asynchronously.
@@ -134,6 +143,13 @@ class WebWidget {
 
   // Called to inform the WebWidget of an input event.
   virtual WebInputEventResult HandleInputEvent(const WebCoalescedInputEvent&) {
+    return WebInputEventResult::kNotHandled;
+  }
+
+  // Send any outstanding touch events. Touch events need to be grouped together
+  // and any changes since the last time a touch event is going to be sent in
+  // the new touch event.
+  virtual WebInputEventResult DispatchBufferedTouchEvents() {
     return WebInputEventResult::kNotHandled;
   }
 
@@ -173,6 +189,9 @@ class WebWidget {
   // Returns true if the WebWidget created is of type WebView.
   virtual bool IsWebView() const { return false; }
 
+  // Returns true if the WebWidget created is of type PepperWidget.
+  virtual bool IsPepperWidget() const { return false; }
+
   // Returns true if the WebWidget created is of type WebFrameWidget.
   virtual bool IsWebFrameWidget() const { return false; }
 
@@ -209,13 +228,6 @@ class WebWidget {
   virtual void UpdateBrowserControlsState(WebBrowserControlsState constraints,
                                           WebBrowserControlsState current,
                                           bool animate) {}
-
-  // Populate |bounds| with the composition character bounds for the ongoing
-  // composition. Returns false if there is no focused input or any ongoing
-  // composition.
-  virtual bool GetCompositionCharacterBounds(WebVector<WebRect>& bounds) {
-    return false;
-  }
 
   // Called by client to request showing the context menu.
   virtual void ShowContextMenu(WebMenuSourceType) {}

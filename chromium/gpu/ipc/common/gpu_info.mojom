@@ -19,14 +19,6 @@ struct GpuDevice {
   string device_string;
 };
 
-// gpu::CollectInfoResult
-enum CollectInfoResult {
-  kCollectInfoNone = 0,
-  kCollectInfoSuccess = 1,
-  kCollectInfoNonFatalFailure = 2,
-  kCollectInfoFatalFailure = 3
-};
-
 // gpu::VideoCodecProfile
 enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_UNKNOWN = -1,
@@ -105,16 +97,13 @@ struct GpuInfo {
   bool software_rendering;
   bool direct_rendering;
   bool sandboxed;
-  int32 process_crash_count;
   bool in_process_gpu;
   bool passthrough_cmd_decoder;
   bool direct_composition;
   bool supports_overlays;
   bool can_support_threaded_texture_mailbox;
-  CollectInfoResult basic_info_state;
-  CollectInfoResult context_info_state;
-  CollectInfoResult dx_diagnostics_info_state;
-  DxDiagNode? dx_diagnostics;
+  [EnableIf=is_win]
+  DxDiagNode dx_diagnostics;
   VideoDecodeAcceleratorCapabilities video_decode_accelerator_capabilities;
   array<VideoEncodeAcceleratorSupportedProfile>
     video_encode_accelerator_supported_profiles;

@@ -15,7 +15,7 @@
 namespace sh
 {
 
-TString SamplerString(const TBasicType type)
+const char *SamplerString(const TBasicType type)
 {
     if (IsShadowSampler(type))
     {
@@ -27,7 +27,7 @@ TString SamplerString(const TBasicType type)
     }
 }
 
-TString SamplerString(HLSLTextureGroup type)
+const char *SamplerString(HLSLTextureGroup type)
 {
     if (type >= HLSL_COMPARISON_SAMPLER_GROUP_BEGIN && type <= HLSL_COMPARISON_SAMPLER_GROUP_END)
     {
@@ -96,6 +96,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_2D_SNORM;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtIImage2D:
@@ -109,6 +112,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_2D_INT4;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtUImage2D:
@@ -123,6 +129,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_2D_UINT4;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtImage3D:
@@ -139,6 +148,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_3D_SNORM;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtIImage3D:
@@ -152,6 +164,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_3D_INT4;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtUImage3D:
@@ -165,6 +180,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_3D_UINT4;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtImage2DArray:
@@ -182,6 +200,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_2D_ARRAY_SNORM;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtIImage2DArray:
@@ -196,6 +217,9 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_2D_ARRAY_INT4;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         case EbtUImage2DArray:
@@ -210,15 +234,20 @@ HLSLTextureGroup TextureGroup(const TBasicType type, TLayoutImageInternalFormat 
                     return HLSL_TEXTURE_2D_ARRAY_UINT4;
                 default:
                     UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return HLSL_TEXTURE_UNKNOWN;
+#endif
             }
         }
         default:
             UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+            return HLSL_TEXTURE_UNKNOWN;
+#endif
     }
-    return HLSL_TEXTURE_UNKNOWN;
 }
 
-TString TextureString(const HLSLTextureGroup textureGroup)
+const char *TextureString(const HLSLTextureGroup textureGroup)
 {
     switch (textureGroup)
     {
@@ -277,12 +306,12 @@ TString TextureString(const HLSLTextureGroup textureGroup)
     return "<unknown read texture type>";
 }
 
-TString TextureString(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
+const char *TextureString(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
 {
     return TextureString(TextureGroup(type, imageInternalFormat));
 }
 
-TString TextureGroupSuffix(const HLSLTextureGroup type)
+const char *TextureGroupSuffix(const HLSLTextureGroup type)
 {
     switch (type)
     {
@@ -341,12 +370,13 @@ TString TextureGroupSuffix(const HLSLTextureGroup type)
     return "<unknown texture type>";
 }
 
-TString TextureGroupSuffix(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
+const char *TextureGroupSuffix(const TBasicType type,
+                               TLayoutImageInternalFormat imageInternalFormat)
 {
     return TextureGroupSuffix(TextureGroup(type, imageInternalFormat));
 }
 
-TString TextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
+const char *TextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
 {
     switch (type)
     {
@@ -371,6 +401,9 @@ TString TextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat imag
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtIImageCube:
         {
@@ -384,6 +417,9 @@ TString TextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat imag
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtUImageCube:
         {
@@ -397,11 +433,18 @@ TString TextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat imag
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         default:
             // All other types are identified by their group suffix
             return TextureGroupSuffix(type, imageInternalFormat);
     }
+#if !UNREACHABLE_IS_NORETURN
+    UNREACHABLE();
+    return "_TTS_invalid_";
+#endif
 }
 
 HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
@@ -425,6 +468,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtIImage2D:
         {
@@ -438,6 +484,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtUImage2D:
         {
@@ -452,6 +501,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtImage3D:
         {
@@ -468,6 +520,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtIImage3D:
         {
@@ -481,6 +536,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtUImage3D:
         {
@@ -494,6 +552,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtImage2DArray:
         case EbtImageCube:
@@ -511,6 +572,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtIImage2DArray:
         case EbtIImageCube:
@@ -525,6 +589,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtUImage2DArray:
         case EbtUImageCube:
@@ -539,6 +606,9 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         default:
             UNREACHABLE();
@@ -546,7 +616,7 @@ HLSLRWTextureGroup RWTextureGroup(const TBasicType type,
     return HLSL_RWTEXTURE_UNKNOWN;
 }
 
-TString RWTextureString(const HLSLRWTextureGroup RWTextureGroup)
+const char *RWTextureString(const HLSLRWTextureGroup RWTextureGroup)
 {
     switch (RWTextureGroup)
     {
@@ -587,12 +657,12 @@ TString RWTextureString(const HLSLRWTextureGroup RWTextureGroup)
     return "<unknown read and write texture type>";
 }
 
-TString RWTextureString(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
+const char *RWTextureString(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
 {
     return RWTextureString(RWTextureGroup(type, imageInternalFormat));
 }
 
-TString RWTextureGroupSuffix(const HLSLRWTextureGroup type)
+const char *RWTextureGroupSuffix(const HLSLRWTextureGroup type)
 {
     switch (type)
     {
@@ -633,12 +703,14 @@ TString RWTextureGroupSuffix(const HLSLRWTextureGroup type)
     return "<unknown read and write resource>";
 }
 
-TString RWTextureGroupSuffix(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
+const char *RWTextureGroupSuffix(const TBasicType type,
+                                 TLayoutImageInternalFormat imageInternalFormat)
 {
     return RWTextureGroupSuffix(RWTextureGroup(type, imageInternalFormat));
 }
 
-TString RWTextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat imageInternalFormat)
+const char *RWTextureTypeSuffix(const TBasicType type,
+                                TLayoutImageInternalFormat imageInternalFormat)
 {
     switch (type)
     {
@@ -657,6 +729,9 @@ TString RWTextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat im
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtIImageCube:
         {
@@ -670,6 +745,9 @@ TString RWTextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat im
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         case EbtUImageCube:
         {
@@ -683,47 +761,54 @@ TString RWTextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat im
                 default:
                     UNREACHABLE();
             }
+#if !UNREACHABLE_IS_NORETURN
+            break;
+#endif
         }
         default:
             // All other types are identified by their group suffix
             return TextureGroupSuffix(type, imageInternalFormat);
     }
+#if !UNREACHABLE_IS_NORETURN
+    UNREACHABLE();
+    return "_RWTS_invalid_";
+#endif
 }
 
-TString DecorateField(const TString &string, const TStructure &structure)
+TString DecorateField(const ImmutableString &string, const TStructure &structure)
 {
     if (structure.symbolType() != SymbolType::BuiltIn)
     {
         return Decorate(string);
     }
 
-    return string;
+    return TString(string.data());
 }
 
-TString DecoratePrivate(const TString &privateText)
+TString DecoratePrivate(const ImmutableString &privateText)
 {
-    return "dx_" + privateText;
+    return "dx_" + TString(privateText.data());
 }
 
-TString Decorate(const TString &string)
+TString Decorate(const ImmutableString &string)
 {
-    if (string.compare(0, 3, "gl_") != 0)
+    if (!string.beginsWith("gl_"))
     {
-        return "_" + string;
+        return "_" + TString(string.data());
     }
 
-    return string;
+    return TString(string.data());
 }
 
 TString DecorateVariableIfNeeded(const TVariable &variable)
 {
     if (variable.symbolType() == SymbolType::AngleInternal)
     {
-        const TString &name = variable.name();
+        const ImmutableString &name = variable.name();
         // The name should not have a prefix reserved for user-defined variables or functions.
-        ASSERT(name.compare(0, 2, "f_") != 0);
-        ASSERT(name.compare(0, 1, "_") != 0);
-        return name;
+        ASSERT(!name.beginsWith("f_"));
+        ASSERT(!name.beginsWith("_"));
+        return TString(name.data());
     }
     else
     {
@@ -736,15 +821,15 @@ TString DecorateFunctionIfNeeded(const TFunction *func)
     if (func->symbolType() == SymbolType::AngleInternal)
     {
         // The name should not have a prefix reserved for user-defined variables or functions.
-        ASSERT(func->name().compare(0, 2, "f_") != 0);
-        ASSERT(func->name().compare(0, 1, "_") != 0);
-        return func->name();
+        ASSERT(!func->name().beginsWith("f_"));
+        ASSERT(!func->name().beginsWith("_"));
+        return TString(func->name().data());
     }
-    ASSERT(func->name().compare(0, 3, "gl_") != 0);
+    ASSERT(!func->name().beginsWith("gl_"));
     // Add an additional f prefix to functions so that they're always disambiguated from variables.
     // This is necessary in the corner case where a variable declaration hides a function that it
     // uses in its initializer.
-    return "f_" + func->name();
+    return "f_" + TString(func->name().data());
 }
 
 TString TypeString(const TType &type)
@@ -859,7 +944,7 @@ TString StructNameString(const TStructure &structure)
         return Decorate(structure.name());
     }
 
-    return "ss" + str(structure.uniqueId().get()) + "_" + structure.name();
+    return "ss" + str(structure.uniqueId().get()) + "_" + TString(structure.name().data());
 }
 
 TString QualifiedStructNameString(const TStructure &structure,
@@ -889,7 +974,7 @@ TString QualifiedStructNameString(const TStructure &structure,
     return prefix + StructNameString(structure);
 }
 
-TString InterpolationString(TQualifier qualifier)
+const char *InterpolationString(TQualifier qualifier)
 {
     switch (qualifier)
     {
@@ -920,7 +1005,7 @@ TString InterpolationString(TQualifier qualifier)
     return "";
 }
 
-TString QualifierString(TQualifier qualifier)
+const char *QualifierString(TQualifier qualifier)
 {
     switch (qualifier)
     {

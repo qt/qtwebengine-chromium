@@ -28,7 +28,10 @@
 #include "base/location.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "build/build_config.h"
+#include "cc/test/skia_common.h"
+#include "cc/test/stub_decode_cache.h"
 #include "components/viz/common/resources/single_release_callback.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "components/viz/test/test_gpu_memory_buffer_manager.h"
@@ -36,7 +39,6 @@
 #include "gpu/command_buffer/common/capabilities.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/WaitableEvent.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/graphics/CanvasResourceHost.h"
 #include "platform/graphics/CanvasResourceProvider.h"
 #include "platform/graphics/StaticBitmapImage.h"
@@ -126,6 +128,48 @@ class FakePlatformSupport : public TestingPlatformSupport {
   viz::TestGpuMemoryBufferManager test_gpu_memory_buffer_manager_;
 };
 
+class ImageTrackingDecodeCache : public cc::StubDecodeCache {
+ public:
+  ImageTrackingDecodeCache() = default;
+  ~ImageTrackingDecodeCache() override { EXPECT_EQ(num_locked_images_, 0); }
+
+  cc::DecodedDrawImage GetDecodedImageForDraw(
+      const cc::DrawImage& image) override {
+    EXPECT_FALSE(disallow_cache_use_);
+
+    num_locked_images_++;
+    decoded_images_.push_back(image);
+    SkBitmap bitmap;
+    bitmap.allocPixelsFlags(SkImageInfo::MakeN32Premul(10, 10),
+                            SkBitmap::kZeroPixels_AllocFlag);
+    sk_sp<SkImage> sk_image = SkImage::MakeFromBitmap(bitmap);
+    return cc::DecodedDrawImage(sk_image, SkSize::Make(0, 0),
+                                SkSize::Make(1, 1), kLow_SkFilterQuality,
+                                !budget_exceeded_);
+  }
+
+  void set_budget_exceeded(bool exceeded) { budget_exceeded_ = exceeded; }
+  void set_disallow_cache_use(bool disallow) { disallow_cache_use_ = disallow; }
+
+  void DrawWithImageFinished(
+      const cc::DrawImage& image,
+      const cc::DecodedDrawImage& decoded_image) override {
+    EXPECT_FALSE(disallow_cache_use_);
+    num_locked_images_--;
+  }
+
+  const std::vector<cc::DrawImage>& decoded_images() const {
+    return decoded_images_;
+  }
+  int num_locked_images() const { return num_locked_images_; }
+
+ private:
+  std::vector<cc::DrawImage> decoded_images_;
+  int num_locked_images_ = 0;
+  bool budget_exceeded_ = false;
+  bool disallow_cache_use_ = false;
+};
+
 }  // anonymous namespace
 
 class Canvas2DLayerBridgeTest : public Test {
@@ -140,18 +184,20 @@ class Canvas2DLayerBridgeTest : public Test {
     return bridge;
   }
   void SetUp() override {
-    auto factory = [](FakeGLES2Interface* gl, bool* gpu_compositing_disabled)
+    auto factory = [](FakeGLES2Interface* gl, ImageTrackingDecodeCache* cache,
+                      bool* gpu_compositing_disabled)
         -> std::unique_ptr<WebGraphicsContext3DProvider> {
       *gpu_compositing_disabled = false;
-      return std::make_unique<FakeWebGraphicsContext3DProvider>(gl);
+      return std::make_unique<FakeWebGraphicsContext3DProvider>(gl, cache);
     };
-    SharedGpuContext::SetContextProviderFactoryForTesting(
-        WTF::BindRepeating(factory, WTF::Unretained(&gl_)));
+    SharedGpuContext::SetContextProviderFactoryForTesting(WTF::BindRepeating(
+        factory, WTF::Unretained(&gl_), WTF::Unretained(&image_decode_cache_)));
   }
   void TearDown() override { SharedGpuContext::ResetForTesting(); }
 
  protected:
   MockGLES2InterfaceWithImageSupport gl_;
+  ImageTrackingDecodeCache image_decode_cache_;
 
   void FullLifecycleTest() {
     Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
@@ -1240,6 +1286,119 @@ TEST_F(Canvas2DLayerBridgeTest, ReleaseGpuMemoryBufferAfterBridgeDestroyed) {
   release_callback = nullptr;
 
   ::testing::Mock::VerifyAndClearExpectations(&gl_);
+}
+
+TEST_F(Canvas2DLayerBridgeTest, EnsureCCImageCacheUse) {
+  auto color_params =
+      CanvasColorParams(kSRGBCanvasColorSpace, kF16CanvasPixelFormat, kOpaque);
+  ASSERT_FALSE(color_params.NeedsSkColorSpaceXformCanvas());
+
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      color_params)));
+  std::vector<cc::DrawImage> images = {
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)),
+                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality,
+                    SkMatrix::I(), 0u, color_params.GetStorageGfxColorSpace()),
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)),
+                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkMatrix::I(),
+                    0u, color_params.GetStorageGfxColorSpace())};
+
+  bridge->Canvas()->drawImage(images[0].paint_image(), 0u, 0u, nullptr);
+  bridge->Canvas()->drawImageRect(
+      images[1].paint_image(), SkRect::MakeWH(5u, 5u), SkRect::MakeWH(5u, 5u),
+      nullptr, cc::PaintCanvas::kFast_SrcRectConstraint);
+  bridge->NewImageSnapshot(kPreferAcceleration);
+
+  EXPECT_EQ(image_decode_cache_.decoded_images(), images);
+}
+
+TEST_F(Canvas2DLayerBridgeTest, EnsureCCImageCacheUseWithColorConversion) {
+  auto color_params = CanvasColorParams(kSRGBCanvasColorSpace,
+                                        kRGBA8CanvasPixelFormat, kOpaque);
+  ASSERT_TRUE(color_params.NeedsSkColorSpaceXformCanvas());
+
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      color_params)));
+  std::vector<cc::DrawImage> images = {
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)),
+                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality,
+                    SkMatrix::I(), 0u, color_params.GetStorageGfxColorSpace()),
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)),
+                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkMatrix::I(),
+                    0u, color_params.GetStorageGfxColorSpace())};
+
+  bridge->Canvas()->drawImage(images[0].paint_image(), 0u, 0u, nullptr);
+  bridge->Canvas()->drawImageRect(
+      images[1].paint_image(), SkRect::MakeWH(5u, 5u), SkRect::MakeWH(5u, 5u),
+      nullptr, cc::PaintCanvas::kFast_SrcRectConstraint);
+  bridge->NewImageSnapshot(kPreferAcceleration);
+
+  EXPECT_EQ(image_decode_cache_.decoded_images(), images);
+}
+
+TEST_F(Canvas2DLayerBridgeTest, ImagesLockedUntilCacheLimit) {
+  // Disable deferral so we can inspect the cache state as we use the canvas.
+  auto color_params =
+      CanvasColorParams(kSRGBCanvasColorSpace, kF16CanvasPixelFormat, kOpaque);
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      color_params)));
+  bridge->DisableDeferral(DisableDeferralReason::kDisableDeferralReasonUnknown);
+
+  std::vector<cc::DrawImage> images = {
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)),
+                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality,
+                    SkMatrix::I(), 0u, color_params.GetStorageGfxColorSpace()),
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)),
+                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkMatrix::I(),
+                    0u, color_params.GetStorageGfxColorSpace()),
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)),
+                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkMatrix::I(),
+                    0u, color_params.GetStorageGfxColorSpace())};
+
+  // First 2 images are budgeted, they should remain locked after the op.
+  bridge->Canvas()->drawImage(images[0].paint_image(), 0u, 0u, nullptr);
+  bridge->Canvas()->drawImage(images[1].paint_image(), 0u, 0u, nullptr);
+  EXPECT_EQ(image_decode_cache_.num_locked_images(), 2);
+
+  // Next image is not budgeted, we should unlock all images other than the last
+  // image.
+  image_decode_cache_.set_budget_exceeded(true);
+  bridge->Canvas()->drawImage(images[2].paint_image(), 0u, 0u, nullptr);
+  EXPECT_EQ(image_decode_cache_.num_locked_images(), 1);
+
+  // Ask the provider to release everything, no locked images should remain.
+  bridge->GetOrCreateResourceProvider()->ReleaseLockedImages();
+  EXPECT_EQ(image_decode_cache_.num_locked_images(), 0);
+}
+
+TEST_F(Canvas2DLayerBridgeTest, ImageCacheOnContextLost) {
+  // Disable deferral so we use the raster canvas directly.
+  auto color_params =
+      CanvasColorParams(kSRGBCanvasColorSpace, kF16CanvasPixelFormat, kOpaque);
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      color_params)));
+  bridge->DisableDeferral(DisableDeferralReason::kDisableDeferralReasonUnknown);
+
+  cc::PaintFlags flags;
+  std::vector<cc::DrawImage> images = {
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)),
+                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality,
+                    SkMatrix::I(), 0u, color_params.GetStorageGfxColorSpace()),
+      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)),
+                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkMatrix::I(),
+                    0u, color_params.GetStorageGfxColorSpace())};
+  bridge->Canvas()->drawImage(images[0].paint_image(), 0u, 0u, nullptr);
+
+  // Lose the context and ensure that the image provider is not used.
+  bridge->GetResourceProvider()->OnContextDestroyed();
+  // We should unref all images on the cache when the context is destroyed.
+  EXPECT_EQ(image_decode_cache_.num_locked_images(), 0);
+  image_decode_cache_.set_disallow_cache_use(true);
+  bridge->Canvas()->drawImage(images[1].paint_image(), 0u, 0u, &flags);
 }
 
 }  // namespace blink

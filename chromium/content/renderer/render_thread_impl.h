@@ -36,6 +36,7 @@
 #include "content/common/frame_replication_state.h"
 #include "content/common/frame_sink_provider.mojom.h"
 #include "content/common/render_frame_message_filter.mojom.h"
+#include "content/common/render_frame_metadata.mojom.h"
 #include "content/common/render_message_filter.mojom.h"
 #include "content/common/renderer.mojom.h"
 #include "content/common/renderer_host.mojom.h"
@@ -54,7 +55,7 @@
 #include "mojo/public/cpp/bindings/thread_safe_interface_ptr.h"
 #include "net/base/network_change_notifier.h"
 #include "net/nqe/effective_connection_type.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
@@ -134,7 +135,6 @@ class AudioRendererMixerManager;
 class BrowserPluginManager;
 class CacheStorageDispatcher;
 class CategorizedWorkerPool;
-class CompositorForwardingMessageFilter;
 class DomStorageDispatcher;
 class FileSystemDispatcher;
 class FrameSwapMessageQueue;
@@ -146,7 +146,6 @@ class NotificationDispatcher;
 class P2PSocketDispatcher;
 class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
-class QuotaDispatcher;
 class RenderThreadObserver;
 class RendererBlinkPlatformImpl;
 class ResourceDispatcher;
@@ -291,7 +290,10 @@ class CONTENT_EXPORT RenderThreadImpl
       int routing_id,
       scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue,
       const GURL& url,
-      const LayerTreeFrameSinkCallback& callback);
+      const LayerTreeFrameSinkCallback& callback,
+      mojom::RenderFrameMetadataObserverClientRequest
+          render_frame_metadata_observer_client_request,
+      mojom::RenderFrameMetadataObserverPtr render_frame_metadata_observer_ptr);
 
   blink::AssociatedInterfaceRegistry* GetAssociatedInterfaceRegistry();
 
@@ -318,10 +320,6 @@ class CONTENT_EXPORT RenderThreadImpl
     return blink_platform_impl_.get();
   }
 
-  CompositorForwardingMessageFilter* compositor_message_filter() const {
-    return compositor_message_filter_.get();
-  }
-
   InputHandlerManager* input_handler_manager() const {
     return input_handler_manager_.get();
   }
@@ -345,10 +343,6 @@ class CONTENT_EXPORT RenderThreadImpl
 
   MidiMessageFilter* midi_message_filter() {
     return midi_message_filter_.get();
-  }
-
-  QuotaDispatcher* quota_dispatcher() const {
-    return quota_dispatcher_.get();
   }
 
   ResourceDispatcher* resource_dispatcher() const {
@@ -585,16 +579,20 @@ class CONTENT_EXPORT RenderThreadImpl
   void OnGetAccessibilityTree();
 
   // mojom::Renderer:
+  void CreateEmbedderRendererService(
+      service_manager::mojom::ServiceRequest service_request) override;
   void CreateView(mojom::CreateViewParamsPtr params) override;
   void CreateFrame(mojom::CreateFrameParamsPtr params) override;
   void SetUpEmbeddedWorkerChannelForServiceWorker(
       mojom::EmbeddedWorkerInstanceClientAssociatedRequest client_request)
       override;
-  void CreateFrameProxy(int32_t routing_id,
-                        int32_t render_view_routing_id,
-                        int32_t opener_routing_id,
-                        int32_t parent_routing_id,
-                        const FrameReplicationState& replicated_state) override;
+  void CreateFrameProxy(
+      int32_t routing_id,
+      int32_t render_view_routing_id,
+      int32_t opener_routing_id,
+      int32_t parent_routing_id,
+      const FrameReplicationState& replicated_state,
+      const base::UnguessableToken& devtools_frame_token) override;
   void OnNetworkConnectionChanged(
       net::NetworkChangeNotifier::ConnectionType type,
       double max_bandwidth_mbps) override;
@@ -631,9 +629,6 @@ class CONTENT_EXPORT RenderThreadImpl
   void OnSyncMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
 
-  std::unique_ptr<viz::BeginFrameSource> CreateExternalBeginFrameSource(
-      int routing_id);
-
   std::unique_ptr<viz::SyntheticBeginFrameSource>
   CreateSyntheticBeginFrameSource();
 
@@ -651,7 +646,6 @@ class CONTENT_EXPORT RenderThreadImpl
   std::unique_ptr<ResourceDispatcher> resource_dispatcher_;
   std::unique_ptr<CacheStorageDispatcher> main_thread_cache_storage_dispatcher_;
   std::unique_ptr<FileSystemDispatcher> file_system_dispatcher_;
-  std::unique_ptr<QuotaDispatcher> quota_dispatcher_;
   std::unique_ptr<URLLoaderThrottleProvider> url_loader_throttle_provider_;
 
   // Used on the renderer and IPC threads.
@@ -747,7 +741,6 @@ class CONTENT_EXPORT RenderThreadImpl
   base::CancelableCallback<void(const IPC::Message&)> main_input_callback_;
   scoped_refptr<IPC::MessageFilter> input_event_filter_;
   std::unique_ptr<InputHandlerManager> input_handler_manager_;
-  scoped_refptr<CompositorForwardingMessageFilter> compositor_message_filter_;
 
 #if defined(OS_ANDROID)
   scoped_refptr<SynchronousCompositorFilter> sync_compositor_message_filter_;
@@ -841,6 +834,8 @@ class CONTENT_EXPORT RenderThreadImpl
   // this member.
   mojo::Binding<viz::mojom::CompositingModeWatcher>
       compositing_mode_watcher_binding_;
+
+  base::WeakPtrFactory<RenderThreadImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

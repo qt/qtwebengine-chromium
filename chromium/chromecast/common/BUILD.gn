@@ -16,6 +16,7 @@ cast_source_set("common") {
 
   deps = [
     "//base",
+    "//chromecast:chromecast_buildflags",
     "//chromecast/base",
     "//chromecast/base:cast_version",
     "//chromecast/common/media",
@@ -32,6 +33,7 @@ cast_source_set("common") {
     ]
 
     deps += [
+      "//components/version_info",
       "//extensions:extensions_resources_grd_grit",
       "//extensions/common",
       "//extensions/common/api:generated_api_bundle_generator_schema",
@@ -44,10 +46,12 @@ cast_source_set("common") {
   }
 }
 
-if (!is_android) {
-  mojom("interfaces") {
-    sources = [
-      "memory_pressure.mojom",
-    ]
+mojom("interfaces") {
+  sources = [
+    "application_media_capabilities.mojom",
+  ]
+
+  if (!is_android) {
+    sources += [ "memory_pressure.mojom" ]
   }
 }

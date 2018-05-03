@@ -44,7 +44,6 @@ enum tegra_map_type {
 struct tegra_private_map_data {
 	void *tiled;
 	void *untiled;
-	int prot;
 };
 
 static const uint32_t render_target_formats[] = { DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888 };
@@ -180,33 +179,28 @@ static void transfer_tiled_memory(struct bo *bo, uint8_t *tiled, uint8_t *untile
 
 static int tegra_init(struct driver *drv)
 {
-	int ret;
 	struct format_metadata metadata;
-	uint64_t flags = BO_USE_RENDER_MASK;
+	uint64_t use_flags = BO_USE_RENDER_MASK;
 
 	metadata.tiling = NV_MEM_KIND_PITCH;
 	metadata.priority = 1;
-	metadata.modifier = DRM_FORMAT_MOD_NONE;
+	metadata.modifier = DRM_FORMAT_MOD_LINEAR;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, use_flags);
 
 	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
 
-	flags &= ~BO_USE_SW_WRITE_OFTEN;
-	flags &= ~BO_USE_SW_READ_OFTEN;
-	flags &= ~BO_USE_LINEAR;
+	use_flags &= ~BO_USE_SW_WRITE_OFTEN;
+	use_flags &= ~BO_USE_SW_READ_OFTEN;
+	use_flags &= ~BO_USE_LINEAR;
 
 	metadata.tiling = NV_MEM_KIND_C32_2CRA;
 	metadata.priority = 2;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, use_flags);
 
 	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &metadata, BO_USE_SCANOUT);
@@ -214,14 +208,15 @@ static int tegra_init(struct driver *drv)
 }
 
 static int tegra_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
-			   uint32_t flags)
+			   uint64_t use_flags)
 {
 	uint32_t size, stride, block_height_log2 = 0;
 	enum nv_mem_kind kind = NV_MEM_KIND_PITCH;
 	struct drm_tegra_gem_create gem_create;
 	int ret;
 
-	if (flags & (BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN))
+	if (use_flags &
+	    (BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN))
 		compute_layout_linear(width, height, format, &stride, &size);
 	else
 		compute_layout_blocklinear(width, height, format, &kind, &block_height_log2,
@@ -265,52 +260,6 @@ static int tegra_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint3
 	return 0;
 }
 
-static void *tegra_bo_map(struct bo *bo, struct map_info *data, size_t plane, int prot)
-{
-	int ret;
-	struct drm_tegra_gem_mmap gem_map;
-	struct tegra_private_map_data *priv;
-
-	memset(&gem_map, 0, sizeof(gem_map));
-	gem_map.handle = bo->handles[0].u32;
-
-	ret = drmCommandWriteRead(bo->drv->fd, DRM_TEGRA_GEM_MMAP, &gem_map, sizeof(gem_map));
-	if (ret < 0) {
-		fprintf(stderr, "drv: DRM_TEGRA_GEM_MMAP failed\n");
-		return MAP_FAILED;
-	}
-
-	void *addr = mmap(0, bo->total_size, prot, MAP_SHARED, bo->drv->fd, gem_map.offset);
-	data->length = bo->total_size;
-	if ((bo->tiling & 0xFF) == NV_MEM_KIND_C32_2CRA && addr != MAP_FAILED) {
-		priv = calloc(1, sizeof(*priv));
-		priv->untiled = calloc(1, bo->total_size);
-		priv->tiled = addr;
-		priv->prot = prot;
-		data->priv = priv;
-		transfer_tiled_memory(bo, priv->tiled, priv->untiled, TEGRA_READ_TILED_BUFFER);
-		addr = priv->untiled;
-	}
-
-	return addr;
-}
-
-static int tegra_bo_unmap(struct bo *bo, struct map_info *data)
-{
-	if (data->priv) {
-		struct tegra_private_map_data *priv = data->priv;
-		if (priv->prot & PROT_WRITE)
-			transfer_tiled_memory(bo, priv->tiled, priv->untiled,
-					      TEGRA_WRITE_TILED_BUFFER);
-		data->addr = priv->tiled;
-		free(priv->untiled);
-		free(priv);
-		data->priv = NULL;
-	}
-
-	return munmap(data->addr, data->length);
-}
-
 static int tegra_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 {
 	int ret;
@@ -346,7 +295,60 @@ static int tegra_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 	return 0;
 }
 
-struct backend backend_tegra = {
+static void *tegra_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
+{
+	int ret;
+	struct drm_tegra_gem_mmap gem_map;
+	struct tegra_private_map_data *priv;
+
+	memset(&gem_map, 0, sizeof(gem_map));
+	gem_map.handle = bo->handles[0].u32;
+
+	ret = drmCommandWriteRead(bo->drv->fd, DRM_TEGRA_GEM_MMAP, &gem_map, sizeof(gem_map));
+	if (ret < 0) {
+		fprintf(stderr, "drv: DRM_TEGRA_GEM_MMAP failed\n");
+		return MAP_FAILED;
+	}
+
+	void *addr = mmap(0, bo->total_size, drv_get_prot(map_flags), MAP_SHARED, bo->drv->fd,
+			  gem_map.offset);
+	vma->length = bo->total_size;
+	if ((bo->tiling & 0xFF) == NV_MEM_KIND_C32_2CRA && addr != MAP_FAILED) {
+		priv = calloc(1, sizeof(*priv));
+		priv->untiled = calloc(1, bo->total_size);
+		priv->tiled = addr;
+		vma->priv = priv;
+		transfer_tiled_memory(bo, priv->tiled, priv->untiled, TEGRA_READ_TILED_BUFFER);
+		addr = priv->untiled;
+	}
+
+	return addr;
+}
+
+static int tegra_bo_unmap(struct bo *bo, struct vma *vma)
+{
+	if (vma->priv) {
+		struct tegra_private_map_data *priv = vma->priv;
+		vma->addr = priv->tiled;
+		free(priv->untiled);
+		free(priv);
+		vma->priv = NULL;
+	}
+
+	return munmap(vma->addr, vma->length);
+}
+
+static int tegra_bo_flush(struct bo *bo, struct mapping *mapping)
+{
+	struct tegra_private_map_data *priv = mapping->vma->priv;
+
+	if (priv && (mapping->vma->map_flags & BO_MAP_WRITE))
+		transfer_tiled_memory(bo, priv->tiled, priv->untiled, TEGRA_WRITE_TILED_BUFFER);
+
+	return 0;
+}
+
+const struct backend backend_tegra = {
 	.name = "tegra",
 	.init = tegra_init,
 	.bo_create = tegra_bo_create,
@@ -354,6 +356,7 @@ struct backend backend_tegra = {
 	.bo_import = tegra_bo_import,
 	.bo_map = tegra_bo_map,
 	.bo_unmap = tegra_bo_unmap,
+	.bo_flush = tegra_bo_flush,
 };
 
 #endif

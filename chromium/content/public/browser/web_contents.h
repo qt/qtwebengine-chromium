@@ -25,10 +25,11 @@
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/screen_orientation_delegate.h"
 #include "content/public/browser/site_instance.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/stop_find_action.h"
-#include "third_party/WebKit/common/sandbox_flags.h"
+#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/window_open_disposition.h"
@@ -91,7 +92,7 @@ struct RendererPreferences;
 //
 // That's it; go to your kitchen, grab a scone, and chill. WebContents will do
 // all the multi-process stuff behind the scenes. More details are at
-// http://www.chromium.org/developers/design-documents/multi-process-architecture
+// https://www.chromium.org/developers/design-documents/multi-process-architecture
 // .
 //
 // Each WebContents has exactly one NavigationController; each
@@ -429,16 +430,14 @@ class WebContents : public PageNavigator,
   virtual void WasShown() = 0;
   virtual void WasHidden() = 0;
 
-  // Whether the WebContents is visible. This can return true even if the page
-  // is still loading, as opposed to RenderWidgetHostView::IsShowing(), which
-  // always returns false when the page is still loading.
-  virtual bool IsVisible() const = 0;
-
   // Invoked when the WebContents becomes occluded/unoccluded. An occluded
   // WebContents isn't painted on the screen, except in a window switching
   // feature (e.g. Alt-Tab).
   virtual void WasOccluded() = 0;
   virtual void WasUnOccluded() = 0;
+
+  // Returns the visibility of the WebContents' view.
+  virtual Visibility GetVisibility() const = 0;
 
   // Returns true if the before unload and unload listeners need to be
   // fired. The value of this changes over time. For example, if true and the
@@ -458,6 +457,10 @@ class WebContents : public PageNavigator,
   virtual void AttachToOuterWebContentsFrame(
       WebContents* outer_web_contents,
       RenderFrameHost* outer_contents_frame) = 0;
+
+  // Returns the outer WebContents of this WebContents if any.
+  // Otherwise, return nullptr.
+  virtual WebContents* GetOuterWebContents() = 0;
 
   // Invoked when visible security state changes.
   virtual void DidChangeVisibleSecurityState() = 0;

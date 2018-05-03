@@ -9,6 +9,7 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrameClient.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/probe/CoreProbes.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/Histogram.h"
 #include "platform/fonts/FontCache.h"
@@ -35,7 +36,7 @@ RemoteFontFaceSource::DisplayPeriod ComputePeriod(
     case kFontDisplayAuto:
       if (is_intervention_triggered)
         return RemoteFontFaceSource::kSwapPeriod;
-    // Fall through.
+      FALLTHROUGH;
     case kFontDisplayBlock:
       switch (phase) {
         case RemoteFontFaceSource::kNoLimitExceeded:
@@ -132,8 +133,17 @@ void RemoteFontFaceSource::NotifyFinished(Resource* resource) {
   ClearResource();
 
   PruneTable();
-  if (face_->FontLoaded(this))
+  if (face_->FontLoaded(this)) {
     font_selector_->FontFaceInvalidated();
+
+    const scoped_refptr<FontCustomPlatformData> customFontData =
+        font->GetCustomFontData();
+    if (customFontData) {
+      probe::fontsUpdated(font_selector_->GetExecutionContext(),
+                          face_->GetFontFace(), resource->Url().GetString(),
+                          customFontData.get());
+    }
+  }
 }
 
 void RemoteFontFaceSource::FontLoadShortLimitExceeded(FontResource*) {

@@ -10,6 +10,7 @@ SDK.HeapProfilerModel = class extends SDK.SDKModel {
     target.registerHeapProfilerDispatcher(new SDK.HeapProfilerDispatcher(this));
     this._enabled = false;
     this._heapProfilerAgent = target.heapProfilerAgent();
+    this._memoryAgent = target.memoryAgent();
     this._runtimeModel = /** @type {!SDK.RuntimeModel} */ (target.model(SDK.RuntimeModel));
   }
 
@@ -36,7 +37,7 @@ SDK.HeapProfilerModel = class extends SDK.SDKModel {
   }
 
   startSampling() {
-    var defaultSamplingIntervalInBytes = 16384;
+    const defaultSamplingIntervalInBytes = 16384;
     this._heapProfilerAgent.startSampling(defaultSamplingIntervalInBytes);
   }
 
@@ -46,6 +47,60 @@ SDK.HeapProfilerModel = class extends SDK.SDKModel {
   stopSampling() {
     this._isRecording = false;
     return this._heapProfilerAgent.stopSampling();
+  }
+
+  startNativeSampling() {
+    const defaultSamplingIntervalInBytes = 65536;
+    this._memoryAgent.startSampling(defaultSamplingIntervalInBytes);
+  }
+
+  /**
+   * @return {!Promise<!Protocol.HeapProfiler.SamplingHeapProfile>}
+   */
+  async stopNativeSampling() {
+    const rawProfile = await this._memoryAgent.getSamplingProfile();
+    this._memoryAgent.stopSampling();
+    return this._convertNativeProfile(rawProfile);
+  }
+
+  /**
+   * @return {!Promise<!Protocol.HeapProfiler.SamplingHeapProfile>}
+   */
+  async takeNativeSnapshot() {
+    const rawProfile = await this._memoryAgent.getAllTimeSamplingProfile();
+    return this._convertNativeProfile(rawProfile);
+  }
+
+  /**
+   * @param {!Protocol.Memory.SamplingProfile} rawProfile
+   * @return {!Protocol.HeapProfiler.SamplingHeapProfile}
+   */
+  _convertNativeProfile(rawProfile) {
+    const head = {children: new Map(), selfSize: 0, callFrame: {functionName: '(root)', url: ''}};
+    for (const sample of rawProfile.samples) {
+      const node = sample.stack.reverse().reduce((node, name) => {
+        let child = node.children.get(name);
+        if (child)
+          return child;
+        const namespace = /^([^:]*)::/.exec(name);
+        child = {
+          children: new Map(),
+          callFrame: {functionName: name, url: namespace && namespace[1] || ''},
+          selfSize: 0
+        };
+        node.children.set(name, child);
+        return child;
+      }, head);
+      node.selfSize += sample.total;
+    }
+
+    function convertChildren(node) {
+      node.children = Array.from(node.children.values());
+      node.children.forEach(convertChildren);
+    }
+    convertChildren(head);
+
+    return /** @type {!Protocol.HeapProfiler.SamplingHeapProfile} */ ({head});
   }
 
   /**

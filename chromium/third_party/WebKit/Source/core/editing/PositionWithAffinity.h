@@ -19,10 +19,13 @@ class CORE_TEMPLATE_CLASS_EXPORT PositionWithAffinityTemplate {
  public:
   // TODO(yosin) We should have single parameter constructor not to use
   // default parameter for avoiding include "TextAffinity.h"
-  PositionWithAffinityTemplate(const PositionTemplate<Strategy>&,
-                               TextAffinity = TextAffinity::kDownstream);
+  explicit PositionWithAffinityTemplate(
+      const PositionTemplate<Strategy>&,
+      TextAffinity = TextAffinity::kDownstream);
   PositionWithAffinityTemplate();
   ~PositionWithAffinityTemplate();
+
+  explicit operator bool() const { return IsNotNull(); }
 
   TextAffinity Affinity() const { return affinity_; }
   const PositionTemplate<Strategy>& GetPosition() const { return position_; }

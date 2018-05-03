@@ -76,6 +76,21 @@ void RequestExtensions(gl::GLApi* api,
   }
 }
 
+void APIENTRY GLDebugMessageCallback(GLenum source,
+                                     GLenum type,
+                                     GLuint id,
+                                     GLenum severity,
+                                     GLsizei length,
+                                     const GLchar* message,
+                                     GLvoid* user_param) {
+  DCHECK(user_param != nullptr);
+  GLES2DecoderPassthroughImpl* command_decoder =
+      static_cast<GLES2DecoderPassthroughImpl*>(const_cast<void*>(user_param));
+  command_decoder->OnDebugMessage(source, type, id, severity, length, message);
+  LogGLDebugMessage(source, type, id, severity, length, message,
+                    command_decoder->GetLogger());
+}
+
 }  // anonymous namespace
 
 PassthroughResources::PassthroughResources() : texture_object_map(nullptr) {}
@@ -353,6 +368,7 @@ void GLES2DecoderPassthroughImpl::EmulatedDefaultFramebuffer::Blit(
 bool GLES2DecoderPassthroughImpl::EmulatedDefaultFramebuffer::Resize(
     const gfx::Size& new_size,
     const FeatureInfo* feature_info) {
+  DCHECK(!new_size.IsEmpty());
   if (size == new_size) {
     return true;
   }
@@ -600,8 +616,11 @@ gpu::ContextResult GLES2DecoderPassthroughImpl::Initialize(
         gl::GetRequestableGLExtensionsFromCurrentContext());
 
     static constexpr const char* kRequiredFunctionalityExtensions[] = {
-        "GL_CHROMIUM_bind_uniform_location", "GL_CHROMIUM_sync_query",
-        "GL_EXT_debug_marker", "GL_NV_fence",
+        "GL_CHROMIUM_bind_uniform_location",
+        "GL_CHROMIUM_sync_query",
+        "GL_EXT_debug_marker",
+        "GL_KHR_debug",
+        "GL_NV_fence",
     };
     RequestExtensions(api(), requestable_extensions,
                       kRequiredFunctionalityExtensions,
@@ -655,7 +674,9 @@ gpu::ContextResult GLES2DecoderPassthroughImpl::Initialize(
   // Each context initializes its own feature info because some extensions may
   // be enabled dynamically.  Don't disallow any features, leave it up to ANGLE
   // to dynamically enable extensions.
-  feature_info_->Initialize(attrib_helper.context_type, DisallowedFeatures());
+  feature_info_->Initialize(attrib_helper.context_type,
+                            true /* is_passthrough_cmd_decoder */,
+                            DisallowedFeatures());
 
   // Check for required extensions
   // TODO(geofflang): verify
@@ -668,7 +689,8 @@ gpu::ContextResult GLES2DecoderPassthroughImpl::Initialize(
       api()->glIsEnabledFn(GL_CLIENT_ARRAYS_ANGLE) != GL_FALSE ||
       feature_info_->feature_flags().angle_webgl_compatibility !=
           IsWebGLContextType(attrib_helper.context_type) ||
-      !feature_info_->feature_flags().angle_request_extension) {
+      !feature_info_->feature_flags().angle_request_extension ||
+      !feature_info_->feature_flags().khr_debug) {
     Destroy(true);
     LOG(ERROR) << "ContextResult::kFatalFailure: "
                   "missing required extension";
@@ -723,15 +745,11 @@ gpu::ContextResult GLES2DecoderPassthroughImpl::Initialize(
     bound_buffers_[GL_DISPATCH_INDIRECT_BUFFER] = 0;
   }
 
-  if (feature_info_->feature_flags().khr_debug) {
-    // For WebGL contexts, log GL errors so they appear in devtools. Otherwise
-    // only enable debug logging if requested.
-    bool log_non_errors =
-        group_->gpu_preferences().enable_gpu_driver_debug_logging;
-    if (IsWebGLContextType(attrib_helper.context_type) || log_non_errors) {
-      InitializeGLDebugLogging(log_non_errors, &logger_);
-    }
-  }
+  // For WebGL contexts, log GL errors so they appear in devtools. Otherwise
+  // only enable debug logging if requested.
+  bool log_non_errors =
+      group_->gpu_preferences().enable_gpu_driver_debug_logging;
+  InitializeGLDebugLogging(log_non_errors, GLDebugMessageCallback, this);
 
   if (feature_info_->feature_flags().chromium_texture_filtering_hint &&
       feature_info_->feature_flags().is_swiftshader) {
@@ -744,6 +762,9 @@ gpu::ContextResult GLES2DecoderPassthroughImpl::Initialize(
       attrib_helper.lose_context_when_out_of_memory;
 
   api()->glGetIntegervFn(GL_MAX_TEXTURE_SIZE, &max_2d_texture_size_);
+  api()->glGetIntegervFn(GL_MAX_RENDERBUFFER_SIZE, &max_renderbuffer_size_);
+  max_offscreen_framebuffer_size_ =
+      std::min(max_2d_texture_size_, max_renderbuffer_size_);
 
   if (offscreen_) {
     offscreen_single_buffer_ = attrib_helper.single_buffer;
@@ -795,11 +816,15 @@ gpu::ContextResult GLES2DecoderPassthroughImpl::Initialize(
       }
     }
 
-    FlushErrors();
+    CheckErrorCallbackState();
     emulated_back_buffer_ = std::make_unique<EmulatedDefaultFramebuffer>(
         api(), emulated_default_framebuffer_format_, feature_info_.get());
-    if (!emulated_back_buffer_->Resize(attrib_helper.offscreen_framebuffer_size,
-                                       feature_info_.get())) {
+    // Make sure to use a non-empty offscreen surface so that the framebuffer is
+    // complete.
+    gfx::Size initial_size(
+        std::max(1, attrib_helper.offscreen_framebuffer_size.width()),
+        std::max(1, attrib_helper.offscreen_framebuffer_size.height()));
+    if (!emulated_back_buffer_->Resize(initial_size, feature_info_.get())) {
       bool was_lost = CheckResetStatus();
       Destroy(true);
       LOG(ERROR) << (was_lost ? "ContextResult::kTransientFailure: "
@@ -809,7 +834,7 @@ gpu::ContextResult GLES2DecoderPassthroughImpl::Initialize(
                       : gpu::ContextResult::kFatalFailure;
     }
 
-    if (FlushErrors()) {
+    if (CheckErrorCallbackState()) {
       Destroy(true);
       // Errors are considered fatal, including OOM.
       LOG(ERROR)
@@ -1020,14 +1045,14 @@ bool GLES2DecoderPassthroughImpl::ResizeOffscreenFramebuffer(
   }
 
   if (size.width() < 0 || size.height() < 0 ||
-      size.width() > max_2d_texture_size_ ||
-      size.height() > max_2d_texture_size_) {
+      size.width() > max_offscreen_framebuffer_size_ ||
+      size.height() > max_offscreen_framebuffer_size_) {
     LOG(ERROR) << "GLES2DecoderPassthroughImpl::ResizeOffscreenFramebuffer "
                   "failed to allocate storage due to excessive dimensions.";
     return false;
   }
 
-  FlushErrors();
+  CheckErrorCallbackState();
 
   if (!emulated_back_buffer_->Resize(size, feature_info_.get())) {
     LOG(ERROR) << "GLES2DecoderPassthroughImpl::ResizeOffscreenFramebuffer "
@@ -1035,7 +1060,7 @@ bool GLES2DecoderPassthroughImpl::ResizeOffscreenFramebuffer(
     return false;
   }
 
-  if (FlushErrors()) {
+  if (CheckErrorCallbackState()) {
     LOG(ERROR) << "GLES2DecoderPassthroughImpl::ResizeOffscreenFramebuffer "
                   "failed to resize the emulated framebuffer because errors "
                   "were generated.";
@@ -1164,6 +1189,8 @@ gpu::Capabilities GLES2DecoderPassthroughImpl::GetCapabilities() {
   caps.image_ycbcr_420v_disabled_for_video_frames =
       group_->gpu_preferences()
           .disable_biplanar_gpu_memory_buffers_for_video_frames;
+  caps.image_xr30 = feature_info_->feature_flags().chromium_image_xr30;
+  caps.image_xb30 = feature_info_->feature_flags().chromium_image_xb30;
   caps.max_copy_texture_chromium_size =
       feature_info_->workarounds().max_copy_texture_chromium_size;
   caps.render_buffer_format_bgra8888 =
@@ -1451,6 +1478,17 @@ void GLES2DecoderPassthroughImpl::BindImage(uint32_t client_texture_id,
   passthrough_texture->SetLevelImage(texture_target, 0, image);
 }
 
+void GLES2DecoderPassthroughImpl::OnDebugMessage(GLenum source,
+                                                 GLenum type,
+                                                 GLuint id,
+                                                 GLenum severity,
+                                                 GLsizei length,
+                                                 const GLchar* message) {
+  if (type == GL_DEBUG_TYPE_ERROR && source == GL_DEBUG_SOURCE_API) {
+    had_error_callback_ = true;
+  }
+}
+
 const char* GLES2DecoderPassthroughImpl::GetCommandName(
     unsigned int command_id) const {
   if (command_id >= kFirstGLES2Command && command_id < kNumCommands) {
@@ -1678,19 +1716,8 @@ GLenum GLES2DecoderPassthroughImpl::PopError() {
 }
 
 bool GLES2DecoderPassthroughImpl::FlushErrors() {
-  auto get_next_error = [this]() {
-    // Always read a real GL error so that it can be replaced by the injected
-    // error
-    GLenum error = api()->glGetErrorFn();
-    if (!injected_driver_errors_.empty()) {
-      error = injected_driver_errors_.front();
-      injected_driver_errors_.pop_front();
-    }
-    return error;
-  };
-
   bool had_error = false;
-  GLenum error = get_next_error();
+  GLenum error = glGetError();
   while (error != GL_NO_ERROR) {
     errors_.insert(error);
     had_error = true;
@@ -1709,13 +1736,9 @@ bool GLES2DecoderPassthroughImpl::FlushErrors() {
       break;
     }
 
-    error = get_next_error();
+    error = glGetError();
   }
   return had_error;
-}
-
-void GLES2DecoderPassthroughImpl::InjectDriverError(GLenum error) {
-  injected_driver_errors_.push_back(error);
 }
 
 bool GLES2DecoderPassthroughImpl::CheckResetStatus() {
@@ -2045,6 +2068,16 @@ GLES2DecoderPassthroughImpl::GLenumToTextureTarget(GLenum target) {
     default:
       return TextureTarget::kUnkown;
   }
+}
+
+bool GLES2DecoderPassthroughImpl::CheckErrorCallbackState() {
+  bool had_error_ = had_error_callback_;
+  had_error_callback_ = false;
+  if (had_error_) {
+    // Make sure lose-context-on-OOM logic is triggered as early as possible.
+    FlushErrors();
+  }
+  return had_error_;
 }
 
 #define GLES2_CMD_OP(name)                                               \

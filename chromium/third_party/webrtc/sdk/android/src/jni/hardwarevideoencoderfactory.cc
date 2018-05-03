@@ -12,6 +12,7 @@
 
 #include "media/base/h264_profile_level_id.h"
 #include "sdk/android/generated_video_jni/jni/HardwareVideoEncoderFactory_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 
 namespace webrtc {
@@ -22,8 +23,8 @@ static jboolean JNI_HardwareVideoEncoderFactory_IsSameH264Profile(
     const JavaParamRef<jclass>&,
     const JavaParamRef<jobject>& params1,
     const JavaParamRef<jobject>& params2) {
-  return H264::IsSameH264Profile(JavaToStdMapStrings(jni, params1),
-                                 JavaToStdMapStrings(jni, params2));
+  return H264::IsSameH264Profile(JavaToNativeStringMap(jni, params1),
+                                 JavaToNativeStringMap(jni, params2));
 }
 
 }  // namespace jni

@@ -7,8 +7,10 @@
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
 #include "modules/mediastream/MediaStreamTrack.h"
+#include "modules/peerconnection/RTCDTMFSender.h"
 #include "modules/peerconnection/RTCPeerConnection.h"
 #include "platform/peerconnection/RTCVoidRequest.h"
+#include "public/platform/WebRTCDTMFSenderHandler.h"
 
 namespace blink {
 
@@ -51,11 +53,16 @@ class ReplaceTrackRequest : public RTCVoidRequest {
 
 RTCRtpSender::RTCRtpSender(RTCPeerConnection* pc,
                            std::unique_ptr<WebRTCRtpSender> sender,
-                           MediaStreamTrack* track)
-    : pc_(pc), sender_(std::move(sender)), track_(track) {
+                           MediaStreamTrack* track,
+                           MediaStreamVector streams)
+    : pc_(pc),
+      sender_(std::move(sender)),
+      track_(track),
+      streams_(std::move(streams)) {
   DCHECK(pc_);
   DCHECK(sender_);
   DCHECK(track_);
+  kind_ = track->kind();
 }
 
 MediaStreamTrack* RTCRtpSender::track() {
@@ -86,11 +93,40 @@ WebRTCRtpSender* RTCRtpSender::web_sender() {
 
 void RTCRtpSender::SetTrack(MediaStreamTrack* track) {
   track_ = track;
+  if (track) {
+    if (kind_.IsNull()) {
+      kind_ = track->kind();
+    } else if (kind_ != track->kind()) {
+      LOG(ERROR) << "Trying to set track to a different kind: Old " << kind_
+                 << " new " << track->kind();
+      NOTREACHED();
+    }
+  }
+}
+
+MediaStreamVector RTCRtpSender::streams() const {
+  return streams_;
+}
+
+RTCDTMFSender* RTCRtpSender::dtmf() {
+  // Lazy initialization of dtmf_ to avoid overhead when not used.
+  if (!dtmf_ && kind_ == "audio") {
+    auto handler = sender_->GetDtmfSender();
+    if (!handler) {
+      LOG(ERROR) << "Unable to create DTMF sender attribute on an audio sender";
+      return nullptr;
+    }
+    dtmf_ =
+        RTCDTMFSender::Create(pc_->GetExecutionContext(), std::move(handler));
+  }
+  return dtmf_;
 }
 
 void RTCRtpSender::Trace(blink::Visitor* visitor) {
   visitor->Trace(pc_);
   visitor->Trace(track_);
+  visitor->Trace(dtmf_);
+  visitor->Trace(streams_);
   ScriptWrappable::Trace(visitor);
 }
 

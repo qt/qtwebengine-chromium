@@ -5,6 +5,7 @@
 #include "core/css/cssom/CSSPerspective.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/css/CSSCalculationValue.h"
 #include "core/css/cssom/CSSUnitValue.h"
 #include "core/geometry/DOMMatrix.h"
 
@@ -45,8 +46,7 @@ CSSPerspective* CSSPerspective::FromCSSValue(const CSSFunctionValue& value) {
   return new CSSPerspective(length);
 }
 
-const DOMMatrix* CSSPerspective::AsMatrix(
-    ExceptionState& exception_state) const {
+DOMMatrix* CSSPerspective::toMatrix(ExceptionState& exception_state) const {
   if (length_->IsUnitValue() && ToCSSUnitValue(length_)->value() < 0) {
     // Negative values are invalid.
     // https://github.com/w3c/css-houdini-drafts/issues/420
@@ -64,15 +64,17 @@ const DOMMatrix* CSSPerspective::AsMatrix(
 }
 
 const CSSFunctionValue* CSSPerspective::ToCSSValue() const {
+  const CSSValue* length = nullptr;
   if (length_->IsUnitValue() && ToCSSUnitValue(length_)->value() < 0) {
-    // Negative values are invalid.
-    // https://github.com/w3c/css-houdini-drafts/issues/420
-    return nullptr;
+    // Wrap out of range length with a calc.
+    CSSCalcExpressionNode* node = length_->ToCalcExpressionNode();
+    node->SetIsNestedCalc();
+    length = CSSPrimitiveValue::Create(CSSCalcValue::Create(node));
+  } else {
+    length = length_->ToCSSValue();
   }
-  const CSSValue* length = length_->ToCSSValue();
-  if (!length)
-    return nullptr;
 
+  DCHECK(length);
   CSSFunctionValue* result = CSSFunctionValue::Create(CSSValuePerspective);
   result->Append(*length);
   return result;

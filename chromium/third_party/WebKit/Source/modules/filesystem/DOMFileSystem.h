@@ -43,9 +43,7 @@
 namespace blink {
 
 class DirectoryEntry;
-class FileCallback;
 class FileEntry;
-class FileWriterCallback;
 
 class MODULES_EXPORT DOMFileSystem final
     : public DOMFileSystemBase,
@@ -78,8 +76,12 @@ class MODULES_EXPORT DOMFileSystem final
   // ScriptWrappable overrides.
   bool HasPendingActivity() const final;
 
-  void CreateWriter(const FileEntry*, FileWriterCallback*, ErrorCallbackBase*);
-  void CreateFile(const FileEntry*, FileCallback*, ErrorCallbackBase*);
+  void CreateWriter(const FileEntry*,
+                    FileWriterCallbacks::OnDidCreateFileWriterCallback*,
+                    ErrorCallbackBase*);
+  void CreateFile(const FileEntry*,
+                  SnapshotFileCallback::OnDidCreateSnapshotFileCallback*,
+                  ErrorCallbackBase*);
 
   // Schedule a callback. This should not cross threads (should be called on the
   // same context thread).

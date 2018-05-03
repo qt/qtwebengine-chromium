@@ -38,6 +38,11 @@ inline void regen_vertices(char* vertex, const GrGlyph* glyph, size_t vertexStri
                            bool useDistanceFields, SkScalar transX, SkScalar transY,
                            GrColor color) {
     uint16_t u0, v0, u1, v1;
+#ifdef DISPLAY_PAGE_INDEX
+    // Enable this to visualize the page from which each glyph is being drawn.
+    // Green Red Magenta Cyan -> 0 1 2 3; Black -> error
+    SkColor hackColor;
+#endif
     if (regenTexCoords) {
         SkASSERT(glyph);
         int width = glyph->fBounds.width();
@@ -67,6 +72,25 @@ inline void regen_vertices(char* vertex, const GrGlyph* glyph, size_t vertexStri
         u1 |= uBit;
         v1 <<= 1;
         v1 |= vBit;
+#ifdef DISPLAY_PAGE_INDEX
+        switch (pageIndex) {
+            case 0:
+                hackColor = SK_ColorGREEN;
+                break;
+            case 1:
+                hackColor = SK_ColorRED;
+                break;
+            case 2:
+                hackColor = SK_ColorMAGENTA;
+                break;
+            case 3:
+                hackColor = SK_ColorCYAN;
+                break;
+            default:
+                hackColor = SK_ColorBLACK;
+                break;
+        }
+#endif
     }
 
     // This is a bit wonky, but sometimes we have LCD text, in which case we won't have color
@@ -90,6 +114,10 @@ inline void regen_vertices(char* vertex, const GrGlyph* glyph, size_t vertexStri
         uint16_t* textureCoords = reinterpret_cast<uint16_t*>(vertex + texCoordOffset);
         textureCoords[0] = u0;
         textureCoords[1] = v0;
+#ifdef DISPLAY_PAGE_INDEX
+        SkColor* vcolor = reinterpret_cast<SkColor*>(vertex + colorOffset);
+        *vcolor = hackColor;
+#endif
     }
     vertex += vertexStride;
 
@@ -109,6 +137,10 @@ inline void regen_vertices(char* vertex, const GrGlyph* glyph, size_t vertexStri
         uint16_t* textureCoords = reinterpret_cast<uint16_t*>(vertex + texCoordOffset);
         textureCoords[0] = u0;
         textureCoords[1] = v1;
+#ifdef DISPLAY_PAGE_INDEX
+        SkColor* vcolor = reinterpret_cast<SkColor*>(vertex + colorOffset);
+        *vcolor = hackColor;
+#endif
     }
     vertex += vertexStride;
 
@@ -128,6 +160,10 @@ inline void regen_vertices(char* vertex, const GrGlyph* glyph, size_t vertexStri
         uint16_t* textureCoords = reinterpret_cast<uint16_t*>(vertex + texCoordOffset);
         textureCoords[0] = u1;
         textureCoords[1] = v0;
+#ifdef DISPLAY_PAGE_INDEX
+        SkColor* vcolor = reinterpret_cast<SkColor*>(vertex + colorOffset);
+        *vcolor = hackColor;
+#endif
     }
     vertex += vertexStride;
 
@@ -147,6 +183,10 @@ inline void regen_vertices(char* vertex, const GrGlyph* glyph, size_t vertexStri
         uint16_t* textureCoords = reinterpret_cast<uint16_t*>(vertex + texCoordOffset);
         textureCoords[0] = u1;
         textureCoords[1] = v1;
+#ifdef DISPLAY_PAGE_INDEX
+        SkColor* vcolor = reinterpret_cast<SkColor*>(vertex + colorOffset);
+        *vcolor = hackColor;
+#endif
     }
 }
 
@@ -199,7 +239,6 @@ Regenerator::Result Regenerator::doRegen() {
         if (!*fLazyCache || (*fLazyCache)->getDescriptor() != *desc) {
             SkScalerContextEffects effects;
             effects.fPathEffect = fRun->fPathEffect.get();
-            effects.fRasterizer = fRun->fRasterizer.get();
             effects.fMaskFilter = fRun->fMaskFilter.get();
             fLazyCache->reset(SkGlyphCache::DetachCache(fRun->fTypeface.get(), effects, desc));
         }
@@ -235,14 +274,15 @@ Regenerator::Result Regenerator::doRegen() {
             SkASSERT(glyph && glyph->fMaskFormat == fSubRun->maskFormat());
 
             if (!fGlyphCache->hasGlyph(glyph) &&
-                !strike->addGlyphToAtlas(fUploadTarget, glyph, fLazyCache->get(),
+                !strike->addGlyphToAtlas(fUploadTarget, fGlyphCache, glyph, fLazyCache->get(),
                                          fSubRun->maskFormat())) {
                 fBrokenRun = glyphIdx > 0;
                 result.fFinished = false;
                 return result;
             }
+            auto tokenTracker = fUploadTarget->tokenTracker();
             fGlyphCache->addGlyphToBulkAndSetUseToken(fSubRun->bulkUseToken(), glyph,
-                                                      fUploadTarget->nextDrawToken());
+                                                      tokenTracker->nextDrawToken());
         }
 
         regen_vertices<regenPos, regenCol, regenTexCoords>(currVertex, glyph, vertexStride,
@@ -310,7 +350,8 @@ Regenerator::Result Regenerator::regenerate() {
 
             // set use tokens for all of the glyphs in our subrun.  This is only valid if we
             // have a valid atlas generation
-            fGlyphCache->setUseTokenBulk(*fSubRun->bulkUseToken(), fUploadTarget->nextDrawToken(),
+            fGlyphCache->setUseTokenBulk(*fSubRun->bulkUseToken(),
+                                         fUploadTarget->tokenTracker()->nextDrawToken(),
                                          fSubRun->maskFormat());
             return result;
         }

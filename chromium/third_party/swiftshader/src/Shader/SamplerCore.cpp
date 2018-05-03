@@ -131,142 +131,144 @@ namespace sw
 				convertFixed12(c, cf);
 			}
 
-			if(fixed12 && !hasFloatTexture())
+			if(fixed12)
 			{
-				if(state.textureFormat == FORMAT_R5G6B5)
+				if(!hasFloatTexture())
 				{
-					c.x = MulHigh(As<UShort4>(c.x), UShort4(0x10000000 / 0xF800));
-					c.y = MulHigh(As<UShort4>(c.y), UShort4(0x10000000 / 0xFC00));
-					c.z = MulHigh(As<UShort4>(c.z), UShort4(0x10000000 / 0xF800));
-				}
-				else
-				{
-					for(int component = 0; component < textureComponentCount(); component++)
+					if(state.textureFormat == FORMAT_R5G6B5)
 					{
-						if(hasUnsignedTextureComponent(component))
+						c.x = MulHigh(As<UShort4>(c.x), UShort4(0x10000000 / 0xF800));
+						c.y = MulHigh(As<UShort4>(c.y), UShort4(0x10000000 / 0xFC00));
+						c.z = MulHigh(As<UShort4>(c.z), UShort4(0x10000000 / 0xF800));
+					}
+					else
+					{
+						for(int component = 0; component < textureComponentCount(); component++)
 						{
-							c[component] = As<UShort4>(c[component]) >> 4;
-						}
-						else
-						{
-							c[component] = c[component] >> 3;
+							if(hasUnsignedTextureComponent(component))
+							{
+								c[component] = As<UShort4>(c[component]) >> 4;
+							}
+							else
+							{
+								c[component] = c[component] >> 3;
+							}
 						}
 					}
 				}
-			}
 
-			if(fixed12 && state.textureFilter != FILTER_GATHER)
-			{
-				int componentCount = textureComponentCount();
-				short defaultColorValue = colorsDefaultToZero ? 0x0000 : 0x1000;
-
-				switch(state.textureFormat)
+				if(state.textureFilter != FILTER_GATHER)
 				{
-				case FORMAT_R8_SNORM:
-				case FORMAT_G8R8_SNORM:
-				case FORMAT_X8B8G8R8_SNORM:
-				case FORMAT_A8B8G8R8_SNORM:
-				case FORMAT_R8:
-				case FORMAT_R5G6B5:
-				case FORMAT_G8R8:
-				case FORMAT_R8I:
-				case FORMAT_R8UI:
-				case FORMAT_G8R8I:
-				case FORMAT_G8R8UI:
-				case FORMAT_X8B8G8R8I:
-				case FORMAT_X8B8G8R8UI:
-				case FORMAT_A8B8G8R8I:
-				case FORMAT_A8B8G8R8UI:
-				case FORMAT_R16I:
-				case FORMAT_R16UI:
-				case FORMAT_G16R16:
-				case FORMAT_G16R16I:
-				case FORMAT_G16R16UI:
-				case FORMAT_X16B16G16R16I:
-				case FORMAT_X16B16G16R16UI:
-				case FORMAT_A16B16G16R16:
-				case FORMAT_A16B16G16R16I:
-				case FORMAT_A16B16G16R16UI:
-				case FORMAT_R32I:
-				case FORMAT_R32UI:
-				case FORMAT_G32R32I:
-				case FORMAT_G32R32UI:
-				case FORMAT_X32B32G32R32I:
-				case FORMAT_X32B32G32R32UI:
-				case FORMAT_A32B32G32R32I:
-				case FORMAT_A32B32G32R32UI:
-				case FORMAT_X8R8G8B8:
-				case FORMAT_X8B8G8R8:
-				case FORMAT_A8R8G8B8:
-				case FORMAT_A8B8G8R8:
-				case FORMAT_SRGB8_X8:
-				case FORMAT_SRGB8_A8:
-				case FORMAT_V8U8:
-				case FORMAT_Q8W8V8U8:
-				case FORMAT_X8L8V8U8:
-				case FORMAT_V16U16:
-				case FORMAT_A16W16V16U16:
-				case FORMAT_Q16W16V16U16:
-				case FORMAT_YV12_BT601:
-				case FORMAT_YV12_BT709:
-				case FORMAT_YV12_JFIF:
-					if(componentCount < 2) c.y = Short4(defaultColorValue);
-					if(componentCount < 3) c.z = Short4(defaultColorValue);
-					if(componentCount < 4) c.w = Short4(0x1000);
-					break;
-				case FORMAT_A8:
-					c.w = c.x;
-					c.x = Short4(0x0000);
-					c.y = Short4(0x0000);
-					c.z = Short4(0x0000);
-					break;
-				case FORMAT_L8:
-				case FORMAT_L16:
-					c.y = c.x;
-					c.z = c.x;
-					c.w = Short4(0x1000);
-					break;
-				case FORMAT_A8L8:
-					c.w = c.y;
-					c.y = c.x;
-					c.z = c.x;
-					break;
-				case FORMAT_R32F:
-					c.y = Short4(defaultColorValue);
-				case FORMAT_G32R32F:
-					c.z = Short4(defaultColorValue);
-				case FORMAT_X32B32G32R32F:
-				case FORMAT_X32B32G32R32F_UNSIGNED:
-					c.w = Short4(0x1000);
-				case FORMAT_A32B32G32R32F:
-					break;
-				case FORMAT_D32F:
-				case FORMAT_D32FS8:
-				case FORMAT_D32F_LOCKABLE:
-				case FORMAT_D32FS8_TEXTURE:
-				case FORMAT_D32F_SHADOW:
-				case FORMAT_D32FS8_SHADOW:
-					c.y = c.x;
-					c.z = c.x;
-					c.w = c.x;
-					break;
-				default:
-					ASSERT(false);
+					int componentCount = textureComponentCount();
+					short defaultColorValue = colorsDefaultToZero ? 0x0000 : 0x1000;
+
+					switch(state.textureFormat)
+					{
+					case FORMAT_R8_SNORM:
+					case FORMAT_G8R8_SNORM:
+					case FORMAT_X8B8G8R8_SNORM:
+					case FORMAT_A8B8G8R8_SNORM:
+					case FORMAT_R8:
+					case FORMAT_R5G6B5:
+					case FORMAT_G8R8:
+					case FORMAT_R8I:
+					case FORMAT_R8UI:
+					case FORMAT_G8R8I:
+					case FORMAT_G8R8UI:
+					case FORMAT_X8B8G8R8I:
+					case FORMAT_X8B8G8R8UI:
+					case FORMAT_A8B8G8R8I:
+					case FORMAT_A8B8G8R8UI:
+					case FORMAT_R16I:
+					case FORMAT_R16UI:
+					case FORMAT_G16R16:
+					case FORMAT_G16R16I:
+					case FORMAT_G16R16UI:
+					case FORMAT_X16B16G16R16I:
+					case FORMAT_X16B16G16R16UI:
+					case FORMAT_A16B16G16R16:
+					case FORMAT_A16B16G16R16I:
+					case FORMAT_A16B16G16R16UI:
+					case FORMAT_R32I:
+					case FORMAT_R32UI:
+					case FORMAT_G32R32I:
+					case FORMAT_G32R32UI:
+					case FORMAT_X32B32G32R32I:
+					case FORMAT_X32B32G32R32UI:
+					case FORMAT_A32B32G32R32I:
+					case FORMAT_A32B32G32R32UI:
+					case FORMAT_X8R8G8B8:
+					case FORMAT_X8B8G8R8:
+					case FORMAT_A8R8G8B8:
+					case FORMAT_A8B8G8R8:
+					case FORMAT_SRGB8_X8:
+					case FORMAT_SRGB8_A8:
+					case FORMAT_V8U8:
+					case FORMAT_Q8W8V8U8:
+					case FORMAT_X8L8V8U8:
+					case FORMAT_V16U16:
+					case FORMAT_A16W16V16U16:
+					case FORMAT_Q16W16V16U16:
+					case FORMAT_YV12_BT601:
+					case FORMAT_YV12_BT709:
+					case FORMAT_YV12_JFIF:
+						if(componentCount < 2) c.y = Short4(defaultColorValue);
+						if(componentCount < 3) c.z = Short4(defaultColorValue);
+						if(componentCount < 4) c.w = Short4(0x1000);
+						break;
+					case FORMAT_A8:
+						c.w = c.x;
+						c.x = Short4(0x0000);
+						c.y = Short4(0x0000);
+						c.z = Short4(0x0000);
+						break;
+					case FORMAT_L8:
+					case FORMAT_L16:
+						c.y = c.x;
+						c.z = c.x;
+						c.w = Short4(0x1000);
+						break;
+					case FORMAT_A8L8:
+						c.w = c.y;
+						c.y = c.x;
+						c.z = c.x;
+						break;
+					case FORMAT_R32F:
+						c.y = Short4(defaultColorValue);
+					case FORMAT_G32R32F:
+						c.z = Short4(defaultColorValue);
+					case FORMAT_X32B32G32R32F:
+					case FORMAT_X32B32G32R32F_UNSIGNED:
+						c.w = Short4(0x1000);
+					case FORMAT_A32B32G32R32F:
+						break;
+					case FORMAT_D32F:
+					case FORMAT_D32FS8:
+					case FORMAT_D32F_LOCKABLE:
+					case FORMAT_D32FS8_TEXTURE:
+					case FORMAT_D32F_SHADOW:
+					case FORMAT_D32FS8_SHADOW:
+						c.y = c.x;
+						c.z = c.x;
+						c.w = c.x;
+						break;
+					default:
+						ASSERT(false);
+					}
+				}
+
+				if((state.swizzleR != SWIZZLE_RED) ||
+				   (state.swizzleG != SWIZZLE_GREEN) ||
+				   (state.swizzleB != SWIZZLE_BLUE) ||
+				   (state.swizzleA != SWIZZLE_ALPHA))
+				{
+					const Vector4s col(c);
+					applySwizzle(state.swizzleR, c.x, col);
+					applySwizzle(state.swizzleG, c.y, col);
+					applySwizzle(state.swizzleB, c.z, col);
+					applySwizzle(state.swizzleA, c.w, col);
 				}
 			}
-		}
-
-		if(fixed12 &&
-		   ((state.swizzleR != SWIZZLE_RED) ||
-		    (state.swizzleG != SWIZZLE_GREEN) ||
-		    (state.swizzleB != SWIZZLE_BLUE) ||
-		    (state.swizzleA != SWIZZLE_ALPHA)))
-		{
-			const Vector4s col(c);
-			applySwizzle(state.swizzleR, c.x, col);
-			applySwizzle(state.swizzleG, c.y, col);
-			applySwizzle(state.swizzleB, c.z, col);
-			applySwizzle(state.swizzleA, c.w, col);
 		}
 
 		return c;
@@ -297,7 +299,8 @@ namespace sw
 			// FIXME: YUV is not supported by the floating point path
 			bool forceFloatFiltering = state.highPrecisionFiltering && !hasYuvFormat() && (state.textureFilter != FILTER_POINT);
 			bool seamlessCube = (state.addressingModeU == ADDRESSING_SEAMLESS);
-			if(hasFloatTexture() || hasUnnormalizedIntegerTexture() || forceFloatFiltering || seamlessCube)   // FIXME: Mostly identical to integer sampling
+			bool rectangleTexture = (state.textureType == TEXTURE_RECTANGLE);
+			if(hasFloatTexture() || hasUnnormalizedIntegerTexture() || forceFloatFiltering || seamlessCube || rectangleTexture)   // FIXME: Mostly identical to integer sampling
 			{
 				Float4 uuuu = u;
 				Float4 vvvv = v;
@@ -483,18 +486,18 @@ namespace sw
 					ASSERT(false);
 				}
 			}
-		}
 
-		if((state.swizzleR != SWIZZLE_RED) ||
-		   (state.swizzleG != SWIZZLE_GREEN) ||
-		   (state.swizzleB != SWIZZLE_BLUE) ||
-		   (state.swizzleA != SWIZZLE_ALPHA))
-		{
-			const Vector4f col(c);
-			applySwizzle(state.swizzleR, c.x, col);
-			applySwizzle(state.swizzleG, c.y, col);
-			applySwizzle(state.swizzleB, c.z, col);
-			applySwizzle(state.swizzleA, c.w, col);
+			if((state.swizzleR != SWIZZLE_RED) ||
+			   (state.swizzleG != SWIZZLE_GREEN) ||
+			   (state.swizzleB != SWIZZLE_BLUE) ||
+			   (state.swizzleA != SWIZZLE_ALPHA))
+			{
+				const Vector4f col(c);
+				applySwizzle(state.swizzleR, c.x, col);
+				applySwizzle(state.swizzleG, c.y, col);
+				applySwizzle(state.swizzleB, c.z, col);
+				applySwizzle(state.swizzleA, c.w, col);
+			}
 		}
 
 		return c;
@@ -2365,20 +2368,26 @@ namespace sw
 
 			Float4 coord = uvw;
 
-			switch(addressingMode)
+			if(state.textureType == TEXTURE_RECTANGLE)
 			{
-			case ADDRESSING_CLAMP:
-			case ADDRESSING_BORDER:
-			case ADDRESSING_SEAMLESS:
-				// Linear filtering of cube doesn't require clamping because the coordinates
-				// are already in [0, 1] range and numerical imprecision is tolerated.
-				if(addressingMode != ADDRESSING_SEAMLESS || pointFilter)
+				coord = Min(Max(coord, Float4(0.0f)), Float4(dim - Int4(1)));
+			}
+			else
+			{
+				switch(addressingMode)
 				{
-					Float4 one = As<Float4>(Int4(oneBits));
-					coord = Min(Max(coord, Float4(0.0f)), one);
-				}
-				break;
-			case ADDRESSING_MIRROR:
+				case ADDRESSING_CLAMP:
+				case ADDRESSING_BORDER:
+				case ADDRESSING_SEAMLESS:
+					// Linear filtering of cube doesn't require clamping because the coordinates
+					// are already in [0, 1] range and numerical imprecision is tolerated.
+					if(addressingMode != ADDRESSING_SEAMLESS || pointFilter)
+					{
+						Float4 one = As<Float4>(Int4(oneBits));
+						coord = Min(Max(coord, Float4(0.0f)), one);
+					}
+					break;
+				case ADDRESSING_MIRROR:
 				{
 					Float4 half = As<Float4>(Int4(halfBits));
 					Float4 one = As<Float4>(Int4(oneBits));
@@ -2386,7 +2395,7 @@ namespace sw
 					coord = one - Abs(two * Frac(coord * half) - one);
 				}
 				break;
-			case ADDRESSING_MIRRORONCE:
+				case ADDRESSING_MIRRORONCE:
 				{
 					Float4 half = As<Float4>(Int4(halfBits));
 					Float4 one = As<Float4>(Int4(oneBits));
@@ -2394,22 +2403,23 @@ namespace sw
 					coord = one - Abs(two * Frac(Min(Max(coord, -one), two) * half) - one);
 				}
 				break;
-			default:   // Wrap
-				coord = Frac(coord);
-				break;
+				default:   // Wrap
+					coord = Frac(coord);
+					break;
+				}
+
+				coord = coord * Float4(dim);
 			}
 
-			coord = coord * Float4(dim);
-
 			if(state.textureFilter == FILTER_POINT ||
-               state.textureFilter == FILTER_GATHER)
- 			{
+			   state.textureFilter == FILTER_GATHER)
+			{
 				xyz0 = Int4(coord);
 			}
 			else
 			{
 				if(state.textureFilter == FILTER_MIN_POINT_MAG_LINEAR ||
-            	   state.textureFilter == FILTER_MIN_LINEAR_MAG_POINT)
+				   state.textureFilter == FILTER_MIN_LINEAR_MAG_POINT)
 				{
 					coord -= As<Float4>(As<Int4>(Float4(0.5f)) & filter);
 				}

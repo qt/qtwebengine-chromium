@@ -98,6 +98,7 @@ static SVGPaintDescription RequestPaint(const LayoutObject& object,
       color = apply_to_fill ? svg_style.FillPaintColor()
                             : svg_style.StrokePaintColor();
       has_color = true;
+      break;
     default:
       break;
   }
@@ -132,7 +133,7 @@ static SVGPaintDescription RequestPaint(const LayoutObject& object,
 
   LayoutSVGResourcePaintServer* uri_resource = nullptr;
   if (SVGResources* resources =
-          SVGResourcesCache::CachedResourcesForLayoutObject(&object))
+          SVGResourcesCache::CachedResourcesForLayoutObject(object))
     uri_resource = apply_to_fill ? resources->Fill() : resources->Stroke();
 
   // If the requested resource is not available, return the color resource or
@@ -168,8 +169,8 @@ SVGPaintServer SVGPaintServer::RequestForLayoutObject(
     return Invalid();
   if (!paint_description.resource)
     return SVGPaintServer(paint_description.color);
-  SVGPaintServer paint_server =
-      paint_description.resource->PreparePaintServer(layout_object);
+  SVGPaintServer paint_server = paint_description.resource->PreparePaintServer(
+      layout_object, layout_object.ObjectBoundingBox());
   if (paint_server.IsValid())
     return paint_server;
   if (paint_description.has_fallback)

@@ -21,6 +21,7 @@ namespace blink {
 class CompositorAnimationHost;
 class CompositorMutatorImpl;
 class GraphicsLayer;
+struct IntrinsicSizingInfo;
 class PageWidgetEventHandler;
 class WebActiveGestureAnimation;
 class WebImage;
@@ -41,6 +42,7 @@ class CORE_EXPORT WebFrameWidgetBase
 
   virtual bool ForSubframe() const = 0;
   virtual void ScheduleAnimation() = 0;
+  virtual void IntrinsicSizingInfoChanged(const IntrinsicSizingInfo&) {}
   virtual CompositorMutatorImpl* CompositorMutator() = 0;
 
   virtual WebWidgetClient* Client() const = 0;
@@ -110,6 +112,9 @@ class CORE_EXPORT WebFrameWidgetBase
 
   // Image decode functionality.
   void RequestDecode(const PaintImage&, base::OnceCallback<void(bool)>);
+
+  // Called when the FrameView for this Widget's local root is created.
+  virtual void DidCreateLocalRootView() {}
 
   // This method returns the focused frame belonging to this WebWidget, that
   // is, a focused frame with the same local root as the one corresponding

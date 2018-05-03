@@ -21,13 +21,14 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "platform/bindings/DOMWrapperWorld.h"
 #include "platform/feature_policy/FeaturePolicy.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebFloatRect.h"
+#include "public/platform/WebIntrinsicSizingInfo.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebScrollIntoViewParams.h"
 #include "public/web/WebDocument.h"
@@ -35,7 +36,7 @@
 #include "public/web/WebPerformance.h"
 #include "public/web/WebRange.h"
 #include "public/web/WebTreeScopeType.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -229,19 +230,17 @@ void WebRemoteFrameImpl::SetReplicatedName(const WebString& name) {
 
 void WebRemoteFrameImpl::SetReplicatedFeaturePolicyHeader(
     const ParsedFeaturePolicy& parsed_header) {
-  if (RuntimeEnabledFeatures::FeaturePolicyEnabled()) {
-    FeaturePolicy* parent_feature_policy = nullptr;
-    if (Parent()) {
-      Frame* parent_frame = GetFrame()->Client()->Parent();
-      parent_feature_policy =
-          parent_frame->GetSecurityContext()->GetFeaturePolicy();
-    }
-    ParsedFeaturePolicy container_policy;
-    if (GetFrame()->Owner())
-      container_policy = GetFrame()->Owner()->ContainerPolicy();
-    GetFrame()->GetSecurityContext()->InitializeFeaturePolicy(
-        parsed_header, container_policy, parent_feature_policy);
+  FeaturePolicy* parent_feature_policy = nullptr;
+  if (Parent()) {
+    Frame* parent_frame = GetFrame()->Client()->Parent();
+    parent_feature_policy =
+        parent_frame->GetSecurityContext()->GetFeaturePolicy();
   }
+  ParsedFeaturePolicy container_policy;
+  if (GetFrame()->Owner())
+    container_policy = GetFrame()->Owner()->ContainerPolicy();
+  GetFrame()->GetSecurityContext()->InitializeFeaturePolicy(
+      parsed_header, container_policy, parent_feature_policy);
 }
 
 void WebRemoteFrameImpl::AddReplicatedContentSecurityPolicyHeader(
@@ -294,11 +293,6 @@ void WebRemoteFrameImpl::DidStartLoading() {
 
 void WebRemoteFrameImpl::DidStopLoading() {
   GetFrame()->SetIsLoading(false);
-  if (Parent() && Parent()->IsWebLocalFrame()) {
-    WebLocalFrameImpl* parent_frame =
-        ToWebLocalFrameImpl(Parent()->ToWebLocalFrame());
-    parent_frame->GetFrame()->GetDocument()->CheckCompleted();
-  }
 }
 
 bool WebRemoteFrameImpl::IsIgnoredForHitTest() const {
@@ -332,7 +326,7 @@ void WebRemoteFrameImpl::WillEnterFullscreen() {
 }
 
 void WebRemoteFrameImpl::SetHasReceivedUserGesture() {
-  GetFrame()->UpdateUserActivationInFrameTree();
+  Frame::NotifyUserActivation(GetFrame(), UserGestureToken::kNewGesture);
 }
 
 void WebRemoteFrameImpl::ScrollRectToVisible(
@@ -348,17 +342,30 @@ void WebRemoteFrameImpl::ScrollRectToVisible(
   }
 
   // Schedule the scroll.
-  auto* scroll_sequencer =
-      owner_element->GetDocument().GetPage()->GetSmoothScrollSequencer();
-  scroll_sequencer->AbortAnimations();
   LayoutRect new_rect_to_scroll = EnclosingLayoutRect(
       owner_object
           ->LocalToAncestorQuad(FloatRect(rect_to_scroll), owner_object->View(),
                                 kUseTransforms | kTraverseDocumentBoundaries)
           .BoundingBox());
-  owner_object->EnclosingBox()->ScrollRectToVisibleRecursive(
-      LayoutRect(new_rect_to_scroll), params);
-  scroll_sequencer->RunQueuedAnimations();
+  owner_object->ScrollRectToVisible(new_rect_to_scroll, params);
+}
+
+void WebRemoteFrameImpl::IntrinsicSizingInfoChanged(
+    const WebIntrinsicSizingInfo& web_sizing_info) {
+  FrameOwner* owner = GetFrame()->Owner();
+  // Only communication from HTMLPluginElement-owned subframes is allowed
+  // at present. This includes <embed> and <object> tags.
+  if (!owner || !owner->IsPlugin())
+    return;
+
+  IntrinsicSizingInfo sizing_info;
+  sizing_info.size = web_sizing_info.size;
+  sizing_info.aspect_ratio = web_sizing_info.aspect_ratio;
+  sizing_info.has_width = web_sizing_info.has_width;
+  sizing_info.has_height = web_sizing_info.has_height;
+  frame_->View()->SetIntrinsicSizeInfo(sizing_info);
+
+  owner->IntrinsicSizingInfoChanged();
 }
 
 void WebRemoteFrameImpl::SetHasReceivedUserGestureBeforeNavigation(bool value) {

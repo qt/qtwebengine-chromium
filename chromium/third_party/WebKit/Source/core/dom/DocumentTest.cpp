@@ -397,10 +397,10 @@ TEST_F(DocumentTest, PrintRelayout) {
   FloatSize page_size(400, 400);
   float maximum_shrink_ratio = 1.6;
 
-  GetDocument().GetFrame()->SetPrinting(true, page_size, page_size,
-                                        maximum_shrink_ratio);
+  GetDocument().GetFrame()->StartPrinting(page_size, page_size,
+                                          maximum_shrink_ratio);
   EXPECT_EQ(GetDocument().documentElement()->OffsetWidth(), 400);
-  GetDocument().GetFrame()->SetPrinting(false, FloatSize(), FloatSize(), 0);
+  GetDocument().GetFrame()->EndPrinting();
   EXPECT_EQ(GetDocument().documentElement()->OffsetWidth(), 800);
 }
 
@@ -411,13 +411,13 @@ TEST_F(DocumentTest, LinkManifest) {
   EXPECT_EQ(nullptr, GetDocument().LinkManifest());
 
   // Check that we use the first manifest with <link rel=manifest>
-  HTMLLinkElement* link = HTMLLinkElement::Create(GetDocument(), false);
+  auto* link = HTMLLinkElement::Create(GetDocument(), CreateElementFlags());
   link->setAttribute(blink::HTMLNames::relAttr, "manifest");
   link->setAttribute(blink::HTMLNames::hrefAttr, "foo.json");
   GetDocument().head()->AppendChild(link);
   EXPECT_EQ(link, GetDocument().LinkManifest());
 
-  HTMLLinkElement* link2 = HTMLLinkElement::Create(GetDocument(), false);
+  auto* link2 = HTMLLinkElement::Create(GetDocument(), CreateElementFlags());
   link2->setAttribute(blink::HTMLNames::relAttr, "manifest");
   link2->setAttribute(blink::HTMLNames::hrefAttr, "bar.json");
   GetDocument().head()->InsertBefore(link2, link);
@@ -613,13 +613,13 @@ TEST_F(DocumentTest, SynchronousMutationNotifier) {
   EXPECT_EQ(GetDocument(), observer.LifecycleContext());
   EXPECT_EQ(0, observer.CountContextDestroyedCalled());
 
-  Element* div_node = GetDocument().createElement("div");
+  Element* div_node = GetDocument().CreateRawElement(HTMLNames::divTag);
   GetDocument().body()->AppendChild(div_node);
 
-  Element* bold_node = GetDocument().createElement("b");
+  Element* bold_node = GetDocument().CreateRawElement(HTMLNames::bTag);
   div_node->AppendChild(bold_node);
 
-  Element* italic_node = GetDocument().createElement("i");
+  Element* italic_node = GetDocument().CreateRawElement(HTMLNames::iTag);
   div_node->AppendChild(italic_node);
 
   Node* text_node = GetDocument().createTextNode("0123456789");
@@ -679,7 +679,7 @@ TEST_F(DocumentTest, SynchronousMutationNotifierMergeTextNodes) {
 TEST_F(DocumentTest, SynchronousMutationNotifierMoveTreeToNewDocument) {
   auto& observer = *new TestSynchronousMutationObserver(GetDocument());
 
-  Node* move_sample = GetDocument().createElement("div");
+  Node* move_sample = GetDocument().CreateRawElement(HTMLNames::divTag);
   move_sample->appendChild(GetDocument().createTextNode("a123"));
   move_sample->appendChild(GetDocument().createTextNode("b456"));
   GetDocument().body()->AppendChild(move_sample);
@@ -703,7 +703,7 @@ TEST_F(DocumentTest, SynchronousMutationNotifieReplaceChild) {
   auto& observer = *new TestSynchronousMutationObserver(GetDocument());
   Element* const replaced_node = GetDocument().body();
   GetDocument().documentElement()->ReplaceChild(
-      GetDocument().createElement("div"), GetDocument().body());
+      GetDocument().CreateRawElement(HTMLNames::divTag), GetDocument().body());
   ASSERT_EQ(2u, observer.ChildrenChangedNodes().size());
   EXPECT_EQ(GetDocument().documentElement(),
             observer.ChildrenChangedNodes()[0]);
@@ -813,9 +813,9 @@ TEST_F(DocumentTest, ValidationMessageCleanup) {
   // true. It's necessary to kick unload process.
   GetDocument().ImplicitOpen(kForceSynchronousParsing);
   GetDocument().CancelParsing();
-  GetDocument().AppendChild(GetDocument().createElement("html"));
+  GetDocument().AppendChild(GetDocument().CreateRawElement(HTMLNames::htmlTag));
   SetHtmlInnerHTML("<body><input required></body>");
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->setTextContent(
       "window.onunload = function() {"
       "document.querySelector('input').reportValidity(); };");
@@ -844,27 +844,6 @@ TEST_F(DocumentTest, SandboxDisablesAppCache) {
   GetDocument().SetSecurityOrigin(origin);
   SandboxFlags mask = kSandboxOrigin;
   GetDocument().EnforceSandboxFlags(mask);
-  GetDocument().SetURL(KURL("https://test.com/foobar/document"));
-
-  ApplicationCacheHost* appcache_host =
-      GetDocument().Loader()->GetApplicationCacheHost();
-  appcache_host->host_ = std::make_unique<MockWebApplicationCacheHost>();
-  appcache_host->SelectCacheWithManifest(
-      KURL("https://test.com/foobar/manifest"));
-  MockWebApplicationCacheHost* mock_web_host =
-      static_cast<MockWebApplicationCacheHost*>(appcache_host->host_.get());
-  EXPECT_FALSE(mock_web_host->with_manifest_was_called_);
-  EXPECT_TRUE(mock_web_host->without_manifest_was_called_);
-}
-
-TEST_F(DocumentTest, SuboriginDisablesAppCache) {
-  ScopedSuboriginsForTest suborigins(true);
-  scoped_refptr<SecurityOrigin> origin =
-      SecurityOrigin::CreateFromString("https://test.com");
-  Suborigin suborigin;
-  suborigin.SetName("foobar");
-  origin->AddSuborigin(suborigin);
-  GetDocument().SetSecurityOrigin(origin);
   GetDocument().SetURL(KURL("https://test.com/foobar/document"));
 
   ApplicationCacheHost* appcache_host =
@@ -943,6 +922,27 @@ TEST_F(DocumentTest, ViewportPropagationNoRecalc) {
   int new_element_count = GetDocument().GetStyleEngine().StyleForElementCount();
 
   EXPECT_EQ(1, new_element_count - old_element_count);
+}
+
+class InvalidatorObserver : public InterfaceInvalidator::Observer {
+ public:
+  void OnInvalidate() { ++invalidate_called_counter_; }
+
+  int CountInvalidateCalled() const { return invalidate_called_counter_; }
+
+ private:
+  int invalidate_called_counter_ = 0;
+};
+
+TEST_F(DocumentTest, InterfaceInvalidatorDestruction) {
+  InvalidatorObserver obs;
+  InterfaceInvalidator* invalidator = GetDocument().GetInterfaceInvalidator();
+  invalidator->AddObserver(&obs);
+  EXPECT_EQ(obs.CountInvalidateCalled(), 0);
+
+  GetDocument().Shutdown();
+  EXPECT_FALSE(GetDocument().GetInterfaceInvalidator());
+  EXPECT_EQ(1, obs.CountInvalidateCalled());
 }
 
 typedef bool TestParamRootLayerScrolling;

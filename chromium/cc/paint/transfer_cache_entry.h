@@ -23,8 +23,9 @@ enum class TransferCacheEntryType : uint32_t {
   kRawMemory,
   kImage,
   kPaintTypeface,
+  kColorSpace,
   // Add new entries above this line, make sure to update kLast.
-  kLast = kPaintTypeface,
+  kLast = kColorSpace,
 };
 
 // An interface used on the client to serialize a transfer cache entry
@@ -50,6 +51,10 @@ class CC_PAINT_EXPORT ClientTransferCacheEntry {
   // guaranteed to be at least SerializedSize() bytes. Returns true on success
   // and false otherwise.
   virtual bool Serialize(base::span<uint8_t> data) const = 0;
+
+  // Returns the same value as Type() but as a uint32_t to use via
+  // ContextSupport.
+  uint32_t UnsafeType() const { return static_cast<uint32_t>(Type()); }
 };
 
 // An interface which receives the raw data sent by the client and

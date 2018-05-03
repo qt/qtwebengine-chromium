@@ -32,6 +32,7 @@
 #define ImageBitmapFactories_h
 
 #include <memory>
+#include "base/single_thread_task_runner.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/image_bitmap_source.h"
@@ -54,7 +55,6 @@ class EventTarget;
 class ExecutionContext;
 class ImageBitmapSource;
 class ImageBitmapOptions;
-class WebTaskRunner;
 
 typedef HTMLImageElementOrSVGImageElementOrHTMLVideoElementOrHTMLCanvasElementOrBlobOrImageDataOrImageBitmapOrOffscreenCanvas
     ImageBitmapSourceUnion;
@@ -67,6 +67,8 @@ class ImageBitmapFactories final
   USING_GARBAGE_COLLECTED_MIXIN(ImageBitmapFactories);
 
  public:
+  static const char kSupplementName[];
+
   static ScriptPromise createImageBitmap(ScriptState*,
                                          EventTarget&,
                                          const ImageBitmapSourceUnion&,
@@ -94,9 +96,6 @@ class ImageBitmapFactories final
 
   void Trace(blink::Visitor*);
   void TraceWrappers(const ScriptWrappableVisitor*) const override;
-
- protected:
-  static const char* SupplementName();
 
  private:
   class ImageBitmapLoader final
@@ -132,7 +131,7 @@ class ImageBitmapFactories final
 
     void ScheduleAsyncImageBitmapDecoding(DOMArrayBuffer*);
     void DecodeImageOnDecoderThread(
-        scoped_refptr<WebTaskRunner>,
+        scoped_refptr<base::SingleThreadTaskRunner>,
         DOMArrayBuffer*,
         const String& premultiply_alpha_option,
         const String& color_space_conversion_option);

@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "core/css/CSSTestHelper.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/UseCounter.h"
+#include "core/html/HTMLHtmlElement.h"
 #include "core/page/Page.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/testing/HistogramTester.h"
@@ -248,19 +250,25 @@ TEST_F(UseCounterTest, SVGImageContextAnimatedCSSProperties) {
 }
 
 TEST_F(UseCounterTest, CSSSelectorPseudoAnyLink) {
-  UseCounter use_counter;
+  std::unique_ptr<DummyPageHolder> dummy_page_holder =
+      DummyPageHolder::Create(IntSize(800, 600));
+  Document& document = dummy_page_holder->GetDocument();
   WebFeature feature = WebFeature::kCSSSelectorPseudoAnyLink;
-  EXPECT_FALSE(use_counter.IsCounted(GetDocument(), feature));
-  use_counter.Count(GetDocument(), feature);
-  EXPECT_TRUE(use_counter.IsCounted(GetDocument(), feature));
+  EXPECT_FALSE(UseCounter::IsCounted(document, feature));
+  document.documentElement()->SetInnerHTMLFromString(
+      "<style>:any-link { color: red; }</style>");
+  EXPECT_TRUE(UseCounter::IsCounted(document, feature));
 }
 
 TEST_F(UseCounterTest, CSSSelectorPseudoWebkitAnyLink) {
-  UseCounter use_counter;
+  std::unique_ptr<DummyPageHolder> dummy_page_holder =
+      DummyPageHolder::Create(IntSize(800, 600));
+  Document& document = dummy_page_holder->GetDocument();
   WebFeature feature = WebFeature::kCSSSelectorPseudoWebkitAnyLink;
-  EXPECT_FALSE(use_counter.IsCounted(GetDocument(), feature));
-  use_counter.Count(GetDocument(), feature);
-  EXPECT_TRUE(use_counter.IsCounted(GetDocument(), feature));
+  EXPECT_FALSE(UseCounter::IsCounted(document, feature));
+  document.documentElement()->SetInnerHTMLFromString(
+      "<style>:-webkit-any-link { color: red; }</style>");
+  EXPECT_TRUE(UseCounter::IsCounted(document, feature));
 }
 
 TEST_F(UseCounterTest, CSSTypedOMStylePropertyMap) {
@@ -269,6 +277,17 @@ TEST_F(UseCounterTest, CSSTypedOMStylePropertyMap) {
   EXPECT_FALSE(use_counter.IsCounted(GetDocument(), feature));
   use_counter.Count(GetDocument(), feature);
   EXPECT_TRUE(use_counter.IsCounted(GetDocument(), feature));
+}
+
+TEST_F(UseCounterTest, CSSSelectorPseudoMatches) {
+  std::unique_ptr<DummyPageHolder> dummy_page_holder =
+      DummyPageHolder::Create(IntSize(800, 600));
+  Document& document = dummy_page_holder->GetDocument();
+  WebFeature feature = WebFeature::kCSSSelectorPseudoMatches;
+  EXPECT_FALSE(UseCounter::IsCounted(document, feature));
+  document.documentElement()->SetInnerHTMLFromString(
+      "<style>.a+:matches(.b, .c+.d) { color: red; }</style>");
+  EXPECT_TRUE(UseCounter::IsCounted(document, feature));
 }
 
 TEST_F(UseCounterTest, InspectorDisablesMeasurement) {
@@ -488,37 +507,6 @@ TEST_F(DeprecationTest, InspectorDisablesDeprecation) {
   EXPECT_FALSE(deprecation_.IsSuppressed(property));
   Deprecation::CountDeprecation(GetFrame(), feature);
   EXPECT_TRUE(use_counter_.HasRecordedMeasurement(feature));
-}
-
-class FeaturePolicyDisabledDeprecationTest
-    : public ::testing::Test,
-      private ScopedFeaturePolicyForTest {
- public:
-  FeaturePolicyDisabledDeprecationTest() : ScopedFeaturePolicyForTest(false) {
-    dummy_ = DummyPageHolder::Create();
-  }
-
- protected:
-  Document& GetDocument() { return dummy_->GetDocument(); }
-  UseCounter& GetUseCounter() { return dummy_->GetPage().GetUseCounter(); }
-
-  std::unique_ptr<DummyPageHolder> dummy_;
-};
-
-TEST_F(FeaturePolicyDisabledDeprecationTest,
-       TestCountDeprecationFeaturePolicy) {
-  // The specific feature we use here isn't important, but we need the
-  // corresponding FP feature as well.
-  FeaturePolicyFeature policy_feature = FeaturePolicyFeature::kGeolocation;
-  WebFeature feature =
-      WebFeature::kGeolocationDisallowedByFeaturePolicyInCrossOriginIframe;
-
-  // Verify that there is, in fact, no policy attacted to the document
-  ASSERT_EQ(GetDocument().GetFeaturePolicy(), nullptr);
-  // Trigger the deprecation counter as if the feature was used.
-  Deprecation::CountDeprecationFeaturePolicy(GetDocument(), policy_feature);
-  // Verify that no usage was recorded.
-  EXPECT_FALSE(GetUseCounter().HasRecordedMeasurement(feature));
 }
 
 }  // namespace blink

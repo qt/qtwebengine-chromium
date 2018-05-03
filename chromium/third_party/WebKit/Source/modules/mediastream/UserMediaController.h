@@ -33,7 +33,6 @@
 namespace blink {
 
 class ApplyConstraintsRequest;
-class MediaDevices;
 class MediaStreamComponent;
 class UserMediaRequest;
 
@@ -43,6 +42,8 @@ class UserMediaController final
   USING_GARBAGE_COLLECTED_MIXIN(UserMediaController);
 
  public:
+  static const char kSupplementName[];
+
   UserMediaController(LocalFrame&, std::unique_ptr<UserMediaClient>);
   virtual void Trace(blink::Visitor*);
 
@@ -50,14 +51,11 @@ class UserMediaController final
 
   void RequestUserMedia(UserMediaRequest*);
   void CancelUserMediaRequest(UserMediaRequest*);
-  void SetMediaDeviceChangeObserver(MediaDevices*);
   void ApplyConstraints(ApplyConstraintsRequest*);
   void StopTrack(MediaStreamComponent*);
 
-  static const char* SupplementName();
   static UserMediaController* From(LocalFrame* frame) {
-    return static_cast<UserMediaController*>(
-        Supplement<LocalFrame>::From(frame, SupplementName()));
+    return Supplement<LocalFrame>::From<UserMediaController>(frame);
   }
 
  private:
@@ -71,11 +69,6 @@ inline void UserMediaController::RequestUserMedia(UserMediaRequest* request) {
 inline void UserMediaController::CancelUserMediaRequest(
     UserMediaRequest* request) {
   client_->CancelUserMediaRequest(request);
-}
-
-inline void UserMediaController::SetMediaDeviceChangeObserver(
-    MediaDevices* observer) {
-  client_->SetMediaDeviceChangeObserver(observer);
 }
 
 inline void UserMediaController::ApplyConstraints(

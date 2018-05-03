@@ -9,7 +9,6 @@ Console.ConsoleSidebar = class extends UI.VBox {
   constructor(badgePool) {
     super(true);
     this.setMinimumSize(125, 0);
-    this._enabled = Runtime.experiments.isEnabled('logManagement');
 
     this._tree = new UI.TreeOutlineInShadow();
     this._tree.registerRequiredCSS('console/consoleSidebar.css');
@@ -19,12 +18,12 @@ Console.ConsoleSidebar = class extends UI.VBox {
     this._selectedTreeElement = null;
     /** @type {!Array<!Console.ConsoleSidebar.FilterTreeElement>} */
     this._treeElements = [];
-    var selectedFilterSetting = Common.settings.createSetting('console.sidebarSelectedFilter', null);
+    const selectedFilterSetting = Common.settings.createSetting('console.sidebarSelectedFilter', null);
 
-    var Levels = ConsoleModel.ConsoleMessage.MessageLevel;
-    var consoleAPIParsedFilters = [{
+    const Levels = SDK.ConsoleMessage.MessageLevel;
+    const consoleAPIParsedFilters = [{
       key: Console.ConsoleFilter.FilterType.Source,
-      text: ConsoleModel.ConsoleMessage.MessageSource.ConsoleAPI,
+      text: SDK.ConsoleMessage.MessageSource.ConsoleAPI,
       negative: false
     }];
     this._appendGroup(
@@ -46,8 +45,8 @@ Console.ConsoleSidebar = class extends UI.VBox {
     this._appendGroup(
         Console.ConsoleSidebar._groupSingularName.Verbose, [], Console.ConsoleFilter.singleLevelMask(Levels.Verbose),
         UI.Icon.create('mediumicon-bug'), badgePool, selectedFilterSetting);
-    var selectedTreeElementName = selectedFilterSetting.get();
-    var defaultTreeElement =
+    const selectedTreeElementName = selectedFilterSetting.get();
+    const defaultTreeElement =
         this._treeElements.find(x => x.name() === selectedTreeElementName) || this._treeElements[0];
     defaultTreeElement.select();
   }
@@ -61,16 +60,14 @@ Console.ConsoleSidebar = class extends UI.VBox {
    * @param {!Common.Setting} selectedFilterSetting
    */
   _appendGroup(name, parsedFilters, levelsMask, icon, badgePool, selectedFilterSetting) {
-    var filter = new Console.ConsoleFilter(name, parsedFilters, null, levelsMask);
-    var treeElement = new Console.ConsoleSidebar.FilterTreeElement(filter, icon, badgePool, selectedFilterSetting);
+    const filter = new Console.ConsoleFilter(name, parsedFilters, null, levelsMask);
+    const treeElement = new Console.ConsoleSidebar.FilterTreeElement(filter, icon, badgePool, selectedFilterSetting);
     this._tree.appendChild(treeElement);
     this._treeElements.push(treeElement);
   }
 
   clear() {
-    if (!this._enabled)
-      return;
-    for (var treeElement of this._treeElements)
+    for (const treeElement of this._treeElements)
       treeElement.clear();
   }
 
@@ -78,9 +75,7 @@ Console.ConsoleSidebar = class extends UI.VBox {
    * @param {!Console.ConsoleViewMessage} viewMessage
    */
   onMessageAdded(viewMessage) {
-    if (!this._enabled)
-      return;
-    for (var treeElement of this._treeElements)
+    for (const treeElement of this._treeElements)
       treeElement.onMessageAdded(viewMessage);
   }
 
@@ -89,7 +84,7 @@ Console.ConsoleSidebar = class extends UI.VBox {
    * @return {boolean}
    */
   shouldBeVisible(viewMessage) {
-    if (!this._enabled || !this._selectedTreeElement)
+    if (!this._selectedTreeElement)
       return true;
     return this._selectedTreeElement._filter.shouldBeVisible(viewMessage);
   }
@@ -117,7 +112,7 @@ Console.ConsoleSidebar.URLGroupTreeElement = class extends UI.TreeElement {
     super(filter.name);
     this._filter = filter;
     this._countElement = this.listItemElement.createChild('span', 'count');
-    var leadingIcons = [UI.Icon.create('largeicon-navigator-file')];
+    const leadingIcons = [UI.Icon.create('largeicon-navigator-file')];
     if (badge)
       leadingIcons.push(badge);
     this.setLeadingIcons(leadingIcons);
@@ -174,9 +169,9 @@ Console.ConsoleSidebar.FilterTreeElement = class extends UI.TreeElement {
   }
 
   _updateCounter() {
-    var prefix = this._messageCount ? this._messageCount : Common.UIString('No');
-    var pluralizedName = this._messageCount === 1 ? this._filter.name :
-                                                    Console.ConsoleSidebar._groupPluralNameMap.get(this._filter.name);
+    const prefix = this._messageCount ? this._messageCount : Common.UIString('No');
+    const pluralizedName = this._messageCount === 1 ? this._filter.name :
+                                                      Console.ConsoleSidebar._groupPluralNameMap.get(this._filter.name);
     this.title = `${prefix} ${pluralizedName}`;
   }
 
@@ -184,12 +179,12 @@ Console.ConsoleSidebar.FilterTreeElement = class extends UI.TreeElement {
    * @param {!Console.ConsoleViewMessage} viewMessage
    */
   onMessageAdded(viewMessage) {
-    var message = viewMessage.consoleMessage();
-    var shouldIncrementCounter = message.type !== ConsoleModel.ConsoleMessage.MessageType.Command &&
-        message.type !== ConsoleModel.ConsoleMessage.MessageType.Result && !message.isGroupMessage();
+    const message = viewMessage.consoleMessage();
+    const shouldIncrementCounter = message.type !== SDK.ConsoleMessage.MessageType.Command &&
+        message.type !== SDK.ConsoleMessage.MessageType.Result && !message.isGroupMessage();
     if (!this._filter.shouldBeVisible(viewMessage) || !shouldIncrementCounter)
       return;
-    var child = this._childElement(message.url);
+    const child = this._childElement(message.url);
     child.incrementAndUpdateCounter();
     this._messageCount++;
     this._updateCounter();
@@ -200,19 +195,19 @@ Console.ConsoleSidebar.FilterTreeElement = class extends UI.TreeElement {
    * @return {!Console.ConsoleSidebar.URLGroupTreeElement}
    */
   _childElement(url) {
-    var urlValue = url || null;
-    var child = this._urlTreeElements.get(urlValue);
+    const urlValue = url || null;
+    let child = this._urlTreeElements.get(urlValue);
     if (child)
       return child;
 
-    var filter = this._filter.clone();
-    var parsedURL = urlValue ? urlValue.asParsedURL() : null;
+    const filter = this._filter.clone();
+    const parsedURL = urlValue ? urlValue.asParsedURL() : null;
     if (urlValue)
       filter.name = parsedURL ? parsedURL.displayName : urlValue;
     else
       filter.name = Common.UIString('<other>');
     filter.parsedFilters.push({key: Console.ConsoleFilter.FilterType.Url, text: urlValue, negative: false});
-    var badge = parsedURL ? this._badgePool.badgeForURL(parsedURL) : null;
+    const badge = parsedURL ? this._badgePool.badgeForURL(parsedURL) : null;
     child = new Console.ConsoleSidebar.URLGroupTreeElement(filter, badge);
     if (urlValue)
       child.tooltip = urlValue;

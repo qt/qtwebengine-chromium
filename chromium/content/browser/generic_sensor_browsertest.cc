@@ -28,9 +28,9 @@
 #include "services/device/public/cpp/generic_sensor/platform_sensor_configuration.h"
 #include "services/device/public/cpp/generic_sensor/sensor_reading.h"
 #include "services/device/public/cpp/generic_sensor/sensor_traits.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/sensor.mojom.h"
-#include "services/device/public/interfaces/sensor_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/sensor.mojom.h"
+#include "services/device/public/mojom/sensor_provider.mojom.h"
 #include "services/service_manager/public/cpp/service_context.h"
 
 namespace content {
@@ -157,7 +157,8 @@ class FakeSensorProvider : public device::mojom::SensorProvider {
 
         mojo::MakeStrongBinding(std::move(sensor),
                                 mojo::MakeRequest(&init_params->sensor));
-        std::move(callback).Run(std::move(init_params));
+        std::move(callback).Run(device::mojom::SensorCreationResult::SUCCESS,
+                                std::move(init_params));
         break;
       }
       default:
@@ -252,7 +253,8 @@ class GenericSensorBrowserTest : public ContentBrowserTest {
 };
 
 // Flakily crashes on Linux ASAN/TSAN bots.  https://crbug.com/789515
-#if defined(OS_LINUX)
+// Flakily times out on Windows bots.  https://crbug.com/809537
+#if defined(OS_LINUX) || defined(OS_WIN)
 #define MAYBE_AmbientLightSensorTest DISABLED_AmbientLightSensorTest
 #else
 #define MAYBE_AmbientLightSensorTest AmbientLightSensorTest

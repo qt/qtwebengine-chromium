@@ -27,6 +27,10 @@ void StubOfflinePageModel::DeletePagesByOfflineId(
 void StubOfflinePageModel::DeletePagesByClientIds(
     const std::vector<ClientId>& client_ids,
     const DeletePageCallback& callback) {}
+void StubOfflinePageModel::DeletePagesByClientIdsAndOrigin(
+    const std::vector<ClientId>& client_ids,
+    const std::string& origin,
+    const DeletePageCallback& callback) {}
 void StubOfflinePageModel::GetPagesByClientIds(
     const std::vector<ClientId>& client_ids,
     const MultipleOfflinePageItemCallback& callback) {}
@@ -48,6 +52,10 @@ void StubOfflinePageModel::GetPagesByURL(
 void StubOfflinePageModel::GetPagesByRequestOrigin(
     const std::string& origin,
     const MultipleOfflinePageItemCallback& callback) {}
+void StubOfflinePageModel::GetPageBySizeAndDigest(
+    int64_t file_size,
+    const std::string& digest,
+    const SingleOfflinePageItemCallback& callback) {}
 void StubOfflinePageModel::GetPagesRemovedOnCacheReset(
     const MultipleOfflinePageItemCallback& callback) {}
 void StubOfflinePageModel::GetPagesByNamespace(

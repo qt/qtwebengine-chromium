@@ -57,7 +57,7 @@
 #if BUILDFLAG(USE_VAAPI)
 #include "media/gpu/vaapi/vaapi_wrapper.h"
 #elif defined(OS_WIN)
-#include "media/gpu/media_foundation_video_encode_accelerator_win.h"
+#include "media/gpu/windows/media_foundation_video_encode_accelerator_win.h"
 #endif
 
 namespace media {
@@ -585,7 +585,7 @@ void H264Validator::ProcessStreamBuffer(const uint8_t* stream, size_t size) {
         ASSERT_TRUE(seen_pps_);
         seen_idr_ = true;
         keyframe = true;
-      // fallthrough
+        FALLTHROUGH;
       case H264NALU::kNonIDRSlice: {
         ASSERT_TRUE(seen_idr_);
         seen_sps_ = seen_pps_ = false;

@@ -30,40 +30,28 @@ TestNetworkQualityEstimator::TestNetworkQualityEstimator()
 TestNetworkQualityEstimator::TestNetworkQualityEstimator(
     const std::map<std::string, std::string>& variation_params)
     : TestNetworkQualityEstimator(variation_params,
-                                  std::unique_ptr<ExternalEstimateProvider>()) {
-}
-
-TestNetworkQualityEstimator::TestNetworkQualityEstimator(
-    const std::map<std::string, std::string>& variation_params,
-    std::unique_ptr<net::ExternalEstimateProvider> external_estimate_provider)
-    : TestNetworkQualityEstimator(std::move(external_estimate_provider),
-                                  variation_params,
                                   true,
                                   true,
                                   std::make_unique<BoundTestNetLog>()) {}
 
 TestNetworkQualityEstimator::TestNetworkQualityEstimator(
-    std::unique_ptr<net::ExternalEstimateProvider> external_estimate_provider,
     const std::map<std::string, std::string>& variation_params,
     bool allow_local_host_requests_for_tests,
     bool allow_smaller_responses_for_tests,
     std::unique_ptr<BoundTestNetLog> net_log)
-    : TestNetworkQualityEstimator(std::move(external_estimate_provider),
-                                  variation_params,
+    : TestNetworkQualityEstimator(variation_params,
                                   allow_local_host_requests_for_tests,
                                   allow_smaller_responses_for_tests,
                                   false,
                                   std::move(net_log)) {}
 
 TestNetworkQualityEstimator::TestNetworkQualityEstimator(
-    std::unique_ptr<net::ExternalEstimateProvider> external_estimate_provider,
     const std::map<std::string, std::string>& variation_params,
     bool allow_local_host_requests_for_tests,
     bool allow_smaller_responses_for_tests,
     bool suppress_notifications_for_testing,
     std::unique_ptr<BoundTestNetLog> net_log)
     : NetworkQualityEstimator(
-          std::move(external_estimate_provider),
           std::make_unique<NetworkQualityEstimatorParams>(variation_params),
           net_log->bound().net_log()),
       net_log_(std::move(net_log)),
@@ -86,9 +74,7 @@ TestNetworkQualityEstimator::TestNetworkQualityEstimator(
 TestNetworkQualityEstimator::TestNetworkQualityEstimator(
     std::unique_ptr<NetworkQualityEstimatorParams> params,
     std::unique_ptr<BoundTestNetLog> net_log)
-    : NetworkQualityEstimator(std::unique_ptr<ExternalEstimateProvider>(),
-                              std::move(params),
-                              net_log->bound().net_log()),
+    : NetworkQualityEstimator(std::move(params), net_log->bound().net_log()),
       net_log_(std::move(net_log)),
       current_network_type_(NetworkChangeNotifier::CONNECTION_UNKNOWN),
       accuracy_recording_intervals_set_(false),

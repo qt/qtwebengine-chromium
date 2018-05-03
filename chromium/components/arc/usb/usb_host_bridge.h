@@ -9,13 +9,12 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/files/scoped_file.h"
 #include "base/macros.h"
 #include "base/scoped_observer.h"
 #include "components/arc/common/usb_host.mojom.h"
 #include "components/arc/connection_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "device/usb/public/interfaces/device_manager.mojom.h"
+#include "device/usb/public/mojom/device_manager.mojom.h"
 #include "device/usb/usb_device.h"
 #include "device/usb/usb_service.h"
 
@@ -23,9 +22,12 @@ namespace content {
 class BrowserContext;
 }  // namespace content
 
+class BrowserContextKeyedServiceFactory;
+
 namespace arc {
 
 class ArcBridgeService;
+class ArcUsbHostUiDelegate;
 
 // Private implementation of UsbHostHost.
 class ArcUsbHostBridge : public KeyedService,
@@ -42,6 +44,9 @@ class ArcUsbHostBridge : public KeyedService,
   explicit ArcUsbHostBridge(content::BrowserContext* context,
                             ArcBridgeService* bridge_service);
   ~ArcUsbHostBridge() override;
+
+  // Returns the factory instance for this class.
+  static BrowserContextKeyedServiceFactory* GetFactory();
 
   // mojom::UsbHostHost overrides:
   void RequestPermission(const std::string& guid,
@@ -60,6 +65,12 @@ class ArcUsbHostBridge : public KeyedService,
 
   // ConnectionObserver<mojom::UsbHostInstance> overrides:
   void OnConnectionReady() override;
+  void OnConnectionClosed() override;
+
+  // KeyedService overrides:
+  void Shutdown() override;
+
+  void SetUiDelegate(ArcUsbHostUiDelegate* ui_delegate);
 
  private:
   void OnDeviceChecked(const std::string& guid, bool allowed);
@@ -73,6 +84,7 @@ class ArcUsbHostBridge : public KeyedService,
   ScopedObserver<device::UsbService, device::UsbService::Observer>
       usb_observer_;
   device::UsbService* usb_service_;
+  ArcUsbHostUiDelegate* ui_delegate_ = nullptr;
 
   // WeakPtrFactory to use for callbacks.
   base::WeakPtrFactory<ArcUsbHostBridge> weak_factory_;

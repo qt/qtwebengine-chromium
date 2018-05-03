@@ -28,12 +28,6 @@ CSSStyleValueVector ParseCSSStyleValue(
     return CSSStyleValueVector();
   }
 
-  if (CSSProperty::Get(property_id).IsShorthand()) {
-    exception_state.ThrowTypeError(
-        "Parsing shorthand properties is not supported");
-    return CSSStyleValueVector();
-  }
-
   const auto style_values = StyleValueFactory::FromString(
       property_id, value, CSSParserContext::Create(*execution_context));
   if (style_values.IsEmpty()) {
@@ -54,54 +48,22 @@ CSSStyleValue* CSSStyleValue::parse(const ExecutionContext* execution_context,
                                     ExceptionState& exception_state) {
   CSSStyleValueVector style_value_vector = ParseCSSStyleValue(
       execution_context, property_name, value, exception_state);
-  if (style_value_vector.IsEmpty())
-    return nullptr;
-
-  return style_value_vector[0];
+  return style_value_vector.IsEmpty() ? nullptr : style_value_vector[0];
 }
 
-Nullable<CSSStyleValueVector> CSSStyleValue::parseAll(
+CSSStyleValueVector CSSStyleValue::parseAll(
     const ExecutionContext* execution_context,
     const String& property_name,
     const String& value,
     ExceptionState& exception_state) {
-  CSSStyleValueVector style_value_vector = ParseCSSStyleValue(
-      execution_context, property_name, value, exception_state);
-  if (style_value_vector.IsEmpty())
-    return nullptr;
-
-  return style_value_vector;
+  return ParseCSSStyleValue(execution_context, property_name, value,
+                            exception_state);
 }
 
 String CSSStyleValue::toString() const {
   const CSSValue* result = ToCSSValue();
-  // TODO(crbug.com/782103): Remove this once all CSSStyleValues
-  // support toCSSValue().
-  return result ? result->CssText() : "";
-}
-
-String CSSStyleValue::StyleValueTypeToString(StyleValueType type) {
-  switch (type) {
-    case StyleValueType::kNumberType:
-      return "number";
-    case StyleValueType::kPercentType:
-      return "percent";
-    case StyleValueType::kLengthType:
-      return "length";
-    case StyleValueType::kAngleType:
-      return "angle";
-    case StyleValueType::kTimeType:
-      return "time";
-    case StyleValueType::kFrequencyType:
-      return "frequency";
-    case StyleValueType::kResolutionType:
-      return "resolution";
-    case StyleValueType::kFlexType:
-      return "flex";
-    default:
-      NOTREACHED();
-      return "";
-  }
+  DCHECK(result);
+  return result->CssText();
 }
 
 }  // namespace blink

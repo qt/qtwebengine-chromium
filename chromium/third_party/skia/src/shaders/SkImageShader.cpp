@@ -31,23 +31,30 @@ static SkShader::TileMode optimize(SkShader::TileMode tm, int dimension) {
 #endif
 }
 
-SkImageShader::SkImageShader(sk_sp<SkImage> img, TileMode tmx, TileMode tmy, const SkMatrix* matrix)
-    : INHERITED(matrix)
+SkImageShader::SkImageShader(sk_sp<SkImage> img,
+                             TileMode tmx, TileMode tmy,
+                             const SkMatrix* localMatrix,
+                             bool clampAsIfUnpremul)
+    : INHERITED(localMatrix)
     , fImage(std::move(img))
     , fTileModeX(optimize(tmx, fImage->width()))
     , fTileModeY(optimize(tmy, fImage->height()))
+    , fClampAsIfUnpremul(clampAsIfUnpremul)
 {}
+
+// fClampAsIfUnpremul is always false when constructed through public APIs,
+// so there's no need to read or write it here.
 
 sk_sp<SkFlattenable> SkImageShader::CreateProc(SkReadBuffer& buffer) {
     const TileMode tx = (TileMode)buffer.readUInt();
     const TileMode ty = (TileMode)buffer.readUInt();
-    SkMatrix matrix;
-    buffer.readMatrix(&matrix);
+    SkMatrix localMatrix;
+    buffer.readMatrix(&localMatrix);
     sk_sp<SkImage> img = buffer.readImage();
     if (!img) {
         return nullptr;
     }
-    return SkImageShader::Make(std::move(img), tx, ty, &matrix);
+    return SkImageShader::Make(std::move(img), tx, ty, &localMatrix);
 }
 
 void SkImageShader::flatten(SkWriteBuffer& buffer) const {
@@ -55,10 +62,39 @@ void SkImageShader::flatten(SkWriteBuffer& buffer) const {
     buffer.writeUInt(fTileModeY);
     buffer.writeMatrix(this->getLocalMatrix());
     buffer.writeImage(fImage.get());
+    SkASSERT(fClampAsIfUnpremul == false);
 }
 
 bool SkImageShader::isOpaque() const {
-    return fImage->isOpaque();
+    return fImage->isOpaque() && fTileModeX != kDecal_TileMode && fTileModeY != kDecal_TileMode;
+}
+
+static bool legacy_shader_can_handle(const SkMatrix& a, const SkMatrix& b) {
+    SkMatrix m = SkMatrix::Concat(a, b);
+    if (!m.isScaleTranslate()) {
+        return false;
+    }
+
+    SkMatrix inv;
+    if (!m.invert(&inv)) {
+        return false;
+    }
+
+    // legacy code uses SkFixed 32.32, so ensure the inverse doesn't map device coordinates
+    // out of range.
+    const SkScalar max_dev_coord = 32767.0f;
+    SkRect src;
+    SkAssertResult(inv.mapRect(&src, SkRect::MakeWH(max_dev_coord, max_dev_coord)));
+
+    // take 1/2 of max signed 32bits so we have room to subtract coordinates
+    const SkScalar max_fixed32dot32 = SK_MaxS32 * 0.5f;
+    if (!SkRect::MakeLTRB(-max_fixed32dot32, -max_fixed32dot32,
+                           max_fixed32dot32, max_fixed32dot32).contains(src)) {
+        return false;
+    }
+
+    // legacy shader impl should be able to handle these matrices
+    return true;
 }
 
 bool SkImageShader::IsRasterPipelineOnly(const SkMatrix& ctm, SkColorType ct, SkAlphaType at,
@@ -75,10 +111,10 @@ bool SkImageShader::IsRasterPipelineOnly(const SkMatrix& ctm, SkColorType ct, Sk
         return true;
     }
 #endif
-    if (!ctm.isScaleTranslate()) {
+    if (tx == kDecal_TileMode || ty == kDecal_TileMode) {
         return true;
     }
-    if (!localM.isScaleTranslate()) {
+    if (!legacy_shader_can_handle(ctm, localM)) {
         return true;
     }
     return false;
@@ -139,13 +175,14 @@ static bool bitmap_is_too_big(int w, int h) {
     return w > kMaxSize || h > kMaxSize;
 }
 
-sk_sp<SkShader> SkImageShader::Make(sk_sp<SkImage> image, TileMode tx, TileMode ty,
-                                    const SkMatrix* localMatrix) {
+sk_sp<SkShader> SkImageShader::Make(sk_sp<SkImage> image,
+                                    TileMode tx, TileMode ty,
+                                    const SkMatrix* localMatrix,
+                                    bool clampAsIfUnpremul) {
     if (!image || bitmap_is_too_big(image->width(), image->height())) {
         return sk_make_sp<SkEmptyShader>();
-    } else {
-        return sk_make_sp<SkImageShader>(image, tx, ty, localMatrix);
     }
+    return sk_sp<SkShader>{ new SkImageShader(image, tx,ty, localMatrix, clampAsIfUnpremul) };
 }
 
 #ifndef SK_IGNORE_TO_STRING
@@ -167,6 +204,7 @@ void SkImageShader::toString(SkString* str) const {
 
 #include "GrColorSpaceInfo.h"
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "SkGr.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
@@ -179,15 +217,19 @@ static GrSamplerState::WrapMode tile_mode_to_wrap_mode(const SkShader::TileMode 
             return GrSamplerState::WrapMode::kRepeat;
         case SkShader::TileMode::kMirror_TileMode:
             return GrSamplerState::WrapMode::kMirrorRepeat;
+        case SkShader::kDecal_TileMode:
+            // TODO: depending on caps, we should extend WrapMode for decal...
+            return GrSamplerState::WrapMode::kClamp;
     }
     SK_ABORT("Unknown tile mode.");
     return GrSamplerState::WrapMode::kClamp;
 }
 
 std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
-        const AsFPArgs& args) const {
+        const GrFPArgs& args) const {
+    SkMatrix lm = this->getLocalMatrix();
     SkMatrix lmInverse;
-    if (!this->getLocalMatrix().invert(&lmInverse)) {
+    if (!lm.invert(&lmInverse)) {
         return nullptr;
     }
     if (args.fLocalMatrix) {
@@ -196,6 +238,7 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
             return nullptr;
         }
         lmInverse.postConcat(inv);
+        lm.preConcat(*args.fLocalMatrix);
     }
 
     GrSamplerState::WrapMode wrapModes[] = {tile_mode_to_wrap_mode(fTileModeX),
@@ -207,7 +250,8 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
     // are provided by the caller.
     bool doBicubic;
     GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
-            args.fFilterQuality, *args.fViewMatrix, this->getLocalMatrix(), &doBicubic);
+            args.fFilterQuality, *args.fViewMatrix, lm,
+            args.fContext->contextPriv().sharpenMipmappedTextures(), &doBicubic);
     GrSamplerState samplerState(wrapModes, textureFilterMode);
     sk_sp<SkColorSpace> texColorSpace;
     SkScalar scaleAdjust[2] = { 1.0f, 1.0f };
@@ -234,7 +278,7 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
     if (isAlphaOnly) {
         return inner;
     }
-    return GrFragmentProcessor::MulOutputByInputAlpha(std::move(inner));
+    return GrFragmentProcessor::MulChildByInputAlpha(std::move(inner));
 }
 
 #endif
@@ -257,12 +301,8 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
     SkRasterPipeline* p = rec.fPipeline;
     SkArenaAlloc* alloc = rec.fAlloc;
 
-    auto matrix = SkMatrix::Concat(rec.fCTM, this->getLocalMatrix());
-    if (rec.fLocalM) {
-        matrix.preConcat(*rec.fLocalM);
-    }
-
-    if (!matrix.invert(&matrix)) {
+    SkMatrix matrix;
+    if (!this->computeTotalInverse(rec.fCTM, rec.fLocalM, &matrix)) {
         return false;
     }
     auto quality = rec.fPaint.getFilterQuality();
@@ -327,26 +367,52 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
 
     bool is_srgb = rec.fDstCS && (!info.colorSpace() || info.gammaCloseToSRGB());
 
+    SkJumper_DecalTileCtx* decal_ctx = nullptr;
+    bool decal_x_and_y = fTileModeX == kDecal_TileMode && fTileModeY == kDecal_TileMode;
+    if (fTileModeX == kDecal_TileMode || fTileModeY == kDecal_TileMode) {
+        decal_ctx = alloc->make<SkJumper_DecalTileCtx>();
+        decal_ctx->limit_x = limit_x->scale;
+        decal_ctx->limit_y = limit_y->scale;
+    }
+
     auto append_tiling_and_gather = [&] {
-        switch (fTileModeX) {
-            case kClamp_TileMode:  /* The gather_xxx stage will clamp for us. */   break;
-            case kMirror_TileMode: p->append(SkRasterPipeline::mirror_x, limit_x); break;
-            case kRepeat_TileMode: p->append(SkRasterPipeline::repeat_x, limit_x); break;
+        if (decal_x_and_y) {
+            p->append(SkRasterPipeline::decal_x_and_y,  decal_ctx);
+        } else {
+            switch (fTileModeX) {
+                case kClamp_TileMode:  /* The gather_xxx stage will clamp for us. */     break;
+                case kMirror_TileMode: p->append(SkRasterPipeline::mirror_x, limit_x);   break;
+                case kRepeat_TileMode: p->append(SkRasterPipeline::repeat_x, limit_x);   break;
+                case kDecal_TileMode:  p->append(SkRasterPipeline::decal_x,  decal_ctx); break;
+            }
+            switch (fTileModeY) {
+                case kClamp_TileMode:  /* The gather_xxx stage will clamp for us. */     break;
+                case kMirror_TileMode: p->append(SkRasterPipeline::mirror_y, limit_y);   break;
+                case kRepeat_TileMode: p->append(SkRasterPipeline::repeat_y, limit_y);   break;
+                case kDecal_TileMode:  p->append(SkRasterPipeline::decal_y,  decal_ctx); break;
+            }
         }
-        switch (fTileModeY) {
-            case kClamp_TileMode:  /* The gather_xxx stage will clamp for us. */   break;
-            case kMirror_TileMode: p->append(SkRasterPipeline::mirror_y, limit_y); break;
-            case kRepeat_TileMode: p->append(SkRasterPipeline::repeat_y, limit_y); break;
-        }
+
+        void* ctx = gather;
         switch (info.colorType()) {
-            case kAlpha_8_SkColorType:   p->append(SkRasterPipeline::gather_a8,   gather); break;
-            case kGray_8_SkColorType:    p->append(SkRasterPipeline::gather_g8,   gather); break;
-            case kRGB_565_SkColorType:   p->append(SkRasterPipeline::gather_565,  gather); break;
-            case kARGB_4444_SkColorType: p->append(SkRasterPipeline::gather_4444, gather); break;
-            case kBGRA_8888_SkColorType: p->append(SkRasterPipeline::gather_bgra, gather); break;
-            case kRGBA_8888_SkColorType: p->append(SkRasterPipeline::gather_8888, gather); break;
-            case kRGBA_F16_SkColorType:  p->append(SkRasterPipeline::gather_f16,  gather); break;
+            case kAlpha_8_SkColorType:      p->append(SkRasterPipeline::gather_a8,      ctx); break;
+            case kGray_8_SkColorType:       p->append(SkRasterPipeline::gather_g8,      ctx); break;
+            case kRGB_565_SkColorType:      p->append(SkRasterPipeline::gather_565,     ctx); break;
+            case kARGB_4444_SkColorType:    p->append(SkRasterPipeline::gather_4444,    ctx); break;
+            case kBGRA_8888_SkColorType:    p->append(SkRasterPipeline::gather_bgra,    ctx); break;
+            case kRGBA_8888_SkColorType:    p->append(SkRasterPipeline::gather_8888,    ctx); break;
+            case kRGBA_1010102_SkColorType: p->append(SkRasterPipeline::gather_1010102, ctx); break;
+            case kRGBA_F16_SkColorType:     p->append(SkRasterPipeline::gather_f16,     ctx); break;
+
+            case kRGB_888x_SkColorType:     p->append(SkRasterPipeline::gather_8888,    ctx);
+                                            p->append(SkRasterPipeline::force_opaque       ); break;
+            case kRGB_101010x_SkColorType:  p->append(SkRasterPipeline::gather_1010102, ctx);
+                                            p->append(SkRasterPipeline::force_opaque       ); break;
+
             default: SkASSERT(false);
+        }
+        if (decal_ctx) {
+            p->append(SkRasterPipeline::check_decal_mask, decal_ctx);
         }
         if (is_srgb) {
             p->append(SkRasterPipeline::from_srgb);
@@ -361,14 +427,14 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
             info.alphaType() == kUnpremul_SkAlphaType) {
             p->append(SkRasterPipeline::premul);
         }
-#if defined(SK_LEGACY_HIGH_QUALITY_SCALING_CLAMP)
         if (quality > kLow_SkFilterQuality) {
             // Bicubic filtering naturally produces out of range values on both sides.
             p->append(SkRasterPipeline::clamp_0);
-            p->append(SkRasterPipeline::clamp_a);
+            p->append(fClampAsIfUnpremul ? SkRasterPipeline::clamp_1
+                                         : SkRasterPipeline::clamp_a);
         }
-#endif
-        append_gamut_transform(p, alloc, info.colorSpace(), rec.fDstCS, kPremul_SkAlphaType);
+        append_gamut_transform(p, alloc, info.colorSpace(), rec.fDstCS,
+                               fClampAsIfUnpremul ? kUnpremul_SkAlphaType : kPremul_SkAlphaType);
         return true;
     };
 

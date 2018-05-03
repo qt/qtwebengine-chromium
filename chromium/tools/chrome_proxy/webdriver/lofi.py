@@ -18,7 +18,7 @@ class LoFi(IntegrationTest):
     with TestDriver() as test_driver:
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       test_driver.AddChromeArg('--data-reduction-proxy-lo-fi=always-on')
       # Disable server experiments such as tamper detection.
       test_driver.AddChromeArg('--data-reduction-proxy-server-experiments-'
@@ -49,7 +49,7 @@ class LoFi(IntegrationTest):
     with TestDriver() as test_driver:
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       test_driver.AddChromeArg('--data-reduction-proxy-lo-fi=slow-connections-'
                                'only')
       # Disable server experiments such as tamper detection.
@@ -86,7 +86,7 @@ class LoFi(IntegrationTest):
     with TestDriver() as test_driver:
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       # Disable server experiments such as tamper detection.
       test_driver.AddChromeArg('--data-reduction-proxy-server-experiments-'
                                'disabled')
@@ -121,7 +121,7 @@ class LoFi(IntegrationTest):
     with TestDriver() as test_driver:
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       test_driver.AddChromeArg('--data-reduction-proxy-lo-fi=slow-connections-'
                                'only')
       # Disable server experiments such as tamper detection.
@@ -162,7 +162,7 @@ class LoFi(IntegrationTest):
     with TestDriver() as test_driver:
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       # Disable server experiments such as tamper detection.
       test_driver.AddChromeArg('--data-reduction-proxy-server-experiments-'
                                'disabled')
@@ -256,7 +256,7 @@ class LoFi(IntegrationTest):
       # to be used across the two page loads.
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       test_driver.AddChromeArg('--data-reduction-proxy-lo-fi=always-on')
       test_driver.AddChromeArg('--profile-type=default')
       test_driver.AddChromeArg('--data-reduction-proxy-server-experiments-'
@@ -337,7 +337,7 @@ class LoFi(IntegrationTest):
       # to be used across the two page loads.
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       test_driver.AddChromeArg('--profile-type=default')
       test_driver.AddChromeArg('--data-reduction-proxy-server-experiments-'
                                'disabled')
@@ -413,7 +413,7 @@ class LoFi(IntegrationTest):
     with TestDriver() as test_driver:
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       test_driver.AddChromeArg('--data-reduction-proxy-lo-fi=always-on')
 
       # Ensure fast network (4G) to ensure force flag ignores ECT.
@@ -442,14 +442,13 @@ class LoFi(IntegrationTest):
       # Verify that Lo-Fi responses were seen.
       self.assertNotEqual(0, lofi_responses)
 
-  # Checks that Client LoFi resource requests have the Intervention header
-  # (in case page has https images that may not be fully loaded).
+  # Checks that Client LoFi resource requests have the Intervention header.
   @ChromeVersionEqualOrAfterM(61)
   def testClientLoFiInterventionHeader(self):
     with TestDriver() as test_driver:
       test_driver.AddChromeArg('--enable-spdy-proxy-auth')
       test_driver.AddChromeArg('--enable-features='
-                               'DataReductionProxyDecidesTransform')
+                               'Previews,DataReductionProxyDecidesTransform')
       test_driver.AddChromeArg(
           '--force-fieldtrial-params=NetworkQualityEstimator.Enabled:'
           'force_effective_connection_type/2G,'
@@ -459,7 +458,7 @@ class LoFi(IntegrationTest):
           '--force-fieldtrials=NetworkQualityEstimator/Enabled/'
           'PreviewsClientLoFi/Enabled')
 
-      test_driver.LoadURL('http://check.googlezip.net/static/index.html')
+      test_driver.LoadURL('https://check.googlezip.net/static/index.html')
 
       intervention_headers = 0
       for response in test_driver.GetHTTPResponses():

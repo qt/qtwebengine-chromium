@@ -5,6 +5,7 @@
 #include <wrl.h>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
 #include "gpu/ipc/client/gpu_memory_buffer_impl_dxgi.h"
@@ -85,7 +86,7 @@ base::Closure GpuMemoryBufferImplDXGI::AllocateForTesting(
                                             base::UnguessableToken::Create());
   handle->type = gfx::DXGI_SHARED_HANDLE;
   handle->id = kBufferId;
-  return base::Bind(&base::DoNothing);
+  return base::DoNothing();
 }
 
 bool GpuMemoryBufferImplDXGI::Map() {

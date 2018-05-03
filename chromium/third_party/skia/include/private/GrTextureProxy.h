@@ -29,7 +29,12 @@ public:
 
     GrSamplerState::Filter highestFilterMode() const;
 
-    GrMipMapped mipMapped() const { return fMipMapped; }
+    // If we are instantiated and have a target, return the mip state of that target. Otherwise
+    // returns the proxy's mip state from creation time. This is useful for lazy proxies which may
+    // claim to not need mips at creation time, but the instantiation happens to give us a mipped
+    // target. In that case we should use that for our benefit to avoid possible copies/mip
+    // generation later.
+    GrMipMapped mipMapped() const;
 
     /**
      * Return the texture proxy's unique key. It will be invalid if the proxy doesn't have one.
@@ -67,7 +72,7 @@ protected:
     friend class GrTextureProxyPriv;
 
     // Deferred version
-    GrTextureProxy(const GrSurfaceDesc& srcDesc, SkBackingFit, SkBudgeted,
+    GrTextureProxy(const GrSurfaceDesc& srcDesc, GrMipMapped, SkBackingFit, SkBudgeted,
                    const void* srcData, size_t srcRowBytes, uint32_t flags);
 
     // Lazy-callback version
@@ -80,24 +85,18 @@ protected:
     //
     // The minimal knowledge version is used for CCPR where we are generating an atlas but we do not
     // know the final size until flush time.
-    GrTextureProxy(LazyInstantiateCallback&&, const GrSurfaceDesc& desc, GrMipMapped,
-                   SkBackingFit fit, SkBudgeted budgeted, uint32_t flags);
+    GrTextureProxy(LazyInstantiateCallback&&, LazyInstantiationType, const GrSurfaceDesc& desc,
+                   GrMipMapped, SkBackingFit fit, SkBudgeted budgeted, uint32_t flags);
 
     // Wrapped version
     GrTextureProxy(sk_sp<GrSurface>, GrSurfaceOrigin);
 
     ~GrTextureProxy() override;
 
-    SkDestinationSurfaceColorMode mipColorMode() const {
-        SkASSERT(LazyState::kNot == this->lazyInstantiationState());
-        return fMipColorMode;
-    }
-
     sk_sp<GrSurface> createSurface(GrResourceProvider*) const override;
 
 private:
     GrMipMapped fMipMapped;
-    SkDestinationSurfaceColorMode fMipColorMode;
 
     GrUniqueKey      fUniqueKey;
     GrProxyProvider* fProxyProvider; // only set when fUniqueKey is valid
@@ -113,7 +112,7 @@ private:
     void setUniqueKey(GrProxyProvider*, const GrUniqueKey&);
     void clearUniqueKey();
 
-    SkDEBUGCODE(void validateLazyTexture(const GrTexture*) override;)
+    SkDEBUGCODE(void validateLazySurface(const GrSurface*) override;)
 
     // For wrapped proxies the GrTexture pointer is stored in GrIORefProxy.
     // For deferred proxies that pointer will be filled in when we need to instantiate

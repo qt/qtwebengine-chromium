@@ -10,7 +10,6 @@
 #include "base/lazy_instance.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -18,11 +17,10 @@
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/content_constants.h"
-#include "content/renderer/service_worker/service_worker_handle_reference.h"
 #include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "content/renderer/service_worker/web_service_worker_impl.h"
-#include "third_party/WebKit/common/service_worker/service_worker_error_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 #include "url/url_constants.h"
@@ -44,10 +42,8 @@ void* const kDeletedServiceWorkerDispatcherMarker =
 }  // namespace
 
 ServiceWorkerDispatcher::ServiceWorkerDispatcher(
-    scoped_refptr<ThreadSafeSender> thread_safe_sender,
-    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner)
-    : thread_safe_sender_(std::move(thread_safe_sender)),
-      main_thread_task_runner_(std::move(main_thread_task_runner)) {
+    scoped_refptr<ThreadSafeSender> thread_safe_sender)
+    : thread_safe_sender_(std::move(thread_safe_sender)) {
   g_dispatcher_tls.Pointer()->Set(static_cast<void*>(this));
 }
 
@@ -75,8 +71,7 @@ void ServiceWorkerDispatcher::OnMessageReceived(const IPC::Message& msg) {
 
 ServiceWorkerDispatcher*
 ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
-    scoped_refptr<ThreadSafeSender> thread_safe_sender,
-    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner) {
+    scoped_refptr<ThreadSafeSender> thread_safe_sender) {
   if (g_dispatcher_tls.Pointer()->Get() ==
       kDeletedServiceWorkerDispatcherMarker) {
     NOTREACHED() << "Re-instantiating TLS ServiceWorkerDispatcher.";
@@ -86,8 +81,8 @@ ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
     return static_cast<ServiceWorkerDispatcher*>(
         g_dispatcher_tls.Pointer()->Get());
 
-  ServiceWorkerDispatcher* dispatcher = new ServiceWorkerDispatcher(
-      std::move(thread_safe_sender), std::move(main_thread_task_runner));
+  ServiceWorkerDispatcher* dispatcher =
+      new ServiceWorkerDispatcher(std::move(thread_safe_sender));
   if (WorkerThread::GetCurrentId())
     WorkerThread::AddObserver(dispatcher);
   return dispatcher;
@@ -111,18 +106,35 @@ void ServiceWorkerDispatcher::WillStopCurrentWorkerThread() {
 
 scoped_refptr<WebServiceWorkerImpl>
 ServiceWorkerDispatcher::GetOrCreateServiceWorker(
-    std::unique_ptr<ServiceWorkerHandleReference> handle_ref) {
-  if (!handle_ref)
+    blink::mojom::ServiceWorkerObjectInfoPtr info) {
+  if (!info)
     return nullptr;
+  DCHECK_NE(blink::mojom::kInvalidServiceWorkerHandleId, info->handle_id);
+  DCHECK_NE(blink::mojom::kInvalidServiceWorkerVersionId, info->version_id);
 
-  WorkerObjectMap::iterator found =
-      service_workers_.find(handle_ref->handle_id());
+  WorkerObjectMap::iterator found = service_workers_.find(info->handle_id);
   if (found != service_workers_.end())
     return found->second;
 
-  // WebServiceWorkerImpl constructor calls AddServiceWorker.
-  return new WebServiceWorkerImpl(std::move(handle_ref),
-                                  thread_safe_sender_.get());
+  if (WorkerThread::GetCurrentId()) {
+    // Because we do not support navigator.serviceWorker in
+    // WorkerNavigator (see https://crbug.com/371690), both dedicated worker and
+    // shared worker context can never have a ServiceWorker object, but service
+    // worker execution context is different as it can have some ServiceWorker
+    // objects via the ServiceWorkerGlobalScope#registration object.
+    // So, if we're on a worker thread here we know it's definitely a service
+    // worker thread.
+    DCHECK(io_thread_task_runner_);
+    return WebServiceWorkerImpl::CreateForServiceWorkerGlobalScope(
+        std::move(info), thread_safe_sender_.get(), io_thread_task_runner_);
+  }
+  return WebServiceWorkerImpl::CreateForServiceWorkerClient(
+      std::move(info), thread_safe_sender_.get());
+}
+
+void ServiceWorkerDispatcher::SetIOThreadTaskRunner(
+    scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner) {
+  io_thread_task_runner_ = std::move(io_thread_task_runner);
 }
 
 void ServiceWorkerDispatcher::OnServiceWorkerStateChanged(

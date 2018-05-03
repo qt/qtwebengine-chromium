@@ -8,6 +8,7 @@
 #include "core/frame/FrameClient.h"
 #include "core/frame/FrameTypes.h"
 #include "core/loader/FrameLoaderTypes.h"
+#include "public/platform/WebCanvas.h"
 #include "public/platform/WebFocusType.h"
 
 namespace blink {
@@ -26,6 +27,10 @@ class RemoteFrameClient : public FrameClient {
                         bool should_replace_current_entry) = 0;
   virtual void Reload(FrameLoadType, ClientRedirectPolicy) = 0;
   virtual unsigned BackForwardLength() = 0;
+
+  // Notifies the remote frame to check whether it is done loading, after one
+  // of its children finishes loading.
+  virtual void CheckCompleted() = 0;
 
   // Forwards a postMessage for a remote frame.
   virtual void ForwardPostMessage(MessageEvent*,
@@ -50,6 +55,8 @@ class RemoteFrameClient : public FrameClient {
 
   virtual void UpdateRenderThrottlingStatus(bool isThrottled,
                                             bool subtreeThrottled) = 0;
+
+  virtual uint32_t Print(const IntRect&, WebCanvas*) const = 0;
 };
 
 }  // namespace blink

@@ -214,7 +214,7 @@ class PrintPreviewObserver : public WebContentsObserver {
 
   // Saves the print preview settings to be sent to the print preview dialog.
   void SetPrintPreviewSettings(const PrintPreviewSettings& settings) {
-    settings_ = base::MakeUnique<PrintPreviewSettings>(settings);
+    settings_ = std::make_unique<PrintPreviewSettings>(settings);
   }
 
   // Returns the setting that could not be set in the preview dialog.
@@ -281,7 +281,7 @@ class PrintPreviewObserver : public WebContentsObserver {
     ASSERT_TRUE(ui->web_ui());
 
     ui->web_ui()->AddMessageHandler(
-        base::MakeUnique<UIDoneLoadingMessageHandler>(this));
+        std::make_unique<UIDoneLoadingMessageHandler>(this));
     ui->SendEnableManipulateSettingsForTest();
   }
 
@@ -369,8 +369,8 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
 
       total_height_in_pixels += height_in_pixels;
       gfx::Rect rect(width_in_pixels, height_in_pixels);
-      PdfRenderSettings settings(rect, gfx::Point(0, 0), kDpi, true,
-                                 PdfRenderSettings::Mode::NORMAL);
+      PdfRenderSettings settings(rect, gfx::Point(0, 0), gfx::Size(kDpi, kDpi),
+                                 true, PdfRenderSettings::Mode::NORMAL);
 
       int int_max = std::numeric_limits<int>::max();
       if (settings.area.width() > int_max / kColorChannels ||
@@ -386,7 +386,7 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
       ASSERT_TRUE(chrome_pdf::RenderPDFPageToBitmap(
           pdf_data.data(), pdf_data.size(), i, page_bitmap_data.data(),
           settings.area.size().width(), settings.area.size().height(),
-          settings.dpi, settings.autorotate));
+          settings.dpi.width(), settings.dpi.height(), settings.autorotate));
       FillPng(&page_bitmap_data, width_in_pixels, max_width_in_pixels,
               settings.area.size().height());
       bitmap_data.insert(bitmap_data.end(),
@@ -456,7 +456,7 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetActiveWebContents();
     ASSERT_TRUE(tab);
 
-    print_preview_observer_ = base::MakeUnique<PrintPreviewObserver>(
+    print_preview_observer_ = std::make_unique<PrintPreviewObserver>(
         browser(), tab, pdf_file_save_path_);
     chrome::DuplicateTab(browser());
 

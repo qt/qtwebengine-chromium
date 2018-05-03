@@ -111,11 +111,21 @@ class FtraceController {
 
   std::unique_ptr<FtraceSink> CreateSink(FtraceConfig, FtraceSink::Delegate*);
 
+  void DisableAllEvents();
+  void WriteTraceMarker(const std::string& s);
+  void ClearTrace();
+
  protected:
   // Protected for testing.
   FtraceController(std::unique_ptr<FtraceProcfs>,
                    base::TaskRunner*,
                    std::unique_ptr<ProtoTranslationTable>);
+
+  // Called to read  data from the raw pipe
+  // for the given |cpu|. Kicks off the reading/parsing
+  // of the pipe. Returns true if there is probably more to read.
+  // Protected and virtual for testing.
+  virtual bool OnRawFtraceDataAvailable(size_t cpu);
 
  private:
   friend FtraceSink;
@@ -123,6 +133,10 @@ class FtraceController {
 
   FtraceController(const FtraceController&) = delete;
   FtraceController& operator=(const FtraceController&) = delete;
+
+  static void PeriodicDrainCPU(base::WeakPtr<FtraceController>,
+                               size_t generation,
+                               int cpu);
 
   void Register(FtraceSink*);
   void Unregister(FtraceSink*);
@@ -132,23 +146,19 @@ class FtraceController {
   void StartIfNeeded();
   void StopIfNeeded();
 
-  // Called when we know there is data for the raw pipe
-  // for the given |cpu|. Kicks off the reading/parsing
-  // of the pipe.
-  void OnRawFtraceDataAvailable(size_t cpu);
-
   // Returns a cached CpuReader for |cpu|.
   // CpuReaders are constructed lazily and owned by the controller.
   CpuReader* GetCpuReader(size_t cpu);
 
   std::unique_ptr<FtraceProcfs> ftrace_procfs_;
+  size_t generation_ = 0;
   bool listening_for_raw_trace_data_ = false;
   base::TaskRunner* task_runner_ = nullptr;
-  base::WeakPtrFactory<FtraceController> weak_factory_;
   std::vector<size_t> enabled_count_;
   std::unique_ptr<ProtoTranslationTable> table_;
   std::map<size_t, std::unique_ptr<CpuReader>> readers_;
   std::set<FtraceSink*> sinks_;
+  base::WeakPtrFactory<FtraceController> weak_factory_;
   PERFETTO_THREAD_CHECKER(thread_checker_)
 };
 

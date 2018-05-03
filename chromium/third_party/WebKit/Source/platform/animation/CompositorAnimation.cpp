@@ -4,126 +4,121 @@
 
 #include "platform/animation/CompositorAnimation.h"
 
-#include "base/memory/ptr_util.h"
-#include "cc/animation/animation_curve.h"
 #include "cc/animation/animation_id_provider.h"
-#include "cc/animation/keyframed_animation_curve.h"
-#include "platform/animation/CompositorAnimationCurve.h"
-#include "platform/animation/CompositorFilterAnimationCurve.h"
-#include "platform/animation/CompositorFloatAnimationCurve.h"
-#include "platform/animation/CompositorScrollOffsetAnimationCurve.h"
-#include "platform/animation/CompositorTransformAnimationCurve.h"
-#include <memory>
-
-using cc::Animation;
-using cc::AnimationIdProvider;
-
-using blink::CompositorAnimation;
-using blink::CompositorAnimationCurve;
+#include "cc/animation/animation_timeline.h"
+#include "platform/animation/CompositorAnimationDelegate.h"
+#include "platform/animation/CompositorKeyframeModel.h"
+#include "platform/wtf/text/WTFString.h"
 
 namespace blink {
 
+std::unique_ptr<CompositorAnimation> CompositorAnimation::Create() {
+  return std::make_unique<CompositorAnimation>(
+      cc::SingleKeyframeEffectAnimation::Create(
+          cc::AnimationIdProvider::NextAnimationId()));
+}
+
+std::unique_ptr<CompositorAnimation>
+CompositorAnimation::CreateWorkletAnimation(
+    const String& name,
+    std::unique_ptr<CompositorScrollTimeline> scroll_timeline) {
+  return std::make_unique<CompositorAnimation>(cc::WorkletAnimation::Create(
+      cc::AnimationIdProvider::NextAnimationId(),
+      std::string(name.Ascii().data(), name.length()),
+      std::move(scroll_timeline)));
+}
+
 CompositorAnimation::CompositorAnimation(
-    const CompositorAnimationCurve& curve,
-    CompositorTargetProperty::Type target_property,
-    int animation_id,
-    int group_id) {
-  if (!animation_id)
-    animation_id = AnimationIdProvider::NextAnimationId();
-  if (!group_id)
-    group_id = AnimationIdProvider::NextGroupId();
+    scoped_refptr<cc::SingleKeyframeEffectAnimation> animation)
+    : animation_(animation), delegate_() {}
 
-  animation_ = Animation::Create(curve.CloneToAnimationCurve(), animation_id,
-                                 group_id, target_property);
+CompositorAnimation::~CompositorAnimation() {
+  SetAnimationDelegate(nullptr);
+  // Detach animation from timeline, otherwise it stays there (leaks) until
+  // compositor shutdown.
+  if (animation_->animation_timeline())
+    animation_->animation_timeline()->DetachAnimation(animation_);
 }
 
-CompositorAnimation::~CompositorAnimation() = default;
-
-int CompositorAnimation::Id() const {
-  return animation_->id();
+cc::SingleKeyframeEffectAnimation* CompositorAnimation::CcAnimation() const {
+  return animation_.get();
 }
 
-int CompositorAnimation::Group() const {
-  return animation_->group();
+void CompositorAnimation::SetAnimationDelegate(
+    CompositorAnimationDelegate* delegate) {
+  delegate_ = delegate;
+  animation_->set_animation_delegate(delegate ? this : nullptr);
 }
 
-CompositorTargetProperty::Type CompositorAnimation::TargetProperty() const {
-  return static_cast<CompositorTargetProperty::Type>(
-      animation_->target_property_id());
+void CompositorAnimation::AttachElement(const CompositorElementId& id) {
+  animation_->AttachElement(id);
 }
 
-double CompositorAnimation::Iterations() const {
-  return animation_->iterations();
+void CompositorAnimation::DetachElement() {
+  animation_->DetachElement();
 }
 
-void CompositorAnimation::SetIterations(double n) {
-  animation_->set_iterations(n);
+bool CompositorAnimation::IsElementAttached() const {
+  return !!animation_->element_id();
 }
 
-double CompositorAnimation::IterationStart() const {
-  return animation_->iteration_start();
+void CompositorAnimation::AddKeyframeModel(
+    std::unique_ptr<CompositorKeyframeModel> keyframe_model) {
+  animation_->AddKeyframeModel(keyframe_model->ReleaseCcKeyframeModel());
 }
 
-void CompositorAnimation::SetIterationStart(double iteration_start) {
-  animation_->set_iteration_start(iteration_start);
+void CompositorAnimation::RemoveKeyframeModel(int keyframe_model_id) {
+  animation_->RemoveKeyframeModel(keyframe_model_id);
 }
 
-double CompositorAnimation::StartTime() const {
-  return (animation_->start_time() - base::TimeTicks()).InSecondsF();
+void CompositorAnimation::PauseKeyframeModel(int keyframe_model_id,
+                                             double time_offset) {
+  animation_->PauseKeyframeModel(keyframe_model_id, time_offset);
 }
 
-void CompositorAnimation::SetStartTime(double monotonic_time) {
-  animation_->set_start_time(base::TimeTicks::FromInternalValue(
-      monotonic_time * base::Time::kMicrosecondsPerSecond));
+void CompositorAnimation::AbortKeyframeModel(int keyframe_model_id) {
+  animation_->AbortKeyframeModel(keyframe_model_id);
 }
 
-double CompositorAnimation::TimeOffset() const {
-  return animation_->time_offset().InSecondsF();
+void CompositorAnimation::NotifyAnimationStarted(base::TimeTicks monotonic_time,
+                                                 int target_property,
+                                                 int group) {
+  if (delegate_) {
+    delegate_->NotifyAnimationStarted(
+        (monotonic_time - base::TimeTicks()).InSecondsF(), group);
+  }
 }
 
-void CompositorAnimation::SetTimeOffset(double monotonic_time) {
-  animation_->set_time_offset(base::TimeDelta::FromSecondsD(monotonic_time));
+void CompositorAnimation::NotifyAnimationFinished(
+    base::TimeTicks monotonic_time,
+    int target_property,
+    int group) {
+  if (delegate_) {
+    delegate_->NotifyAnimationFinished(
+        (monotonic_time - base::TimeTicks()).InSecondsF(), group);
+  }
 }
 
-blink::CompositorAnimation::Direction CompositorAnimation::GetDirection()
-    const {
-  return animation_->direction();
+void CompositorAnimation::NotifyAnimationAborted(base::TimeTicks monotonic_time,
+                                                 int target_property,
+                                                 int group) {
+  if (delegate_) {
+    delegate_->NotifyAnimationAborted(
+        (monotonic_time - base::TimeTicks()).InSecondsF(), group);
+  }
 }
 
-void CompositorAnimation::SetDirection(Direction direction) {
-  animation_->set_direction(direction);
-}
-
-double CompositorAnimation::PlaybackRate() const {
-  return animation_->playback_rate();
-}
-
-void CompositorAnimation::SetPlaybackRate(double playback_rate) {
-  animation_->set_playback_rate(playback_rate);
-}
-
-blink::CompositorAnimation::FillMode CompositorAnimation::GetFillMode() const {
-  return animation_->fill_mode();
-}
-
-void CompositorAnimation::SetFillMode(FillMode fill_mode) {
-  animation_->set_fill_mode(fill_mode);
-}
-
-std::unique_ptr<cc::Animation> CompositorAnimation::ReleaseCcAnimation() {
-  animation_->set_needs_synchronized_start_time(true);
-  return std::move(animation_);
-}
-
-std::unique_ptr<CompositorFloatAnimationCurve>
-CompositorAnimation::FloatCurveForTesting() const {
-  const cc::AnimationCurve* curve = animation_->curve();
-  DCHECK_EQ(cc::AnimationCurve::FLOAT, curve->Type());
-
-  auto keyframed_curve = base::WrapUnique(
-      static_cast<cc::KeyframedFloatAnimationCurve*>(curve->Clone().release()));
-  return CompositorFloatAnimationCurve::CreateForTesting(
-      std::move(keyframed_curve));
+void CompositorAnimation::NotifyAnimationTakeover(
+    base::TimeTicks monotonic_time,
+    int target_property,
+    base::TimeTicks animation_start_time,
+    std::unique_ptr<cc::AnimationCurve> curve) {
+  if (delegate_) {
+    delegate_->NotifyAnimationTakeover(
+        (monotonic_time - base::TimeTicks()).InSecondsF(),
+        (animation_start_time - base::TimeTicks()).InSecondsF(),
+        std::move(curve));
+  }
 }
 
 }  // namespace blink

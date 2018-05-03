@@ -863,10 +863,16 @@ SI void from_8888(U32 _8888, F* r, F* g, F* b, F* a) {
     *b = cast((_8888 >> 16) & 0xff) * (1/255.0f);
     *a = cast((_8888 >> 24)       ) * (1/255.0f);
 }
+SI void from_1010102(U32 rgba, F* r, F* g, F* b, F* a) {
+    *r = cast((rgba      ) & 0x3ff) * (1/1023.0f);
+    *g = cast((rgba >> 10) & 0x3ff) * (1/1023.0f);
+    *b = cast((rgba >> 20) & 0x3ff) * (1/1023.0f);
+    *a = cast((rgba >> 30)        ) * (1/   3.0f);
+}
 
 // Used by load_ and store_ stages to get to the right (dx,dy) starting point of contiguous memory.
 template <typename T>
-SI T* ptr_at_xy(const SkJumper_MemoryCtx* ctx, int dx, int dy) {
+SI T* ptr_at_xy(const SkJumper_MemoryCtx* ctx, size_t dx, size_t dy) {
     return (T*)ctx->pixels + dy*ctx->stride + dx;
 }
 
@@ -898,6 +904,8 @@ SI U32 to_unorm(F v, F scale, F bias = 1.0f) {
     // Any time we use round() we probably want to use to_unorm().
     return round(min(max(0, v), bias), scale);
 }
+
+SI I32 cond_to_mask(I32 cond) { return if_then_else(cond, I32(~0), I32(0)); }
 
 // Now finally, normal Stages!
 
@@ -1291,6 +1299,9 @@ STAGE(unpremul, Ctx::None) {
     g *= scale;
     b *= scale;
 }
+
+STAGE(force_opaque    , Ctx::None) {  a = 1; }
+STAGE(force_opaque_dst, Ctx::None) { da = 1; }
 
 SI F from_srgb(F s) {
     auto lo = s * (1/12.92f);
@@ -1690,6 +1701,29 @@ STAGE(store_bgra, const SkJumper_MemoryCtx* ctx) {
     store(ptr, px, tail);
 }
 
+STAGE(load_1010102, const SkJumper_MemoryCtx* ctx) {
+    auto ptr = ptr_at_xy<const uint32_t>(ctx, dx,dy);
+    from_1010102(load<U32>(ptr, tail), &r,&g,&b,&a);
+}
+STAGE(load_1010102_dst, const SkJumper_MemoryCtx* ctx) {
+    auto ptr = ptr_at_xy<const uint32_t>(ctx, dx,dy);
+    from_1010102(load<U32>(ptr, tail), &dr,&dg,&db,&da);
+}
+STAGE(gather_1010102, const SkJumper_GatherCtx* ctx) {
+    const uint32_t* ptr;
+    U32 ix = ix_and_ptr(&ptr, ctx, r,g);
+    from_1010102(gather(ptr, ix), &r,&g,&b,&a);
+}
+STAGE(store_1010102, const SkJumper_MemoryCtx* ctx) {
+    auto ptr = ptr_at_xy<uint32_t>(ctx, dx,dy);
+
+    U32 px = to_unorm(r, 1023)
+           | to_unorm(g, 1023) << 10
+           | to_unorm(b, 1023) << 20
+           | to_unorm(a,    3) << 30;
+    store(ptr, px, tail);
+}
+
 STAGE(load_f16, const SkJumper_MemoryCtx* ctx) {
     auto ptr = ptr_at_xy<const uint64_t>(ctx, dx,dy);
 
@@ -1799,6 +1833,34 @@ SI F clamp_01(F v) { return min(max(0, v), 1); }
 STAGE( clamp_x_1, Ctx::None) { r = clamp_01(r); }
 STAGE(repeat_x_1, Ctx::None) { r = clamp_01(r - floor_(r)); }
 STAGE(mirror_x_1, Ctx::None) { r = clamp_01(abs_( (r-1.0f) - two(floor_((r-1.0f)*0.5f)) - 1.0f )); }
+
+// Decal stores a 32bit mask after checking the coordinate (x and/or y) against its domain:
+//      mask == 0x00000000 if the coordinate(s) are out of bounds
+//      mask == 0xFFFFFFFF if the coordinate(s) are in bounds
+// After the gather stage, the r,g,b,a values are AND'd with this mask, setting them to 0
+// if either of the coordinates were out of bounds.
+
+STAGE(decal_x, SkJumper_DecalTileCtx* ctx) {
+    auto w = ctx->limit_x;
+    unaligned_store(ctx->mask, cond_to_mask((0 <= r) & (r < w)));
+}
+STAGE(decal_y, SkJumper_DecalTileCtx* ctx) {
+    auto h = ctx->limit_y;
+    unaligned_store(ctx->mask, cond_to_mask((0 <= g) & (g < h)));
+}
+STAGE(decal_x_and_y, SkJumper_DecalTileCtx* ctx) {
+    auto w = ctx->limit_x;
+    auto h = ctx->limit_y;
+    unaligned_store(ctx->mask,
+                    cond_to_mask((0 <= r) & (r < w) & (0 <= g) & (g < h)));
+}
+STAGE(check_decal_mask, SkJumper_DecalTileCtx* ctx) {
+    auto mask = unaligned_load<U32>(ctx->mask);
+    r = bit_cast<F>( bit_cast<U32>(r) & mask );
+    g = bit_cast<F>( bit_cast<U32>(g) & mask );
+    b = bit_cast<F>( bit_cast<U32>(b) & mask );
+    a = bit_cast<F>( bit_cast<U32>(a) & mask );
+}
 
 STAGE(luminance_to_alpha, Ctx::None) {
     a = r*0.2126f + g*0.7152f + b*0.0722f;
@@ -1992,14 +2054,14 @@ STAGE(mask_2pt_conical_nan, SkJumper_2PtConicalCtx* c) {
     F& t = r;
     auto is_degenerate = (t != t); // NaN
     t = if_then_else(is_degenerate, F(0), t);
-    unaligned_store(&c->fMask, if_then_else(is_degenerate, U32(0), U32(0xffffffff)));
+    unaligned_store(&c->fMask, cond_to_mask(!is_degenerate));
 }
 
 STAGE(mask_2pt_conical_degenerates, SkJumper_2PtConicalCtx* c) {
     F& t = r;
     auto is_degenerate = (t <= 0) | (t != t);
     t = if_then_else(is_degenerate, F(0), t);
-    unaligned_store(&c->fMask, if_then_else(is_degenerate, U32(0), U32(0xffffffff)));
+    unaligned_store(&c->fMask, cond_to_mask(!is_degenerate));
 }
 
 STAGE(apply_vector_mask, const uint32_t* ctx) {

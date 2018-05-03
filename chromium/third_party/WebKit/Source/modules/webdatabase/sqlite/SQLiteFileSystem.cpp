@@ -33,15 +33,36 @@
 #include "platform/heap/Handle.h"
 #include "platform/heap/SafePoint.h"
 #include "platform/wtf/text/CString.h"
+#include "sql/initialization.h"
 #include "third_party/sqlite/sqlite3.h"
 
 // SQLiteFileSystem::registerSQLiteVFS() is implemented in the
 // platform-specific files SQLiteFileSystemChromium{Win|Posix}.cpp
 namespace blink {
 
-SQLiteFileSystem::SQLiteFileSystem() = default;
+#if DCHECK_IS_ON()
+// static
+bool SQLiteFileSystem::initialize_sqlite_called_ = false;
+#endif  // DCHECK_IS_ON
 
+// static
+void SQLiteFileSystem::InitializeSQLite() {
+#if DCHECK_IS_ON()
+  DCHECK(!initialize_sqlite_called_) << __func__ << " already called";
+  initialize_sqlite_called_ = true;
+#endif  // DCHECK_IS_ON()
+
+  sql::EnsureSqliteInitialized();
+  RegisterSQLiteVFS();
+}
+
+// static
 int SQLiteFileSystem::OpenDatabase(const String& filename, sqlite3** database) {
+#if DCHECK_IS_ON()
+  DCHECK(initialize_sqlite_called_)
+      << "InitializeSQLite() must be called before " << __func__;
+#endif  // DCHECK_IS_ON()
+
   return sqlite3_open_v2(filename.Utf8().data(), database,
                          SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
                          "chromium_vfs");

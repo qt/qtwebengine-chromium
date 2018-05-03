@@ -60,17 +60,16 @@ TEST(NinjaActionTargetWriter, ActionNoSources) {
   NinjaActionTargetWriter writer(&target, out);
   writer.Run();
 
-  const char expected[] =
-      "rule __foo_bar___rule\n"
-      "  command = /usr/bin/python ../../foo/script.py\n"
-      "  description = ACTION //foo:bar()\n"
-      "  restat = 1\n"
-      "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
-          "../../foo/included.txt\n"
-      "\n"
-      "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
-      "\n"
-      "build obj/foo/bar.stamp: stamp foo.out\n";
+  const char* expected = 1 /* skip initial newline */ + R"(
+rule __foo_bar___rule
+  command = /usr/bin/python ../../foo/script.py
+  description = ACTION //foo:bar()
+  restat = 1
+
+build foo.out: __foo_bar___rule | ../../foo/script.py ../../foo/included.txt
+
+build obj/foo/bar.stamp: stamp foo.out
+)";
   EXPECT_EQ(expected, out.str());
 }
 
@@ -105,18 +104,17 @@ TEST(NinjaActionTargetWriter, ActionNoSourcesPool) {
   NinjaActionTargetWriter writer(&target, out);
   writer.Run();
 
-  const char expected[] =
-      "rule __foo_bar___rule\n"
-      "  command = /usr/bin/python ../../foo/script.py\n"
-      "  description = ACTION //foo:bar()\n"
-      "  restat = 1\n"
-      "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
-          "../../foo/included.txt\n"
-      "\n"
-      "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
-      "  pool = foo_pool\n"
-      "\n"
-      "build obj/foo/bar.stamp: stamp foo.out\n";
+  const char* expected = 1 /* skip initial newline */ + R"(
+rule __foo_bar___rule
+  command = /usr/bin/python ../../foo/script.py
+  description = ACTION //foo:bar()
+  restat = 1
+
+build foo.out: __foo_bar___rule | ../../foo/script.py ../../foo/included.txt
+  pool = foo_pool
+
+build obj/foo/bar.stamp: stamp foo.out
+)";
   EXPECT_EQ(expected, out.str());
 }
 
@@ -152,10 +150,9 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
       "  command = /usr/bin/python ../../foo/script.py\n"
       "  description = ACTION //foo:bar()\n"
       "  restat = 1\n"
-      "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
-          "../../foo/included.txt ../../foo/source.txt\n"
       "\n"
-      "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
+      "build foo.out: __foo_bar___rule | ../../foo/script.py "
+      "../../foo/included.txt ../../foo/source.txt\n"
       "\n"
       "build obj/foo/bar.stamp: stamp foo.out\n";
   EXPECT_EQ(expected_linux, out.str());
@@ -355,6 +352,57 @@ TEST(NinjaActionTargetWriter, ForEachWithResponseFile) {
       "  source_file_part = input1.txt\n"
       // Substitution for the rspfile contents.
       "  source_name_part = input1\n"
+      "\n"
+      "build obj/foo/bar.stamp: stamp input1.out\n";
+  EXPECT_EQ(expected_linux, out.str());
+}
+
+TEST(NinjaActionTargetWriter, ForEachWithPool) {
+  Err err;
+  TestWithScope setup;
+
+  Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
+  target.set_output_type(Target::ACTION_FOREACH);
+
+  target.sources().push_back(SourceFile("//foo/input1.txt"));
+  target.action_values().set_script(SourceFile("//foo/script.py"));
+
+  Pool pool(setup.settings(),
+            Label(SourceDir("//foo/"), "pool", setup.toolchain()->label().dir(),
+                  setup.toolchain()->label().name()));
+  pool.set_depth(5);
+  target.action_values().set_pool(LabelPtrPair<Pool>(&pool));
+
+  target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target.OnResolved(&err));
+
+  // Make sure we get interesting substitutions for both the args and the
+  // response file contents.
+  target.action_values().args() =
+      SubstitutionList::MakeForTest("{{source}}", "{{source_file_part}}");
+  target.action_values().outputs() =
+      SubstitutionList::MakeForTest("//out/Debug/{{source_name_part}}.out");
+
+  setup.build_settings()->set_python_path(
+      base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
+
+  std::ostringstream out;
+  NinjaActionTargetWriter writer(&target, out);
+  writer.Run();
+
+  const char expected_linux[] =
+      "rule __foo_bar___rule\n"
+      // These come from the args.
+      "  command = /usr/bin/python ../../foo/script.py ${in} "
+      "${source_file_part}\n"
+      "  description = ACTION //foo:bar()\n"
+      "  restat = 1\n"
+      "\n"
+      "build input1.out: __foo_bar___rule ../../foo/input1.txt"
+      " | ../../foo/script.py\n"
+      // Substitution for the args.
+      "  source_file_part = input1.txt\n"
+      "  pool = foo_pool\n"
       "\n"
       "build obj/foo/bar.stamp: stamp input1.out\n";
   EXPECT_EQ(expected_linux, out.str());

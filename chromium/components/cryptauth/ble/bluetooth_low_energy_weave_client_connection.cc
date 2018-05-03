@@ -4,12 +4,12 @@
 
 #include "components/cryptauth/ble/bluetooth_low_energy_weave_client_connection.h"
 
+#include <memory>
 #include <sstream>
 #include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/task_runner.h"
@@ -82,7 +82,7 @@ BluetoothLowEnergyWeaveClientConnection::Factory::BuildInstance(
     const device::BluetoothUUID remote_service_uuid,
     device::BluetoothDevice* bluetooth_device,
     bool should_set_low_connection_latency) {
-  return base::MakeUnique<BluetoothLowEnergyWeaveClientConnection>(
+  return std::make_unique<BluetoothLowEnergyWeaveClientConnection>(
       remote_device, adapter, remote_service_uuid, bluetooth_device,
       should_set_low_connection_latency);
 }
@@ -151,15 +151,15 @@ BluetoothLowEnergyWeaveClientConnection::
       adapter_(adapter),
       remote_service_({remote_service_uuid, std::string()}),
       packet_generator_(
-          base::MakeUnique<BluetoothLowEnergyWeavePacketGenerator>()),
-      packet_receiver_(base::MakeUnique<BluetoothLowEnergyWeavePacketReceiver>(
+          std::make_unique<BluetoothLowEnergyWeavePacketGenerator>()),
+      packet_receiver_(std::make_unique<BluetoothLowEnergyWeavePacketReceiver>(
           BluetoothLowEnergyWeavePacketReceiver::ReceiverType::CLIENT)),
       tx_characteristic_(
           {device::BluetoothUUID(kTXCharacteristicUUID), std::string()}),
       rx_characteristic_(
           {device::BluetoothUUID(kRXCharacteristicUUID), std::string()}),
       task_runner_(base::ThreadTaskRunnerHandle::Get()),
-      timer_(base::MakeUnique<base::OneShotTimer>()),
+      timer_(std::make_unique<base::OneShotTimer>()),
       sub_status_(SubStatus::DISCONNECTED),
       weak_ptr_factory_(this) {
   adapter_->AddObserver(this);
@@ -167,6 +167,19 @@ BluetoothLowEnergyWeaveClientConnection::
 
 BluetoothLowEnergyWeaveClientConnection::
     ~BluetoothLowEnergyWeaveClientConnection() {
+  if (sub_status() != SubStatus::DISCONNECTED) {
+    // Deleting this object without calling Disconnect() may result in the
+    // connection staying active longer than intended, which can lead to errors.
+    // See https://crbug.com/763604.
+    PA_LOG(WARNING) << "Warning: Deleting "
+                    << "BluetoothLowEnergyWeaveClientConnection object with an "
+                    << "active connection to " << GetDeviceInfoLogString()
+                    << ". This may result in disconnection errors; trying to "
+                    << "send uWeave \"connection close\" packet before "
+                    << "deleting.";
+    ClearQueueAndSendConnectionClose();
+  }
+
   DestroyConnection(
       BleWeaveConnectionResult::BLE_WEAVE_CONNECTION_RESULT_CLOSED_NORMALLY);
 }
@@ -233,6 +246,11 @@ void BluetoothLowEnergyWeaveClientConnection::CreateGattConnection() {
 
 void BluetoothLowEnergyWeaveClientConnection::Disconnect() {
   if (IsConnected()) {
+    // If a disconnection is already in progress, there is nothing to do.
+    if (has_triggered_disconnection_)
+      return;
+
+    has_triggered_disconnection_ = true;
     PA_LOG(INFO) << "Disconnection requested; sending \"connection close\" "
                  << "uWeave packet to " << GetDeviceInfoLogString() << ".";
 
@@ -378,7 +396,7 @@ void BluetoothLowEnergyWeaveClientConnection::SendMessageImpl(
     WriteRequestType request_type = (i != weave_packets.size() - 1)
                                         ? WriteRequestType::REGULAR
                                         : WriteRequestType::MESSAGE_COMPLETE;
-    queued_write_requests_.emplace(base::MakeUnique<WriteRequest>(
+    queued_write_requests_.emplace(std::make_unique<WriteRequest>(
         weave_packets[i], request_type, message.get()));
   }
 
@@ -646,7 +664,7 @@ void BluetoothLowEnergyWeaveClientConnection::SendConnectionRequest() {
   PA_LOG(INFO) << "Sending \"connection request\" uWeave packet to "
                << GetDeviceInfoLogString();
 
-  queued_write_requests_.emplace(base::MakeUnique<WriteRequest>(
+  queued_write_requests_.emplace(std::make_unique<WriteRequest>(
       packet_generator_->CreateConnectionRequest(),
       WriteRequestType::CONNECTION_REQUEST));
   ProcessNextWriteRequest();
@@ -721,6 +739,8 @@ void BluetoothLowEnergyWeaveClientConnection::OnRemoteCharacteristicWritten() {
       WriteRequestType::CONNECTION_CLOSE) {
     // Once a "connection close" uWeave packet has been sent, the connection
     // is ready to be disconnected.
+    PA_LOG(INFO) << "uWeave \"connection close\" packet sent to "
+                 << GetDeviceInfoLogString() << ". Destroying connection.";
     DestroyConnection(
         BleWeaveConnectionResult::BLE_WEAVE_CONNECTION_RESULT_CLOSED_NORMALLY);
     return;
@@ -833,15 +853,17 @@ void BluetoothLowEnergyWeaveClientConnection::
   // write, we must wait for it to complete before the "connection close" can
   // be sent.
   queued_write_requests_.emplace(
-      base::MakeUnique<WriteRequest>(packet_generator_->CreateConnectionClose(
+      std::make_unique<WriteRequest>(packet_generator_->CreateConnectionClose(
                                          packet_receiver_->GetReasonToClose()),
                                      WriteRequestType::CONNECTION_CLOSE));
 
   if (pending_write_request_) {
     PA_LOG(WARNING) << "Waiting for current write to complete, then will send "
-                    << "a \"connection close\" uWeave packet.";
+                    << "a \"connection close\" uWeave packet to "
+                    << GetDeviceInfoLogString() << ".";
   } else {
-    PA_LOG(INFO) << "Sending a \"connection close\" uWeave packet.";
+    PA_LOG(INFO) << "Sending a \"connection close\" uWeave packet to "
+                 << GetDeviceInfoLogString() << ".";
   }
 
   ProcessNextWriteRequest();

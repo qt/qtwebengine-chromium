@@ -51,7 +51,6 @@ class FrameSelection;
 class LocalFrame;
 class HitTestResult;
 class KillRing;
-class Pasteboard;
 class SetSelectionOptions;
 class SpellChecker;
 class CSSPropertyValueSet;
@@ -83,46 +82,25 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
   bool CanEdit() const;
   bool CanEditRichly() const;
 
-  bool CanDHTMLCut(EditorCommandSource);
-  bool CanDHTMLCopy(EditorCommandSource);
-
   bool CanCut() const;
   bool CanCopy() const;
   bool CanPaste() const;
   bool CanDelete() const;
   bool CanSmartCopyOrDelete() const;
 
-  void Cut(EditorCommandSource);
-  void Copy(EditorCommandSource);
-  void Paste(EditorCommandSource);
-  void PasteAsPlainText(EditorCommandSource);
-  void PerformDelete();
-
   static void CountEvent(ExecutionContext*, const Event*);
   void CopyImage(const HitTestResult&);
 
   void RespondToChangedContents(const Position&);
 
-  bool SelectionStartHasStyle(CSSPropertyID, const String& value) const;
-  EditingTriState SelectionHasStyle(CSSPropertyID, const String& value) const;
-  String SelectionStartCSSPropertyValue(CSSPropertyID);
-
-  void RemoveFormattingAndStyle();
-
   void RegisterCommandGroup(CompositeEditCommand* command_group_wrapper);
 
-  bool DeleteWithDirection(DeleteDirection,
-                           TextGranularity,
-                           bool kill_ring,
-                           bool is_typing_action);
   void DeleteSelectionWithSmartDelete(
       DeleteMode,
       InputEvent::InputType,
       const Position& reference_move_position = Position());
 
-  void ApplyStyle(CSSPropertyValueSet*, InputEvent::InputType);
   void ApplyParagraphStyle(CSSPropertyValueSet*, InputEvent::InputType);
-  void ApplyStyleToSelection(CSSPropertyValueSet*, InputEvent::InputType);
   void ApplyParagraphStyleToSelection(CSSPropertyValueSet*,
                                       InputEvent::InputType);
 
@@ -208,6 +186,8 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
   bool IsSelectTrailingWhitespaceEnabled() const;
 
   bool PreventRevealSelection() const { return prevent_reveal_selection_; }
+  void IncreasePreventRevealSelection() { ++prevent_reveal_selection_; }
+  void DecreasePreventRevealSelection() { --prevent_reveal_selection_; }
 
   void SetStartNewKillRingSequence(bool);
 
@@ -223,19 +203,10 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
 
   void AddToKillRing(const EphemeralRange&);
 
-  void PasteAsFragment(DocumentFragment*,
-                       bool smart_replace,
-                       bool match_style,
-                       EditorCommandSource);
-  void PasteAsPlainText(const String&, bool smart_replace, EditorCommandSource);
-
-  Element* FindEventTargetFrom(const VisibleSelection&) const;
-  Element* FindEventTargetFromSelection() const;
   Element* FindEventTargetForClipboardEvent(EditorCommandSource) const;
 
   bool FindString(const String&, FindOptions);
 
-  Range* FindStringAndScrollToVisible(const String&, Range*, FindOptions);
   Range* FindRangeOfString(const String& target,
                            const EphemeralRange& reference_range,
                            FindOptions);
@@ -249,8 +220,7 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
 
   void ComputeAndSetTypingStyle(CSSPropertyValueSet*, InputEvent::InputType);
 
-  // |firstRectForRange| requires up-to-date layout.
-  IntRect FirstRectForRange(const EphemeralRange&) const;
+  EphemeralRange RangeForPoint(const IntPoint&) const;
 
   void RespondToChangedSelection();
 
@@ -294,28 +264,14 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
     default_paragraph_separator_ = separator;
   }
 
-  static void TidyUpHTMLStructure(Document&);
-
-  class RevealSelectionScope {
-    DISALLOW_COPY_AND_ASSIGN(RevealSelectionScope);
-    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
-
-   public:
-    explicit RevealSelectionScope(Editor*);
-    ~RevealSelectionScope();
-
-    void Trace(blink::Visitor*);
-
-   private:
-    Member<Editor> editor_;
-  };
-  friend class RevealSelectionScope;
-
   EditingStyle* TypingStyle() const;
   void SetTypingStyle(EditingStyle*);
   void ClearTypingStyle();
 
   void Trace(blink::Visitor*);
+
+  void RevealSelectionAfterEditingOperation(
+      const ScrollAlignment& = ScrollAlignment::kAlignCenterIfNeeded);
 
  private:
   Member<LocalFrame> frame_;
@@ -339,24 +295,6 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
     return *frame_;
   }
 
-  bool CanDeleteRange(const EphemeralRange&) const;
-
-  // Returns true if Editor should continue with default processing.
-  bool DispatchCopyEvent(EditorCommandSource);
-  bool DispatchCutEvent(EditorCommandSource);
-  bool DispatchPasteEvent(PasteMode, EditorCommandSource);
-  bool DispatchClipboardEvent(const AtomicString&,
-                              DataTransferAccessPolicy,
-                              EditorCommandSource,
-                              PasteMode = kAllMimeTypes);
-
-  bool CanSmartReplaceWithPasteboard(Pasteboard*);
-  void PasteAsPlainTextWithPasteboard(Pasteboard*, EditorCommandSource);
-  void PasteWithPasteboard(Pasteboard*, EditorCommandSource);
-  void WriteSelectionToPasteboard();
-
-  void RevealSelectionAfterEditingOperation(
-      const ScrollAlignment& = ScrollAlignment::kAlignCenterIfNeeded);
   void ChangeSelectionAfterCommand(const SelectionInDOMTree&,
                                    const SetSelectionOptions&);
 

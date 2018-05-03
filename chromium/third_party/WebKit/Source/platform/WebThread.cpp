@@ -6,7 +6,6 @@
 
 #include "base/single_thread_task_runner.h"
 #include "build/build_config.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/wtf/Assertions.h"
 
 #if defined(OS_WIN)
@@ -17,6 +16,15 @@
 
 namespace blink {
 
+WebThreadCreationParams::WebThreadCreationParams(WebThreadType thread_type)
+    : thread_type(thread_type), name(GetNameForThreadType(thread_type)) {}
+
+WebThreadCreationParams& WebThreadCreationParams::SetThreadName(
+    const char* thread_name) {
+  name = thread_name;
+  return *this;
+}
+
 #if defined(OS_WIN)
 static_assert(sizeof(blink::PlatformThreadId) >= sizeof(DWORD),
               "size of platform thread id is too small");
@@ -26,10 +34,5 @@ static_assert(sizeof(blink::PlatformThreadId) >= sizeof(pid_t),
 #else
 #error Unexpected platform
 #endif
-
-scoped_refptr<base::SingleThreadTaskRunner>
-WebThread::GetSingleThreadTaskRunner() const {
-  return GetWebTaskRunner();
-}
 
 }  // namespace blink

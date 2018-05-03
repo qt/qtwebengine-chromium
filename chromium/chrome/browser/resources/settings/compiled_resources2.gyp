@@ -57,6 +57,7 @@
       'target_name': 'search_settings',
       'dependencies': [
         '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:cr',
+        '<(DEPTH)/ui/webui/resources/js/compiled_resources2.gyp:search_highlight_utils',
       ],
       'includes': ['../../../../third_party/closure_compiler/compile_js2.gypi'],
     },
@@ -79,6 +80,7 @@
         'default_browser_page/compiled_resources2.gyp:*',
         'device_page/compiled_resources2.gyp:*',
         'downloads_page/compiled_resources2.gyp:*',
+        'incompatible_applications_page/compiled_resources2.gyp:*',
         'internet_page/compiled_resources2.gyp:*',
         'languages_page/compiled_resources2.gyp:*',
         'on_startup_page/compiled_resources2.gyp:*',

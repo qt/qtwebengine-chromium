@@ -28,18 +28,13 @@ void Keyframe::AddKeyframePropertiesToV8Object(
     object_builder.AddNull("offset");
   }
   object_builder.Add("easing", easing_->ToString());
-  if (composite_.has_value()) {
+  if (composite_) {
     object_builder.AddString(
         "composite",
         EffectModel::CompositeOperationToString(composite_.value()));
+  } else {
+    object_builder.AddNull("composite");
   }
-}
-
-bool Keyframe::CompareOffsets(const scoped_refptr<Keyframe>& a,
-                              const scoped_refptr<Keyframe>& b) {
-  if (!a->Offset() || !b->Offset())
-    return false;
-  return a->CheckedOffset() < b->CheckedOffset();
 }
 
 }  // namespace blink

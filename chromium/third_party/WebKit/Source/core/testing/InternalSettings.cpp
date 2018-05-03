@@ -79,9 +79,7 @@ InternalSettings::Backup::Backup(Settings* settings)
       default_video_poster_url_(settings->GetDefaultVideoPosterURL()),
       original_image_animation_policy_(settings->GetImageAnimationPolicy()),
       original_scroll_top_left_interop_enabled_(
-          RuntimeEnabledFeatures::ScrollTopLeftInteropEnabled()),
-      original_animation_worklet_enabled_(
-          RuntimeEnabledFeatures::AnimationWorkletEnabled()) {}
+          RuntimeEnabledFeatures::ScrollTopLeftInteropEnabled()) {}
 
 void InternalSettings::Backup::RestoreTo(Settings* settings) {
   RuntimeEnabledFeatures::SetExperimentalContentSecurityPolicyFeaturesEnabled(
@@ -110,15 +108,14 @@ void InternalSettings::Backup::RestoreTo(Settings* settings) {
 }
 
 InternalSettings* InternalSettings::From(Page& page) {
-  if (!Supplement<Page>::From(page, SupplementName()))
-    Supplement<Page>::ProvideTo(page, SupplementName(),
-                                new InternalSettings(page));
-  return static_cast<InternalSettings*>(
-      Supplement<Page>::From(page, SupplementName()));
+  InternalSettings* supplement = Supplement<Page>::From<InternalSettings>(page);
+  if (!supplement) {
+    supplement = new InternalSettings(page);
+    ProvideTo(page, supplement);
+  }
+  return supplement;
 }
-const char* InternalSettings::SupplementName() {
-  return "InternalSettings";
-}
+const char InternalSettings::kSupplementName[] = "InternalSettings";
 
 InternalSettings::~InternalSettings() = default;
 
@@ -504,13 +501,6 @@ void InternalSettings::SetPreloadLogging(bool enabled,
                                          ExceptionState& exception_state) {
   InternalSettingsGuardForSettings();
   GetSettings()->SetLogPreload(enabled);
-}
-
-void InternalSettings::setAnimationWorkletEnabled(
-    bool enabled,
-    ExceptionState& exception_state) {
-  InternalSettingsGuardForSettings();
-  RuntimeEnabledFeatures::SetAnimationWorkletEnabled(enabled);
 }
 
 void InternalSettings::setPresentationReceiver(

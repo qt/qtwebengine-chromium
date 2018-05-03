@@ -8,13 +8,14 @@
 #ifndef GrCCCoverageProcessor_DEFINED
 #define GrCCCoverageProcessor_DEFINED
 
+#include "GrCaps.h"
 #include "GrGeometryProcessor.h"
 #include "GrShaderCaps.h"
 #include "SkNx.h"
 #include "glsl/GrGLSLGeometryProcessor.h"
 #include "glsl/GrGLSLVarying.h"
 
-class GrGLSLPPFragmentBuilder;
+class GrGLSLFPFragmentBuilder;
 class GrGLSLVertexGeoBuilder;
 class GrMesh;
 
@@ -32,8 +33,9 @@ class GrMesh;
  */
 class GrCCCoverageProcessor : public GrGeometryProcessor {
 public:
-    // Defines a single triangle or closed quadratic bezier, with transposed x,y point values.
-    struct TriangleInstance {
+    // Defines a single primitive shape with 3 input points (i.e. Triangles and Quadratics).
+    // X,Y point values are transposed.
+    struct TriPointInstance {
         float fX[3];
         float fY[3];
 
@@ -41,12 +43,15 @@ public:
         void set(const SkPoint&, const SkPoint&, const SkPoint&, const Sk2f& trans);
     };
 
-    // Defines a single closed cubic bezier, with transposed x,y point values.
-    struct CubicInstance {
+    // Defines a single primitive shape with 4 input points, or 3 input points plus a W parameter
+    // duplicated in both 4th components (i.e. Cubics or Triangles with a custom winding number).
+    // X,Y point values are transposed.
+    struct QuadPointInstance {
         float fX[4];
         float fY[4];
 
         void set(const SkPoint[4], float dx, float dy);
+        void set(const SkPoint&, const SkPoint&, const SkPoint&, const Sk2f& trans, float w);
     };
 
     // All primitive shapes (triangles and closed, convex bezier curves) require more than one
@@ -58,7 +63,7 @@ public:
     enum class RenderPass {
         // For a Hull, the Impl generates a "conservative raster hull" around the input points. This
         // is the geometry that causes a pixel to be rasterized if it is touched anywhere by the
-        // input polygon. The initial coverage values sent to the Shader at each vertex are either
+        // input polygon. The input coverage values sent to the Shader at each vertex are either
         // null, or +1 all around if the Impl combines this pass with kTriangleEdges. Logically,
         // the conservative raster hull is equivalent to the convex hull of pixel size boxes
         // centered on each input point.
@@ -67,7 +72,7 @@ public:
         kCubicHulls,
 
         // For Edges, the Impl generates conservative rasters around every input edge (i.e. convex
-        // hulls of two pixel-size boxes centered on both of the edge's endpoints). The initial
+        // hulls of two pixel-size boxes centered on both of the edge's endpoints). The input
         // coverage values sent to the Shader at each vertex are -1 on the outside border of the
         // edge geometry and 0 on the inside. This is the only geometry type that associates
         // coverage values with the output vertices. Interpolated, these coverage values convert
@@ -79,7 +84,7 @@ public:
 
         // For Corners, the Impl Generates the conservative rasters of corner points (i.e.
         // pixel-size boxes). It generates 3 corner boxes for triangles and 2 for curves. The Shader
-        // specifies which corners. Initial coverage values sent to the Shader will be null.
+        // specifies which corners. Input coverage values sent to the Shader will be null.
         kTriangleCorners,
         kQuadraticCorners,
         kCubicCorners
@@ -87,15 +92,24 @@ public:
     static bool RenderPassIsCubic(RenderPass);
     static const char* RenderPassName(RenderPass);
 
-    constexpr static bool DoesRenderPass(RenderPass renderPass, const GrShaderCaps& caps) {
-        return RenderPass::kTriangleEdges != renderPass || caps.geometryShaderSupport();
+    constexpr static bool DoesRenderPass(RenderPass renderPass, const GrCaps& caps) {
+        return RenderPass::kTriangleEdges != renderPass ||
+               caps.shaderCaps()->geometryShaderSupport();
     }
 
-    GrCCCoverageProcessor(GrResourceProvider* rp, RenderPass pass, const GrShaderCaps& caps)
+    enum class WindMethod : bool {
+        kCrossProduct, // Calculate wind = +/-1 by sign of the cross product.
+        kInstanceData // Instance data provides custom, signed wind values of any magnitude.
+                      // (For tightly-wound tessellated triangles.)
+    };
+
+    GrCCCoverageProcessor(GrResourceProvider* rp, RenderPass pass, WindMethod windMethod)
             : INHERITED(kGrCCCoverageProcessor_ClassID)
             , fRenderPass(pass)
-            , fImpl(caps.geometryShaderSupport() ?  Impl::kGeometryShader : Impl::kVertexShader) {
-        SkASSERT(DoesRenderPass(pass, caps));
+            , fWindMethod(windMethod)
+            , fImpl(rp->caps()->shaderCaps()->geometryShaderSupport() ? Impl::kGeometryShader
+                                                                      : Impl::kVertexShader) {
+        SkASSERT(DoesRenderPass(pass, *rp->caps()));
         if (Impl::kGeometryShader == fImpl) {
             this->initGS();
         } else {
@@ -104,10 +118,8 @@ public:
     }
 
     // Appends a GrMesh that will draw the provided instances. The instanceBuffer must be an array
-    // of either TriangleInstance or CubicInstance, depending on this processor's RendererPass, with
-    // coordinates in the desired shape's final atlas-space position.
-    //
-    // NOTE: Quadratics use TriangleInstance since both have 3 points.
+    // of either TriPointInstance or QuadPointInstance, depending on this processor's RendererPass,
+    // with coordinates in the desired shape's final atlas-space position.
     void appendMesh(GrBuffer* instanceBuffer, int instanceCount, int baseInstance,
                     SkTArray<GrMesh>* out) {
         if (Impl::kGeometryShader == fImpl) {
@@ -159,10 +171,14 @@ public:
                                    const char* repetitionID, const char* wind,
                                    GeometryVars*) const {}
 
-        void emitVaryings(GrGLSLVaryingHandler*, GrGLSLVarying::Scope, SkString* code,
-                          const char* position, const char* coverage, const char* wind);
+        void emitVaryings(GrGLSLVaryingHandler* varyingHandler, GrGLSLVarying::Scope scope,
+                          SkString* code, const char* position, const char* inputCoverage,
+                          const char* wind) {
+            SkASSERT(GrGLSLVarying::Scope::kVertToGeo != scope);
+            this->onEmitVaryings(varyingHandler, scope, code, position, inputCoverage, wind);
+        }
 
-        void emitFragmentCode(const GrCCCoverageProcessor& proc, GrGLSLPPFragmentBuilder*,
+        void emitFragmentCode(const GrCCCoverageProcessor& proc, GrGLSLFPFragmentBuilder*,
                               const char* skOutputColor, const char* skOutputCoverage) const;
 
         // Defines an equation ("dot(float3(pt, 1), distance_equation)") that is -1 on the outside
@@ -175,26 +191,17 @@ public:
         virtual ~Shader() {}
 
     protected:
-        enum class WindHandling : bool {
-            kHandled,
-            kNotHandled
-        };
-
         // Here the subclass adds its internal varyings to the handler and produces code to
-        // initialize those varyings from a given position, coverage value, and wind.
+        // initialize those varyings from a given position, input coverage value, and wind.
         //
-        // Returns whether the subclass will handle wind modulation or if this base class should
-        // take charge of multiplying the final coverage output by "wind".
-        //
-        // NOTE: the coverage parameter is only relevant for edges (see comments in RenderPass).
+        // NOTE: the coverage input is only relevant for edges (see comments in RenderPass).
         // Otherwise it is +1 all around.
-        virtual WindHandling onEmitVaryings(GrGLSLVaryingHandler*, GrGLSLVarying::Scope,
-                                            SkString* code, const char* position,
-                                            const char* coverage, const char* wind) = 0;
+        virtual void onEmitVaryings(GrGLSLVaryingHandler*, GrGLSLVarying::Scope, SkString* code,
+                                    const char* position, const char* inputCoverage,
+                                    const char* wind) = 0;
 
-        // Emits the fragment code that calculates a pixel's coverage value. If using
-        // WindHandling::kHandled, this value must be signed appropriately.
-        virtual void onEmitFragmentCode(GrGLSLPPFragmentBuilder*,
+        // Emits the fragment code that calculates a pixel's signed coverage value.
+        virtual void onEmitFragmentCode(GrGLSLFPFragmentBuilder*,
                                         const char* outputCoverage) const = 0;
 
         // Returns the name of a Shader's internal varying at the point where where its value is
@@ -209,10 +216,7 @@ public:
         // center. Subclasses can use this for software multisampling.
         //
         // Returns the number of samples.
-        static int DefineSoftSampleLocations(GrGLSLPPFragmentBuilder* f, const char* samplesName);
-
-    private:
-        GrGLSLVarying fWind;
+        static int DefineSoftSampleLocations(GrGLSLFPFragmentBuilder* f, const char* samplesName);
     };
 
     class GSImpl;
@@ -243,19 +247,24 @@ private:
     GrGLSLPrimitiveProcessor* createVSImpl(std::unique_ptr<Shader>) const;
 
     const RenderPass fRenderPass;
+    const WindMethod fWindMethod;
     const Impl fImpl;
-    sk_sp<const GrBuffer> fVertexBuffer; // Used by VSImpl.
-    sk_sp<const GrBuffer> fIndexBuffer; // Used by VSImpl.
     SkDEBUGCODE(float fDebugBloat = 0);
+
+    // Used by VSImpl.
+    sk_sp<const GrBuffer> fVertexBuffer;
+    sk_sp<const GrBuffer> fIndexBuffer;
+    int fNumIndicesPerInstance;
+    GrPrimitiveType fPrimitiveType;
 
     typedef GrGeometryProcessor INHERITED;
 };
 
-inline void GrCCCoverageProcessor::TriangleInstance::set(const SkPoint p[3], const Sk2f& trans) {
+inline void GrCCCoverageProcessor::TriPointInstance::set(const SkPoint p[3], const Sk2f& trans) {
     this->set(p[0], p[1], p[2], trans);
 }
 
-inline void GrCCCoverageProcessor::TriangleInstance::set(const SkPoint& p0, const SkPoint& p1,
+inline void GrCCCoverageProcessor::TriPointInstance::set(const SkPoint& p0, const SkPoint& p1,
                                                          const SkPoint& p2, const Sk2f& trans) {
     Sk2f P0 = Sk2f::Load(&p0) + trans;
     Sk2f P1 = Sk2f::Load(&p1) + trans;
@@ -263,11 +272,21 @@ inline void GrCCCoverageProcessor::TriangleInstance::set(const SkPoint& p0, cons
     Sk2f::Store3(this, P0, P1, P2);
 }
 
-inline void GrCCCoverageProcessor::CubicInstance::set(const SkPoint p[4], float dx, float dy) {
+inline void GrCCCoverageProcessor::QuadPointInstance::set(const SkPoint p[4], float dx, float dy) {
     Sk4f X,Y;
     Sk4f::Load2(p, &X, &Y);
     (X + dx).store(&fX);
     (Y + dy).store(&fY);
+}
+
+inline void GrCCCoverageProcessor::QuadPointInstance::set(const SkPoint& p0, const SkPoint& p1,
+                                                          const SkPoint& p2, const Sk2f& trans,
+                                                          float w) {
+    Sk2f P0 = Sk2f::Load(&p0) + trans;
+    Sk2f P1 = Sk2f::Load(&p1) + trans;
+    Sk2f P2 = Sk2f::Load(&p2) + trans;
+    Sk2f W = Sk2f(w);
+    Sk2f::Store4(this, P0, P1, P2, W);
 }
 
 inline bool GrCCCoverageProcessor::RenderPassIsCubic(RenderPass pass) {

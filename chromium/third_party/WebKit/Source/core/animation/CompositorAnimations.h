@@ -43,7 +43,6 @@ namespace blink {
 
 class Animation;
 class CompositorAnimation;
-class CompositorAnimationPlayer;
 class Element;
 class KeyframeEffectModelBase;
 
@@ -68,7 +67,7 @@ class CORE_EXPORT CompositorAnimations {
     static FailureCode NonActionable(const String& reason) {
       return FailureCode(false, false, false, reason);
     }
-    static FailureCode NotPaintIntoOwnBacking(const String& reason) {
+    static FailureCode AcceleratableAnimNotAccelerated(const String& reason) {
       return FailureCode(true, false, false, reason);
     }
 
@@ -106,7 +105,7 @@ class CORE_EXPORT CompositorAnimations {
                                          double time_offset,
                                          const Timing&,
                                          const Animation*,
-                                         CompositorAnimationPlayer&,
+                                         CompositorAnimation&,
                                          const EffectModel&,
                                          Vector<int>& started_animation_ids,
                                          double animation_playback_rate);
@@ -118,7 +117,7 @@ class CORE_EXPORT CompositorAnimations {
                                                    int id,
                                                    double pause_time);
 
-  static void AttachCompositedLayers(Element&, CompositorAnimationPlayer*);
+  static void AttachCompositedLayers(Element&, CompositorAnimation*);
 
   struct CompositorTiming {
     Timing::PlaybackDirection direction;
@@ -141,7 +140,7 @@ class CORE_EXPORT CompositorAnimations {
       double start_time,
       double time_offset,
       const KeyframeEffectModelBase&,
-      Vector<std::unique_ptr<CompositorAnimation>>& animations,
+      Vector<std::unique_ptr<CompositorKeyframeModel>>& animations,
       double animation_playback_rate);
 
  private:
@@ -160,6 +159,8 @@ class CORE_EXPORT CompositorAnimations {
                            canStartElementOnCompositorEffectSPv2);
   FRIEND_TEST_ALL_PREFIXES(AnimationCompositorAnimationsTest,
                            canStartElementOnCompositorEffect);
+  FRIEND_TEST_ALL_PREFIXES(AnimationCompositorAnimationsTest,
+                           cannotStartElementOnCompositorEffectSVG);
   FRIEND_TEST_ALL_PREFIXES(
       AnimationCompositorAnimationsTest,
       cannotStartElementOnCompositorEffectWithRuntimeFeature);

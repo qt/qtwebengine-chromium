@@ -114,6 +114,22 @@ def parse_args(args):
         ]))
 
     option_group_definitions.append(
+        ('Fuchsia-specific Options', [
+            optparse.make_option(
+                '--zircon-logging',
+                dest='zircon_logging',
+                action='store_true',
+                default=True,
+                help=('Log Zircon debug messages (enabled by default).')),
+            optparse.make_option(
+                '--no-zircon-logging',
+                dest='zircon_logging',
+                action='store_false',
+                default=True,
+                help=('Do not log Zircon debug messages.')),
+        ]))
+
+    option_group_definitions.append(
         ('Results Options', [
             optparse.make_option(
                 '--add-platform-exceptions',
@@ -366,24 +382,22 @@ def parse_args(args):
                 type='int',
                 default=1,
                 help='Number of times to run each test (e.g. AAABBBCCC)'),
-            # TODO(joelo): Delete --retry-failures and --no-retry-failures as they
-            # are redundant with --num-retries.
-            optparse.make_option(
-                '--retry-failures',
-                action='store_true',
-                help=('Re-try any tests that produce unexpected results. Default is to not retry '
-                      'if an explicit list of tests is passed to run-webkit-tests.')),
-            optparse.make_option(
-                '--no-retry-failures',
-                dest='retry_failures',
-                action='store_false',
-                help="Don't re-try any tests that produce unexpected results."),
             optparse.make_option(
                 '--num-retries',
+                '--test-launcher-retry-limit',
                 type='int',
-                default=3,
-                help=('Number of times to retry failures, default is 3. Only relevant when '
-                      'failure retries are enabled.')),
+                default=None,
+                help=('Number of times to retry failures. Default (when this '
+                      'flag is not specified) is to retry 3 times, unless an '
+                      'explicit list of tests is passed to run-webkit-tests. '
+                      'If a non-zero value is given explicitly, failures are '
+                      'retried regardless.')),
+            optparse.make_option(
+                '--no-retry-failures',
+                dest='num_retries',
+                action='store_const',
+                const=0,
+                help="Don't retry any failures (equivalent to --num-retries=0)."),
             optparse.make_option(
                 '--total-shards',
                 type=int,
@@ -410,11 +424,17 @@ def parse_args(args):
                 '--skipped',
                 action='store',
                 default=None,
-                help=('control how tests marked SKIP are run. '
+                help=('Control how tests marked SKIP are run. '
                       '"default" == Skip tests unless explicitly listed on the command line, '
                       '"ignore" == Run them anyway, '
                       '"only" == only run the SKIP tests, '
                       '"always" == always skip, even if listed on the command line.')),
+            optparse.make_option(
+                '--gtest_also_run_disabled_tests',
+                action='store_true',
+                default=False,  # Consistent with the default value of --skipped
+                help=('Equivalent to --skipped=ignore. This option overrides '
+                      '--skipped if both are given.')),
             optparse.make_option(
                 '--skip-failing-tests',
                 action='store_true',
@@ -437,6 +457,12 @@ def parse_args(args):
                 action='append',
                 metavar='FILE',
                 help='read list of tests to run from file'),
+            optparse.make_option(
+                '--gtest_filter',
+                type='string',
+                help='A colon-separated list of tests to run. Wildcards are '
+                     'NOT supported. It is the same as listing the tests as '
+                     'positional arguments.'),
             optparse.make_option(
                 '--time-out-ms',
                 help='Set the timeout for each test'),
@@ -559,9 +585,11 @@ def _set_up_derived_options(port, options, args):
     if not args and not options.test_list and options.smoke is None:
         options.smoke = port.default_smoke_test_only()
     if options.smoke:
-        if not args and not options.test_list and options.retry_failures is None:
-            # Retry failures by default if we're doing just a smoke test (no additional tests).
-            options.retry_failures = True
+        if not args and not options.test_list and options.num_retries is None:
+            # Retry failures 3 times if we're running a smoke test without
+            # additional tests. SmokeTests is an explicit list of tests, so we
+            # wouldn't retry by default without this special case.
+            options.num_retries = 3
 
         if not options.test_list:
             options.test_list = []
@@ -569,8 +597,13 @@ def _set_up_derived_options(port, options, args):
         if not options.skipped:
             options.skipped = 'always'
 
-    if not options.skipped:
+    if options.gtest_also_run_disabled_tests:
+        options.skipped = 'ignore'
+    elif not options.skipped:
         options.skipped = 'default'
+
+    if options.gtest_filter:
+        args.extend(options.gtest_filter.split(':'))
 
     if not options.total_shards and 'GTEST_TOTAL_SHARDS' in port.host.environ:
         options.total_shards = int(port.host.environ['GTEST_TOTAL_SHARDS'])

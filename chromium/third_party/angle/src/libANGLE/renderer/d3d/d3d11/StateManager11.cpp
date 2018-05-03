@@ -32,9 +32,8 @@ namespace
 {
 bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOURCE_VIEW_DESC desc)
 {
-    unsigned mipLevel   = index.mipIndex;
-    GLint layerIndex    = index.layerIndex;
-    GLenum type         = index.type;
+    unsigned mipLevel  = index.mipIndex;
+    GLenum textureType = index.type;
 
     switch (desc.ViewDimension)
     {
@@ -45,15 +44,17 @@ bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOUR
             maxSrvMip              = allLevels ? INT_MAX : maxSrvMip;
 
             unsigned mipMin = index.mipIndex;
-            unsigned mipMax = (layerIndex == -1) ? INT_MAX : layerIndex;
+            unsigned mipMax = INT_MAX;
 
-            return type == GL_TEXTURE_2D &&
+            return textureType == GL_TEXTURE_2D &&
                    gl::RangeUI(mipMin, mipMax)
                        .intersects(gl::RangeUI(desc.Texture2D.MostDetailedMip, maxSrvMip));
         }
 
         case D3D11_SRV_DIMENSION_TEXTURE2DARRAY:
         {
+            GLint layerIndex = index.layerIndex;
+
             bool allLevels = (desc.Texture2DArray.MipLevels == std::numeric_limits<UINT>::max());
             unsigned int maxSrvMip =
                 desc.Texture2DArray.MipLevels + desc.Texture2DArray.MostDetailedMip;
@@ -62,7 +63,7 @@ bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOUR
             unsigned maxSlice = desc.Texture2DArray.FirstArraySlice + desc.Texture2DArray.ArraySize;
 
             // Cube maps can be mapped to Texture2DArray SRVs
-            return (type == GL_TEXTURE_2D_ARRAY || gl::IsCubeMapTextureTarget(type)) &&
+            return (textureType == GL_TEXTURE_2D_ARRAY || textureType == GL_TEXTURE_CUBE_MAP) &&
                    desc.Texture2DArray.MostDetailedMip <= mipLevel && mipLevel < maxSrvMip &&
                    desc.Texture2DArray.FirstArraySlice <= static_cast<UINT>(layerIndex) &&
                    static_cast<UINT>(layerIndex) < maxSlice;
@@ -74,7 +75,7 @@ bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOUR
             unsigned int maxSrvMip = desc.TextureCube.MipLevels + desc.TextureCube.MostDetailedMip;
             maxSrvMip              = allLevels ? INT_MAX : maxSrvMip;
 
-            return gl::IsCubeMapTextureTarget(type) &&
+            return textureType == GL_TEXTURE_CUBE_MAP &&
                    desc.TextureCube.MostDetailedMip <= mipLevel && mipLevel < maxSrvMip;
         }
 
@@ -84,7 +85,7 @@ bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOUR
             unsigned int maxSrvMip = desc.Texture3D.MipLevels + desc.Texture3D.MostDetailedMip;
             maxSrvMip              = allLevels ? INT_MAX : maxSrvMip;
 
-            return type == GL_TEXTURE_3D && desc.Texture3D.MostDetailedMip <= mipLevel &&
+            return textureType == GL_TEXTURE_3D && desc.Texture3D.MostDetailedMip <= mipLevel &&
                    mipLevel < maxSrvMip;
         }
         default:
@@ -1032,6 +1033,7 @@ void StateManager11::syncState(const gl::Context *context, const gl::State::Dirt
                 {
                     invalidateCurrentValueAttrib(attribIndex);
                 }
+                break;
             }
             default:
                 break;
@@ -3261,8 +3263,10 @@ StateManager11::OnConstantBufferDirtyReceiver::~OnConstantBufferDirtyReceiver()
 {
 }
 
-void StateManager11::OnConstantBufferDirtyReceiver::signal(size_t messageID,
-                                                           const gl::Context *context)
+void StateManager11::OnConstantBufferDirtyReceiver::onSubjectStateChange(
+    const gl::Context *context,
+    angle::SubjectIndex index,
+    angle::SubjectMessage message)
 {
     StateManager11 *stateManager = GetImplAs<Context11>(context)->getRenderer()->getStateManager();
     stateManager->invalidateProgramUniformBuffers();
@@ -3272,24 +3276,24 @@ void StateManager11::OnConstantBufferDirtyReceiver::bindVS(size_t index, Buffer1
 {
     ASSERT(buffer);
     ASSERT(index < mBindingsVS.size());
-    mBindingsVS[index].bind(buffer->getDirectBroadcastChannel());
+    mBindingsVS[index].bind(buffer->getDirectSubject());
 }
 
 void StateManager11::OnConstantBufferDirtyReceiver::bindPS(size_t index, Buffer11 *buffer)
 {
     ASSERT(buffer);
     ASSERT(index < mBindingsPS.size());
-    mBindingsPS[index].bind(buffer->getDirectBroadcastChannel());
+    mBindingsPS[index].bind(buffer->getDirectSubject());
 }
 
 void StateManager11::OnConstantBufferDirtyReceiver::reset()
 {
-    for (OnBufferDataDirtyBinding &vsBinding : mBindingsVS)
+    for (angle::ObserverBinding &vsBinding : mBindingsVS)
     {
         vsBinding.bind(nullptr);
     }
 
-    for (OnBufferDataDirtyBinding &psBinding : mBindingsPS)
+    for (angle::ObserverBinding &psBinding : mBindingsPS)
     {
         psBinding.bind(nullptr);
     }

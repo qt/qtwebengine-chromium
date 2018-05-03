@@ -88,7 +88,6 @@ class CORE_EXPORT SVGElement : public Element {
     kAncestorScope  // Used by SVGSVGElement::get{Enclosure|Intersection}List()
   };
   virtual AffineTransform LocalCoordinateSpaceTransform(CTMScope) const;
-  virtual bool NeedsPendingResourceHandling() const { return true; }
 
   bool InstanceUpdatesBlocked() const;
   void SetInstanceUpdatesBlocked(bool);
@@ -174,8 +173,8 @@ class CORE_EXPORT SVGElement : public Element {
 
   SVGElementProxySet* ElementProxySet();
 
-  SVGElementSet* SetOfIncomingReferences() const;
   void AddReferenceTo(SVGElement*);
+  void NotifyIncomingReferences(bool needs_layout);
   void RebuildAllIncomingReferences();
   void RemoveAllIncomingReferences();
   void RemoveAllOutgoingReferences();
@@ -237,11 +236,13 @@ class CORE_EXPORT SVGElement : public Element {
     UpdateRelativeLengthsInformation(SelfHasRelativeLengths(), this);
   }
   void UpdateRelativeLengthsInformation(bool has_relative_lengths, SVGElement*);
-  static void MarkForLayoutAndParentResourceInvalidation(LayoutObject*);
+  static void MarkForLayoutAndParentResourceInvalidation(LayoutObject&);
 
   virtual bool SelfHasRelativeLengths() const { return false; }
 
   bool HasSVGParent() const;
+
+  SVGElementSet* SetOfIncomingReferences() const;
 
   SVGElementRareData* EnsureSVGRareData();
   inline bool HasSVGRareData() const { return svg_rare_data_; }
@@ -272,8 +273,6 @@ class CORE_EXPORT SVGElement : public Element {
     return EnsureComputedStyle(pseudo_element_specifier);
   }
   void WillRecalcStyle(StyleRecalcChange) override;
-
-  void BuildPendingResourcesIfNeeded();
 
   HeapHashSet<WeakMember<SVGElement>> elements_with_relative_lengths_;
 
@@ -318,7 +317,7 @@ inline bool Node::HasTagName(const SVGQualifiedName& name) const {
   return IsSVGElement() && ToSVGElement(*this).HasTagName(name);
 }
 
-// This requires isSVG*Element(const SVGElement&).
+// This requires IsSVG*Element(const SVGElement&).
 #define DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType)               \
   inline bool Is##thisType(const thisType* element);                       \
   inline bool Is##thisType(const thisType& element);                       \
@@ -326,14 +325,10 @@ inline bool Node::HasTagName(const SVGQualifiedName& name) const {
     return element && Is##thisType(*element);                              \
   }                                                                        \
   inline bool Is##thisType(const Node& node) {                             \
-    return node.IsSVGElement() ? Is##thisType(ToSVGElement(node)) : false; \
+    return node.IsSVGElement() && Is##thisType(ToSVGElement(node));        \
   }                                                                        \
   inline bool Is##thisType(const Node* node) {                             \
     return node && Is##thisType(*node);                                    \
-  }                                                                        \
-  template <typename T>                                                    \
-  inline bool Is##thisType(const T* node) {                                \
-    return Is##thisType(node);                                             \
   }                                                                        \
   template <typename T>                                                    \
   inline bool Is##thisType(const Member<T>& node) {                        \

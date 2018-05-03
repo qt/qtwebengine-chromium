@@ -41,6 +41,7 @@
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
+#include "core/fileapi/PublicURLManager.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/Frame.h"
 #include "core/frame/Settings.h"
@@ -68,6 +69,7 @@
 #include "platform/blob/BlobData.h"
 #include "platform/exported/WrappedResourceResponse.h"
 #include "platform/feature_policy/FeaturePolicy.h"
+#include "platform/loader/cors/CORS.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
@@ -87,7 +89,7 @@
 #include "platform/wtf/text/CString.h"
 #include "public/platform/WebCORS.h"
 #include "public/platform/WebURLRequest.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
+#include "third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 
 namespace blink {
 
@@ -338,7 +340,8 @@ XMLHttpRequest::State XMLHttpRequest::readyState() const {
   return state_;
 }
 
-ScriptString XMLHttpRequest::responseText(ExceptionState& exception_state) {
+v8::Local<v8::String> XMLHttpRequest::responseText(
+    ExceptionState& exception_state) {
   if (response_type_code_ != kResponseTypeDefault &&
       response_type_code_ != kResponseTypeText) {
     exception_state.ThrowDOMException(kInvalidStateError,
@@ -346,19 +349,19 @@ ScriptString XMLHttpRequest::responseText(ExceptionState& exception_state) {
                                       "object's 'responseType' is '' or 'text' "
                                       "(was '" +
                                           responseType() + "').");
-    return ScriptString();
+    return v8::Local<v8::String>();
   }
   if (error_ || (state_ != kLoading && state_ != kDone))
-    return ScriptString();
-  return response_text_;
+    return v8::Local<v8::String>();
+  return response_text_.V8Value(isolate_);
 }
 
-ScriptString XMLHttpRequest::ResponseJSONSource() {
+v8::Local<v8::String> XMLHttpRequest::ResponseJSONSource() {
   DCHECK_EQ(response_type_code_, kResponseTypeJSON);
 
   if (error_ || state_ != kDone)
-    return ScriptString();
-  return response_text_;
+    return v8::Local<v8::String>();
+  return response_text_.V8Value(isolate_);
 }
 
 void XMLHttpRequest::InitResponseDocument() {
@@ -406,7 +409,7 @@ Document* XMLHttpRequest::responseXML(ExceptionState& exception_state) {
     if (!response_document_)
       return nullptr;
 
-    response_document_->SetContent(response_text_.FlattenToString());
+    response_document_->SetContent(response_text_.Flatten(isolate_));
     if (!response_document_->WellFormed())
       response_document_ = nullptr;
 
@@ -734,6 +737,12 @@ void XMLHttpRequest::open(const AtomicString& method,
 
   url_ = url;
 
+  if (url_.ProtocolIs("blob") &&
+      RuntimeEnabledFeatures::MojoBlobURLsEnabled()) {
+    GetExecutionContext()->GetPublicURLManager().Resolve(
+        url_, MakeRequest(&blob_url_loader_factory_));
+  }
+
   async_ = async;
 
   DCHECK(!loader_);
@@ -766,9 +775,9 @@ bool XMLHttpRequest::InitSend(ExceptionState& exception_state) {
 
   if (!async_) {
     if (GetExecutionContext()->IsDocument() &&
-        IsSupportedInFeaturePolicy(FeaturePolicyFeature::kSyncXHR) &&
+        IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kSyncXHR) &&
         !GetDocument()->GetFrame()->IsFeatureEnabled(
-            FeaturePolicyFeature::kSyncXHR)) {
+            mojom::FeaturePolicyFeature::kSyncXHR)) {
       LogConsoleError(GetExecutionContext(),
                       "Synchronous requests are disabled by Feature Policy.");
       HandleNetworkError();
@@ -1053,7 +1062,7 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
     }
   }
 
-  same_origin_request_ = GetSecurityOrigin()->CanRequestNoSuborigin(url_);
+  same_origin_request_ = GetSecurityOrigin()->CanRequest(url_);
 
   if (!same_origin_request_ && with_credentials_) {
     UseCounter::Count(&execution_context,
@@ -1064,7 +1073,7 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
   // in case the upload listeners are added after the request is started.
   upload_events_allowed_ =
       same_origin_request_ || upload_events ||
-      !FetchUtils::IsCORSSafelistedMethod(method_) ||
+      !CORS::IsCORSSafelistedMethod(method_) ||
       !FetchUtils::ContainsOnlyCORSSafelistedHeaders(request_headers_);
 
   ResourceRequest request(url_);
@@ -1076,9 +1085,7 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
   request.SetFetchCredentialsMode(
       with_credentials_ ? network::mojom::FetchCredentialsMode::kInclude
                         : network::mojom::FetchCredentialsMode::kSameOrigin);
-  request.SetServiceWorkerMode(is_isolated_world_
-                                   ? WebURLRequest::ServiceWorkerMode::kNone
-                                   : WebURLRequest::ServiceWorkerMode::kAll);
+  request.SetSkipServiceWorker(is_isolated_world_);
   request.SetExternalRequestStateFromRequestorAddressSpace(
       execution_context.GetSecurityContext().AddressSpace());
 
@@ -1101,6 +1108,11 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
   resource_loader_options.security_origin = GetSecurityOrigin();
   resource_loader_options.initiator_info.name =
       FetchInitiatorTypeNames::xmlhttprequest;
+  if (blob_url_loader_factory_) {
+    resource_loader_options.url_loader_factory = base::MakeRefCounted<
+        base::RefCountedData<network::mojom::blink::URLLoaderFactoryPtr>>(
+        std::move(blob_url_loader_factory_));
+  }
 
   // When responseType is set to "blob", we redirect the downloaded data to a
   // file-handle directly.
@@ -1565,8 +1577,13 @@ void XMLHttpRequest::UpdateContentTypeAndCharset(
   ReplaceCharsetInMediaType(content_type, charset);
   request_headers_.Set(HTTPNames::Content_Type, AtomicString(content_type));
 
-  if (original_content_type != content_type)
+  if (original_content_type != content_type) {
     UseCounter::Count(GetExecutionContext(), WebFeature::kReplaceCharsetInXHR);
+    if (!EqualIgnoringASCIICase(original_content_type, content_type)) {
+      UseCounter::Count(GetExecutionContext(),
+                        WebFeature::kReplaceCharsetInXHRIgnoringCase);
+    }
+  }
 }
 
 bool XMLHttpRequest::ResponseIsXML() const {
@@ -1668,7 +1685,7 @@ void XMLHttpRequest::DidFinishLoadingInternal() {
   if (decoder_) {
     auto text = decoder_->Flush();
     if (!text.IsEmpty() && !response_text_overflow_) {
-      response_text_ = response_text_.ConcatenateWith(text);
+      response_text_.Concat(isolate_, text);
       response_text_overflow_ = response_text_.IsEmpty();
     }
   }
@@ -1828,7 +1845,7 @@ std::unique_ptr<TextResourceDecoder> XMLHttpRequest::CreateDecoder() const {
     case kResponseTypeDefault:
       if (ResponseIsXML())
         return TextResourceDecoder::Create(decoder_options_for_xml);
-    // fall through
+      FALLTHROUGH;
     case kResponseTypeText:
       return TextResourceDecoder::Create(decoder_options_for_utf8_plain_text);
     case kResponseTypeDocument:
@@ -1874,7 +1891,7 @@ void XMLHttpRequest::DidReceiveData(const char* data, unsigned len) {
 
     auto text = decoder_->Decode(data, len);
     if (!text.IsEmpty() && !response_text_overflow_) {
-      response_text_ = response_text_.ConcatenateWith(text);
+      response_text_.Concat(isolate_, text);
       response_text_overflow_ = response_text_.IsEmpty();
     }
   } else if (response_type_code_ == kResponseTypeArrayBuffer ||
@@ -2004,6 +2021,7 @@ void XMLHttpRequest::TraceWrappers(
   visitor->TraceWrappers(response_blob_);
   visitor->TraceWrappers(response_document_);
   visitor->TraceWrappers(response_array_buffer_);
+  visitor->TraceWrappers(response_text_);
   XMLHttpRequestEventTarget::TraceWrappers(visitor);
 }
 

@@ -13,6 +13,8 @@
 #include "core/page/scrolling/RootScrollerUtil.h"
 #include "core/paint/PaintLayer.h"
 
+#include "public/platform/Platform.h"
+
 namespace blink {
 
 CompositingReasonFinder::CompositingReasonFinder(LayoutView& layout_view)
@@ -63,6 +65,9 @@ bool CompositingReasonFinder::RequiresCompositingForScrollableFrame() const {
   if (!(compositing_triggers_ & kScrollableInnerFrameTrigger))
     return false;
 
+  if (layout_view_.GetFrameView()->VisibleContentSize().IsEmpty())
+    return false;
+
   return layout_view_.GetFrameView()->IsScrollable();
 }
 
@@ -100,10 +105,11 @@ CompositingReasonFinder::PotentialCompositingReasonsFromStyle(
   // If the implementation of createsGroup changes, we need to be aware of that
   // in this part of code.
   DCHECK((layout_object.IsTransparent() || layout_object.HasMask() ||
+          layout_object.HasClipPath() ||
           layout_object.HasFilterInducingProperty() || style.HasBlendMode()) ==
          layout_object.CreatesGroup());
 
-  if (style.HasMask())
+  if (style.HasMask() || style.ClipPath())
     reasons |= CompositingReason::kMaskWithCompositedDescendants;
 
   if (style.HasFilterInducingProperty())
@@ -135,7 +141,12 @@ bool CompositingReasonFinder::RequiresCompositingForTransform(
   // may have transforms, but the layoutObject may be an inline that doesn't
   // support them.
   return layout_object.HasTransformRelatedProperty() &&
-         layout_object.StyleRef().Has3DTransform();
+         layout_object.StyleRef().Has3DTransform() &&
+         // Don't composite "trivial" 3D transforms such as translateZ(0) on
+         // low-end devices. These devices are much more sensitive to memory
+         // and per-composited-layer commit overhead.
+         (!Platform::Current()->IsLowEndDevice() ||
+          layout_object.StyleRef().Transform().HasNonTrivial3DComponent());
 }
 
 CompositingReasons CompositingReasonFinder::NonStyleDeterminedDirectReasons(
@@ -187,6 +198,10 @@ CompositingReasons CompositingReasonFinder::CompositingReasonsForAnimation(
     reasons |= CompositingReason::kActiveFilterAnimation;
   if (RequiresCompositingForBackdropFilterAnimation(style))
     reasons |= CompositingReason::kActiveBackdropFilterAnimation;
+  // TODO(crbug.com/754471): remove the next two lines when the experiment is
+  // completed.
+  if (!style.ShouldCompositeForCurrentAnimations())
+    reasons = CompositingReason::kNone;
   return reasons;
 }
 

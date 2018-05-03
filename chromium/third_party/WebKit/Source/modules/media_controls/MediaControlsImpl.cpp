@@ -27,6 +27,7 @@
 #include "modules/media_controls/MediaControlsImpl.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/string_or_trusted_html.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/MutationObserver.h"
 #include "core/dom/MutationObserverInit.h"
@@ -73,14 +74,17 @@
 #include "modules/media_controls/elements/MediaControlPictureInPictureButtonElement.h"
 #include "modules/media_controls/elements/MediaControlPlayButtonElement.h"
 #include "modules/media_controls/elements/MediaControlRemainingTimeDisplayElement.h"
+#include "modules/media_controls/elements/MediaControlScrubbingMessageElement.h"
 #include "modules/media_controls/elements/MediaControlTextTrackListElement.h"
 #include "modules/media_controls/elements/MediaControlTimelineElement.h"
 #include "modules/media_controls/elements/MediaControlToggleClosedCaptionsButtonElement.h"
 #include "modules/media_controls/elements/MediaControlVolumeSliderElement.h"
+#include "modules/picture_in_picture/PictureInPictureController.h"
 #include "modules/remoteplayback/HTMLMediaElementRemotePlayback.h"
 #include "modules/remoteplayback/RemotePlayback.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/runtime_enabled_features.h"
+#include "platform/text/PlatformLocale.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebSize.h"
 
@@ -101,6 +105,8 @@ constexpr int kMinHeightForOverlayPlayButton = kOverlayPlayButtonHeight +
                                                kAndroidMediaPanelHeight +
                                                (2 * kOverlayBottomMargin);
 
+constexpr int kMinScrubbingMessageWidth = 300;
+
 // If you change this value, then also update the corresponding value in
 // LayoutTests/media/media-controls.js.
 const double kTimeWithoutMouseMovementBeforeHidingMediaControls = 3;
@@ -120,6 +126,8 @@ constexpr int kModernControlsAudioButtonPadding = 20;
 constexpr int kModernControlsVideoButtonPadding = 26;
 
 const char kShowDefaultPosterCSSClass[] = "use-default-poster";
+const char kActAsAudioControlsCSSClass[] = "audio-only";
+const char kScrubbingMessageCSSClass[] = "scrubbing-message";
 
 bool ShouldShowFullscreenButton(const HTMLMediaElement& media_element) {
   // Unconditionally allow the user to exit fullscreen if we are in it
@@ -146,6 +154,18 @@ bool ShouldShowFullscreenButton(const HTMLMediaElement& media_element) {
   }
 
   return true;
+}
+
+bool ShouldShowPictureInPictureButton(HTMLMediaElement& media_element) {
+  if (!media_element.IsHTMLVideoElement())
+    return false;
+
+  if (!media_element.HasVideo())
+    return false;
+
+  return PictureInPictureController::Ensure(media_element.GetDocument())
+             .IsElementAllowed(ToHTMLVideoElement(media_element)) ==
+         PictureInPictureController::Status::kEnabled;
 }
 
 bool ShouldShowCastButton(HTMLMediaElement& media_element) {
@@ -232,7 +252,8 @@ class MediaControlsImpl::MediaControlsResizeObserverDelegate final
 };
 
 // Observes changes to the HTMLMediaElement attributes that affect controls.
-// Currently only observes the disableRemotePlayback attribute.
+// Currently only observes the disableRemotePlayback and disablePictureInPicture
+// attributes.
 class MediaControlsImpl::MediaElementMutationCallback
     : public MutationObserver::Delegate {
  public:
@@ -241,7 +262,9 @@ class MediaControlsImpl::MediaElementMutationCallback
     MutationObserverInit init;
     init.setAttributeOldValue(true);
     init.setAttributes(true);
-    init.setAttributeFilter({HTMLNames::disableremoteplaybackAttr.ToString()});
+    init.setAttributeFilter(
+        {HTMLNames::disableremoteplaybackAttr.ToString(),
+         HTMLNames::disablepictureinpictureAttr.ToString()});
     observer_->observe(&controls_->MediaElement(), init, ASSERT_NO_EXCEPTION);
   }
 
@@ -259,10 +282,18 @@ class MediaControlsImpl::MediaElementMutationCallback
       if (record->oldValue() == element.getAttribute(record->attributeName()))
         continue;
 
-      DCHECK_EQ(HTMLNames::disableremoteplaybackAttr.ToString(),
-                record->attributeName());
-      controls_->RefreshCastButtonVisibility();
-      return;
+      if (record->attributeName() ==
+          HTMLNames::disableremoteplaybackAttr.ToString())
+        controls_->RefreshCastButtonVisibilityWithoutUpdate();
+
+      if (record->attributeName() ==
+              HTMLNames::disablepictureinpictureAttr.ToString() &&
+          controls_->picture_in_picture_button_) {
+        controls_->picture_in_picture_button_->SetIsWanted(
+            ShouldShowPictureInPictureButton(controls_->MediaElement()));
+      }
+
+      BatchedControlUpdate batch(controls_);
     }
   }
 
@@ -294,6 +325,7 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       panel_(nullptr),
       play_button_(nullptr),
       timeline_(nullptr),
+      scrubbing_message_(nullptr),
       current_time_display_(nullptr),
       duration_display_(nullptr),
       mute_button_(nullptr),
@@ -388,6 +420,9 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
 //   |    (-webkit-media-controls-enclosure)
 //   \-MediaControlPanelElement
 //     |    (-webkit-media-controls-panel)
+//     |  {if ModernMediaControlsEnabled and is video element and is Android}
+//     +-MediaControlScrubbingMessageElement
+//     |  (-internal-media-controls-scrubbing-message)
 //     |  {if ModernMediaControlsEnabled, otherwise
 //     |   contents are directly attached to parent.
 //     +-MediaControlOverlayPlayButtonElement
@@ -461,38 +496,23 @@ void MediaControlsImpl::InitializeControls() {
 
   // If using the modern media controls, the buttons should belong to a
   // seperate button panel. This is because they are displayed in two lines.
-  Element* button_panel = panel_;
   if (IsModern() && MediaElement().IsHTMLVideoElement()) {
-    panel_->AppendChild(overlay_play_button_);
-
     media_button_panel_ = new MediaControlButtonPanelElement(*this);
-    panel_->AppendChild(media_button_panel_);
-    button_panel = media_button_panel_;
+    if (RuntimeEnabledFeatures::DoubleTapToJumpOnVideoEnabled()) {
+      scrubbing_message_ = new MediaControlScrubbingMessageElement(*this);
+    }
   }
 
   play_button_ = new MediaControlPlayButtonElement(*this);
-  button_panel->AppendChild(play_button_);
 
   current_time_display_ = new MediaControlCurrentTimeDisplayElement(*this);
   current_time_display_->SetIsWanted(true);
-  button_panel->AppendChild(current_time_display_);
 
   duration_display_ = new MediaControlRemainingTimeDisplayElement(*this);
-  button_panel->AppendChild(duration_display_);
-
-  if (IsModern() && MediaElement().IsHTMLVideoElement()) {
-    MediaControlElementsHelper::CreateDiv(
-        "-internal-media-controls-button-spacer", button_panel);
-  }
-
   timeline_ = new MediaControlTimelineElement(*this);
-  panel_->AppendChild(timeline_);
-
   mute_button_ = new MediaControlMuteButtonElement(*this);
-  button_panel->AppendChild(mute_button_);
 
   volume_slider_ = new MediaControlVolumeSliderElement(*this);
-  button_panel->AppendChild(volume_slider_);
   if (PreferHiddenVolumeControls(GetDocument()))
     volume_slider_->SetIsWanted(false);
 
@@ -501,21 +521,18 @@ void MediaControlsImpl::InitializeControls() {
       MediaElement().IsHTMLVideoElement()) {
     picture_in_picture_button_ =
         new MediaControlPictureInPictureButtonElement(*this);
-    button_panel->AppendChild(picture_in_picture_button_);
+    picture_in_picture_button_->SetIsWanted(
+        ShouldShowPictureInPictureButton(MediaElement()));
   }
+
   fullscreen_button_ = new MediaControlFullscreenButtonElement(*this);
-  button_panel->AppendChild(fullscreen_button_);
-
   download_button_ = new MediaControlDownloadButtonElement(*this);
-  button_panel->AppendChild(download_button_);
-
   cast_button_ = new MediaControlCastButtonElement(*this, false);
-  button_panel->AppendChild(cast_button_);
-
   toggle_closed_captions_button_ =
       new MediaControlToggleClosedCaptionsButtonElement(*this);
-  button_panel->AppendChild(toggle_closed_captions_button_);
+  overflow_menu_ = new MediaControlOverflowMenuButtonElement(*this);
 
+  PopulatePanel();
   enclosure_->AppendChild(panel_);
 
   AppendChild(enclosure_);
@@ -523,8 +540,6 @@ void MediaControlsImpl::InitializeControls() {
   text_track_list_ = new MediaControlTextTrackListElement(*this);
   AppendChild(text_track_list_);
 
-  overflow_menu_ = new MediaControlOverflowMenuButtonElement(*this);
-  button_panel->AppendChild(overflow_menu_);
 
   overflow_list_ = new MediaControlOverflowMenuListElement(*this);
   AppendChild(overflow_list_);
@@ -535,12 +550,6 @@ void MediaControlsImpl::InitializeControls() {
   // overflow menu.
   overflow_list_->AppendChild(play_button_->CreateOverflowElement(
       new MediaControlPlayButtonElement(*this)));
-  if (RuntimeEnabledFeatures::PictureInPictureEnabled() && !IsModern() &&
-      MediaElement().IsHTMLVideoElement()) {
-    overflow_list_->AppendChild(
-        picture_in_picture_button_->CreateOverflowElement(
-            new MediaControlPictureInPictureButtonElement(*this)));
-  }
   overflow_list_->AppendChild(fullscreen_button_->CreateOverflowElement(
       new MediaControlFullscreenButtonElement(*this)));
   overflow_list_->AppendChild(download_button_->CreateOverflowElement(
@@ -552,9 +561,55 @@ void MediaControlsImpl::InitializeControls() {
   overflow_list_->AppendChild(
       toggle_closed_captions_button_->CreateOverflowElement(
           new MediaControlToggleClosedCaptionsButtonElement(*this)));
+  if (RuntimeEnabledFeatures::PictureInPictureEnabled() && !IsModern() &&
+      MediaElement().IsHTMLVideoElement()) {
+    overflow_list_->AppendChild(
+        picture_in_picture_button_->CreateOverflowElement(
+            new MediaControlPictureInPictureButtonElement(*this)));
+  }
 
   // Set the default CSS classes.
   UpdateCSSClassFromState();
+}
+
+void MediaControlsImpl::PopulatePanel() {
+  // Clear the panels.
+  panel_->setInnerHTML(StringOrTrustedHTML::FromString(""));
+  if (media_button_panel_)
+    media_button_panel_->setInnerHTML(StringOrTrustedHTML::FromString(""));
+
+  Element* button_panel = panel_;
+  if (IsModern() && MediaElement().IsHTMLVideoElement() &&
+      !is_acting_as_audio_controls_) {
+    if (scrubbing_message_)
+      panel_->AppendChild(scrubbing_message_);
+    panel_->AppendChild(overlay_play_button_);
+    panel_->AppendChild(media_button_panel_);
+    button_panel = media_button_panel_;
+  }
+
+  button_panel->AppendChild(play_button_);
+  button_panel->AppendChild(current_time_display_);
+  button_panel->AppendChild(duration_display_);
+
+  if (IsModern() && MediaElement().IsHTMLVideoElement()) {
+    MediaControlElementsHelper::CreateDiv(
+        "-internal-media-controls-button-spacer", button_panel);
+  }
+
+  panel_->AppendChild(timeline_);
+
+  button_panel->AppendChild(mute_button_);
+  button_panel->AppendChild(volume_slider_);
+
+  if (picture_in_picture_button_)
+    button_panel->AppendChild(picture_in_picture_button_);
+
+  button_panel->AppendChild(fullscreen_button_);
+  button_panel->AppendChild(download_button_);
+  button_panel->AppendChild(cast_button_);
+  button_panel->AppendChild(toggle_closed_captions_button_);
+  button_panel->AppendChild(overflow_menu_);
 }
 
 Node::InsertionNotificationRequest MediaControlsImpl::InsertedInto(
@@ -592,12 +647,17 @@ void MediaControlsImpl::UpdateCSSClassFromState() {
   StringBuilder builder;
   builder.Append(kStateCSSClasses[state]);
 
-  if (MediaElement().IsHTMLVideoElement() &&
+  if (MediaElement().IsHTMLVideoElement() && !is_acting_as_audio_controls_ &&
       !VideoElement().HasAvailableVideoFrame() &&
       VideoElement().PosterImageURL().IsEmpty() &&
-      state != ControlsState::kScrubbing) {
+      state <= ControlsState::kLoadingMetadata) {
     builder.Append(" ");
     builder.Append(kShowDefaultPosterCSSClass);
+  }
+
+  if (is_acting_as_audio_controls_) {
+    builder.Append(" ");
+    builder.Append(kActAsAudioControlsCSSClass);
   }
 
   const AtomicString& classes = builder.ToAtomicString();
@@ -686,6 +746,11 @@ void MediaControlsImpl::Reset() {
   OnVolumeChange();
   OnTextTracksAddedOrRemoved();
 
+  if (picture_in_picture_button_) {
+    picture_in_picture_button_->SetIsWanted(
+        ShouldShowPictureInPictureButton(MediaElement()));
+  }
+
   OnControlsListUpdated();
 }
 
@@ -711,7 +776,7 @@ LayoutObject* MediaControlsImpl::ContainerLayoutObject() {
 void MediaControlsImpl::MaybeShow() {
   panel_->SetIsWanted(true);
   panel_->SetIsDisplayed(true);
-  if (overlay_play_button_)
+  if (overlay_play_button_ && !is_paused_for_scrubbing_)
     overlay_play_button_->UpdateDisplayType();
   // Only make the controls visible if they won't get hidden by OnTimeUpdate.
   if (MediaElement().paused() || !ShouldHideMediaControls())
@@ -720,6 +785,8 @@ void MediaControlsImpl::MaybeShow() {
     download_iph_manager_->SetControlsVisibility(true);
   if (loading_panel_)
     loading_panel_->OnControlsShown();
+
+  timeline_->OnControlsShown();
 }
 
 void MediaControlsImpl::Hide() {
@@ -736,6 +803,13 @@ void MediaControlsImpl::Hide() {
     download_iph_manager_->SetControlsVisibility(false);
   if (loading_panel_)
     loading_panel_->OnControlsHidden();
+
+  // Cancel scrubbing if necessary.
+  if (is_scrubbing_) {
+    is_paused_for_scrubbing_ = false;
+    EndScrubbing();
+  }
+  timeline_->OnControlsHidden();
 }
 
 bool MediaControlsImpl::IsVisible() const {
@@ -828,6 +902,12 @@ void MediaControlsImpl::BeginScrubbing() {
     MediaElement().pause();
   }
 
+  if (scrubbing_message_) {
+    scrubbing_message_->SetIsWanted(true);
+    if (scrubbing_message_->DoesFit())
+      panel_->setAttribute("class", kScrubbingMessageCSSClass);
+  }
+
   is_scrubbing_ = true;
   UpdateCSSClassFromState();
 }
@@ -837,6 +917,11 @@ void MediaControlsImpl::EndScrubbing() {
     is_paused_for_scrubbing_ = false;
     if (MediaElement().paused())
       MediaElement().Play();
+  }
+
+  if (scrubbing_message_) {
+    scrubbing_message_->SetIsWanted(false);
+    panel_->removeAttribute("class");
   }
 
   is_scrubbing_ = false;
@@ -877,6 +962,26 @@ void MediaControlsImpl::DisableShowingTextTracks() {
     if (track->mode() == TextTrack::ShowingKeyword())
       track->setMode(TextTrack::DisabledKeyword());
   }
+}
+
+String MediaControlsImpl::GetTextTrackLabel(TextTrack* track) const {
+  if (!track) {
+    return MediaElement().GetLocale().QueryString(
+        WebLocalizedString::kTextTracksOff);
+  }
+
+  String track_label = track->label();
+
+  if (track_label.IsEmpty())
+    track_label = track->language();
+
+  if (track_label.IsEmpty()) {
+    track_label = String(MediaElement().GetLocale().QueryString(
+        WebLocalizedString::kTextTracksNoLabel,
+        String::Number(track->TrackIndex() + 1)));
+  }
+
+  return track_label;
 }
 
 void MediaControlsImpl::RefreshCastButtonVisibility() {
@@ -959,18 +1064,17 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
       std::make_pair(toggle_closed_captions_button_.Get(), false),
   };
 
-  // Get the size of the media controls.
-  WebSize controls_size =
-      MediaControlElementsHelper::GetSizeOrDefault(*this, WebSize(0, 0));
+  // These are the elements in order of priority that take up vertical room.
+  MediaControlElementBase* column_elements[] = {
+      overlay_play_button_.Get(), media_button_panel_.Get(), timeline_.Get(),
+  };
+
+  // Current size of the media controls.
+  WebSize controls_size = size_;
 
   // The video controls are more than one row so we need to allocate vertical
   // room and hide the overlay play button if there is not enough room.
-  if (MediaElement().IsHTMLVideoElement()) {
-    // These are the elements in order of priority that take up vertical room.
-    MediaControlElementBase* column_elements[] = {
-        overlay_play_button_.Get(), media_button_panel_.Get(), timeline_.Get(),
-    };
-
+  if (MediaElement().IsHTMLVideoElement() && !is_acting_as_audio_controls_) {
     controls_size.width -= kModernControlsVideoButtonPadding;
 
     // Allocate vertical room for the column elements.
@@ -988,6 +1092,15 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
     play_button_->SetIsWanted(!overlay_play_button_->DoesFit());
   } else {
     controls_size.width -= kModernControlsAudioButtonPadding;
+
+    // Undo any IsWanted/DoesFit changes made in the above block if we're
+    // switching to act as audio controls.
+    if (is_acting_as_audio_controls_) {
+      play_button_->SetIsWanted(true);
+
+      for (MediaControlElementBase* element : column_elements)
+        element->SetDoesFit(true);
+    }
   }
 
   // Go through the elements and if they are sticky allocate them to the panel
@@ -1044,6 +1157,11 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
 
   if (download_iph_manager_)
     download_iph_manager_->UpdateInProductHelp();
+}
+
+void MediaControlsImpl::UpdateScrubbingMessageFits() const {
+  if (scrubbing_message_)
+    scrubbing_message_->SetDoesFit(size_.Width() >= kMinScrubbingMessageWidth);
 }
 
 void MediaControlsImpl::MaybeToggleControlsFromTap() {
@@ -1318,6 +1436,7 @@ void MediaControlsImpl::OnPause() {
 }
 
 void MediaControlsImpl::OnTextTracksAddedOrRemoved() {
+  toggle_closed_captions_button_->UpdateDisplayType();
   toggle_closed_captions_button_->SetIsWanted(
       MediaElement().HasClosedCaptions());
   BatchedControlUpdate batch(this);
@@ -1339,6 +1458,13 @@ void MediaControlsImpl::OnLoadedMetadata() {
   // to be changed.
   Reset();
   UpdateCSSClassFromState();
+
+  if (ShouldActAsAudioControls() != is_acting_as_audio_controls_) {
+    if (is_acting_as_audio_controls_)
+      StopActingAsAudioControls();
+    else
+      StartActingAsAudioControls();
+  }
 }
 
 void MediaControlsImpl::OnEnteredFullscreen() {
@@ -1389,6 +1515,7 @@ void MediaControlsImpl::ComputeWhichControlsFit() {
   // won't benefit from that anwyay, we just do it here like JS will.
   if (IsModern()) {
     UpdateOverflowMenuWanted();
+    UpdateScrubbingMessageFits();
     return;
   }
 
@@ -1575,6 +1702,33 @@ void MediaControlsImpl::PositionPopupMenu(Element* popup_menu) {
                                    kImportant, ASSERT_NO_EXCEPTION);
 }
 
+bool MediaControlsImpl::ShouldActAsAudioControls() const {
+  // A video element should act like an audio element when it has an audio track
+  // but no video track.
+  return IsModern() && MediaElement().IsHTMLVideoElement() &&
+         MediaElement().HasAudio() && !MediaElement().HasVideo();
+}
+
+void MediaControlsImpl::StartActingAsAudioControls() {
+  DCHECK(ShouldActAsAudioControls());
+  DCHECK(!is_acting_as_audio_controls_);
+
+  is_acting_as_audio_controls_ = true;
+  PopulatePanel();
+  UpdateCSSClassFromState();
+  UpdateOverflowMenuWanted();
+}
+
+void MediaControlsImpl::StopActingAsAudioControls() {
+  DCHECK(!ShouldActAsAudioControls());
+  DCHECK(is_acting_as_audio_controls_);
+
+  is_acting_as_audio_controls_ = false;
+  PopulatePanel();
+  UpdateCSSClassFromState();
+  UpdateOverflowMenuWanted();
+}
+
 void MediaControlsImpl::Invalidate(Element* element) {
   if (!element)
     return;
@@ -1671,6 +1825,7 @@ void MediaControlsImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(play_button_);
   visitor->Trace(current_time_display_);
   visitor->Trace(timeline_);
+  visitor->Trace(scrubbing_message_);
   visitor->Trace(mute_button_);
   visitor->Trace(volume_slider_);
   visitor->Trace(picture_in_picture_button_);

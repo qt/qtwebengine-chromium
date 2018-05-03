@@ -11,8 +11,8 @@
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "build/build_config.h"
-#include "cc/base/switches.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
+#include "components/viz/common/switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_frontend_host.h"
@@ -155,11 +155,9 @@ void OnBeginFrameFinished(
     ImageEncoding encoding,
     int quality,
     bool has_damage,
-    bool main_frame_content_updated,
     std::unique_ptr<SkBitmap> bitmap) {
   auto result = std::make_unique<base::DictionaryValue>();
   result->SetBoolean("hasDamage", has_damage);
-  result->SetBoolean("mainFrameContentUpdated", main_frame_content_updated);
 
   if (bitmap && !bitmap->drawsNothing()) {
     result->SetString("screenshotData",
@@ -272,6 +270,11 @@ std::unique_ptr<base::DictionaryValue> ParsePrintSettings(
       margin_left_in_inch * printing::kPointsPerInch;
   settings->margins_in_points.right =
       margin_right_in_inch * printing::kPointsPerInch;
+
+  if (const base::Value* prefer_css_page_size =
+          params->FindKey("preferCSSPageSize")) {
+    settings->prefer_css_page_size = prefer_css_page_size->GetBool();
+  }
 
   return nullptr;
 }
@@ -411,9 +414,8 @@ std::string HeadlessDevToolsManagerDelegate::GetDiscoveryPageHTML() {
       .as_string();
 }
 
-std::string HeadlessDevToolsManagerDelegate::GetFrontendResource(
-    const std::string& path) {
-  return content::DevToolsFrontendHost::GetFrontendResource(path).as_string();
+bool HeadlessDevToolsManagerDelegate::HasBundledFrontendResources() {
+  return true;
 }
 
 void HeadlessDevToolsManagerDelegate::ClientDetached(
@@ -864,6 +866,13 @@ void HeadlessDevToolsManagerDelegate::BeginFrame(
     return;
   }
 
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kRunAllCompositorStagesBeforeDraw)) {
+    LOG(WARNING) << "BeginFrameControl commands are designed to be used with "
+                    "--run-all-compositor-stages-before-draw, see "
+                    "https://goo.gl/3zHXhB for more info.";
+  }
+
   base::Time frame_time;
   base::TimeTicks frame_timeticks;
   base::TimeTicks deadline;
@@ -947,7 +956,7 @@ void HeadlessDevToolsManagerDelegate::BeginFrame(
   }
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          cc::switches::kRunAllCompositorStagesBeforeDraw) &&
+          ::switches::kRunAllCompositorStagesBeforeDraw) &&
       headless_contents->HasPendingFrame()) {
     LOG(WARNING) << "A BeginFrame is already in flight. In "
                     "--run-all-compositor-stages-before-draw mode, only a "

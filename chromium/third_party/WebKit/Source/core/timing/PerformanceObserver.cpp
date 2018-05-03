@@ -13,10 +13,10 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
 #include "core/timing/PerformanceEntry.h"
 #include "core/timing/PerformanceObserverEntryList.h"
 #include "core/timing/PerformanceObserverInit.h"
+#include "core/timing/WindowPerformance.h"
 #include "core/timing/WorkerGlobalScopePerformance.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/Timer.h"
@@ -50,7 +50,7 @@ PerformanceObserver* PerformanceObserver::Create(
 
 PerformanceObserver::PerformanceObserver(
     ExecutionContext* execution_context,
-    PerformanceBase* performance,
+    Performance* performance,
     V8PerformanceObserverCallback* callback)
     : ContextClient(execution_context),
       execution_context_(execution_context),

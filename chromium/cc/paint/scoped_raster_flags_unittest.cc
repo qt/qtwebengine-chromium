@@ -27,11 +27,11 @@ class MockImageProvider : public ImageProvider {
 
     return ScopedDecodedDrawImage(
         DecodedDrawImage(image, SkSize::MakeEmpty(), SkSize::Make(1.0f, 1.0f),
-                         draw_image.filter_quality()),
+                         draw_image.filter_quality(), true),
         base::BindOnce(&MockImageProvider::UnrefImage, base::Unretained(this)));
   }
 
-  void UnrefImage(DecodedDrawImage decoded_image) {
+  void UnrefImage() {
     ref_count_--;
     CHECK_GE(ref_count_, 0);
   }
@@ -54,12 +54,13 @@ TEST(ScopedRasterFlagsTest, KeepsDecodesAlive) {
   auto record_shader = PaintShader::MakePaintRecord(
       record, SkRect::MakeWH(100, 100), SkShader::TileMode::kClamp_TileMode,
       SkShader::TileMode::kClamp_TileMode, &SkMatrix::I());
+  record_shader->set_has_animated_images();
 
   MockImageProvider provider;
   PaintFlags flags;
   flags.setShader(record_shader);
   {
-    ScopedRasterFlags scoped_flags(&flags, &provider, SkMatrix::I(), 255);
+    ScopedRasterFlags scoped_flags(&flags, &provider, SkMatrix::I(), 255, true);
     ASSERT_TRUE(scoped_flags.flags());
     EXPECT_NE(scoped_flags.flags(), &flags);
     SkPaint paint = scoped_flags.flags()->ToSkPaint();
@@ -76,7 +77,7 @@ TEST(ScopedRasterFlagsTest, NoImageProvider) {
       CreateDiscardablePaintImage(gfx::Size(10, 10)),
       SkShader::TileMode::kClamp_TileMode, SkShader::TileMode::kClamp_TileMode,
       &SkMatrix::I()));
-  ScopedRasterFlags scoped_flags(&flags, nullptr, SkMatrix::I(), 10);
+  ScopedRasterFlags scoped_flags(&flags, nullptr, SkMatrix::I(), 10, true);
   EXPECT_NE(scoped_flags.flags(), &flags);
   EXPECT_EQ(scoped_flags.flags()->getAlpha(), SkMulDiv255Round(255, 10));
 }
@@ -107,7 +108,7 @@ TEST(ScopedRasterFlagsTest, ThinAliasedStroke) {
   };
 
   for (const auto& test : tests) {
-    ScopedRasterFlags scoped_flags(&flags, nullptr, test.ctm, test.alpha);
+    ScopedRasterFlags scoped_flags(&flags, nullptr, test.ctm, test.alpha, true);
     ASSERT_TRUE(scoped_flags.flags());
 
     EXPECT_EQ(scoped_flags.flags() == &flags, test.expect_same_flags);

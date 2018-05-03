@@ -49,17 +49,17 @@ namespace blink {
 using namespace HTMLNames;
 
 inline HTMLLinkElement::HTMLLinkElement(Document& document,
-                                        bool created_by_parser)
+                                        const CreateElementFlags flags)
     : HTMLElement(linkTag, document),
       link_loader_(LinkLoader::Create(this)),
       referrer_policy_(kReferrerPolicyDefault),
       sizes_(DOMTokenList::Create(*this, HTMLNames::sizesAttr)),
       rel_list_(RelList::Create(this)),
-      created_by_parser_(created_by_parser) {}
+      created_by_parser_(flags.IsCreatedByParser()) {}
 
 HTMLLinkElement* HTMLLinkElement::Create(Document& document,
-                                         bool created_by_parser) {
-  return new HTMLLinkElement(document, created_by_parser);
+                                         const CreateElementFlags flags) {
+  return new HTMLLinkElement(document, flags);
 }
 
 HTMLLinkElement::~HTMLLinkElement() = default;
@@ -126,19 +126,9 @@ bool HTMLLinkElement::ShouldLoadLink() {
          !href.PotentiallyDanglingMarkup();
 }
 
-bool HTMLLinkElement::LoadLink(const String& type,
-                               const String& as,
-                               const String& media,
-                               const String& nonce,
-                               const String& integrity,
-                               ReferrerPolicy referrer_policy,
-                               const KURL& url) {
-  return link_loader_->LoadLink(
-      rel_attribute_,
-      GetCrossOriginAttributeValue(
-          FastGetAttribute(HTMLNames::crossoriginAttr)),
-      type, as, media, nonce, integrity, referrer_policy, url, GetDocument(),
-      NetworkHintsInterfaceImpl());
+bool HTMLLinkElement::LoadLink(const LinkLoadParameters& params) {
+  return link_loader_->LoadLink(params, GetDocument(),
+                                NetworkHintsInterfaceImpl());
 }
 
 LinkResource* HTMLLinkElement::LinkResourceToProcess() {
@@ -271,7 +261,8 @@ void HTMLLinkElement::DidSendDOMContentLoadedForLinkPrerender() {
   DispatchEvent(Event::Create(EventTypeNames::webkitprerenderdomcontentloaded));
 }
 
-scoped_refptr<WebTaskRunner> HTMLLinkElement::GetLoadingTaskRunner() {
+scoped_refptr<base::SingleThreadTaskRunner>
+HTMLLinkElement::GetLoadingTaskRunner() {
   return GetDocument().GetTaskRunner(TaskType::kNetworking);
 }
 

@@ -4,6 +4,7 @@
 
 #include "ui/message_center/views/message_view.h"
 
+#include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -14,8 +15,8 @@
 #include "ui/gfx/shadow_util.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/message_center/message_center.h"
+#include "ui/message_center/public/cpp/features.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
-#include "ui/message_center/public/cpp/message_center_switches.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
@@ -25,6 +26,8 @@
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
+
+namespace message_center {
 
 namespace {
 
@@ -37,8 +40,7 @@ bool sidebar_enabled = false;
 
 // Creates a text for spoken feedback from the data contained in the
 // notification.
-base::string16 CreateAccessibleName(
-    const message_center::Notification& notification) {
+base::string16 CreateAccessibleName(const Notification& notification) {
   if (!notification.accessible_name().empty())
     return notification.accessible_name();
 
@@ -46,10 +48,8 @@ base::string16 CreateAccessibleName(
   std::vector<base::string16> accessible_lines = {
       notification.title(), notification.message(),
       notification.context_message()};
-  std::vector<message_center::NotificationItem> items = notification.items();
-  for (size_t i = 0;
-       i < items.size() && i < message_center::kNotificationMaximumItems;
-       ++i) {
+  std::vector<NotificationItem> items = notification.items();
+  for (size_t i = 0; i < items.size() && i < kNotificationMaximumItems; ++i) {
     accessible_lines.push_back(items[i].title + base::ASCIIToUTF16(" ") +
                                items[i].message);
   }
@@ -57,16 +57,10 @@ base::string16 CreateAccessibleName(
 }
 
 bool ShouldRoundMessageViewCorners() {
-#if defined(OS_CHROMEOS)
-  return true;
-#else
-  return message_center::IsNewStyleNotificationEnabled();
-#endif
+  return base::FeatureList::IsEnabled(message_center::kNewStyleNotifications);
 }
 
 }  // namespace
-
-namespace message_center {
 
 // static
 const char MessageView::kViewClassName[] = "MessageView";
@@ -96,8 +90,7 @@ MessageView::MessageView(const Notification& notification)
   UpdateWithNotification(notification);
 }
 
-MessageView::~MessageView() {
-}
+MessageView::~MessageView() {}
 
 void MessageView::UpdateWithNotification(const Notification& notification) {
   pinned_ = notification.pinned();
@@ -140,6 +133,15 @@ bool MessageView::IsExpanded() const {
   return false;
 }
 
+bool MessageView::IsManuallyExpandedOrCollapsed() const {
+  // Not implemented by default.
+  return false;
+}
+
+void MessageView::SetManuallyExpandedOrCollapsed(bool value) {
+  // Not implemented by default.
+}
+
 void MessageView::OnContainerAnimationStarted() {
   // Not implemented by default.
 }
@@ -149,9 +151,9 @@ void MessageView::OnContainerAnimationEnded() {
 }
 
 void MessageView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
-  node_data->role = ui::AX_ROLE_BUTTON;
+  node_data->role = ax::mojom::Role::kButton;
   node_data->AddStringAttribute(
-      ui::AX_ATTR_ROLE_DESCRIPTION,
+      ax::mojom::StringAttribute::kRoleDescription,
       l10n_util::GetStringUTF8(
           IDS_MESSAGE_NOTIFICATION_SETTINGS_BUTTON_ACCESSIBLE_NAME));
   node_data->SetName(accessible_name_);
@@ -274,7 +276,9 @@ void MessageView::OnSlideOut() {
 }
 
 bool MessageView::GetPinned() const {
-  return pinned_ && !force_disable_pinned_;
+  // Only nested notifications can be pinned. Standalones (i.e. popups) can't
+  // be.
+  return pinned_ && is_nested_;
 }
 
 void MessageView::OnCloseButtonPressed() {
@@ -282,7 +286,7 @@ void MessageView::OnCloseButtonPressed() {
                                            true /* by_user */);
 }
 
-void MessageView::OnSettingsButtonPressed() {
+void MessageView::OnSettingsButtonPressed(const ui::Event& event) {
   MessageCenter::Get()->ClickOnSettingsButton(notification_id_);
 }
 

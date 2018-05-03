@@ -44,10 +44,10 @@ class LayoutSVGResourceGradient : public LayoutSVGResourcePaintServer {
   explicit LayoutSVGResourceGradient(SVGGradientElement*);
 
   void RemoveAllClientsFromCache(bool mark_for_invalidation = true) final;
-  void RemoveClientFromCache(LayoutObject*,
-                             bool mark_for_invalidation = true) final;
+  bool RemoveClientFromCache(LayoutObject&) final;
 
-  SVGPaintServer PreparePaintServer(const LayoutObject&) final;
+  SVGPaintServer PreparePaintServer(const LayoutObject&,
+                                    const FloatRect& object_bounding_box) final;
 
   bool IsChildAllowed(LayoutObject* child, const ComputedStyle&) const final;
 

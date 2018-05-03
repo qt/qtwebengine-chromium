@@ -40,12 +40,8 @@ using content::BrowserThread;
 
 namespace extensions {
 
-ShellExtensionsBrowserClient::ShellExtensionsBrowserClient(
-    BrowserContext* context,
-    PrefService* pref_service)
-    : browser_context_(context),
-      pref_service_(pref_service),
-      api_client_(new ShellExtensionsAPIClient),
+ShellExtensionsBrowserClient::ShellExtensionsBrowserClient()
+    : api_client_(new ShellExtensionsAPIClient),
       extension_cache_(new NullExtensionCache()) {
   // app_shell does not have a concept of channel yet, so leave UNKNOWN to
   // enable all channel-dependent extension APIs.
@@ -66,6 +62,7 @@ bool ShellExtensionsBrowserClient::AreExtensionsDisabled(
 }
 
 bool ShellExtensionsBrowserClient::IsValidContext(BrowserContext* context) {
+  DCHECK(browser_context_);
   return context == browser_context_;
 }
 
@@ -126,6 +123,25 @@ ShellExtensionsBrowserClient::MaybeCreateResourceBundleRequestJob(
   return NULL;
 }
 
+base::FilePath ShellExtensionsBrowserClient::GetBundleResourcePath(
+    const network::ResourceRequest& request,
+    const base::FilePath& extension_resources_path,
+    int* resource_id) const {
+  *resource_id = 0;
+  return base::FilePath();
+}
+
+void ShellExtensionsBrowserClient::LoadResourceFromResourceBundle(
+    const network::ResourceRequest& request,
+    network::mojom::URLLoaderRequest loader,
+    const base::FilePath& resource_relative_path,
+    int resource_id,
+    const std::string& content_security_policy,
+    network::mojom::URLLoaderClientPtr client,
+    bool send_cors_header) {
+  NOTREACHED() << "Load resources from bundles not supported.";
+}
+
 bool ShellExtensionsBrowserClient::AllowCrossRendererResourceLoad(
     const GURL& url,
     content::ResourceType resource_type,
@@ -148,6 +164,7 @@ bool ShellExtensionsBrowserClient::AllowCrossRendererResourceLoad(
 
 PrefService* ShellExtensionsBrowserClient::GetPrefServiceForContext(
     BrowserContext* context) {
+  DCHECK(pref_service_);
   return pref_service_;
 }
 
@@ -175,6 +192,11 @@ void ShellExtensionsBrowserClient::PermitExternalProtocolHandler() {
 }
 
 bool ShellExtensionsBrowserClient::IsRunningInForcedAppMode() {
+  return false;
+}
+
+bool ShellExtensionsBrowserClient::IsAppModeForcedForApp(
+    const ExtensionId& extension_id) {
   return false;
 }
 
@@ -289,6 +311,15 @@ bool ShellExtensionsBrowserClient::IsLockScreenContext(
 std::string ShellExtensionsBrowserClient::GetApplicationLocale() {
   // TODO(michaelpg): Use system locale.
   return "en-US";
+}
+
+void ShellExtensionsBrowserClient::InitWithBrowserContext(
+    content::BrowserContext* context,
+    PrefService* pref_service) {
+  DCHECK(!browser_context_);
+  DCHECK(!pref_service_);
+  browser_context_ = context;
+  pref_service_ = pref_service;
 }
 
 }  // namespace extensions

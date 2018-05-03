@@ -32,7 +32,6 @@
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/gpu/compositor_util.h"
-#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/delegated_frame_host_client_aura.h"
 #include "content/browser/renderer_host/dip_util.h"
@@ -46,9 +45,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/browser/renderer_host/render_widget_host_view_event_handler.h"
-#include "content/browser/renderer_host/render_widget_host_view_frame_subscriber.h"
 #include "content/browser/renderer_host/ui_events_helper.h"
-#include "content/common/content_switches_internal.h"
 #include "content/common/input_messages.h"
 #include "content/common/render_widget_window_tree_client_factory.mojom.h"
 #include "content/common/text_input_state.h"
@@ -57,8 +54,8 @@
 #include "content/public/browser/overscroll_configuration.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "gpu/ipc/common/gpu_messages.h"
-#include "media/base/video_frame.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/ui/common/switches.h"
 #include "services/ui/public/interfaces/window_manager_constants.mojom.h"
@@ -81,6 +78,7 @@
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/base/ui_base_types.h"
@@ -413,9 +411,11 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
       is_guest_view_hack_(is_guest_view_hack),
       device_scale_factor_(0.0f),
       event_handler_(new RenderWidgetHostViewEventHandler(host_, this, this)),
-      frame_sink_id_(switches::IsMusHostingViz()
+      frame_sink_id_(base::FeatureList::IsEnabled(features::kMash)
                          ? viz::FrameSinkId()
-                         : host_->AllocateFrameSinkId(is_guest_view_hack_)),
+                         : is_guest_view_hack_
+                               ? AllocateFrameSinkIdForGuestViewHack()
+                               : host_->GetFrameSinkId()),
       weak_ptr_factory_(this) {
   if (!is_guest_view_hack_)
     host_->SetView(this);
@@ -427,9 +427,8 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
 
   cursor_manager_.reset(new CursorManager(this));
 
-  bool overscroll_enabled = base::CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
-  SetOverscrollControllerEnabled(overscroll_enabled);
+  SetOverscrollControllerEnabled(OverscrollConfig::GetMode() !=
+                                 OverscrollConfig::Mode::kDisabled);
 
   selection_controller_client_.reset(
       new TouchSelectionControllerClientAura(this));
@@ -457,7 +456,7 @@ void RenderWidgetHostViewAura::InitAsChild(gfx::NativeView parent_view) {
   if (parent_view)
     parent_view->AddChild(GetNativeView());
 
-  device_scale_factor_ = ui::GetScaleFactorForNativeView(window_);
+  device_scale_factor_ = GetDeviceScaleFactor();
 }
 
 void RenderWidgetHostViewAura::InitAsPopup(
@@ -508,7 +507,7 @@ void RenderWidgetHostViewAura::InitAsPopup(
 
   event_filter_for_popup_exit_.reset(new EventFilterForPopupExit(this));
 
-  device_scale_factor_ = ui::GetScaleFactorForNativeView(window_);
+  device_scale_factor_ = GetDeviceScaleFactor();
 }
 
 void RenderWidgetHostViewAura::InitAsFullscreen(
@@ -536,7 +535,7 @@ void RenderWidgetHostViewAura::InitAsFullscreen(
   Show();
   Focus();
 
-  device_scale_factor_ = ui::GetScaleFactorForNativeView(window_);
+  device_scale_factor_ = GetDeviceScaleFactor();
 }
 
 void RenderWidgetHostViewAura::Show() {
@@ -712,6 +711,13 @@ void RenderWidgetHostViewAura::WasUnOccluded() {
                                            host_->GetLatencyComponentId(), 0);
     renderer_latency_info.set_trace_id(++tab_show_sequence_);
   }
+
+  // If the primary surface was evicted, we should create a new primary.
+  if (features::IsSurfaceSynchronizationEnabled() && delegated_frame_host_ &&
+      delegated_frame_host_->IsPrimarySurfaceEvicted()) {
+    WasResized(cc::DeadlinePolicy::UseDefaultDeadline());
+  }
+
   TRACE_EVENT_ASYNC_BEGIN0("latency", "TabSwitching::Latency",
                            tab_show_sequence_);
   host_->WasShown(renderer_latency_info);
@@ -724,8 +730,11 @@ void RenderWidgetHostViewAura::WasUnOccluded() {
       NotifyRendererOfCursorVisibilityState(cursor_client->IsCursorVisible());
   }
 
-  if (delegated_frame_host_)
-    delegated_frame_host_->WasShown(browser_latency_info);
+  if (delegated_frame_host_) {
+    delegated_frame_host_->WasShown(window_->GetLocalSurfaceId(),
+                                    window_->bounds().size(),
+                                    browser_latency_info);
+  }
 
 #if defined(OS_WIN)
   UpdateLegacyWin();
@@ -882,37 +891,13 @@ gfx::Size RenderWidgetHostViewAura::GetRequestedRendererSize() const {
 void RenderWidgetHostViewAura::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
-    const ReadbackRequestCallback& callback,
-    const SkColorType preferred_color_type) {
+    base::OnceCallback<void(const SkBitmap&)> callback) {
   if (!IsSurfaceAvailableForCopy()) {
-    callback.Run(SkBitmap(), READBACK_SURFACE_UNAVAILABLE);
+    std::move(callback).Run(SkBitmap());
     return;
   }
-  delegated_frame_host_->CopyFromCompositingSurface(
-      src_subrect, dst_size, callback, preferred_color_type);
-}
-
-void RenderWidgetHostViewAura::CopyFromSurfaceToVideoFrame(
-    const gfx::Rect& src_subrect,
-    scoped_refptr<media::VideoFrame> target,
-    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
-  if (!IsSurfaceAvailableForCopy()) {
-    callback.Run(gfx::Rect(), false);
-    return;
-  }
-  delegated_frame_host_->CopyFromCompositingSurfaceToVideoFrame(
-      src_subrect, std::move(target), callback);
-}
-
-void RenderWidgetHostViewAura::BeginFrameSubscription(
-    std::unique_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
-  if (delegated_frame_host_)
-    delegated_frame_host_->BeginFrameSubscription(std::move(subscriber));
-}
-
-void RenderWidgetHostViewAura::EndFrameSubscription() {
-  if (delegated_frame_host_)
-    delegated_frame_host_->EndFrameSubscription();
+  delegated_frame_host_->CopyFromCompositingSurface(src_subrect, dst_size,
+                                                    std::move(callback));
 }
 
 #if defined(OS_WIN)
@@ -933,6 +918,16 @@ void RenderWidgetHostViewAura::OnLegacyWindowDestroyed() {
   legacy_window_destroyed_ = true;
 }
 #endif
+
+void RenderWidgetHostViewAura::CreateCompositorFrameSink(
+    CreateCompositorFrameSinkCallback callback) {
+  // DelegatedFrameHost registers the FrameSinkId, so we need to wait
+  // for that to be created before creating a CompositorFrameSink.
+  if (delegated_frame_host_)
+    std::move(callback).Run(frame_sink_id_);
+  else
+    create_frame_sink_callback_ = std::move(callback);
+}
 
 void RenderWidgetHostViewAura::DidCreateNewRendererCompositorFrameSink(
     viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink) {
@@ -967,8 +962,6 @@ void RenderWidgetHostViewAura::SubmitCompositorFrame(
 
   delegated_frame_host_->SubmitCompositorFrame(
       local_surface_id, std::move(frame), std::move(hit_test_region_list));
-  if (window_)
-    window_->set_embed_frame_sink_id(frame_sink_id_);
   if (frame.metadata.selection.start != selection_start_ ||
       frame.metadata.selection.end != selection_end_) {
     selection_start_ = frame.metadata.selection.start;
@@ -993,12 +986,8 @@ void RenderWidgetHostViewAura::DidStopFlinging() {
   selection_controller_client_->OnScrollCompleted();
 }
 
-bool RenderWidgetHostViewAura::HasAcceleratedSurface(
-    const gfx::Size& desired_size) {
-  // Aura doesn't use GetBackingStore for accelerated pages, so it doesn't
-  // matter what is returned here as GetBackingStore is the only caller of this
-  // method. TODO(jbates) implement this if other Aura code needs it.
-  return false;
+gfx::Vector2d RenderWidgetHostViewAura::GetOffsetFromRootSurface() {
+  return window_->GetBoundsInRootWindow().OffsetFromOrigin();
 }
 
 gfx::Rect RenderWidgetHostViewAura::GetBoundsInRootWindow() {
@@ -1075,6 +1064,7 @@ void RenderWidgetHostViewAura::GestureEventAck(
       host_->StopFling();
     }
   }
+  event_handler_->GestureEventAck(event, ack_result);
 }
 
 void RenderWidgetHostViewAura::ProcessAckedTouchEvent(
@@ -1593,13 +1583,7 @@ void RenderWidgetHostViewAura::OnDeviceScaleFactorChanged(
   if (!window_->GetRootWindow())
     return;
 
-  host_->WasResized();
-  if (delegated_frame_host_)
-    delegated_frame_host_->WasResized();
-  if (host_->auto_resize_enabled()) {
-    host_->DidAllocateLocalSurfaceIdForAutoResize(
-        host_->last_auto_resize_request_number());
-  }
+  SyncSurfaceProperties(cc::DeadlinePolicy::UseDefaultDeadline());
 
   device_scale_factor_ = new_device_scale_factor;
   const display::Display display =
@@ -1738,7 +1722,7 @@ void RenderWidgetHostViewAura::FocusedNodeChanged(
 void RenderWidgetHostViewAura::ScheduleEmbed(
     ui::mojom::WindowTreeClientPtr client,
     base::OnceCallback<void(const base::UnguessableToken&)> callback) {
-  DCHECK(IsUsingMus());
+  DCHECK(features::IsMusEnabled());
   aura::Env::GetInstance()->ScheduleEmbed(std::move(client),
                                           std::move(callback));
 }
@@ -1920,8 +1904,6 @@ void RenderWidgetHostViewAura::CreateAuraWindow(aura::client::WindowType type) {
   DCHECK(!window_);
   DCHECK(!is_mus_browser_plugin_guest_);
   window_ = new aura::Window(this);
-  if (frame_sink_id_.is_valid())
-    window_->set_embed_frame_sink_id(frame_sink_id_);
   window_->SetName("RenderWidgetHostViewAura");
   window_->SetProperty(aura::client::kEmbedType,
                        aura::client::WindowEmbedType::EMBED_IN_OWNER);
@@ -1936,8 +1918,12 @@ void RenderWidgetHostViewAura::CreateAuraWindow(aura::client::WindowType type) {
   window_->SetType(type);
   window_->Init(ui::LAYER_SOLID_COLOR);
   window_->layer()->SetColor(background_color_);
+  // This needs to happen only after |window_| has been initialized using
+  // Init(), because it needs to have the layer.
+  if (frame_sink_id_.is_valid())
+    window_->SetEmbedFrameSinkId(frame_sink_id_);
 
-  if (!IsUsingMus())
+  if (!features::IsMusEnabled())
     return;
 
   // Embed the renderer into the Window.
@@ -1964,7 +1950,10 @@ void RenderWidgetHostViewAura::CreateDelegatedFrameHostClient() {
       base::FeatureList::IsEnabled(features::kVizDisplayCompositor);
   delegated_frame_host_ = std::make_unique<DelegatedFrameHost>(
       frame_sink_id_, delegated_frame_host_client_.get(),
-      features::IsSurfaceSynchronizationEnabled(), enable_viz);
+      features::IsSurfaceSynchronizationEnabled(), enable_viz,
+      false /* should_register_frame_sink_id */);
+  if (!create_frame_sink_callback_.is_null())
+    std::move(create_frame_sink_callback_).Run(frame_sink_id_);
 
   if (renderer_compositor_frame_sink_) {
     delegated_frame_host_->DidCreateNewRendererCompositorFrameSink(
@@ -2046,14 +2035,10 @@ void RenderWidgetHostViewAura::UpdateCursorIfOverSelf() {
   }
 }
 
-void RenderWidgetHostViewAura::WasResized() {
+void RenderWidgetHostViewAura::WasResized(
+    const cc::DeadlinePolicy& deadline_policy) {
   window_->AllocateLocalSurfaceId();
-  if (delegated_frame_host_)
-    delegated_frame_host_->WasResized();
-  if (host_->auto_resize_enabled()) {
-    host_->DidAllocateLocalSurfaceIdForAutoResize(
-        host_->last_auto_resize_request_number());
-  }
+  SyncSurfaceProperties(deadline_policy);
 }
 
 ui::InputMethod* RenderWidgetHostViewAura::GetInputMethod() const {
@@ -2190,19 +2175,31 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
   // a Window::SetBoundsInternal call.
   if (!in_bounds_changed_)
     window_->SetBounds(rect);
-  host_->WasResized();
-  if (delegated_frame_host_)
-    delegated_frame_host_->WasResized();
-  if (host_->auto_resize_enabled()) {
-    host_->DidAllocateLocalSurfaceIdForAutoResize(
-        host_->last_auto_resize_request_number());
-  }
+
+  SyncSurfaceProperties(cc::DeadlinePolicy::UseDefaultDeadline());
+
 #if defined(OS_WIN)
   UpdateLegacyWin();
 
   if (mouse_locked_)
     UpdateMouseLockRegion();
 #endif
+}
+
+void RenderWidgetHostViewAura::SyncSurfaceProperties(
+    const cc::DeadlinePolicy& deadline_policy) {
+  if (delegated_frame_host_) {
+    delegated_frame_host_->WasResized(window_->GetLocalSurfaceId(),
+                                      window_->bounds().size(),
+                                      deadline_policy);
+  }
+  // Note that |host_| will retrieve resize parameters from
+  // |delegated_frame_host_|, so it must have WasResized called after.
+  host_->WasResized();
+  if (host_->auto_resize_enabled()) {
+    host_->DidAllocateLocalSurfaceIdForAutoResize(
+        host_->last_auto_resize_request_number());
+  }
 }
 
 #if defined(OS_WIN)
@@ -2429,7 +2426,10 @@ void RenderWidgetHostViewAura::OnSelectionBoundsChanged(
   const gfx::Rect caret_rect = ConvertRectToScreen(gfx::Rect(
       region->focus.edge_top_rounded().x(),
       region->focus.edge_top_rounded().y(), 1, region->focus.GetHeight()));
-  legacy_render_widget_host_HWND_->MoveCaretTo(caret_rect);
+  gfx::Rect dip_caret_rect = display::win::ScreenWin::DIPToScreenRect(
+      legacy_render_widget_host_HWND_->hwnd(), caret_rect);
+  dip_caret_rect.set_width(1);  // Collapse any selection.
+  legacy_render_widget_host_HWND_->MoveCaretTo(dip_caret_rect);
 #endif  // defined(OS_WIN)
 }
 
@@ -2486,12 +2486,26 @@ void RenderWidgetHostViewAura::ScrollFocusedEditableNodeIntoRect(
 }
 
 void RenderWidgetHostViewAura::OnSynchronizedDisplayPropertiesChanged() {
-  WasResized();
+  WasResized(cc::DeadlinePolicy::UseDefaultDeadline());
 }
 
 void RenderWidgetHostViewAura::ResizeDueToAutoResize(const gfx::Size& new_size,
                                                      uint64_t sequence_number) {
-  WasResized();
+  WasResized(cc::DeadlinePolicy::UseDefaultDeadline());
+}
+
+void RenderWidgetHostViewAura::DidNavigate() {
+  WasResized(cc::DeadlinePolicy::UseExistingDeadline());
+  if (delegated_frame_host_)
+    delegated_frame_host_->DidNavigate();
+}
+
+// static
+viz::FrameSinkId
+RenderWidgetHostViewAura::AllocateFrameSinkIdForGuestViewHack() {
+  return ImageTransportFactory::GetInstance()
+      ->GetContextFactoryPrivate()
+      ->AllocateFrameSinkId();
 }
 
 }  // namespace content

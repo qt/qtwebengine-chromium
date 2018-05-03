@@ -95,6 +95,8 @@ class VIEWS_EXPORT InkDropHostView : public View, public InkDropHost {
   gfx::Point GetInkDropCenterBasedOnLastEvent() const;
 
   // View:
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
   void VisibilityChanged(View* starting_from, bool is_visible) override;
   void OnFocus() override;
@@ -127,6 +129,10 @@ class VIEWS_EXPORT InkDropHostView : public View, public InkDropHost {
   void InstallInkDropMask(ui::Layer* ink_drop_layer);
 
   void ResetInkDropMask();
+
+  // Updates the ink drop mask layer size to |new_size|. It does nothing if
+  // |ink_drop_mask_| is null.
+  void UpdateInkDropMaskLayerSize(const gfx::Size& new_size);
 
   // Returns an InkDropImpl configured to work well with a
   // flood-fill ink drop ripple.

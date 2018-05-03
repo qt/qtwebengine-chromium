@@ -6,7 +6,6 @@
 #define Sensor_h
 
 #include "bindings/core/v8/ActiveScriptWrappable.h"
-#include "common/feature_policy/feature_policy.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/DOMHighResTimeStamp.h"
 #include "core/dom/DOMTimeStamp.h"
@@ -15,9 +14,11 @@
 #include "modules/EventTargetModules.h"
 #include "modules/sensor/SensorOptions.h"
 #include "modules/sensor/SensorProxy.h"
+#include "modules/sensor/SpatialSensorOptions.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
+#include "public/common/feature_policy/feature_policy.h"
 
 namespace blink {
 
@@ -67,7 +68,13 @@ class Sensor : public EventTargetWithInlineData,
          const SensorOptions&,
          ExceptionState&,
          device::mojom::blink::SensorType,
-         const Vector<FeaturePolicyFeature>&);
+         const Vector<mojom::FeaturePolicyFeature>&);
+
+  Sensor(ExecutionContext*,
+         const SpatialSensorOptions&,
+         ExceptionState&,
+         device::mojom::blink::SensorType,
+         const Vector<mojom::FeaturePolicyFeature>&);
 
   using SensorConfigurationPtr = device::mojom::blink::SensorConfigurationPtr;
   using SensorConfiguration = device::mojom::blink::SensorConfiguration;
@@ -79,7 +86,7 @@ class Sensor : public EventTargetWithInlineData,
 
   bool IsActivated() const { return state_ == SensorState::kActivated; }
   bool IsIdleOrErrored() const;
-  const SensorProxy* proxy() const { return sensor_proxy_; }
+  const device::SensorReading& GetReading() const;
 
   // SensorProxy::Observer overrides.
   void OnSensorInitialized() override;
@@ -110,7 +117,7 @@ class Sensor : public EventTargetWithInlineData,
   void NotifyError(DOMException* error);
 
  private:
-  SensorOptions sensor_options_;
+  double frequency_;
   device::mojom::blink::SensorType type_;
   SensorState state_;
   Member<SensorProxy> sensor_proxy_;
@@ -119,6 +126,7 @@ class Sensor : public EventTargetWithInlineData,
   TaskHandle pending_reading_notification_;
   TaskHandle pending_activated_notification_;
   TaskHandle pending_error_notification_;
+  bool use_screen_coords_ = false;
 };
 
 }  // namespace blink

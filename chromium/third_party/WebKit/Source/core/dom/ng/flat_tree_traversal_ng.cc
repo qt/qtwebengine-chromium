@@ -33,33 +33,25 @@
 
 namespace blink {
 
-ElementShadow* ShadowFor(const Node& node) {
-  return node.IsElementNode() ? ToElement(node).Shadow() : nullptr;
-}
-
 bool CanBeDistributedToV0InsertionPoint(const Node& node) {
   return node.IsInV0ShadowTree() || node.IsChildOfV0ShadowHost();
 }
 
 Node* FlatTreeTraversalNg::TraverseChild(const Node& node,
                                          TraversalDirection direction) {
-  if (auto* slot = ToHTMLSlotElementOrNull(node)) {
-    if (slot->SupportsAssignment()) {
-      if (slot->AssignedNodes().IsEmpty()) {
-        return direction == kTraversalDirectionForward ? slot->firstChild()
-                                                       : slot->lastChild();
-      }
-      return direction == kTraversalDirectionForward ? slot->FirstAssignedNode()
-                                                     : slot->LastAssignedNode();
+  if (auto* slot = ToHTMLSlotElementIfSupportsAssignmentOrNull(node)) {
+    if (slot->AssignedNodes().IsEmpty()) {
+      return direction == kTraversalDirectionForward ? slot->firstChild()
+                                                     : slot->lastChild();
     }
+    return direction == kTraversalDirectionForward ? slot->FirstAssignedNode()
+                                                   : slot->LastAssignedNode();
   }
 
   Node* child;
-  ElementShadow* shadow = ShadowFor(node);
-  if (shadow) {
-    ShadowRoot& shadow_root = shadow->YoungestShadowRoot();
-    child = direction == kTraversalDirectionForward ? shadow_root.firstChild()
-                                                    : shadow_root.lastChild();
+  if (ShadowRoot* shadow_root = node.GetShadowRoot()) {
+    child = direction == kTraversalDirectionForward ? shadow_root->firstChild()
+                                                    : shadow_root->lastChild();
   } else {
     child = direction == kTraversalDirectionForward ? node.firstChild()
                                                     : node.lastChild();
@@ -94,8 +86,7 @@ Node* FlatTreeTraversalNg::TraverseChild(const Node& node,
 Node* FlatTreeTraversalNg::V0ResolveDistributionStartingAt(
     const Node& node,
     TraversalDirection direction) {
-  DCHECK(!IsHTMLSlotElement(node) ||
-         !ToHTMLSlotElement(node).SupportsAssignment());
+  DCHECK(!ToHTMLSlotElementIfSupportsAssignmentOrNull(node));
   for (const Node* sibling = &node; sibling;
        sibling = (direction == kTraversalDirectionForward
                       ? sibling->nextSibling()
@@ -143,17 +134,6 @@ Node* FlatTreeTraversalNg::TraverseSiblings(const Node& node,
   //   if (slot->SupportsAssignment() && slot->AssignedNodes().IsEmpty())
   //     return TraverseSiblings(*slot, direction);
   // }
-
-  // For v0 older shadow tree
-  if (node.parentNode() && node.parentNode()->IsShadowRoot()) {
-    ShadowRoot* parent_shadow_root = ToShadowRoot(node.parentNode());
-    if (!parent_shadow_root->IsYoungest()) {
-      HTMLShadowElement* assigned_insertion_point =
-          parent_shadow_root->ShadowInsertionPointOfYoungerShadowRoot();
-      DCHECK(assigned_insertion_point);
-      return TraverseSiblings(*assigned_insertion_point, direction);
-    }
-  }
   return nullptr;
 }
 
@@ -192,10 +172,11 @@ ContainerNode* FlatTreeTraversalNg::TraverseParent(
   if (node.IsChildOfV1ShadowHost())
     return node.AssignedSlot();
 
-  if (auto* slot = ToHTMLSlotElementOrNull(node.parentElement())) {
-    if (slot->SupportsAssignment() && !slot->AssignedNodes().IsEmpty())
+  if (auto* parent_slot =
+          ToHTMLSlotElementIfSupportsAssignmentOrNull(node.parentElement())) {
+    if (!parent_slot->AssignedNodes().IsEmpty())
       return nullptr;
-    return slot;
+    return parent_slot;
   }
 
   if (CanBeDistributedToV0InsertionPoint(node))
@@ -233,9 +214,6 @@ ContainerNode* FlatTreeTraversalNg::TraverseParentOrHost(const Node& node) {
   if (!parent->IsShadowRoot())
     return parent;
   ShadowRoot* shadow_root = ToShadowRoot(parent);
-  DCHECK(!shadow_root->ShadowInsertionPointOfYoungerShadowRoot());
-  if (!shadow_root->IsYoungest())
-    return nullptr;
   return &shadow_root->host();
 }
 

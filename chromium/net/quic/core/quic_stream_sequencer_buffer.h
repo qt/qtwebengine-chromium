@@ -67,6 +67,7 @@
 #include "base/macros.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/platform/api/quic_export.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
 namespace net {
@@ -121,14 +122,14 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
                              QuicStringPiece data,
                              QuicTime timestamp,
                              size_t* bytes_buffered,
-                             std::string* error_details);
+                             QuicString* error_details);
 
   // Reads from this buffer into given iovec array, up to number of iov_len
   // iovec objects and returns the number of bytes read.
   QuicErrorCode Readv(const struct iovec* dest_iov,
                       size_t dest_count,
                       size_t* bytes_read,
-                      std::string* error_details);
+                      QuicString* error_details);
 
   // Returns the readable region of valid data in iovec format. The readable
   // region is the buffer region where there is valid data not yet read by
@@ -170,8 +171,6 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
   // Returns number of bytes available to be read out.
   size_t ReadableBytes() const;
 
-  bool allow_overlapping_data() const { return allow_overlapping_data_; }
-
  private:
   friend class test::QuicStreamSequencerBufferPeer;
 
@@ -180,7 +179,7 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
   bool CopyStreamData(QuicStreamOffset offset,
                       QuicStringPiece data,
                       size_t* bytes_copy,
-                      std::string* error_details);
+                      QuicString* error_details);
 
   // Dispose the given buffer block.
   // After calling this method, blocks_[index] is set to nullptr
@@ -194,14 +193,6 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
   // should be retired.
   // Return false on success, or false otherwise.
   bool RetireBlockIfEmpty(size_t block_index);
-
-  // Called within OnStreamData() to update the gap OnStreamData() writes into
-  // (remove, split or change begin/end offset).
-  // TODO(fayang): Remove this when deprecating
-  // quic_reloadable_flag_quic_allow_receiving_overlapping_data.
-  void UpdateGapList(std::list<Gap>::iterator gap_with_new_data_written,
-                     QuicStreamOffset start_offset,
-                     size_t bytes_written);
 
   // Calculate the capacity of block at specified index.
   // Return value should be either kBlockSizeBytes for non-trailing blocks and
@@ -234,10 +225,10 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
   void UpdateFrameArrivalMap(QuicStreamOffset offset);
 
   // Return |gaps_| as a string: [1024, 1500) [1800, 2048)... for debugging.
-  std::string GapsDebugString();
+  QuicString GapsDebugString();
 
   // Return all received frames as a string in same format as GapsDebugString();
-  std::string ReceivedFramesDebugString();
+  QuicString ReceivedFramesDebugString();
 
   // The maximum total capacity of this buffer in byte, as constructed.
   const size_t max_buffer_capacity_bytes_;
@@ -248,11 +239,6 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
   // Number of bytes read out of buffer.
   QuicStreamOffset total_bytes_read_;
 
-  // Contains Gaps which represents currently missing data.
-  // TODO(fayang): Remove list of gaps when deprecating
-  // quic_reloadable_flag_quic_allow_receiving_overlapping_data.
-  std::list<Gap> gaps_;
-
   // An ordered, variable-length list of blocks, with the length limited
   // such that the number of blocks never exceeds blocks_count_.
   // Each list entry can hold up to kBlockSizeBytes bytes.
@@ -262,8 +248,7 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
   size_t num_bytes_buffered_;
 
   // Stores all the buffered frames' start offset, length and arrival time.
-  // TODO(fayang): Remove this when deprecating
-  // quic_reloadable_flag_quic_allow_receiving_overlapping_data.
+  // TODO(fayang): Remove this as it is obsolete.
   std::map<QuicStreamOffset, FrameInfo> frame_arrival_time_map_;
 
   // For debugging use after free, assigned to 123456 in constructor and 654321
@@ -273,10 +258,6 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
 
   // Currently received data.
   QuicIntervalSet<QuicStreamOffset> bytes_received_;
-
-  // Latched value of
-  // quic_reloadable_flag_quic_allow_receiving_overlapping_data.
-  const bool allow_overlapping_data_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStreamSequencerBuffer);
 };

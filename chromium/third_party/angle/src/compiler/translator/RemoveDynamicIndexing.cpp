@@ -14,6 +14,7 @@
 #include "compiler/translator/IntermNodePatternMatcher.h"
 #include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/IntermTraverse.h"
+#include "compiler/translator/StaticType.h"
 #include "compiler/translator/SymbolTable.h"
 
 namespace sh
@@ -21,6 +22,12 @@ namespace sh
 
 namespace
 {
+
+const TType *kIndexType = StaticType::Get<EbtInt, EbpHigh, EvqIn, 1, 1>();
+
+constexpr const ImmutableString kBaseName("base");
+constexpr const ImmutableString kIndexName("index");
+constexpr const ImmutableString kValueName("value");
 
 std::string GetIndexFunctionName(const TType &type, bool write)
 {
@@ -58,30 +65,11 @@ std::string GetIndexFunctionName(const TType &type, bool write)
     return nameSink.str();
 }
 
-TIntermSymbol *CreateBaseSymbol(const TType &type, TSymbolTable *symbolTable)
+TIntermSymbol *CreateParameterSymbol(const TConstParameter &parameter, TSymbolTable *symbolTable)
 {
-    TString *baseString = NewPoolTString("base");
-    TVariable *baseVariable =
-        new TVariable(symbolTable, baseString, type, SymbolType::AngleInternal);
-    return new TIntermSymbol(baseVariable);
-}
-
-TIntermSymbol *CreateIndexSymbol(TSymbolTable *symbolTable)
-{
-    TString *indexString     = NewPoolTString("index");
-    TVariable *indexVariable = new TVariable(
-        symbolTable, indexString, TType(EbtInt, EbpHigh, EvqIn), SymbolType::AngleInternal);
-    return new TIntermSymbol(indexVariable);
-}
-
-TIntermSymbol *CreateValueSymbol(const TType &type, TSymbolTable *symbolTable)
-{
-    TString *valueString = NewPoolTString("value");
-    TType valueType(type);
-    valueType.setQualifier(EvqIn);
-    TVariable *valueVariable =
-        new TVariable(symbolTable, valueString, valueType, SymbolType::AngleInternal);
-    return new TIntermSymbol(valueVariable);
+    TVariable *variable =
+        new TVariable(symbolTable, parameter.name, parameter.type, SymbolType::AngleInternal);
+    return new TIntermSymbol(variable);
 }
 
 TIntermConstantUnion *CreateIntConstantNode(int i)
@@ -113,6 +101,20 @@ TType *GetFieldType(const TType &indexedType)
     {
         return new TType(indexedType.getBasicType(), indexedType.getPrecision());
     }
+}
+
+const TType *GetBaseType(const TType &type, bool write)
+{
+    TType *baseType = new TType(type);
+    // Conservatively use highp here, even if the indexed type is not highp. That way the code can't
+    // end up using mediump version of an indexing function for a highp value, if both mediump and
+    // highp values are being indexed in the shader. For HLSL precision doesn't matter, but in
+    // principle this code could be used with multiple backends.
+    baseType->setPrecision(EbpHigh);
+    baseType->setQualifier(EvqInOut);
+    if (!write)
+        baseType->setQualifier(EvqIn);
+    return baseType;
 }
 
 // Generate a read or write function for one field in a vector/matrix.
@@ -165,7 +167,6 @@ TIntermFunctionDefinition *GetIndexFunctionDefinition(const TType &type,
 {
     ASSERT(!type.isArray());
 
-    const TType *fieldType = GetFieldType(type);
     int numCases    = 0;
     if (type.isMatrix())
     {
@@ -179,24 +180,14 @@ TIntermFunctionDefinition *GetIndexFunctionDefinition(const TType &type,
     std::string functionName                = GetIndexFunctionName(type, write);
     TIntermFunctionPrototype *prototypeNode = CreateInternalFunctionPrototypeNode(func);
 
-    TType baseType(type);
-    // Conservatively use highp here, even if the indexed type is not highp. That way the code can't
-    // end up using mediump version of an indexing function for a highp value, if both mediump and
-    // highp values are being indexed in the shader. For HLSL precision doesn't matter, but in
-    // principle this code could be used with multiple backends.
-    baseType.setPrecision(EbpHigh);
-    baseType.setQualifier(EvqInOut);
-    if (!write)
-        baseType.setQualifier(EvqIn);
-
-    TIntermSymbol *baseParam = CreateBaseSymbol(baseType, symbolTable);
+    TIntermSymbol *baseParam = CreateParameterSymbol(func.getParam(0), symbolTable);
     prototypeNode->getSequence()->push_back(baseParam);
-    TIntermSymbol *indexParam = CreateIndexSymbol(symbolTable);
+    TIntermSymbol *indexParam = CreateParameterSymbol(func.getParam(1), symbolTable);
     prototypeNode->getSequence()->push_back(indexParam);
     TIntermSymbol *valueParam = nullptr;
     if (write)
     {
-        valueParam = CreateValueSymbol(*fieldType, symbolTable);
+        valueParam = CreateParameterSymbol(func.getParam(2), symbolTable);
         prototypeNode->getSequence()->push_back(valueParam);
     }
 
@@ -278,7 +269,6 @@ class RemoveDynamicIndexingTraverser : public TLValueTrackingTraverser
 {
   public:
     RemoveDynamicIndexingTraverser(TSymbolTable *symbolTable,
-                                   int shaderVersion,
                                    PerformanceDiagnostics *perfDiagnostics);
 
     bool visitBinary(Visit visit, TIntermBinary *node) override;
@@ -309,9 +299,8 @@ class RemoveDynamicIndexingTraverser : public TLValueTrackingTraverser
 
 RemoveDynamicIndexingTraverser::RemoveDynamicIndexingTraverser(
     TSymbolTable *symbolTable,
-    int shaderVersion,
     PerformanceDiagnostics *perfDiagnostics)
-    : TLValueTrackingTraverser(true, false, false, symbolTable, shaderVersion),
+    : TLValueTrackingTraverser(true, false, false, symbolTable),
       mUsedTreeInsertion(false),
       mRemoveIndexSideEffectsInSubtree(false),
       mPerfDiagnostics(perfDiagnostics)
@@ -412,14 +401,16 @@ bool RemoveDynamicIndexingTraverser::visitBinary(Visit visit, TIntermBinary *nod
 #endif
 
             const TType &type = node->getLeft()->getType();
-            TString *indexingFunctionName =
-                NewPoolTString(GetIndexFunctionName(type, false).c_str());
+            ImmutableString indexingFunctionName(GetIndexFunctionName(type, false));
             TFunction *indexingFunction = nullptr;
             if (mIndexedVecAndMatrixTypes.find(type) == mIndexedVecAndMatrixTypes.end())
             {
                 indexingFunction =
-                    new TFunction(mSymbolTable, indexingFunctionName, GetFieldType(type),
-                                  SymbolType::AngleInternal, true);
+                    new TFunction(mSymbolTable, indexingFunctionName, SymbolType::AngleInternal,
+                                  GetFieldType(type), true);
+                indexingFunction->addParameter(
+                    TConstParameter(kBaseName, GetBaseType(type, false)));
+                indexingFunction->addParameter(TConstParameter(kIndexName, kIndexType));
                 mIndexedVecAndMatrixTypes[type] = indexingFunction;
             }
             else
@@ -462,11 +453,18 @@ bool RemoveDynamicIndexingTraverser::visitBinary(Visit visit, TIntermBinary *nod
                 TFunction *indexedWriteFunction = nullptr;
                 if (mWrittenVecAndMatrixTypes.find(type) == mWrittenVecAndMatrixTypes.end())
                 {
-                    TString *functionName = NewPoolTString(
-                        GetIndexFunctionName(node->getLeft()->getType(), true).c_str());
+                    ImmutableString functionName(
+                        GetIndexFunctionName(node->getLeft()->getType(), true));
                     indexedWriteFunction =
-                        new TFunction(mSymbolTable, functionName, new TType(EbtVoid),
-                                      SymbolType::AngleInternal, false);
+                        new TFunction(mSymbolTable, functionName, SymbolType::AngleInternal,
+                                      StaticType::GetBasic<EbtVoid>(), false);
+                    indexedWriteFunction->addParameter(
+                        TConstParameter(kBaseName, GetBaseType(type, true)));
+                    indexedWriteFunction->addParameter(TConstParameter(kIndexName, kIndexType));
+                    TType *valueType = GetFieldType(type);
+                    valueType->setQualifier(EvqIn);
+                    indexedWriteFunction->addParameter(
+                        TConstParameter(kValueName, static_cast<const TType *>(valueType)));
                     mWrittenVecAndMatrixTypes[type] = indexedWriteFunction;
                 }
                 else
@@ -530,10 +528,9 @@ void RemoveDynamicIndexingTraverser::nextIteration()
 
 void RemoveDynamicIndexing(TIntermNode *root,
                            TSymbolTable *symbolTable,
-                           int shaderVersion,
                            PerformanceDiagnostics *perfDiagnostics)
 {
-    RemoveDynamicIndexingTraverser traverser(symbolTable, shaderVersion, perfDiagnostics);
+    RemoveDynamicIndexingTraverser traverser(symbolTable, perfDiagnostics);
     do
     {
         traverser.nextIteration();

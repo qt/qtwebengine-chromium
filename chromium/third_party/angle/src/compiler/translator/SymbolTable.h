@@ -31,63 +31,17 @@
 //
 
 #include <array>
-#include <assert.h>
-#include <set>
+#include <memory>
 
 #include "common/angleutils.h"
 #include "compiler/translator/ExtensionBehavior.h"
+#include "compiler/translator/ImmutableString.h"
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/Symbol.h"
 
 namespace sh
 {
-
-class TSymbolTableLevel
-{
-  public:
-    typedef TUnorderedMap<TString, TSymbol *> tLevel;
-    typedef tLevel::const_iterator const_iterator;
-    typedef const tLevel::value_type tLevelPair;
-    typedef std::pair<tLevel::iterator, bool> tInsertResult;
-
-    TSymbolTableLevel() : mGlobalInvariant(false) {}
-    ~TSymbolTableLevel();
-
-    bool insert(TSymbol *symbol);
-
-    // Insert a function using its unmangled name as the key.
-    bool insertUnmangled(TFunction *function);
-
-    TSymbol *find(const TString &name) const;
-
-    void addInvariantVarying(const std::string &name) { mInvariantVaryings.insert(name); }
-
-    bool isVaryingInvariant(const std::string &name)
-    {
-        return (mGlobalInvariant || mInvariantVaryings.count(name) > 0);
-    }
-
-    void setGlobalInvariant(bool invariant) { mGlobalInvariant = invariant; }
-
-    void insertUnmangledBuiltInName(const std::string &name)
-    {
-        mUnmangledBuiltInNames.insert(name);
-    }
-
-    bool hasUnmangledBuiltIn(const std::string &name)
-    {
-        return mUnmangledBuiltInNames.count(name) > 0;
-    }
-
-  protected:
-    tLevel level;
-    std::set<std::string> mInvariantVaryings;
-    bool mGlobalInvariant;
-
-  private:
-    std::set<std::string> mUnmangledBuiltInNames;
-};
 
 // Define ESymbolLevel as int rather than an enum since level can go
 // above GLOBAL_LEVEL and cause atBuiltInLevel() to fail if the
@@ -103,104 +57,133 @@ const int GLSL_BUILTINS      = 4;
 const int LAST_BUILTIN_LEVEL = GLSL_BUILTINS;
 const int GLOBAL_LEVEL       = 5;
 
+struct UnmangledBuiltIn
+{
+    constexpr UnmangledBuiltIn() : extension(TExtension::UNDEFINED) {}
+
+    constexpr UnmangledBuiltIn(TExtension extension) : extension(extension) {}
+
+    TExtension extension;
+};
+
 class TSymbolTable : angle::NonCopyable
 {
   public:
-    TSymbolTable() : mUniqueIdCounter(0), mUserDefinedUniqueIdsStart(-1)
-    {
-        // The symbol table cannot be used until push() is called, but
-        // the lack of an initial call to push() can be used to detect
-        // that the symbol table has not been preloaded with built-ins.
-    }
+    TSymbolTable();
+    // To start using the symbol table after construction:
+    // * initializeBuiltIns() needs to be called.
+    // * push() needs to be called to push the global level.
 
     ~TSymbolTable();
 
     // When the symbol table is initialized with the built-ins, there should
     // 'push' calls, so that built-ins are at level 0 and the shader
     // globals are at level 1.
-    bool isEmpty() const { return table.empty(); }
+    bool isEmpty() const { return mTable.empty(); }
     bool atBuiltInLevel() const { return currentLevel() <= LAST_BUILTIN_LEVEL; }
     bool atGlobalLevel() const { return currentLevel() == GLOBAL_LEVEL; }
-    void push()
-    {
-        table.push_back(new TSymbolTableLevel);
-        precisionStack.push_back(new PrecisionStackLevel);
-    }
 
-    void pop()
-    {
-        delete table.back();
-        table.pop_back();
-
-        delete precisionStack.back();
-        precisionStack.pop_back();
-    }
+    void push();
+    void pop();
 
     // The declare* entry points are used when parsing and declare symbols at the current scope.
-    // They return the created symbol / true in case the declaration was successful, and nullptr /
-    // false if the declaration failed due to redefinition.
+    // They return the created true in case the declaration was successful, and false if the
+    // declaration failed due to redefinition.
     bool declareVariable(TVariable *variable);
     bool declareStructType(TStructure *str);
     bool declareInterfaceBlock(TInterfaceBlock *interfaceBlock);
+    // Functions are always declared at global scope.
+    void declareUserDefinedFunction(TFunction *function, bool insertUnmangledName);
+
+    // These return the TFunction pointer to keep using to refer to this function.
+    const TFunction *markFunctionHasPrototypeDeclaration(const ImmutableString &mangledName,
+                                                         bool *hadPrototypeDeclarationOut);
+    const TFunction *setFunctionParameterNamesFromDefinition(const TFunction *function,
+                                                             bool *wasDefinedOut);
+
+    // find() is guaranteed not to retain a reference to the ImmutableString, so an ImmutableString
+    // with a reference to a short-lived char * is fine to pass here.
+    const TSymbol *find(const ImmutableString &name, int shaderVersion) const;
+
+    const TSymbol *findGlobal(const ImmutableString &name) const;
+
+    const TSymbol *findBuiltIn(const ImmutableString &name, int shaderVersion) const;
+
+    const TSymbol *findBuiltIn(const ImmutableString &name,
+                               int shaderVersion,
+                               bool includeGLSLBuiltins) const;
+
+    void setDefaultPrecision(TBasicType type, TPrecision prec);
+
+    // Searches down the precisionStack for a precision qualifier
+    // for the specified TBasicType
+    TPrecision getDefaultPrecision(TBasicType type) const;
+
+    // This records invariant varyings declared through
+    // "invariant varying_name;".
+    void addInvariantVarying(const ImmutableString &originalName);
+
+    // If this returns false, the varying could still be invariant
+    // if it is set as invariant during the varying variable
+    // declaration - this piece of information is stored in the
+    // variable's type, not here.
+    bool isVaryingInvariant(const ImmutableString &originalName) const;
+
+    void setGlobalInvariant(bool invariant);
+
+    const TSymbolUniqueId nextUniqueId() { return TSymbolUniqueId(this); }
+
+    // Gets the built-in accessible by a shader with the specified version, if any.
+    const UnmangledBuiltIn *getUnmangledBuiltInForShaderVersion(const ImmutableString &name,
+                                                                int shaderVersion);
+
+    void initializeBuiltIns(sh::GLenum type,
+                            ShShaderSpec spec,
+                            const ShBuiltInResources &resources);
+    void clearCompilationResults();
+
+  private:
+    friend class TSymbolUniqueId;
+    int nextUniqueIdValue();
+
+    class TSymbolTableBuiltInLevel;
+    class TSymbolTableLevel;
+
+    void pushBuiltInLevel();
+
+    ESymbolLevel currentLevel() const
+    {
+        return static_cast<ESymbolLevel>(mTable.size() + LAST_BUILTIN_LEVEL);
+    }
 
     // The insert* entry points are used when initializing the symbol table with built-ins.
     // They return the created symbol / true in case the declaration was successful, and nullptr /
     // false if the declaration failed due to redefinition.
-    TVariable *insertVariable(ESymbolLevel level, const char *name, const TType &type);
-    TVariable *insertVariableExt(ESymbolLevel level,
-                                 TExtension ext,
-                                 const char *name,
-                                 const TType &type);
+    TVariable *insertVariable(ESymbolLevel level, const ImmutableString &name, const TType *type);
+    void insertVariableExt(ESymbolLevel level,
+                           TExtension ext,
+                           const ImmutableString &name,
+                           const TType *type);
     bool insertVariable(ESymbolLevel level, TVariable *variable);
     bool insertStructType(ESymbolLevel level, TStructure *str);
     bool insertInterfaceBlock(ESymbolLevel level, TInterfaceBlock *interfaceBlock);
 
-    bool insertConstInt(ESymbolLevel level, const char *name, int value, TPrecision precision)
-    {
-        TVariable *constant = new TVariable(
-            this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1), SymbolType::BuiltIn);
-        constant->getType().realize();
-        TConstantUnion *unionArray = new TConstantUnion[1];
-        unionArray[0].setIConst(value);
-        constant->shareConstPointer(unionArray);
-        return insert(level, constant);
-    }
+    template <TPrecision precision>
+    bool insertConstInt(ESymbolLevel level, const ImmutableString &name, int value);
 
+    template <TPrecision precision>
     bool insertConstIntExt(ESymbolLevel level,
                            TExtension ext,
-                           const char *name,
-                           int value,
-                           TPrecision precision)
-    {
-        TVariable *constant =
-            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1),
-                          SymbolType::BuiltIn, ext);
-        constant->getType().realize();
-        TConstantUnion *unionArray = new TConstantUnion[1];
-        unionArray[0].setIConst(value);
-        constant->shareConstPointer(unionArray);
-        return insert(level, constant);
-    }
+                           const ImmutableString &name,
+                           int value);
 
+    template <TPrecision precision>
     bool insertConstIvec3(ESymbolLevel level,
-                          const char *name,
-                          const std::array<int, 3> &values,
-                          TPrecision precision)
-    {
-        TVariable *constantIvec3 = new TVariable(
-            this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 3), SymbolType::BuiltIn);
-        constantIvec3->getType().realize();
+                          const ImmutableString &name,
+                          const std::array<int, 3> &values);
 
-        TConstantUnion *unionArray = new TConstantUnion[3];
-        for (size_t index = 0u; index < 3u; ++index)
-        {
-            unionArray[index].setIConst(values[index]);
-        }
-        constantIvec3->shareConstPointer(unionArray);
-
-        return insert(level, constantIvec3);
-    }
-
+    // Note that for inserted built-in functions the const char *name needs to remain valid for the
+    // lifetime of the SymbolTable. SymbolTable does not allocate a copy of it.
     void insertBuiltIn(ESymbolLevel level,
                        TOperator op,
                        TExtension ext,
@@ -221,9 +204,9 @@ class TSymbolTable : angle::NonCopyable
                        const TType *ptype4 = 0,
                        const TType *ptype5 = 0)
     {
-        insertUnmangledBuiltInName(name, level);
-        insertBuiltIn(level, EOpNull, TExtension::UNDEFINED, rvalue, name, ptype1, ptype2, ptype3,
-                      ptype4, ptype5);
+        insertUnmangledBuiltIn(name, TExtension::UNDEFINED, level);
+        insertBuiltIn(level, EOpCallBuiltInFunction, TExtension::UNDEFINED, rvalue, name, ptype1,
+                      ptype2, ptype3, ptype4, ptype5);
     }
 
     void insertBuiltIn(ESymbolLevel level,
@@ -236,8 +219,9 @@ class TSymbolTable : angle::NonCopyable
                        const TType *ptype4 = 0,
                        const TType *ptype5 = 0)
     {
-        insertUnmangledBuiltInName(name, level);
-        insertBuiltIn(level, EOpNull, ext, rvalue, name, ptype1, ptype2, ptype3, ptype4, ptype5);
+        insertUnmangledBuiltIn(name, ext, level);
+        insertBuiltIn(level, EOpCallBuiltInFunction, ext, rvalue, name, ptype1, ptype2, ptype3,
+                      ptype4, ptype5);
     }
 
     void insertBuiltInOp(ESymbolLevel level,
@@ -270,91 +254,36 @@ class TSymbolTable : angle::NonCopyable
                                               const TType *rvalue,
                                               const char *name);
 
-    TSymbol *find(const TString &name,
-                  int shaderVersion,
-                  bool *builtIn   = nullptr,
-                  bool *sameScope = nullptr) const;
-
-    TSymbol *findGlobal(const TString &name) const;
-
-    TSymbol *findBuiltIn(const TString &name, int shaderVersion) const;
-
-    TSymbol *findBuiltIn(const TString &name, int shaderVersion, bool includeGLSLBuiltins) const;
-
-    TSymbolTableLevel *getOuterLevel()
-    {
-        assert(currentLevel() >= 1);
-        return table[currentLevel() - 1];
-    }
-
-    void setDefaultPrecision(TBasicType type, TPrecision prec)
-    {
-        int indexOfLastElement = static_cast<int>(precisionStack.size()) - 1;
-        // Uses map operator [], overwrites the current value
-        (*precisionStack[indexOfLastElement])[type] = prec;
-    }
-
-    // Searches down the precisionStack for a precision qualifier
-    // for the specified TBasicType
-    TPrecision getDefaultPrecision(TBasicType type) const;
-
-    // This records invariant varyings declared through
-    // "invariant varying_name;".
-    void addInvariantVarying(const std::string &originalName)
-    {
-        ASSERT(atGlobalLevel());
-        table[currentLevel()]->addInvariantVarying(originalName);
-    }
-    // If this returns false, the varying could still be invariant
-    // if it is set as invariant during the varying variable
-    // declaration - this piece of information is stored in the
-    // variable's type, not here.
-    bool isVaryingInvariant(const std::string &originalName) const
-    {
-        ASSERT(atGlobalLevel());
-        return table[currentLevel()]->isVaryingInvariant(originalName);
-    }
-
-    void setGlobalInvariant(bool invariant)
-    {
-        ASSERT(atGlobalLevel());
-        table[currentLevel()]->setGlobalInvariant(invariant);
-    }
-
-    const TSymbolUniqueId nextUniqueId() { return TSymbolUniqueId(this); }
-
-    // Checks whether there is a built-in accessible by a shader with the specified version.
-    bool hasUnmangledBuiltInForShaderVersion(const char *name, int shaderVersion);
-
-    void markBuiltInInitializationFinished();
-    void clearCompilationResults();
-
-  private:
-    friend class TSymbolUniqueId;
-    int nextUniqueIdValue();
-
-    ESymbolLevel currentLevel() const { return static_cast<ESymbolLevel>(table.size() - 1); }
-
     TVariable *insertVariable(ESymbolLevel level,
-                              const TString *name,
-                              const TType &type,
+                              const ImmutableString &name,
+                              const TType *type,
                               SymbolType symbolType);
 
-    bool insert(ESymbolLevel level, TSymbol *symbol)
-    {
-        ASSERT(level > LAST_BUILTIN_LEVEL || mUserDefinedUniqueIdsStart == -1);
-        return table[level]->insert(symbol);
-    }
+    bool insert(ESymbolLevel level, TSymbol *symbol);
+
+    TFunction *findUserDefinedFunction(const ImmutableString &name) const;
 
     // Used to insert unmangled functions to check redeclaration of built-ins in ESSL 3.00 and
     // above.
-    void insertUnmangledBuiltInName(const char *name, ESymbolLevel level);
+    void insertUnmangledBuiltIn(const char *name, TExtension ext, ESymbolLevel level);
 
     bool hasUnmangledBuiltInAtLevel(const char *name, ESymbolLevel level);
 
-    std::vector<TSymbolTableLevel *> table;
+    void initSamplerDefaultPrecision(TBasicType samplerType);
+
+    void initializeBuiltInFunctions(sh::GLenum type);
+    void initializeBuiltInVariables(sh::GLenum type,
+                                    ShShaderSpec spec,
+                                    const ShBuiltInResources &resources);
+    void markBuiltInInitializationFinished();
+
+    std::vector<std::unique_ptr<TSymbolTableBuiltInLevel>> mBuiltInTable;
+    std::vector<std::unique_ptr<TSymbolTableLevel>> mTable;
+
+    // There's one precision stack level for predefined precisions and then one level for each scope
+    // in table.
     typedef TMap<TBasicType, TPrecision> PrecisionStackLevel;
-    std::vector<PrecisionStackLevel *> precisionStack;
+    std::vector<std::unique_ptr<PrecisionStackLevel>> mPrecisionStack;
 
     int mUniqueIdCounter;
 

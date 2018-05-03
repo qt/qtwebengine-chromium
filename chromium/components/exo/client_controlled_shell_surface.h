@@ -63,8 +63,14 @@ class ClientControlledShellSurface
   // Called when the client was restored.
   void SetRestored();
 
-  // Called when the client chagned the fullscreen state.
+  // Called when the client changed the fullscreen state.
   void SetFullscreen(bool fullscreen);
+
+  // Called when the client was snapped to left.
+  void SetSnappedToLeft();
+
+  // Called when the client was snapped to right.
+  void SetSnappedToRight();
 
   // Set the callback to run when the surface state changed.
   using StateChangedCallback =
@@ -77,7 +83,8 @@ class ClientControlledShellSurface
 
   // Set the callback to run when the surface bounds changed.
   using BoundsChangedCallback = base::RepeatingCallback<void(
-      ash::mojom::WindowStateType current_state_type,
+      ash::mojom::WindowStateType current_state,
+      ash::mojom::WindowStateType requested_state,
       int64_t display_id,
       const gfx::Rect& bounds,
       bool is_resize,
@@ -130,17 +137,20 @@ class ClientControlledShellSurface
   // Sends the window bounds change event to client. |display_id| specifies in
   // which display the surface should live in. |drag_bounds_change| is
   // a masked value of ash::WindowResizer::kBoundsChange_Xxx, and specifies
-  // how the bounds was changed.
+  // how the bounds was changed. The bounds change event may also come from a
+  // snapped window state change |requested_state|.
   void OnBoundsChangeEvent(ash::mojom::WindowStateType current_state,
+                           ash::mojom::WindowStateType requested_state,
                            int64_t display_id,
                            const gfx::Rect& bounds,
                            bool is_resize,
                            int drag_bounds_change);
+
   // Sends the window drag events to client.
   void OnDragStarted(int component);
   void OnDragFinished(bool cancel, const gfx::Point& location);
 
-  void StartResize_DEPRECATED();
+  void StartResize(int component);
 
   // Starts the move-by-drag operation.
   void StartMove(const gfx::Point& location);
@@ -209,6 +219,8 @@ class ClientControlledShellSurface
 
   void UpdateBackdrop();
 
+  void AttemptToStartDrag(int component, const gfx::Point& location);
+
   // Lock the compositor if it's not already locked, or extends the
   // lock timeout if it's already locked.
   // TODO(reveman): Remove this when using configure callbacks for orientation.
@@ -238,7 +250,8 @@ class ClientControlledShellSurface
 
   ash::wm::ClientControlledState* client_controlled_state_ = nullptr;
 
-  ui::WindowShowState pending_show_state_ = ui::SHOW_STATE_NORMAL;
+  ash::mojom::WindowStateType pending_window_state_ =
+      ash::mojom::WindowStateType::NORMAL;
 
   bool can_maximize_ = true;
 

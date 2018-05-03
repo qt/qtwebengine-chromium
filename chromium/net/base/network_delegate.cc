@@ -9,7 +9,7 @@
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/trace_constants.h"
-#include "net/proxy/proxy_info.h"
+#include "net/proxy_resolution/proxy_info.h"
 #include "net/url_request/url_request.h"
 
 namespace net {
@@ -188,9 +188,11 @@ bool NetworkDelegate::CanQueueReportingReport(const url::Origin& origin) const {
   return OnCanQueueReportingReport(origin);
 }
 
-bool NetworkDelegate::CanSendReportingReport(const url::Origin& origin) const {
+void NetworkDelegate::CanSendReportingReports(
+    std::set<url::Origin> origins,
+    base::OnceCallback<void(std::set<url::Origin>)> result_callback) const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  return OnCanSendReportingReport(origin);
+  OnCanSendReportingReports(std::move(origins), std::move(result_callback));
 }
 
 bool NetworkDelegate::CanSetReportingClient(const url::Origin& origin,

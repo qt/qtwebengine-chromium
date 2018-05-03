@@ -4,25 +4,24 @@
 
 #include "platform/loader/cors/CORS.h"
 
+#include <string>
+
+#include "platform/loader/cors/CORSErrorString.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/http_names.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "platform/wtf/ThreadSpecific.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "services/network/public/cpp/cors/cors.h"
+#include "services/network/public/cpp/cors/preflight_cache.h"
 #include "url/gurl.h"
 
 namespace blink {
 
 namespace {
-
-bool IsInterestingStatusCode(int status_code) {
-  // Predicate that gates what status codes should be included in console error
-  // messages for responses containing no access control headers.
-  return status_code >= 400;
-}
 
 base::Optional<std::string> GetHeaderValue(const HTTPHeaderMap& header_map,
                                            const AtomicString& header_name) {
@@ -34,163 +33,40 @@ base::Optional<std::string> GetHeaderValue(const HTTPHeaderMap& header_map,
   return base::nullopt;
 }
 
+network::cors::PreflightCache& GetPerThreadPreflightCache() {
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<network::cors::PreflightCache>,
+                                  cache, ());
+  return *cache;
+}
+
+base::Optional<std::string> GetOptionalHeaderValue(
+    const HTTPHeaderMap& header_map,
+    const AtomicString& header_name) {
+  const AtomicString& result = header_map.Get(header_name);
+  if (result.IsNull())
+    return base::nullopt;
+
+  return std::string(result.Ascii().data());
+}
+
+std::unique_ptr<net::HttpRequestHeaders> CreateNetHttpRequestHeaders(
+    const HTTPHeaderMap& header_map) {
+  std::unique_ptr<net::HttpRequestHeaders> request_headers =
+      std::make_unique<net::HttpRequestHeaders>();
+  for (HTTPHeaderMap::const_iterator i = header_map.begin(),
+                                     end = header_map.end();
+       i != end; ++i) {
+    DCHECK(!i->key.IsNull());
+    DCHECK(!i->value.IsNull());
+    request_headers->SetHeader(std::string(i->key.Ascii().data()),
+                               std::string(i->value.Ascii().data()));
+  }
+  return request_headers;
+}
+
 }  // namespace
 
 namespace CORS {
-
-String GetErrorString(const network::mojom::CORSError error,
-                      const KURL& request_url,
-                      const KURL& redirect_url,
-                      const int response_status_code,
-                      const HTTPHeaderMap& response_header,
-                      const SecurityOrigin& origin,
-                      const WebURLRequest::RequestContext context) {
-  static const char kNoCorsInformation[] =
-      " Have the server send the header with a valid value, or, if an opaque "
-      "response serves your needs, set the request's mode to 'no-cors' to "
-      "fetch the resource with CORS disabled.";
-
-  String redirect_denied =
-      redirect_url.IsValid()
-          ? String::Format(
-                "Redirect from '%s' to '%s' has been blocked by CORS policy: ",
-                request_url.GetString().Utf8().data(),
-                redirect_url.GetString().Utf8().data())
-          : String();
-
-  switch (error) {
-    case network::mojom::CORSError::kDisallowedByMode:
-      return String::Format(
-          "Failed to load '%s': Cross origin requests are not allowed by "
-          "request mode.",
-          request_url.GetString().Utf8().data());
-    case network::mojom::CORSError::kInvalidResponse:
-      return String::Format(
-          "%sInvalid response. Origin '%s' is therefore not allowed access.",
-          redirect_denied.Utf8().data(), origin.ToString().Utf8().data());
-    case network::mojom::CORSError::kSubOriginMismatch:
-      return String::Format(
-          "%sThe 'Access-Control-Allow-Suborigin' header has a value '%s' that "
-          "is not equal to the supplied suborigin. Origin '%s' is therefore "
-          "not allowed access.",
-          redirect_denied.Utf8().data(),
-          response_header.Get(HTTPNames::Access_Control_Allow_Suborigin)
-              .Utf8()
-              .data(),
-          origin.ToString().Utf8().data());
-    case network::mojom::CORSError::kWildcardOriginNotAllowed:
-      return String::Format(
-          "%sThe value of the 'Access-Control-Allow-Origin' header in the "
-          "response must not be the wildcard '*' when the request's "
-          "credentials mode is 'include'. Origin '%s' is therefore not allowed "
-          "access.%s",
-          redirect_denied.Utf8().data(), origin.ToString().Utf8().data(),
-          context == WebURLRequest::kRequestContextXMLHttpRequest
-              ? " The credentials mode of requests initiated by the "
-                "XMLHttpRequest is controlled by the withCredentials attribute."
-              : "");
-    case network::mojom::CORSError::kMissingAllowOriginHeader:
-      return String::Format(
-          "%sNo 'Access-Control-Allow-Origin' header is present on the "
-          "requested resource. Origin '%s' is therefore not allowed access."
-          "%s%s",
-          redirect_denied.Utf8().data(), origin.ToString().Utf8().data(),
-          IsInterestingStatusCode(response_status_code)
-              ? String::Format(" The response had HTTP status code %d.",
-                               response_status_code)
-                    .Utf8()
-                    .data()
-              : "",
-          context == WebURLRequest::kRequestContextFetch
-              ? " If an opaque response serves your needs, set the request's "
-                "mode to 'no-cors' to fetch the resource with CORS disabled."
-              : "");
-    case network::mojom::CORSError::kMultipleAllowOriginValues:
-      return String::Format(
-          "%sThe 'Access-Control-Allow-Origin' header contains multiple values "
-          "'%s', but only one is allowed. Origin '%s' is therefore not allowed "
-          "access.%s",
-          redirect_denied.Utf8().data(),
-          response_header.Get(HTTPNames::Access_Control_Allow_Origin)
-              .Utf8()
-              .data(),
-          origin.ToString().Utf8().data(),
-          context == WebURLRequest::kRequestContextFetch ? kNoCorsInformation
-                                                         : "");
-    case network::mojom::CORSError::kInvalidAllowOriginValue:
-      return String::Format(
-          "%sThe 'Access-Control-Allow-Origin' header contains the invalid "
-          "value '%s'. Origin '%s' is therefore not allowed access.%s",
-          redirect_denied.Utf8().data(),
-          response_header.Get(HTTPNames::Access_Control_Allow_Origin)
-              .Utf8()
-              .data(),
-          origin.ToString().Utf8().data(),
-          context == WebURLRequest::kRequestContextFetch ? kNoCorsInformation
-                                                         : "");
-    case network::mojom::CORSError::kAllowOriginMismatch:
-      return String::Format(
-          "%sThe 'Access-Control-Allow-Origin' header has a value '%s' that is "
-          "not equal to the supplied origin. Origin '%s' is therefore not "
-          "allowed access.%s",
-          redirect_denied.Utf8().data(),
-          response_header.Get(HTTPNames::Access_Control_Allow_Origin)
-              .Utf8()
-              .data(),
-          origin.ToString().Utf8().data(),
-          context == WebURLRequest::kRequestContextFetch ? kNoCorsInformation
-                                                         : "");
-    case network::mojom::CORSError::kDisallowCredentialsNotSetToTrue:
-      return String::Format(
-          "%sThe value of the 'Access-Control-Allow-Credentials' header in "
-          "the response is '%s' which must be 'true' when the request's "
-          "credentials mode is 'include'. Origin '%s' is therefore not allowed "
-          "access.%s",
-          redirect_denied.Utf8().data(),
-          response_header.Get(HTTPNames::Access_Control_Allow_Credentials)
-              .Utf8()
-              .data(),
-          origin.ToString().Utf8().data(),
-          (context == WebURLRequest::kRequestContextXMLHttpRequest
-               ? " The credentials mode of requests initiated by the "
-                 "XMLHttpRequest is controlled by the withCredentials "
-                 "attribute."
-               : ""));
-    case network::mojom::CORSError::kPreflightInvalidStatus:
-      return String::Format(
-          "Response for preflight has invalid HTTP status code %d.",
-          response_status_code);
-    case network::mojom::CORSError::kPreflightMissingAllowExternal:
-      return WebString(
-          "No 'Access-Control-Allow-External' header was present in the "
-          "preflight response for this external request (This is an "
-          "experimental header which is defined in "
-          "'https://wicg.github.io/cors-rfc1918/').");
-    case network::mojom::CORSError::kPreflightInvalidAllowExternal:
-      return String::Format(
-          "The 'Access-Control-Allow-External' header in the preflight "
-          "response for this external request had a value of '%s',  not 'true' "
-          "(This is an experimental header which is defined in "
-          "'https://wicg.github.io/cors-rfc1918/').",
-          response_header.Get(HTTPNames::Access_Control_Allow_External)
-              .Utf8()
-              .data());
-    case network::mojom::CORSError::kRedirectDisallowedScheme:
-      return String::Format(
-          "%sRedirect location '%s' has a disallowed scheme for cross-origin "
-          "requests.",
-          redirect_denied.Utf8().data(),
-          redirect_url.GetString().Utf8().data());
-    case network::mojom::CORSError::kRedirectContainsCredentials:
-      return String::Format(
-          "%sRedirect location '%s' contains a username and password, which is "
-          "disallowed for cross-origin requests.",
-          redirect_denied.Utf8().data(),
-          redirect_url.GetString().Utf8().data());
-  }
-  NOTREACHED();
-  return WebString();
-}
 
 WTF::Optional<network::mojom::CORSError> CheckAccess(
     const KURL& response_url,
@@ -198,14 +74,15 @@ WTF::Optional<network::mojom::CORSError> CheckAccess(
     const HTTPHeaderMap& response_header,
     network::mojom::FetchCredentialsMode credentials_mode,
     const SecurityOrigin& origin) {
+  std::unique_ptr<SecurityOrigin::PrivilegeData> privilege =
+      origin.CreatePrivilegeData();
   return network::cors::CheckAccess(
       response_url, response_status_code,
       GetHeaderValue(response_header, HTTPNames::Access_Control_Allow_Origin),
       GetHeaderValue(response_header,
-                     HTTPNames::Access_Control_Allow_Suborigin),
-      GetHeaderValue(response_header,
                      HTTPNames::Access_Control_Allow_Credentials),
-      credentials_mode, origin.ToUrlOrigin());
+      credentials_mode, origin.ToUrlOrigin(),
+      !privilege->block_local_access_from_local_origin_);
 }
 
 WTF::Optional<network::mojom::CORSError> CheckRedirectLocation(
@@ -235,6 +112,102 @@ WTF::Optional<network::mojom::CORSError> CheckExternalPreflight(
 
 bool IsCORSEnabledRequestMode(network::mojom::FetchRequestMode request_mode) {
   return network::cors::IsCORSEnabledRequestMode(request_mode);
+}
+
+bool EnsurePreflightResultAndCacheOnSuccess(
+    const HTTPHeaderMap& response_header_map,
+    const String& origin,
+    const KURL& request_url,
+    const String& request_method,
+    const HTTPHeaderMap& request_header_map,
+    network::mojom::FetchCredentialsMode request_credentials_mode,
+    String* error_description) {
+  DCHECK(!origin.IsNull());
+  DCHECK(!request_method.IsNull());
+  DCHECK(error_description);
+
+  base::Optional<network::mojom::CORSError> error;
+
+  std::unique_ptr<network::cors::PreflightResult> result =
+      network::cors::PreflightResult::Create(
+          request_credentials_mode,
+          GetOptionalHeaderValue(response_header_map,
+                                 HTTPNames::Access_Control_Allow_Methods),
+          GetOptionalHeaderValue(response_header_map,
+                                 HTTPNames::Access_Control_Allow_Headers),
+          GetOptionalHeaderValue(response_header_map,
+                                 HTTPNames::Access_Control_Max_Age),
+          &error);
+  if (error) {
+    *error_description = CORS::GetErrorString(
+        CORS::ErrorParameter::CreateForPreflightResponseCheck(*error,
+                                                              String()));
+    return false;
+  }
+
+  error = result->EnsureAllowedCrossOriginMethod(
+      std::string(request_method.Ascii().data()));
+  if (error) {
+    *error_description = CORS::GetErrorString(
+        CORS::ErrorParameter::CreateForPreflightResponseCheck(*error,
+                                                              request_method));
+    return false;
+  }
+
+  std::string detected_error_header;
+  error = result->EnsureAllowedCrossOriginHeaders(
+      *CreateNetHttpRequestHeaders(request_header_map), &detected_error_header);
+  if (error) {
+    *error_description = CORS::GetErrorString(
+        CORS::ErrorParameter::CreateForPreflightResponseCheck(
+            *error, String(detected_error_header.data(),
+                           detected_error_header.length())));
+    return false;
+  }
+
+  DCHECK(!error);
+
+  GetPerThreadPreflightCache().AppendEntry(std::string(origin.Ascii().data()),
+                                           request_url, std::move(result));
+  return true;
+}
+
+bool CheckIfRequestCanSkipPreflight(
+    const String& origin,
+    const KURL& url,
+    network::mojom::FetchCredentialsMode credentials_mode,
+    const String& method,
+    const HTTPHeaderMap& request_header_map) {
+  DCHECK(!origin.IsNull());
+  DCHECK(!method.IsNull());
+
+  return GetPerThreadPreflightCache().CheckIfRequestCanSkipPreflight(
+      std::string(origin.Ascii().data()), url, credentials_mode,
+      std::string(method.Ascii().data()),
+      *CreateNetHttpRequestHeaders(request_header_map));
+}
+
+bool IsCORSSafelistedMethod(const String& method) {
+  DCHECK(!method.IsNull());
+  CString utf8_method = method.Utf8();
+  return network::cors::IsCORSSafelistedMethod(
+      std::string(utf8_method.data(), utf8_method.length()));
+}
+
+bool IsCORSSafelistedContentType(const String& media_type) {
+  CString utf8_media_type = media_type.Utf8();
+  return network::cors::IsCORSSafelistedContentType(
+      std::string(utf8_media_type.data(), utf8_media_type.length()));
+}
+
+bool IsCORSSafelistedHeader(const String& name, const String& value) {
+  DCHECK(!name.IsNull());
+  DCHECK(!value.IsNull());
+  CString utf8_name = name.Utf8();
+  CString utf8_value = value.Utf8();
+  return network::cors::IsCORSSafelistedHeader(
+      std::string(utf8_name.data(), utf8_name.length()),
+      std::string(utf8_value.data(), utf8_value.length()));
 }
 
 }  // namespace CORS

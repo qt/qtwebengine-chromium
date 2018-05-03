@@ -25,8 +25,9 @@
 
 #include "core/html/canvas/CanvasRenderingContext.h"
 
-#include "core/html/canvas/CanvasContextCreationAttributes.h"
+#include "core/html/canvas/CanvasContextCreationAttributesCore.h"
 #include "core/html/canvas/CanvasImageSource.h"
+#include "core/origin_trials/origin_trials.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
@@ -35,7 +36,7 @@ namespace blink {
 
 CanvasRenderingContext::CanvasRenderingContext(
     CanvasRenderingContextHost* host,
-    const CanvasContextCreationAttributes& attrs)
+    const CanvasContextCreationAttributesCore& attrs)
     : host_(host),
       color_params_(kSRGBCanvasColorSpace, kRGBA8CanvasPixelFormat, kNonOpaque),
       creation_attributes_(attrs) {
@@ -43,26 +44,25 @@ CanvasRenderingContext::CanvasRenderingContext(
   // gamut color spaces, user must explicitly request for float16 storage.
   // Otherwise, we fall back to srgb-8888. Invalid requests fall back to
   // srgb-8888 too.
-  if (creation_attributes_.pixelFormat() == kF16CanvasPixelFormatName) {
+  if (creation_attributes_.pixel_format == kF16CanvasPixelFormatName) {
     color_params_.SetCanvasPixelFormat(kF16CanvasPixelFormat);
-    if (creation_attributes_.colorSpace() == kRec2020CanvasColorSpaceName)
+    if (creation_attributes_.color_space == kRec2020CanvasColorSpaceName)
       color_params_.SetCanvasColorSpace(kRec2020CanvasColorSpace);
-    else if (creation_attributes_.colorSpace() == kP3CanvasColorSpaceName)
+    else if (creation_attributes_.color_space == kP3CanvasColorSpaceName)
       color_params_.SetCanvasColorSpace(kP3CanvasColorSpace);
   }
 
-  if (!creation_attributes_.alpha()) {
+  if (!creation_attributes_.alpha) {
     color_params_.SetOpacityMode(kOpaque);
   }
 
-  if (!RuntimeEnabledFeatures::LowLatencyCanvasEnabled() &&
-      creation_attributes_.hasLowLatency())
-    creation_attributes_.setLowLatency(false);
+  if (!OriginTrials::lowLatencyCanvasEnabled(host->GetTopExecutionContext()))
+    creation_attributes_.low_latency = false;
 
   // Make m_creationAttributes reflect the effective colorSpace and pixelFormat
   // rather than the requested one.
-  creation_attributes_.setColorSpace(ColorSpaceAsString());
-  creation_attributes_.setPixelFormat(PixelFormatAsString());
+  creation_attributes_.color_space = ColorSpaceAsString();
+  creation_attributes_.pixel_format = PixelFormatAsString();
 }
 
 WTF::String CanvasRenderingContext::ColorSpaceAsString() const {
@@ -148,9 +148,11 @@ CanvasRenderingContext::ContextType CanvasRenderingContext::ContextTypeFromId(
     return kContextWebgl;
   if (id == "webgl2")
     return kContextWebgl2;
-  if (id == "bitmaprenderer" &&
-      RuntimeEnabledFeatures::ExperimentalCanvasFeaturesEnabled()) {
+  if (id == "bitmaprenderer") {
     return kContextImageBitmap;
+  }
+  if (id == "xrpresent" && RuntimeEnabledFeatures::WebXREnabled()) {
+    return kContextXRPresent;
   }
   return kContextTypeCount;
 }
@@ -190,6 +192,7 @@ bool CanvasRenderingContext::WouldTaintOrigin(
 
 void CanvasRenderingContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(host_);
+  visitor->Trace(creation_attributes_);
   ScriptWrappable::Trace(visitor);
 }
 

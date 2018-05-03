@@ -18,8 +18,8 @@ loadScript('media/mojo/interfaces/remoting_common.mojom');
 loadScript('mojo/common/time.mojom');
 loadScript('net/interfaces/ip_address.mojom');
 loadScript('net/interfaces/ip_endpoint.mojom');
-loadScript('url/mojo/origin.mojom');
-loadScript('url/mojo/url.mojom');
+loadScript('url/mojom/origin.mojom');
+loadScript('url/mojom/url.mojom');
 
 // The following adapter classes preserve backward compatibility for the media
 // router component extension.
@@ -784,6 +784,8 @@ MediaRouter.prototype.start = function() {
               'config': {
                 'enable_dial_discovery': response.config.enableDialDiscovery,
                 'enable_cast_discovery': response.config.enableCastDiscovery,
+                'enable_dial_sink_query': response.config.enableDialSinkQuery,
+                'enable_cast_sink_query': response.config.enableCastSinkQuery,
               }
             };
           });
@@ -971,6 +973,14 @@ MediaRouter.prototype.onMediaRemoterCreated = function(tabId, remoter,
       tabId,
       new media.mojom.MirrorServiceRemoterPtr(remoter.ptr.passInterface()),
       remotingSource);
+}
+
+/**
+ * Returns current status of media sink service in JSON format.
+ * @return {!Promise<!{status: string}>}
+ */
+MediaRouter.prototype.getMediaSinkServiceStatus = function() {
+  return this.service_.getMediaSinkServiceStatus();
 }
 
 /**

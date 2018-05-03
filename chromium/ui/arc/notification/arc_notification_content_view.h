@@ -20,7 +20,6 @@ class NotificationControlButtonsView;
 }
 
 namespace ui {
-struct AXActionData;
 class LayerTreeOwner;
 }
 
@@ -73,6 +72,8 @@ class ArcNotificationContentView
   void UpdateAccessibleName();
   void SetExpanded(bool expanded);
   bool IsExpanded() const;
+  void SetManuallyExpandedOrCollapsed(bool value);
+  bool IsManuallyExpandedOrCollapsed() const;
   void OnContainerAnimationStarted();
   void OnContainerAnimationEnded();
 
@@ -89,7 +90,6 @@ class ArcNotificationContentView
   void OnFocus() override;
   void OnBlur() override;
   views::FocusTraversable* GetFocusTraversable() override;
-  bool HandleAccessibleAction(const ui::AXActionData& action) override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
 
   // aura::WindowObserver
@@ -109,7 +109,7 @@ class ArcNotificationContentView
 
   // If |item_| is null, we may be about to be destroyed. In this case,
   // we have to be careful about what we do.
-  ArcNotificationItem* item_ = nullptr;
+  ArcNotificationItem* item_;
   ArcNotificationSurface* surface_ = nullptr;
 
   // The flag to prevent an infinite loop of changing the visibility.

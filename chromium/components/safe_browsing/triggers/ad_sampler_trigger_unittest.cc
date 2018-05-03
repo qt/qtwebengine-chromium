@@ -7,6 +7,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/test_simple_task_runner.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/safe_browsing/features.h"
 #include "components/safe_browsing/triggers/trigger_manager.h"
@@ -58,7 +59,7 @@ class MockTriggerManager : public TriggerManager {
 
 class AdSamplerTriggerTest : public content::RenderViewHostTestHarness {
  public:
-  AdSamplerTriggerTest() {}
+  AdSamplerTriggerTest() : task_runner_(new base::TestSimpleTaskRunner) {}
   ~AdSamplerTriggerTest() override {}
 
   void SetUp() override {
@@ -74,10 +75,13 @@ class AdSamplerTriggerTest : public content::RenderViewHostTestHarness {
   void CreateTriggerWithFrequency(const size_t denominator) {
     safe_browsing::AdSamplerTrigger::CreateForWebContents(
         web_contents(), &trigger_manager_, &prefs_, nullptr, nullptr);
-    safe_browsing::AdSamplerTrigger::FromWebContents(web_contents())
-        ->sampler_frequency_denominator_ = denominator;
-    safe_browsing::AdSamplerTrigger::FromWebContents(web_contents())
-        ->finish_report_delay_ms_ = 0;
+
+    safe_browsing::AdSamplerTrigger* ad_sampler =
+        safe_browsing::AdSamplerTrigger::FromWebContents(web_contents());
+    ad_sampler->SetSamplerFrequencyForTest(denominator);
+
+    // Give the trigger a test task runner that we can synchronize on.
+    ad_sampler->SetTaskRunnerForTest(task_runner_);
   }
 
   // Returns the final RenderFrameHost after navigation commits.
@@ -110,6 +114,11 @@ class AdSamplerTriggerTest : public content::RenderViewHostTestHarness {
     return NavigateFrame(url, subframe);
   }
 
+  void WaitForTaskRunnerIdle() {
+    task_runner_->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
+  }
+
   MockTriggerManager* get_trigger_manager() { return &trigger_manager_; }
   base::HistogramTester* get_histograms() { return &histograms_; }
 
@@ -117,6 +126,7 @@ class AdSamplerTriggerTest : public content::RenderViewHostTestHarness {
   TestingPrefServiceSimple prefs_;
   MockTriggerManager trigger_manager_;
   base::HistogramTester histograms_;
+  scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
 };
 
 TEST_F(AdSamplerTriggerTest, TriggerDisabledBySamplingFrequency) {
@@ -188,6 +198,9 @@ TEST_F(AdSamplerTriggerTest, PageWithMultipleAds) {
   CreateAndNavigateSubFrame(kAdUrl, kNonAdName, main_frame);
   CreateAndNavigateSubFrame(kNonAdUrl, kAdName, main_frame);
 
+  // Wait for any posted tasks to finish.
+  WaitForTaskRunnerIdle();
+
   // Three navigations (main frame, two subframes). Main frame with no ads, and
   // two sampled ads
   get_histograms()->ExpectBucketCount(kAdSamplerTriggerActionMetricName,
@@ -216,6 +229,9 @@ TEST_F(AdSamplerTriggerTest, ReportRejectedByTriggerManager) {
   RenderFrameHost* main_frame = NavigateMainFrame(kNonAdUrl);
   CreateAndNavigateSubFrame(kAdUrl, kNonAdName, main_frame);
   CreateAndNavigateSubFrame(kNonAdUrl, kNonAdName, main_frame);
+
+  // Wait for any posted tasks to finish.
+  WaitForTaskRunnerIdle();
 
   // Three navigations (main frame, two subframes). Two frames with no ads, and
   // one ad rejected by trigger manager.

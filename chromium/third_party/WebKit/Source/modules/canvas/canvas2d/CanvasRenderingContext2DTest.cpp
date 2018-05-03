@@ -7,7 +7,6 @@
 #include <memory>
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "bindings/core/v8/V8BindingForTesting.h"
-#include "build/build_config.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
@@ -18,13 +17,14 @@
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/loader/EmptyClients.h"
 #include "core/paint/PaintLayer.h"
-#include "core/testing/DummyPageHolder.h"
+#include "core/testing/PageTestBase.h"
 #include "modules/canvas/canvas2d/CanvasGradient.h"
 #include "modules/canvas/canvas2d/CanvasPattern.h"
 #include "modules/webgl/WebGLRenderingContext.h"
 #include "platform/graphics/Canvas2DLayerBridge.h"
 #include "platform/graphics/CanvasHeuristicParameters.h"
 #include "platform/graphics/ColorCorrectionTestUtils.h"
+#include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/StaticBitmapImage.h"
 #include "platform/graphics/gpu/SharedGpuContext.h"
 #include "platform/graphics/test/FakeGLES2Interface.h"
@@ -36,12 +36,14 @@
 #include "public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/core/SkSwizzle.h"
 
+using ::testing::_;
+using ::testing::InSequence;
 using ::testing::Mock;
 
 namespace blink {
@@ -96,14 +98,15 @@ scoped_refptr<Image> FakeImageSource::GetSourceImageForCanvas(
 
 enum LinearPixelMathState { kLinearPixelMathDisabled, kLinearPixelMathEnabled };
 
-class CanvasRenderingContext2DTest : public ::testing::Test {
+class CanvasRenderingContext2DTest : public PageTestBase {
  protected:
   CanvasRenderingContext2DTest();
   void SetUp() override;
 
-  DummyPageHolder& Page() const { return *dummy_page_holder_; }
-  Document& GetDocument() const { return *document_; }
   HTMLCanvasElement& CanvasElement() const { return *canvas_element_; }
+  bool IsCanvasResourceHostSet(Canvas2DLayerBridge* bridge) {
+    return !!bridge->resource_host_;
+  }
   CanvasRenderingContext2D* Context2d() const {
     return static_cast<CanvasRenderingContext2D*>(
         CanvasElement().RenderingContext());
@@ -132,8 +135,6 @@ class CanvasRenderingContext2DTest : public ::testing::Test {
       Canvas2DLayerBridge::AccelerationMode);
 
  private:
-  std::unique_ptr<DummyPageHolder> dummy_page_holder_;
-  Persistent<Document> document_;
   Persistent<HTMLCanvasElement> canvas_element_;
   Persistent<MemoryCache> global_memory_cache_;
 
@@ -183,12 +184,12 @@ void CanvasRenderingContext2DTest::CreateContext(
     String color_space,
     LinearPixelMathState LinearPixelMath_state) {
   String canvas_type("2d");
-  CanvasContextCreationAttributes attributes;
-  attributes.setAlpha(opacity_mode == kNonOpaque);
+  CanvasContextCreationAttributesCore attributes;
+  attributes.alpha = opacity_mode == kNonOpaque;
   if (!color_space.IsEmpty()) {
-    attributes.setColorSpace(color_space);
+    attributes.color_space = color_space;
     if (LinearPixelMath_state == kLinearPixelMathEnabled) {
-      attributes.setPixelFormat("float16");
+      attributes.pixel_format = "float16";
     }
   }
   canvas_element_->GetCanvasRenderingContext(canvas_type, attributes);
@@ -206,13 +207,10 @@ void CanvasRenderingContext2DTest::SetUp() {
 
   Page::PageClients page_clients;
   FillWithEmptyClients(page_clients);
-  dummy_page_holder_ = DummyPageHolder::Create(
-      IntSize(800, 600), &page_clients, nullptr, override_settings_function_);
-  document_ = &dummy_page_holder_->GetDocument();
-  document_->documentElement()->SetInnerHTMLFromString(
+  SetupPageWithClients(&page_clients, nullptr, override_settings_function_);
+  SetHtmlInnerHTML(
       "<body><canvas id='c'></canvas><canvas id='d'></canvas></body>");
-  document_->View()->UpdateAllLifecyclePhases();
-  canvas_element_ = ToHTMLCanvasElement(document_->getElementById("c"));
+  canvas_element_ = ToHTMLCanvasElement(GetElementById("c"));
 
   full_image_data_ = ImageData::Create(IntSize(10, 10));
   partial_image_data_ = ImageData::Create(IntSize(2, 2));
@@ -259,18 +257,21 @@ std::unique_ptr<Canvas2DLayerBridge> CanvasRenderingContext2DTest::MakeBridge(
 
 //============================================================================
 
-class FakeAcceleratedImageBufferSurface : public Canvas2DLayerBridge {
+class FakeCanvas2DLayerBridge : public Canvas2DLayerBridge {
  public:
-  FakeAcceleratedImageBufferSurface(const IntSize& size,
-                                    CanvasColorParams color_params)
+  FakeCanvas2DLayerBridge(const IntSize& size,
+                          CanvasColorParams color_params,
+                          AccelerationHint hint)
       : Canvas2DLayerBridge(size, 0, kDisableAcceleration, color_params),
-        is_accelerated_(true) {}
-  ~FakeAcceleratedImageBufferSurface() override = default;
+        is_accelerated_(hint != kPreferNoAcceleration) {}
+  ~FakeCanvas2DLayerBridge() override = default;
   bool IsAccelerated() const override { return is_accelerated_; }
   void SetIsAccelerated(bool is_accelerated) {
     if (is_accelerated != is_accelerated_)
       is_accelerated_ = is_accelerated;
   }
+  MOCK_METHOD1(DrawFullImage, void(const PaintImage& image));
+  MOCK_METHOD1(DidRestoreCanvasMatrixClipStack, void(PaintCanvas*));
 
  private:
   bool is_accelerated_;
@@ -517,11 +518,8 @@ TEST_F(CanvasRenderingContext2DTest, detectOverdrawWithCompositeOperations) {
 }
 
 TEST_F(CanvasRenderingContext2DTest, ImageResourceLifetime) {
-  NonThrowableExceptionState non_throwable_exception_state;
-  Element* canvas_element =
-      GetDocument().createElement("canvas", non_throwable_exception_state);
-  EXPECT_FALSE(non_throwable_exception_state.HadException());
-  HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(canvas_element);
+  auto* canvas =
+      ToHTMLCanvasElement(GetDocument().CreateRawElement(HTMLNames::canvasTag));
   canvas->SetSize(IntSize(40, 40));
   ImageBitmap* image_bitmap_derived = nullptr;
   {
@@ -530,11 +528,14 @@ TEST_F(CanvasRenderingContext2DTest, ImageResourceLifetime) {
         IntRect(0, 0, canvas->width(), canvas->height());
     ImageBitmap* image_bitmap_from_canvas =
         ImageBitmap::Create(canvas, crop_rect, default_options);
+    ASSERT_TRUE(image_bitmap_from_canvas);
+
     crop_rect = IntRect(0, 0, 20, 20);
     image_bitmap_derived = ImageBitmap::Create(image_bitmap_from_canvas,
                                                crop_rect, default_options);
+    ASSERT_TRUE(image_bitmap_derived);
   }
-  CanvasContextCreationAttributes attributes;
+  CanvasContextCreationAttributesCore attributes;
   CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(
       canvas->GetCanvasRenderingContext("2d", attributes));
   DummyExceptionStateForTesting exception_state;
@@ -547,10 +548,10 @@ TEST_F(CanvasRenderingContext2DTest, GPUMemoryUpdateForAcceleratedCanvas) {
   CreateContext(kNonOpaque);
 
   IntSize size(10, 10);
-  std::unique_ptr<FakeAcceleratedImageBufferSurface> fake_accelerate_surface =
-      std::make_unique<FakeAcceleratedImageBufferSurface>(size,
-                                                          CanvasColorParams());
-  FakeAcceleratedImageBufferSurface* fake_accelerate_surface_ptr =
+  std::unique_ptr<FakeCanvas2DLayerBridge> fake_accelerate_surface =
+      std::make_unique<FakeCanvas2DLayerBridge>(size, CanvasColorParams(),
+                                                kPreferAcceleration);
+  FakeCanvas2DLayerBridge* fake_accelerate_surface_ptr =
       fake_accelerate_surface.get();
   CanvasElement().CreateImageBufferUsingSurfaceForTesting(
       std::move(fake_accelerate_surface), size);
@@ -577,12 +578,11 @@ TEST_F(CanvasRenderingContext2DTest, GPUMemoryUpdateForAcceleratedCanvas) {
   // Creating a different accelerated image buffer
   HTMLCanvasElement* anotherCanvas =
       ToHTMLCanvasElement(GetDocument().getElementById("d"));
-  CanvasContextCreationAttributes attributes;
+  CanvasContextCreationAttributesCore attributes;
   anotherCanvas->GetCanvasRenderingContext("2d", attributes);
   IntSize size2(10, 5);
-  auto fake_accelerate_surface2 =
-      std::make_unique<FakeAcceleratedImageBufferSurface>(size2,
-                                                          CanvasColorParams());
+  auto fake_accelerate_surface2 = std::make_unique<FakeCanvas2DLayerBridge>(
+      size2, CanvasColorParams(), kPreferAcceleration);
   anotherCanvas->CreateImageBufferUsingSurfaceForTesting(
       std::move(fake_accelerate_surface2), size2);
   EXPECT_EQ(800, GetCurrentGPUMemoryUsage());
@@ -670,13 +670,7 @@ TEST_F(CanvasRenderingContext2DTest, MAYBE_GetImageDataDisablesAcceleration) {
   }
 }
 
-// https://crbug.com/791524
-#if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
-#define MAYBE_TextureUploadHeuristics DISABLED_TextureUploadHeuristics
-#else
-#define MAYBE_TextureUploadHeuristics TextureUploadHeuristics
-#endif  // defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
-TEST_F(CanvasRenderingContext2DTest, MAYBE_TextureUploadHeuristics) {
+TEST_F(CanvasRenderingContext2DTest, TextureUploadHeuristics) {
   ScopedCanvas2dFixedRenderingModeForTest canvas_2d_fixed_rendering_mode(false);
 
   enum TestVariants {
@@ -714,6 +708,7 @@ TEST_F(CanvasRenderingContext2DTest, MAYBE_TextureUploadHeuristics) {
         SkSurface::MakeRasterN32Premul(src_size, src_size);
     scoped_refptr<StaticBitmapImage> big_bitmap =
         StaticBitmapImage::Create(sk_surface->makeImageSnapshot());
+    ASSERT_TRUE(big_bitmap);
     ImageBitmap* big_image = ImageBitmap::Create(std::move(big_bitmap));
     NonThrowableExceptionState exception_state;
     V8TestingScope scope;
@@ -733,13 +728,31 @@ TEST_F(CanvasRenderingContext2DTest, MAYBE_TextureUploadHeuristics) {
   }
 }
 
-TEST_F(CanvasRenderingContext2DTest, DisableAcceleration) {
+TEST_F(CanvasRenderingContext2DTest,
+       NoResourceProviderInCanvas2DBufferInitialization) {
+  // This test enforces that there is no eager creation of
+  // CanvasResourceProvider for html canvas with 2d context when its
+  // Canvas2DLayerBridge is initially set up. This enforcement might be changed
+  // in the future refactoring; but change is seriously warned against because
+  // certain code paths in canvas 2d (that depend on the existence of
+  // CanvasResourceProvider) will be changed too, causing bad regressions.
+  CreateContext(kNonOpaque);
+  IntSize size(10, 10);
+  auto fake_accelerate_surface = std::make_unique<FakeCanvas2DLayerBridge>(
+      size, CanvasColorParams(), kPreferAcceleration);
+  CanvasElement().CreateImageBufferUsingSurfaceForTesting(
+      std::move(fake_accelerate_surface), size);
+
+  EXPECT_TRUE(CanvasElement().Canvas2DBuffer());
+  EXPECT_FALSE(CanvasElement().ResourceProvider());
+}
+
+TEST_F(CanvasRenderingContext2DTest, DisableAcceleration_UpdateGPUMemoryUsage) {
   CreateContext(kNonOpaque);
 
   IntSize size(10, 10);
-  auto fake_accelerate_surface =
-      std::make_unique<FakeAcceleratedImageBufferSurface>(size,
-                                                          CanvasColorParams());
+  auto fake_accelerate_surface = std::make_unique<FakeCanvas2DLayerBridge>(
+      size, CanvasColorParams(), kPreferAcceleration);
   CanvasElement().CreateImageBufferUsingSurfaceForTesting(
       std::move(fake_accelerate_surface), size);
   CanvasRenderingContext2D* context = Context2d();
@@ -761,6 +774,39 @@ TEST_F(CanvasRenderingContext2DTest, DisableAcceleration) {
   EXPECT_EQ(0, GetCurrentGPUMemoryUsage());
   EXPECT_EQ(0, GetGlobalGPUMemoryUsage());
   EXPECT_EQ(0u, GetGlobalAcceleratedContextCount());
+}
+
+TEST_F(CanvasRenderingContext2DTest,
+       DisableAcceleration_RestoreCanvasMatrixClipStack) {
+  // This tests verifies whether the RestoreCanvasMatrixClipStack happens after
+  // PaintCanvas is drawn from old 2d bridge to new 2d bridge.
+  InSequence s;
+
+  CreateContext(kNonOpaque);
+  IntSize size(10, 10);
+  auto fake_accelerate_surface = std::make_unique<FakeCanvas2DLayerBridge>(
+      size, CanvasColorParams(), kPreferAcceleration);
+  CanvasElement().CreateImageBufferUsingSurfaceForTesting(
+      std::move(fake_accelerate_surface), size);
+
+  auto fake_deaccelerate_surface = std::make_unique<FakeCanvas2DLayerBridge>(
+      size, CanvasColorParams(), kPreferNoAcceleration);
+  PaintCanvas* paint_canvas_ptr = fake_deaccelerate_surface->Canvas();
+  FakeCanvas2DLayerBridge* surface_ptr = fake_deaccelerate_surface.get();
+
+  EXPECT_CALL(*fake_deaccelerate_surface, DrawFullImage(_)).Times(1);
+  EXPECT_CALL(*fake_deaccelerate_surface,
+              DidRestoreCanvasMatrixClipStack(paint_canvas_ptr))
+      .Times(1);
+
+  EXPECT_TRUE(CanvasElement().Canvas2DBuffer()->IsAccelerated());
+  EXPECT_TRUE(IsCanvasResourceHostSet(CanvasElement().Canvas2DBuffer()));
+
+  CanvasElement().DisableAcceleration(std::move(fake_deaccelerate_surface));
+  EXPECT_FALSE(CanvasElement().Canvas2DBuffer()->IsAccelerated());
+  EXPECT_TRUE(IsCanvasResourceHostSet(CanvasElement().Canvas2DBuffer()));
+
+  Mock::VerifyAndClearExpectations(surface_ptr);
 }
 
 enum class ColorSpaceConversion : uint8_t {
@@ -791,9 +837,9 @@ TEST_F(CanvasRenderingContext2DTest, ImageBitmapColorSpaceConversion) {
 
   Persistent<HTMLCanvasElement> canvas =
       Persistent<HTMLCanvasElement>(CanvasElement());
-  CanvasContextCreationAttributes attributes;
-  attributes.setAlpha(true);
-  attributes.setColorSpace("srgb");
+  CanvasContextCreationAttributesCore attributes;
+  attributes.alpha = true;
+  attributes.color_space = "srgb";
   CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(
       canvas->GetCanvasRenderingContext("2d", attributes));
   StringOrCanvasGradientOrCanvasPattern fill_style;
@@ -855,8 +901,10 @@ TEST_F(CanvasRenderingContext2DTest, ImageBitmapColorSpaceConversion) {
     ImageBitmapOptions options =
         PrepareBitmapOptionsAndSetRuntimeFlags(color_space_conversion);
     ImageBitmap* image_bitmap = ImageBitmap::Create(canvas, crop_rect, options);
+    ASSERT_TRUE(image_bitmap);
     sk_sp<SkImage> converted_image =
         image_bitmap->BitmapImage()->PaintImageForCurrentFrame().GetSkImage();
+    ASSERT_TRUE(converted_image);
     SkImageInfo image_info =
         SkImageInfo::Make(1, 1, color_type, SkAlphaType::kUnpremul_SkAlphaType,
                           converted_image->refColorSpace());
@@ -1007,10 +1055,10 @@ void TestPutImageDataOnCanvasWithColorSpaceSettings(
 
       // Create a canvas and call putImageData and getImageData to make sure
       // the conversion is done correctly.
-      CanvasContextCreationAttributes attributes;
-      attributes.setAlpha(true);
-      attributes.setColorSpace(canvas_color_space_names[k]);
-      attributes.setPixelFormat(canvas_pixel_format_names[k]);
+      CanvasContextCreationAttributesCore attributes;
+      attributes.alpha = true;
+      attributes.color_space = canvas_color_space_names[k];
+      attributes.pixel_format = canvas_pixel_format_names[k];
       CanvasRenderingContext2D* context =
           static_cast<CanvasRenderingContext2D*>(
               canvas_element.GetCanvasRenderingContext("2d", attributes));

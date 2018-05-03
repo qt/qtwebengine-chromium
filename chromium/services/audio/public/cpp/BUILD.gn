@@ -4,14 +4,36 @@
 
 source_set("cpp") {
   sources = [
+    "audio_system_factory.cc",
+    "audio_system_factory.h",
     "audio_system_to_service_adapter.cc",
     "audio_system_to_service_adapter.h",
+    "debug_recording_session.cc",
+    "debug_recording_session.h",
+    "debug_recording_session_factory.cc",
+    "debug_recording_session_factory.h",
   ]
 
   public_deps = [
     "//base",
     "//media",
-    "//services/audio/public/interfaces",
+    "//services/audio/public/mojom",
+    "//services/service_manager/public/cpp",
+  ]
+}
+
+source_set("test_support") {
+  testonly = true
+
+  sources = [
+    "fake_system_info.cc",
+    "fake_system_info.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//media",
+    "//services/audio/public/mojom",
     "//services/service_manager/public/cpp",
   ]
 }

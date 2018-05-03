@@ -13,8 +13,7 @@
 #include "core/layout/LayoutTextFragment.h"
 
 namespace blink {
-
-namespace {
+namespace visible_units_test {
 
 PositionWithAffinity PositionWithAffinityInDOMTree(
     Node& anchor,
@@ -45,8 +44,6 @@ VisiblePositionInFlatTree CreateVisiblePositionInFlatTree(
     TextAffinity affinity = TextAffinity::kDownstream) {
   return CreateVisiblePosition(PositionInFlatTree(&anchor, offset), affinity);
 }
-
-}  // namespace
 
 class VisibleUnitsTest : public EditingTestBase {};
 
@@ -126,7 +123,7 @@ TEST_F(VisibleUnitsTest, canonicalPositionOfWithHTMLHtmlElement) {
   Node* two = GetDocument().QuerySelector("#two");
   Node* three = GetDocument().QuerySelector("#three");
   Node* four = GetDocument().QuerySelector("#four");
-  Element* html = GetDocument().createElement("html");
+  Element* html = GetDocument().CreateRawElement(HTMLNames::htmlTag);
   // Move two, three and four into second html element.
   html->AppendChild(two);
   html->AppendChild(three);
@@ -518,71 +515,6 @@ TEST_F(VisibleUnitsTest, endOfSentence) {
                 .DeepEquivalent());
 }
 
-TEST_F(VisibleUnitsTest, endOfWord) {
-  const char* body_content =
-      "<a id=host><b id=one>1</b> <b id=two>22</b></a><i id=three>333</i>";
-  const char* shadow_content =
-      "<p><u id=four>44444</u><content select=#two></content><span id=space> "
-      "</span><content select=#one></content><u id=five>55555</u></p>";
-  SetBodyContent(body_content);
-  ShadowRoot* shadow_root = SetShadowContent(shadow_content, "host");
-
-  Node* one = GetDocument().getElementById("one")->firstChild();
-  Node* two = GetDocument().getElementById("two")->firstChild();
-  Node* three = GetDocument().getElementById("three")->firstChild();
-  Node* four = shadow_root->getElementById("four")->firstChild();
-  Node* five = shadow_root->getElementById("five")->firstChild();
-
-  EXPECT_EQ(
-      Position(three, 3),
-      EndOfWord(CreateVisiblePositionInDOMTree(*one, 0)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(five, 5),
-      EndOfWord(CreateVisiblePositionInFlatTree(*one, 0)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(three, 3),
-      EndOfWord(CreateVisiblePositionInDOMTree(*one, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(five, 5),
-      EndOfWord(CreateVisiblePositionInFlatTree(*one, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(three, 3),
-      EndOfWord(CreateVisiblePositionInDOMTree(*two, 0)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(two, 2),
-      EndOfWord(CreateVisiblePositionInFlatTree(*two, 0)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(three, 3),
-      EndOfWord(CreateVisiblePositionInDOMTree(*two, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(two, 2),
-      EndOfWord(CreateVisiblePositionInFlatTree(*two, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(three, 3),
-      EndOfWord(CreateVisiblePositionInDOMTree(*three, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(three, 3),
-      EndOfWord(CreateVisiblePositionInFlatTree(*three, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(four, 5),
-      EndOfWord(CreateVisiblePositionInDOMTree(*four, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(two, 2),
-      EndOfWord(CreateVisiblePositionInFlatTree(*four, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(five, 5),
-      EndOfWord(CreateVisiblePositionInDOMTree(*five, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(five, 5),
-      EndOfWord(CreateVisiblePositionInFlatTree(*five, 1)).DeepEquivalent());
-}
-
 TEST_F(VisibleUnitsTest, isEndOfEditableOrNonEditableContent) {
   const char* body_content =
       "<a id=host><b id=one contenteditable>1</b><b id=two>22</b></a>";
@@ -897,7 +829,7 @@ TEST_F(VisibleUnitsTest, isVisuallyEquivalentCandidateWithHTMLHtmlElement) {
   Node* two = GetDocument().QuerySelector("#two");
   Node* three = GetDocument().QuerySelector("#three");
   Node* four = GetDocument().QuerySelector("#four");
-  Element* html = GetDocument().createElement("html");
+  Element* html = GetDocument().CreateRawElement(HTMLNames::htmlTag);
   // Move two, three and four into second html element.
   html->AppendChild(two);
   html->AppendChild(three);
@@ -1667,72 +1599,6 @@ TEST_F(VisibleUnitsTest, startOfSentence) {
                 .DeepEquivalent());
 }
 
-TEST_F(VisibleUnitsTest, startOfWord) {
-  const char* body_content =
-      "<a id=host><b id=one>1</b> <b id=two>22</b></a><i id=three>333</i>";
-  const char* shadow_content =
-      "<p><u id=four>44444</u><content select=#two></content><span id=space> "
-      "</span><content select=#one></content><u id=five>55555</u></p>";
-  SetBodyContent(body_content);
-  ShadowRoot* shadow_root = SetShadowContent(shadow_content, "host");
-
-  Node* one = GetDocument().getElementById("one")->firstChild();
-  Node* two = GetDocument().getElementById("two")->firstChild();
-  Node* three = GetDocument().getElementById("three")->firstChild();
-  Node* four = shadow_root->getElementById("four")->firstChild();
-  Node* five = shadow_root->getElementById("five")->firstChild();
-  Node* space = shadow_root->getElementById("space")->firstChild();
-
-  EXPECT_EQ(
-      Position(one, 0),
-      StartOfWord(CreateVisiblePositionInDOMTree(*one, 0)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(space, 1),
-      StartOfWord(CreateVisiblePositionInFlatTree(*one, 0)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(one, 0),
-      StartOfWord(CreateVisiblePositionInDOMTree(*one, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(space, 1),
-      StartOfWord(CreateVisiblePositionInFlatTree(*one, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(one, 0),
-      StartOfWord(CreateVisiblePositionInDOMTree(*two, 0)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(four, 0),
-      StartOfWord(CreateVisiblePositionInFlatTree(*two, 0)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(one, 0),
-      StartOfWord(CreateVisiblePositionInDOMTree(*two, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(four, 0),
-      StartOfWord(CreateVisiblePositionInFlatTree(*two, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(one, 0),
-      StartOfWord(CreateVisiblePositionInDOMTree(*three, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(space, 1),
-      StartOfWord(CreateVisiblePositionInFlatTree(*three, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(four, 0),
-      StartOfWord(CreateVisiblePositionInDOMTree(*four, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(four, 0),
-      StartOfWord(CreateVisiblePositionInFlatTree(*four, 1)).DeepEquivalent());
-
-  EXPECT_EQ(
-      Position(space, 1),
-      StartOfWord(CreateVisiblePositionInDOMTree(*five, 1)).DeepEquivalent());
-  EXPECT_EQ(
-      PositionInFlatTree(space, 1),
-      StartOfWord(CreateVisiblePositionInFlatTree(*five, 1)).DeepEquivalent());
-}
-
 TEST_F(VisibleUnitsTest,
        endsOfNodeAreVisuallyDistinctPositionsWithInvisibleChild) {
   // Repro case of crbug.com/582247
@@ -1811,4 +1677,5 @@ TEST_F(VisibleUnitsTest, NextBoundaryOfEditableTableWithLeadingSpaceInOutput) {
             GetCaretTextFromBody(result));
 }
 
+}  // namespace visible_units_test
 }  // namespace blink

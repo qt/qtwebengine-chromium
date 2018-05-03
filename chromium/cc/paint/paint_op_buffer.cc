@@ -15,7 +15,6 @@
 #include "cc/paint/scoped_raster_flags.h"
 #include "third_party/skia/include/core/SkAnnotation.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkFlattenableSerialization.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/skia/include/core/SkSerialProcs.h"
 
@@ -281,14 +280,17 @@ size_t SimpleSerialize(const PaintOp* op, void* memory, size_t size) {
 PlaybackParams::PlaybackParams(ImageProvider* image_provider)
     : image_provider(image_provider),
       original_ctm(SkMatrix::I()),
-      custom_callback(CustomDataRasterCallback()) {}
+      custom_callback(CustomDataRasterCallback()),
+      did_draw_op_callback(DidDrawOpCallback()) {}
 
 PlaybackParams::PlaybackParams(ImageProvider* image_provider,
                                const SkMatrix& original_ctm,
-                               CustomDataRasterCallback custom_callback)
+                               CustomDataRasterCallback custom_callback,
+                               DidDrawOpCallback did_draw_op_callback)
     : image_provider(image_provider),
       original_ctm(original_ctm),
-      custom_callback(custom_callback) {}
+      custom_callback(custom_callback),
+      did_draw_op_callback(did_draw_op_callback) {}
 
 PlaybackParams::~PlaybackParams() {}
 
@@ -1111,7 +1113,7 @@ void DrawImageOp::RasterWithFlags(const DrawImageOp* op,
                                   const PaintFlags* flags,
                                   SkCanvas* canvas,
                                   const PlaybackParams& params) {
-  SkPaint paint = flags->ToSkPaint();
+  SkPaint paint = flags ? flags->ToSkPaint() : SkPaint();
 
   if (!params.image_provider) {
     canvas->drawImage(op->image.GetSkImage().get(), op->left, op->top, &paint);
@@ -1152,7 +1154,7 @@ void DrawImageRectOp::RasterWithFlags(const DrawImageRectOp* op,
   // TODO(enne): Probably PaintCanvas should just use the skia enum directly.
   SkCanvas::SrcRectConstraint skconstraint =
       static_cast<SkCanvas::SrcRectConstraint>(op->constraint);
-  SkPaint paint = flags->ToSkPaint();
+  SkPaint paint = flags ? flags->ToSkPaint() : SkPaint();
 
   if (!params.image_provider) {
     canvas->drawImageRect(op->image.GetSkImage().get(), op->src, op->dst,
@@ -2246,7 +2248,8 @@ void PaintOpBuffer::Playback(SkCanvas* canvas,
   // the translation should be preserved instead of clobbering the top level
   // transform.  This could probably be done more efficiently.
   PlaybackParams new_params(params.image_provider, canvas->getTotalMatrix(),
-                            params.custom_callback);
+                            params.custom_callback,
+                            params.did_draw_op_callback);
   for (PlaybackFoldingIterator iter(this, offsets); iter; ++iter) {
     const PaintOp* op = *iter;
 
@@ -2263,20 +2266,23 @@ void PaintOpBuffer::Playback(SkCanvas* canvas,
 
     if (op->IsPaintOpWithFlags()) {
       const auto* flags_op = static_cast<const PaintOpWithFlags*>(op);
+      const bool create_skia_shaders = true;
       const ScopedRasterFlags scoped_flags(
           &flags_op->flags, new_params.image_provider, canvas->getTotalMatrix(),
-          iter.alpha());
+          iter.alpha(), create_skia_shaders);
       if (const auto* raster_flags = scoped_flags.flags())
         flags_op->RasterWithFlags(canvas, raster_flags, new_params);
-      continue;
+    } else {
+      // TODO(enne): skip SaveLayer followed by restore with nothing in
+      // between, however SaveLayer with image filters on it (or maybe
+      // other PaintFlags options) are not a noop.  Figure out what these
+      // are so we can skip them correctly.
+      DCHECK_EQ(iter.alpha(), 255);
+      op->Raster(canvas, new_params);
     }
 
-    // TODO(enne): skip SaveLayer followed by restore with nothing in
-    // between, however SaveLayer with image filters on it (or maybe
-    // other PaintFlags options) are not a noop.  Figure out what these
-    // are so we can skip them correctly.
-    DCHECK_EQ(iter.alpha(), 255);
-    op->Raster(canvas, new_params);
+    if (!new_params.did_draw_op_callback.is_null())
+      new_params.did_draw_op_callback.Run();
   }
 }
 

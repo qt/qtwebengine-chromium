@@ -23,14 +23,29 @@ class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
   // The IdentityManager instance created and owned by this instance.
   IdentityManager* identity_manager();
 
-  // Synchronously makes the primary account available with the given values.
-  void MakePrimaryAccountAvailable(std::string gaia_id,
-                                   std::string email_address,
-                                   std::string refresh_token);
+  // Makes the primary account available for the given email address, generating
+  // a GAIA ID and refresh token that correspond uniquely to that email address.
+  // On non-ChromeOS platforms, this will also result in the firing of the
+  // IdentityManager and SigninManager callbacks for signin success. On all
+  // platforms, this method blocks until the primary account is available.
+  void MakePrimaryAccountAvailable(std::string email);
+
+  // Clears the primary account. On non-ChromeOS, results in the firing of the
+  // IdentityManager and SigninManager callbacks for signout. Blocks until the
+  // primary account is cleared.
+  void ClearPrimaryAccount();
 
   // When this is set, access token requests will be automatically granted with
   // an access token value of "access_token".
   void SetAutomaticIssueOfAccessTokens(bool grant);
+
+  // Waits for an access token request to occur and issues |token| in response.
+  // NOTE: The implementation currently issues tokens in response to *all*
+  // pending access token requests. If you need finer granularity, contact
+  // blundell@chromium.org
+  void WaitForAccessTokenRequestAndRespondWithToken(
+      const std::string& token,
+      const base::Time& expiration);
 
   // Waits for an access token request to occur and issues |error| in response.
   // NOTE: The implementation currently issues errors in response to *all*

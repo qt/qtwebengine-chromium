@@ -105,7 +105,6 @@ class ChannelWin : public Channel,
 
       bool write_now = !delay_writes_ && outgoing_messages_.empty();
       outgoing_messages_.emplace_back(std::move(message), 0);
-
       if (write_now && !WriteNoLock(outgoing_messages_.front()))
         reject_writes_ = write_error = true;
     }

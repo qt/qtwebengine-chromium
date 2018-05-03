@@ -61,10 +61,10 @@
                     "minimum": 0,
                     "maximum": 65535
                   },
-                  "browserSideNavigationEnabled": {
+                  "nativeCrxBindingsEnabled": {
                     "type": "boolean",
                     "optional": true,
-                    "description": "Whether navigation requets are initiated by the browser or renderer (PlzNavigate)."
+                    "description": "Whether native extension bindings are enabled."
                   }
                 }
               }

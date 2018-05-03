@@ -9,8 +9,8 @@
 
 #include "base/time/time.h"
 #include "net/base/net_export.h"
+#include "net/base/proxy_server.h"
 #include "net/http/http_vary_data.h"
-#include "net/proxy/proxy_server.h"
 #include "net/ssl/ssl_info.h"
 
 namespace base {
@@ -55,6 +55,7 @@ class NET_EXPORT HttpResponseInfo {
     CONNECTION_INFO_QUIC_41 = 19,
     CONNECTION_INFO_QUIC_42 = 20,
     CONNECTION_INFO_QUIC_43 = 21,
+    CONNECTION_INFO_QUIC_99 = 22,
     NUM_OF_CONNECTION_INFOS,
   };
 

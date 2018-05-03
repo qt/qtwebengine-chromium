@@ -52,7 +52,7 @@ namespace {
 // use |LayoutObject::EnclosingBlockFlowFragment()|.
 const NGPhysicalBoxFragment* EnclosingBlockFlowFragmentOf(
     const LayoutInline& node) {
-  if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled())
+  if (!RuntimeEnabledFeatures::LayoutNGEnabled())
     return nullptr;
   return node.EnclosingBlockFlowFragment();
 }
@@ -640,7 +640,8 @@ void LayoutInline::AddChildToContinuation(LayoutObject* new_child,
 
 void LayoutInline::Paint(const PaintInfo& paint_info,
                          const LayoutPoint& paint_offset) const {
-  if (RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled()) {
+  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
+    // Inline box with self painting layer is painted in this code path.
     if (LayoutBlockFlow* block_flow = EnclosingNGBlockFlow()) {
       if (NGPaintFragment* block_flow_fragment = block_flow->PaintFragment()) {
         block_flow_fragment->PaintInlineBoxForDescendants(paint_info,
@@ -655,6 +656,14 @@ void LayoutInline::Paint(const PaintInfo& paint_info,
 
 template <typename GeneratorContext>
 void LayoutInline::GenerateLineBoxRects(GeneratorContext& yield) const {
+  if (const NGPhysicalBoxFragment* box_fragment =
+          EnclosingBlockFlowFragmentOf(*this)) {
+    const auto& descendants =
+        NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);
+    for (const auto& descendant : descendants)
+      yield(descendant.RectInContainerBox().ToLayoutRect());
+    return;
+  }
   if (!AlwaysCreateLineBoxes()) {
     GenerateCulledLineBoxRects(yield, this);
   } else if (InlineFlowBox* curr = FirstLineBox()) {
@@ -840,6 +849,14 @@ void LayoutInline::AbsoluteQuadsForSelf(Vector<FloatQuad>& quads,
 }
 
 LayoutPoint LayoutInline::FirstLineBoxTopLeft() const {
+  if (const NGPhysicalBoxFragment* box_fragment =
+          EnclosingBlockFlowFragmentOf(*this)) {
+    const auto& fragments =
+        NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);
+    if (fragments.IsEmpty())
+      return LayoutPoint();
+    return fragments.front().offset_to_container_box.ToLayoutPoint();
+  }
   if (InlineBox* first_box = FirstLineBoxIncludingCulling())
     return first_box->Location();
   return LayoutPoint();
@@ -944,7 +961,13 @@ bool LayoutInline::HitTestCulledInline(
   return false;
 }
 
-PositionWithAffinity LayoutInline::PositionForPoint(const LayoutPoint& point) {
+PositionWithAffinity LayoutInline::PositionForPoint(
+    const LayoutPoint& point) const {
+  if (const LayoutBlockFlow* ng_block_flow = EnclosingNGBlockFlow())
+    return ng_block_flow->PositionForPoint(point);
+
+  DCHECK(CanUseInlineBox(*this));
+
   // FIXME: Does not deal with relative positioned inlines (should it?)
 
   // If there are continuations, test them first because our containing block
@@ -986,12 +1009,8 @@ LayoutRect LayoutInline::LinesBoundingBox() const {
     LayoutRect result;
     auto children =
         NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);
-    for (const auto& child : children) {
-      NGPhysicalOffset left_top =
-          child.fragment->Offset() + child.offset_to_container_box;
-      result.Unite(LayoutRect(LayoutPoint(left_top.left, left_top.top),
-                              child.fragment->Size().ToLayoutSize()));
-    }
+    for (const auto& child : children)
+      result.Unite(child.RectInContainerBox().ToLayoutRect());
     return result;
   }
 
@@ -1315,7 +1334,7 @@ LayoutSize LayoutInline::OffsetFromContainer(
 }
 
 PaintLayerType LayoutInline::LayerTypeRequired() const {
-  return IsInFlowPositioned() || CreatesGroup() || HasClipPath() ||
+  return IsInFlowPositioned() || CreatesGroup() ||
                  Style()->ShouldCompositeForCurrentAnimations() ||
                  Style()->ContainsPaint()
              ? kNormalPaintLayer
@@ -1609,6 +1628,14 @@ void LayoutInline::InvalidateDisplayItemClients(
 
   for (InlineFlowBox* box = FirstLineBox(); box; box = box->NextLineBox())
     paint_invalidator.InvalidateDisplayItemClient(*box, invalidation_reason);
+}
+
+void LayoutInline::MapLocalToAncestor(const LayoutBoxModelObject* ancestor,
+                                      TransformState& transform_state,
+                                      MapCoordinatesFlags mode) const {
+  if (CanContainFixedPositionObjects())
+    mode &= ~kIsFixed;
+  LayoutBoxModelObject::MapLocalToAncestor(ancestor, transform_state, mode);
 }
 
 // TODO(loonybear): Not to just dump 0, 0 as the x and y here

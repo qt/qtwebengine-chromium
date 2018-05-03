@@ -28,7 +28,6 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/media_stream_request.h"
 #include "extensions/browser/app_window/app_delegate.h"
 #include "extensions/browser/app_window/app_web_contents_helper.h"
@@ -243,16 +242,7 @@ AppWindow::AppWindow(BrowserContext* context,
                      const Extension* extension)
     : browser_context_(context),
       extension_id_(extension->id()),
-      window_type_(WINDOW_TYPE_DEFAULT),
       app_delegate_(app_delegate),
-      fullscreen_types_(FULLSCREEN_TYPE_NONE),
-      has_been_shown_(false),
-      is_hidden_(false),
-      cached_always_on_top_(false),
-      requested_alpha_enabled_(false),
-      is_ime_window_(false),
-      show_on_lock_screen_(false),
-      show_in_shelf_(false),
       image_loader_ptr_factory_(this) {
   ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
   CHECK(!client->IsGuestSession(context) || context->IsOffTheRecord())
@@ -319,9 +309,7 @@ void AppWindow::Init(const GURL& url,
     // notifies observers of the window being hidden.
     Hide();
   } else {
-    // Panels are not activated by default.
-    Show(window_type_is_panel() || !new_params.focused ? SHOW_INACTIVE
-                                                       : SHOW_ACTIVE);
+    Show(SHOW_INACTIVE);
 
     // These states may cause the window to show, so they are ignored if the
     // window is initially hidden.
@@ -331,6 +319,10 @@ void AppWindow::Init(const GURL& url,
       Maximize();
     else if (new_params.state == ui::SHOW_STATE_MINIMIZED)
       Minimize();
+
+    // Panels are not activated by default.
+    Show(window_type_is_panel() || !new_params.focused ? SHOW_INACTIVE
+                                                       : SHOW_ACTIVE);
   }
 
   OnNativeWindowChanged();
@@ -466,14 +458,8 @@ void AppWindow::SetOnFirstCommitOrWindowClosedCallback(
 }
 
 void AppWindow::OnReadyToCommitFirstNavigation() {
-  if (!content::IsBrowserSideNavigationEnabled())
-    return;
-
-  // PlzNavigate: execute renderer-side setup now that there is a renderer
-  // process assigned to the navigation. With renderer-side navigation, this
-  // would happen before the navigation starts, but PlzNavigate must wait until
-  // this point in time in the navigation.
-
+  // Execute renderer-side setup now that there is a renderer process assigned
+  // to the navigation. We must wait until this point in time in the navigation.
   if (on_first_commit_or_window_closed_callback_.is_null())
     return;
   // It is important that the callback executes after the calls to
@@ -594,16 +580,14 @@ base::string16 AppWindow::GetTitle() const {
 }
 
 void AppWindow::SetAppIconUrl(const GURL& url) {
-  // Avoid using any previous icons that were being downloaded.
-  image_loader_ptr_factory_.InvalidateWeakPtrs();
   app_icon_url_ = url;
-  web_contents()->DownloadImage(
-      url,
-      true,   // is a favicon
-      0,      // no maximum size
-      false,  // normal cache policy
-      base::Bind(&AppWindow::DidDownloadFavicon,
-                 image_loader_ptr_factory_.GetWeakPtr()));
+
+  // Don't start custom app icon loading in the case window is not ready yet.
+  // see crbug.com/788531.
+  if (!window_ready_)
+    return;
+
+  StartAppIconDownload();
 }
 
 void AppWindow::UpdateShape(std::unique_ptr<ShapeRects> rects) {
@@ -792,6 +776,19 @@ void AppWindow::GetSerializedState(base::DictionaryValue* properties) const {
 
 //------------------------------------------------------------------------------
 // Private methods
+void AppWindow::StartAppIconDownload() {
+  DCHECK(app_icon_url_.is_valid());
+
+  // Avoid using any previous icons that were being downloaded.
+  image_loader_ptr_factory_.InvalidateWeakPtrs();
+  web_contents()->DownloadImage(
+      app_icon_url_,
+      true,   // is a favicon
+      0,      // no maximum size
+      false,  // normal cache policy
+      base::Bind(&AppWindow::DidDownloadFavicon,
+                 image_loader_ptr_factory_.GetWeakPtr()));
+}
 
 void AppWindow::DidDownloadFavicon(
     int id,
@@ -910,8 +907,10 @@ void AppWindow::ExitFullscreenModeForTab(content::WebContents* source) {
 }
 
 void AppWindow::OnAppWindowReady() {
-  if (app_window_contents_)
-    app_window_contents_->OnWindowReady();
+  window_ready_ = true;
+
+  if (app_icon_url_.is_valid())
+    StartAppIconDownload();
 }
 
 void AppWindow::ToggleFullscreenModeForTab(content::WebContents* source,

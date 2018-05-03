@@ -28,10 +28,9 @@
 
 #include <memory>
 #include <set>
-#include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/CoreExport.h"
-#include "core/html/canvas/CanvasContextCreationAttributes.h"
+#include "core/html/canvas/CanvasContextCreationAttributesCore.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/layout/ContentChangeType.h"
 #include "core/typed_arrays/ArrayBufferViewHelpers.h"
@@ -41,6 +40,7 @@
 #include "modules/webgl/WebGLExtensionName.h"
 #include "modules/webgl/WebGLTexture.h"
 #include "modules/webgl/WebGLVertexArrayObjectBase.h"
+#include "modules/xr/XRDevice.h"
 #include "platform/Timer.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/ScriptWrappable.h"
@@ -49,6 +49,7 @@
 #include "platform/graphics/gpu/Extensions3DUtil.h"
 #include "platform/graphics/gpu/WebGLImageConversion.h"
 #include "platform/wtf/CheckedNumeric.h"
+#include "platform/wtf/Optional.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
@@ -141,7 +142,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
   static std::unique_ptr<WebGraphicsContext3DProvider>
   CreateWebGraphicsContext3DProvider(CanvasRenderingContextHost*,
-                                     const CanvasContextCreationAttributes&,
+                                     const CanvasContextCreationAttributesCore&,
                                      unsigned web_gl_version,
                                      bool* using_gpu_compositing);
   static void ForceNextWebGLContextCreationToFail();
@@ -275,10 +276,10 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   WebGLActiveInfo* getActiveAttrib(WebGLProgram*, GLuint index);
   WebGLActiveInfo* getActiveUniform(WebGLProgram*, GLuint index);
   bool getAttachedShaders(WebGLProgram*, HeapVector<Member<WebGLShader>>&);
-  Nullable<HeapVector<Member<WebGLShader>>> getAttachedShaders(WebGLProgram*);
+  Optional<HeapVector<Member<WebGLShader>>> getAttachedShaders(WebGLProgram*);
   GLint getAttribLocation(WebGLProgram*, const String& name);
   ScriptValue getBufferParameter(ScriptState*, GLenum target, GLenum pname);
-  void getContextAttributes(Nullable<WebGLContextAttributes>&);
+  void getContextAttributes(Optional<WebGLContextAttributes>&);
   GLenum getError();
   ScriptValue getExtension(ScriptState*, const String& name);
   virtual ScriptValue getFramebufferAttachmentParameter(ScriptState*,
@@ -296,7 +297,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   WebGLShaderPrecisionFormat* getShaderPrecisionFormat(GLenum shader_type,
                                                        GLenum precision_type);
   String getShaderSource(WebGLShader*);
-  Nullable<Vector<String>> getSupportedExtensions();
+  Optional<Vector<String>> getSupportedExtensions();
   virtual ScriptValue getTexParameter(ScriptState*,
                                       GLenum target,
                                       GLenum pname);
@@ -605,7 +606,11 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
   // For use by WebVR, commits the current canvas content similar
   // to the "commit" JS API.
-  scoped_refptr<StaticBitmapImage> GetStaticBitmapImage();
+  scoped_refptr<StaticBitmapImage> GetStaticBitmapImage(
+      std::unique_ptr<viz::SingleReleaseCallback>* out_release_callback);
+
+  ScriptPromise setCompatibleXRDevice(ScriptState*, XRDevice*);
+  bool IsXRDeviceCompatible(const XRDevice*);
 
  protected:
   friend class EXTDisjointTimerQuery;
@@ -633,7 +638,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   WebGLRenderingContextBase(CanvasRenderingContextHost*,
                             std::unique_ptr<WebGraphicsContext3DProvider>,
                             bool using_gpu_compositing,
-                            const CanvasContextCreationAttributes&,
+                            const CanvasContextCreationAttributesCore&,
                             unsigned);
   scoped_refptr<DrawingBuffer> CreateDrawingBuffer(
       std::unique_ptr<WebGraphicsContext3DProvider>,
@@ -710,7 +715,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   TaskRunnerTimer<WebGLRenderingContextBase> dispatch_context_lost_event_timer_;
   bool restore_allowed_;
   TaskRunnerTimer<WebGLRenderingContextBase> restore_timer_;
-  scoped_refptr<WebTaskRunner> task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   bool marked_canvas_dirty_;
   bool animation_frame_in_progress_;
@@ -737,6 +742,8 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   TraceWrapperMember<WebGLFramebuffer> framebuffer_binding_;
   TraceWrapperMember<WebGLRenderbuffer> renderbuffer_binding_;
 
+  Member<XRDevice> compatible_xr_device_;
+
   HeapVector<TextureUnitState> texture_units_;
   unsigned long active_texture_unit_;
 
@@ -745,15 +752,13 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   // Fixed-size cache of reusable resource providers for video texImage2D calls.
   class LRUCanvasResourceProviderCache {
    public:
-    LRUCanvasResourceProviderCache(int capacity);
+    explicit LRUCanvasResourceProviderCache(size_t capacity);
     // The pointer returned is owned by the image buffer map.
     CanvasResourceProvider* GetCanvasResourceProvider(const IntSize&);
 
    private:
-    void BubbleToFront(int idx);
-    std::unique_ptr<std::unique_ptr<CanvasResourceProvider>[]>
-        resource_providers_;
-    int capacity_;
+    void BubbleToFront(size_t idx);
+    Vector<std::unique_ptr<CanvasResourceProvider>> resource_providers_;
   };
   LRUCanvasResourceProviderCache generated_image_cache_;
 
@@ -1668,15 +1673,15 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
  private:
   WebGLRenderingContextBase(CanvasRenderingContextHost*,
-                            scoped_refptr<WebTaskRunner>,
+                            scoped_refptr<base::SingleThreadTaskRunner>,
                             std::unique_ptr<WebGraphicsContext3DProvider>,
                             bool using_gpu_compositing,
-                            const CanvasContextCreationAttributes&,
+                            const CanvasContextCreationAttributesCore&,
                             unsigned);
   static bool SupportOwnOffscreenSurface(ExecutionContext*);
   static std::unique_ptr<WebGraphicsContext3DProvider>
   CreateContextProviderInternal(CanvasRenderingContextHost*,
-                                const CanvasContextCreationAttributes&,
+                                const CanvasContextCreationAttributesCore&,
                                 unsigned web_gl_version,
                                 bool* using_gpu_compositing);
   void TexImageCanvasByGPU(TexImageFunctionID,
@@ -1697,6 +1702,11 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   const unsigned version_;
 
   bool IsPaintable() const final { return GetDrawingBuffer(); }
+
+  // Returns true if the context is compatible with the given device as defined
+  // by https://immersive-web.github.io/webxr/spec/latest/#contextcompatibility
+  bool ContextCreatedOnCompatibleAdapter(const XRDevice*);
+
   bool CopyRenderingResultsFromDrawingBuffer(CanvasResourceProvider*,
                                              SourceDrawingBuffer) const;
   void HoldReferenceToDrawingBuffer(DrawingBuffer*);

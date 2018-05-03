@@ -13,6 +13,10 @@
 #include "core/intersection_observer/IntersectionObserverEntry.h"
 #include "core/layout/LayoutEmbeddedContent.h"
 #include "core/layout/LayoutView.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/CullRect.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 
 namespace blink {
 
@@ -124,17 +128,55 @@ void RemoteFrameView::SetFrameRect(const IntRect& frame_rect) {
   FrameRectsChanged();
 }
 
+IntRect RemoteFrameView::FrameRect() const {
+  IntPoint location(frame_rect_.Location());
+
+  // As an optimization, we don't include the root layer's scroll offset in the
+  // frame rect.  As a result, we don't need to recalculate the frame rect every
+  // time the root layer scrolls, but we need to add it in here.
+  LayoutEmbeddedContent* owner = remote_frame_->OwnerLayoutObject();
+  if (owner) {
+    LayoutView* owner_layout_view = owner->View();
+    DCHECK(owner_layout_view);
+    if (owner_layout_view->HasOverflowClip())
+      location.Move(-owner_layout_view->ScrolledContentOffset());
+  }
+
+  return IntRect(location, frame_rect_.Size());
+}
+
 void RemoteFrameView::FrameRectsChanged() {
   // Update the rect to reflect the position of the frame relative to the
   // containing local frame root. The position of the local root within
   // any remote frames, if any, is accounted for by the embedder.
-  IntRect screen_space_rect = frame_rect_;
+  IntRect frame_rect(FrameRect());
+  IntRect screen_space_rect = frame_rect;
 
   if (LocalFrameView* parent = ParentFrameView()) {
     screen_space_rect =
         parent->ConvertToRootFrame(parent->ContentsToFrame(screen_space_rect));
   }
-  remote_frame_->Client()->FrameRectsChanged(frame_rect_, screen_space_rect);
+  remote_frame_->Client()->FrameRectsChanged(frame_rect, screen_space_rect);
+}
+
+void RemoteFrameView::Paint(GraphicsContext& context,
+                            const GlobalPaintFlags flags,
+                            const CullRect& rect) const {
+  // Painting remote frames is only for printing.
+  if (!context.Printing())
+    return;
+
+  if (!rect.IntersectsCullRect(FrameRect()))
+    return;
+
+  DrawingRecorder recorder(context, *GetFrame().OwnerLayoutObject(),
+                           DisplayItem::kDocumentBackground);
+  DCHECK(context.Canvas());
+  // Inform the remote frame to print.
+  uint32_t content_id = Print(FrameRect(), context.Canvas());
+
+  // Record the place holder id on canvas.
+  context.Canvas()->recordCustomData(content_id);
 }
 
 void RemoteFrameView::UpdateGeometry() {
@@ -203,7 +245,7 @@ void RemoteFrameView::UpdateRenderThrottlingStatus(bool hidden,
   // Note that we disallow throttling of 0x0 and display:none frames because
   // some sites use them to drive UI logic.
   HTMLFrameOwnerElement* owner_element = remote_frame_->DeprecatedLocalOwner();
-  hidden_for_throttling_ = hidden && !FrameRect().IsEmpty() &&
+  hidden_for_throttling_ = hidden && !frame_rect_.IsEmpty() &&
                            (owner_element && owner_element->GetLayoutObject());
   subtree_throttled_ = subtree_throttled;
 
@@ -220,6 +262,29 @@ bool RemoteFrameView::CanThrottleRendering() const {
   if (subtree_throttled_)
     return true;
   return hidden_for_throttling_;
+}
+
+void RemoteFrameView::SetIntrinsicSizeInfo(
+    const IntrinsicSizingInfo& size_info) {
+  intrinsic_sizing_info_ = size_info;
+  has_intrinsic_sizing_info_ = true;
+}
+
+bool RemoteFrameView::GetIntrinsicSizingInfo(
+    IntrinsicSizingInfo& sizing_info) const {
+  if (!has_intrinsic_sizing_info_)
+    return false;
+
+  sizing_info = intrinsic_sizing_info_;
+  return true;
+}
+
+bool RemoteFrameView::HasIntrinsicSizingInfo() const {
+  return has_intrinsic_sizing_info_;
+}
+
+uint32_t RemoteFrameView::Print(const IntRect& rect, WebCanvas* canvas) const {
+  return remote_frame_->Client()->Print(rect, canvas);
 }
 
 void RemoteFrameView::Trace(blink::Visitor* visitor) {

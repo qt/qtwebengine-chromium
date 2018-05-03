@@ -1,24 +1,20 @@
-/* Copyright (c) 2014, Intel Corporation.
+/*
+ * Copyright 2014-2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright (c) 2014, Intel Corporation. All Rights Reserved.
  *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Licensed under the OpenSSL license (the "License").  You may not use
+ * this file except in compliance with the License.  You can obtain a copy
+ * in the file LICENSE in the source distribution or at
+ * https://www.openssl.org/source/license.html
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
- * SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
- * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
- * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */
-
-// Developers and authors:
-// Shay Gueron (1, 2), and Vlad Krasnov (1)
-// (1) Intel Corporation, Israel Development Center
-// (2) University of Haifa
-// Reference:
-// S.Gueron and V.Krasnov, "Fast Prime Field Elliptic Curve Cryptography with
-//                          256 Bit Primes"
+ * Originally written by Shay Gueron (1, 2), and Vlad Krasnov (1)
+ * (1) Intel Corporation, Israel Development Center, Haifa, Israel
+ * (2) University of Haifa, Israel
+ *
+ * Reference:
+ * S.Gueron and V.Krasnov, "Fast Prime Field Elliptic Curve Cryptography with
+ *                          256 Bit Primes"
+ */
 
 #include <openssl/ec.h>
 
@@ -205,13 +201,7 @@ static void ecp_nistz256_mod_inverse_mont(BN_ULONG r[P256_LIMBS],
 // returns one if it fits. Otherwise it returns zero.
 static int ecp_nistz256_bignum_to_field_elem(BN_ULONG out[P256_LIMBS],
                                              const BIGNUM *in) {
-  if (in->top > P256_LIMBS) {
-    return 0;
-  }
-
-  OPENSSL_memset(out, 0, sizeof(BN_ULONG) * P256_LIMBS);
-  OPENSSL_memcpy(out, in->d, sizeof(BN_ULONG) * in->top);
-  return 1;
+  return bn_copy_words(out, P256_LIMBS, in);
 }
 
 // r = p * p_scalar

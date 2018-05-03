@@ -401,19 +401,6 @@ void WebContentsAndroid::ExitFullscreen(JNIEnv* env,
   web_contents_->ExitFullscreen(/*will_cause_resize=*/false);
 }
 
-void WebContentsAndroid::UpdateBrowserControlsState(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    bool enable_hiding,
-    bool enable_showing,
-    bool animate) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (!host)
-    return;
-  host->Send(new ViewMsg_UpdateBrowserControlsState(
-      host->GetRoutingID(), enable_hiding, enable_showing, animate));
-}
-
 void WebContentsAndroid::ScrollFocusedEditableNodeIntoView(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj) {
@@ -605,16 +592,16 @@ void WebContentsAndroid::GetContentBitmap(
     jint height,
     const JavaParamRef<jobject>& jcallback) {
   RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
-  const ReadbackRequestCallback result_callback = base::Bind(
+  base::OnceCallback<void(const SkBitmap&)> result_callback = base::BindOnce(
       &WebContentsAndroid::OnFinishGetContentBitmap, weak_factory_.GetWeakPtr(),
       ScopedJavaGlobalRef<jobject>(env, obj),
       ScopedJavaGlobalRef<jobject>(env, jcallback));
   if (!view) {
-    result_callback.Run(SkBitmap(), READBACK_FAILED);
+    std::move(result_callback).Run(SkBitmap());
     return;
   }
-  view->CopyFromSurface(gfx::Rect(), gfx::Size(width, height), result_callback,
-                        kN32_SkColorType);
+  view->CopyFromSurface(gfx::Rect(), gfx::Size(width, height),
+                        std::move(result_callback));
 }
 
 void WebContentsAndroid::ReloadLoFiImages(JNIEnv* env,
@@ -671,6 +658,12 @@ bool WebContentsAndroid::HasActiveEffectivelyFullscreenVideo(
   return web_contents_->HasActiveEffectivelyFullscreenVideo();
 }
 
+bool WebContentsAndroid::IsPictureInPictureAllowedForFullscreenVideo(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj) {
+  return web_contents_->IsPictureInPictureAllowedForFullscreenVideo();
+}
+
 base::android::ScopedJavaLocalRef<jobject>
 WebContentsAndroid::GetFullscreenVideoSize(
     JNIEnv* env,
@@ -690,6 +683,18 @@ void WebContentsAndroid::SetSize(
   web_contents_->GetNativeView()->OnSizeChanged(width, height);
 }
 
+int WebContentsAndroid::GetWidth(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj) {
+  return web_contents_->GetNativeView()->GetSize().width();
+}
+
+int WebContentsAndroid::GetHeight(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj) {
+  return web_contents_->GetNativeView()->GetSize().height();
+}
+
 ScopedJavaLocalRef<jobject> WebContentsAndroid::GetOrCreateEventForwarder(
     JNIEnv* env,
     const base::android::JavaParamRef<jobject>& obj) {
@@ -700,14 +705,13 @@ ScopedJavaLocalRef<jobject> WebContentsAndroid::GetOrCreateEventForwarder(
 void WebContentsAndroid::OnFinishGetContentBitmap(
     const JavaRef<jobject>& obj,
     const JavaRef<jobject>& callback,
-    const SkBitmap& bitmap,
-    ReadbackResponse response) {
+    const SkBitmap& bitmap) {
   JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jobject> java_bitmap;
-  if (response == READBACK_SUCCESS)
+  if (!bitmap.drawsNothing())
     java_bitmap = gfx::ConvertToJavaBitmap(&bitmap);
   Java_WebContentsImpl_onGetContentBitmapFinished(env, obj, callback,
-                                                  java_bitmap, response);
+                                                  java_bitmap);
 }
 
 void WebContentsAndroid::OnFinishDownloadImage(

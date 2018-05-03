@@ -14,7 +14,6 @@ rtc_source_set("call_interfaces") {
     "audio_send_stream.h",
     "audio_state.h",
     "call.h",
-    "callfactoryinterface.h",
     "flexfec_receive_stream.h",
     "syncable.cc",
     "syncable.h",
@@ -27,10 +26,11 @@ rtc_source_set("call_interfaces") {
     ":video_stream_api",
     "..:webrtc_common",
     "../:typedefs",
-    "../api:audio_mixer_api",
+    "../api:fec_controller_api",
     "../api:libjingle_peerconnection_api",
     "../api:optional",
     "../api:transport_api",
+    "../api/audio:audio_mixer_api",
     "../api/audio_codecs:audio_codecs_api",
     "../modules/audio_processing:audio_processing_statistics",
     "../rtc_base:rtc_base",
@@ -42,6 +42,8 @@ rtc_source_set("call_interfaces") {
 # when interfaces have stabilized. See also TODO for |mock_rtp_interfaces|.
 rtc_source_set("rtp_interfaces") {
   sources = [
+    "bitrate_constraints.cc",
+    "bitrate_constraints.h",
     "rtcp_packet_sink_interface.h",
     "rtp_config.cc",
     "rtp_config.h",
@@ -51,6 +53,7 @@ rtc_source_set("rtp_interfaces") {
   ]
   deps = [
     "../api:array_view",
+    "../api:optional",
     "../rtc_base:rtc_base_approved",
   ]
 }
@@ -89,10 +92,25 @@ rtc_source_set("rtp_sender") {
     "rtp_transport_controller_send.h",
   ]
   deps = [
+    ":bitrate_configurator",
     ":rtp_interfaces",
     "..:webrtc_common",
     "../modules/congestion_controller",
     "../modules/pacing",
+    "../modules/utility",
+    "../rtc_base:rtc_base",
+    "../rtc_base:rtc_base_approved",
+  ]
+}
+
+rtc_source_set("bitrate_configurator") {
+  sources = [
+    "rtp_bitrate_configurator.cc",
+    "rtp_bitrate_configurator.h",
+  ]
+  deps = [
+    ":rtp_interfaces",
+    "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
   ]
 }
@@ -138,17 +156,22 @@ rtc_static_library("call") {
     ":rtp_sender",
     ":video_stream_api",
     "..:webrtc_common",
+    "../api:callfactory_api",
     "../api:optional",
     "../api:transport_api",
     "../audio",
+    "../logging:rtc_event_audio",
     "../logging:rtc_event_log_api",
-    "../logging:rtc_event_log_impl",
+    "../logging:rtc_event_rtp_rtcp",
+    "../logging:rtc_event_video",
+    "../logging:rtc_stream_config",
     "../modules/bitrate_controller",
     "../modules/congestion_controller",
     "../modules/pacing",
     "../modules/rtp_rtcp",
     "../modules/rtp_rtcp:rtp_rtcp_format",
     "../modules/utility",
+    "../modules/video_coding:video_coding",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_task_queue",
@@ -193,12 +216,14 @@ if (rtc_include_tests) {
       "call_unittest.cc",
       "flexfec_receive_stream_unittest.cc",
       "rtcp_demuxer_unittest.cc",
+      "rtp_bitrate_configurator_unittest.cc",
       "rtp_demuxer_unittest.cc",
       "rtp_rtcp_demuxer_helper_unittest.cc",
       "rtx_receive_stream_unittest.cc",
     ]
     deps = [
       ":bitrate_allocator",
+      ":bitrate_configurator",
       ":call",
       ":call_interfaces",
       ":mock_rtp_interfaces",
@@ -212,13 +237,13 @@ if (rtc_include_tests) {
       "../api/audio_codecs:builtin_audio_decoder_factory",
       "../audio:audio",
       "../logging:rtc_event_log_api",
+      "../logging:rtc_event_log_impl_base",
       "../modules/audio_device:mock_audio_device",
       "../modules/audio_mixer",
       "../modules/audio_mixer:audio_mixer_impl",
       "../modules/audio_processing:mocks",
       "../modules/bitrate_controller",
       "../modules/congestion_controller",
-      "../modules/congestion_controller:mock_congestion_controller",
       "../modules/pacing",
       "../modules/pacing:mock_paced_sender",
       "../modules/rtp_rtcp",
@@ -233,7 +258,6 @@ if (rtc_include_tests) {
       "../test:test_common",
       "../test:test_support",
       "../test:video_test_common",
-      "//testing/gmock",
       "//testing/gtest",
     ]
     if (!build_with_chromium && is_clang) {
@@ -272,7 +296,6 @@ if (rtc_include_tests) {
       "../test:test_support",
       "../test:video_test_common",
       "../video",
-      "../voice_engine",
       "//testing/gtest",
     ]
     if (!build_with_chromium && is_clang) {
@@ -286,16 +309,16 @@ if (rtc_include_tests) {
     testonly = true
 
     sources = [
-      "fake_rtp_transport_controller_send.h",
       "test/mock_rtp_packet_sink_interface.h",
+      "test/mock_rtp_transport_controller_send.h",
     ]
     deps = [
       ":rtp_interfaces",
-      "..:webrtc_common",
-      "../modules/congestion_controller:congestion_controller",
-      "../modules/pacing:pacing",
+      "../modules/congestion_controller",
+      "../modules/pacing",
+      "../rtc_base:rate_limiter",
+      "../rtc_base:rtc_base",
       "../test:test_support",
-      "//testing/gmock",
     ]
   }
 

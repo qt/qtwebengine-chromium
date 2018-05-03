@@ -21,7 +21,7 @@
 class AccountId;
 
 namespace policy {
-class UntrustedAuthorityCertsCache;
+class TempCertsCacheNSS;
 }
 
 namespace chromeos {
@@ -29,7 +29,6 @@ namespace chromeos {
 class ActiveDirectoryPasswordChangeScreenHandler;
 class Key;
 class SigninScreenHandler;
-class SigninScreenHandlerDelegate;
 
 // A class that handles WebUI hooks in Gaia screen.
 class GaiaScreenHandler : public BaseScreenHandler,
@@ -53,9 +52,10 @@ class GaiaScreenHandler : public BaseScreenHandler,
   // GaiaView:
   void MaybePreloadAuthExtension() override;
   void DisableRestrictiveProxyCheckForTest() override;
+  void ShowGaiaAsync() override;
 
  private:
-  // TODO (antrim@): remove this dependency.
+  // TODO (xiaoyinh): remove this dependency.
   friend class SigninScreenHandler;
 
   struct GaiaContext;
@@ -127,6 +127,10 @@ class GaiaScreenHandler : public BaseScreenHandler,
   void HandleIdentifierEntered(const std::string& account_identifier);
 
   void HandleAuthExtensionLoaded();
+  void HandleUpdateGaiaDialogSize(int width, int height);
+  void HandleUpdateGaiaDialogVisibility(bool visible);
+  void HandleShowAddUser(const base::ListValue* args);
+  void OnShowAddUser();
 
   // Really handles the complete login message.
   void DoCompleteLogin(const std::string& gaia_id,
@@ -163,13 +167,6 @@ class GaiaScreenHandler : public BaseScreenHandler,
   // principals API was used during SAML login.
   void SetSAMLPrincipalsAPIUsed(bool api_used);
 
-  // Show the sign-in screen. Depending on internal state, the screen will
-  // either be shown immediately or after an asynchronous clean-up process that
-  // cleans DNS cache and cookies. In the latter case, the request to show the
-  // screen can be canceled by calling CancelShowGaiaAsync() while the clean-up
-  // is in progress.
-  void ShowGaiaAsync();
-
   // Cancels the request to show the sign-in screen while the asynchronous
   // clean-up process that precedes the screen showing is in progress.
   void CancelShowGaiaAsync();
@@ -193,8 +190,6 @@ class GaiaScreenHandler : public BaseScreenHandler,
 
   // Are we on a restrictive proxy?
   bool IsRestrictiveProxy() const;
-
-  SigninScreenHandlerDelegate* Delegate();
 
   // Returns temporary unused device Id.
   std::string GetTemporaryDeviceId();
@@ -283,8 +278,7 @@ class GaiaScreenHandler : public BaseScreenHandler,
 
   // Makes untrusted authority certificates from device policy available for
   // client certificate discovery.
-  std::unique_ptr<policy::UntrustedAuthorityCertsCache>
-      untrusted_authority_certs_cache_;
+  std::unique_ptr<policy::TempCertsCacheNSS> untrusted_authority_certs_cache_;
 
   base::WeakPtrFactory<GaiaScreenHandler> weak_factory_;
 

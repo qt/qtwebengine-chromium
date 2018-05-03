@@ -36,7 +36,11 @@ def _CheckForWrongMojomIncludes(input_api, output_api):
     # used to avoid exporting Blink types outside Blink.
     def source_file_filter(path):
         return input_api.FilterSourceFile(path,
-                                          black_list=[r'third_party/WebKit/common/'])
+                                          black_list=[r'third_party/WebKit/common/', r'third_party/WebKit/public/common'])
+
+    # The list of files that we specifically want to allow including
+    # -blink variant files (e.g. because it has #if INSIDE_BLINK).
+    allow_blink_files = [r'third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRequest.h']
 
     pattern = input_api.re.compile(r'#include\s+.+\.mojom(.*)\.h[>"]')
     public_folder = input_api.os_path.normpath('third_party/WebKit/public/')
@@ -45,10 +49,14 @@ def _CheckForWrongMojomIncludes(input_api, output_api):
     for f in input_api.AffectedFiles(file_filter=source_file_filter):
         for line_num, line in f.ChangedContents():
             error_list = None
+            # This is not super precise as we don't check endif, but allow
+            # including Blink variant mojom files if the file has
+            # '#if INSIDE_BLINK'.
             match = pattern.match(line)
             if match:
                 if match.group(1) != '-shared':
-                    if f.LocalPath().startswith(public_folder):
+                    if f.LocalPath().startswith(public_folder) and \
+                            not f.LocalPath() in allow_blink_files:
                         error_list = public_blink_mojom_errors
                     elif match.group(1) != '-blink':
                         # Neither -shared.h, nor -blink.h.
@@ -93,10 +101,16 @@ def _CheckStyle(input_api, output_api):
     style_checker_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
                                                 'Tools', 'Scripts', 'check-webkit-style')
     args = [input_api.python_executable, style_checker_path, '--diff-files']
-    files = [input_api.os_path.join('..', '..', f.LocalPath())
-             for f in input_api.AffectedFiles()
-             # Filter out files that follow Chromium's coding style.
-             if not re_chromium_style_file.search(f.LocalPath())]
+    files = []
+    for f in input_api.AffectedFiles():
+        file_path = f.LocalPath()
+        # Filter out files that follow Chromium's coding style.
+        if re_chromium_style_file.search(file_path):
+            continue
+        # Filter out changes in LayoutTests.
+        if 'LayoutTests' + input_api.os_path.sep in file_path and 'TestExpectations' not in file_path:
+            continue
+        files.append(input_api.os_path.join('..', '..', file_path))
     # Do not call check-webkit-style with empty affected file list if all
     # input_api.AffectedFiles got filtered.
     if not files:
@@ -143,9 +157,6 @@ def _CheckForForbiddenChromiumCode(input_api, output_api):
     results = []
     for f in input_api.AffectedFiles():
         path = f.LocalPath()
-        _, ext = os.path.splitext(path)
-        if ext not in ('.cc', '.cpp', '.h', '.mm'):
-            continue
         errors = audit_non_blink_usage.check(path, [(i + 1, l) for i, l in enumerate(f.NewContents())])
         if errors:
             errors = audit_non_blink_usage.check(path, f.ChangedContents())

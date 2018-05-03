@@ -5,12 +5,15 @@
 #include "modules/device_orientation/DeviceOrientationController.h"
 
 #include "core/frame/Deprecation.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/HostsUsingFeatures.h"
 #include "core/frame/Settings.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "modules/EventModules.h"
 #include "modules/device_orientation/DeviceOrientationData.h"
 #include "modules/device_orientation/DeviceOrientationDispatcher.h"
 #include "modules/device_orientation/DeviceOrientationEvent.h"
+#include "platform/feature_policy/FeaturePolicy.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Assertions.h"
 #include "public/platform/Platform.h"
@@ -29,18 +32,16 @@ void DeviceOrientationController::DidUpdateData() {
   DispatchDeviceEvent(LastEvent());
 }
 
-const char* DeviceOrientationController::SupplementName() {
-  return "DeviceOrientationController";
-}
+const char DeviceOrientationController::kSupplementName[] =
+    "DeviceOrientationController";
 
 DeviceOrientationController& DeviceOrientationController::From(
     Document& document) {
   DeviceOrientationController* controller =
-      static_cast<DeviceOrientationController*>(
-          Supplement<Document>::From(document, SupplementName()));
+      Supplement<Document>::From<DeviceOrientationController>(document);
   if (!controller) {
     controller = new DeviceOrientationController(document);
-    Supplement<Document>::ProvideTo(document, SupplementName(), controller);
+    ProvideTo(document, controller);
   }
   return *controller;
 }
@@ -51,14 +52,13 @@ void DeviceOrientationController::DidAddEventListener(
   if (event_type != EventTypeName())
     return;
 
-  if (GetDocument().GetFrame()) {
+  LocalFrame* frame = GetDocument().GetFrame();
+  if (frame) {
     if (GetDocument().IsSecureContext()) {
-      UseCounter::Count(GetDocument().GetFrame(),
-                        WebFeature::kDeviceOrientationSecureOrigin);
+      UseCounter::Count(frame, WebFeature::kDeviceOrientationSecureOrigin);
     } else {
       Deprecation::CountDeprecation(
-          GetDocument().GetFrame(),
-          WebFeature::kDeviceOrientationInsecureOrigin);
+          frame, WebFeature::kDeviceOrientationInsecureOrigin);
       HostsUsingFeatures::CountAnyWorld(
           GetDocument(),
           HostsUsingFeatures::Feature::kDeviceOrientationInsecureHost);
@@ -78,6 +78,12 @@ void DeviceOrientationController::DidAddEventListener(
       Platform::Current()->RecordRapporURL(
           "DeviceSensors.DeviceOrientationCrossOrigin",
           WebURL(GetDocument().Url()));
+    }
+
+    if (!CheckPolicyFeatures({mojom::FeaturePolicyFeature::kAccelerometer,
+                              mojom::FeaturePolicyFeature::kGyroscope})) {
+      LogToConsolePolicyFeaturesDisabled(frame, EventTypeName());
+      return;
     }
   }
 
@@ -139,6 +145,23 @@ void DeviceOrientationController::Trace(blink::Visitor* visitor) {
   visitor->Trace(override_orientation_data_);
   DeviceSingleWindowEventController::Trace(visitor);
   Supplement<Document>::Trace(visitor);
+}
+
+// static
+void DeviceOrientationController::LogToConsolePolicyFeaturesDisabled(
+    LocalFrame* frame,
+    const AtomicString& event_name) {
+  if (!frame)
+    return;
+  const String& message = String::Format(
+      "The %s events are blocked by feature policy. "
+      "See "
+      "https://github.com/WICG/feature-policy/blob/gh-pages/"
+      "features.md#sensor-features",
+      event_name.Ascii().data());
+  ConsoleMessage* console_message = ConsoleMessage::Create(
+      kJSMessageSource, kWarningMessageLevel, std::move(message));
+  frame->Console().AddMessage(console_message);
 }
 
 }  // namespace blink

@@ -15,6 +15,8 @@
 #include "net/quic/core/crypto/crypto_message_parser.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/platform/api/quic_export.h"
+#include "net/quic/platform/api/quic_string.h"
+#include "net/quic/platform/api/quic_string_piece.h"
 
 namespace net {
 
@@ -57,7 +59,7 @@ class QUIC_EXPORT_PRIVATE CryptoFramer : public CryptoMessageParser {
   }
 
   QuicErrorCode error() const override;
-  const std::string& error_detail() const override;
+  const QuicString& error_detail() const override;
 
   // Processes input data, which must be delivered in order. Returns
   // false if there was an error, and true otherwise.
@@ -66,6 +68,15 @@ class QUIC_EXPORT_PRIVATE CryptoFramer : public CryptoMessageParser {
   // Returns the number of bytes of buffered input data remaining to be
   // parsed.
   size_t InputBytesRemaining() const override;
+
+  // Checks if the specified tag has been seen. Returns |true| if it
+  // has, and |false| if it has not or a CHLO has not been seen.
+  bool HasTag(QuicTag tag) const;
+
+  // Even if the CHLO has not been fully received, force processing of
+  // the handshake message. This is dangerous and should not be used
+  // except as a mechanism of last resort.
+  void ForceHandshake();
 
   // Returns a new QuicData owned by the caller that contains a serialized
   // |message|, or nullptr if there was an error.
@@ -98,13 +109,13 @@ class QUIC_EXPORT_PRIVATE CryptoFramer : public CryptoMessageParser {
   // Last error.
   QuicErrorCode error_;
   // Remaining unparsed data.
-  std::string buffer_;
+  QuicString buffer_;
   // Current state of the parsing.
   CryptoFramerState state_;
   // The message currently being parsed.
   CryptoHandshakeMessage message_;
   // The issue which caused |error_|
-  std::string error_detail_;
+  QuicString error_detail_;
   // Number of entires in the message currently being parsed.
   uint16_t num_entries_;
   // tags_and_lengths_ contains the tags that are currently being parsed and

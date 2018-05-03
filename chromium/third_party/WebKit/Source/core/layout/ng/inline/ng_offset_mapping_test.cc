@@ -87,13 +87,12 @@ class NGOffsetMappingTest : public NGLayoutTest {
   FontCachePurgePreventer purge_preventer_;
 };
 
+// TODO(layout-dev): Remove this unused parameterization.
 class ParameterizedNGOffsetMappingTest
     : public ::testing::WithParamInterface<bool>,
-      private ScopedLayoutNGPaintFragmentsForTest,
       public NGOffsetMappingTest {
  public:
-  ParameterizedNGOffsetMappingTest()
-      : ScopedLayoutNGPaintFragmentsForTest(GetParam()) {}
+  ParameterizedNGOffsetMappingTest() {}
 };
 
 INSTANTIATE_TEST_CASE_P(All,
@@ -900,6 +899,38 @@ TEST_P(ParameterizedNGOffsetMappingTest, BiDiAroundForcedBreakInPre) {
   TEST_UNIT(mapping.GetUnits()[2], NGOffsetMappingUnitType::kIdentity, text, 4u,
             7u, 7u, 10u);  // "bar"
   TEST_RANGE(mapping.GetRanges(), text, 0u, 3u);
+}
+
+TEST_P(ParameterizedNGOffsetMappingTest, SoftHyphen) {
+  LoadAhem();
+  SetupHtml(
+      "t",
+      "<div id=t style='font: 10px/10px Ahem; width: 40px'>abc&shy;def</div>");
+
+  const Node* text = GetElementById("t")->firstChild();
+  const NGOffsetMapping& mapping = GetOffsetMapping();
+
+  // Line wrapping and hyphenation are oblivious to offset mapping.
+  ASSERT_EQ(1u, mapping.GetUnits().size());
+  TEST_UNIT(mapping.GetUnits()[0], NGOffsetMappingUnitType::kIdentity, text, 0u,
+            7u, 0u, 7u);
+  TEST_RANGE(mapping.GetRanges(), text, 0u, 1u);
+}
+
+TEST_P(ParameterizedNGOffsetMappingTest, TextOverflowEllipsis) {
+  LoadAhem();
+  SetupHtml("t",
+            "<div id=t style='font: 10px/10px Ahem; width: 30px; overflow: "
+            "hidden; text-overflow: ellipsis'>123456</div>");
+
+  const Node* text = GetElementById("t")->firstChild();
+  const NGOffsetMapping& mapping = GetOffsetMapping();
+
+  // Ellipsis is oblivious to offset mapping.
+  ASSERT_EQ(1u, mapping.GetUnits().size());
+  TEST_UNIT(mapping.GetUnits()[0], NGOffsetMappingUnitType::kIdentity, text, 0u,
+            6u, 0u, 6u);
+  TEST_RANGE(mapping.GetRanges(), text, 0u, 1u);
 }
 
 }  // namespace blink

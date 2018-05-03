@@ -42,6 +42,8 @@ const int kSampleFrequency = 44100;
 const int kBitsPerSample = 16;
 const int kSamplesPerBuffer = kSampleFrequency / 100;
 const bool kInitiallyMuted = false;
+const int kRenderProcessID = -1;
+const int kRenderFrameID = MSG_ROUTING_NONE;
 
 media::AudioParameters GetTestAudioParameters() {
   return media::AudioParameters(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
@@ -76,8 +78,7 @@ class MockRendererAudioInputStreamFactoryClient
 
   void StreamCreated(media::mojom::AudioInputStreamPtr input_stream,
                      media::mojom::AudioInputStreamClientRequest client_request,
-                     mojo::ScopedSharedBufferHandle shared_buffer,
-                     mojo::ScopedHandle socket_descriptor,
+                     media::mojom::AudioDataPipePtr data_pipe,
                      bool initially_muted) override {
     Created();
   }
@@ -88,7 +89,7 @@ class MockRendererAudioInputStreamFactoryClient
 std::unique_ptr<media::AudioInputDelegate> CreateFakeDelegate(
     media::AudioInputDelegate::EventHandler** event_handler_out,
     AudioInputDeviceManager* audio_input_device_manager,
-    media::AudioLog* audio_log,
+    media::mojom::AudioLogPtr audio_log,
     AudioInputDeviceManager::KeyboardMicRegistration keyboard_mic_registration,
     uint32_t shared_memory_count,
     int stream_id,
@@ -113,6 +114,8 @@ class RenderFrameAudioInputStreamFactoryTest : public testing::Test {
         factory_handle_(RenderFrameAudioInputStreamFactoryHandle::CreateFactory(
             base::BindRepeating(&CreateFakeDelegate, &event_handler_),
             &media_stream_manager_,
+            kRenderProcessID,
+            kRenderFrameID,
             mojo::MakeRequest(&factory_ptr_))) {}
 
   ~RenderFrameAudioInputStreamFactoryTest() override {

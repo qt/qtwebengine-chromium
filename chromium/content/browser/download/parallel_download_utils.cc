@@ -7,7 +7,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
-#include "content/public/browser/download_save_info.h"
+#include "components/download/public/common/download_save_info.h"
 #include "content/public/common/content_features.h"
 
 namespace content {
@@ -26,20 +26,20 @@ const int kParallelRequestCount = 3;
 const int kDefaultRemainingTimeInSeconds = 2;
 
 // TODO(qinmin): replace this with a comparator operator in
-// DownloadItem::ReceivedSlice.
-bool compareReceivedSlices(const DownloadItem::ReceivedSlice& lhs,
-                           const DownloadItem::ReceivedSlice& rhs) {
+// download::DownloadItem::ReceivedSlice.
+bool compareReceivedSlices(const download::DownloadItem::ReceivedSlice& lhs,
+                           const download::DownloadItem::ReceivedSlice& rhs) {
   return lhs.offset < rhs.offset;
 }
 
 }  // namespace
 
-std::vector<DownloadItem::ReceivedSlice> FindSlicesForRemainingContent(
-    int64_t current_offset,
-    int64_t total_length,
-    int request_count,
-    int64_t min_slice_size) {
-  std::vector<DownloadItem::ReceivedSlice> new_slices;
+std::vector<download::DownloadItem::ReceivedSlice>
+FindSlicesForRemainingContent(int64_t current_offset,
+                              int64_t total_length,
+                              int request_count,
+                              int64_t min_slice_size) {
+  std::vector<download::DownloadItem::ReceivedSlice> new_slices;
 
   if (request_count > 0) {
     int64_t slice_size =
@@ -52,21 +52,22 @@ std::vector<DownloadItem::ReceivedSlice> FindSlicesForRemainingContent(
     }
   }
 
-  // Last slice is a half open slice, which results in sending range request
-  // like "Range:50-" to fetch from 50 bytes to the end of the file.
-  new_slices.emplace_back(current_offset, DownloadSaveInfo::kLengthFullContent);
+  // No strong assumption that content length header is correct. So the last
+  // slice is always half open, which sends range request like "Range:50-".
+  new_slices.emplace_back(current_offset,
+                          download::DownloadSaveInfo::kLengthFullContent);
   return new_slices;
 }
 
-std::vector<DownloadItem::ReceivedSlice> FindSlicesToDownload(
-    const std::vector<DownloadItem::ReceivedSlice>& received_slices) {
-  std::vector<DownloadItem::ReceivedSlice> result;
+std::vector<download::DownloadItem::ReceivedSlice> FindSlicesToDownload(
+    const std::vector<download::DownloadItem::ReceivedSlice>& received_slices) {
+  std::vector<download::DownloadItem::ReceivedSlice> result;
   if (received_slices.empty()) {
-    result.emplace_back(0, DownloadSaveInfo::kLengthFullContent);
+    result.emplace_back(0, download::DownloadSaveInfo::kLengthFullContent);
     return result;
   }
 
-  std::vector<DownloadItem::ReceivedSlice>::const_iterator iter =
+  std::vector<download::DownloadItem::ReceivedSlice>::const_iterator iter =
       received_slices.begin();
   DCHECK_GE(iter->offset, 0);
   if (iter->offset != 0)
@@ -74,10 +75,11 @@ std::vector<DownloadItem::ReceivedSlice> FindSlicesToDownload(
 
   while (true) {
     int64_t offset = iter->offset + iter->received_bytes;
-    std::vector<DownloadItem::ReceivedSlice>::const_iterator next =
+    std::vector<download::DownloadItem::ReceivedSlice>::const_iterator next =
         std::next(iter);
     if (next == received_slices.end()) {
-      result.emplace_back(offset, DownloadSaveInfo::kLengthFullContent);
+      result.emplace_back(offset,
+                          download::DownloadSaveInfo::kLengthFullContent);
       break;
     }
 
@@ -90,13 +92,14 @@ std::vector<DownloadItem::ReceivedSlice> FindSlicesToDownload(
 }
 
 size_t AddOrMergeReceivedSliceIntoSortedArray(
-    const DownloadItem::ReceivedSlice& new_slice,
-    std::vector<DownloadItem::ReceivedSlice>& received_slices) {
-  std::vector<DownloadItem::ReceivedSlice>::iterator it =
+    const download::DownloadItem::ReceivedSlice& new_slice,
+    std::vector<download::DownloadItem::ReceivedSlice>& received_slices) {
+  std::vector<download::DownloadItem::ReceivedSlice>::iterator it =
       std::upper_bound(received_slices.begin(), received_slices.end(),
                        new_slice, compareReceivedSlices);
   if (it != received_slices.begin()) {
-    std::vector<DownloadItem::ReceivedSlice>::iterator prev = std::prev(it);
+    std::vector<download::DownloadItem::ReceivedSlice>::iterator prev =
+        std::prev(it);
     if (prev->offset + prev->received_bytes == new_slice.offset) {
       prev->received_bytes += new_slice.received_bytes;
       return static_cast<size_t>(std::distance(received_slices.begin(), prev));
@@ -105,6 +108,51 @@ size_t AddOrMergeReceivedSliceIntoSortedArray(
 
   it = received_slices.emplace(it, new_slice);
   return static_cast<size_t>(std::distance(received_slices.begin(), it));
+}
+
+bool CanRecoverFromError(
+    const DownloadFileImpl::SourceStream* error_stream,
+    const DownloadFileImpl::SourceStream* preceding_neighbor) {
+  DCHECK(error_stream->offset() >= preceding_neighbor->offset())
+      << "Preceding"
+         "stream's offset should be smaller than the error stream.";
+  DCHECK_GE(error_stream->length(), 0);
+
+  if (preceding_neighbor->is_finished()) {
+    // Check if the preceding stream fetched to the end of the file without
+    // error. The error stream doesn't need to download anything.
+    if (preceding_neighbor->length() ==
+            download::DownloadSaveInfo::kLengthFullContent &&
+        preceding_neighbor->GetCompletionStatus() ==
+            download::DOWNLOAD_INTERRUPT_REASON_NONE) {
+      return true;
+    }
+
+    // Check if finished preceding stream has already downloaded all data for
+    // the error stream.
+    if (error_stream->length() > 0) {
+      return error_stream->offset() + error_stream->length() <=
+             preceding_neighbor->offset() + preceding_neighbor->bytes_written();
+    }
+
+    return false;
+  }
+
+  // If preceding stream is half open, and still working, we can recover.
+  if (preceding_neighbor->length() ==
+      download::DownloadSaveInfo::kLengthFullContent) {
+    return true;
+  }
+
+  // Check if unfinished preceding stream is able to download data for error
+  // stream in the future only when preceding neighbor and error stream both
+  // have an upper bound.
+  if (error_stream->length() > 0 && preceding_neighbor->length() > 0) {
+    return error_stream->offset() + error_stream->length() <=
+           preceding_neighbor->offset() + preceding_neighbor->length();
+  }
+
+  return false;
 }
 
 int64_t GetMinSliceSizeConfig() {
@@ -142,17 +190,18 @@ base::TimeDelta GetParallelRequestRemainingTimeConfig() {
              : base::TimeDelta::FromSeconds(kDefaultRemainingTimeInSeconds);
 }
 
-void DebugSlicesInfo(const DownloadItem::ReceivedSlices& slices) {
+void DebugSlicesInfo(const download::DownloadItem::ReceivedSlices& slices) {
   DVLOG(1) << "Received slices size : " << slices.size();
   for (const auto& it : slices) {
     DVLOG(1) << "Slice offset = " << it.offset
-             << " , received_bytes = " << it.received_bytes;
+             << " , received_bytes = " << it.received_bytes
+             << " , finished = " << it.finished;
   }
 }
 
 int64_t GetMaxContiguousDataBlockSizeFromBeginning(
-    const DownloadItem::ReceivedSlices& slices) {
-  std::vector<DownloadItem::ReceivedSlice>::const_iterator iter =
+    const download::DownloadItem::ReceivedSlices& slices) {
+  std::vector<download::DownloadItem::ReceivedSlice>::const_iterator iter =
       slices.begin();
 
   int64_t size = 0;

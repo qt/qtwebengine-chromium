@@ -56,8 +56,8 @@ KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
 
   EffectModel::CompositeOperation composite = EffectModel::kCompositeReplace;
   if (options.IsKeyframeEffectOptions()) {
-    composite = EffectModel::ExtractCompositeOperation(
-        options.GetAsKeyframeEffectOptions());
+    composite = EffectModel::StringToCompositeOperation(
+        options.GetAsKeyframeEffectOptions().composite());
   }
 
   KeyframeEffectModelBase* model = EffectInput::Convert(
@@ -93,7 +93,7 @@ KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
     ExceptionState& exception_state) {
   Timing new_timing = source->SpecifiedTiming();
   KeyframeEffectModelBase* model = source->Model()->Clone();
-  return new KeyframeEffectReadOnly(source->Target(), model, new_timing,
+  return new KeyframeEffectReadOnly(source->target(), model, new_timing,
                                     source->GetPriority(),
                                     source->GetEventDelegate());
 }
@@ -111,31 +111,24 @@ KeyframeEffectReadOnly::KeyframeEffectReadOnly(Element* target,
   DCHECK(model_);
 }
 
-void KeyframeEffectReadOnly::Attach(Animation* animation) {
-  if (target_) {
-    target_->EnsureElementAnimations().Animations().insert(animation);
+void KeyframeEffectReadOnly::Attach(AnimationEffectOwner* owner) {
+  if (target_ && owner->GetAnimation()) {
+    target_->EnsureElementAnimations().Animations().insert(
+        owner->GetAnimation());
     target_->SetNeedsAnimationStyleRecalc();
     if (RuntimeEnabledFeatures::WebAnimationsSVGEnabled() &&
         target_->IsSVGElement())
       ToSVGElement(target_)->SetWebAnimationsPending();
   }
-  AnimationEffectReadOnly::Attach(animation);
+  AnimationEffectReadOnly::Attach(owner);
 }
 
 void KeyframeEffectReadOnly::Detach() {
-  if (target_)
+  if (target_ && GetAnimation())
     target_->GetElementAnimations()->Animations().erase(GetAnimation());
   if (sampled_effect_)
     ClearEffects();
   AnimationEffectReadOnly::Detach();
-}
-
-void KeyframeEffectReadOnly::SpecifiedTimingChanged() {
-  if (GetAnimation()) {
-    // FIXME: Needs to consider groups when added.
-    DCHECK_EQ(GetAnimation()->effect(), this);
-    GetAnimation()->SetCompositorPending(true);
-  }
 }
 
 static EffectStack& EnsureEffectStack(Element* element) {
@@ -192,15 +185,16 @@ void KeyframeEffectReadOnly::ApplyEffects() {
   DCHECK_GE(iteration, 0);
   bool changed = false;
   if (sampled_effect_) {
-    changed = model_->Sample(clampTo<int>(iteration, 0), Progress(),
+    changed = model_->Sample(clampTo<int>(iteration, 0), Progress().value(),
                              IterationDuration(),
                              sampled_effect_->MutableInterpolations());
   } else {
     Vector<scoped_refptr<Interpolation>> interpolations;
-    model_->Sample(clampTo<int>(iteration, 0), Progress(), IterationDuration(),
-                   interpolations);
+    model_->Sample(clampTo<int>(iteration, 0), Progress().value(),
+                   IterationDuration(), interpolations);
     if (!interpolations.IsEmpty()) {
-      SampledEffect* sampled_effect = SampledEffect::Create(this);
+      SampledEffect* sampled_effect =
+          SampledEffect::Create(this, owner_->SequenceNumber());
       sampled_effect->MutableInterpolations().swap(interpolations);
       sampled_effect_ = sampled_effect;
       EnsureEffectStack(target_).Add(sampled_effect);
@@ -224,7 +218,7 @@ void KeyframeEffectReadOnly::ClearEffects() {
 
   sampled_effect_->Clear();
   sampled_effect_ = nullptr;
-  RestartAnimationOnCompositor();
+  GetAnimation()->RestartAnimationOnCompositor();
   target_->SetNeedsAnimationStyleRecalc();
   if (RuntimeEnabledFeatures::WebAnimationsSVGEnabled() &&
       target_->IsSVGElement())
@@ -236,7 +230,7 @@ void KeyframeEffectReadOnly::UpdateChildrenAndEffects() const {
   if (!model_->HasFrames())
     return;
   DCHECK(GetAnimation());
-  if (IsInEffect() && !GetAnimation()->EffectSuppressed())
+  if (IsInEffect() && !owner_->EffectSuppressed())
     const_cast<KeyframeEffectReadOnly*>(this)->ApplyEffects();
   else if (sampled_effect_)
     const_cast<KeyframeEffectReadOnly*>(this)->ClearEffects();
@@ -322,18 +316,18 @@ void KeyframeEffectReadOnly::StartAnimationOnCompositor(
     double start_time,
     double current_time,
     double animation_playback_rate,
-    CompositorAnimationPlayer* compositor_player) {
+    CompositorAnimation* compositor_animation) {
   DCHECK(!HasActiveAnimationsOnCompositor());
   DCHECK(CheckCanStartAnimationOnCompositor(animation_playback_rate).Ok());
 
-  if (!compositor_player)
-    compositor_player = GetAnimation()->CompositorPlayer();
-  DCHECK(compositor_player);
+  if (!compositor_animation)
+    compositor_animation = GetAnimation()->GetCompositorAnimation();
+  DCHECK(compositor_animation);
 
   CompositorAnimations::StartAnimationOnCompositor(
       *target_, group, start_time, current_time, SpecifiedTiming(),
-      GetAnimation(), *compositor_player, *Model(), compositor_animation_ids_,
-      animation_playback_rate);
+      GetAnimation(), *compositor_animation, *Model(),
+      compositor_animation_ids_, animation_playback_rate);
   DCHECK(!compositor_animation_ids_.IsEmpty());
 }
 
@@ -398,11 +392,6 @@ bool KeyframeEffectReadOnly::CancelAnimationOnCompositor() {
   return true;
 }
 
-void KeyframeEffectReadOnly::RestartAnimationOnCompositor() {
-  if (CancelAnimationOnCompositor())
-    GetAnimation()->SetCompositorPending(true);
-}
-
 void KeyframeEffectReadOnly::CancelIncompatibleAnimationsOnCompositor() {
   if (target_ && GetAnimation() && model_->HasFrames()) {
     CompositorAnimations::CancelIncompatibleAnimationsOnCompositor(
@@ -426,7 +415,15 @@ void KeyframeEffectReadOnly::AttachCompositedLayers() {
   DCHECK(target_);
   DCHECK(GetAnimation());
   CompositorAnimations::AttachCompositedLayers(
-      *target_, GetAnimation()->CompositorPlayer());
+      *target_, GetAnimation()->GetCompositorAnimation());
+}
+
+bool KeyframeEffectReadOnly::HasAnimation() const {
+  return !!owner_;
+}
+
+bool KeyframeEffectReadOnly::HasPlayingAnimation() const {
+  return owner_ && owner_->Playing();
 }
 
 void KeyframeEffectReadOnly::Trace(blink::Visitor* visitor) {

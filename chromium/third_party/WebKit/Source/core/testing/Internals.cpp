@@ -63,7 +63,6 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/PlainTextRange.h"
 #include "core/editing/SelectionTemplate.h"
-#include "core/editing/VisiblePosition.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markers/DocumentMarker.h"
 #include "core/editing/markers/DocumentMarkerController.h"
@@ -114,7 +113,9 @@
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/PrintContext.h"
+#include "core/page/scrolling/RootScrollerController.h"
 #include "core/page/scrolling/ScrollState.h"
+#include "core/page/scrolling/ScrollingCoordinatorContext.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/compositing/CompositedLayerMapping.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
@@ -132,6 +133,7 @@
 #include "core/testing/OriginTrialsTest.h"
 #include "core/testing/RecordTest.h"
 #include "core/testing/SequenceTest.h"
+#include "core/testing/StaticSelection.h"
 #include "core/testing/TypeConversions.h"
 #include "core/testing/UnionTypesTest.h"
 #include "core/typed_arrays/DOMArrayBuffer.h"
@@ -159,6 +161,7 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/wtf/Optional.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/dtoa.h"
 #include "platform/wtf/text/StringBuffer.h"
 #include "platform/wtf/text/TextEncodingRegistry.h"
@@ -259,18 +262,23 @@ void Internals::ResetToConsistentState(Page* page) {
     g_s_features_backup = new RuntimeEnabledFeatures::Backup;
   g_s_features_backup->Restore();
   page->SetIsCursorVisible(true);
+  // Ensure the PageScaleFactor always stays within limits, if the test changed
+  // the limits. BlinkTestRunner will reset the limits to those set by
+  // LayoutTestDefaultPreferences when preferences are reapplied after this
+  // call.
+  page->SetDefaultPageScaleLimits(1, 4);
   page->SetPageScaleFactor(1);
-  page->DeprecatedLocalMainFrame()
-      ->View()
-      ->LayoutViewportScrollableArea()
-      ->SetScrollOffset(ScrollOffset(), kProgrammaticScroll);
+  LocalFrame* frame = page->DeprecatedLocalMainFrame();
+  frame->View()->LayoutViewportScrollableArea()->SetScrollOffset(
+      ScrollOffset(), kProgrammaticScroll);
   OverrideUserPreferredLanguagesForTesting(Vector<AtomicString>());
   if (page->DeprecatedLocalMainFrame()->GetEditor().IsOverwriteModeEnabled())
     page->DeprecatedLocalMainFrame()->GetEditor().ToggleOverwriteModeEnabled();
 
   if (ScrollingCoordinator* scrolling_coordinator =
-          page->GetScrollingCoordinator())
-    scrolling_coordinator->Reset();
+          page->GetScrollingCoordinator()) {
+    scrolling_coordinator->Reset(frame);
+  }
 
   KeyboardEventManager::SetCurrentCapsLockState(
       OverrideCapsLockState::kDefault);
@@ -735,7 +743,7 @@ CSSStyleDeclaration* Internals::computedStyleIncludingVisitedInfo(
 
 ShadowRoot* Internals::createUserAgentShadowRoot(Element* host) {
   DCHECK(host);
-  return &host->EnsureUserAgentShadowRootV1();
+  return &host->EnsureUserAgentShadowRoot();
 }
 
 void Internals::setBrowserControlsState(float top_height,
@@ -749,37 +757,16 @@ void Internals::setBrowserControlsShownRatio(float ratio) {
   document_->GetPage()->GetChromeClient().SetBrowserControlsShownRatio(ratio);
 }
 
+Node* Internals::effectiveRootScroller(Document* document) {
+  if (!document)
+    document = document_;
+
+  return &document->GetRootScrollerController().EffectiveRootScroller();
+}
+
 ShadowRoot* Internals::shadowRoot(Element* host) {
-  // FIXME: Internals::shadowRoot() in tests should be converted to
-  // youngestShadowRoot() or oldestShadowRoot().
-  // https://bugs.webkit.org/show_bug.cgi?id=78465
-  return youngestShadowRoot(host);
-}
-
-ShadowRoot* Internals::youngestShadowRoot(Element* host) {
   DCHECK(host);
-  if (ElementShadow* shadow = host->Shadow())
-    return &shadow->YoungestShadowRoot();
-  return nullptr;
-}
-
-ShadowRoot* Internals::oldestShadowRoot(Element* host) {
-  DCHECK(host);
-  if (ElementShadow* shadow = host->Shadow())
-    return &shadow->OldestShadowRoot();
-  return nullptr;
-}
-
-ShadowRoot* Internals::youngerShadowRoot(Node* shadow,
-                                         ExceptionState& exception_state) {
-  DCHECK(shadow);
-  if (!shadow->IsShadowRoot()) {
-    exception_state.ThrowDOMException(
-        kInvalidAccessError, "The node provided is not a shadow root.");
-    return nullptr;
-  }
-
-  return ToShadowRoot(shadow)->YoungerShadowRoot();
+  return host->GetShadowRoot();
 }
 
 String Internals::shadowRootType(const Node* root,
@@ -792,7 +779,7 @@ String Internals::shadowRootType(const Node* root,
   }
 
   switch (ToShadowRoot(root)->GetType()) {
-    case ShadowRootType::kUserAgentV1:
+    case ShadowRootType::kUserAgent:
       return String("UserAgentShadowRoot");
     case ShadowRootType::V0:
       return String("V0ShadowRoot");
@@ -915,13 +902,13 @@ DOMRectReadOnly* Internals::absoluteCaretBounds(
 }
 
 String Internals::textAffinity() {
-  if (GetFrame()
-          ->GetPage()
-          ->GetFocusController()
-          .FocusedFrame()
-          ->Selection()
-          .GetSelectionInDOMTree()
-          .Affinity() == TextAffinity::kUpstream) {
+  if (GetFrame() && GetFrame()
+                            ->GetPage()
+                            ->GetFocusController()
+                            .FocusedFrame()
+                            ->Selection()
+                            .GetSelectionInDOMTree()
+                            .Affinity() == TextAffinity::kUpstream) {
     return "Upstream";
   }
   return "Downstream";
@@ -1387,13 +1374,13 @@ void Internals::setAutofilledValue(Element* element,
 
   if (auto* input = ToHTMLInputElementOrNull(*element)) {
     input->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keydown));
-    input->setValue(value, kDispatchInputAndChangeEvent);
+    input->SetAutofillValue(value);
     input->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keyup));
   }
 
   if (auto* textarea = ToHTMLTextAreaElementOrNull(*element)) {
     textarea->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keydown));
-    textarea->setValue(value, kDispatchInputAndChangeEvent);
+    textarea->SetAutofillValue(value);
     textarea->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keyup));
   }
 
@@ -2320,6 +2307,16 @@ String Internals::mainThreadScrollingReasons(
   return document->GetFrame()->View()->MainThreadScrollingReasonsAsText();
 }
 
+void Internals::markGestureScrollRegionDirty(
+    Document* document,
+    ExceptionState& exception_state) const {
+  FrameView* frame_view = document->View();
+  if (!frame_view || !frame_view->IsLocalFrameView())
+    return;
+  LocalFrameView* lfv = static_cast<LocalFrameView*>(frame_view);
+  lfv->GetScrollingContext()->SetScrollGestureRegionIsDirty(true);
+}
+
 DOMRectList* Internals::nonFastScrollableRects(
     Document* document,
     ExceptionState& exception_state) const {
@@ -2527,6 +2524,20 @@ void Internals::setPersistent(HTMLVideoElement* video_element,
                               bool persistent) {
   DCHECK(video_element);
   video_element->OnBecamePersistentVideo(persistent);
+}
+
+void Internals::forceStaleStateForMediaElement(
+    HTMLMediaElement* media_element) {
+  DCHECK(media_element);
+  if (auto wmp = media_element->GetWebMediaPlayer())
+    wmp->ForceStaleStateForTesting();
+}
+
+bool Internals::isMediaElementSuspended(HTMLMediaElement* media_element) {
+  DCHECK(media_element);
+  if (auto wmp = media_element->GetWebMediaPlayer())
+    return wmp->IsSuspendedForTesting();
+  return false;
 }
 
 void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(
@@ -2880,6 +2891,19 @@ void Internals::forceReload(bool bypass_cache) {
       ClientRedirectPolicy::kNotClientRedirect);
 }
 
+StaticSelection* Internals::getSelectionInFlatTree(
+    DOMWindow* window,
+    ExceptionState& exception_state) {
+  Frame* const frame = window->GetFrame();
+  if (!frame || !frame->IsLocalFrame()) {
+    exception_state.ThrowDOMException(kInvalidAccessError,
+                                      "Must supply local window");
+    return nullptr;
+  }
+  return StaticSelection::FromSelectionInFlatTree(ConvertToSelectionInFlatTree(
+      ToLocalFrame(frame)->Selection().GetSelectionInDOMTree()));
+}
+
 Node* Internals::visibleSelectionAnchorNode() {
   if (!GetFrame())
     return nullptr;
@@ -2928,7 +2952,7 @@ DOMRect* Internals::selectionBounds(ExceptionState& exception_state) {
   }
 
   return DOMRect::FromFloatRect(
-      FloatRect(GetFrame()->Selection().UnclippedBounds()));
+      FloatRect(GetFrame()->Selection().AbsoluteUnclippedBounds()));
 }
 
 String Internals::markerTextForListItem(Element* element) {
@@ -3183,6 +3207,8 @@ bool Internals::ignoreLayoutWithPendingStylesheets(Document* document) {
 void Internals::setNetworkConnectionInfoOverride(
     bool on_line,
     const String& type,
+    const String& effective_type,
+    unsigned long http_rtt_msec,
     double downlink_max_mbps,
     ExceptionState& exception_state) {
   WebConnectionType webtype;
@@ -3212,14 +3238,6 @@ void Internals::setNetworkConnectionInfoOverride(
         ExceptionMessages::FailedToEnumerate("connection type", type));
     return;
   }
-  GetNetworkStateNotifier().SetNetworkConnectionInfoOverride(on_line, webtype,
-                                                             downlink_max_mbps);
-}
-
-void Internals::setNetworkQualityInfoOverride(const String& effective_type,
-                                              unsigned long transport_rtt_msec,
-                                              double downlink_throughput_mbps,
-                                              ExceptionState& exception_state) {
   WebEffectiveConnectionType web_effective_type =
       WebEffectiveConnectionType::kTypeUnknown;
   if (effective_type == "offline") {
@@ -3238,10 +3256,8 @@ void Internals::setNetworkQualityInfoOverride(const String& effective_type,
                             "effective connection type", effective_type));
     return;
   }
-
-  GetNetworkStateNotifier().SetNetworkQualityInfoOverride(
-      web_effective_type, transport_rtt_msec, downlink_throughput_mbps);
-
+  GetNetworkStateNotifier().SetNetworkConnectionInfoOverride(
+      on_line, webtype, web_effective_type, http_rtt_msec, downlink_max_mbps);
   GetFrame()->Client()->SetEffectiveConnectionTypeForTesting(
       web_effective_type);
 }
@@ -3460,7 +3476,7 @@ double Internals::monotonicTimeToZeroBasedDocumentTime(
     double platform_time,
     ExceptionState& exception_state) {
   return document_->Loader()->GetTiming().MonotonicTimeToZeroBasedDocumentTime(
-      platform_time);
+      TimeTicksFromSeconds(platform_time));
 }
 
 String Internals::getScrollAnimationState(Node* node) const {

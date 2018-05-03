@@ -12,7 +12,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/common/input/sync_compositor_messages.h"
 #include "content/common/input_messages.h"
-#include "content/renderer/android/synchronous_compositor_proxy.h"
+#include "content/renderer/android/synchronous_compositor_proxy_chrome_ipc.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/events/blink/synchronous_input_handler_proxy.h"
 
@@ -59,7 +59,7 @@ bool SynchronousCompositorFilter::OnMessageReceived(
   return result;
 }
 
-SynchronousCompositorProxy* SynchronousCompositorFilter::FindProxy(
+SynchronousCompositorProxyChromeIPC* SynchronousCompositorFilter::FindProxy(
     int routing_id) {
   auto itr = sync_compositor_map_.find(routing_id);
   if (itr == sync_compositor_map_.end()) {
@@ -78,20 +78,11 @@ void SynchronousCompositorFilter::OnMessageReceivedOnCompositorThread(
     const IPC::Message& message) {
   DCHECK(compositor_task_runner_->BelongsToCurrentThread());
 
-  SynchronousCompositorProxy* proxy = FindProxy(message.routing_id());
+  SynchronousCompositorProxyChromeIPC* proxy = FindProxy(message.routing_id());
   if (proxy) {
     proxy->OnMessageReceived(message);
     return;
   }
-
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(SynchronousCompositorFilter, message)
-    IPC_MESSAGE_HANDLER(SyncCompositorMsg_SynchronizeRendererState,
-                        OnSynchronizeRendererState)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  if (handled)
-    return;
 
   if (!message.is_sync())
     return;
@@ -156,27 +147,11 @@ void SynchronousCompositorFilter::RegisterLayerTreeFrameSink(
   }
 }
 
-void SynchronousCompositorFilter::OnSynchronizeRendererState(
-    const std::vector<int>& routing_ids,
-    std::vector<SyncCompositorCommonRendererParams>* out) {
-  for (int routing_id : routing_ids) {
-    SynchronousCompositorProxy* proxy = FindProxy(routing_id);
-    SyncCompositorCommonRendererParams param;
-    if (proxy)
-      proxy->PopulateCommonParams(&param);
-    out->push_back(param);
-  }
-}
-
 void SynchronousCompositorFilter::UnregisterLayerTreeFrameSink(
     int routing_id,
     SynchronousLayerTreeFrameSink* layer_tree_frame_sink) {
   DCHECK(compositor_task_runner_->BelongsToCurrentThread());
   DCHECK(layer_tree_frame_sink);
-  SynchronousCompositorProxy* proxy = FindProxy(routing_id);
-  if (proxy) {
-    proxy->SetLayerTreeFrameSink(nullptr);
-  }
   auto entry = layer_tree_frame_sink_map_.find(routing_id);
   if (entry != layer_tree_frame_sink_map_.end())
     layer_tree_frame_sink_map_.erase(entry);
@@ -186,9 +161,9 @@ void SynchronousCompositorFilter::CreateSynchronousCompositorProxy(
     int routing_id,
     ui::SynchronousInputHandlerProxy* synchronous_input_handler_proxy) {
   DCHECK(sync_compositor_map_.find(routing_id) == sync_compositor_map_.end());
-  std::unique_ptr<SynchronousCompositorProxy> proxy =
-      std::make_unique<SynchronousCompositorProxy>(
-          routing_id, this, synchronous_input_handler_proxy);
+  auto proxy = std::make_unique<SynchronousCompositorProxyChromeIPC>(
+      routing_id, this, synchronous_input_handler_proxy);
+  proxy->Init();
   sync_compositor_map_[routing_id] = std::move(proxy);
 }
 

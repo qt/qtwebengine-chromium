@@ -98,6 +98,8 @@ enum class SlotChangeType {
   kSuppressSlotChangeEvent,
 };
 
+enum class CloneChildrenFlag { kClone, kSkip };
+
 class NodeRenderingData {
  public:
   explicit NodeRenderingData(LayoutObject* layout_object,
@@ -256,8 +258,11 @@ class CORE_EXPORT Node : public EventTarget {
   Node* appendChild(Node* new_child);
 
   bool hasChildren() const { return firstChild(); }
-  virtual Node* cloneNode(bool deep, ExceptionState&) = 0;
-  Node* cloneNode(bool deep);
+  Node* cloneNode(bool deep, ExceptionState&) const;
+  // https://dom.spec.whatwg.org/#concept-node-clone
+  virtual Node* Clone(Document&, CloneChildrenFlag) const = 0;
+  // This is not web-exposed. We should rename it or remove it.
+  Node* cloneNode(bool deep) const;
   void normalize();
 
   bool isEqualNode(Node*) const;
@@ -328,6 +333,7 @@ class CORE_EXPORT Node : public EventTarget {
   virtual bool IsCharacterDataNode() const { return false; }
   virtual bool IsFrameOwnerElement() const { return false; }
   virtual bool IsMediaRemotingInterstitial() const { return false; }
+  virtual bool IsPictureInPictureInterstitial() const { return false; }
 
   // Traverses the ancestors of this node and returns true if any of them are
   // either a MediaControlElement or MediaControls.
@@ -363,7 +369,7 @@ class CORE_EXPORT Node : public EventTarget {
   // isInShadowTree() returns true.
   // This can happen when handling queued events (e.g. during execCommand())
   ShadowRoot* ContainingShadowRoot() const;
-  ShadowRoot* YoungestShadowRoot() const;
+  ShadowRoot* GetShadowRoot() const;
   bool IsInUserAgentShadowRoot() const;
 
   // Returns nullptr, a child of ShadowRoot, or a legacy shadow root.
@@ -549,6 +555,11 @@ class CORE_EXPORT Node : public EventTarget {
     return PixelSnappedIntRect(BoundingBox());
   }
 
+  // BoundingBoxForScrollIntoView() is the node's scroll snap area.
+  // It is expanded from the BoundingBox() by scroll-margin.
+  // https://drafts.csswg.org/css-scroll-snap-1/#scroll-snap-area
+  LayoutRect BoundingBoxForScrollIntoView() const;
+
   unsigned NodeIndex() const;
 
   // Returns the DOM ownerDocument attribute. This method never returns null,
@@ -718,8 +729,9 @@ class CORE_EXPORT Node : public EventTarget {
   // Tracing--rename it to something indicative.
   String DebugName() const;
 
-#ifndef NDEBUG
   String ToString() const;
+
+#ifndef NDEBUG
   String ToTreeStringForThis() const;
   String ToFlatTreeStringForThis() const;
   void PrintNodePathTo(std::ostream&) const;

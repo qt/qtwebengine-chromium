@@ -18,8 +18,6 @@ class GrContext;
 class SkCanvas;
 class SkSurface;
 
-#define SK_RASTER_RECORDER_IMPLEMENTATION 1
-
 /*
  * This class is intended to be used as:
  *   Get an SkSurfaceCharacterization representing the intended gpu-backed destination SkSurface
@@ -32,9 +30,10 @@ class SkSurface;
  * is thread-safe (i.e., one can break a scene into tiles and perform their cpu-side
  * work in parallel ahead of time).
  */
-class SkDeferredDisplayListRecorder {
+class SK_API SkDeferredDisplayListRecorder {
 public:
     SkDeferredDisplayListRecorder(const SkSurfaceCharacterization&);
+    ~SkDeferredDisplayListRecorder();
 
     const SkSurfaceCharacterization& characterization() const {
         return fCharacterization;
@@ -50,11 +49,15 @@ public:
 private:
     bool init();
 
-    const SkSurfaceCharacterization fCharacterization;
+    const SkSurfaceCharacterization             fCharacterization;
+
 #ifndef SK_RASTER_RECORDER_IMPLEMENTATION
-    sk_sp<GrContext> fContext;
+#if SK_SUPPORT_GPU
+    sk_sp<GrContext>                            fContext;
 #endif
-    sk_sp<SkSurface> fSurface;
+    sk_sp<SkDeferredDisplayList::LazyProxyData> fLazyProxyData;
+#endif
+    sk_sp<SkSurface>                            fSurface;
 };
 
 #endif

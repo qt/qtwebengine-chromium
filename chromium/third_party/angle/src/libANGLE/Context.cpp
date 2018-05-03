@@ -333,7 +333,7 @@ Context::Context(rx::EGLImplFactory *implFactory,
 
         for (unsigned int i = 0; i < mCaps.maxAtomicCounterBufferBindings; i++)
         {
-            bindBufferRange(BufferBinding::AtomicCounter, 0, i, 0, 0);
+            bindBufferRange(BufferBinding::AtomicCounter, i, 0, 0, 0);
         }
 
         for (unsigned int i = 0; i < mCaps.maxShaderStorageBufferBindings; i++)
@@ -1781,6 +1781,12 @@ void Context::texParameteriv(GLenum target, GLenum pname, const GLint *params)
 
 void Context::drawArrays(GLenum mode, GLint first, GLsizei count)
 {
+    // No-op if zero count
+    if (count == 0)
+    {
+        return;
+    }
+
     ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(mImplementation->drawArrays(this, mode, first, count));
     MarkTransformFeedbackBufferUsage(mGLState.getCurrentTransformFeedback());
@@ -1788,6 +1794,12 @@ void Context::drawArrays(GLenum mode, GLint first, GLsizei count)
 
 void Context::drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount)
 {
+    // No-op if zero count
+    if (count == 0 || instanceCount == 0)
+    {
+        return;
+    }
+
     ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(
         mImplementation->drawArraysInstanced(this, mode, first, count, instanceCount));
@@ -1796,6 +1808,12 @@ void Context::drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsiz
 
 void Context::drawElements(GLenum mode, GLsizei count, GLenum type, const void *indices)
 {
+    // No-op if zero count
+    if (count == 0)
+    {
+        return;
+    }
+
     ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(mImplementation->drawElements(this, mode, count, type, indices));
 }
@@ -1806,6 +1824,12 @@ void Context::drawElementsInstanced(GLenum mode,
                                     const void *indices,
                                     GLsizei instances)
 {
+    // No-op if zero count
+    if (count == 0 || instances == 0)
+    {
+        return;
+    }
+
     ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(
         mImplementation->drawElementsInstanced(this, mode, count, type, indices, instances));
@@ -1818,6 +1842,12 @@ void Context::drawRangeElements(GLenum mode,
                                 GLenum type,
                                 const void *indices)
 {
+    // No-op if zero count
+    if (count == 0)
+    {
+        return;
+    }
+
     ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(
         mImplementation->drawRangeElements(this, mode, start, end, count, type, indices));
@@ -2595,10 +2625,10 @@ void Context::requestExtension(const char *name)
 
     // Invalidate all textures and framebuffer. Some extensions make new formats renderable or
     // sampleable.
-    mState.mTextures->signalAllTexturesDirty();
+    mState.mTextures->signalAllTexturesDirty(this);
     for (auto &zeroTexture : mZeroTextures)
     {
-        zeroTexture.second->signalDirty(InitState::Initialized);
+        zeroTexture.second->signalDirty(this, InitState::Initialized);
     }
 
     mState.mFramebuffers->invalidateFramebufferComplenessCache();
@@ -2900,6 +2930,13 @@ void Context::blitFramebuffer(GLint srcX0,
                               GLbitfield mask,
                               GLenum filter)
 {
+    if (mask == 0)
+    {
+        // ES3.0 spec, section 4.3.2 specifies that a mask of zero is valid and no
+        // buffers are copied.
+        return;
+    }
+
     Framebuffer *drawFramebuffer = mGLState.getDrawFramebuffer();
     ASSERT(drawFramebuffer);
 

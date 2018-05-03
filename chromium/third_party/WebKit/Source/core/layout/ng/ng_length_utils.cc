@@ -117,6 +117,7 @@ LayoutUnit ResolveInlineLength(const NGConstraintSpace& constraint_space,
     case kDeviceHeight:
     case kExtendToZoom:
       NOTREACHED() << "These should only be used for viewport definitions";
+      FALLTHROUGH;
     case kMaxSizeNone:
     default:
       NOTREACHED();
@@ -131,9 +132,7 @@ LayoutUnit ResolveBlockLength(const NGConstraintSpace& constraint_space,
                               LengthResolveType type) {
   DCHECK(!length.IsMaxSizeNone());
   DCHECK_NE(type, LengthResolveType::kMarginBorderPaddingSize);
-  // TODO(layout-dev) enable this DCHECK
-  // DCHECK_EQ(constraint_space.WritingMode(),
-  //          style.GetWritingMode());
+  DCHECK_EQ(constraint_space.GetWritingMode(), style.GetWritingMode());
 
   if (constraint_space.IsAnonymous())
     return content_size;
@@ -193,6 +192,7 @@ LayoutUnit ResolveBlockLength(const NGConstraintSpace& constraint_space,
     case kDeviceHeight:
     case kExtendToZoom:
       NOTREACHED() << "These should only be used for viewport definitions";
+      FALLTHROUGH;
     case kMaxSizeNone:
     default:
       NOTREACHED();
@@ -397,7 +397,7 @@ int ResolveUsedColumnCount(LayoutUnit available_size,
       style.HasAutoColumnWidth()
           ? NGSizeIndefinite
           : std::max(LayoutUnit(1), LayoutUnit(style.ColumnWidth()));
-  LayoutUnit gap = ResolveUsedColumnGap(style);
+  LayoutUnit gap = ResolveUsedColumnGap(available_size, style);
   int computed_count = style.ColumnCount();
   return ResolveUsedColumnCount(computed_count, computed_column_inline_size,
                                 gap, available_size);
@@ -423,15 +423,16 @@ LayoutUnit ResolveUsedColumnInlineSize(LayoutUnit available_size,
           ? NGSizeIndefinite
           : std::max(LayoutUnit(1), LayoutUnit(style.ColumnWidth()));
   int computed_count = style.HasAutoColumnCount() ? 0 : style.ColumnCount();
-  LayoutUnit used_gap = ResolveUsedColumnGap(style);
+  LayoutUnit used_gap = ResolveUsedColumnGap(available_size, style);
   return ResolveUsedColumnInlineSize(computed_count, computed_size, used_gap,
                                      available_size);
 }
 
-LayoutUnit ResolveUsedColumnGap(const ComputedStyle& style) {
-  if (style.HasNormalColumnGap())
+LayoutUnit ResolveUsedColumnGap(LayoutUnit available_size,
+                                const ComputedStyle& style) {
+  if (style.ColumnGap().IsNormal())
     return LayoutUnit(style.GetFontDescription().ComputedPixelSize());
-  return LayoutUnit(style.ColumnGap());
+  return ValueForLength(style.ColumnGap().GetLength(), available_size);
 }
 
 NGPhysicalBoxStrut ComputePhysicalMargins(
@@ -557,22 +558,81 @@ void ApplyAutoMargins(const ComputedStyle& style,
   const LayoutUnit used_space = inline_size + margins->InlineSum();
   const LayoutUnit available_space = available_inline_size - used_space;
   if (available_space > LayoutUnit()) {
-    if ((style.MarginStart().IsAuto() && style.MarginEnd().IsAuto()) ||
-        (!style.MarginStart().IsAuto() && !style.MarginEnd().IsAuto() &&
-         containing_block_style.GetTextAlign() == ETextAlign::kWebkitCenter)) {
-      margins->inline_start += available_space / 2;
-    } else if (style.MarginStart().IsAuto() ||
-               (containing_block_style.IsLeftToRightDirection() &&
-                containing_block_style.GetTextAlign() ==
-                    ETextAlign::kWebkitRight) ||
-               (!containing_block_style.IsLeftToRightDirection() &&
-                containing_block_style.GetTextAlign() ==
-                    ETextAlign::kWebkitLeft)) {
-      margins->inline_start += available_space;
+    bool start_auto = style.MarginStartUsing(containing_block_style).IsAuto();
+    bool end_auto = style.MarginEndUsing(containing_block_style).IsAuto();
+    enum EBlockAlignment { kStart, kCenter, kEnd };
+    EBlockAlignment alignment;
+    if (start_auto || end_auto) {
+      alignment = start_auto ? (end_auto ? kCenter : kEnd) : kStart;
+    } else {
+      // If none of the inline margins are auto, look for -webkit- text-align
+      // values (which are really about block alignment). These are typically
+      // mapped from the legacy "align" HTML attribute.
+      switch (containing_block_style.GetTextAlign()) {
+        case ETextAlign::kWebkitLeft:
+          alignment =
+              containing_block_style.IsLeftToRightDirection() ? kStart : kEnd;
+          break;
+        case ETextAlign::kWebkitRight:
+          alignment =
+              containing_block_style.IsLeftToRightDirection() ? kEnd : kStart;
+          break;
+        case ETextAlign::kWebkitCenter:
+          alignment = kCenter;
+          break;
+        default:
+          alignment = kStart;
+          break;
+      }
     }
+    if (alignment == kCenter)
+      margins->inline_start += available_space / 2;
+    else if (alignment == kEnd)
+      margins->inline_start += available_space;
   }
   margins->inline_end =
       available_inline_size - inline_size - margins->inline_start;
+}
+
+LayoutUnit LineOffsetForTextAlign(ETextAlign text_align,
+                                  TextDirection direction,
+                                  LayoutUnit space_left) {
+  bool is_ltr = IsLtr(direction);
+  if (text_align == ETextAlign::kStart || text_align == ETextAlign::kJustify)
+    text_align = is_ltr ? ETextAlign::kLeft : ETextAlign::kRight;
+  else if (text_align == ETextAlign::kEnd)
+    text_align = is_ltr ? ETextAlign::kRight : ETextAlign::kLeft;
+
+  switch (text_align) {
+    case ETextAlign::kLeft:
+    case ETextAlign::kWebkitLeft: {
+      // The direction of the block should determine what happens with wide
+      // lines. In particular with RTL blocks, wide lines should still spill
+      // out to the left.
+      if (is_ltr)
+        return LayoutUnit();
+      return space_left.ClampPositiveToZero();
+    }
+    case ETextAlign::kRight:
+    case ETextAlign::kWebkitRight: {
+      // Wide lines spill out of the block based off direction.
+      // So even if text-align is right, if direction is LTR, wide lines
+      // should overflow out of the right side of the block.
+      if (space_left > LayoutUnit() || !is_ltr)
+        return space_left;
+      return LayoutUnit();
+    }
+    case ETextAlign::kCenter:
+    case ETextAlign::kWebkitCenter: {
+      if (is_ltr || space_left > LayoutUnit())
+        return (space_left / 2).ClampNegativeToZero();
+      // In RTL, wide lines should spill out to the left, same as kRight.
+      return space_left;
+    }
+    default:
+      NOTREACHED();
+      return LayoutUnit();
+  }
 }
 
 LayoutUnit ConstrainByMinMax(LayoutUnit length,

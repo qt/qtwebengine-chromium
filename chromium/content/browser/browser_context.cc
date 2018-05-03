@@ -50,12 +50,17 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "services/file/file_service.h"
-#include "services/file/public/interfaces/constants.mojom.h"
+#include "services/file/public/mojom/constants.mojom.h"
 #include "services/file/user_id_map.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "services/service_manager/public/interfaces/service.mojom.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
+#include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/fileapi/external_mount_points.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/browser/webrtc/webrtc_event_log_manager.h"
+#endif
 
 using base::UserDataAdapter;
 
@@ -183,6 +188,12 @@ class BrowserContextServiceManagerConnectionHolder
 
   DISALLOW_COPY_AND_ASSIGN(BrowserContextServiceManagerConnectionHolder);
 };
+
+base::WeakPtr<storage::BlobStorageContext> BlobStorageContextGetterForBrowser(
+    scoped_refptr<ChromeBlobStorageContext> blob_context) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  return blob_context->context()->AsWeakPtr();
+}
 
 }  // namespace
 
@@ -349,6 +360,16 @@ void BrowserContext::CreateFileBackedBlob(
 }
 
 // static
+BrowserContext::BlobContextGetter BrowserContext::GetBlobStorageContext(
+    BrowserContext* browser_context) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  scoped_refptr<ChromeBlobStorageContext> chrome_blob_context =
+      ChromeBlobStorageContext::GetFor(browser_context);
+  return base::BindRepeating(&BlobStorageContextGetterForBrowser,
+                             chrome_blob_context);
+}
+
+// static
 void BrowserContext::DeliverPushMessage(
     BrowserContext* browser_context,
     const GURL& origin,
@@ -445,7 +466,6 @@ void BrowserContext::SetDownloadManagerForTesting(
 void BrowserContext::Initialize(
     BrowserContext* browser_context,
     const base::FilePath& path) {
-
   std::string new_id;
   if (GetContentClient() && GetContentClient()->browser()) {
     new_id = GetContentClient()->browser()->GetServiceUserIdForBrowserContext(
@@ -495,12 +515,9 @@ void BrowserContext::Initialize(
 
     // New embedded service factories should be added to |connection| here.
 
-    if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableMojoLocalStorage)) {
-      service_manager::EmbeddedServiceInfo info;
-      info.factory = base::Bind(&file::CreateFileService);
-      connection->AddEmbeddedService(file::mojom::kServiceName, info);
-    }
+    service_manager::EmbeddedServiceInfo info;
+    info.factory = base::BindRepeating(&file::CreateFileService);
+    connection->AddEmbeddedService(file::mojom::kServiceName, info);
 
     ContentBrowserClient::StaticServiceMap services;
     browser_context->RegisterInProcessServices(&services);
@@ -511,6 +528,15 @@ void BrowserContext::Initialize(
     RegisterCommonBrowserInterfaces(connection);
     connection->Start();
   }
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+  if (!browser_context->IsOffTheRecord()) {
+    auto* webrtc_event_log_manager = WebRtcEventLogManager::GetInstance();
+    if (webrtc_event_log_manager) {
+      webrtc_event_log_manager->EnableForBrowserContext(browser_context);
+    }
+  }
+#endif
 }
 
 // static
@@ -560,6 +586,14 @@ BrowserContext::~BrowserContext() {
 
   DCHECK(!GetUserData(kStoragePartitionMapKeyName))
       << "StoragePartitionMap is not shut down properly";
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+  auto* webrtc_event_log_manager = WebRtcEventLogManager::GetInstance();
+  if (webrtc_event_log_manager) {
+    const auto id = WebRtcEventLogManager::GetBrowserContextId(this);
+    webrtc_event_log_manager->DisableForBrowserContext(id);
+  }
+#endif
 
   RemoveBrowserContextFromUserIdMap(this);
 

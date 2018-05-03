@@ -28,11 +28,11 @@
 #include "SkImageInfoPriv.h"
 #include "SkImage_Base.h"
 #include "SkLatticeIter.h"
-#include "SkMaskFilter.h"
+#include "SkMaskFilterBase.h"
 #include "SkPathEffect.h"
 #include "SkPicture.h"
 #include "SkPictureData.h"
-#include "SkRRect.h"
+#include "SkRRectPriv.h"
 #include "SkRasterClip.h"
 #include "SkReadPixelsRec.h"
 #include "SkRecord.h"
@@ -159,6 +159,9 @@ sk_sp<GrRenderTargetContext> SkGpuDevice::MakeRenderTargetContext(
     }
 
     GrPixelConfig config = SkImageInfo2GrPixelConfig(origInfo, *context->caps());
+    if (kUnknown_GrPixelConfig == config) {
+        return nullptr;
+    }
     // This method is used to create SkGpuDevice's for SkSurface_Gpus. In this case
     // they need to be exact.
     return context->makeDeferredRenderTargetContext(
@@ -402,9 +405,11 @@ void SkGpuDevice::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
         return;
     }
 
-    SkMaskFilter* mf = paint.getMaskFilter();
-    if (mf && mf->asFragmentProcessor(nullptr)) {
-        mf = nullptr; // already handled in SkPaintToGrPaint
+    SkMaskFilterBase* mf = as_MFB(paint.getMaskFilter());
+    if (mf) {
+        if (mf->hasFragmentProcessor()) {
+            mf = nullptr; // already handled in SkPaintToGrPaint
+        }
     }
 
     GrStyle style(paint);
@@ -413,7 +418,7 @@ void SkGpuDevice::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
 
         SkRRect devRRect;
         if (rrect.transform(this->ctm(), &devRRect)) {
-            if (devRRect.allCornersCircular()) {
+            if (SkRRectPriv::AllCornersCircular(devRRect)) {
                 if (mf->canFilterMaskGPU(devRRect, this->devClipBounds(), this->ctm(), nullptr)) {
                     if (mf->directFilterRRectMaskGPU(this->context(), fRenderTargetContext.get(),
                                                      std::move(grPaint), this->clip(), this->ctm(),
@@ -759,8 +764,9 @@ bool SkGpuDevice::shouldTileImage(const SkImage* image, const SkRect* srcRectPtr
 
     GrSamplerState samplerState;
     bool doBicubic;
-    GrSamplerState::Filter textureFilterMode =
-            GrSkFilterQualityToGrFilterMode(quality, viewMatrix, srcToDstRect, &doBicubic);
+    GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
+            quality, viewMatrix, srcToDstRect, fContext->contextPriv().sharpenMipmappedTextures(),
+            &doBicubic);
 
     int tileFilterPad;
     if (doBicubic) {
@@ -810,7 +816,8 @@ void SkGpuDevice::drawBitmap(const SkBitmap& bitmap,
         GrSamplerState samplerState;
         bool doBicubic;
         GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
-                paint.getFilterQuality(), viewMatrix, SkMatrix::I(), &doBicubic);
+                paint.getFilterQuality(), viewMatrix, SkMatrix::I(),
+                fContext->contextPriv().sharpenMipmappedTextures(), &doBicubic);
 
         int tileFilterPad;
 
@@ -1084,6 +1091,12 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special1, int left, int top, const
     const GrPixelConfig config = proxy->config();
 
     SkPaint tmpUnfiltered(paint);
+    if (tmpUnfiltered.getMaskFilter()) {
+        SkMatrix ctm = this->ctm();
+        ctm.postTranslate(-SkIntToScalar(left + offset.fX), -SkIntToScalar(top + offset.fY));
+        tmpUnfiltered.setMaskFilter(tmpUnfiltered.getMaskFilter()->makeWithLocalMatrix(ctm));
+    }
+
     tmpUnfiltered.setImageFilter(nullptr);
 
     auto fp = GrSimpleTextureEffect::Make(std::move(proxy), SkMatrix::I());
@@ -1092,7 +1105,7 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special1, int left, int top, const
     if (GrPixelConfigIsAlphaOnly(config)) {
         fp = GrFragmentProcessor::MakeInputPremulAndMulByOutput(std::move(fp));
     } else {
-        fp = GrFragmentProcessor::MulOutputByInputAlpha(std::move(fp));
+        fp = GrFragmentProcessor::MulChildByInputAlpha(std::move(fp));
     }
 
     GrPaint grPaint;
@@ -1106,7 +1119,7 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special1, int left, int top, const
     fRenderTargetContext->fillRectToRect(
             this->clip(),
             std::move(grPaint),
-            GrAA(paint.isAntiAlias()),
+            GrAA(tmpUnfiltered.isAntiAlias()),
             SkMatrix::I(),
             SkRect::Make(SkIRect::MakeXYWH(left + offset.fX, top + offset.fY, subset.width(),
                                            subset.height())),
@@ -1162,7 +1175,8 @@ void SkGpuDevice::drawBitmapRect(const SkBitmap& bitmap,
         GrSamplerState sampleState;
         bool doBicubic;
         GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
-                paint.getFilterQuality(), this->ctm(), srcToDstMatrix, &doBicubic);
+                paint.getFilterQuality(), this->ctm(), srcToDstMatrix,
+                fContext->contextPriv().sharpenMipmappedTextures(), &doBicubic);
 
         int tileFilterPad;
 
@@ -1354,7 +1368,8 @@ void SkGpuDevice::drawProducerNine(GrTextureProducer* producer,
                        GrFSAAType::kUnifiedMSAA == fRenderTargetContext->fsaaType();
     bool doBicubic;
     GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
-            paint.getFilterQuality(), this->ctm(), SkMatrix::I(), &doBicubic);
+            paint.getFilterQuality(), this->ctm(), SkMatrix::I(),
+            fContext->contextPriv().sharpenMipmappedTextures(), &doBicubic);
     if (useFallback || doBicubic || GrSamplerState::Filter::kNearest != textureFilterMode) {
         SkLatticeIter iter(producer->width(), producer->height(), center, dst);
 
@@ -1586,8 +1601,7 @@ void SkGpuDevice::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
     ASSERT_SINGLE_OWNER
     GR_CREATE_TRACE_MARKER_CONTEXT("SkGpuDevice", "drawShadow", fContext.get());
 
-    GrColor color = SkColorToPremulGrColor(rec.fColor);
-    if (!fRenderTargetContext->drawFastShadow(this->clip(), color, this->ctm(), path, rec)) {
+    if (!fRenderTargetContext->drawFastShadow(this->clip(), this->ctm(), path, rec)) {
         // failed to find an accelerated case
         this->INHERITED::drawShadow(path, rec);
     }

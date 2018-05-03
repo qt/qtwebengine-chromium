@@ -28,8 +28,20 @@ class MediaControlsResourceLoader
   // Returns the jump SVG image as a string.
   static String GetJumpSVGImage();
 
+  // Returns the arrow right SVG image as a string.
+  static String GetArrowRightSVGImage();
+
+  // Returns the arrow left SVG image as a string.
+  static String GetArrowLeftSVGImage();
+
+  // Returns the scrubbing message stylesheet content as a string.
+  static String GetScrubbingMessageStyleSheet();
+
   // Returns the overlay play button stylesheet content as a string.
   static String GetOverlayPlayStyleSheet();
+
+  // Returns the specific stylesheet used for media related interstitials.
+  static String GetMediaInterstitialsStyleSheet();
 
   String GetUAStyleSheet() override;
 

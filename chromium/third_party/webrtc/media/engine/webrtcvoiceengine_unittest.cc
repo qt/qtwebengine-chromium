@@ -36,12 +36,14 @@
 
 using testing::_;
 using testing::ContainerEq;
+using testing::Field;
 using testing::Return;
 using testing::ReturnPointee;
 using testing::SaveArg;
 using testing::StrictMock;
 
 namespace {
+using webrtc::BitrateConstraints;
 
 constexpr uint32_t kMaxUnsignaledRecvStreams = 4;
 
@@ -160,7 +162,7 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
         apm_ec_(*apm_->echo_cancellation()),
         apm_ns_(*apm_->noise_suppression()),
         apm_vd_(*apm_->voice_detection()),
-        call_(webrtc::Call::Config(&event_log_)),
+        call_(),
         override_field_trials_(field_trials) {
     // AudioDeviceModule.
     AdmSetupExpectations(&adm_);
@@ -362,7 +364,7 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     EXPECT_EQ(1UL, parameters.encodings.size());
 
     parameters.encodings[0].max_bitrate_bps = bitrate;
-    return channel_->SetRtpSendParameters(ssrc, parameters);
+    return channel_->SetRtpSendParameters(ssrc, parameters).ok();
   }
 
   void SetGlobalMaxBitrate(const cricket::AudioCodec& codec, int bitrate) {
@@ -425,14 +427,16 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     codecs[0].params[cricket::kCodecParamMinBitrate] = min_bitrate_kbps;
     codecs[0].params[cricket::kCodecParamStartBitrate] = start_bitrate_kbps;
     codecs[0].params[cricket::kCodecParamMaxBitrate] = max_bitrate_kbps;
-    SetSendParameters(send_parameters_);
+    EXPECT_CALL(*call_.GetMockTransportControllerSend(),
+                SetSdpBitrateParameters(
+                    AllOf(Field(&BitrateConstraints::min_bitrate_bps,
+                                expected_min_bitrate_bps),
+                          Field(&BitrateConstraints::start_bitrate_bps,
+                                expected_start_bitrate_bps),
+                          Field(&BitrateConstraints::max_bitrate_bps,
+                                expected_max_bitrate_bps))));
 
-    EXPECT_EQ(expected_min_bitrate_bps,
-              call_.GetConfig().bitrate_config.min_bitrate_bps);
-    EXPECT_EQ(expected_start_bitrate_bps,
-              call_.GetConfig().bitrate_config.start_bitrate_bps);
-    EXPECT_EQ(expected_max_bitrate_bps,
-              call_.GetConfig().bitrate_config.max_bitrate_bps);
+    SetSendParameters(send_parameters_);
   }
 
   void TestSetSendRtpHeaderExtensions(const std::string& ext) {
@@ -698,7 +702,6 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
   webrtc::test::MockEchoCancellation& apm_ec_;
   webrtc::test::MockNoiseSuppression& apm_ns_;
   webrtc::test::MockVoiceDetection& apm_vd_;
-  webrtc::RtcEventLogNullImpl event_log_;
   cricket::FakeCall call_;
   std::unique_ptr<cricket::WebRtcVoiceEngine> engine_;
   cricket::VoiceMediaChannel* channel_ = nullptr;
@@ -1034,7 +1037,8 @@ TEST_F(WebRtcVoiceEngineTestFake, CannotSetMaxBitrateForNonexistentStream) {
   EXPECT_EQ(0, nonexistent_parameters.encodings.size());
 
   nonexistent_parameters.encodings.push_back(webrtc::RtpEncodingParameters());
-  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, nonexistent_parameters));
+  EXPECT_FALSE(
+      channel_->SetRtpSendParameters(kSsrcX, nonexistent_parameters).ok());
 }
 
 TEST_F(WebRtcVoiceEngineTestFake,
@@ -1048,10 +1052,10 @@ TEST_F(WebRtcVoiceEngineTestFake,
   webrtc::RtpParameters parameters = channel_->GetRtpSendParameters(kSsrcX);
   // Two or more encodings should result in failure.
   parameters.encodings.push_back(webrtc::RtpEncodingParameters());
-  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, parameters));
+  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, parameters).ok());
   // Zero encodings should also fail.
   parameters.encodings.clear();
-  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, parameters));
+  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, parameters).ok());
 }
 
 // Changing the SSRC through RtpParameters is not allowed.
@@ -1059,7 +1063,7 @@ TEST_F(WebRtcVoiceEngineTestFake, CannotSetSsrcInRtpSendParameters) {
   EXPECT_TRUE(SetupSendStream());
   webrtc::RtpParameters parameters = channel_->GetRtpSendParameters(kSsrcX);
   parameters.encodings[0].ssrc = 0xdeadbeef;
-  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, parameters));
+  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, parameters).ok());
 }
 
 // Test that a stream will not be sending if its encoding is made
@@ -1073,14 +1077,14 @@ TEST_F(WebRtcVoiceEngineTestFake, SetRtpParametersEncodingsActive) {
   ASSERT_EQ(1u, parameters.encodings.size());
   ASSERT_TRUE(parameters.encodings[0].active);
   parameters.encodings[0].active = false;
-  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, parameters));
+  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, parameters).ok());
   EXPECT_FALSE(GetSendStream(kSsrcX).IsSending());
 
   // Now change it back to active and verify we resume sending.
   // This should occur even when other parameters are updated.
   parameters.encodings[0].active = true;
   parameters.encodings[0].max_bitrate_bps = rtc::Optional<int>(6000);
-  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, parameters));
+  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, parameters).ok());
   EXPECT_TRUE(GetSendStream(kSsrcX).IsSending());
 }
 
@@ -1146,7 +1150,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetAndGetRtpSendParameters) {
   webrtc::RtpParameters initial_params = channel_->GetRtpSendParameters(kSsrcX);
 
   // We should be able to set the params we just got.
-  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, initial_params));
+  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, initial_params).ok());
 
   // ... And this shouldn't change the params returned by GetRtpSendParameters.
   webrtc::RtpParameters new_params = channel_->GetRtpSendParameters(kSsrcX);
@@ -1169,7 +1173,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetRtpSendParameterUpdatesMaxBitrate) {
 
   constexpr int kMaxBitrateBps = 6000;
   rtp_parameters.encodings[0].max_bitrate_bps = kMaxBitrateBps;
-  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters));
+  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters).ok());
 
   const int max_bitrate = GetSendStreamConfig(kSsrcX).max_bitrate_bps;
   EXPECT_EQ(max_bitrate, kMaxBitrateBps);
@@ -1185,9 +1189,9 @@ TEST_F(WebRtcVoiceEngineTestFake, SetRtpSendParameterInvalidBitratePriority) {
             rtp_parameters.encodings[0].bitrate_priority);
 
   rtp_parameters.encodings[0].bitrate_priority = 0;
-  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters));
+  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters).ok());
   rtp_parameters.encodings[0].bitrate_priority = -1.0;
-  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters));
+  EXPECT_FALSE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters).ok());
 }
 
 // Test that the bitrate_priority in the send stream config gets updated when
@@ -1201,7 +1205,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetRtpSendParameterUpdatesBitratePriority) {
             rtp_parameters.encodings[0].bitrate_priority);
   double new_bitrate_priority = 2.0;
   rtp_parameters.encodings[0].bitrate_priority = new_bitrate_priority;
-  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters));
+  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters).ok());
 
   // The priority should get set for both the audio channel's rtp parameters
   // and the audio send stream's audio config.
@@ -1530,12 +1534,14 @@ TEST_F(WebRtcVoiceEngineTestFake,
   SetSendCodecsShouldWorkForBitrates("100", 100000, "150", 150000, "200",
                                      200000);
   send_parameters_.max_bandwidth_bps = 100000;
+  // Setting max bitrate should keep previous min bitrate
+  // Setting max bitrate should not reset start bitrate.
+  EXPECT_CALL(*call_.GetMockTransportControllerSend(),
+              SetSdpBitrateParameters(
+                  AllOf(Field(&BitrateConstraints::min_bitrate_bps, 100000),
+                        Field(&BitrateConstraints::start_bitrate_bps, -1),
+                        Field(&BitrateConstraints::max_bitrate_bps, 200000))));
   SetSendParameters(send_parameters_);
-  EXPECT_EQ(100000, call_.GetConfig().bitrate_config.min_bitrate_bps)
-      << "Setting max bitrate should keep previous min bitrate.";
-  EXPECT_EQ(-1, call_.GetConfig().bitrate_config.start_bitrate_bps)
-      << "Setting max bitrate should not reset start bitrate.";
-  EXPECT_EQ(200000, call_.GetConfig().bitrate_config.max_bitrate_bps);
 }
 
 // Test that we can enable NACK with opus as caller.
@@ -1774,7 +1780,24 @@ TEST_F(WebRtcVoiceEngineTestFake, SetSendCodecsDTMFOnTop) {
   const auto& spec = *GetSendStreamConfig(kSsrcX).send_codec_spec;
   EXPECT_EQ(96, spec.payload_type);
   EXPECT_STRCASEEQ("ISAC", spec.format.name.c_str());
+  SetSend(true);
   EXPECT_TRUE(channel_->CanInsertDtmf());
+}
+
+// Test that CanInsertDtmf() is governed by the send flag
+TEST_F(WebRtcVoiceEngineTestFake, DTMFControlledBySendFlag) {
+  EXPECT_TRUE(SetupSendStream());
+  cricket::AudioSendParameters parameters;
+  parameters.codecs.push_back(kTelephoneEventCodec1);
+  parameters.codecs.push_back(kPcmuCodec);
+  parameters.codecs[0].id = 98;  // DTMF
+  parameters.codecs[1].id = 96;
+  SetSendParameters(parameters);
+  EXPECT_FALSE(channel_->CanInsertDtmf());
+  SetSend(true);
+  EXPECT_TRUE(channel_->CanInsertDtmf());
+  SetSend(false);
+  EXPECT_FALSE(channel_->CanInsertDtmf());
 }
 
 // Test that payload type range is limited for telephone-event codec.
@@ -1786,6 +1809,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetSendCodecsDTMFPayloadTypeOutOfRange) {
   parameters.codecs[0].id = 0;  // DTMF
   parameters.codecs[1].id = 96;
   SetSendParameters(parameters);
+  SetSend(true);
   EXPECT_TRUE(channel_->CanInsertDtmf());
   parameters.codecs[0].id = 128;  // DTMF
   EXPECT_FALSE(channel_->SetSendParameters(parameters));
@@ -1834,6 +1858,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetSendCodecsCNandDTMFAsCaller) {
   EXPECT_STRCASEEQ("ISAC", send_codec_spec.format.name.c_str());
   EXPECT_EQ(1, send_codec_spec.format.num_channels);
   EXPECT_EQ(97, send_codec_spec.cng_payload_type);
+  SetSend(true);
   EXPECT_TRUE(channel_->CanInsertDtmf());
 }
 
@@ -1859,6 +1884,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetSendCodecsCNandDTMFAsCallee) {
   EXPECT_STRCASEEQ("ISAC", send_codec_spec.format.name.c_str());
   EXPECT_EQ(1, send_codec_spec.format.num_channels);
   EXPECT_EQ(97, send_codec_spec.cng_payload_type);
+  SetSend(true);
   EXPECT_TRUE(channel_->CanInsertDtmf());
 }
 
@@ -1924,6 +1950,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetSendCodecsCaseInsensitive) {
   EXPECT_STRCASEEQ("ISAC", send_codec_spec.format.name.c_str());
   EXPECT_EQ(1, send_codec_spec.format.num_channels);
   EXPECT_EQ(97, send_codec_spec.cng_payload_type);
+  SetSend(true);
   EXPECT_TRUE(channel_->CanInsertDtmf());
 }
 
@@ -2344,7 +2371,7 @@ TEST_F(WebRtcVoiceEngineWithSendSideBweWithOverheadTest,
 
   constexpr int kMaxBitrateBps = 6000;
   rtp_parameters.encodings[0].max_bitrate_bps = kMaxBitrateBps;
-  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters));
+  EXPECT_TRUE(channel_->SetRtpSendParameters(kSsrcX, rtp_parameters).ok());
 
   const int max_bitrate = GetSendStreamConfig(kSsrcX).max_bitrate_bps;
 #if WEBRTC_OPUS_SUPPORT_120MS_PTIME

@@ -11,18 +11,23 @@
 #include "base/allocator/partition_allocator/address_space_randomization.h"
 #include "base/allocator/partition_allocator/spin_lock.h"
 #include "base/base_export.h"
+#include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/numerics/checked_math.h"
 #include "build/build_config.h"
-
-#if defined(OS_MACOSX)
-#include <mach/mach.h>
-#endif
 
 #if defined(OS_POSIX)
 
 #include <errno.h>
 #include <sys/mman.h>
+
+#if defined(OS_MACOSX)
+#include <mach/mach.h>
+#endif
+#if defined(OS_LINUX)
+#include <sys/resource.h>
+#endif
 
 #ifndef MADV_FREE
 #define MADV_FREE MADV_DONTNEED
@@ -46,13 +51,36 @@ int GetAccessFlags(PageAccessibilityConfiguration page_accessibility) {
       return PROT_READ | PROT_WRITE;
     case PageReadExecute:
       return PROT_READ | PROT_EXEC;
+    case PageReadWriteExecute:
+      return PROT_READ | PROT_WRITE | PROT_EXEC;
     default:
       NOTREACHED();
-    // Fall through.
+      FALLTHROUGH;
     case PageInaccessible:
       return PROT_NONE;
   }
 }
+
+#if defined(OS_LINUX) && defined(ARCH_CPU_64_BITS)
+// On Linux, multiple guarded memory regions may exceed the process address
+// space limit. This function will raise or lower the limit by |amount|.
+bool AdjustAddressSpaceLimit(int64_t amount) {
+  struct rlimit old_rlimit;
+  if (getrlimit(RLIMIT_AS, &old_rlimit))
+    return false;
+  const rlim_t new_limit =
+      CheckAdd(old_rlimit.rlim_cur, amount).ValueOrDefault(old_rlimit.rlim_max);
+  const struct rlimit new_rlimit = {std::min(new_limit, old_rlimit.rlim_max),
+                                    old_rlimit.rlim_max};
+  // setrlimit will fail if limit > old_rlimit.rlim_max.
+  return setrlimit(RLIMIT_AS, &new_rlimit) == 0;
+}
+
+// Current WASM guarded memory regions have 8 GiB of address space. There are
+// schemes that reduce that to 4 GiB.
+constexpr size_t kMinimumGuardedMemorySize = 1ULL << 32;  // 4 GiB
+
+#endif  // defined(OS_LINUX) && defined(ARCH_CPU_64_BITS)
 
 #elif defined(OS_WIN)
 
@@ -72,9 +100,11 @@ int GetAccessFlags(PageAccessibilityConfiguration page_accessibility) {
       return PAGE_READWRITE;
     case PageReadExecute:
       return PAGE_EXECUTE_READ;
+    case PageReadWriteExecute:
+      return PAGE_EXECUTE_READWRITE;
     default:
       NOTREACHED();
-    // Fall through.
+      FALLTHROUGH;
     case PageInaccessible:
       return PAGE_NOACCESS;
   }
@@ -96,6 +126,7 @@ size_t s_reservation_size = 0;
 static void* SystemAllocPages(void* hint,
                               size_t length,
                               PageAccessibilityConfiguration page_accessibility,
+                              PageTag page_tag,
                               bool commit) {
   DCHECK(!(length & kPageAllocationGranularityOffsetMask));
   DCHECK(!(reinterpret_cast<uintptr_t>(hint) &
@@ -113,8 +144,10 @@ static void* SystemAllocPages(void* hint,
 
 #if defined(OS_MACOSX)
   // Use a custom tag to make it easier to distinguish partition alloc regions
-  // in vmmap.
-  int fd = VM_MAKE_TAG(254);
+  // in vmmap. Tags between 240-255 are supported.
+  DCHECK_LE(PageTag::kFirst, page_tag);
+  DCHECK_GE(PageTag::kLast, page_tag);
+  int fd = VM_MAKE_TAG(static_cast<int>(page_tag));
 #else
   int fd = -1;
 #endif
@@ -132,15 +165,18 @@ static void* AllocPagesIncludingReserved(
     void* address,
     size_t length,
     PageAccessibilityConfiguration page_accessibility,
+    PageTag page_tag,
     bool commit) {
-  void* ret = SystemAllocPages(address, length, page_accessibility, commit);
+  void* ret =
+      SystemAllocPages(address, length, page_accessibility, page_tag, commit);
   if (ret == nullptr) {
     const bool cant_alloc_length = kHintIsAdvisory || address == nullptr;
     if (cant_alloc_length) {
       // The system cannot allocate |length| bytes. Release any reserved address
       // space and try once more.
       ReleaseReservation();
-      ret = SystemAllocPages(address, length, page_accessibility, commit);
+      ret = SystemAllocPages(address, length, page_accessibility, page_tag,
+                             commit);
     }
   }
   return ret;
@@ -182,7 +218,8 @@ static void* TrimMapping(void* base,
     // aligned address within the freed range.
     ret = reinterpret_cast<char*>(base) + pre_slack;
     FreePages(base, base_length);
-    ret = SystemAllocPages(ret, trim_length, page_accessibility, commit);
+    ret = SystemAllocPages(ret, trim_length, page_accessibility,
+                           PageTag::kChromium, commit);
   }
 #endif
 
@@ -195,6 +232,7 @@ void* AllocPages(void* address,
                  size_t length,
                  size_t align,
                  PageAccessibilityConfiguration page_accessibility,
+                 PageTag page_tag,
                  bool commit) {
   DCHECK(length >= kPageAllocationGranularity);
   DCHECK(!(length & kPageAllocationGranularityOffsetMask));
@@ -206,6 +244,19 @@ void* AllocPages(void* address,
   uintptr_t align_offset_mask = align - 1;
   uintptr_t align_base_mask = ~align_offset_mask;
   DCHECK(!(reinterpret_cast<uintptr_t>(address) & align_offset_mask));
+
+#if defined(OS_LINUX) && defined(ARCH_CPU_64_BITS)
+  // On 64 bit Linux, we may need to adjust the address space limit for
+  // guarded allocations.
+  if (length >= kMinimumGuardedMemorySize) {
+    CHECK_EQ(PageInaccessible, page_accessibility);
+    CHECK(!commit);
+    if (AdjustAddressSpaceLimit(base::checked_cast<int64_t>(length))) {
+      DLOG(WARNING) << "Could not address space by " << length;
+      // Fall through. Try the allocation, since we may have a reserve.
+    }
+  }
+#endif
 
   // If the client passed null as the address, choose a good one.
   if (address == nullptr) {
@@ -225,7 +276,7 @@ void* AllocPages(void* address,
 #endif
   for (int i = 0; i < kExactSizeTries; ++i) {
     void* ret = AllocPagesIncludingReserved(address, length, page_accessibility,
-                                            commit);
+                                            page_tag, commit);
     if (ret != nullptr) {
       // If the alignment is to our liking, we're done.
       if (!(reinterpret_cast<uintptr_t>(ret) & align_offset_mask))
@@ -261,7 +312,7 @@ void* AllocPages(void* address,
     // Continue randomizing only on POSIX.
     address = kHintIsAdvisory ? GetRandomPageBase() : nullptr;
     ret = AllocPagesIncludingReserved(address, try_length, page_accessibility,
-                                      commit);
+                                      page_tag, commit);
     // The retries are for Windows, where a race can steal our mapping on
     // resize.
   } while (ret != nullptr &&
@@ -278,6 +329,12 @@ void FreePages(void* address, size_t length) {
 #if defined(OS_POSIX)
   int ret = munmap(address, length);
   CHECK(!ret);
+#if defined(OS_LINUX) && defined(ARCH_CPU_64_BITS)
+  // On 64 bit Linux, restore the address space limit.
+  if (length >= kMinimumGuardedMemorySize) {
+    CHECK(AdjustAddressSpaceLimit(-base::checked_cast<int64_t>(length)));
+  }
+#endif
 #else
   BOOL ret = VirtualFree(address, 0, MEM_RELEASE);
   CHECK(ret);
@@ -381,7 +438,8 @@ bool ReserveAddressSpace(size_t size) {
   // To avoid deadlock, call only SystemAllocPages.
   subtle::SpinLock::Guard guard(s_reserveLock.Get());
   if (s_reservation_address == nullptr) {
-    void* mem = SystemAllocPages(nullptr, size, PageInaccessible, false);
+    void* mem = SystemAllocPages(nullptr, size, PageInaccessible,
+                                 PageTag::kChromium, false);
     if (mem != nullptr) {
       // We guarantee this alignment when reserving address space.
       DCHECK(!(reinterpret_cast<uintptr_t>(mem) &

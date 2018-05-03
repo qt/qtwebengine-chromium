@@ -63,7 +63,6 @@ void RunBenchmark(RasterSource* raster_source,
       base::Optional<PlaybackImageProvider::Settings> image_settings;
       image_settings.emplace();
       image_settings->images_to_skip = {};
-      image_settings->at_raster_images = {};
       image_settings->image_to_current_frame_index = {};
 
       PlaybackImageProvider image_provider(
@@ -72,8 +71,10 @@ void RunBenchmark(RasterSource* raster_source,
       settings.image_provider = &image_provider;
 
       raster_source->PlaybackToCanvas(
-          &canvas, gfx::ColorSpace(), content_rect, content_rect,
-          gfx::AxisTransform2d(contents_scale, gfx::Vector2dF()), settings);
+          &canvas, gfx::ColorSpace(),
+          raster_source->GetContentSize(contents_scale), content_rect,
+          content_rect, gfx::AxisTransform2d(contents_scale, gfx::Vector2dF()),
+          settings);
 
       timer.NextLap();
     } while (!timer.HasTimeLimitExpired());
@@ -127,8 +128,8 @@ class FixedInvalidationPictureLayerTilingClient
 RasterizeAndRecordBenchmarkImpl::RasterizeAndRecordBenchmarkImpl(
     scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner,
     base::Value* value,
-    const MicroBenchmarkImpl::DoneCallback& callback)
-    : MicroBenchmarkImpl(callback, origin_task_runner),
+    MicroBenchmarkImpl::DoneCallback callback)
+    : MicroBenchmarkImpl(std::move(callback), origin_task_runner),
       rasterize_repeat_count_(kDefaultRasterizeRepeatCount) {
   base::DictionaryValue* settings = nullptr;
   value->GetAsDictionary(&settings);

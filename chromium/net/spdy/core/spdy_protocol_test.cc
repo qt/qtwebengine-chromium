@@ -10,6 +10,7 @@
 
 #include "net/spdy/core/spdy_bitmasks.h"
 #include "net/spdy/core/spdy_test_utils.h"
+#include "net/spdy/platform/api/spdy_flags.h"
 #include "net/test/gtest_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -104,7 +105,7 @@ TEST(SpdyProtocolTest, IsValidHTTP2FrameStreamId) {
 }
 
 TEST(SpdyProtocolTest, ParseSettingsId) {
-  SpdySettingsIds setting_id;
+  SpdyKnownSettingsId setting_id;
   EXPECT_FALSE(ParseSettingsId(0, &setting_id));
   EXPECT_TRUE(ParseSettingsId(1, &setting_id));
   EXPECT_EQ(SETTINGS_HEADER_TABLE_SIZE, setting_id);
@@ -118,29 +119,42 @@ TEST(SpdyProtocolTest, ParseSettingsId) {
   EXPECT_EQ(SETTINGS_MAX_FRAME_SIZE, setting_id);
   EXPECT_TRUE(ParseSettingsId(6, &setting_id));
   EXPECT_EQ(SETTINGS_MAX_HEADER_LIST_SIZE, setting_id);
-  EXPECT_FALSE(ParseSettingsId(7, &setting_id));
+  if (GetSpdyReloadableFlag(http2_check_settings_id_007)) {
+    EXPECT_FALSE(ParseSettingsId(7, &setting_id));
+  } else {
+    EXPECT_TRUE(ParseSettingsId(7, &setting_id));
+    EXPECT_EQ(0x07, setting_id);
+  }
+  EXPECT_TRUE(ParseSettingsId(8, &setting_id));
+  EXPECT_EQ(SETTINGS_ENABLE_CONNECT_PROTOCOL, setting_id);
+  EXPECT_FALSE(ParseSettingsId(9, &setting_id));
+  EXPECT_FALSE(ParseSettingsId(0xFF44, &setting_id));
+  EXPECT_TRUE(ParseSettingsId(0xFF45, &setting_id));
+  EXPECT_EQ(SETTINGS_EXPERIMENT_SCHEDULER, setting_id);
+  EXPECT_FALSE(ParseSettingsId(0xFF46, &setting_id));
 }
 
 TEST(SpdyProtocolTest, SettingsIdToString) {
   struct {
-    SpdySettingsIds setting_id;
-    bool expected_bool;
+    SpdySettingsId setting_id;
     const SpdyString expected_string;
   } test_cases[] = {
-      {static_cast<SpdySettingsIds>(0), false, "SETTINGS_UNKNOWN"},
-      {SETTINGS_HEADER_TABLE_SIZE, true, "SETTINGS_HEADER_TABLE_SIZE"},
-      {SETTINGS_ENABLE_PUSH, true, "SETTINGS_ENABLE_PUSH"},
-      {SETTINGS_MAX_CONCURRENT_STREAMS, true,
-       "SETTINGS_MAX_CONCURRENT_STREAMS"},
-      {SETTINGS_INITIAL_WINDOW_SIZE, true, "SETTINGS_INITIAL_WINDOW_SIZE"},
-      {SETTINGS_MAX_FRAME_SIZE, true, "SETTINGS_MAX_FRAME_SIZE"},
-      {SETTINGS_MAX_HEADER_LIST_SIZE, true, "SETTINGS_MAX_HEADER_LIST_SIZE"},
-      {static_cast<SpdySettingsIds>(7), false, "SETTINGS_UNKNOWN"}};
+      {0, "SETTINGS_UNKNOWN_0"},
+      {SETTINGS_HEADER_TABLE_SIZE, "SETTINGS_HEADER_TABLE_SIZE"},
+      {SETTINGS_ENABLE_PUSH, "SETTINGS_ENABLE_PUSH"},
+      {SETTINGS_MAX_CONCURRENT_STREAMS, "SETTINGS_MAX_CONCURRENT_STREAMS"},
+      {SETTINGS_INITIAL_WINDOW_SIZE, "SETTINGS_INITIAL_WINDOW_SIZE"},
+      {SETTINGS_MAX_FRAME_SIZE, "SETTINGS_MAX_FRAME_SIZE"},
+      {SETTINGS_MAX_HEADER_LIST_SIZE, "SETTINGS_MAX_HEADER_LIST_SIZE"},
+      {7, "SETTINGS_UNKNOWN_7"},
+      {SETTINGS_ENABLE_CONNECT_PROTOCOL, "SETTINGS_ENABLE_CONNECT_PROTOCOL"},
+      {9, "SETTINGS_UNKNOWN_9"},
+      {0xFF44, "SETTINGS_UNKNOWN_ff44"},
+      {0xFF45, "SETTINGS_EXPERIMENT_SCHEDULER"},
+      {0xFF46, "SETTINGS_UNKNOWN_ff46"}};
   for (auto test_case : test_cases) {
-    const char* settings_id_string;
-    EXPECT_EQ(test_case.expected_bool,
-              SettingsIdToString(test_case.setting_id, &settings_id_string));
-    EXPECT_EQ(test_case.expected_string, settings_id_string);
+    EXPECT_EQ(test_case.expected_string,
+              SettingsIdToString(test_case.setting_id));
   }
 }
 

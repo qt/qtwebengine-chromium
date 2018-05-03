@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/navigator.h"
@@ -26,7 +27,6 @@
 #include "content/common/media/media_player_delegate_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "content/public/browser/javascript_dialog_manager.h"
@@ -55,7 +55,7 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/sandbox_flags.h"
+#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "url/url_constants.h"
 
@@ -371,7 +371,8 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   InitNavigateParams(&params, 0, true, GURL(url::kAboutBlankURL),
                      ui::PAGE_TRANSITION_TYPED);
 
-  main_test_rfh()->SendNavigateWithParams(&params);
+  main_test_rfh()->SendNavigateWithParams(&params,
+                                          false /* was_within_same_document */);
 
   contents()->UpdateTitle(main_test_rfh(),
                           base::ASCIIToUTF16("    Lots O' Whitespace\n"),
@@ -448,7 +449,8 @@ TEST_F(WebContentsImplTest, DirectNavigationToViewSourceWebUI) {
       FrameHostMsg_DidStartProvisionalLoad(1, kRewrittenURL,
                                            std::vector<GURL>(),
                                            base::TimeTicks::Now()));
-  main_test_rfh()->SendNavigateWithParams(&params);
+  main_test_rfh()->SendNavigateWithParams(&params,
+                                          false /* was_within_same_document */);
 
   // This is the virtual URL.
   EXPECT_EQ(base::ASCIIToUTF16("view-source:chrome://blah"),
@@ -545,8 +547,7 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   int entry_id = controller().GetPendingEntry()->GetUniqueID();
-  if (IsBrowserSideNavigationEnabled())
-    orig_rfh->PrepareForCommit();
+  orig_rfh->PrepareForCommit();
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(url, contents()->GetLastCommittedURL());
   EXPECT_EQ(url2, contents()->GetVisibleURL());
@@ -583,8 +584,7 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   // We should use the same RFH as before, swapping it back in.
   controller().GoBack();
   entry_id = controller().GetPendingEntry()->GetUniqueID();
-  if (IsBrowserSideNavigationEnabled())
-    main_test_rfh()->PrepareForCommit();
+  main_test_rfh()->PrepareForCommit();
   TestRenderFrameHost* goback_rfh = contents()->GetPendingMainFrame();
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
 
@@ -785,8 +785,7 @@ TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   entry_id = controller().GetPendingEntry()->GetUniqueID();
-  if (IsBrowserSideNavigationEnabled())
-    orig_rfh->PrepareForCommit();
+  orig_rfh->PrepareForCommit();
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(url, contents()->GetLastCommittedURL());
   EXPECT_EQ(url2, contents()->GetVisibleURL());
@@ -2544,8 +2543,7 @@ TEST_F(WebContentsImplTest, NoJSMessageOnInterstitials) {
   IPC::Message* dummy_message = new IPC::Message;
   contents()->RunJavaScriptDialog(
       main_test_rfh(), base::ASCIIToUTF16("This is an informative message"),
-      base::ASCIIToUTF16("OK"), kGURL, JAVASCRIPT_DIALOG_TYPE_ALERT,
-      dummy_message);
+      base::ASCIIToUTF16("OK"), JAVASCRIPT_DIALOG_TYPE_ALERT, dummy_message);
   EXPECT_TRUE(contents()->last_dialog_suppressed_);
 }
 
@@ -2985,8 +2983,7 @@ TEST_F(WebContentsImplTest, ActiveContentsCountNavigate) {
                                     ui::PAGE_TRANSITION_TYPED,
                                     std::string());
   int entry_id = contents->GetController().GetPendingEntry()->GetUniqueID();
-  if (IsBrowserSideNavigationEnabled())
-    contents->GetMainFrame()->PrepareForCommit();
+  contents->GetMainFrame()->PrepareForCommit();
   EXPECT_TRUE(contents->CrossProcessNavigationPending());
   EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
   contents->GetPendingMainFrame()->SendNavigate(entry_id, true, kUrl);
@@ -3047,17 +3044,32 @@ class LoadingWebContentsObserver : public WebContentsObserver {
  public:
   explicit LoadingWebContentsObserver(WebContents* contents)
       : WebContentsObserver(contents),
-        is_loading_(false) {
-  }
+        is_loading_(false),
+        did_receive_response_(false) {}
   ~LoadingWebContentsObserver() override {}
 
-  void DidStartLoading() override { is_loading_ = true; }
-  void DidStopLoading() override { is_loading_ = false; }
+  // The assertions on these messages ensure that they are received in order.
+  void DidStartLoading() override {
+    ASSERT_FALSE(did_receive_response_);
+    ASSERT_FALSE(is_loading_);
+    is_loading_ = true;
+  }
+  void DidReceiveResponse() override {
+    ASSERT_TRUE(is_loading_);
+    did_receive_response_ = true;
+  }
+  void DidStopLoading() override {
+    ASSERT_TRUE(is_loading_);
+    is_loading_ = false;
+    did_receive_response_ = false;
+  }
 
   bool is_loading() const { return is_loading_; }
+  bool did_receive_response() const { return did_receive_response_; }
 
  private:
   bool is_loading_;
+  bool did_receive_response_;
 
   DISALLOW_COPY_AND_ASSIGN(LoadingWebContentsObserver);
 };
@@ -3089,39 +3101,33 @@ TEST_F(WebContentsImplTestWithSiteIsolation, StartStopEventsBalance) {
   const GURL bar_url("http://bar.chromium.org");
   TestRenderFrameHost* orig_rfh = main_test_rfh();
 
-  // Use a WebContentsObserver to approximate the behavior of the tab's spinner.
+  // Use a WebContentsObserver to observe the behavior of the tab's spinner.
   LoadingWebContentsObserver observer(contents());
 
-  // Navigate the main RenderFrame, simulate the DidStartLoading, and commit.
-  // The frame should still be loading.
+  // Navigate the main RenderFrame and commit. The frame should still be
+  // loading.
   controller().LoadURL(
       main_url, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   int entry_id = controller().GetPendingEntry()->GetUniqueID();
 
-  // PlzNavigate: the RenderFrameHost does not expect to receive
-  // DidStartLoading IPCs for navigations to different documents.
-  if (!IsBrowserSideNavigationEnabled()) {
-    orig_rfh->OnMessageReceived(
-        FrameHostMsg_DidStartLoading(orig_rfh->GetRoutingID(), false));
-  }
   main_test_rfh()->PrepareForCommit();
   contents()->TestDidNavigate(orig_rfh, entry_id, true, main_url,
                               ui::PAGE_TRANSITION_TYPED);
   EXPECT_FALSE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(orig_rfh, main_test_rfh());
   EXPECT_TRUE(contents()->IsLoading());
+
+  // The Observer callback implementations contain assertions to ensure that the
+  // events arrive in the correct order.
   EXPECT_TRUE(observer.is_loading());
+  EXPECT_TRUE(observer.did_receive_response());
 
   // Create a child frame to navigate multiple times.
   TestRenderFrameHost* subframe = orig_rfh->AppendChild("subframe");
 
-  // Navigate the child frame to about:blank, which will send both
-  // DidStartLoading and DidStopLoading messages.
+  // Navigate the child frame to about:blank, which will send DidStopLoading
+  // message.
   {
-    if (!IsBrowserSideNavigationEnabled()) {
-      subframe->OnMessageReceived(
-          FrameHostMsg_DidStartLoading(subframe->GetRoutingID(), true));
-    }
     subframe->SendNavigateWithTransition(0, false, initial_url,
                                          ui::PAGE_TRANSITION_AUTO_SUBFRAME);
     subframe->OnMessageReceived(
@@ -3138,6 +3144,7 @@ TEST_F(WebContentsImplTestWithSiteIsolation, StartStopEventsBalance) {
   // expected that the WebContents is still in loading state.
   EXPECT_TRUE(contents()->IsLoading());
   EXPECT_TRUE(observer.is_loading());
+  EXPECT_TRUE(observer.did_receive_response());
 
   // Navigate the frame again, this time using LoadURLWithParams. This causes
   // RenderFrameHost to call into WebContents::DidStartLoading, which starts
@@ -3156,11 +3163,6 @@ TEST_F(WebContentsImplTestWithSiteIsolation, StartStopEventsBalance) {
     controller().LoadURLWithParams(load_params);
     entry_id = controller().GetPendingEntry()->GetUniqueID();
 
-    if (!IsBrowserSideNavigationEnabled()) {
-      subframe->OnMessageReceived(
-          FrameHostMsg_DidStartLoading(subframe->GetRoutingID(), true));
-    }
-
     // Commit the navigation in the child frame and send the DidStopLoading
     // message.
     subframe->PrepareForCommit();
@@ -3174,6 +3176,7 @@ TEST_F(WebContentsImplTestWithSiteIsolation, StartStopEventsBalance) {
   // hasn't sent the DidstopLoading message yet.
   EXPECT_TRUE(contents()->IsLoading());
   EXPECT_TRUE(observer.is_loading());
+  EXPECT_TRUE(observer.did_receive_response());
 
   // Send the DidStopLoading for the main frame and ensure it isn't loading
   // anymore.
@@ -3181,6 +3184,7 @@ TEST_F(WebContentsImplTestWithSiteIsolation, StartStopEventsBalance) {
       FrameHostMsg_DidStopLoading(orig_rfh->GetRoutingID()));
   EXPECT_FALSE(contents()->IsLoading());
   EXPECT_FALSE(observer.is_loading());
+  EXPECT_FALSE(observer.did_receive_response());
 }
 
 // Tests that WebContentsImpl::IsLoadingToDifferentDocument only reports main
@@ -3190,18 +3194,12 @@ TEST_F(WebContentsImplTestWithSiteIsolation, IsLoadingToDifferentDocument) {
   const GURL main_url("http://www.chromium.org");
   TestRenderFrameHost* orig_rfh = main_test_rfh();
 
-  // Navigate the main RenderFrame, simulate the DidStartLoading, and commit.
-  // The frame should still be loading.
+  // Navigate the main RenderFrame and commit. The frame should still be
+  // loading.
   controller().LoadURL(main_url, Referrer(), ui::PAGE_TRANSITION_TYPED,
                        std::string());
   int entry_id = controller().GetPendingEntry()->GetUniqueID();
 
-  // PlzNavigate: the RenderFrameHost does not expect to receive
-  // DidStartLoading IPCs for navigations to different documents.
-  if (!IsBrowserSideNavigationEnabled()) {
-    orig_rfh->OnMessageReceived(
-        FrameHostMsg_DidStartLoading(orig_rfh->GetRoutingID(), false));
-  }
   main_test_rfh()->PrepareForCommit();
   contents()->TestDidNavigate(orig_rfh, entry_id, true, main_url,
                               ui::PAGE_TRANSITION_TYPED);
@@ -3222,10 +3220,6 @@ TEST_F(WebContentsImplTestWithSiteIsolation, IsLoadingToDifferentDocument) {
 
   // Navigate the child frame to about:blank, make sure the web contents is
   // marked as "loading" but not "loading to different document".
-  if (!IsBrowserSideNavigationEnabled()) {
-    subframe->OnMessageReceived(
-        FrameHostMsg_DidStartLoading(subframe->GetRoutingID(), true));
-  }
   subframe->SendNavigateWithTransition(0, false, GURL("about:blank"),
                                        ui::PAGE_TRANSITION_AUTO_SUBFRAME);
   EXPECT_TRUE(contents()->IsLoading());
@@ -3453,7 +3447,7 @@ TEST_F(WebContentsImplTest, ThemeColorChangeDependingOnFirstVisiblePaint) {
 }
 
 TEST_F(WebContentsImplTest, ParseDownloadHeaders) {
-  DownloadUrlParameters::RequestHeadersType request_headers =
+  download::DownloadUrlParameters::RequestHeadersType request_headers =
       WebContentsImpl::ParseDownloadHeaders("A: 1\r\nB: 2\r\nC: 3\r\n\r\n");
   ASSERT_EQ(3u, request_headers.size());
   EXPECT_EQ("A", request_headers[0].first);
@@ -3496,7 +3490,7 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager {
   // JavaScriptDialogManager
 
   void RunJavaScriptDialog(WebContents* web_contents,
-                           const GURL& alerting_frame_url,
+                           RenderFrameHost* render_frame_host,
                            JavaScriptDialogType dialog_type,
                            const base::string16& message_text,
                            const base::string16& default_prompt_text,

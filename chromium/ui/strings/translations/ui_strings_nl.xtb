@@ -8,6 +8,7 @@
 <translation id="1243314992276662751">Uploaden</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">AANBEVOLEN APPS</translation>
+<translation id="1368832886055348810">Links naar rechts</translation>
 <translation id="1398853756734560583">Maximaliseren</translation>
 <translation id="1413622004203049571">Meldingen van <ph name="NOTIFIER_NAME" /> uitschakelen</translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 minuut en }other{# minuten en }}</translation>
@@ -21,6 +22,7 @@
 <translation id="1812519734428420144">Sterbeoordeling <ph name="RATING_SCORE" /></translation>
 <translation id="1830179671306812954">{HOURS,plural, =1{1 uur en }other{# uur en }}</translation>
 <translation id="1842960171412779397">Selecteren</translation>
+<translation id="1859234291848436338">Schrijfrichting</translation>
 <translation id="1860796786778352021">Melding sluiten</translation>
 <translation id="1871244248791675517">Ins</translation>
 <translation id="1884435127456172652"><ph name="NUMBER" />%</translation>
@@ -30,6 +32,7 @@
 <translation id="2168039046890040389">Pagina omhoog</translation>
 <translation id="2190355936436201913">(leeg)</translation>
 <translation id="219905428774326614">Launcher, alle apps</translation>
+<translation id="2267918077332197517">Alle meldingen van deze site blokkeren</translation>
 <translation id="2289052229480071835">Tik op de tikdoelen op je scherm.</translation>
 <translation id="2295140143284145483">Enquête</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
@@ -50,7 +53,9 @@
 <translation id="3183922693828471536">Hiernaartoe bladeren</translation>
 <translation id="3234408098842461169">Pijl-omlaag</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{1 dag}other{# dagen}}</translation>
+<translation id="335581015389089642">Spraak</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{1 dag resterend}other{# dagen resterend}}</translation>
+<translation id="3618849550573277856">'<ph name="LOOKUP_STRING" />' opzoeken</translation>
 <translation id="364720409959344976">Map voor uploaden selecteren</translation>
 <translation id="3660179305079774227">Pijl-omhoog</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> GB/s</translation>
@@ -63,8 +68,8 @@
 <translation id="4202807286478387388">Gaan naar</translation>
 <translation id="4250229828105606438">Screenshot</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{1 maand geleden}other{# maanden geleden}}</translation>
+<translation id="4289300219472526559">Inspreken starten</translation>
 <translation id="4316910396681052118">ALLE APPS</translation>
-<translation id="4320177379694898372">Geen internetverbinding</translation>
 <translation id="4588090240171750605">Naar rechts bladeren</translation>
 <translation id="4724120544754982507">Meldingscentrum, <ph name="UNREAD_NOTIFICATION_COUNT" /> ongelezen meldingen</translation>
 <translation id="4730374152663651037">VEELGEBRUIKT</translation>
@@ -102,7 +107,9 @@
 <translation id="6351032674660237738">APP-SUGGESTIES</translation>
 <translation id="6364916375976753737">Naar links bladeren</translation>
 <translation id="6394627529324717982">Komma</translation>
+<translation id="6397363302884558537">Inspreken stoppen</translation>
 <translation id="6404817160109697034">{SECONDS,plural, =1{1 sec. geleden}other{# sec. geleden}}</translation>
+<translation id="6430678249303439055">Alle meldingen van deze app blokkeren</translation>
 <translation id="6483402905448010557">{SECONDS,plural, =1{1 seconde geleden}other{# seconden geleden}}</translation>
 <translation id="654149438358937226">Alle meldingen blokkeren</translation>
 <translation id="6567071839949112727">klik via bovenliggende entiteit</translation>
@@ -119,6 +126,7 @@
 <translation id="6917971086528278418">{YEARS,plural, =1{Nog 1 jaar}other{Nog # jaar}}</translation>
 <translation id="6945221475159498467">Selecteren</translation>
 <translation id="6965382102122355670">OK</translation>
+<translation id="6974053822202609517">Rechts naar links</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">MEEST WAARSCHIJNLIJK</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -142,7 +150,6 @@
 <translation id="8328145009876646418">Linkerzijde</translation>
 <translation id="8331626408530291785">Omhoog bladeren</translation>
 <translation id="8352146631962686268">{YEARS,plural, =1{1 jaar}other{# jaar}}</translation>
-<translation id="8371695176452482769">Begin nu te spreken</translation>
 <translation id="838869780401515933">Selecteren</translation>
 <translation id="8393700583063109961">Bericht verzenden</translation>
 <translation id="8394908167088220973">Media afspelen/onderbreken</translation>
@@ -153,6 +160,7 @@
 <translation id="8725488761726303204">+ nog <ph name="NUMBER" /></translation>
 <translation id="8730621377337864115">Gereed</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 u}other{# u}}</translation>
+<translation id="8798099450830957504">Standaard</translation>
 <translation id="8806053966018712535">Map <ph name="FOLDER_NAME" /></translation>
 <translation id="883911313571074303">Afbeelding annoteren</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" />  KB</translation>

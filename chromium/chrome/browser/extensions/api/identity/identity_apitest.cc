@@ -518,8 +518,8 @@ class IdentityGetAccountsFunctionTest : public IdentityTestWithSignin {
         new IdentityGetAccountsFunction);
     func->set_extension(
         ExtensionBuilder("Test").SetID(kExtensionId).Build().get());
-    if (!utils::RunFunction(
-            func.get(), std::string("[]"), browser(), utils::NONE)) {
+    if (!utils::RunFunction(func.get(), std::string("[]"), browser(),
+                            api_test_utils::NONE)) {
       return GenerateFailureResult(accounts, NULL)
              << "getAccounts did not return a result.";
     }
@@ -819,7 +819,7 @@ class GetAuthTokenFunctionTest
       const OAuth2TokenService::ScopeSet& scopes) override {
     if (on_access_token_requested_.is_null())
       return;
-    base::ResetAndReturn(&on_access_token_requested_).Run();
+    std::move(on_access_token_requested_).Run();
   }
 
   std::string extension_id_;
@@ -2020,10 +2020,8 @@ class RemoveCachedAuthTokenFunctionTest : public ExtensionBrowserTest {
     func->set_extension(
         ExtensionBuilder("Test").SetID(kExtensionId).Build().get());
     return utils::RunFunction(
-        func.get(),
-        std::string("[{\"token\": \"") + kAccessToken + "\"}]",
-        browser(),
-        extension_function_test_utils::NONE);
+        func.get(), std::string("[{\"token\": \"") + kAccessToken + "\"}]",
+        browser(), api_test_utils::NONE);
   }
 
   IdentityAPI* id_api() {

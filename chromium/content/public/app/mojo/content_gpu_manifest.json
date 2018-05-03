@@ -9,8 +9,11 @@
           "content::mojom::ChildControl",
           "content::mojom::ChildHistogramFetcher",
           "content::mojom::ChildHistogramFetcherFactory",
+          "content::mojom::ResourceUsageReporter",
           "IPC::mojom::ChannelBootstrap",
           "service_manager::mojom::ServiceFactory",
+          "ui::ozone::mojom::DeviceCursor",
+          "ui::ozone::mojom::DrmDevice",
           "viz::mojom::CompositingModeReporter",
           "viz::mojom::VizMain"
         ],
@@ -26,7 +29,8 @@
           "gpu"
         ],
         "device": [ "device:power_monitor" ],
-        "metrics": [ "url_keyed_metrics" ]
+        "metrics": [ "url_keyed_metrics" ],
+        "ui": [ "discardable_memory" ]
       }
     }
   }

@@ -14,16 +14,24 @@
 #endif
 
 namespace device {
-OculusRenderLoop::OculusRenderLoop(ovrSession session)
+OculusRenderLoop::OculusRenderLoop(ovrSession session, ovrGraphicsLuid luid)
     : base::Thread("OculusRenderLoop"),
       main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       session_(session),
+      luid_(luid),
       binding_(this),
       weak_ptr_factory_(this) {
   DCHECK(main_thread_task_runner_);
 }
 
-OculusRenderLoop::~OculusRenderLoop() {}
+OculusRenderLoop::~OculusRenderLoop() {
+  Stop();
+}
+
+void OculusRenderLoop::CleanUp() {
+  submit_client_ = nullptr;
+  binding_.Close();
+}
 
 void OculusRenderLoop::SubmitFrame(int16_t frame_index,
                                    const gpu::MailboxHolder& mailbox,
@@ -55,14 +63,13 @@ void OculusRenderLoop::SubmitFrameWithTextureHandle(
     ovrTextureSwapChainDesc desc = {};
     desc.Type = ovrTexture_2D;
     desc.ArraySize = 1;
-    // TODO(billorr): Use SRGB, and do color conversion when we copy.
-    desc.Format = OVR_FORMAT_R8G8B8A8_UNORM;
+    desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
     desc.Width = source_size_.width();
     desc.Height = source_size_.height();
     desc.MipLevels = 1;
     desc.SampleCount = 1;
     desc.StaticImage = ovrFalse;
-    desc.MiscFlags = ovrTextureMisc_None;
+    desc.MiscFlags = ovrTextureMisc_DX_Typeless;
     desc.BindFlags = ovrTextureBind_DX_RenderTarget;
     ovr_CreateTextureSwapChainDX(session_, texture_helper_.GetDevice().Get(),
                                  &desc, &texture_swap_chain_);
@@ -75,23 +82,27 @@ void OculusRenderLoop::SubmitFrameWithTextureHandle(
         session_, texture_swap_chain_, -1,
         IID_PPV_ARGS(texture.ReleaseAndGetAddressOf()));
     texture_helper_.SetBackbuffer(texture);
-    if (texture_helper_.CopyTextureToBackBuffer(false)) {
+
+    if (texture_helper_.CopyTextureToBackBuffer(true)) {
       copy_succeeded = true;
       ovrLayerEyeFov layer = {};
       layer.Header.Type = ovrLayerType_EyeFov;
-      layer.Header.Flags = ovrLayerFlag_TextureOriginAtBottomLeft;
+      layer.Header.Flags = 0;
       layer.ColorTexture[0] = texture_swap_chain_;
       DCHECK(source_size_.width() % 2 == 0);
       layer.Viewport[0] = {
-          {source_size_.width() * left_bounds_.x(),
-           source_size_.height() * left_bounds_.y()},
-          {source_size_.width() * left_bounds_.width(),
-           source_size_.height() * left_bounds_.height()}};  // left viewport
+          // Left viewport.
+          {static_cast<int>(source_size_.width() * left_bounds_.x()),
+           static_cast<int>(source_size_.height() * left_bounds_.y())},
+          {static_cast<int>(source_size_.width() * left_bounds_.width()),
+           static_cast<int>(source_size_.height() * left_bounds_.height())}};
+
       layer.Viewport[1] = {
-          {source_size_.width() * right_bounds_.x(),
-           source_size_.height() * right_bounds_.y()},
-          {source_size_.width() * right_bounds_.width(),
-           source_size_.height() * right_bounds_.height()}};  // right viewport
+          // Right viewport.
+          {static_cast<int>(source_size_.width() * right_bounds_.x()),
+           static_cast<int>(source_size_.height() * right_bounds_.y())},
+          {static_cast<int>(source_size_.width() * right_bounds_.width()),
+           static_cast<int>(source_size_.height() * right_bounds_.height())}};
       ovrHmdDesc hmdDesc = ovr_GetHmdDesc(session_);
       layer.Fov[0] = hmdDesc.DefaultEyeFov[0];
       layer.Fov[1] = hmdDesc.DefaultEyeFov[1];
@@ -143,11 +154,13 @@ void OculusRenderLoop::UpdateLayerBounds(int16_t frame_id,
 void OculusRenderLoop::RequestPresent(
     mojom::VRSubmitFrameClientPtrInfo submit_client_info,
     mojom::VRPresentationProviderRequest request,
-    base::OnceCallback<void(bool)> callback) {
+    device::mojom::VRRequestPresentOptionsPtr present_options,
+    device::mojom::VRDisplayHost::RequestPresentCallback callback) {
 #if defined(OS_WIN)
-  if (!texture_helper_.EnsureInitialized()) {
+  if (!texture_helper_.SetAdapterLUID(*reinterpret_cast<LUID*>(&luid_)) ||
+      !texture_helper_.EnsureInitialized()) {
     main_thread_task_runner_->PostTask(
-        FROM_HERE, base::BindOnce(std::move(callback), false));
+        FROM_HERE, base::BindOnce(std::move(callback), false, nullptr));
     return;
   }
 #endif
@@ -156,8 +169,17 @@ void OculusRenderLoop::RequestPresent(
   binding_.Close();
   binding_.Bind(std::move(request));
 
-  main_thread_task_runner_->PostTask(FROM_HERE,
-                                     base::BindOnce(std::move(callback), true));
+  device::mojom::VRDisplayFrameTransportOptionsPtr transport_options =
+      device::mojom::VRDisplayFrameTransportOptions::New();
+  transport_options->transport_method =
+      device::mojom::VRDisplayFrameTransportMethod::SUBMIT_AS_TEXTURE_HANDLE;
+  // Only set boolean options that we need. Default is false, and we should be
+  // able to safely ignore ones that our implementation doesn't care about.
+  transport_options->wait_for_transfer_notification = true;
+
+  main_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(std::move(callback), true, std::move(transport_options)));
   is_presenting_ = true;
 }
 

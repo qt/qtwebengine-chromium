@@ -24,7 +24,6 @@ enum class SurfaceDrawStatus;
 
 namespace viz {
 class CompositorFrame;
-class FrameSinkManagerImpl;
 class HostFrameSinkManager;
 }  // namespace viz
 
@@ -50,14 +49,15 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
 
   DelegatedFrameHostAndroid(ViewAndroid* view,
                             viz::HostFrameSinkManager* host_frame_sink_manager,
-                            viz::FrameSinkManagerImpl* frame_sink_manager,
                             Client* client,
                             const viz::FrameSinkId& frame_sink_id);
 
   ~DelegatedFrameHostAndroid() override;
 
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame);
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list);
   void DidNotProduceFrame(const viz::BeginFrameAck& ack);
 
   void DestroyDelegatedContent();
@@ -69,10 +69,11 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   // Should only be called when the host has a content layer. Use this for one-
   // off screen capture, not for video. Always provides RGBA_BITMAP
   // CopyOutputResults.
-  void RequestCopyOfSurface(
-      WindowAndroidCompositor* compositor,
-      const gfx::Rect& src_subrect_in_pixel,
-      viz::CopyOutputRequest::CopyOutputRequestCallback result_callback);
+  void CopyFromCompositingSurface(
+      const gfx::Rect& src_subrect,
+      const gfx::Size& output_size,
+      base::OnceCallback<void(const SkBitmap&)> callback);
+  bool CanCopyFromCompositingSurface() const;
 
   void CompositorFrameSinkChanged();
 
@@ -121,7 +122,6 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   ViewAndroid* view_;
 
   viz::HostFrameSinkManager* const host_frame_sink_manager_;
-  viz::FrameSinkManagerImpl* const frame_sink_manager_;
   WindowAndroidCompositor* registered_parent_compositor_ = nullptr;
   Client* client_;
 

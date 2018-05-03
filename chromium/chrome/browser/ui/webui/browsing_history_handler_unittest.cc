@@ -57,8 +57,6 @@ base::Time PretendNow() {
   return out_time;
 }
 
-void IgnoreBoolAndDoNothing(bool ignored_argument) {}
-
 class TestSyncService : public browser_sync::TestProfileSyncService {
  public:
   explicit TestSyncService(Profile* profile)
@@ -84,17 +82,16 @@ class TestSyncService : public browser_sync::TestProfileSyncService {
 class BrowsingHistoryHandlerWithWebUIForTesting
     : public BrowsingHistoryHandler {
  public:
-  explicit BrowsingHistoryHandlerWithWebUIForTesting(content::WebUI* web_ui)
-      : test_clock_(new base::SimpleTestClock()) {
-    set_clock(base::WrapUnique(test_clock_));
+  explicit BrowsingHistoryHandlerWithWebUIForTesting(content::WebUI* web_ui) {
+    set_clock(&test_clock_);
     set_web_ui(web_ui);
-    test_clock_->SetNow(PretendNow());
+    test_clock_.SetNow(PretendNow());
   }
 
-  base::SimpleTestClock* test_clock() { return test_clock_; }
+  base::SimpleTestClock* test_clock() { return &test_clock_; }
 
  private:
-  base::SimpleTestClock* test_clock_;
+  base::SimpleTestClock test_clock_;
 };
 
 }  // namespace
@@ -167,7 +164,7 @@ class BrowsingHistoryHandlerTest : public ::testing::Test {
 // Tests that BrowsingHistoryHandler is informed about WebHistoryService
 // deletions.
 TEST_F(BrowsingHistoryHandlerTest, ObservingWebHistoryDeletions) {
-  base::Callback<void(bool)> callback = base::Bind(&IgnoreBoolAndDoNothing);
+  base::Callback<void(bool)> callback = base::DoNothing();
 
   // BrowsingHistoryHandler is informed about WebHistoryService history
   // deletions.

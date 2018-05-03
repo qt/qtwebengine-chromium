@@ -16,20 +16,10 @@
 
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
-#include "modules/video_coding/codecs/test/packet_manipulator.h"
+#include "modules/video_coding/include/video_codec_interface.h"
 
 namespace webrtc {
 namespace test {
-
-// Defines which frame types shall be excluded from packet loss and when.
-enum ExcludeFrameTypes {
-  // Will exclude the first keyframe in the video sequence from packet loss.
-  // Following keyframes will be targeted for packet loss.
-  kExcludeOnlyFirstKeyFrame,
-  // Exclude all keyframes from packet loss, no matter where in the video
-  // sequence they occur.
-  kExcludeAllKeyFrames
-};
 
 // Test configuration for a test run.
 struct TestConfig {
@@ -42,42 +32,40 @@ struct TestConfig {
   };
 
   void SetCodecSettings(VideoCodecType codec_type,
-                        int num_temporal_layers,
-                        bool error_concealment_on,
+                        size_t num_simulcast_streams,
+                        size_t num_spatial_layers,
+                        size_t num_temporal_layers,
                         bool denoising_on,
                         bool frame_dropper_on,
                         bool spatial_resize_on,
                         bool resilience_on,
-                        int width,
-                        int height);
+                        size_t width,
+                        size_t height);
 
-  int NumberOfCores() const;
-  int NumberOfTemporalLayers() const;
-  int TemporalLayerForFrame(int frame_idx) const;
-  std::vector<FrameType> FrameTypeForFrame(int frame_idx) const;
+  void ConfigureSimulcast();
+
+  size_t NumberOfCores() const;
+  size_t NumberOfTemporalLayers() const;
+  size_t NumberOfSpatialLayers() const;
+  size_t NumberOfSimulcastStreams() const;
+
+  std::vector<FrameType> FrameTypeForFrame(size_t frame_idx) const;
   std::string ToString() const;
   std::string CodecName() const;
   std::string FilenameWithParams() const;
+  bool IsAsyncCodec() const;
 
   // Plain name of YUV file to process without file extension.
   std::string filename;
 
   // File to process. This must be a video file in the YUV format.
-  std::string input_filename;
-
-  // File to write to during processing for the test. Will be a video file in
-  // the YUV format.
-  std::string output_filename;
+  std::string filepath;
 
   // Number of frames to process.
-  int num_frames = 0;
+  size_t num_frames = 0;
 
-  // Configurations related to networking.
-  NetworkingConfig networking_config;
-
-  // Decides how the packet loss simulations shall exclude certain frames from
-  // packet loss.
-  ExcludeFrameTypes exclude_frame_types = kExcludeOnlyFirstKeyFrame;
+  // Bitstream constraints.
+  size_t max_payload_size_bytes = 1440;
 
   // Force the encoder and decoder to use a single core for processing.
   // Using a single core is necessary to get a deterministic behavior for the
@@ -96,7 +84,7 @@ struct TestConfig {
   // to this setting. Forcing key frames may also affect encoder planning
   // optimizations in a negative way, since it will suddenly be forced to
   // produce an expensive key frame.
-  int keyframe_interval = 0;
+  size_t keyframe_interval = 0;
 
   // Codec settings to use.
   webrtc::VideoCodec codec_settings;
@@ -118,6 +106,9 @@ struct TestConfig {
 
   // Custom checker that will be called for each frame.
   const EncodedFrameChecker* encoded_frame_checker = nullptr;
+
+  // Print out frame level stats.
+  bool print_frame_level_stats = false;
 };
 
 }  // namespace test

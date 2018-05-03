@@ -11,6 +11,7 @@
 #include <wrl/client.h>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
@@ -20,14 +21,15 @@
 #include "base/win/scoped_variant.h"
 #include "media/base/media_switches.h"
 #include "media/base/win/mf_initializer.h"
+#include "media/capture/video/win/metrics.h"
 #include "media/capture/video/win/video_capture_device_mf_win.h"
 #include "media/capture/video/win/video_capture_device_win.h"
 
 using Descriptor = media::VideoCaptureDeviceDescriptor;
 using Descriptors = media::VideoCaptureDeviceDescriptors;
-using Microsoft::WRL::ComPtr;
 using base::win::ScopedCoMem;
 using base::win::ScopedVariant;
+using Microsoft::WRL::ComPtr;
 
 namespace media {
 
@@ -69,10 +71,9 @@ static bool IsDeviceBlacklistedForQueryingDetailedFrameRates(
 
 static bool LoadMediaFoundationDlls() {
   static const wchar_t* const kMfDLLs[] = {
-      L"%WINDIR%\\system32\\mf.dll",
-      L"%WINDIR%\\system32\\mfplat.dll",
+      L"%WINDIR%\\system32\\mf.dll", L"%WINDIR%\\system32\\mfplat.dll",
       L"%WINDIR%\\system32\\mfreadwrite.dll",
-  };
+      L"%WINDIR%\\system32\\MFCaptureEngine.dll"};
 
   for (const wchar_t* kMfDLL : kMfDLLs) {
     wchar_t path[MAX_PATH] = {0};
@@ -86,8 +87,13 @@ static bool LoadMediaFoundationDlls() {
 static bool PrepareVideoCaptureAttributesMediaFoundation(
     IMFAttributes** attributes,
     int count) {
-  if (!InitializeMediaFoundation())
+  // Once https://bugs.chromium.org/p/chromium/issues/detail?id=791615 is fixed,
+  // we must make sure that this method succeeds in capture_unittests context
+  // when MediaFoundation is enabled.
+  if (!VideoCaptureDeviceFactoryWin::PlatformSupportsMediaFoundation() ||
+      !InitializeMediaFoundation()) {
     return false;
+  }
 
   if (FAILED(MFCreateAttributes(attributes, count)))
     return false;
@@ -250,16 +256,16 @@ static void GetDeviceDescriptorsMediaFoundation(
 static void GetDeviceSupportedFormatsDirectShow(const Descriptor& descriptor,
                                                 VideoCaptureFormats* formats) {
   DVLOG(1) << "GetDeviceSupportedFormatsDirectShow for "
-           << descriptor.display_name;
+           << descriptor.display_name();
   bool query_detailed_frame_rates =
       !IsDeviceBlacklistedForQueryingDetailedFrameRates(
-          descriptor.display_name);
+          descriptor.display_name());
   CapabilityList capability_list;
   VideoCaptureDeviceWin::GetDeviceCapabilityList(
       descriptor.device_id, query_detailed_frame_rates, &capability_list);
   for (const auto& entry : capability_list) {
     formats->emplace_back(entry.supported_format);
-    DVLOG(1) << descriptor.display_name << " "
+    DVLOG(1) << descriptor.display_name() << " "
              << VideoCaptureFormat::ToString(entry.supported_format);
   }
 }
@@ -268,7 +274,7 @@ static void GetDeviceSupportedFormatsMediaFoundation(
     const Descriptor& descriptor,
     VideoCaptureFormats* formats) {
   DVLOG(1) << "GetDeviceSupportedFormatsMediaFoundation for "
-           << descriptor.display_name;
+           << descriptor.display_name();
   ComPtr<IMFMediaSource> source;
   if (!CreateVideoCaptureDeviceMediaFoundation(descriptor.device_id.c_str(),
                                                source.GetAddressOf())) {
@@ -286,8 +292,9 @@ static void GetDeviceSupportedFormatsMediaFoundation(
 
   DWORD stream_index = 0;
   ComPtr<IMFMediaType> type;
-  while (SUCCEEDED(reader->GetNativeMediaType(kFirstVideoStream, stream_index,
-                                              type.GetAddressOf()))) {
+  while (SUCCEEDED(hr = reader->GetNativeMediaType(
+                       static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                       stream_index, type.GetAddressOf()))) {
     UINT32 width, height;
     hr = MFGetAttributeSize(type.Get(), MF_MT_FRAME_SIZE, &width, &height);
     if (FAILED(hr)) {
@@ -315,15 +322,15 @@ static void GetDeviceSupportedFormatsMediaFoundation(
       DLOG(ERROR) << "GetGUID failed: " << logging::SystemErrorCodeToString(hr);
       return;
     }
-    VideoCaptureDeviceMFWin::FormatFromGuid(type_guid,
-                                            &capture_format.pixel_format);
+    VideoCaptureDeviceMFWin::GetPixelFormatFromMFSourceMediaSubtype(
+        type_guid, &capture_format.pixel_format);
     type.Reset();
     ++stream_index;
     if (capture_format.pixel_format == PIXEL_FORMAT_UNKNOWN)
       continue;
     formats->push_back(capture_format);
 
-    DVLOG(1) << descriptor.display_name << " "
+    DVLOG(1) << descriptor.display_name() << " "
              << VideoCaptureFormat::ToString(capture_format);
   }
 }
@@ -340,8 +347,20 @@ bool VideoCaptureDeviceFactoryWin::PlatformSupportsMediaFoundation() {
 }
 
 VideoCaptureDeviceFactoryWin::VideoCaptureDeviceFactoryWin()
-    : use_media_foundation_(base::CommandLine::ForCurrentProcess()->HasSwitch(
-                                switches::kForceMediaFoundationVideoCapture)) {}
+    : use_media_foundation_(
+          base::FeatureList::IsEnabled(media::kMediaFoundationVideoCapture)) {
+  if (!PlatformSupportsMediaFoundation()) {
+    use_media_foundation_ = false;
+    LogVideoCaptureWinBackendUsed(
+        VideoCaptureWinBackendUsed::kUsingDirectShowAsFallback);
+  } else if (use_media_foundation_) {
+    LogVideoCaptureWinBackendUsed(
+        VideoCaptureWinBackendUsed::kUsingMediaFoundationAsDefault);
+  } else {
+    LogVideoCaptureWinBackendUsed(
+        VideoCaptureWinBackendUsed::kUsingDirectShowAsDefault);
+  }
+}
 
 std::unique_ptr<VideoCaptureDevice> VideoCaptureDeviceFactoryWin::CreateDevice(
     const Descriptor& device_descriptor) {
@@ -349,19 +368,19 @@ std::unique_ptr<VideoCaptureDevice> VideoCaptureDeviceFactoryWin::CreateDevice(
   std::unique_ptr<VideoCaptureDevice> device;
   if (device_descriptor.capture_api == VideoCaptureApi::WIN_MEDIA_FOUNDATION) {
     DCHECK(PlatformSupportsMediaFoundation());
-    device.reset(new VideoCaptureDeviceMFWin(device_descriptor));
-    DVLOG(1) << " MediaFoundation Device: " << device_descriptor.display_name;
     ComPtr<IMFMediaSource> source;
     if (!CreateVideoCaptureDeviceMediaFoundation(
             device_descriptor.device_id.c_str(), source.GetAddressOf())) {
       return std::unique_ptr<VideoCaptureDevice>();
     }
-    if (!static_cast<VideoCaptureDeviceMFWin*>(device.get())->Init(source))
+    device.reset(new VideoCaptureDeviceMFWin(source));
+    DVLOG(1) << " MediaFoundation Device: " << device_descriptor.display_name();
+    if (!static_cast<VideoCaptureDeviceMFWin*>(device.get())->Init())
       device.reset();
   } else if (device_descriptor.capture_api ==
              VideoCaptureApi::WIN_DIRECT_SHOW) {
     device.reset(new VideoCaptureDeviceWin(device_descriptor));
-    DVLOG(1) << " DirectShow Device: " << device_descriptor.display_name;
+    DVLOG(1) << " DirectShow Device: " << device_descriptor.display_name();
     if (!static_cast<VideoCaptureDeviceWin*>(device.get())->Init())
       device.reset();
   } else {
@@ -393,7 +412,8 @@ void VideoCaptureDeviceFactoryWin::GetSupportedFormats(
 VideoCaptureDeviceFactory*
 VideoCaptureDeviceFactory::CreateVideoCaptureDeviceFactory(
     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager) {
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    MojoJpegDecodeAcceleratorFactoryCB jda_factory) {
   return new VideoCaptureDeviceFactoryWin();
 }
 

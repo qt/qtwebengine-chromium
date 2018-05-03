@@ -96,8 +96,10 @@ config("extra_warnings") {
     ]
   }
   if (is_clang) {
-    # Remove when crbug.com/428099 is resolved.
-    cflags += [ "-Winconsistent-missing-override" ]
+    cflags += [
+      # Remove when crbug.com/428099 is resolved.
+      "-Winconsistent-missing-override",
+    ]
   }
 }
 
@@ -151,12 +153,15 @@ config("angle_release_asserts_config") {
 
 config("angle_common_config") {
   include_dirs = [ "src/common/third_party/base" ]
+  if (is_android) {
+    libs = [ "log" ]
+  }
 }
 
 static_library("angle_common") {
   sources = rebase_path(gles_gypi.libangle_common_sources, ".", "src")
 
-  if (is_linux || is_android) {
+  if (is_linux || is_android || is_fuchsia) {
     sources += rebase_path(gles_gypi.libangle_common_linux_sources, ".", "src")
   }
 
@@ -178,6 +183,7 @@ static_library("angle_common") {
 
   public_deps = [
     ":commit_id",
+    ":includes",
   ]
   public_configs = [ ":angle_common_config" ]
   all_dependent_configs = [ ":angle_release_asserts_config" ]
@@ -406,6 +412,31 @@ config("libANGLE_config") {
   }
 }
 
+if (angle_enable_vulkan) {
+  # Use this target to include everything ANGLE needs for Vulkan.
+  group("angle_vulkan") {
+    deps = [
+      "$angle_root/third_party/glslang:glslang",
+    ]
+    public_deps = [
+      "$angle_root/third_party/vulkan-validation-layers:vulkan_headers",
+    ]
+    data_deps = [
+      "$angle_root/third_party/vulkan-validation-layers:vulkan_validation_layers",
+    ]
+    public_configs = [
+      "$angle_root/third_party/glslang:glslang_config",
+      "$angle_root/third_party/vulkan-validation-layers:vulkan_config",
+    ]
+    if (!is_android) {
+      deps +=
+          [ "$angle_root/third_party/vulkan-validation-layers:vulkan_loader" ]
+      data_deps += [ "$angle_root/third_party/vulkan-validation-layers:vulkan_gen_json_files" ]
+      public_configs += [ "$angle_root/third_party/vulkan-validation-layers:vulkan_loader_config" ]
+    }
+  }
+}
+
 static_library("libANGLE") {
   sources = rebase_path(gles_gypi.libangle_sources, ".", "src")
 
@@ -502,7 +533,13 @@ static_library("libANGLE") {
     if (is_linux) {
       sources += rebase_path(gles_gypi.libangle_vulkan_xcb_sources, ".", "src")
     }
-    deps += [ "src/vulkan_support:angle_vulkan" ]
+    if (is_android) {
+      sources +=
+          rebase_path(gles_gypi.libangle_vulkan_android_sources, ".", "src")
+    }
+    deps += [ ":angle_vulkan" ]
+    public_deps +=
+        [ "$angle_root/third_party/vulkan-validation-layers:vulkan_headers" ]
   }
 
   if (angle_enable_null) {
@@ -625,6 +662,15 @@ shared_library("libGLESv1_CM") {
   if (is_android) {
     configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
   }
+
+  if (is_mac && !is_component_build) {
+    ldflags = [
+      "-install_name",
+      "@rpath/${target_name}.dylib",
+    ]
+    public_configs = [ ":shared_library_public_config" ]
+  }
+
   configs -= angle_undefine_configs
   configs += [
     ":commit_id_config",

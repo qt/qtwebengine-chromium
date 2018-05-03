@@ -55,6 +55,8 @@ void ChildCallStackProfileCollector::SetParentProfileCollector(
   DCHECK(retain_profiles_);
   retain_profiles_ = false;
   task_runner_ = base::ThreadTaskRunnerHandle::Get();
+  // This should only be set one time per child process.
+  DCHECK(!parent_collector_);
   parent_collector_ = std::move(parent_collector);
   if (parent_collector_) {
     for (ProfilesState& state : profiles_) {
@@ -89,10 +91,10 @@ void ChildCallStackProfileCollector::CollectImpl(
        base::ThreadTaskRunnerHandle::Get() != task_runner_)) {
     // Post back to the thread that owns the the parent interface.
     task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ChildCallStackProfileCollector::CollectImpl,
-                              // This class has lazy instance lifetime.
-                              base::Unretained(this), params, start_timestamp,
-                              base::Passed(std::move(profiles))));
+        FROM_HERE, base::BindOnce(&ChildCallStackProfileCollector::CollectImpl,
+                                  // This class has lazy instance lifetime.
+                                  base::Unretained(this), params,
+                                  start_timestamp, std::move(profiles)));
     return;
   }
 

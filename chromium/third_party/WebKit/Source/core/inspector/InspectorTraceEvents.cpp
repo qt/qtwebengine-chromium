@@ -42,6 +42,7 @@
 #include "platform/wtf/DynamicAnnotations.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/TextPosition.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 #include "v8/include/v8-profiler.h"
 #include "v8/include/v8.h"
 
@@ -334,18 +335,15 @@ String UrlForFrame(LocalFrame* frame) {
 const char* CompileOptionsString(v8::ScriptCompiler::CompileOptions options) {
   switch (options) {
     case v8::ScriptCompiler::kNoCompileOptions:
-      return "no";
-    case v8::ScriptCompiler::kProduceParserCache:
-      return "parser";
-    case v8::ScriptCompiler::kConsumeParserCache:
-      return "parser";
-    case v8::ScriptCompiler::kProduceCodeCache:
       return "code";
-    case v8::ScriptCompiler::kProduceFullCodeCache:
-      return "full code";
     case v8::ScriptCompiler::kConsumeCodeCache:
       return "code";
-    default:
+    case v8::ScriptCompiler::kEagerCompile:
+      return "full code";
+    case v8::ScriptCompiler::kProduceParserCache:
+    case v8::ScriptCompiler::kConsumeParserCache:
+    case v8::ScriptCompiler::kProduceCodeCache:
+    case v8::ScriptCompiler::kProduceFullCodeCache:
       NOTREACHED();
   }
   NOTREACHED();
@@ -687,6 +685,8 @@ std::unique_ptr<TracedValue> InspectorSendRequestEvent::Data(
     LocalFrame* frame,
     const ResourceRequest& request) {
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
+  if (request.GetFrameType() != network::mojom::RequestContextFrameType::kNone)
+    request_id = IdentifiersFactory::LoaderId(loader);
 
   std::unique_ptr<TracedValue> value = TracedValue::Create();
   value->SetString("requestId", request_id);
@@ -702,7 +702,7 @@ std::unique_ptr<TracedValue> InspectorSendRequestEvent::Data(
 
 namespace {
 void RecordTiming(const ResourceLoadTiming& timing, TracedValue* value) {
-  value->SetDouble("requestTime", timing.RequestTime());
+  value->SetDouble("requestTime", TimeTicksInSeconds(timing.RequestTime()));
   value->SetDouble("proxyStart",
                    timing.CalculateMillisecondDelta(timing.ProxyStart()));
   value->SetDouble("proxyEnd",
@@ -727,8 +727,8 @@ void RecordTiming(const ResourceLoadTiming& timing, TracedValue* value) {
                    timing.CalculateMillisecondDelta(timing.SendEnd()));
   value->SetDouble("receiveHeadersEnd", timing.CalculateMillisecondDelta(
                                             timing.ReceiveHeadersEnd()));
-  value->SetDouble("pushStart", timing.PushStart());
-  value->SetDouble("pushEnd", timing.PushEnd());
+  value->SetDouble("pushStart", TimeTicksInSeconds(timing.PushStart()));
+  value->SetDouble("pushEnd", TimeTicksInSeconds(timing.PushEnd()));
 }
 }  // namespace
 
@@ -1053,9 +1053,8 @@ InspectorCompileScriptEvent::V8CacheResult::ProduceResult::ProduceResult(
     v8::ScriptCompiler::CompileOptions produce_options,
     int cache_size)
     : produce_options(produce_options), cache_size(cache_size) {
-  DCHECK(produce_options == v8::ScriptCompiler::kProduceParserCache ||
-         produce_options == v8::ScriptCompiler::kProduceCodeCache ||
-         produce_options == v8::ScriptCompiler::kProduceFullCodeCache);
+  DCHECK(produce_options == v8::ScriptCompiler::kNoCompileOptions ||
+         produce_options == v8::ScriptCompiler::kEagerCompile);
 }
 
 InspectorCompileScriptEvent::V8CacheResult::ConsumeResult::ConsumeResult(
@@ -1065,8 +1064,7 @@ InspectorCompileScriptEvent::V8CacheResult::ConsumeResult::ConsumeResult(
     : consume_options(consume_options),
       cache_size(cache_size),
       rejected(rejected) {
-  DCHECK(consume_options == v8::ScriptCompiler::kConsumeParserCache ||
-         consume_options == v8::ScriptCompiler::kConsumeCodeCache);
+  DCHECK_EQ(consume_options, v8::ScriptCompiler::kConsumeCodeCache);
 }
 
 InspectorCompileScriptEvent::V8CacheResult::V8CacheResult(
@@ -1243,11 +1241,11 @@ std::unique_ptr<TracedValue> InspectorTimeStampEvent::Data(
 
 std::unique_ptr<TracedValue> InspectorTracingSessionIdForWorkerEvent::Data(
     const String& session_id,
-    const String& worker_id,
     WorkerThread* worker_thread) {
   std::unique_ptr<TracedValue> value = TracedValue::Create();
   value->SetString("sessionId", session_id);
-  value->SetString("workerId", worker_id);
+  value->SetString("workerId", IdentifiersFactory::IdFromToken(
+                                   worker_thread->GetDevToolsWorkerToken()));
   value->SetDouble("workerThreadId", worker_thread->GetPlatformThreadId());
   return value;
 }
@@ -1287,7 +1285,7 @@ std::unique_ptr<TracedValue> InspectorAnimationEvent::Data(
   if (const AnimationEffectReadOnly* effect = animation.effect()) {
     value->SetString("name", animation.id());
     if (effect->IsKeyframeEffectReadOnly()) {
-      if (Element* target = ToKeyframeEffectReadOnly(effect)->Target())
+      if (Element* target = ToKeyframeEffectReadOnly(effect)->target())
         SetNodeInfo(value.get(), target, "nodeId", "nodeName");
     }
   }

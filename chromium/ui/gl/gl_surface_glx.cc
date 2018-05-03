@@ -168,6 +168,8 @@ class OMLSyncControlVSyncProvider : public SyncControlVSyncProvider {
     return true;
   }
 
+  bool IsHWClock() const override { return true; }
+
  private:
   GLXWindow glx_window_;
 
@@ -344,8 +346,8 @@ class SGIVideoSyncVSyncProvider
       const gfx::VSyncProvider::UpdateVSyncCallback& callback) override {
     // Only one outstanding request per surface.
     if (!pending_callback_) {
-      pending_callback_.reset(
-          new gfx::VSyncProvider::UpdateVSyncCallback(callback));
+      pending_callback_ =
+          std::make_unique<gfx::VSyncProvider::UpdateVSyncCallback>(callback);
       vsync_thread_->task_runner()->PostTask(
           FROM_HERE,
           base::BindOnce(&SGIVideoSyncProviderThreadShim::GetVSyncParameters,
@@ -361,7 +363,8 @@ class SGIVideoSyncVSyncProvider
     return false;
   }
 
-  bool SupportGetVSyncParametersIfAvailable() override { return false; }
+  bool SupportGetVSyncParametersIfAvailable() const override { return false; }
+  bool IsHWClock() const override { return false; }
 
  private:
   void PendingCallbackRunner(const base::TimeTicks timebase,
@@ -475,6 +478,10 @@ bool GLSurfaceGLX::InitializeExtensionSettingsOneOff() {
 
   if (!g_glx_get_msc_rate_oml_supported && g_glx_sgi_video_sync_supported) {
     Display* video_sync_display = gfx::OpenNewXDisplay();
+    if (!video_sync_display) {
+      LOG(ERROR) << "Could not open video sync display";
+      return false;
+    }
     if (!CreateDummyWindow(video_sync_display)) {
       LOG(ERROR) << "CreateDummyWindow(video_sync_display) failed";
       return false;
@@ -609,13 +616,15 @@ bool NativeViewGLSurfaceGLX::Initialize(GLSurfaceFormat format) {
   }
 
   if (g_glx_oml_sync_control_supported) {
-    vsync_provider_.reset(new OMLSyncControlVSyncProvider(glx_window_));
-    presentation_helper_ = std::make_unique<GLSurfacePresentationHelper>(
-        vsync_provider_.get(), true);
+    vsync_provider_ =
+        std::make_unique<OMLSyncControlVSyncProvider>(glx_window_);
+    presentation_helper_ =
+        std::make_unique<GLSurfacePresentationHelper>(vsync_provider_.get());
   } else if (g_glx_sgi_video_sync_supported) {
-    vsync_provider_.reset(new SGIVideoSyncVSyncProvider(parent_window_));
-    presentation_helper_ = std::make_unique<GLSurfacePresentationHelper>(
-        vsync_provider_.get(), false);
+    vsync_provider_ =
+        std::make_unique<SGIVideoSyncVSyncProvider>(parent_window_);
+    presentation_helper_ =
+        std::make_unique<GLSurfacePresentationHelper>(vsync_provider_.get());
   } else {
     // Assume a refresh rate of 59.9 Hz, which will cause us to skip
     // 1 frame every 10 seconds on a 60Hz monitor, but will prevent us
@@ -625,8 +634,8 @@ bool NativeViewGLSurfaceGLX::Initialize(GLSurfaceFormat format) {
     const base::TimeTicks kDefaultTimebase;
     const base::TimeDelta kDefaultInterval =
         base::TimeDelta::FromSeconds(1) / 59.9;
-    vsync_provider_.reset(
-        new gfx::FixedVSyncProvider(kDefaultTimebase, kDefaultInterval));
+    vsync_provider_ = std::make_unique<gfx::FixedVSyncProvider>(
+        kDefaultTimebase, kDefaultInterval);
     presentation_helper_ = std::make_unique<GLSurfacePresentationHelper>(
         kDefaultTimebase, kDefaultInterval);
   }
@@ -668,10 +677,10 @@ gfx::SwapResult NativeViewGLSurfaceGLX::SwapBuffers(
     const PresentationCallback& callback) {
   TRACE_EVENT2("gpu", "NativeViewGLSurfaceGLX:RealSwapBuffers", "width",
                GetSize().width(), "height", GetSize().height());
-  presentation_helper_->PreSwapBuffers(callback);
+  GLSurfacePresentationHelper::ScopedSwapBuffers scoped_swap_buffers(
+      presentation_helper_.get(), callback);
   glXSwapBuffers(g_display, GetDrawableHandle());
-  presentation_helper_->PostSwapBuffers();
-  return gfx::SwapResult::SWAP_ACK;
+  return scoped_swap_buffers.result();
 }
 
 gfx::Size NativeViewGLSurfaceGLX::GetSize() {
@@ -711,10 +720,11 @@ gfx::SwapResult NativeViewGLSurfaceGLX::PostSubBuffer(
     int height,
     const PresentationCallback& callback) {
   DCHECK(g_driver_glx.ext.b_GLX_MESA_copy_sub_buffer);
-  presentation_helper_->PreSwapBuffers(callback);
+
+  GLSurfacePresentationHelper::ScopedSwapBuffers scoped_swap_buffers(
+      presentation_helper_.get(), callback);
   glXCopySubBufferMESA(g_display, GetDrawableHandle(), x, y, width, height);
-  presentation_helper_->PostSwapBuffers();
-  return gfx::SwapResult::SWAP_ACK;
+  return scoped_swap_buffers.result();
 }
 
 bool NativeViewGLSurfaceGLX::OnMakeCurrent(GLContext* context) {

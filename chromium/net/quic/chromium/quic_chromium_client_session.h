@@ -25,14 +25,15 @@
 #include "net/base/load_timing_info.h"
 #include "net/base/net_error_details.h"
 #include "net/base/net_export.h"
+#include "net/base/proxy_server.h"
 #include "net/cert/ct_verify_result.h"
 #include "net/log/net_log_with_source.h"
-#include "net/proxy/proxy_server.h"
 #include "net/quic/chromium/quic_chromium_client_stream.h"
 #include "net/quic/chromium/quic_chromium_packet_reader.h"
 #include "net/quic/chromium/quic_chromium_packet_writer.h"
 #include "net/quic/chromium/quic_connection_logger.h"
 #include "net/quic/chromium/quic_connectivity_probing_manager.h"
+#include "net/quic/chromium/quic_session_key.h"
 #include "net/quic/core/quic_client_push_promise_index.h"
 #include "net/quic/core/quic_crypto_client_stream.h"
 #include "net/quic/core/quic_packets.h"
@@ -43,6 +44,7 @@
 #include "net/spdy/chromium/http2_priority_dependencies.h"
 #include "net/spdy/chromium/multiplexed_session.h"
 #include "net/spdy/chromium/server_push_delegate.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace net {
 
@@ -130,7 +132,8 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     // ERR_IO_PENDING is returned, then when the request is eventuallly
     // complete |callback| will be called.
     int RequestStream(bool requires_confirmation,
-                      const CompletionCallback& callback);
+                      const CompletionCallback& callback,
+                      const NetworkTrafficAnnotationTag& traffic_annotation);
 
     // Releases |stream_| to the caller. Returns nullptr if the underlying
     // QuicChromiumClientSession is closed.
@@ -277,6 +280,10 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     // Releases |stream_| to the caller.
     std::unique_ptr<QuicChromiumClientStream::Handle> ReleaseStream();
 
+    const NetworkTrafficAnnotationTag traffic_annotation() {
+      return traffic_annotation_;
+    }
+
    private:
     friend class QuicChromiumClientSession;
 
@@ -290,7 +297,8 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
 
     // |session| must outlive this request.
     StreamRequest(QuicChromiumClientSession::Handle* session,
-                  bool requires_confirmation);
+                  bool requires_confirmation,
+                  const NetworkTrafficAnnotationTag& traffic_annotation);
 
     void OnIOComplete(int rv);
     void DoCallback(int rv);
@@ -319,6 +327,8 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     base::TimeTicks pending_start_time_;
     State next_state_;
 
+    const NetworkTrafficAnnotationTag traffic_annotation_;
+
     base::WeakPtrFactory<StreamRequest> weak_factory_;
 
     DISALLOW_COPY_AND_ASSIGN(StreamRequest);
@@ -335,7 +345,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
       QuicClock* clock,
       TransportSecurityState* transport_security_state,
       std::unique_ptr<QuicServerInfo> server_info,
-      const QuicServerId& server_id,
+      const QuicSessionKey& session_key,
       bool require_confirmation,
       bool migrate_sesion_early,
       bool migrate_session_on_network_change,
@@ -448,7 +458,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
                           const std::string& error_details,
                           ConnectionCloseSource source) override;
   void OnSuccessfulVersionNegotiation(
-      const QuicTransportVersion& version) override;
+      const ParsedQuicVersion& version) override;
   void OnConnectivityProbeReceived(
       const QuicSocketAddress& self_address,
       const QuicSocketAddress& peer_address) override;
@@ -500,9 +510,11 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   // Returns true if |hostname| may be pooled onto this session.  If this
   // is a secure QUIC session, then |hostname| must match the certificate
   // presented during the handshake.
-  bool CanPool(const std::string& hostname, PrivacyMode privacy_mode) const;
+  bool CanPool(const std::string& hostname,
+               PrivacyMode privacy_mode,
+               const SocketTag& socket_tag) const;
 
-  const QuicServerId& server_id() const { return server_id_; }
+  const QuicServerId& server_id() const { return session_key_.server_id(); }
 
   // Attempts to migrate session when a write error is encountered.
   void MigrateSessionOnWriteError(int error_code);
@@ -638,8 +650,11 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
 
   bool WasConnectionEverUsed();
 
-  QuicChromiumClientStream* CreateOutgoingReliableStreamImpl();
-  QuicChromiumClientStream* CreateIncomingReliableStreamImpl(QuicStreamId id);
+  QuicChromiumClientStream* CreateOutgoingReliableStreamImpl(
+      const NetworkTrafficAnnotationTag& traffic_annotation);
+  QuicChromiumClientStream* CreateIncomingReliableStreamImpl(
+      QuicStreamId id,
+      const NetworkTrafficAnnotationTag& traffic_annotation);
   // A completion callback invoked when a read completes.
   void OnReadComplete(int result);
 
@@ -685,7 +700,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   // delete |this|.
   void NotifyFactoryOfSessionClosed();
 
-  QuicServerId server_id_;
+  QuicSessionKey session_key_;
   bool require_confirmation_;
   bool migrate_session_early_;
   bool migrate_session_on_network_change_;

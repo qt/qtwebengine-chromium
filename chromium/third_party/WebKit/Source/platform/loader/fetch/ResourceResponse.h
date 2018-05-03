@@ -45,7 +45,7 @@
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/CString.h"
 #include "public/platform/WebURLResponse.h"
-#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
+#include "services/network/public/mojom/fetch_api.mojom-blink.h"
 
 namespace blink {
 
@@ -76,6 +76,12 @@ class PLATFORM_EXPORT ResourceResponse final {
     kSecurityStyleUnauthenticated,
     kSecurityStyleAuthenticationBroken,
     kSecurityStyleAuthenticated
+  };
+
+  enum CTPolicyCompliance {
+    kCTPolicyComplianceDetailsNotAvailable,
+    kCTPolicyComplies,
+    kCTPolicyDoesNotComply
   };
 
   class PLATFORM_EXPORT SignedCertificateTimestamp final {
@@ -242,14 +248,14 @@ class PLATFORM_EXPORT ResourceResponse final {
     has_major_certificate_errors_ = has_major_certificate_errors;
   }
 
+  CTPolicyCompliance GetCTPolicyCompliance() const {
+    return ct_policy_compliance_;
+  }
+  void SetCTPolicyCompliance(CTPolicyCompliance);
+
   bool IsLegacySymantecCert() const { return is_legacy_symantec_cert_; }
   void SetIsLegacySymantecCert(bool is_legacy_symantec_cert) {
     is_legacy_symantec_cert_ = is_legacy_symantec_cert;
-  }
-
-  base::Time CertValidityStart() const { return cert_validity_start_; }
-  void SetCertValidityStart(base::Time cert_validity_start) {
-    cert_validity_start_ = cert_validity_start;
   }
 
   SecurityStyle GetSecurityStyle() const { return security_style_; }
@@ -307,6 +313,7 @@ class PLATFORM_EXPORT ResourceResponse final {
       network::mojom::FetchResponseType value) {
     response_type_via_service_worker_ = value;
   }
+  bool IsOpaqueResponseFromServiceWorker() const;
 
   // See ServiceWorkerResponseInfo::url_list_via_service_worker.
   const Vector<KURL>& UrlListViaServiceWorker() const {
@@ -438,6 +445,10 @@ class PLATFORM_EXPORT ResourceResponse final {
   // True if the resource was retrieved by the embedder in spite of
   // certificate errors.
   bool has_major_certificate_errors_ = false;
+
+  // The Certificate Transparency policy compliance status of the resource.
+  CTPolicyCompliance ct_policy_compliance_ =
+      kCTPolicyComplianceDetailsNotAvailable;
 
   // True if the resource was retrieved with a legacy Symantec certificate which
   // is slated for distrust in future.
@@ -579,6 +590,7 @@ struct CrossThreadResourceResponseData {
   std::unique_ptr<CrossThreadHTTPHeaderMapData> http_headers_;
   scoped_refptr<ResourceLoadTiming> resource_load_timing_;
   bool has_major_certificate_errors_;
+  ResourceResponse::CTPolicyCompliance ct_policy_compliance_;
   bool is_legacy_symantec_cert_;
   base::Time cert_validity_start_;
   ResourceResponse::SecurityStyle security_style_;

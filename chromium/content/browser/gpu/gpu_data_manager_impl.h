@@ -69,7 +69,6 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
   bool GpuAccessAllowed(std::string* reason) const override;
   void RequestCompleteGpuInfoIfNeeded() override;
   bool IsEssentialGpuInfoAvailable() const override;
-  bool IsCompleteGpuInfoAvailable() const override;
   void RequestVideoMemoryUsageStatsUpdate(
       const base::Callback<void(const gpu::VideoMemoryUsageStats& stats)>&
           callback) const override;
@@ -81,23 +80,14 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
   void AddObserver(GpuDataManagerObserver* observer) override;
   void RemoveObserver(GpuDataManagerObserver* observer) override;
   void UnblockDomainFrom3DAPIs(const GURL& url) override;
-  void SetGLStrings(const std::string& gl_vendor,
-                    const std::string& gl_renderer,
-                    const std::string& gl_version) override;
   void DisableHardwareAcceleration() override;
   bool HardwareAccelerationEnabled() const override;
   void GetDisabledExtensions(std::string* disabled_extensions) const override;
-  void SetGpuInfo(const gpu::GPUInfo& gpu_info) override;
 
   void GetDisabledWebGLExtensions(std::string* disabled_webgl_extensions) const;
 
   bool IsGpuFeatureInfoAvailable() const;
   gpu::GpuFeatureStatus GetFeatureStatus(gpu::GpuFeatureType feature) const;
-
-  // This collects preliminary GPU info, load GpuBlacklist, and compute the
-  // preliminary blacklisted features; it should only be called at browser
-  // startup time in UI thread before the IO restriction is turned on.
-  void Initialize();
 
   // Only update if the current GPUInfo is not finalized.  If blacklist is
   // loaded, run through blacklist and update blacklisted features.
@@ -108,10 +98,6 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
   void UpdateGpuFeatureInfo(const gpu::GpuFeatureInfo& gpu_feature_info);
 
   gpu::GpuFeatureInfo GetGpuFeatureInfo() const;
-
-  // Insert disable-feature switches corresponding to preliminary gpu feature
-  // flags into the renderer process command line.
-  void AppendRendererCommandLine(base::CommandLine* command_line) const;
 
   // Insert switches into gpu process command line: kUseGL, etc.
   void AppendGpuCommandLine(base::CommandLine* command_line) const;
@@ -172,7 +158,7 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
   // Called when GPU process initialization failed.
   void OnGpuProcessInitFailure();
 
-  void DisableSwiftShader();
+  void BlockSwiftShader();
 
  private:
   friend class GpuDataManagerImplPrivate;

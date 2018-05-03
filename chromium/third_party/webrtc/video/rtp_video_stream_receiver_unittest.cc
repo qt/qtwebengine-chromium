@@ -61,14 +61,14 @@ class MockOnCompleteFrameCallback
  public:
   MockOnCompleteFrameCallback() : buffer_(rtc::ByteBuffer::ORDER_NETWORK) {}
 
-  MOCK_METHOD1(DoOnCompleteFrame, void(video_coding::FrameObject* frame));
+  MOCK_METHOD1(DoOnCompleteFrame, void(video_coding::EncodedFrame* frame));
   MOCK_METHOD1(DoOnCompleteFrameFailNullptr,
-               void(video_coding::FrameObject* frame));
+               void(video_coding::EncodedFrame* frame));
   MOCK_METHOD1(DoOnCompleteFrameFailLength,
-               void(video_coding::FrameObject* frame));
+               void(video_coding::EncodedFrame* frame));
   MOCK_METHOD1(DoOnCompleteFrameFailBitstream,
-               void(video_coding::FrameObject* frame));
-  void OnCompleteFrame(std::unique_ptr<video_coding::FrameObject> frame) {
+               void(video_coding::EncodedFrame* frame));
+  void OnCompleteFrame(std::unique_ptr<video_coding::EncodedFrame> frame) {
     if (!frame) {
       DoOnCompleteFrameFailNullptr(nullptr);
       return;
@@ -216,6 +216,25 @@ TEST_F(RtpVideoStreamReceiverTest, GenericKeyFrame) {
   EXPECT_CALL(mock_on_complete_frame_callback_, DoOnCompleteFrame(_));
   rtp_video_stream_receiver_->OnReceivedPayloadData(data.data(), data.size(),
                                                     &rtp_header);
+}
+
+TEST_F(RtpVideoStreamReceiverTest, NoInfiniteRecursionOnEncapsulatedRedPacket) {
+  const uint8_t kRedPayloadType = 125;
+  VideoCodec codec;
+  codec.plType = kRedPayloadType;
+  memcpy(codec.plName, "red", sizeof("red"));
+  rtp_video_stream_receiver_->AddReceiveCodec(codec, {});
+  const std::vector<uint8_t> data({0x80,                // RTP version.
+                                   kRedPayloadType,     // Payload type.
+                                   0, 0, 0, 0, 0, 0,    // Don't care.
+                                   0, 0, 0x4, 0x57,     // SSRC
+                                   kRedPayloadType,     // RED header.
+                                   0, 0, 0, 0, 0        // Don't care.
+                                 });
+  RtpPacketReceived packet;
+  EXPECT_TRUE(packet.Parse(data.data(), data.size()));
+  rtp_video_stream_receiver_->StartReceive();
+  rtp_video_stream_receiver_->OnRtpPacket(packet);
 }
 
 TEST_F(RtpVideoStreamReceiverTest, GenericKeyFrameBitstreamError) {

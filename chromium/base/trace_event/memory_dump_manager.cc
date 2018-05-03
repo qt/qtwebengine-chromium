@@ -8,15 +8,15 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
-#include "base/allocator/features.h"
+#include "base/allocator/buildflags.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
 #include "base/debug/thread_heap_usage_tracker.h"
-#include "base/memory/ptr_util.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
@@ -50,7 +50,7 @@ namespace {
 const char* const kTraceEventArgNames[] = {"dumps"};
 const unsigned char kTraceEventArgTypes[] = {TRACE_VALUE_TYPE_CONVERTABLE};
 
-MemoryDumpManager* g_instance_for_testing = nullptr;
+MemoryDumpManager* g_memory_dump_manager_for_testing = nullptr;
 
 // Temporary (until peak detector and scheduler are moved outside of here)
 // trampoline function to match the |request_dump_function| passed to Initialize
@@ -162,8 +162,8 @@ const char* const MemoryDumpManager::kSystemAllocatorPoolName =
 
 // static
 MemoryDumpManager* MemoryDumpManager::GetInstance() {
-  if (g_instance_for_testing)
-    return g_instance_for_testing;
+  if (g_memory_dump_manager_for_testing)
+    return g_memory_dump_manager_for_testing;
 
   return Singleton<MemoryDumpManager,
                    LeakySingletonTraits<MemoryDumpManager>>::get();
@@ -172,9 +172,9 @@ MemoryDumpManager* MemoryDumpManager::GetInstance() {
 // static
 std::unique_ptr<MemoryDumpManager>
 MemoryDumpManager::CreateInstanceForTesting() {
-  DCHECK(!g_instance_for_testing);
+  DCHECK(!g_memory_dump_manager_for_testing);
   std::unique_ptr<MemoryDumpManager> instance(new MemoryDumpManager());
-  g_instance_for_testing = instance.get();
+  g_memory_dump_manager_for_testing = instance.get();
   return instance;
 }
 
@@ -197,7 +197,7 @@ MemoryDumpManager::~MemoryDumpManager() {
   }
   AutoLock lock(lock_);
   dump_thread_.reset();
-  g_instance_for_testing = nullptr;
+  g_memory_dump_manager_for_testing = nullptr;
 }
 
 // static
@@ -734,7 +734,7 @@ void MemoryDumpManager::FinishAsyncProcessDump(
         pmd_async_state->callback_task_runner;
     callback_task_runner->PostTask(
         FROM_HERE, BindOnce(&MemoryDumpManager::FinishAsyncProcessDump,
-                            Unretained(this), Passed(&pmd_async_state)));
+                            Unretained(this), std::move(pmd_async_state)));
     return;
   }
 
@@ -747,7 +747,7 @@ void MemoryDumpManager::FinishAsyncProcessDump(
   // profiler.
   const auto& args = pmd_async_state->req_args;
   if (!pmd_async_state->process_memory_dump->heap_dumps().empty()) {
-    std::unique_ptr<TracedValue> traced_value = base::MakeUnique<TracedValue>();
+    std::unique_ptr<TracedValue> traced_value = std::make_unique<TracedValue>();
     pmd_async_state->process_memory_dump->SerializeHeapProfilerDumpsInto(
         traced_value.get());
 
@@ -911,8 +911,8 @@ MemoryDumpManager::ProcessMemoryDumpAsyncState::ProcessMemoryDumpAsyncState(
   pending_dump_providers.reserve(dump_providers.size());
   pending_dump_providers.assign(dump_providers.rbegin(), dump_providers.rend());
   MemoryDumpArgs args = {req_args.level_of_detail, req_args.dump_guid};
-  process_memory_dump =
-      MakeUnique<ProcessMemoryDump>(heap_profiler_serialization_state, args);
+  process_memory_dump = std::make_unique<ProcessMemoryDump>(
+      heap_profiler_serialization_state, args);
 }
 
 MemoryDumpManager::ProcessMemoryDumpAsyncState::~ProcessMemoryDumpAsyncState() =

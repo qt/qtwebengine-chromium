@@ -265,11 +265,17 @@ bool VisualViewport::DidSetScaleOrLocation(float scale,
 
   bool values_changed = false;
 
-  if (scale != scale_ && !std::isnan(scale) && !std::isinf(scale)) {
-    scale_ = scale;
-    values_changed = true;
-    GetPage().GetChromeClient().PageScaleFactorChanged();
-    EnqueueResizeEvent();
+  if (!std::isnan(scale) && !std::isinf(scale)) {
+    float clamped_scale = GetPage()
+                              .GetPageScaleConstraintsSet()
+                              .FinalConstraints()
+                              .ClampToConstraints(scale);
+    if (clamped_scale != scale_) {
+      scale_ = clamped_scale;
+      values_changed = true;
+      GetPage().GetChromeClient().PageScaleFactorChanged();
+      EnqueueResizeEvent();
+    }
   }
 
   ScrollOffset clamped_offset = ClampScrollOffset(ToScrollOffset(location));
@@ -348,13 +354,13 @@ void VisualViewport::CreateLayerTree() {
          !inner_viewport_container_layer_);
 
   // FIXME: The root transform layer should only be created on demand.
-  root_transform_layer_ = GraphicsLayer::Create(this);
-  inner_viewport_container_layer_ = GraphicsLayer::Create(this);
-  overscroll_elasticity_layer_ = GraphicsLayer::Create(this);
-  page_scale_layer_ = GraphicsLayer::Create(this);
-  inner_viewport_scroll_layer_ = GraphicsLayer::Create(this);
-  overlay_scrollbar_horizontal_ = GraphicsLayer::Create(this);
-  overlay_scrollbar_vertical_ = GraphicsLayer::Create(this);
+  root_transform_layer_ = GraphicsLayer::Create(*this);
+  inner_viewport_container_layer_ = GraphicsLayer::Create(*this);
+  overscroll_elasticity_layer_ = GraphicsLayer::Create(*this);
+  page_scale_layer_ = GraphicsLayer::Create(*this);
+  inner_viewport_scroll_layer_ = GraphicsLayer::Create(*this);
+  overlay_scrollbar_horizontal_ = GraphicsLayer::Create(*this);
+  overlay_scrollbar_vertical_ = GraphicsLayer::Create(*this);
 
   ScrollingCoordinator* coordinator = GetPage().GetScrollingCoordinator();
   DCHECK(coordinator);
@@ -415,13 +421,13 @@ void VisualViewport::InitializeScrollbars() {
     if (!overlay_scrollbar_vertical_->Parent())
       inner_viewport_container_layer_->AddChild(
           overlay_scrollbar_vertical_.get());
+
+    SetupScrollbar(WebScrollbar::kHorizontal);
+    SetupScrollbar(WebScrollbar::kVertical);
   } else {
     overlay_scrollbar_horizontal_->RemoveFromParent();
     overlay_scrollbar_vertical_->RemoveFromParent();
   }
-
-  SetupScrollbar(WebScrollbar::kHorizontal);
-  SetupScrollbar(WebScrollbar::kVertical);
 
   // Ensure existing LocalFrameView scrollbars are removed if the visual
   // viewport scrollbars are now supplied, or created if the visual viewport no
@@ -465,6 +471,8 @@ void VisualViewport::SetupScrollbar(WebScrollbar::Orientation orientation) {
     scrollbar_graphics_layer->SetContentsToPlatformLayer(
         web_scrollbar_layer->Layer());
     scrollbar_graphics_layer->SetDrawsContent(false);
+    web_scrollbar_layer->SetScrollLayer(
+        inner_viewport_scroll_layer_->PlatformLayer());
   }
 
   int x_position = is_horizontal
@@ -487,14 +495,6 @@ void VisualViewport::SetupScrollbar(WebScrollbar::Orientation orientation) {
   scrollbar_graphics_layer->SetPosition(IntPoint(x_position, y_position));
   scrollbar_graphics_layer->SetSize(FloatSize(width, height));
   scrollbar_graphics_layer->SetContentsRect(IntRect(0, 0, width, height));
-}
-
-void VisualViewport::SetScrollLayerOnScrollbars(WebLayer* scroll_layer) const {
-  // TODO(bokan): This is currently done while registering viewport layers
-  // with the compositor but could it actually be done earlier, like in
-  // setupScrollbars? Then we wouldn't need this method.
-  web_overlay_scrollbar_horizontal_->SetScrollLayer(scroll_layer);
-  web_overlay_scrollbar_vertical_->SetScrollLayer(scroll_layer);
 }
 
 bool VisualViewport::VisualViewportSuppliesScrollbars() const {
@@ -667,7 +667,8 @@ IntRect VisualViewport::VisibleContentRect(
   return rect;
 }
 
-scoped_refptr<WebTaskRunner> VisualViewport::GetTimerTaskRunner() const {
+scoped_refptr<base::SingleThreadTaskRunner> VisualViewport::GetTimerTaskRunner()
+    const {
   return MainFrame()->GetTaskRunner(TaskType::kUnspecedTimer);
 }
 

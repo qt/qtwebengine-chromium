@@ -5,6 +5,8 @@
 module ash.mojom;
 
 import "mojo/common/time.mojom";
+import "ui/accessibility/ax_enums.mojom";
+import "ui/gfx/geometry/mojo/geometry.mojom";
 
 // Alert sent to the accessibility api.
 enum AccessibilityAlert {
@@ -23,11 +25,8 @@ enum AccessibilityAlert {
   // When screen is turned off by tablet power button.
   SCREEN_OFF,
 
-  // When window moved to above/below/left/right display by accelerators.
-  WINDOW_MOVED_TO_ABOVE_DISPLAY,
-  WINDOW_MOVED_TO_BELOW_DISPLAY,
-  WINDOW_MOVED_TO_LEFT_DISPLAY,
-  WINDOW_MOVED_TO_RIGHT_DISPLAY,
+  // When window moved to another display by accelerators.
+  WINDOW_MOVED_TO_ANOTHER_DISPLAY,
 
   // When the user attempts a keyboard command that requires a window to work,
   // and none is available.
@@ -46,6 +45,12 @@ interface AccessibilityController {
   // Starts or stops darkening the screen (e.g. to allow chrome a11y extensions
   // to darken the screen).
   SetDarkenScreen(bool darken);
+
+  // Called when braille display state is changed.
+  BrailleDisplayStateChanged(bool connected);
+
+  // Sets the focus highlight rect using |bounds_in_screen|.
+  SetFocusHighlightRect(gfx.mojom.Rect bounds_in_screen);
 };
 
 // Interface for ash to request accessibility service from its client (e.g.
@@ -66,10 +71,27 @@ interface AccessibilityControllerClient {
 
   // Forwards an accessibility gesture from the touch exploration controller to
   // ChromeVox.
-  // TODO(warx): replace string with enum once ax_enums.idl is converted to
-  // mojom file.
-  HandleAccessibilityGesture(string gesture);
+  HandleAccessibilityGesture(ax.mojom.Gesture gesture);
 
-  // Start or stop dictation (type what you speak).
+  // Starts or stops dictation (type what you speak).
   ToggleDictation();
+
+  // Cancels all current and queued speech immediately.
+  SilenceSpokenFeedback();
+
+  // Called when we first detect two fingers are held down, which can be used to
+  // toggle spoken feedback on some touch-only devices.
+  OnTwoFingerTouchStart();
+
+  // Called when the user is no longer holding down two fingers (including
+  // releasing one, holding down three, or moving them).
+  OnTwoFingerTouchStop();
+
+  // Whether or not to enable toggling spoken feedback via holding down two
+  // fingers on the screen.
+  ShouldToggleSpokenFeedbackViaTouch() => (bool should_toggle);
+
+  // Plays tick sound indicating spoken feedback will be toggled after
+  // countdown.
+  PlaySpokenFeedbackToggleCountdown(int32 tick_count);
 };

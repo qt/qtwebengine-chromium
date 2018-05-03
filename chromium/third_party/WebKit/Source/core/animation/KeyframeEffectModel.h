@@ -74,14 +74,16 @@ class CORE_EXPORT KeyframeEffectModelBase : public EffectModel {
     friend class KeyframeEffectModelBase;
   };
 
-  bool IsReplaceOnly();
+  bool AffectedByUnderlyingAnimations() const final { return !IsReplaceOnly(); }
+  bool IsReplaceOnly() const;
 
   PropertyHandleSet Properties() const;
 
   using KeyframeVector = Vector<scoped_refptr<Keyframe>>;
   const KeyframeVector& GetFrames() const { return keyframes_; }
   bool HasFrames() const { return !keyframes_.IsEmpty(); }
-  void SetFrames(KeyframeVector& keyframes);
+  template <class K>
+  void SetFrames(Vector<K>& keyframes);
 
   CompositeOperation Composite() const { return composite_; }
   void SetComposite(CompositeOperation composite) { composite_ = composite; }
@@ -127,7 +129,8 @@ class CORE_EXPORT KeyframeEffectModelBase : public EffectModel {
                                       const ComputedStyle& base_style,
                                       const ComputedStyle* parent_style) const;
 
-  static Vector<double> GetComputedOffsets(const KeyframeVector& keyframes);
+  template <class K>
+  static Vector<double> GetComputedOffsets(const Vector<K>& keyframes);
 
   bool Affects(const PropertyHandle& property) const override {
     EnsureKeyframeGroups();

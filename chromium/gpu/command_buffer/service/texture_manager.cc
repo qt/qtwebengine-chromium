@@ -361,6 +361,12 @@ bool SizedFormatAvailable(const FeatureInfo* feature_info,
     return true;
   }
 
+  if (internal_format == GL_RGB10_A2_EXT &&
+      (feature_info->feature_flags().chromium_image_xr30 ||
+       feature_info->feature_flags().chromium_image_xb30)) {
+    return true;
+  }
+
   // TODO(dshwang): check if it's possible to remove
   // CHROMIUM_color_buffer_float_rgb. crbug.com/329605
   if (feature_info->feature_flags().chromium_color_buffer_float_rgb &&
@@ -2794,7 +2800,8 @@ void TextureManager::ValidateAndDoTexImage(
     }
   }
 
-  if (texture_state->unpack_alignment_workaround_with_unpack_buffer && buffer) {
+  if (texture_state->unpack_alignment_workaround_with_unpack_buffer && buffer &&
+      args.width && args.height && args.depth) {
     uint32_t buffer_size = static_cast<uint32_t>(buffer->size());
     if (buffer_size - args.pixels_size - ToGLuint(args.pixels) < args.padding) {
       // In ValidateTexImage(), we already made sure buffer size is no less
@@ -3023,7 +3030,8 @@ void TextureManager::ValidateAndDoTexSubImage(
     }
   }
 
-  if (texture_state->unpack_alignment_workaround_with_unpack_buffer && buffer) {
+  if (texture_state->unpack_alignment_workaround_with_unpack_buffer && buffer &&
+      args.width && args.height && args.depth) {
     uint32_t buffer_size = static_cast<uint32_t>(buffer->size());
     if (buffer_size - args.pixels_size - ToGLuint(args.pixels) < args.padding) {
       DoTexSubImageWithAlignmentWorkaround(texture_state, state, args);
@@ -3303,6 +3311,36 @@ GLenum TextureManager::AdjustTexFormat(const gles2::FeatureInfo* feature_info,
         GetCompatibilitySwizzle(format);
     if (swizzle)
       return swizzle->dest_format;
+  }
+  return format;
+}
+
+// static
+GLenum TextureManager::AdjustTexStorageFormat(
+    const gles2::FeatureInfo* feature_info,
+    GLenum format) {
+  // We need to emulate luminance/alpha on core profile only.
+  if (feature_info->gl_version_info().is_desktop_core_profile) {
+    switch (format) {
+      case GL_ALPHA8_EXT:
+        return GL_R8_EXT;
+      case GL_LUMINANCE8_EXT:
+        return GL_R8_EXT;
+      case GL_LUMINANCE8_ALPHA8_EXT:
+        return GL_RG8_EXT;
+      case GL_ALPHA16F_EXT:
+        return GL_R16F_EXT;
+      case GL_LUMINANCE16F_EXT:
+        return GL_R16F_EXT;
+      case GL_LUMINANCE_ALPHA16F_EXT:
+        return GL_RG16F_EXT;
+      case GL_ALPHA32F_EXT:
+        return GL_R32F_EXT;
+      case GL_LUMINANCE32F_EXT:
+        return GL_R32F_EXT;
+      case GL_LUMINANCE_ALPHA32F_EXT:
+        return GL_RG32F_EXT;
+    }
   }
   return format;
 }

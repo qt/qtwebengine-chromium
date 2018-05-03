@@ -4,7 +4,6 @@
 
 #include "core/frame/csp/ContentSecurityPolicy.h"
 
-#include "common/net/ip_address_space.mojom-blink.h"
 #include "core/dom/Document.h"
 #include "core/frame/csp/CSPDirectiveList.h"
 #include "core/html/HTMLScriptElement.h"
@@ -17,6 +16,7 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/mojom/net/ip_address_space.mojom-blink.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -746,7 +746,8 @@ TEST_F(ContentSecurityPolicyTest, NonceInline) {
                                       << "`, Nonce: `" << test.nonce << "`");
 
     unsigned expected_reports = test.allowed ? 0u : 1u;
-    HTMLScriptElement* element = HTMLScriptElement::Create(*document, true);
+    auto* element =
+        HTMLScriptElement::Create(*document, CreateElementFlags::ByParser());
 
     // Enforce 'script-src'
     Persistent<ContentSecurityPolicy> policy = ContentSecurityPolicy::Create();
@@ -1240,102 +1241,112 @@ TEST_F(ContentSecurityPolicyTest, CSPBypassDisabledWhenSchemeIsPrivileged) {
 
 TEST_F(ContentSecurityPolicyTest, IsValidCSPAttrTest) {
   // Empty string is invalid
-  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("", ""));
 
   // Policy with single directive
   EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("base-uri http://example.com"));
+      ContentSecurityPolicy::IsValidCSPAttr("base-uri http://example.com", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "invalid-policy-name http://example.com"));
+      "invalid-policy-name http://example.com", ""));
 
   // Policy with multiple directives
   EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr(
       "base-uri http://example.com 'self'; child-src http://example.com; "
-      "default-src http://example.com"));
+      "default-src http://example.com",
+      ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
       "default-src http://example.com; "
-      "invalid-policy-name http://example.com"));
+      "invalid-policy-name http://example.com",
+      ""));
 
   // 'self', 'none'
-  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr("script-src 'self'"));
-  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr("default-src 'none'"));
-  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("script-src 'slef'"));
-  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("default-src 'non'"));
+  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr("script-src 'self'", ""));
+  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr("default-src 'none'", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("script-src 'slef'", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("default-src 'non'", ""));
 
   // invalid ascii character
   EXPECT_FALSE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src https:  \x08"));
+      ContentSecurityPolicy::IsValidCSPAttr("script-src https:  \x08", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 127.0.0.1%2F%DFisnotSorB%2F"));
+      "script-src 127.0.0.1%2F%DFisnotSorB%2F", ""));
 
   // paths on script-src
-  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr("script-src 127.0.0.1:*/"));
   EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src 127.0.0.1:*/path"));
-  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 127.0.0.1:*/path?query=string"));
-  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 127.0.0.1:*/path#anchor"));
+      ContentSecurityPolicy::IsValidCSPAttr("script-src 127.0.0.1:*/", ""));
   EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src 127.0.0.1:8000/"));
+      ContentSecurityPolicy::IsValidCSPAttr("script-src 127.0.0.1:*/path", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src 127.0.0.1:*/path?query=string", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src 127.0.0.1:*/path#anchor", ""));
   EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src 127.0.0.1:8000/path"));
+      ContentSecurityPolicy::IsValidCSPAttr("script-src 127.0.0.1:8000/", ""));
+  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src 127.0.0.1:8000/path", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 127.0.0.1:8000/path?query=string"));
+      "script-src 127.0.0.1:8000/path?query=string", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 127.0.0.1:8000/path#anchor"));
+      "script-src 127.0.0.1:8000/path#anchor", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 127.0.0.1:8000/thisisa;pathwithasemicolon"));
+      "script-src 127.0.0.1:8000/thisisa;pathwithasemicolon", ""));
 
   // script-src invalid hosts
-  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("script-src http:/"));
-  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("script-src http://"));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("script-src http:/", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr("script-src http://", ""));
   EXPECT_FALSE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src http:/127.0.0.1"));
-  EXPECT_FALSE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src http:///127.0.0.1"));
-  EXPECT_FALSE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src http://127.0.0.1:/"));
-  EXPECT_FALSE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src https://127.?.0.1:*"));
-  EXPECT_FALSE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src https://127.0.0.1:"));
+      ContentSecurityPolicy::IsValidCSPAttr("script-src http:/127.0.0.1", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src https://127.0.0.1:\t*   "));
+      "script-src http:///127.0.0.1", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src http://127.0.0.1:/", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src https://127.?.0.1:*", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src https://127.0.0.1:", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src https://127.0.0.1:\t*   ", ""));
 
   // script-src host wildcards
+  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src http://*.0.1:8000", ""));
+  EXPECT_TRUE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src http://*.0.1:8000/", ""));
   EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src http://*.0.1:8000"));
+      ContentSecurityPolicy::IsValidCSPAttr("script-src http://*.0.1:*", ""));
   EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src http://*.0.1:8000/"));
-  EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src http://*.0.1:*"));
-  EXPECT_TRUE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src http://*.0.1:*/"));
+      ContentSecurityPolicy::IsValidCSPAttr("script-src http://*.0.1:*/", ""));
 
   // missing semicolon
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "default-src 'self' script-src example.com"));
+      "default-src 'self' script-src example.com", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 'self' object-src 'self' style-src *"));
+      "script-src 'self' object-src 'self' style-src *", ""));
 
   // 'none' with other sources
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src http://127.0.0.1:8000 'none'"));
-  EXPECT_FALSE(
-      ContentSecurityPolicy::IsValidCSPAttr("script-src 'none' 'none' 'none'"));
+      "script-src http://127.0.0.1:8000 'none'", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src 'none' 'none' 'none'", ""));
 
   // comma separated
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 'none', object-src 'none'"));
+      "script-src 'none', object-src 'none'", ""));
 
   // reporting not allowed
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
-      "script-src 'none'; report-uri http://example.com/reporting"));
+      "script-src 'none'; report-uri http://example.com/reporting", ""));
   EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
       "report-uri relative-path/reporting;"
-      "base-uri http://example.com 'self'"));
-  // TODO(andypaicu): when `report-to` is implemented, add tests here.
+      "base-uri http://example.com 'self'",
+      ""));
+
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "script-src 'none'; report-to http://example.com/reporting", ""));
+  EXPECT_FALSE(ContentSecurityPolicy::IsValidCSPAttr(
+      "report-to relative-path/reporting;"
+      "base-uri http://example.com 'self'",
+      ""));
 }
 
 }  // namespace blink

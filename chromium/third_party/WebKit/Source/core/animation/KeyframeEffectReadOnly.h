@@ -55,6 +55,7 @@ class CORE_EXPORT KeyframeEffectReadOnly : public AnimationEffectReadOnly {
   // IDL implementation.
   String composite() const;
   Vector<ScriptValue> getKeyframes(ScriptState*);
+  Element* target() const { return target_; }
 
   EffectModel::CompositeOperation compositeInternal() const {
     return model_->Composite();
@@ -68,23 +69,20 @@ class CORE_EXPORT KeyframeEffectReadOnly : public AnimationEffectReadOnly {
     model_ = model;
   }
   Priority GetPriority() const { return priority_; }
-  Element* Target() const { return target_; }
 
   void NotifySampledEffectRemovedFromEffectStack();
 
   CompositorAnimations::FailureCode CheckCanStartAnimationOnCompositor(
       double animation_playback_rate) const;
   // Must only be called once.
-  void StartAnimationOnCompositor(
-      int group,
-      double start_time,
-      double time_offset,
-      double animation_playback_rate,
-      CompositorAnimationPlayer* compositor_player = nullptr);
+  void StartAnimationOnCompositor(int group,
+                                  double start_time,
+                                  double time_offset,
+                                  double animation_playback_rate,
+                                  CompositorAnimation* = nullptr);
   bool HasActiveAnimationsOnCompositor() const;
   bool HasActiveAnimationsOnCompositor(const PropertyHandle&) const;
   bool CancelAnimationOnCompositor();
-  void RestartAnimationOnCompositor();
   void CancelIncompatibleAnimationsOnCompositor();
   void PauseAnimationForTestingOnCompositor(double pause_time);
 
@@ -99,6 +97,9 @@ class CORE_EXPORT KeyframeEffectReadOnly : public AnimationEffectReadOnly {
 
   void DowngradeToNormal() { priority_ = kDefaultPriority; }
 
+  bool HasAnimation() const;
+  bool HasPlayingAnimation() const;
+
  protected:
   KeyframeEffectReadOnly(Element*,
                          KeyframeEffectModelBase*,
@@ -109,9 +110,8 @@ class CORE_EXPORT KeyframeEffectReadOnly : public AnimationEffectReadOnly {
   void ApplyEffects();
   void ClearEffects();
   void UpdateChildrenAndEffects() const override;
-  void Attach(Animation*) override;
+  void Attach(AnimationEffectOwner*) override;
   void Detach() override;
-  void SpecifiedTimingChanged() override;
   double CalculateTimeToEffectChange(
       bool forwards,
       double inherited_time,

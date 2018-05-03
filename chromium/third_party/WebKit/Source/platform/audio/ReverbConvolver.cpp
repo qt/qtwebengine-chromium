@@ -138,8 +138,9 @@ ReverbConvolver::ReverbConvolver(AudioChannel* impulse_response,
   // FIXME: would be better to up the thread priority here.  It doesn't need to
   // be real-time, but higher than the default...
   if (use_background_threads && background_stages_.size() > 0) {
-    background_thread_ = Platform::Current()->CreateThread(
-        "Reverb convolution background thread");
+    background_thread_ =
+        Platform::Current()->CreateThread(WebThreadCreationParams(
+            WebThreadType::kReverbConvolutionBackgroundThread));
   }
 }
 
@@ -200,7 +201,7 @@ void ReverbConvolver::Process(const AudioChannel* source_channel,
   // Now that we've buffered more input, post another task to the background
   // thread.
   if (background_thread_) {
-    PostCrossThreadTask(*background_thread_->GetWebTaskRunner(), FROM_HERE,
+    PostCrossThreadTask(*background_thread_->GetTaskRunner(), FROM_HERE,
                         CrossThreadBind(&ReverbConvolver::ProcessInBackground,
                                         CrossThreadUnretained(this)));
   }

@@ -35,7 +35,8 @@ void SyncLoadContext::StartAsyncWithWaitableEvent(
       std::move(request), routing_id, std::move(loading_task_runner),
       frame_origin, traffic_annotation, true /* is_sync */,
       base::WrapUnique(context), context->url_loader_factory_,
-      std::move(throttles), network::mojom::URLLoaderClientEndpointsPtr());
+      std::move(throttles), network::mojom::URLLoaderClientEndpointsPtr(),
+      nullptr /* continue_for_navigation */);
 }
 
 SyncLoadContext::SyncLoadContext(
@@ -49,8 +50,7 @@ SyncLoadContext::SyncLoadContext(
       SharedURLLoaderFactory::Create(std::move(url_loader_factory));
 
   // Constructs a new ResourceDispatcher specifically for this request.
-  resource_dispatcher_ =
-      std::make_unique<ResourceDispatcher>(base::ThreadTaskRunnerHandle::Get());
+  resource_dispatcher_ = std::make_unique<ResourceDispatcher>();
 
   // Initialize the final URL with the original request URL. It will be
   // overwritten on redirects.

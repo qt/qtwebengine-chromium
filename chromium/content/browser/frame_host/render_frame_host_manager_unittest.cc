@@ -62,7 +62,7 @@
 #include "content/test/test_web_contents.h"
 #include "net/base/load_flags.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/frame_policy.h"
+#include "third_party/WebKit/public/common/frame/frame_policy.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
 #include "ui/base/page_transition_types.h"
 
@@ -454,7 +454,7 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
             manager->frame_tree_node_, frame_entry->url(),
             frame_entry->referrer(), *frame_entry, entry, navigate_type,
             PREVIEWS_UNSPECIFIED, false, false, nullptr, base::TimeTicks::Now(),
-            controller);
+            controller, nullptr);
 
     // Simulates request creation that triggers the 1st internal call to
     // GetFrameHostForNavigation.
@@ -1025,19 +1025,11 @@ TEST_F(RenderFrameHostManagerTest, WebUI) {
   EXPECT_TRUE(host->GetSiteInstance()->HasSite());
   EXPECT_EQ(kUrl, host->GetSiteInstance()->GetSiteURL());
 
-  // The Web UI is committed immediately because the RenderViewHost has not been
-  // used yet. UpdateStateForNavigate() took the short cut path.
-  if (IsBrowserSideNavigationEnabled()) {
-    // In PlzNavigate, there will be a navigating WebUI because
-    // GetFrameHostForNavigation was already called twice and the committed
-    // WebUI should be set to be reused.
-    EXPECT_TRUE(manager->GetNavigatingWebUI());
-    EXPECT_EQ(host->web_ui(), manager->GetNavigatingWebUI());
-    EXPECT_EQ(host->web_ui(), host->pending_web_ui());
-  } else {
-    // The WebUI was immediately committed and there should be none navigating.
-    EXPECT_FALSE(manager->GetNavigatingWebUI());
-  }
+  // There will be a navigating WebUI because GetFrameHostForNavigation was
+  // already called twice and the committed  WebUI should be set to be reused.
+  EXPECT_TRUE(manager->GetNavigatingWebUI());
+  EXPECT_EQ(host->web_ui(), manager->GetNavigatingWebUI());
+  EXPECT_EQ(host->web_ui(), host->pending_web_ui());
   EXPECT_TRUE(manager->current_frame_host()->web_ui());
 
   // Commit.
@@ -1635,8 +1627,7 @@ TEST_F(RenderFrameHostManagerTest, CloseWithPendingWhileUnresponsive) {
   // Start a navigation to a new site.
   controller().LoadURL(
       kUrl2, Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
-  if (IsBrowserSideNavigationEnabled())
-    rfh1->PrepareForCommit();
+  rfh1->PrepareForCommit();
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
 
   // Simulate the unresponsiveness timer.  The tab should close.
@@ -2697,7 +2688,6 @@ TEST_F(RenderFrameHostManagerTest, CanCommitOrigin) {
   params.transition = ui::PAGE_TRANSITION_LINK;
   params.should_update_history = false;
   params.gesture = NavigationGestureAuto;
-  params.was_within_same_document = false;
   params.method = "GET";
   params.page_state = PageState::CreateFromURL(kUrlBar);
 
@@ -2732,7 +2722,8 @@ TEST_F(RenderFrameHostManagerTest, CanCommitOrigin) {
     if (test_case.mismatch)
       expected_bad_msg_count++;
 
-    main_test_rfh()->SendNavigateWithParams(&params);
+    main_test_rfh()->SendNavigateWithParams(
+        &params, false /* was_within_same_document */);
 
     EXPECT_EQ(expected_bad_msg_count, process()->bad_msg_count())
       << " url:" << test_case.url
@@ -2775,7 +2766,7 @@ TEST_F(RenderFrameHostManagerTestWithBrowserSideNavigation,
           frame_entry->referrer(), *frame_entry, entry,
           FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT, PREVIEWS_UNSPECIFIED,
           false, false, nullptr, base::TimeTicks::Now(),
-          static_cast<NavigationControllerImpl*>(&controller()));
+          static_cast<NavigationControllerImpl*>(&controller()), nullptr);
   manager->DidCreateNavigationRequest(navigation_request.get());
 
   // As the initial RenderFrame was not live, the new RenderFrameHost should be
@@ -2836,7 +2827,7 @@ TEST_F(RenderFrameHostManagerTestWithBrowserSideNavigation,
           frame_entry->referrer(), *frame_entry, entry,
           FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT, PREVIEWS_UNSPECIFIED,
           false, false, nullptr, base::TimeTicks::Now(),
-          static_cast<NavigationControllerImpl*>(&controller()));
+          static_cast<NavigationControllerImpl*>(&controller()), nullptr);
   manager->DidCreateNavigationRequest(navigation_request.get());
 
   // The current WebUI should still be in place and the pending WebUI should be
@@ -2894,7 +2885,7 @@ TEST_F(RenderFrameHostManagerTestWithBrowserSideNavigation,
           frame_entry->referrer(), *frame_entry, entry,
           FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT, PREVIEWS_UNSPECIFIED,
           false, false, nullptr, base::TimeTicks::Now(),
-          static_cast<NavigationControllerImpl*>(&controller()));
+          static_cast<NavigationControllerImpl*>(&controller()), nullptr);
   manager->DidCreateNavigationRequest(navigation_request.get());
 
   // The current WebUI should still be in place and there should be a new
@@ -3009,11 +3000,11 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
   commit_params.transition = ui::PAGE_TRANSITION_AUTO_SUBFRAME;
   commit_params.should_update_history = false;
   commit_params.gesture = NavigationGestureAuto;
-  commit_params.was_within_same_document = false;
   commit_params.method = "GET";
   commit_params.page_state = PageState::CreateFromURL(kUrl3);
   commit_params.insecure_request_policy = blink::kLeaveInsecureRequestsAlone;
-  child_host->SendNavigateWithParams(&commit_params);
+  child_host->SendNavigateWithParams(&commit_params,
+                                     false /* was_within_same_document */);
   EXPECT_NO_FATAL_FAILURE(CheckInsecureRequestPolicyIPC(
       main_test_rfh(), blink::kLeaveInsecureRequestsAlone,
       proxy_to_parent->GetRoutingID()));

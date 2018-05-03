@@ -567,11 +567,14 @@ bool Display::isValidWindow(EGLNativeWindowType window)
 			XWindowAttributes windowAttributes;
 			Status status = libX11->XGetWindowAttributes((::Display*)nativeDisplay, window, &windowAttributes);
 
-			return status == True;
+			return status != 0;
 		}
 		return false;
 	#elif defined(__APPLE__)
 		return sw::OSX::IsValidWindow(window);
+	#elif defined(__Fuchsia__)
+		// TODO(crbug.com/800951): Integrate with Mozart.
+		return true;
 	#else
 		#error "Display::isValidWindow unimplemented for this platform"
 		return false;
@@ -743,6 +746,8 @@ sw::Format Display::getDisplayFormat() const
 			return sw::FORMAT_X8R8G8B8;
 		}
 	#elif defined(__APPLE__)
+		return sw::FORMAT_A8B8G8R8;
+	#elif defined(__Fuchsia__)
 		return sw::FORMAT_A8B8G8R8;
 	#else
 		#error "Display::isValidWindow unimplemented for this platform"

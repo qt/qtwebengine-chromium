@@ -96,6 +96,8 @@ source_set("base") {
     "cdm_promise.h",
     "cdm_promise_adapter.cc",
     "cdm_promise_adapter.h",
+    "cdm_proxy_context.cc",
+    "cdm_proxy_context.h",
     "cdm_session_tracker.cc",
     "cdm_session_tracker.h",
     "channel_mixer.cc",
@@ -280,7 +282,7 @@ source_set("base") {
     "//ui/gfx:color_space",
   ]
   deps = [
-    "//base/allocator:features",
+    "//base/allocator:buildflags",
     "//gpu/command_buffer/common",
     "//ppapi/features",
     "//skia",
@@ -346,10 +348,12 @@ source_set("base") {
     deps += [ "//media/base/win" ]
   }
 
-  if (use_low_memory_buffer) {
-    sources += [ "demuxer_memory_limit_lowmem.cc" ]
+  if (is_chromecast) {
+    sources += [ "demuxer_memory_limit_low.cc" ]
+  } else if (is_android) {
+    sources += [ "demuxer_memory_limit_select.cc" ]
   } else {
-    sources += [ "demuxer_memory_limit.cc" ]
+    sources += [ "demuxer_memory_limit_default.cc" ]
   }
 }
 

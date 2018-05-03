@@ -14,7 +14,6 @@ class CFX_XMLElement;
 class CFX_XMLNode;
 class CXFA_LocaleValue;
 class CXFA_Node;
-class CXFA_WidgetAcc;
 
 double XFA_GetFractionalScale(uint32_t idx);
 int XFA_GetMaxFractionalScale();
@@ -38,6 +37,6 @@ void XFA_DataExporter_RegenerateFormFile(
 
 const XFA_SCRIPTATTRIBUTEINFO* XFA_GetScriptAttributeByName(
     XFA_Element eElement,
-    const WideStringView& wsAttributeName);
+    WideStringView wsAttributeName);
 
 #endif  // XFA_FXFA_PARSER_XFA_UTILS_H_

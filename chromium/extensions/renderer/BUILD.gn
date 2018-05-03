@@ -3,11 +3,12 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//extensions/features/features.gni")
 
 assert(enable_extensions)
 
-source_set("renderer") {
+jumbo_source_set("renderer") {
   sources = [
     "activity_log_converter_strategy.cc",
     "activity_log_converter_strategy.h",
@@ -132,6 +133,10 @@ source_set("renderer") {
     "guest_view/mime_handler_view/mime_handler_view_container.h",
     "i18n_custom_bindings.cc",
     "i18n_custom_bindings.h",
+    "i18n_hooks_delegate.cc",
+    "i18n_hooks_delegate.h",
+    "i18n_hooks_util.cc",
+    "i18n_hooks_util.h",
     "id_generator_custom_bindings.cc",
     "id_generator_custom_bindings.h",
     "injection_host.cc",
@@ -348,7 +353,7 @@ source_set("renderer") {
   }
 }
 
-static_library("unit_test_support") {
+jumbo_static_library("unit_test_support") {
   # Sources that are shared between chrome-based renderer unit tests and
   # top-level extensions renderer unit tests.
   testonly = true

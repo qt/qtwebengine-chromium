@@ -41,8 +41,8 @@ class SVGElementProxy::IdObserver : public IdTargetObserver {
   }
 
   void ContentChanged() {
-    DCHECK(Lifecycle().GetState() <= DocumentLifecycle::kCompositingClean ||
-           Lifecycle().GetState() >= DocumentLifecycle::kPaintClean);
+    DCHECK(Lifecycle().GetState() != DocumentLifecycle::kInPrePaint &&
+           Lifecycle().GetState() != DocumentLifecycle::kInPaint);
     HeapVector<Member<SVGResourceClient>> clients;
     CopyToVector(clients_, clients);
     for (SVGResourceClient* client : clients)
@@ -73,7 +73,7 @@ SVGElementProxy::SVGElementProxy(const String& url, const AtomicString& id)
 SVGElementProxy::~SVGElementProxy() = default;
 
 void SVGElementProxy::AddClient(SVGResourceClient* client,
-                                WebTaskRunner* task_runner) {
+                                base::SingleThreadTaskRunner* task_runner) {
   // An empty id will never be a valid element reference.
   if (id_.IsEmpty())
     return;

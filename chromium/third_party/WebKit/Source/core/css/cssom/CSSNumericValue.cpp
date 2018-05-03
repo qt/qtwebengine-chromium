@@ -228,6 +228,7 @@ CSSNumericValue* CSSNumericValue::parse(const String& css_text,
         DCHECK(calc_value->ExpressionNode());
         return CalcToNumericValue(*calc_value->ExpressionNode());
       }
+      break;
     default:
       break;
   }
@@ -357,6 +358,29 @@ CSSMathSum* CSSNumericValue::toSum(const Vector<String>& unit_strings,
   return value;
 }
 
+void CSSNumericValue::type(CSSNumericType& type) const {
+  using BaseType = CSSNumericValueType::BaseType;
+
+  if (int exponent = type_.Exponent(BaseType::kLength))
+    type.setLength(exponent);
+  if (int exponent = type_.Exponent(BaseType::kAngle))
+    type.setAngle(exponent);
+  if (int exponent = type_.Exponent(BaseType::kTime))
+    type.setTime(exponent);
+  if (int exponent = type_.Exponent(BaseType::kFrequency))
+    type.setFrequency(exponent);
+  if (int exponent = type_.Exponent(BaseType::kResolution))
+    type.setResolution(exponent);
+  if (int exponent = type_.Exponent(BaseType::kFlex))
+    type.setFlex(exponent);
+  if (int exponent = type_.Exponent(BaseType::kPercent))
+    type.setPercent(exponent);
+  if (type_.HasPercentHint()) {
+    type.setPercentHint(
+        CSSNumericValueType::BaseTypeToString(type_.PercentHint()));
+  }
+}
+
 CSSNumericValue* CSSNumericValue::add(
     const HeapVector<CSSNumberish>& numberishes,
     ExceptionState& exception_state) {
@@ -400,8 +424,15 @@ CSSNumericValue* CSSNumericValue::div(
     const HeapVector<CSSNumberish>& numberishes,
     ExceptionState& exception_state) {
   auto values = CSSNumberishesToNumericValues(numberishes);
-  std::transform(values.begin(), values.end(), values.begin(),
-                 [](CSSNumericValue* v) { return v->Invert(); });
+  for (auto& v : values) {
+    auto invert_value = v->Invert();
+    if (!invert_value) {
+      exception_state.ThrowRangeError("Can't divide-by-zero");
+      return nullptr;
+    }
+    v = invert_value;
+  }
+
   PrependValueForArithmetic<kProductType>(values, this);
 
   if (CSSUnitValue* unit_value = MaybeMultiplyAsUnitValue(values))
@@ -439,6 +470,12 @@ bool CSSNumericValue::equals(const HeapVector<CSSNumberish>& args) {
   CSSNumericValueVector values = CSSNumberishesToNumericValues(args);
   return std::all_of(values.begin(), values.end(),
                      [this](const auto& v) { return this->Equals(*v); });
+}
+
+String CSSNumericValue::toString() const {
+  StringBuilder result;
+  BuildCSSText(Nested::kNo, ParenLess::kNo, result);
+  return result.ToString();
 }
 
 CSSNumericValue* CSSNumericValue::Negate() {

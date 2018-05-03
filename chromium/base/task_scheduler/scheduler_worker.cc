@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/task_scheduler/task_tracker.h"
+#include "base/trace_event/trace_event.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -36,10 +37,16 @@ class SchedulerWorker::Thread : public PlatformThread::Delegate {
 
   // PlatformThread::Delegate.
   void ThreadMain() override {
+    TRACE_EVENT_BEGIN0("task_scheduler", "SchedulerWorkerThread active");
+
     outer_->delegate_->OnMainEntry(outer_.get());
 
     // A SchedulerWorker starts out waiting for work.
-    outer_->delegate_->WaitForWork(&wake_up_event_);
+    {
+      TRACE_EVENT_END0("task_scheduler", "SchedulerWorkerThread active");
+      outer_->delegate_->WaitForWork(&wake_up_event_);
+      TRACE_EVENT_BEGIN0("task_scheduler", "SchedulerWorkerThread active");
+    }
 
     // When defined(COM_INIT_CHECK_HOOK_ENABLED), ignore
     // SchedulerBackwardCompatibility::INIT_COM_STA to find incorrect uses of
@@ -65,12 +72,18 @@ class SchedulerWorker::Thread : public PlatformThread::Delegate {
       scoped_refptr<Sequence> sequence =
           outer_->delegate_->GetWork(outer_.get());
       if (!sequence) {
+        // Exit immediately if GetWork() resulted in detaching this worker.
+        if (outer_->ShouldExit())
+          break;
+
+        TRACE_EVENT_END0("task_scheduler", "SchedulerWorkerThread active");
         outer_->delegate_->WaitForWork(&wake_up_event_);
+        TRACE_EVENT_BEGIN0("task_scheduler", "SchedulerWorkerThread active");
         continue;
       }
 
-      sequence = outer_->task_tracker_->RunNextTask(std::move(sequence),
-                                                    outer_->delegate_.get());
+      sequence = outer_->task_tracker_->RunAndPopNextTask(
+          std::move(sequence), outer_->delegate_.get());
 
       outer_->delegate_->DidRunTask();
 
@@ -86,12 +99,17 @@ class SchedulerWorker::Thread : public PlatformThread::Delegate {
       wake_up_event_.Reset();
     }
 
+    // Important: It is unsafe to access unowned state (e.g. |task_tracker_|)
+    // after invoking OnMainExit().
+
     outer_->delegate_->OnMainExit(outer_.get());
 
     // Break the ownership circle between SchedulerWorker and Thread.
     // This can result in deleting |this| and as such no more member accesses
     // should be made after this point.
     outer_ = nullptr;
+
+    TRACE_EVENT_END0("task_scheduler", "SchedulerWorkerThread active");
   }
 
   void Join() { PlatformThread::Join(thread_handle_); }
@@ -103,8 +121,6 @@ class SchedulerWorker::Thread : public PlatformThread::Delegate {
  private:
   Thread(scoped_refptr<SchedulerWorker> outer)
       : outer_(std::move(outer)),
-        wake_up_event_(WaitableEvent::ResetPolicy::MANUAL,
-                       WaitableEvent::InitialState::NOT_SIGNALED),
         current_thread_priority_(GetDesiredThreadPriority()) {
     DCHECK(outer_);
   }
@@ -117,7 +133,7 @@ class SchedulerWorker::Thread : public PlatformThread::Delegate {
 
   // Returns the priority for which the thread should be set based on the
   // priority hint, current shutdown state, and platform capabilities.
-  ThreadPriority GetDesiredThreadPriority() {
+  ThreadPriority GetDesiredThreadPriority() const {
     DCHECK(outer_);
 
     // All threads have a NORMAL priority when Lock doesn't handle multiple
@@ -151,7 +167,8 @@ class SchedulerWorker::Thread : public PlatformThread::Delegate {
   scoped_refptr<SchedulerWorker> outer_;
 
   // Event signaled to wake up this thread.
-  WaitableEvent wake_up_event_;
+  WaitableEvent wake_up_event_{WaitableEvent::ResetPolicy::AUTOMATIC,
+                               WaitableEvent::InitialState::NOT_SIGNALED};
 
   // Current priority of this thread. May be different from
   // |outer_->priority_hint_|.
@@ -170,7 +187,6 @@ void SchedulerWorker::Delegate::WaitForWork(WaitableEvent* wake_up_event) {
   } else {
     wake_up_event->TimedWait(sleep_time);
   }
-  wake_up_event->Reset();
 }
 
 SchedulerWorker::SchedulerWorker(

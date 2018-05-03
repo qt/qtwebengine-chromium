@@ -93,8 +93,9 @@ static void PaintInternal(Page& page,
 
     IntRect dirty_rect(rect);
     LocalFrameView* view = root.View();
-    view->UpdateAllLifecyclePhasesExceptPaint();
     if (view) {
+      DCHECK(view->GetLayoutView()->GetDocument().Lifecycle().GetState() ==
+             DocumentLifecycle::kPaintClean);
       ClipRecorder clip_recorder(paint_context, builder,
                                  DisplayItem::kPageWidgetDelegateClip,
                                  dirty_rect);
@@ -241,6 +242,7 @@ WebInputEventResult PageWidgetDelegate::HandleInputEvent(
     case WebInputEvent::kTouchCancel:
     case WebInputEvent::kTouchScrollStarted:
       NOTREACHED();
+      return WebInputEventResult::kNotHandled;
 
     case WebInputEvent::kGesturePinchBegin:
     case WebInputEvent::kGesturePinchEnd:
@@ -306,35 +308,6 @@ WebInputEventResult PageWidgetEventHandler::HandlePointerEvent(
   return main_frame.GetEventHandler().HandlePointerEvent(
       transformed_event,
       TransformWebPointerEventVector(main_frame.View(), coalesced_events));
-}
-
-WebInputEventResult PageWidgetEventHandler::HandleInputEventIncludingTouch(
-    const WebCoalescedInputEvent& coalesced_event) {
-  const WebInputEvent& input_event = coalesced_event.Event();
-  if (WebInputEvent::IsTouchEventType(input_event.GetType())) {
-    if (input_event.GetType() == WebInputEvent::kTouchScrollStarted) {
-      WebPointerEvent pointer_event =
-          WebPointerEvent::CreatePointerCausesUaActionEvent(
-              WebPointerProperties::PointerType::kUnknown,
-              input_event.TimeStampSeconds());
-      return HandleInputEventInternal(WebCoalescedInputEvent(pointer_event));
-    }
-    const WebTouchEvent touch_event =
-        static_cast<const WebTouchEvent&>(input_event);
-    for (unsigned i = 0; i < touch_event.touches_length; ++i) {
-      const WebTouchPoint& touch_point = touch_event.touches[i];
-      if (touch_point.state != blink::WebTouchPoint::kStateStationary) {
-        const WebPointerEvent& pointer_event =
-            WebPointerEvent(touch_event, touch_point);
-        const WebCoalescedInputEvent& coalesced_pointer_event =
-            GetCoalescedWebPointerEventForTouch(
-                pointer_event, coalesced_event.GetCoalescedEventsPointers());
-        HandleInputEventInternal(coalesced_pointer_event);
-      }
-    }
-    return DispatchBufferedTouchEvents();
-  }
-  return HandleInputEventInternal(coalesced_event);
 }
 
 }  // namespace blink

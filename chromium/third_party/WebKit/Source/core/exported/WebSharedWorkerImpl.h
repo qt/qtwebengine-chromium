@@ -35,17 +35,16 @@
 
 #include <memory>
 #include "base/memory/scoped_refptr.h"
-#include "common/net/ip_address_space.mojom-shared.h"
 #include "core/CoreExport.h"
 #include "core/exported/WorkerShadowPage.h"
 #include "core/workers/SharedWorkerReportingProxy.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerThread.h"
-#include "platform/WebTaskRunner.h"
+#include "public/mojom/net/ip_address_space.mojom-shared.h"
 #include "public/platform/WebContentSecurityPolicy.h"
 #include "public/web/WebSharedWorkerClient.h"
 #include "public/web/worker_content_settings_proxy.mojom-blink.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom-blink.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
 
 namespace blink {
 
@@ -74,7 +73,7 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
 
   // WebDevToolsAgentImpl::Client overrides.
   void ResumeStartup() override;
-  const WebString& GetDevToolsFrameToken() override;
+  const base::UnguessableToken& GetDevToolsWorkerToken() override;
 
   // WebSharedWorker methods:
   void StartWorkerContext(
@@ -83,7 +82,7 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
       const WebString& content_security_policy,
       WebContentSecurityPolicyType,
       mojom::IPAddressSpace,
-      const WebString& devtools_frame_token,
+      const base::UnguessableToken& devtools_worker_token,
       mojo::ScopedMessagePipeHandle content_settings_handle,
       mojo::ScopedMessagePipeHandle interface_provider) override;
   void Connect(MessagePortChannel) override;
@@ -115,7 +114,7 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
   std::unique_ptr<WorkerShadowPage> shadow_page_;
   // Unique worker token used by DevTools to attribute different instrumentation
   // to the same worker.
-  WebString devtools_frame_token_;
+  base::UnguessableToken devtools_worker_token_;
 
   std::unique_ptr<WebServiceWorkerNetworkProvider> network_provider_;
 

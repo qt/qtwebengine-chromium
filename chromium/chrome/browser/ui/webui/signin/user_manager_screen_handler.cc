@@ -51,7 +51,6 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/prefs/pref_service.h"
-#include "components/proximity_auth/screenlock_bridge.h"
 #include "components/signin/core/account_id/account_id.h"
 #include "components/signin/core/browser/profile_management_switches.h"
 #include "components/strings/grit/components_strings.h"
@@ -92,7 +91,6 @@ const char kJsApiUserManagerAuthLaunchUser[] = "authenticatedLaunchUser";
 const char kJsApiUserManagerLaunchGuest[] = "launchGuest";
 const char kJsApiUserManagerLaunchUser[] = "launchUser";
 const char kJsApiUserManagerRemoveUser[] = "removeUser";
-const char kJsApiUserManagerAttemptUnlock[] = "attemptUnlock";
 const char kJsApiUserManagerLogRemoveUserWarningShown[] =
     "logRemoveUserWarningShown";
 const char kJsApiUserManagerRemoveUserWarningLoadStats[] =
@@ -101,9 +99,6 @@ const char kJsApiUserManagerAreAllProfilesLocked[] =
     "areAllProfilesLocked";
 const size_t kAvatarIconSize = 180;
 const int kMaxOAuthRetries = 3;
-
-void HandleAndDoNothing(const base::ListValue* args) {
-}
 
 std::string GetAvatarImage(const ProfileAttributesEntry* entry) {
   bool is_gaia_picture = entry->IsUsingGAIAPicture() &&
@@ -121,17 +116,6 @@ std::string GetAvatarImage(const ProfileAttributesEntry* entry) {
   gfx::Image resized_image = profiles::GetSizedAvatarIcon(
       avatar_image, is_gaia_picture, kAvatarIconSize, kAvatarIconSize);
   return webui::GetBitmapDataUrl(resized_image.AsBitmap());
-}
-
-extensions::ScreenlockPrivateEventRouter* GetScreenlockRouter(
-    const std::string& email) {
-  base::FilePath path =
-      profiles::GetPathOfProfileWithEmail(g_browser_process->profile_manager(),
-                                          email);
-  Profile* profile = g_browser_process->profile_manager()
-      ->GetProfileByPath(path);
-  return extensions::ScreenlockPrivateEventRouter::GetFactoryInstance()->Get(
-      profile);
 }
 
 bool IsGuestModeEnabled() {
@@ -537,7 +521,6 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
   // The callback is run if the only profile has been deleted, and a new
   // profile has been created to replace it.
   webui::DeleteProfileAtPath(profile_path,
-                             web_ui(),
                              ProfileMetrics::DELETE_PROFILE_USER_MANAGER);
 }
 
@@ -596,14 +579,6 @@ void UserManagerScreenHandler::HandleLaunchUser(const base::ListValue* args) {
       base::Bind(&UserManagerScreenHandler::OnSwitchToProfileComplete,
                  weak_ptr_factory_.GetWeakPtr()),
       ProfileMetrics::SWITCH_PROFILE_MANAGER);
-}
-
-void UserManagerScreenHandler::HandleAttemptUnlock(
-    const base::ListValue* args) {
-  std::string email;
-  CHECK(args->GetString(0, &email));
-  GetScreenlockRouter(email)
-      ->OnAuthAttempted(GetAuthType(AccountId::FromUserEmail(email)), "");
 }
 
 void UserManagerScreenHandler::HandleHardlockUserPod(
@@ -712,9 +687,6 @@ void UserManagerScreenHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(kJsApiUserManagerRemoveUser,
       base::Bind(&UserManagerScreenHandler::HandleRemoveUser,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(kJsApiUserManagerAttemptUnlock,
-      base::Bind(&UserManagerScreenHandler::HandleAttemptUnlock,
-                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kJsApiUserManagerLogRemoveUserWarningShown,
       base::Bind(&HandleLogRemoveUserWarningShown));
   web_ui()->RegisterMessageCallback(kJsApiUserManagerRemoveUserWarningLoadStats,
@@ -725,21 +697,18 @@ void UserManagerScreenHandler::RegisterMessages() {
       base::Bind(&UserManagerScreenHandler::HandleAreAllProfilesLocked,
                  base::Unretained(this)));
 
-  const content::WebUI::MessageCallback& kDoNothingCallback =
-      base::Bind(&HandleAndDoNothing);
-
   // Unused callbacks from screen_account_picker.js
-  web_ui()->RegisterMessageCallback("accountPickerReady", kDoNothingCallback);
-  web_ui()->RegisterMessageCallback("loginUIStateChanged", kDoNothingCallback);
-  web_ui()->RegisterMessageCallback("hideCaptivePortal", kDoNothingCallback);
-  web_ui()->RegisterMessageCallback("getTabletModeState", kDoNothingCallback);
+  web_ui()->RegisterMessageCallback("accountPickerReady", base::DoNothing());
+  web_ui()->RegisterMessageCallback("loginUIStateChanged", base::DoNothing());
+  web_ui()->RegisterMessageCallback("hideCaptivePortal", base::DoNothing());
+  web_ui()->RegisterMessageCallback("getTabletModeState", base::DoNothing());
   // Unused callbacks from display_manager.js
-  web_ui()->RegisterMessageCallback("showAddUser", kDoNothingCallback);
-  web_ui()->RegisterMessageCallback("updateCurrentScreen", kDoNothingCallback);
-  web_ui()->RegisterMessageCallback("loginVisible", kDoNothingCallback);
+  web_ui()->RegisterMessageCallback("showAddUser", base::DoNothing());
+  web_ui()->RegisterMessageCallback("updateCurrentScreen", base::DoNothing());
+  web_ui()->RegisterMessageCallback("loginVisible", base::DoNothing());
   // Unused callbacks from user_pod_row.js
-  web_ui()->RegisterMessageCallback("focusPod", kDoNothingCallback);
-  web_ui()->RegisterMessageCallback("noPodFocused", kDoNothingCallback);
+  web_ui()->RegisterMessageCallback("focusPod", base::DoNothing());
+  web_ui()->RegisterMessageCallback("noPodFocused", base::DoNothing());
 }
 
 void UserManagerScreenHandler::GetLocalizedValues(

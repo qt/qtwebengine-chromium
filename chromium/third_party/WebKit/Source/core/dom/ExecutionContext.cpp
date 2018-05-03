@@ -32,8 +32,8 @@
 #include "core/dom/PausableObject.h"
 #include "core/dom/events/EventTarget.h"
 #include "core/events/ErrorEvent.h"
+#include "core/fileapi/PublicURLManager.h"
 #include "core/frame/UseCounter.h"
-#include "core/html/PublicURLManager.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/probe/CoreProbes.h"
 #include "core/workers/WorkerGlobalScope.h"
@@ -51,7 +51,8 @@ ExecutionContext::ExecutionContext()
       is_context_paused_(false),
       is_context_destroyed_(false),
       window_interaction_tokens_(0),
-      referrer_policy_(kReferrerPolicyDefault) {}
+      referrer_policy_(kReferrerPolicyDefault),
+      invalidator_(std::make_unique<InterfaceInvalidator>()) {}
 
 ExecutionContext::~ExecutionContext() = default;
 
@@ -87,6 +88,7 @@ void ExecutionContext::UnpausePausableObjects() {
 
 void ExecutionContext::NotifyContextDestroyed() {
   is_context_destroyed_ = true;
+  invalidator_.reset();
   ContextLifecycleNotifier::NotifyContextDestroyed();
 }
 
@@ -117,7 +119,7 @@ bool ExecutionContext::ShouldSanitizeScriptError(
   const KURL& url = CompleteURL(source_url);
   if (url.ProtocolIsData())
     return false;
-  return !(GetSecurityOrigin()->CanRequestNoSuborigin(url) ||
+  return !(GetSecurityOrigin()->CanRequest(url) ||
            cors_status == kSharableCrossOrigin);
 }
 

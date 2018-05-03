@@ -51,7 +51,7 @@
 #include "modules/mediastream/UserMediaController.h"
 #include "platform/mediastream/MediaStreamCenter.h"
 #include "platform/mediastream/MediaStreamDescriptor.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
+#include "third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 
 namespace blink {
 
@@ -337,6 +337,12 @@ class UserMediaRequest::V8Callbacks final : public UserMediaRequest::Callbacks {
 
   ~V8Callbacks() override = default;
 
+  void Trace(blink::Visitor* visitor) override {
+    visitor->Trace(success_callback_);
+    visitor->Trace(error_callback_);
+    UserMediaRequest::Callbacks::Trace(visitor);
+  }
+
   void OnSuccess(ScriptWrappable* callback_this_value,
                  MediaStream* stream) override {
     success_callback_->InvokeAndReportException(callback_this_value, stream);
@@ -349,18 +355,17 @@ class UserMediaRequest::V8Callbacks final : public UserMediaRequest::Callbacks {
  private:
   V8Callbacks(V8NavigatorUserMediaSuccessCallback* success_callback,
               V8NavigatorUserMediaErrorCallback* error_callback)
-      : success_callback_(success_callback), error_callback_(error_callback) {}
+      : success_callback_(ToV8PersistentCallbackFunction(success_callback)),
+        error_callback_(ToV8PersistentCallbackFunction(error_callback)) {}
 
   // As Blink does not hold a UserMediaRequest and lets content/ hold it,
   // we cannot use wrapper-tracing to keep the underlying callback functions.
   // Plus, it's guaranteed that the callbacks are one-shot type (not repeated
   // type) and the owner UserMediaRequest will be discarded in a limited
   // timeframe. Thus these persistent handles are okay.
-  V8NavigatorUserMediaSuccessCallback::Persistent<
-      V8NavigatorUserMediaSuccessCallback>
+  Member<V8PersistentCallbackFunction<V8NavigatorUserMediaSuccessCallback>>
       success_callback_;
-  V8NavigatorUserMediaErrorCallback::Persistent<
-      V8NavigatorUserMediaErrorCallback>
+  Member<V8PersistentCallbackFunction<V8NavigatorUserMediaErrorCallback>>
       error_callback_;
 };
 
@@ -422,11 +427,18 @@ UserMediaRequest::UserMediaRequest(ExecutionContext* context,
       video_(video),
       should_disable_hardware_noise_suppression_(
           OriginTrials::disableHardwareNoiseSuppressionEnabled(context)),
+      should_enable_experimental_hw_echo_cancellation_(
+          OriginTrials::experimentalHardwareEchoCancellationEnabled(context)),
       controller_(controller),
       callbacks_(callbacks) {
   if (should_disable_hardware_noise_suppression_) {
     UseCounter::Count(context,
                       WebFeature::kUserMediaDisableHardwareNoiseSuppression);
+  }
+  if (should_enable_experimental_hw_echo_cancellation_) {
+    UseCounter::Count(
+        context,
+        WebFeature::kUserMediaEnableExperimentalHardwareEchoCancellation);
   }
 }
 
@@ -452,6 +464,11 @@ bool UserMediaRequest::ShouldDisableHardwareNoiseSuppression() const {
   return should_disable_hardware_noise_suppression_;
 }
 
+bool UserMediaRequest::ShouldEnableExperimentalHardwareEchoCancellation()
+    const {
+  return should_enable_experimental_hw_echo_cancellation_;
+}
+
 bool UserMediaRequest::IsSecureContextUse(String& error_message) {
   Document* document = OwnerDocument();
 
@@ -465,25 +482,25 @@ bool UserMediaRequest::IsSecureContextUse(String& error_message) {
     if (Audio()) {
       if (RuntimeEnabledFeatures::FeaturePolicyForPermissionsEnabled()) {
         if (!document->GetFrame()->IsFeatureEnabled(
-                FeaturePolicyFeature::kMicrophone)) {
+                mojom::FeaturePolicyFeature::kMicrophone)) {
           UseCounter::Count(
               document, WebFeature::kMicrophoneDisabledByFeaturePolicyEstimate);
         }
       } else {
         Deprecation::CountDeprecationFeaturePolicy(
-            *document, FeaturePolicyFeature::kMicrophone);
+            *document, mojom::FeaturePolicyFeature::kMicrophone);
       }
     }
     if (Video()) {
       if (RuntimeEnabledFeatures::FeaturePolicyForPermissionsEnabled()) {
         if (!document->GetFrame()->IsFeatureEnabled(
-                FeaturePolicyFeature::kCamera)) {
+                mojom::FeaturePolicyFeature::kCamera)) {
           UseCounter::Count(document,
                             WebFeature::kCameraDisabledByFeaturePolicyEstimate);
         }
       } else {
         Deprecation::CountDeprecationFeaturePolicy(
-            *document, FeaturePolicyFeature::kCamera);
+            *document, mojom::FeaturePolicyFeature::kCamera);
       }
     }
 

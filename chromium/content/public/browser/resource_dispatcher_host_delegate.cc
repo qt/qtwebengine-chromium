@@ -7,9 +7,10 @@
 #include "content/public/browser/navigation_data.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/stream_info.h"
-#include "net/ssl/client_cert_store.h"
 
 namespace content {
+
+ResourceDispatcherHostDelegate::~ResourceDispatcherHostDelegate() {}
 
 bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
     const std::string& method,
@@ -34,13 +35,6 @@ void ResourceDispatcherHostDelegate::DownloadStarting(
     bool is_new_request,
     std::vector<std::unique_ptr<ResourceThrottle>>* throttles) {}
 
-ResourceDispatcherHostLoginDelegate*
-    ResourceDispatcherHostDelegate::CreateLoginDelegate(
-        net::AuthChallengeInfo* auth_info,
-        net::URLRequest* request) {
-  return nullptr;
-}
-
 bool ResourceDispatcherHostDelegate::HandleExternalProtocol(
     const GURL& url,
     ResourceRequestInfo* info) {
@@ -49,7 +43,6 @@ bool ResourceDispatcherHostDelegate::HandleExternalProtocol(
 
 bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
     net::URLRequest* request,
-    const base::FilePath& plugin_path,
     const std::string& mime_type,
     GURL* origin,
     std::string* payload) {
@@ -89,15 +82,6 @@ PreviewsState ResourceDispatcherHostDelegate::DetermineEnabledPreviews(
 NavigationData* ResourceDispatcherHostDelegate::GetNavigationData(
     net::URLRequest* request) const {
   return nullptr;
-}
-
-std::unique_ptr<net::ClientCertStore>
-ResourceDispatcherHostDelegate::CreateClientCertStore(
-    ResourceContext* resource_context) {
-  return std::unique_ptr<net::ClientCertStore>();
-}
-
-ResourceDispatcherHostDelegate::~ResourceDispatcherHostDelegate() {
 }
 
 }  // namespace content

@@ -15,7 +15,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
-#include "base/test/sequenced_worker_pool_owner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "components/browser_sync/browser_sync_switches.h"
@@ -161,10 +160,6 @@ ACTION_P(ReturnNewMockHostCaptureClearServerData, captured_callback) {
   return new SyncEngineCaptureClearServerData(base::Bind(
       &OnClearServerDataCalled, base::Unretained(captured_callback)));
 }
-
-void DoNothing(DataTypeController::ConfigureResult ignored1,
-               const SyncMergeResult& ignored2,
-               const SyncMergeResult& ignored3) {}
 
 // A test harness that uses a real ProfileSyncService and in most cases a
 // MockSyncEngine.
@@ -992,7 +987,7 @@ TEST_F(ProfileSyncServiceTest, GetOpenTabsUIDelegate) {
       std::make_unique<syncer::FakeDataTypeController>(syncer::PROXY_TABS);
   // Progress the controller to RUNNING first, which is how the service
   // determines whether a type is enabled.
-  controller->StartAssociating(base::Bind(&DoNothing));
+  controller->StartAssociating(base::DoNothing());
   controller->FinishStart(DataTypeController::OK_FIRST_RUN);
   service()->RegisterDataTypeController(std::move(controller));
   EXPECT_NE(nullptr, service()->GetOpenTabsUIDelegate());

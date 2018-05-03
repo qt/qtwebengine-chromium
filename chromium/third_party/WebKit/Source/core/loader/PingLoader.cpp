@@ -200,14 +200,10 @@ bool SendBeaconCommon(LocalFrame* frame,
   // mode should always be "no-cors".
   params.MutableOptions().initiator_info.name = FetchInitiatorTypeNames::beacon;
 
+  frame->Client()->DidDispatchPingLoader(request.Url());
   Resource* resource =
       RawResource::Fetch(params, frame->GetDocument()->Fetcher(), nullptr);
-  if (resource && resource->GetStatus() != ResourceStatus::kLoadError) {
-    frame->Client()->DidDispatchPingLoader(request.Url());
-    return true;
-  }
-
-  return false;
+  return resource->GetStatus() != ResourceStatus::kLoadError;
 }
 
 }  // namespace
@@ -242,10 +238,8 @@ void PingLoader::SendLinkAuditPing(LocalFrame* frame,
   FetchParameters params(request);
   params.MutableOptions().initiator_info.name = FetchInitiatorTypeNames::ping;
 
-  Resource* resource =
-      RawResource::Fetch(params, frame->GetDocument()->Fetcher(), nullptr);
-  if (resource && resource->GetStatus() != ResourceStatus::kLoadError)
-    frame->Client()->DidDispatchPingLoader(request.Url());
+  frame->Client()->DidDispatchPingLoader(request.Url());
+  RawResource::Fetch(params, frame->GetDocument()->Fetcher(), nullptr);
 }
 
 void PingLoader::SendViolationReport(LocalFrame* frame,
@@ -274,10 +268,8 @@ void PingLoader::SendViolationReport(LocalFrame* frame,
   params.MutableOptions().security_origin =
       frame->GetDocument()->GetSecurityOrigin();
 
-  Resource* resource =
-      RawResource::Fetch(params, frame->GetDocument()->Fetcher(), nullptr);
-  if (resource && resource->GetStatus() != ResourceStatus::kLoadError)
-    frame->Client()->DidDispatchPingLoader(request.Url());
+  frame->Client()->DidDispatchPingLoader(request.Url());
+  RawResource::Fetch(params, frame->GetDocument()->Fetcher(), nullptr);
 }
 
 bool PingLoader::SendBeacon(LocalFrame* frame,

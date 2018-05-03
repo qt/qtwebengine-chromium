@@ -64,24 +64,25 @@ test("device_unittests") {
     "bluetooth/test/test_bluetooth_local_gatt_service_delegate.cc",
     "bluetooth/test/test_bluetooth_local_gatt_service_delegate.h",
     "bluetooth/uribeacon/uri_encoder_unittest.cc",
-    "ctap/ctap_request_unittest.cc",
+    "fido/ctap_request_unittest.cc",
+    "fido/ctap_response_unittest.cc",
+    "fido/fido_hid_message_unittest.cc",
+    "fido/u2f_apdu_unittest.cc",
+    "fido/u2f_ble_connection_unittest.cc",
+    "fido/u2f_ble_device_unittest.cc",
+    "fido/u2f_ble_frames_unittest.cc",
+    "fido/u2f_discovery_unittest.cc",
+    "fido/u2f_register_unittest.cc",
+    "fido/u2f_request_unittest.cc",
+    "fido/u2f_sign_unittest.cc",
     "gamepad/abstract_haptic_gamepad_unittest.cc",
     "gamepad/gamepad_provider_unittest.cc",
     "gamepad/gamepad_service_unittest.cc",
-    "gamepad/public/interfaces/gamepad_struct_traits_unittest.cc",
+    "gamepad/public/mojom/gamepad_mojom_traits_unittest.cc",
     "sensors/data_fetcher_shared_memory_base_unittest.cc",
     "sensors/sensor_manager_android_unittest.cc",
     "sensors/sensor_manager_chromeos_unittest.cc",
     "test/run_all_unittests.cc",
-    "u2f/u2f_apdu_unittest.cc",
-    "u2f/u2f_ble_connection_unittest.cc",
-    "u2f/u2f_ble_device_unittest.cc",
-    "u2f/u2f_ble_frames_unittest.cc",
-    "u2f/u2f_discovery_unittest.cc",
-    "u2f/u2f_message_unittest.cc",
-    "u2f/u2f_register_unittest.cc",
-    "u2f/u2f_request_unittest.cc",
-    "u2f/u2f_sign_unittest.cc",
   ]
 
   deps = [
@@ -93,18 +94,17 @@ test("device_unittests") {
     "//device/bluetooth:deprecated_experimental_mojo",
     "//device/bluetooth:mocks",
     "//device/bluetooth/uribeacon",
-    "//device/ctap",
+    "//device/fido",
+    "//device/fido:mocks",
     "//device/gamepad",
     "//device/gamepad:test_helpers",
     "//device/gamepad/public/cpp:shared_with_blink",
-    "//device/gamepad/public/interfaces",
-    "//device/gamepad/public/interfaces:gamepad_struct_traits_test",
+    "//device/gamepad/public/mojom",
+    "//device/gamepad/public/mojom:gamepad_mojom_traits_test",
     "//device/geolocation:unittests",
     "//device/sensors",
     "//device/sensors/public/cpp:full",
-    "//device/sensors/public/interfaces",
-    "//device/u2f",
-    "//device/u2f:mocks",
+    "//device/sensors/public/mojom",
     "//mojo/common",
     "//mojo/edk/system",
     "//mojo/public/cpp/bindings",
@@ -121,15 +121,15 @@ test("device_unittests") {
   # Linux, requires udev.
   if (!is_linux_without_udev && !is_android) {
     sources += [
-      "u2f/u2f_hid_device_unittest.cc",
-      "u2f/u2f_hid_discovery_unittest.cc",
+      "fido/u2f_hid_device_unittest.cc",
+      "fido/u2f_hid_discovery_unittest.cc",
     ]
     deps += [
-      "//device/u2f:test_support",
+      "//device/fido:test_support",
       "//services/device/public/cpp/hid",
-      "//services/device/public/interfaces",
+      "//services/device/public/mojom",
       "//services/service_manager/public/cpp",
-      "//services/service_manager/public/interfaces",
+      "//services/service_manager/public/mojom",
     ]
 
     # Serial is supported in below platforms. See //device/servial/BUILD.gn
@@ -167,7 +167,7 @@ test("device_unittests") {
       "//device/usb:test_support",
       "//device/usb/mojo",
       "//device/usb/public/cpp",
-      "//device/usb/public/interfaces",
+      "//device/usb/public/mojom",
       "//net:test_support",
     ]
 
@@ -222,7 +222,7 @@ test("device_unittests") {
 
   # BLE discovery: works on Linux.
   if (is_linux) {
-    sources += [ "u2f/u2f_ble_discovery_unittest.cc" ]
+    sources += [ "fido/u2f_ble_discovery_unittest.cc" ]
   }
 
   if (is_mac) {
@@ -266,7 +266,7 @@ test("device_unittests") {
       "//device/vr",
       "//device/vr:fakes",
       "//device/vr:java",
-      "//device/vr:mojo_bindings",
+      "//device/vr/public/mojom",
       "//services/device/public/cpp/generic_sensor",
       "//ui/display",
     ]
@@ -299,6 +299,7 @@ if (is_android) {
   }
 
   android_library("bluetooth_test_java") {
+    testonly = true
     java_files = bluetooth_java_sources_needing_jni
     deps = [
       "//base:base_java",
@@ -306,6 +307,8 @@ if (is_android) {
       "//device/bluetooth:java",
       "//third_party/android_tools:android_support_annotations_java",
     ]
+
+    deps += android_extra_test_deps
 
     srcjar_deps = [ ":bluetooth_test_javagen" ]
   }
@@ -321,6 +324,7 @@ if (is_android) {
       "$google_play_services_package:google_play_services_location_java",
       "//base:base_java",
       "//base:base_java_test_support",
+      "//base:base_junit_test_support",
       "//device/gamepad:java",
       "//device/geolocation:geolocation_java",
       "//device/geolocation:geolocation_java_test_support",

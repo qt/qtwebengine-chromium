@@ -36,7 +36,7 @@
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/redirect_info.h"
 #include "services/network/public/cpp/resource_response_info.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
@@ -64,8 +64,7 @@ const char kFtpDirListing[] =
 
 class TestResourceDispatcher : public ResourceDispatcher {
  public:
-  TestResourceDispatcher()
-      : ResourceDispatcher(nullptr), canceled_(false), defers_loading_(false) {}
+  TestResourceDispatcher() : canceled_(false), defers_loading_(false) {}
 
   ~TestResourceDispatcher() override {}
 
@@ -92,8 +91,8 @@ class TestResourceDispatcher : public ResourceDispatcher {
       std::unique_ptr<RequestPeer> peer,
       scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints)
-      override {
+      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
+      base::OnceClosure* continue_navigation_function) override {
     EXPECT_FALSE(peer_);
     if (sync_load_response_.encoded_body_length != -1)
       EXPECT_TRUE(is_sync);
@@ -637,9 +636,9 @@ TEST_F(WebURLLoaderImplTest, BrowserSideNavigationCommit) {
       new StreamOverrideParameters());
   stream_override->stream_url = kStreamURL;
   stream_override->response.mime_type = kMimeType;
-  RequestExtraData* extra_data = new RequestExtraData();
+  auto extra_data = std::make_unique<RequestExtraData>();
   extra_data->set_stream_override(std::move(stream_override));
-  request.SetExtraData(extra_data);
+  request.SetExtraData(std::move(extra_data));
 
   client()->loader()->LoadAsynchronously(request, client());
 

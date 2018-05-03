@@ -19,7 +19,7 @@ class StyleRule;
 // The declared StylePropertyMap retrieves styles specified by a CSS style rule
 // and returns them as CSSStyleValues. The IDL for this class is in
 // StylePropertyMap.idl. The declared StylePropertyMap for an element is
-// accessed via CSSStyleRule.attributeStyleMap (see CSSStyleRule.idl)
+// accessed via CSSStyleRule.styleMap (see CSSStyleRule.idl)
 class CORE_EXPORT DeclaredStylePropertyMap final : public StylePropertyMap {
   WTF_MAKE_NONCOPYABLE(DeclaredStylePropertyMap);
 
@@ -31,14 +31,22 @@ class CORE_EXPORT DeclaredStylePropertyMap final : public StylePropertyMap {
     StylePropertyMap::Trace(visitor);
   }
 
+  unsigned int size() final;
+
  protected:
   const CSSValue* GetProperty(CSSPropertyID) override;
   const CSSValue* GetCustomProperty(AtomicString) override;
   void ForEachProperty(const IterationCallback&) override;
   void SetProperty(CSSPropertyID, const CSSValue&) override;
+  bool SetShorthandProperty(CSSPropertyID,
+                            const String&,
+                            SecureContextMode) override;
   void SetCustomProperty(const AtomicString&, const CSSValue&) override;
   void RemoveProperty(CSSPropertyID) override;
   void RemoveCustomProperty(const AtomicString&) override;
+  void RemoveAllProperties() final;
+
+  String SerializationForShorthand(const CSSProperty&) final;
 
  private:
   StyleRule* GetStyleRule() const;

@@ -341,7 +341,15 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
   // If we're not using AudioOutputResampler our output parameters are the same
   // as our input parameters.
   AudioParameters output_params = params;
-  if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
+
+  // If audio has been disabled force usage of a fake audio stream.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableAudioOutput)) {
+    output_params.set_format(AudioParameters::AUDIO_FAKE);
+  }
+
+  if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY &&
+      output_params.format() != AudioParameters::AUDIO_FAKE) {
     output_params =
         GetPreferredOutputStreamParameters(output_device_id, params);
 
@@ -371,7 +379,6 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
     }
 
     output_params.set_latency_tag(params.latency_tag());
-
   } else {
     switch (output_params.format()) {
       case AudioParameters::AUDIO_PCM_LINEAR:
@@ -555,8 +562,9 @@ int AudioManagerBase::GetUserBufferSize() {
 }
 
 std::unique_ptr<AudioLog> AudioManagerBase::CreateAudioLog(
-    AudioLogFactory::AudioComponent component) {
-  return audio_log_factory_->CreateAudioLog(component);
+    AudioLogFactory::AudioComponent component,
+    int component_id) {
+  return audio_log_factory_->CreateAudioLog(component, component_id);
 }
 
 void AudioManagerBase::InitializeDebugRecording() {
@@ -573,24 +581,15 @@ void AudioManagerBase::InitializeDebugRecording() {
   debug_recording_manager_ = CreateAudioDebugRecordingManager(GetTaskRunner());
 }
 
-void AudioManagerBase::EnableDebugRecording(
-    const base::FilePath& base_file_name) {
-  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
-  DCHECK(debug_recording_manager_)
-      << "InitializeDebugRecording() must be called before enabling";
-  debug_recording_manager_->EnableDebugRecording(base_file_name);
-}
-
-void AudioManagerBase::DisableDebugRecording() {
-  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
-  if (debug_recording_manager_)
-    debug_recording_manager_->DisableDebugRecording();
-}
-
 std::unique_ptr<AudioDebugRecordingManager>
 AudioManagerBase::CreateAudioDebugRecordingManager(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   return std::make_unique<AudioDebugRecordingManager>(std::move(task_runner));
+}
+
+AudioDebugRecordingManager* AudioManagerBase::GetAudioDebugRecordingManager() {
+  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
+  return debug_recording_manager_.get();
 }
 
 void AudioManagerBase::SetMaxStreamCountForTesting(int max_input,

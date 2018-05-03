@@ -402,8 +402,19 @@ void ScriptInjection::InjectCss(std::set<std::string>* injected_stylesheets,
   std::vector<blink::WebString> css_sources = injector_->GetCssSources(
       run_location_, injected_stylesheets, num_injected_stylesheets);
   blink::WebLocalFrame* web_frame = render_frame_->GetWebFrame();
+  // Default CSS origin is "author", but can be overridden to "user" by scripts.
+  base::Optional<CSSOrigin> css_origin = injector_->GetCssOrigin();
+  blink::WebDocument::CSSOrigin blink_css_origin =
+      css_origin && *css_origin == CSS_ORIGIN_USER
+          ? blink::WebDocument::kUserOrigin
+          : blink::WebDocument::kAuthorOrigin;
+  blink::WebStyleSheetKey style_sheet_key;
+  if (const base::Optional<std::string>& injection_key =
+          injector_->GetInjectionKey())
+    style_sheet_key = blink::WebString::FromASCII(*injection_key);
   for (const blink::WebString& css : css_sources)
-    web_frame->GetDocument().InsertStyleSheet(css);
+    web_frame->GetDocument().InsertStyleSheet(css, &style_sheet_key,
+                                              blink_css_origin);
 }
 
 }  // namespace extensions

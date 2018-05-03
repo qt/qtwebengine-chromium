@@ -33,9 +33,9 @@
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_parameters_callback.h"
 #include "net/log/net_log_with_source.h"
-#include "net/proxy/proxy_config.h"
-#include "net/proxy/proxy_retry_info.h"
-#include "net/proxy/proxy_service.h"
+#include "net/proxy_resolution/proxy_config.h"
+#include "net/proxy_resolution/proxy_retry_info.h"
+#include "net/proxy_resolution/proxy_service.h"
 #include "net/quic/core/quic_error_codes.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/socket/ssl_client_socket.h"
@@ -316,13 +316,15 @@ NET_EXPORT std::unique_ptr<base::DictionaryValue> GetNetInfo(
   // TODO(mmenke):  The code for most of these sources should probably be moved
   // into the sources themselves.
   if (info_sources & NET_INFO_PROXY_SETTINGS) {
-    ProxyService* proxy_service = context->proxy_service();
+    ProxyResolutionService* proxy_resolution_service =
+        context->proxy_resolution_service();
 
     std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
-    if (proxy_service->fetched_config().is_valid())
-      dict->Set("original", proxy_service->fetched_config().ToValue());
-    if (proxy_service->config().is_valid())
-      dict->Set("effective", proxy_service->config().ToValue());
+    if (proxy_resolution_service->fetched_config())
+      dict->Set("original",
+                proxy_resolution_service->fetched_config()->ToValue());
+    if (proxy_resolution_service->config())
+      dict->Set("effective", proxy_resolution_service->config()->ToValue());
 
     net_info_dict->Set(NetInfoSourceToString(NET_INFO_PROXY_SETTINGS),
                        std::move(dict));
@@ -330,7 +332,7 @@ NET_EXPORT std::unique_ptr<base::DictionaryValue> GetNetInfo(
 
   if (info_sources & NET_INFO_BAD_PROXIES) {
     const ProxyRetryInfoMap& bad_proxies_map =
-        context->proxy_service()->proxy_retry_info();
+        context->proxy_resolution_service()->proxy_retry_info();
 
     auto list = std::make_unique<base::ListValue>();
 

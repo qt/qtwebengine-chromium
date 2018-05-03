@@ -10,9 +10,9 @@
 #include "bindings/core/v8/array_buffer_or_array_buffer_view.h"
 #include "modules/credentialmanager/Credential.h"
 #include "modules/credentialmanager/FederatedCredential.h"
-#include "modules/credentialmanager/MakePublicKeyCredentialOptions.h"
 #include "modules/credentialmanager/PasswordCredential.h"
 #include "modules/credentialmanager/PublicKeyCredential.h"
+#include "modules/credentialmanager/PublicKeyCredentialCreationOptions.h"
 #include "modules/credentialmanager/PublicKeyCredentialDescriptor.h"
 #include "modules/credentialmanager/PublicKeyCredentialParameters.h"
 #include "modules/credentialmanager/PublicKeyCredentialRequestOptions.h"
@@ -40,7 +40,7 @@ using password_manager::mojom::blink::CredentialInfoPtr;
 using password_manager::mojom::blink::CredentialType;
 using password_manager::mojom::blink::CredentialManagerError;
 using webauth::mojom::blink::AuthenticatorStatus;
-using webauth::mojom::blink::MakePublicKeyCredentialOptionsPtr;
+using webauth::mojom::blink::PublicKeyCredentialCreationOptionsPtr;
 using webauth::mojom::blink::PublicKeyCredentialDescriptor;
 using webauth::mojom::blink::PublicKeyCredentialDescriptorPtr;
 using webauth::mojom::blink::PublicKeyCredentialRpEntity;
@@ -112,8 +112,6 @@ TypeConverter<CredentialManagerError, AuthenticatorStatus>::Convert(
       return CredentialManagerError::PENDING_REQUEST;
     case webauth::mojom::blink::AuthenticatorStatus::INVALID_DOMAIN:
       return CredentialManagerError::INVALID_DOMAIN;
-    case webauth::mojom::blink::AuthenticatorStatus::TIMED_OUT:
-      return CredentialManagerError::TIMED_OUT;
     case webauth::mojom::blink::AuthenticatorStatus::NOT_IMPLEMENTED:
       return CredentialManagerError::NOT_IMPLEMENTED;
     case webauth::mojom::blink::AuthenticatorStatus::SUCCESS:
@@ -232,12 +230,12 @@ TypeConverter<PublicKeyCredentialParametersPtr,
 }
 
 // static
-MakePublicKeyCredentialOptionsPtr
-TypeConverter<MakePublicKeyCredentialOptionsPtr,
-              blink::MakePublicKeyCredentialOptions>::
-    Convert(const blink::MakePublicKeyCredentialOptions& options) {
+PublicKeyCredentialCreationOptionsPtr
+TypeConverter<PublicKeyCredentialCreationOptionsPtr,
+              blink::PublicKeyCredentialCreationOptions>::
+    Convert(const blink::PublicKeyCredentialCreationOptions& options) {
   auto mojo_options =
-      webauth::mojom::blink::MakePublicKeyCredentialOptions::New();
+      webauth::mojom::blink::PublicKeyCredentialCreationOptions::New();
   mojo_options->relying_party = PublicKeyCredentialRpEntity::From(options.rp());
   mojo_options->user = PublicKeyCredentialUserEntity::From(options.user());
   if (!mojo_options->relying_party | !mojo_options->user) {
@@ -279,6 +277,24 @@ TypeConverter<MakePublicKeyCredentialOptionsPtr,
       }
     }
   }
+
+  mojo_options->attestation =
+      webauth::mojom::AttestationConveyancePreference::NONE;
+  if (options.hasAttestation()) {
+    const auto& attestation = options.attestation();
+    if (attestation == "none") {
+      // Default value.
+    } else if (attestation == "indirect") {
+      mojo_options->attestation =
+          webauth::mojom::AttestationConveyancePreference::INDIRECT;
+    } else if (attestation == "direct") {
+      mojo_options->attestation =
+          webauth::mojom::AttestationConveyancePreference::DIRECT;
+    } else {
+      return nullptr;
+    }
+  }
+
   return mojo_options;
 }
 
@@ -309,6 +325,14 @@ TypeConverter<PublicKeyCredentialRequestOptionsPtr,
       }
     }
   }
+
+  if (options.hasExtensions()) {
+    const auto& extensions = options.extensions();
+    if (extensions.hasAppid()) {
+      mojo_options->appid = extensions.appid();
+    }
+  }
+
   return mojo_options;
 }
 

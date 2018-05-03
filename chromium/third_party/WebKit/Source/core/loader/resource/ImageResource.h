@@ -78,7 +78,9 @@ class CORE_EXPORT ImageResource final
 
   void AllClientsAndObserversRemoved() override;
 
-  bool CanReuse(const FetchParameters&) const override;
+  bool CanReuse(
+      const FetchParameters&,
+      scoped_refptr<const SecurityOrigin> new_source_origin) const override;
   bool CanUseCacheValidator() const override;
 
   scoped_refptr<const SharedBuffer> ResourceBuffer() const override;
@@ -86,8 +88,9 @@ class CORE_EXPORT ImageResource final
   void ResponseReceived(const ResourceResponse&,
                         std::unique_ptr<WebDataConsumerHandle>) override;
   void AppendData(const char*, size_t) override;
-  void Finish(double finish_time, WebTaskRunner*) override;
-  void FinishAsError(const ResourceError&, WebTaskRunner*) override;
+  void Finish(double finish_time, base::SingleThreadTaskRunner*) override;
+  void FinishAsError(const ResourceError&,
+                     base::SingleThreadTaskRunner*) override;
 
   // For compatibility, images keep loading even if there are HTTP errors.
   bool ShouldIgnoreHTTPStatusCodeErrors() const override { return true; }
@@ -140,21 +143,15 @@ class CORE_EXPORT ImageResource final
   void DestroyDecodedDataIfPossible() override;
   void DestroyDecodedDataForFailedRevalidation() override;
 
-  void FlushImageIfNeeded(TimerBase*);
+  void FlushImageIfNeeded();
 
   bool ShouldReloadBrokenPlaceholder() const;
 
   Member<ImageResourceContent> content_;
 
-  // TODO(hiroshige): move |m_devicePixelRatioHeaderValue| and
-  // |m_hasDevicePixelRatioHeaderValue| to ImageResourceContent and update
-  // it via ImageResourceContent::updateImage().
-  float device_pixel_ratio_header_value_;
-
   Member<MultipartImageResourceParser> multipart_parser_;
   MultipartParsingState multipart_parsing_state_ =
       MultipartParsingState::kWaitingForFirstPart;
-  bool has_device_pixel_ratio_header_value_;
 
   // Indicates if the ImageResource is currently scheduling a reload, e.g.
   // because reloadIfLoFi() was called.
@@ -179,12 +176,13 @@ class CORE_EXPORT ImageResource final
   };
   PlaceholderOption placeholder_option_;
 
-  Timer<ImageResource> flush_timer_;
   double last_flush_time_ = 0.;
 
   bool is_during_finish_as_error_ = false;
 
   bool is_referenced_from_ua_stylesheet_ = false;
+
+  bool is_pending_flushing_ = false;
 };
 
 DEFINE_RESOURCE_TYPE_CASTS(Image);

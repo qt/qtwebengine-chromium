@@ -13,6 +13,7 @@
 #include "api/array_view.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/video_bitrate_allocator.h"
+#include "modules/rtp_rtcp/mocks/mock_rtcp_bandwidth_observer.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/app.h"
@@ -78,13 +79,6 @@ class MockTransportFeedbackObserver : public TransportFeedbackObserver {
                void(uint32_t, uint16_t, size_t, const PacedPacketInfo&));
   MOCK_METHOD1(OnTransportFeedback, void(const rtcp::TransportFeedback&));
   MOCK_CONST_METHOD0(GetTransportFeedbackVector, std::vector<PacketFeedback>());
-};
-
-class MockRtcpBandwidthObserver : public RtcpBandwidthObserver {
- public:
-  MOCK_METHOD1(OnReceivedEstimatedBitrate, void(uint32_t));
-  MOCK_METHOD3(OnReceivedRtcpReceiverReport,
-               void(const ReportBlockList&, int64_t, int64_t));
 };
 
 class MockModuleRtpRtcp : public RTCPReceiver::ModuleRtpRtcp {
@@ -262,6 +256,33 @@ TEST_F(RtcpReceiverTest, InjectSrPacketCalculatesNegativeRTTAsOne) {
   EXPECT_EQ(
       0, rtcp_receiver_.RTT(kSenderSsrc, &rtt_ms, nullptr, nullptr, nullptr));
   EXPECT_EQ(1, rtt_ms);
+}
+
+TEST_F(
+    RtcpReceiverTest,
+    TwoReportBlocksWithLastOneWithoutLastSrCalculatesRttForBandwidthObserver) {
+  const int64_t kRttMs = 120;
+  const uint32_t kDelayNtp = 123000;
+  const int64_t kDelayMs = CompactNtpRttToMs(kDelayNtp);
+
+  uint32_t sent_ntp = CompactNtp(system_clock_.CurrentNtpTime());
+  system_clock_.AdvanceTimeMilliseconds(kRttMs + kDelayMs);
+
+  rtcp::SenderReport sr;
+  sr.SetSenderSsrc(kSenderSsrc);
+  rtcp::ReportBlock block;
+  block.SetMediaSsrc(kReceiverMainSsrc);
+  block.SetLastSr(sent_ntp);
+  block.SetDelayLastSr(kDelayNtp);
+  sr.AddReportBlock(block);
+  block.SetMediaSsrc(kReceiverExtraSsrc);
+  block.SetLastSr(0);
+  sr.AddReportBlock(block);
+
+  EXPECT_CALL(rtp_rtcp_impl_, OnReceivedRtcpReportBlocks(SizeIs(2)));
+  EXPECT_CALL(bandwidth_observer_,
+              OnReceivedRtcpReceiverReport(SizeIs(2), kRttMs, _));
+  InjectRtcpPacket(sr);
 }
 
 TEST_F(RtcpReceiverTest, InjectRrPacket) {

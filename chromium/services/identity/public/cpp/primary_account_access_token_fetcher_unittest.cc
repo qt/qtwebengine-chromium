@@ -16,7 +16,6 @@
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/fake_profile_oauth2_token_service.h"
 #include "components/signin/core/browser/fake_signin_manager.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/test_signin_client.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -62,7 +61,6 @@ class PrimaryAccountAccessTokenFetcherTest
 
   PrimaryAccountAccessTokenFetcherTest() : signin_client_(&pref_service_) {
     AccountTrackerService::RegisterPrefs(pref_service_.registry());
-    signin::RegisterAccountConsistencyProfilePrefs(pref_service_.registry());
 #if defined(OS_CHROMEOS)
     SigninManagerBase::RegisterProfilePrefs(pref_service_.registry());
     SigninManagerBase::RegisterPrefs(pref_service_.registry());
@@ -71,17 +69,14 @@ class PrimaryAccountAccessTokenFetcherTest
     SigninManager::RegisterPrefs(pref_service_.registry());
 #endif  // OS_CHROMEOS
 
-    signin::SetGaiaOriginIsolatedCallback(
-        base::BindRepeating([] { return true; }));
-
-    account_tracker_ = base::MakeUnique<AccountTrackerService>();
+    account_tracker_ = std::make_unique<AccountTrackerService>();
     account_tracker_->Initialize(&signin_client_);
 
 #if defined(OS_CHROMEOS)
-    signin_manager_ = base::MakeUnique<FakeSigninManagerBase>(
+    signin_manager_ = std::make_unique<FakeSigninManagerBase>(
         &signin_client_, account_tracker_.get());
 #else
-    signin_manager_ = base::MakeUnique<FakeSigninManager>(
+    signin_manager_ = std::make_unique<FakeSigninManager>(
         &signin_client_, &token_service_, account_tracker_.get(),
         /*cookie_manager_service=*/nullptr);
 #endif  // OS_CHROMEOS
@@ -96,7 +91,7 @@ class PrimaryAccountAccessTokenFetcherTest
       PrimaryAccountAccessTokenFetcher::TokenCallback callback,
       PrimaryAccountAccessTokenFetcher::Mode mode) {
     std::set<std::string> scopes{"scope"};
-    return base::MakeUnique<PrimaryAccountAccessTokenFetcher>(
+    return std::make_unique<PrimaryAccountAccessTokenFetcher>(
         "test_consumer", signin_manager_.get(), &token_service_, scopes,
         std::move(callback), mode);
   }

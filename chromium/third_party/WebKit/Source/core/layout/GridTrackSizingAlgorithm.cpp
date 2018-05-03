@@ -231,6 +231,28 @@ bool GridTrackSizingAlgorithmStrategy::
   return true;
 }
 
+Optional<LayoutUnit>
+GridTrackSizingAlgorithmStrategy::ExtentForBaselineAlignment(
+    const LayoutBox& child) const {
+  const LayoutGrid& layout_grid = *GetLayoutGrid();
+  GridAxis baseline_axis =
+      GridLayoutUtils::IsOrthogonalChild(*GetLayoutGrid(), child)
+          ? kGridRowAxis
+          : kGridColumnAxis;
+  if (!layout_grid.IsBaselineAlignmentForChild(child, baseline_axis))
+    return WTF::nullopt;
+
+  ItemPosition align =
+      layout_grid.SelfAlignmentForChild(baseline_axis, child).GetPosition();
+  const auto& span =
+      baseline_axis == kGridColumnAxis
+          ? algorithm_.GetGrid().GridItemSpan(child, kForRows)
+          : algorithm_.GetGrid().GridItemSpan(child, kForColumns);
+
+  return algorithm_.baseline_alignment_.ExtentForBaselineAlignment(
+      align, span.StartLine(), child, baseline_axis);
+};
+
 LayoutUnit GridTrackSizingAlgorithmStrategy::LogicalHeightForChild(
     LayoutBox& child) const {
   GridTrackSizingDirection child_block_direction =
@@ -319,7 +341,33 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinSizeForChild(
       is_row_axis
           ? child.StyleRef().OverflowInlineDirection() == EOverflow::kVisible
           : child.StyleRef().OverflowBlockDirection() == EOverflow::kVisible;
-  if (!child_size.IsAuto() || (child_min_size.IsAuto() && overflow_is_visible))
+  if (child_size.IsAuto() && child_min_size.IsAuto() && overflow_is_visible) {
+    LayoutUnit min_size = MinContentForChild(child);
+    const GridSpan& span =
+        algorithm_.GetGrid().GridItemSpan(child, Direction());
+    LayoutUnit max_breadth;
+    for (const auto& track_position : span) {
+      GridTrackSize track_size =
+          algorithm_.GetGridTrackSize(Direction(), track_position);
+      if (!track_size.HasFixedMaxTrackBreadth())
+        return min_size;
+      max_breadth += ValueForLength(track_size.MaxTrackBreadth().length(),
+                                    AvailableSpace().value_or(LayoutUnit()));
+    }
+    if (min_size > max_breadth) {
+      LayoutUnit margin_and_border_and_padding =
+          is_row_axis ? GridLayoutUtils::MarginLogicalWidthForChild(
+                            *GetLayoutGrid(), child) +
+                            child.BorderAndPaddingLogicalWidth()
+                      : GridLayoutUtils::MarginLogicalHeightForChild(
+                            *GetLayoutGrid(), child) +
+                            child.BorderAndPaddingLogicalHeight();
+      min_size = std::max(max_breadth, margin_and_border_and_padding);
+    }
+    return min_size;
+  }
+
+  if (!child_size.IsAuto())
     return MinContentForChild(child);
 
   LayoutUnit grid_area_size =
@@ -339,6 +387,40 @@ LayoutUnit GridTrackSizingAlgorithmStrategy::MinSizeForChild(
          child.ScrollbarLogicalHeight();
 }
 
+void GridTrackSizingAlgorithm::UpdateBaselineAlignmentContextIfNeeded(
+    LayoutBox& child,
+    GridAxis baseline_axis) {
+  // TODO (lajava): We must ensure this method is not called as part of an
+  // intrinsic size computation.
+  if (!layout_grid_->IsBaselineAlignmentForChild(child, baseline_axis))
+    return;
+
+  child.LayoutIfNeeded();
+  ItemPosition align =
+      layout_grid_->SelfAlignmentForChild(baseline_axis, child).GetPosition();
+  const auto& span = baseline_axis == kGridColumnAxis
+                         ? grid_.GridItemSpan(child, kForRows)
+                         : grid_.GridItemSpan(child, kForColumns);
+  baseline_alignment_.UpdateBaselineAlignmentContextIfNeeded(
+      align, span.StartLine(), child, baseline_axis);
+}
+
+LayoutUnit GridTrackSizingAlgorithm::BaselineOffsetForChild(
+    const LayoutBox& child,
+    GridAxis baseline_axis) const {
+  if (!layout_grid_->IsBaselineAlignmentForChild(child, baseline_axis))
+    return LayoutUnit();
+
+  ItemPosition align =
+      layout_grid_->SelfAlignmentForChild(baseline_axis, child).GetPosition();
+  const auto& span = baseline_axis == kGridColumnAxis
+                         ? grid_.GridItemSpan(child, kForRows)
+                         : grid_.GridItemSpan(child, kForColumns);
+
+  return baseline_alignment_.BaselineOffsetForChild(align, span.StartLine(),
+                                                    child, baseline_axis);
+}
+
 LayoutUnit GridTrackSizingAlgorithmStrategy::ComputeTrackBasedSize() const {
   return algorithm_.ComputeTrackBasedSize();
 }
@@ -354,21 +436,6 @@ void GridTrackSizingAlgorithmStrategy::DistributeSpaceToTracks(
     LayoutUnit& available_logical_space) const {
   algorithm_.DistributeSpaceToTracks<kMaximizeTracks>(tracks, nullptr,
                                                       available_logical_space);
-}
-
-Optional<LayoutUnit>
-GridTrackSizingAlgorithmStrategy::ExtentForBaselineAlignment(
-    LayoutBox& child) const {
-  auto* grid = algorithm_.layout_grid_;
-  GridAxis baseline_axis = GridLayoutUtils::IsOrthogonalChild(*grid, child)
-                               ? kGridRowAxis
-                               : kGridColumnAxis;
-  if (!grid->IsBaselineAlignmentForChild(child, baseline_axis) ||
-      !grid->IsBaselineContextComputed(baseline_axis))
-    return WTF::nullopt;
-
-  auto& group = grid->GetBaselineGroupForChild(child, baseline_axis);
-  return group.MaxAscent() + group.MaxDescent();
 }
 
 LayoutUnit DefiniteSizeStrategy::MinLogicalWidthForChild(
@@ -484,8 +551,15 @@ double IndefiniteSizeStrategy::FindUsedFlexFraction(
       if (i > 0 && span.StartLine() <= flexible_sized_tracks_index[i - 1])
         continue;
 
-      flex_fraction = std::max(
-          flex_fraction, FindFrUnitSize(span, MaxContentForChild(*grid_item)));
+      // Removing gutters from the max-content contribution of the item,
+      // so they are not taken into account in FindFrUnitSize().
+      LayoutUnit left_over_space =
+          MaxContentForChild(*grid_item) -
+          GetLayoutGrid()->GuttersSize(algorithm_.GetGrid(), direction,
+                                       span.StartLine(), span.IntegerSpan(),
+                                       AvailableSpace());
+      flex_fraction =
+          std::max(flex_fraction, FindFrUnitSize(span, left_over_space));
     }
   }
 
@@ -759,41 +833,8 @@ void GridTrackSizingAlgorithm::SizeTrackToFitNonSpanningItem(
     track.SetBaseSize(
         std::max(track.BaseSize(), strategy_->MaxContentForChild(grid_item)));
   } else if (track_size.HasAutoMinTrackBreadth()) {
-    LayoutUnit min_size = strategy_->MinSizeForChild(grid_item);
-
-    GridTrackSizingDirection child_inline_direction =
-        GridLayoutUtils::FlowAwareDirectionForChild(*layout_grid_, grid_item,
-                                                    kForColumns);
-    bool is_row_axis = direction_ == child_inline_direction;
-    Length grid_item_size = is_row_axis ? grid_item.StyleRef().LogicalWidth()
-                                        : grid_item.StyleRef().LogicalHeight();
-    Length grid_item_min_size = is_row_axis
-                                    ? grid_item.StyleRef().LogicalMinWidth()
-                                    : grid_item.StyleRef().LogicalMinHeight();
-    bool overflow_is_visible =
-        is_row_axis ? grid_item.StyleRef().OverflowInlineDirection() ==
-                          EOverflow::kVisible
-                    : grid_item.StyleRef().OverflowBlockDirection() ==
-                          EOverflow::kVisible;
-
-    if (grid_item_size.IsAuto() && grid_item_min_size.IsAuto() &&
-        overflow_is_visible && track_size.HasFixedMaxTrackBreadth()) {
-      LayoutUnit max_breadth =
-          ValueForLength(track_size.MaxTrackBreadth().length(),
-                         AvailableSpace().value_or(LayoutUnit()));
-      if (min_size > max_breadth) {
-        LayoutUnit margin_and_border_and_padding =
-            is_row_axis ? GridLayoutUtils::MarginLogicalWidthForChild(
-                              *layout_grid_, grid_item) +
-                              grid_item.BorderAndPaddingLogicalWidth()
-                        : GridLayoutUtils::MarginLogicalHeightForChild(
-                              *layout_grid_, grid_item) +
-                              grid_item.BorderAndPaddingLogicalHeight();
-        min_size = std::max(max_breadth, margin_and_border_and_padding);
-      }
-    }
-
-    track.SetBaseSize(std::max(track.BaseSize(), min_size));
+    track.SetBaseSize(
+        std::max(track.BaseSize(), strategy_->MinSizeForChild(grid_item)));
   }
 
   if (track_size.HasMinContentMaxTrackBreadth()) {
@@ -1255,6 +1296,8 @@ double GridTrackSizingAlgorithm::FindFrUnitSize(
       flex_factor_sum += track_size.MaxTrackBreadth().Flex();
     }
   }
+  // We don't remove the gutters from left_over_space here, because that was
+  // already done before.
 
   // The function is not called if we don't have <flex> grid tracks.
   DCHECK(!flexible_tracks_indexes.IsEmpty());
@@ -1439,6 +1482,8 @@ void GridTrackSizingAlgorithm::Setup(GridTrackSizingDirection direction,
     SetFreeSpace(direction, WTF::nullopt);
   }
   Tracks(direction).resize(num_tracks);
+
+  baseline_alignment_.SetBlockFlow(layout_grid_->StyleRef().GetWritingMode());
 
   needs_setup_ = false;
 }

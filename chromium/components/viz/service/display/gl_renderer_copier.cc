@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -426,7 +427,7 @@ void GLRendererCopier::StartReadbackFromFramebuffer(
       GetOptimalReadbackFormat());
   const GLuint query = workflow->query();
   context_provider_->ContextSupport()->SignalQuery(
-      query, base::Bind(&ReadPixelsWorkflow::Finish, base::Passed(&workflow)));
+      query, base::BindOnce(&ReadPixelsWorkflow::Finish, std::move(workflow)));
 }
 
 void GLRendererCopier::SendTextureResult(
@@ -462,8 +463,7 @@ void GLRendererCopier::SendTextureResult(
     gl->DeleteTextures(1, &result_texture);
     // TODO(crbug/754872): This non-null release callback wart is going away
     // soon, as copy requestors won't need pool/manage textures anymore.
-    release_callback = SingleReleaseCallback::Create(
-        base::Bind([](const gpu::SyncToken&, bool) {}));
+    release_callback = SingleReleaseCallback::Create(base::DoNothing());
   } else {
     // Note: There's no need to try to pool/re-use the result texture from here,
     // since only clients that are trying to re-invent video capture would see
@@ -914,9 +914,23 @@ GLRendererCopier::CacheEntry::CacheEntry() {
   object_names.fill(0);
 }
 
-GLRendererCopier::CacheEntry::CacheEntry(CacheEntry&&) = default;
+GLRendererCopier::CacheEntry::CacheEntry(CacheEntry&& other)
+    : purge_count_at_last_use(other.purge_count_at_last_use),
+      object_names(other.object_names),
+      scaler(std::move(other.scaler)),
+      i420_converter(std::move(other.i420_converter)) {
+  other.object_names.fill(0);
+}
+
 GLRendererCopier::CacheEntry& GLRendererCopier::CacheEntry::operator=(
-    CacheEntry&&) = default;
+    CacheEntry&& other) {
+  purge_count_at_last_use = other.purge_count_at_last_use;
+  object_names = other.object_names;
+  other.object_names.fill(0);
+  scaler = std::move(other.scaler);
+  i420_converter = std::move(other.i420_converter);
+  return *this;
+}
 
 GLRendererCopier::CacheEntry::~CacheEntry() {
   // Ensure all resources were freed by this point. Resources aren't explicity

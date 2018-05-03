@@ -9,8 +9,8 @@
 
 #include "base/callback_list.h"
 #include "device/geolocation/geolocation_export.h"
-#include "device/geolocation/public/interfaces/geoposition.mojom.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/device/public/mojom/geoposition.mojom.h"
 
 namespace device {
 
@@ -38,16 +38,6 @@ class GeolocationProvider {
   // URLRequestContextGetter.
   using RequestContextProducer = base::RepeatingCallback<void(
       base::OnceCallback<void(scoped_refptr<net::URLRequestContextGetter>)>)>;
-
-  // Optional: Provide a callback to produce a request context for network
-  // geolocation requests.
-  // Call before using GetInstance().
-  DEVICE_GEOLOCATION_EXPORT static void SetRequestContextProducer(
-      RequestContextProducer request_context_producer);
-
-  // Optional: Provide a Google API key for network geolocation requests.
-  // Call before using Init() on the singleton GetInstance().
-  DEVICE_GEOLOCATION_EXPORT static void SetApiKey(const std::string& api_key);
 
   typedef base::Callback<void(const mojom::Geoposition&)>
       LocationUpdateCallback;

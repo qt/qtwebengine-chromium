@@ -4,7 +4,7 @@
 
 #include "platform/scheduler/child/worker_global_scope_scheduler.h"
 
-#include "platform/scheduler/child/web_task_runner_impl.h"
+#include "platform/scheduler/child/task_runner_impl.h"
 #include "platform/scheduler/child/worker_scheduler.h"
 
 namespace blink {
@@ -28,8 +28,8 @@ void WorkerGlobalScopeScheduler::Dispose() {
 #endif
 }
 
-scoped_refptr<WebTaskRunner> WorkerGlobalScopeScheduler::GetTaskRunner(
-    TaskType type) const {
+scoped_refptr<base::SingleThreadTaskRunner>
+WorkerGlobalScopeScheduler::GetTaskRunner(TaskType type) const {
   switch (type) {
     case TaskType::kDOMManipulation:
     case TaskType::kUserInteraction:
@@ -59,11 +59,14 @@ scoped_refptr<WebTaskRunner> WorkerGlobalScopeScheduler::GetTaskRunner(
     case TaskType::kInternalTest:
     case TaskType::kInternalWebCrypto:
     case TaskType::kInternalIndexedDB:
+    case TaskType::kInternalMedia:
+    case TaskType::kInternalMediaRealTime:
+    case TaskType::kInternalIPC:
       // UnthrottledTaskRunner is generally discouraged in future.
       // TODO(nhiroki): Identify which tasks can be throttled / suspendable and
       // move them into other task runners. See also comments in
       // Get(LocalFrame). (https://crbug.com/670534)
-      return WebTaskRunnerImpl::Create(task_queue_, type);
+      return TaskRunnerImpl::Create(task_queue_, type);
     case TaskType::kCount:
       NOTREACHED();
       break;

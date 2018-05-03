@@ -64,12 +64,7 @@ RasterWindowContext_ios::~RasterWindowContext_ios() {
 
 sk_sp<const GrGLInterface> RasterWindowContext_ios::onInitializeContext() {
     SkASSERT(fWindow);
-
-    fGLContext = SDL_GL_CreateContext(fWindow);
-    if (!fGLContext) {
-        SkDebugf("%s\n", SDL_GetError());
-        return nullptr;
-    }
+    SkASSERT(fGLContext);
 
     if (0 == SDL_GL_MakeCurrent(fWindow, fGLContext)) {
         glClearStencil(0);
@@ -79,6 +74,7 @@ sk_sp<const GrGLInterface> RasterWindowContext_ios::onInitializeContext() {
 
         SDL_GL_GetAttribute(SDL_GL_STENCIL_SIZE, &fStencilBits);
         SDL_GL_GetAttribute(SDL_GL_MULTISAMPLESAMPLES, &fSampleCount);
+        fSampleCount = SkTMax(fSampleCount, 1);
 
         SDL_GL_GetDrawableSize(fWindow, &fWidth, &fHeight);
         glViewport(0, 0, fWidth, fHeight);
@@ -94,12 +90,7 @@ sk_sp<const GrGLInterface> RasterWindowContext_ios::onInitializeContext() {
 }
 
 void RasterWindowContext_ios::onDestroyContext() {
-    if (!fWindow || !fGLContext) {
-        return;
-    }
     fBackbufferSurface.reset(nullptr);
-    SDL_GL_DeleteContext(fGLContext);
-    fGLContext = nullptr;
 }
 
 sk_sp<SkSurface> RasterWindowContext_ios::getBackbufferSurface() { return fBackbufferSurface; }

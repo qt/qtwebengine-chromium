@@ -8,18 +8,21 @@
 #include <mutex>
 #include <vector>
 
-#include <jni.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
+#include <jni.h>
+#include <sys/stat.h>
 
-#include "gm_runner.h"
-#include "gm_knowledge.h"
-#include "skqp_asset_manager.h"
+#include "ResourceFactory.h"
+#include "SkOSPath.h"
 #include "SkStream.h"
+#include "gm_knowledge.h"
+#include "gm_runner.h"
+#include "skqp_asset_manager.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 extern "C" {
-JNIEXPORT void JNICALL Java_org_skia_skqp_SkQP_nInit(JNIEnv*, jobject, jobject, jstring);
+JNIEXPORT void JNICALL Java_org_skia_skqp_SkQP_nInit(JNIEnv*, jobject, jobject, jstring, jboolean);
 JNIEXPORT jfloat JNICALL Java_org_skia_skqp_SkQP_nExecuteGM(JNIEnv*, jobject, jint, jint);
 JNIEXPORT jobjectArray JNICALL Java_org_skia_skqp_SkQP_nExecuteUnitTest(JNIEnv*, jobject,
                                                                               jint);
@@ -74,13 +77,13 @@ struct AndroidAssetManager : public skqp::AssetManager {
                 return dup;
             }
         };
+        // SkDebugf("AndroidAssetManager::open(\"%s\");", path);
         AAsset* asset = AndroidAssetManager::OpenAsset(fMgr, path);
         return asset ? std::unique_ptr<SkStreamAsset>(new AAStrm(fMgr, std::string(path), asset))
                      : nullptr;
     }
     static AAsset* OpenAsset(AAssetManager* mgr, const char* path) {
-        std::string fullPath = std::string("gmkb/") + path;
-        return mgr ? AAssetManager_open(mgr, fullPath.c_str(), AASSET_MODE_STREAMING) : nullptr;
+        return mgr ? AAssetManager_open(mgr, path, AASSET_MODE_STREAMING) : nullptr;
     }
 };
 }
@@ -107,6 +110,25 @@ static jclass gStringClass = nullptr;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+sk_sp<SkData> get_resource(const char* resource) {
+    AAssetManager* mgr = gAssetManager.fMgr;
+    if (!mgr) {
+        return nullptr;
+    }
+    SkString path = SkOSPath::Join("resources", resource);
+    AAsset* asset = AAssetManager_open(mgr, path.c_str(), AASSET_MODE_STREAMING);
+    if (!asset) {
+        return nullptr;
+    }
+    size_t size = SkToSizeT(AAsset_getLength(asset));
+    sk_sp<SkData> data = SkData::MakeUninitialized(size);
+    (void)AAsset_read(asset, data->writable_data(), size);
+    AAsset_close(asset);
+    return data;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 template <typename T, typename F>
 jobjectArray to_java_string_array(JNIEnv* env,
                                   const std::vector<T>& array,
@@ -119,24 +141,35 @@ jobjectArray to_java_string_array(JNIEnv* env,
 }
 
 void Java_org_skia_skqp_SkQP_nInit(JNIEnv* env, jobject object, jobject assetManager,
-                                         jstring dataDir) {
+                                         jstring dataDir, jboolean experimentalMode) {
     jclass clazz = env->GetObjectClass(object);
     jassert(env, assetManager);
-
-    gm_runner::InitSkia();
 
     std::lock_guard<std::mutex> lock(gMutex);
     gAssetManager.fMgr = AAssetManager_fromJava(env, assetManager);
     jassert(env, gAssetManager.fMgr);
 
+    gm_runner::InitSkia(experimentalMode ? gm_runner::Mode::kExperimentalMode
+                                         : gm_runner::Mode::kCompatibilityTestMode,
+                        &gAssetManager);
+    gResourceFactory = &get_resource;
+
     const char* dataDirString = env->GetStringUTFChars(dataDir, nullptr);
+    jassert(env, dataDirString && dataDirString[0]);
     gReportDirectory =  std::string(dataDirString) + "/skqp_report";
+    int mkdirRetval = mkdir(gReportDirectory.c_str(), 0777);
+    SkASSERT_RELEASE(0 == mkdirRetval);
+
     env->ReleaseStringUTFChars(dataDir, dataDirString);
 
     gBackends = gm_runner::GetSupportedBackends();
+    jassert(env, gBackends.size() > 0);
     gGMs = gm_runner::GetGMFactories(&gAssetManager);
+    jassert(env, gGMs.size() > 0);
     gUnitTests = gm_runner::GetUnitTests();
+    jassert(env, gUnitTests.size() > 0);
     gStringClass = env->FindClass("java/lang/String");
+    jassert(env, gStringClass);
 
     constexpr char stringArrayType[] = "[Ljava/lang/String;";
     env->SetObjectField(object, env->GetFieldID(clazz, "mBackends", stringArrayType),
@@ -186,7 +219,9 @@ jobjectArray Java_org_skia_skqp_SkQP_nExecuteUnitTest(JNIEnv* env,
     if (errors.size() == 0) {
         return nullptr;
     }
-    jobjectArray array = env->NewObjectArray(errors.size(), gStringClass, nullptr);
+    jclass stringClass = env->FindClass("java/lang/String");
+    jassert(env, stringClass);
+    jobjectArray array = env->NewObjectArray(errors.size(), stringClass, nullptr);
     for (unsigned i = 0; i < errors.size(); ++i) {
         set_string_array_element(env, array, errors[i].c_str(), i);
     }

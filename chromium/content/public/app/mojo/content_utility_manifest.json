@@ -9,6 +9,7 @@
           "content::mojom::ChildControl",
           "content::mojom::ChildHistogramFetcher",
           "content::mojom::ChildHistogramFetcherFactory",
+          "content::mojom::ResourceUsageReporter",
           "IPC::mojom::ChannelBootstrap",
           "printing::mojom::PdfToEmfConverterFactory",
           "printing::mojom::PdfToPwgRasterConverter",
@@ -43,10 +44,6 @@
         "platform": "android"
       }
     ],
-    "v8_snapshot_data" : [{
-      "path": "snapshot_blob.bin",
-      "platform": "linux"
-    }],
     "v8_snapshot_32_data" : [{
       "path": "assets/snapshot_blob_32.bin",
       "platform": "android"
@@ -54,10 +51,6 @@
     "v8_snapshot_64_data" : [{
       "path": "assets/snapshot_blob_64.bin",
       "platform": "android"
-    }],
-    "v8_context_snapshot_data" : [{
-      "path": "v8_context_snapshot.bin",
-      "platform": "linux"
     }]
   }
 }

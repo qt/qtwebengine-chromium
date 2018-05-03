@@ -453,7 +453,6 @@ bool TextControlElement::SetSelectionRange(
                         : start_position)
           .Extend(direction == kSelectionHasBackwardDirection ? start_position
                                                               : end_position)
-          .SetIsDirectional(direction != kSelectionHasNoDirection)
           .Build(),
       SetSelectionOptions::Builder()
           .SetShouldCloseTyping(true)
@@ -627,7 +626,6 @@ SelectionInDOMTree TextControlElement::Selection() const {
   if (!inner_text->HasChildren()) {
     return SelectionInDOMTree::Builder()
         .Collapse(Position(inner_text, 0))
-        .SetIsDirectional(selectionDirection() != "none")
         .Build();
   }
 
@@ -655,34 +653,7 @@ SelectionInDOMTree TextControlElement::Selection() const {
 
   return SelectionInDOMTree::Builder()
       .SetBaseAndExtent(Position(start_node, start), Position(end_node, end))
-      .SetIsDirectional(selectionDirection() != "none")
       .Build();
-}
-
-const AtomicString& TextControlElement::autocapitalize() const {
-  DEFINE_STATIC_LOCAL(const AtomicString, off, ("off"));
-  DEFINE_STATIC_LOCAL(const AtomicString, none, ("none"));
-  DEFINE_STATIC_LOCAL(const AtomicString, characters, ("characters"));
-  DEFINE_STATIC_LOCAL(const AtomicString, words, ("words"));
-  DEFINE_STATIC_LOCAL(const AtomicString, sentences, ("sentences"));
-
-  const AtomicString& value = FastGetAttribute(autocapitalizeAttr);
-  if (DeprecatedEqualIgnoringCase(value, none) ||
-      DeprecatedEqualIgnoringCase(value, off))
-    return none;
-  if (DeprecatedEqualIgnoringCase(value, characters))
-    return characters;
-  if (DeprecatedEqualIgnoringCase(value, words))
-    return words;
-  if (DeprecatedEqualIgnoringCase(value, sentences))
-    return sentences;
-
-  // Invalid or missing value.
-  return DefaultAutocapitalize();
-}
-
-void TextControlElement::setAutocapitalize(const AtomicString& autocapitalize) {
-  setAttribute(autocapitalizeAttr, autocapitalize);
 }
 
 int TextControlElement::maxLength() const {
@@ -764,9 +735,6 @@ void TextControlElement::ScheduleSelectEvent() {
 
 void TextControlElement::ParseAttribute(
     const AttributeModificationParams& params) {
-  if (params.name == autocapitalizeAttr)
-    UseCounter::Count(GetDocument(), WebFeature::kAutocapitalizeAttribute);
-
   if (params.name == placeholderAttr) {
     UpdatePlaceholderText();
     UpdatePlaceholderVisibility();
@@ -973,9 +941,15 @@ String TextControlElement::DirectionForFormData() const {
   return "ltr";
 }
 
+void TextControlElement::SetAutofillValue(const String& value) {
+  // Set the value trimmed to the max length of the field and dispatch the input
+  // and change events.
+  setValue(value.Substring(0, maxLength()), kDispatchInputAndChangeEvent);
+}
+
 // TODO(crbug.com/772433): Create and use a new suggested-value element instead.
 void TextControlElement::SetSuggestedValue(const String& value) {
-  suggested_value_ = value;
+  suggested_value_ = value.Substring(0, maxLength());
   if (!suggested_value_.IsEmpty() && !InnerEditorValue().IsEmpty()) {
     // If there is an inner editor value, hide it so the suggested value can be
     // shown to the user.
@@ -1020,12 +994,13 @@ void TextControlElement::Trace(Visitor* visitor) {
   HTMLFormControlElementWithState::Trace(visitor);
 }
 
-void TextControlElement::CopyNonAttributePropertiesFromElement(
-    const Element& source) {
+void TextControlElement::CloneNonAttributePropertiesFrom(
+    const Element& source,
+    CloneChildrenFlag flag) {
   const TextControlElement& source_element =
       static_cast<const TextControlElement&>(source);
   last_change_was_user_edit_ = source_element.last_change_was_user_edit_;
-  HTMLFormControlElement::CopyNonAttributePropertiesFromElement(source);
+  HTMLFormControlElement::CloneNonAttributePropertiesFrom(source, flag);
 }
 
 }  // namespace blink

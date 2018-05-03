@@ -126,6 +126,15 @@ class QUIC_EXPORT_PRIVATE QuicDataReader {
 
   void set_endianness(Endianness endianness) { endianness_ = endianness; }
 
+  // Read an IETF-encoded Variable Length Integer and place the result
+  // in |*result|.
+  // Returns true if it works, false if not. The only error is that
+  // there is not enough in the buffer to read the number.
+  // If there is an error, |*result| is not altered.
+  // Numbers are encoded per the rules in draft-ietf-quic-transport-08.txt
+  // and that the integers in the range 0 ... (2^62)-1.
+  bool ReadVarInt62(uint64_t* result);
+
  private:
   // Returns true if the underlying buffer has enough room to read the given
   // amount of bytes.
@@ -134,7 +143,8 @@ class QUIC_EXPORT_PRIVATE QuicDataReader {
   // To be called when a read fails for any reason.
   void OnFailure();
 
-  // The data buffer that we're reading from.
+  // TODO(fkastenholz, b/73004262) change buffer_, et al, to be uint8_t, not
+  // char. The data buffer that we're reading from.
   const char* data_;
 
   // The length of the data buffer that we're reading from.

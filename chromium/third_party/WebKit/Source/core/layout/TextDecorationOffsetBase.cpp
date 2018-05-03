@@ -5,9 +5,9 @@
 #include "core/layout/TextDecorationOffsetBase.h"
 
 #include <algorithm>
-#include "core/layout/line/LineVerticalPositionType.h"
 #include "core/paint/DecorationInfo.h"
 #include "platform/fonts/FontMetrics.h"
+#include "platform/fonts/FontVerticalPositionType.h"
 
 namespace blink {
 
@@ -40,7 +40,7 @@ int TextDecorationOffsetBase::ComputeUnderlineOffset(
   switch (underline_position) {
     default:
       NOTREACHED();
-    // Fall through.
+      FALLTHROUGH;
     case ResolvedUnderlinePosition::kRoman:
       return ComputeUnderlineOffsetForRoman(font_metrics,
                                             text_decoration_thickness);
@@ -49,7 +49,7 @@ int TextDecorationOffsetBase::ComputeUnderlineOffset(
       // content box.
       return ComputeUnderlineOffsetForUnder(
           text_decoration_thickness,
-          LineVerticalPositionType::BottomOfEmHeight);
+          FontVerticalPositionType::BottomOfEmHeight);
   }
 }
 

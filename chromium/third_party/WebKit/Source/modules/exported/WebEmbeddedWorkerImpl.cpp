@@ -101,8 +101,7 @@ WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(
       pause_after_download_state_(kDontPauseAfterDownload),
       waiting_for_debugger_state_(kNotWaitingForDebugger),
       interface_provider_info_(std::move(interface_provider_info)) {
-  if (RuntimeEnabledFeatures::ServiceWorkerScriptStreamingEnabled() &&
-      installed_scripts_manager) {
+  if (installed_scripts_manager) {
     installed_scripts_manager_ =
         std::make_unique<ServiceWorkerInstalledScriptsManager>(
             std::move(installed_scripts_manager));
@@ -140,7 +139,7 @@ void WebEmbeddedWorkerImpl::StartWorkerContext(
       WebEmbeddedWorkerStartData::kPauseAfterDownload)
     pause_after_download_state_ = kDoPauseAfterDownload;
 
-  devtools_frame_token_ = data.devtools_frame_token;
+  devtools_worker_token_ = data.devtools_worker_token;
   shadow_page_ = std::make_unique<WorkerShadowPage>(this);
   WebSettings* settings = shadow_page_->GetSettings();
 
@@ -256,10 +255,11 @@ void WebEmbeddedWorkerImpl::OnShadowPageInitialized() {
   shadow_page_->DocumentLoader()->SetServiceWorkerNetworkProvider(
       worker_context_client_->CreateServiceWorkerNetworkProvider());
 
-  // Kickstart the worker before loading the script when the script has been
-  // installed.
-  if (RuntimeEnabledFeatures::ServiceWorkerScriptStreamingEnabled() &&
-      installed_scripts_manager_ &&
+  // If this is an installed service worker, we can start the worker thread
+  // now. The script will be streamed in by the installed scripts manager in
+  // parallel. For non-installed scripts, the script must be loaded from network
+  // before the worker thread can be started.
+  if (installed_scripts_manager_ &&
       installed_scripts_manager_->IsScriptInstalled(
           worker_start_data_.script_url)) {
     DCHECK_EQ(pause_after_download_state_, kDontPauseAfterDownload);
@@ -288,8 +288,8 @@ void WebEmbeddedWorkerImpl::ResumeStartup() {
     shadow_page_->Initialize(worker_start_data_.script_url);
 }
 
-const WebString& WebEmbeddedWorkerImpl::GetDevToolsFrameToken() {
-  return devtools_frame_token_;
+const base::UnguessableToken& WebEmbeddedWorkerImpl::GetDevToolsWorkerToken() {
+  return devtools_worker_token_;
 }
 
 void WebEmbeddedWorkerImpl::OnScriptLoaderFinished() {
@@ -319,6 +319,7 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
   // FIXME: this document's origin is pristine and without any extra privileges.
   // (crbug.com/254993)
   const SecurityOrigin* starter_origin = document->GetSecurityOrigin();
+  bool starter_secure_context = document->IsSecureContext();
 
   WorkerClients* worker_clients = WorkerClients::Create();
   ProvideIndexedDBClientToWorker(worker_clients,
@@ -358,9 +359,10 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
     global_scope_creation_params = std::make_unique<GlobalScopeCreationParams>(
         worker_start_data_.script_url, worker_start_data_.user_agent,
         document->GetContentSecurityPolicy()->Headers().get(),
-        document->GetReferrerPolicy(), starter_origin, worker_clients,
-        main_script_loader_->ResponseAddressSpace(),
-        main_script_loader_->OriginTrialTokens(), std::move(worker_settings),
+        document->GetReferrerPolicy(), starter_origin, starter_secure_context,
+        worker_clients, main_script_loader_->ResponseAddressSpace(),
+        main_script_loader_->OriginTrialTokens(), devtools_worker_token_,
+        std::move(worker_settings),
         static_cast<V8CacheOptions>(worker_start_data_.v8_cache_options),
         std::move(interface_provider_info_));
     source_code = main_script_loader_->SourceText();
@@ -373,8 +375,9 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
     global_scope_creation_params = std::make_unique<GlobalScopeCreationParams>(
         worker_start_data_.script_url, worker_start_data_.user_agent,
         nullptr /* ContentSecurityPolicy */, kReferrerPolicyDefault,
-        starter_origin, worker_clients, worker_start_data_.address_space,
-        nullptr /* OriginTrialTokens */, std::move(worker_settings),
+        starter_origin, starter_secure_context, worker_clients,
+        worker_start_data_.address_space, nullptr /* OriginTrialTokens */,
+        devtools_worker_token_, std::move(worker_settings),
         static_cast<V8CacheOptions>(worker_start_data_.v8_cache_options),
         std::move(interface_provider_info_));
   }

@@ -7,10 +7,10 @@
 #include <memory>
 
 #include "base/bind.h"
-#include "cc/test/test_context_provider.h"
-#include "cc/test/test_shared_bitmap_manager.h"
 #include "components/viz/common/resources/single_release_callback.h"
+#include "components/viz/test/test_context_provider.h"
 #include "components/viz/test/test_gpu_memory_buffer_manager.h"
+#include "components/viz/test/test_shared_bitmap_manager.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -23,7 +23,7 @@ class LayerTreeResourceProviderTest : public testing::TestWithParam<bool> {
  protected:
   LayerTreeResourceProviderTest()
       : use_gpu_(GetParam()),
-        context_provider_(TestContextProvider::Create()),
+        context_provider_(viz::TestContextProvider::Create()),
         bound_(context_provider_->BindToCurrentThread()),
         provider_(std::make_unique<LayerTreeResourceProvider>(
             use_gpu_ ? context_provider_.get() : nullptr,
@@ -71,9 +71,9 @@ class LayerTreeResourceProviderTest : public testing::TestWithParam<bool> {
 
  private:
   bool use_gpu_;
-  scoped_refptr<TestContextProvider> context_provider_;
+  scoped_refptr<viz::TestContextProvider> context_provider_;
   gpu::ContextResult bound_;
-  TestSharedBitmapManager shared_bitmap_manager_;
+  viz::TestSharedBitmapManager shared_bitmap_manager_;
   viz::TestGpuMemoryBufferManager gpu_memory_buffer_manager_;
   bool delegated_sync_points_required_ = true;
   viz::ResourceSettings resource_settings_;
@@ -98,8 +98,10 @@ TEST_P(LayerTreeResourceProviderTest, TransferableResourceReleased) {
   // The local id is different.
   EXPECT_NE(id, tran.id);
 
-  // No sync token was returned since the resource was never exported.
-  EXPECT_CALL(release, Released(gpu::SyncToken(), false));
+  // The same SyncToken that was sent is returned when the resource was never
+  // exported. The SyncToken may be from any context, and the ReleaseCallback
+  // may need to wait on it before interacting with the resource on its context.
+  EXPECT_CALL(release, Released(tran.mailbox_holder.sync_token, false));
   provider().RemoveImportedResource(id);
 }
 

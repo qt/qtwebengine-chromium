@@ -334,7 +334,36 @@ need to be translated for each locale.-->
         <message name="IDS_SELECT_UPLOAD_FOLDER_BUTTON_TITLE" desc="The name of the Select button in the folder selection dialog for uploading.">
           Upload
         </message>
+
+        <!-- Edit::Speech submenu -->
+        <message name="IDS_SPEECH_MAC" desc="The Mac menu item for the 'Speech' submenu in the edit and context menu. To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, open the Edit menu and use the translation from there.">
+          Speech
+        </message>
+        <message name="IDS_SPEECH_START_SPEAKING_MAC" desc="The Mac menu item for the 'Start Speaking' item from the 'Speech' submenu in edit and context menu. To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, open the Edit menu and use the translation from there.">
+          Start Speaking
+        </message>
+        <message name="IDS_SPEECH_STOP_SPEAKING_MAC" desc="The Mac menu item for the 'Stop Speaking' item from the 'Speech' submenu in edit and context menu. To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, open the Edit menu and use the translation from there.">
+          Stop Speaking
+        </message>
+
+        <message name="IDS_CONTENT_CONTEXT_LOOK_UP" desc="The name of the 'Look Up “string”' item in the content area context menu. To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+          Look Up “<ph name="LOOKUP_STRING">$1<ex>orthogonal</ex></ph>”
+        </message>
+
       </if>
+
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_MENU" desc="The name of the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Writing Direction
+      </message>
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_DEFAULT" desc="The name of the 'default' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Default
+      </message>
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_LTR" desc="The name of the 'Left to Right' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Left to Right
+      </message>
+      <message name="IDS_CONTENT_CONTEXT_WRITING_DIRECTION_RTL" desc="The name of the 'Right to Left' item from the Writing Direction submenu in the content area context menu.  To translate, launch /Applications/TextEdit.app in an appropriately localized version of OS X, right-click on the text entry area and use the translation from there.">
+        Right to Left
+      </message>
 
       <!-- File chooser dialog default titles (only used on Linux) -->
       <message name="IDS_SELECT_FOLDER_DIALOG_TITLE" desc="The default title for the Select Folder file chooser dialog.">
@@ -652,7 +681,13 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_NOTIFICATION_DURATION_YEARS_SHORTEST" desc="Phrase describing a time duration using years that is as short as possible, preferrably one character. Should be same as AndroidPlatform msgId 7848711145196397042. (frameworks/base/core/res/res/values/strings.xml:plurals:duration_years_shortest) [ICU Syntax]">
         {YEARS, plural, =1 {1y} other {#y}}
       </message>
-      <message name="IDS_MESSAGE_CENTER_BLOCK_ALL_NOTIFICATIONS" desc="The label for the radio button to block all the notifications from this notification origin.">
+      <message name="IDS_MESSAGE_CENTER_BLOCK_ALL_NOTIFICATIONS_SITE" desc="The label for the radio button to block all the notifications from this notification origin.">
+        Block all notifications from this site
+      </message>
+      <message name="IDS_MESSAGE_CENTER_BLOCK_ALL_NOTIFICATIONS_APP" desc="The label for the radio button to block all the notifications from this app.">
+        Block all notifications from this app
+      </message>
+      <message name="IDS_MESSAGE_CENTER_BLOCK_ALL_NOTIFICATIONS" desc="The label for the radio button to block all the notifications.">
         Block all notifications
       </message>
       <message name="IDS_MESSAGE_CENTER_DONT_BLOCK_NOTIFICATIONS" desc="The label for the radio button to allow all the notifications from this notification origin.">
@@ -718,12 +753,6 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_APP_LIST_FOLDER_CLOSE_FOLDER_ACCESSIBILE_NAME" desc="The spoken feedback text for closing an app launcher folder">
         Close folder
-      </message>
-      <message name="IDS_APP_LIST_SPEECH_HINT_TEXT" desc="The text label in the speech recognition UI to ask the user to speak the search query">
-        Speak now
-      </message>
-      <message name="IDS_APP_LIST_SPEECH_NETWORK_ERROR_HINT_TEXT" desc="The text label in the speech recognition UI to show the speech recognition can't start because of network error.">
-        No internet connection
       </message>
       <message name="IDS_APP_LIST_EXPAND_BUTTON" desc="Tooltip for the button that expands the app list from suggested apps to a fullscreen view which shows all apps.">
         Expand to all apps

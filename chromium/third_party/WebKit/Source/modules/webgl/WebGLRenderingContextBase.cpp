@@ -89,6 +89,7 @@
 #include "modules/webgl/WebGLUniformLocation.h"
 #include "modules/webgl/WebGLVertexArrayObject.h"
 #include "modules/webgl/WebGLVertexArrayObjectOES.h"
+#include "modules/xr/XRDevice.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/WaitableEvent.h"
 #include "platform/bindings/ScriptWrappableVisitor.h"
@@ -571,8 +572,6 @@ static String ExtractWebGLContextCreationError(
       "Reset notification strategy",
       String::Format("0x%04x", info.reset_notification_strategy).Utf8().data(),
       builder);
-  FormatWebGLStatusString("GPU process crash count",
-                          String::Number(info.process_crash_count), builder);
   FormatWebGLStatusString("ErrorMessage", info.error_message.Utf8().data(),
                           builder);
   builder.Append('.');
@@ -616,8 +615,8 @@ CreateContextProviderOnWorkerThread(
   creation_info.gl_info = gl_info;
   creation_info.url = url.Copy();
   creation_info.using_gpu_compositing = using_gpu_compositing;
-  scoped_refptr<WebTaskRunner> task_runner =
-      Platform::Current()->MainThread()->GetWebTaskRunner();
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      Platform::Current()->MainThread()->GetTaskRunner();
   PostCrossThreadTask(*task_runner, FROM_HERE,
                       CrossThreadBind(&CreateContextProviderOnMainThread,
                                       CrossThreadUnretained(&creation_info),
@@ -638,7 +637,7 @@ bool WebGLRenderingContextBase::SupportOwnOffscreenSurface(
 std::unique_ptr<WebGraphicsContext3DProvider>
 WebGLRenderingContextBase::CreateContextProviderInternal(
     CanvasRenderingContextHost* host,
-    const CanvasContextCreationAttributes& attributes,
+    const CanvasContextCreationAttributesCore& attributes,
     unsigned web_gl_version,
     bool* using_gpu_compositing) {
   DCHECK(host);
@@ -689,7 +688,7 @@ WebGLRenderingContextBase::CreateContextProviderInternal(
 std::unique_ptr<WebGraphicsContext3DProvider>
 WebGLRenderingContextBase::CreateWebGraphicsContext3DProvider(
     CanvasRenderingContextHost* host,
-    const CanvasContextCreationAttributes& attributes,
+    const CanvasContextCreationAttributesCore& attributes,
     unsigned webgl_version,
     bool* using_gpu_compositing) {
   if (host->IsWebGLBlocked()) {
@@ -720,7 +719,8 @@ ImageBitmap* WebGLRenderingContextBase::TransferToImageBitmapBase(
   UseCounter::Count(ExecutionContext::From(script_state), feature);
   if (!GetDrawingBuffer())
     return nullptr;
-  return ImageBitmap::Create(GetDrawingBuffer()->TransferToStaticBitmapImage());
+  return ImageBitmap::Create(
+      GetDrawingBuffer()->TransferToStaticBitmapImage(nullptr));
 }
 
 ScriptPromise WebGLRenderingContextBase::commit(
@@ -735,7 +735,10 @@ ScriptPromise WebGLRenderingContextBase::commit(
                           exception_state);
   }
 
-  scoped_refptr<StaticBitmapImage> image = GetStaticBitmapImage();
+  // TODO(crbug.com/809227): passing in nullptr for the release_callback, so the
+  // texture won't be recycled.  This could potentially impact performance as
+  // creating framebuffers can be expensive.
+  scoped_refptr<StaticBitmapImage> image = GetStaticBitmapImage(nullptr);
 
   return Host()->Commit(
       std::move(image), SkIRect::MakeWH(width, height),
@@ -743,18 +746,19 @@ ScriptPromise WebGLRenderingContextBase::commit(
 }
 
 scoped_refptr<StaticBitmapImage>
-WebGLRenderingContextBase::GetStaticBitmapImage() {
+WebGLRenderingContextBase::GetStaticBitmapImage(
+    std::unique_ptr<viz::SingleReleaseCallback>* out_release_callback) {
   if (!GetDrawingBuffer())
     return nullptr;
 
-  if (CreationAttributes().preserveDrawingBuffer()) {
+  if (CreationAttributes().preserve_drawing_buffer) {
     int width = GetDrawingBuffer()->Size().Width();
     int height = GetDrawingBuffer()->Size().Height();
     SkImageInfo image_info = SkImageInfo::Make(
         width, height, kRGBA_8888_SkColorType, ColorParams().GetSkAlphaType());
     return MakeImageSnapshot(image_info);
   }
-  return GetDrawingBuffer()->TransferToStaticBitmapImage();
+  return GetDrawingBuffer()->TransferToStaticBitmapImage(out_release_callback);
 }
 
 scoped_refptr<StaticBitmapImage> WebGLRenderingContextBase::GetImage(
@@ -789,7 +793,7 @@ scoped_refptr<StaticBitmapImage> WebGLRenderingContextBase::GetImage(
   int height = GetDrawingBuffer()->Size().Height();
   SkImageInfo image_info = SkImageInfo::Make(
       width, height, kRGBA_8888_SkColorType,
-      CreationAttributes().alpha() ? kPremul_SkAlphaType : kOpaque_SkAlphaType);
+      CreationAttributes().alpha ? kPremul_SkAlphaType : kOpaque_SkAlphaType);
   return this->MakeImageSnapshot(image_info);
 }
 
@@ -819,6 +823,43 @@ scoped_refptr<StaticBitmapImage> WebGLRenderingContextBase::MakeImageSnapshot(
       IntRect(IntPoint(0, 0), GetDrawingBuffer()->Size()), kBackBuffer);
   return AcceleratedStaticBitmapImage::CreateFromSkImage(
       surface->makeImageSnapshot(), std::move(shared_context_wrapper));
+}
+
+ScriptPromise WebGLRenderingContextBase::setCompatibleXRDevice(
+    ScriptState* script_state,
+    XRDevice* xr_device) {
+  ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
+  ScriptPromise promise = resolver->Promise();
+
+  if (isContextLost()) {
+    return ScriptPromise::RejectWithDOMException(
+        script_state,
+        DOMException::Create(kInvalidStateError, "Context lost."));
+  }
+
+  if (xr_device == compatible_xr_device_) {
+    resolver->Resolve();
+    return promise;
+  }
+
+  if (ContextCreatedOnCompatibleAdapter(xr_device)) {
+    compatible_xr_device_ = xr_device;
+    resolver->Resolve();
+  } else {
+    // TODO(offenwanger): Trigger context loss and recreate on compatible GPU.
+    return ScriptPromise::RejectWithDOMException(
+        script_state,
+        DOMException::Create(
+            kNotSupportedError,
+            "Context is not compatible. Switching not yet implemented."));
+  }
+
+  return promise;
+}
+
+bool WebGLRenderingContextBase::IsXRDeviceCompatible(
+    const XRDevice* xr_device) {
+  return xr_device == compatible_xr_device_;
 }
 
 namespace {
@@ -965,7 +1006,7 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(
     CanvasRenderingContextHost* host,
     std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
     bool using_gpu_compositing,
-    const CanvasContextCreationAttributes& requested_attributes,
+    const CanvasContextCreationAttributesCore& requested_attributes,
     unsigned version)
     : WebGLRenderingContextBase(
           host,
@@ -977,10 +1018,10 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(
 
 WebGLRenderingContextBase::WebGLRenderingContextBase(
     CanvasRenderingContextHost* host,
-    scoped_refptr<WebTaskRunner> task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
     bool using_gpu_compositing,
-    const CanvasContextCreationAttributes& requested_attributes,
+    const CanvasContextCreationAttributesCore& requested_attributes,
     unsigned version)
     : CanvasRenderingContext(host, requested_attributes),
       context_group_(new WebGLContextGroup()),
@@ -1010,6 +1051,10 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(
       is_ext_color_buffer_float_formats_added_(false),
       version_(version) {
   DCHECK(context_provider);
+
+  // TODO(offenwanger) Make sure this is being created on a compatible adapter.
+  compatible_xr_device_ =
+      static_cast<XRDevice*>(requested_attributes.compatible_xr_device.Get());
 
   context_group_->AddContext(this);
 
@@ -1058,13 +1103,13 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(
 scoped_refptr<DrawingBuffer> WebGLRenderingContextBase::CreateDrawingBuffer(
     std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
     bool using_gpu_compositing) {
-  bool premultiplied_alpha = CreationAttributes().premultipliedAlpha();
-  bool want_alpha_channel = CreationAttributes().alpha();
-  bool want_depth_buffer = CreationAttributes().depth();
-  bool want_stencil_buffer = CreationAttributes().stencil();
-  bool want_antialiasing = CreationAttributes().antialias();
+  bool premultiplied_alpha = CreationAttributes().premultiplied_alpha;
+  bool want_alpha_channel = CreationAttributes().alpha;
+  bool want_depth_buffer = CreationAttributes().depth;
+  bool want_stencil_buffer = CreationAttributes().stencil;
+  bool want_antialiasing = CreationAttributes().antialias;
   DrawingBuffer::PreserveDrawingBuffer preserve =
-      CreationAttributes().preserveDrawingBuffer() ? DrawingBuffer::kPreserve
+      CreationAttributes().preserve_drawing_buffer ? DrawingBuffer::kPreserve
                                                    : DrawingBuffer::kDiscard;
   DrawingBuffer::WebGLVersion web_gl_version = DrawingBuffer::kWebGL1;
   if (Version() == 1) {
@@ -1097,6 +1142,9 @@ scoped_refptr<DrawingBuffer> WebGLRenderingContextBase::CreateDrawingBuffer(
 void WebGLRenderingContextBase::InitializeNewContext() {
   DCHECK(!isContextLost());
   DCHECK(GetDrawingBuffer());
+
+  // TODO(offenwanger): Check if compatible_xr_device needs to be taken into
+  // account here.
 
   marked_canvas_dirty_ = false;
   animation_frame_in_progress_ = false;
@@ -1304,8 +1352,13 @@ void WebGLRenderingContextBase::DestroyContext() {
 
 void WebGLRenderingContextBase::MarkContextChanged(
     ContentChangeType change_type) {
-  if (framebuffer_binding_ || isContextLost())
+  if (isContextLost())
     return;
+
+  if (framebuffer_binding_) {
+    framebuffer_binding_->SetContentsChanged(true);
+    return;
+  }
 
   if (!GetDrawingBuffer()->MarkContentsChanged() && marked_canvas_dirty_) {
     return;
@@ -1347,9 +1400,9 @@ WebGLRenderingContextBase::ClearIfComposited(GLbitfield mask) {
       (mask && framebuffer_binding_))
     return kSkipped;
 
-  Nullable<WebGLContextAttributes> context_attributes;
+  Optional<WebGLContextAttributes> context_attributes;
   getContextAttributes(context_attributes);
-  if (context_attributes.IsNull()) {
+  if (!context_attributes) {
     // Unlikely, but context was lost.
     return kSkipped;
   }
@@ -1371,13 +1424,13 @@ WebGLRenderingContextBase::ClearIfComposited(GLbitfield mask) {
       true, true, true,
       !GetDrawingBuffer()->RequiresAlphaChannelToBePreserved());
   GLbitfield clear_mask = GL_COLOR_BUFFER_BIT;
-  if (context_attributes.Get().depth()) {
+  if (context_attributes->depth()) {
     if (!combined_clear || !depth_mask_ || !(mask & GL_DEPTH_BUFFER_BIT))
       ContextGL()->ClearDepthf(1.0f);
     clear_mask |= GL_DEPTH_BUFFER_BIT;
     ContextGL()->DepthMask(true);
   }
-  if (context_attributes.Get().stencil() ||
+  if (context_attributes->stencil() ||
       GetDrawingBuffer()->HasImplicitStencilBuffer()) {
     if (combined_clear && (mask & GL_STENCIL_BUFFER_BIT))
       ContextGL()->ClearStencil(clear_stencil_ & stencil_mask_);
@@ -1488,6 +1541,12 @@ bool WebGLRenderingContextBase::PaintRenderingResultsToCanvas(
     return false;
   }
 
+  return true;
+}
+
+bool WebGLRenderingContextBase::ContextCreatedOnCompatibleAdapter(
+    const XRDevice* device) {
+  // TODO(offenwanger): Determine if device is compatible with current context.
   return true;
 }
 
@@ -2684,10 +2743,10 @@ WebGLActiveInfo* WebGLRenderingContextBase::getActiveUniform(
   return WebGLActiveInfo::Create(name_impl->Substring(0, length), type, size);
 }
 
-Nullable<HeapVector<Member<WebGLShader>>>
+Optional<HeapVector<Member<WebGLShader>>>
 WebGLRenderingContextBase::getAttachedShaders(WebGLProgram* program) {
   if (isContextLost() || !ValidateWebGLObject("getAttachedShaders", program))
-    return nullptr;
+    return WTF::nullopt;
 
   HeapVector<Member<WebGLShader>> shader_objects;
   const GLenum kShaderType[] = {GL_VERTEX_SHADER, GL_FRAGMENT_SHADER};
@@ -2758,17 +2817,20 @@ ScriptValue WebGLRenderingContextBase::getBufferParameter(
 }
 
 void WebGLRenderingContextBase::getContextAttributes(
-    Nullable<WebGLContextAttributes>& result) {
+    Optional<WebGLContextAttributes>& result) {
   if (isContextLost())
     return;
-  result.Set(ToWebGLContextAttributes(CreationAttributes()));
+  result = ToWebGLContextAttributes(CreationAttributes());
   // Some requested attributes may not be honored, so we need to query the
   // underlying context/drawing buffer and adjust accordingly.
-  if (CreationAttributes().depth() && !GetDrawingBuffer()->HasDepthBuffer())
-    result.Get().setDepth(false);
-  if (CreationAttributes().stencil() && !GetDrawingBuffer()->HasStencilBuffer())
-    result.Get().setStencil(false);
-  result.Get().setAntialias(GetDrawingBuffer()->Multisample());
+  if (CreationAttributes().depth && !GetDrawingBuffer()->HasDepthBuffer())
+    result->setDepth(false);
+  if (CreationAttributes().stencil && !GetDrawingBuffer()->HasStencilBuffer())
+    result->setStencil(false);
+  result->setAntialias(GetDrawingBuffer()->Multisample());
+  if (compatible_xr_device_) {
+    result->setCompatibleXRDevice(compatible_xr_device_);
+  }
 }
 
 GLenum WebGLRenderingContextBase::getError() {
@@ -2988,7 +3050,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
     case GL_CURRENT_PROGRAM:
       return WebGLAny(script_state, current_program_.Get());
     case GL_DEPTH_BITS:
-      if (!framebuffer_binding_ && !CreationAttributes().depth())
+      if (!framebuffer_binding_ && !CreationAttributes().depth)
         return WebGLAny(script_state, kIntZero);
       return GetIntParameter(script_state, pname);
     case GL_DEPTH_CLEAR_VALUE:
@@ -3096,7 +3158,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
     case GL_STENCIL_BACK_WRITEMASK:
       return GetUnsignedIntParameter(script_state, pname);
     case GL_STENCIL_BITS:
-      if (!framebuffer_binding_ && !CreationAttributes().stencil())
+      if (!framebuffer_binding_ && !CreationAttributes().stencil)
         return WebGLAny(script_state, kIntZero);
       return GetIntParameter(script_state, pname);
     case GL_STENCIL_CLEAR_VALUE:
@@ -3254,6 +3316,7 @@ ScriptValue WebGLRenderingContextBase::getProgramParameter(
                           "invalid parameter name");
         return ScriptValue::CreateNull(script_state);
       }
+      FALLTHROUGH;
     case GL_ATTACHED_SHADERS:
     case GL_ACTIVE_ATTRIBUTES:
     case GL_ACTIVE_UNIFORMS:
@@ -3264,6 +3327,7 @@ ScriptValue WebGLRenderingContextBase::getProgramParameter(
         ContextGL()->GetProgramiv(ObjectOrZero(program), pname, &value);
         return WebGLAny(script_state, static_cast<unsigned>(value));
       }
+      FALLTHROUGH;
     default:
       SynthesizeGLError(GL_INVALID_ENUM, "getProgramParameter",
                         "invalid parameter name");
@@ -3303,6 +3367,7 @@ ScriptValue WebGLRenderingContextBase::getRenderbufferParameter(
                           "invalid parameter name");
         return ScriptValue::CreateNull(script_state);
       }
+      FALLTHROUGH;
     case GL_RENDERBUFFER_WIDTH:
     case GL_RENDERBUFFER_HEIGHT:
     case GL_RENDERBUFFER_RED_SIZE:
@@ -3395,9 +3460,9 @@ String WebGLRenderingContextBase::getShaderSource(WebGLShader* shader) {
   return EnsureNotNull(shader->Source());
 }
 
-Nullable<Vector<String>> WebGLRenderingContextBase::getSupportedExtensions() {
+Optional<Vector<String>> WebGLRenderingContextBase::getSupportedExtensions() {
   if (isContextLost())
-    return nullptr;
+    return WTF::nullopt;
 
   Vector<String> result;
 
@@ -3793,7 +3858,7 @@ ScriptValue WebGLRenderingContextBase::getVertexAttrib(
         ContextGL()->GetVertexAttribiv(index, pname, &value);
         return WebGLAny(script_state, static_cast<bool>(value));
       }
-    // fall through to default error case
+      FALLTHROUGH;
     default:
       SynthesizeGLError(GL_INVALID_ENUM, "getVertexAttrib",
                         "invalid parameter name");
@@ -5551,12 +5616,12 @@ void WebGLRenderingContextBase::TexParameter(GLenum target,
     case GL_TEXTURE_MAG_FILTER:
       break;
     case GL_TEXTURE_WRAP_R:
-      // fall through to WRAP_S and WRAP_T for WebGL 2 or higher
       if (!IsWebGL2OrHigher()) {
         SynthesizeGLError(GL_INVALID_ENUM, "texParameter",
                           "invalid parameter name");
         return;
       }
+      FALLTHROUGH;
     case GL_TEXTURE_WRAP_S:
     case GL_TEXTURE_WRAP_T:
       if ((is_float && paramf != GL_CLAMP_TO_EDGE &&
@@ -6934,6 +6999,7 @@ bool WebGLRenderingContextBase::ValidateTexFuncDimensions(
         }
         break;
       }
+      FALLTHROUGH;
     case GL_TEXTURE_2D_ARRAY:
       if (IsWebGL2OrHigher()) {
         if (width > (max_texture_size_ >> level) ||
@@ -6945,6 +7011,7 @@ bool WebGLRenderingContextBase::ValidateTexFuncDimensions(
         }
         break;
       }
+      FALLTHROUGH;
     default:
       SynthesizeGLError(GL_INVALID_ENUM, function_name, "invalid target");
       return false;
@@ -7612,17 +7679,14 @@ String WebGLRenderingContextBase::EnsureNotNull(const String& text) const {
 }
 
 WebGLRenderingContextBase::LRUCanvasResourceProviderCache::
-    LRUCanvasResourceProviderCache(int capacity)
-    : resource_providers_(
-          std::make_unique<std::unique_ptr<CanvasResourceProvider>[]>(
-              capacity)),
-      capacity_(capacity) {}
+    LRUCanvasResourceProviderCache(size_t capacity)
+    : resource_providers_(capacity) {}
 
 CanvasResourceProvider* WebGLRenderingContextBase::
     LRUCanvasResourceProviderCache::GetCanvasResourceProvider(
         const IntSize& size) {
-  int i;
-  for (i = 0; i < capacity_; ++i) {
+  size_t i;
+  for (i = 0; i < resource_providers_.size(); ++i) {
     CanvasResourceProvider* resource_provider = resource_providers_[i].get();
     if (!resource_provider)
       break;
@@ -7636,7 +7700,7 @@ CanvasResourceProvider* WebGLRenderingContextBase::
       size, CanvasResourceProvider::kSoftwareResourceUsage));
   if (!temp)
     return nullptr;
-  i = std::min(capacity_ - 1, i);
+  i = std::min(resource_providers_.size() - 1, i);
   resource_providers_[i] = std::move(temp);
 
   CanvasResourceProvider* resource_provider = resource_providers_[i].get();
@@ -7645,8 +7709,8 @@ CanvasResourceProvider* WebGLRenderingContextBase::
 }
 
 void WebGLRenderingContextBase::LRUCanvasResourceProviderCache::BubbleToFront(
-    int idx) {
-  for (int i = idx; i > 0; --i)
+    size_t idx) {
+  for (size_t i = idx; i > 0; --i)
     resource_providers_[i].swap(resource_providers_[i - 1]);
 }
 
@@ -7710,9 +7774,9 @@ void WebGLRenderingContextBase::ApplyStencilTest() {
   if (framebuffer_binding_) {
     have_stencil_buffer = framebuffer_binding_->HasStencilBuffer();
   } else {
-    Nullable<WebGLContextAttributes> attributes;
+    Optional<WebGLContextAttributes> attributes;
     getContextAttributes(attributes);
-    have_stencil_buffer = !attributes.IsNull() && attributes.Get().stencil();
+    have_stencil_buffer = attributes && attributes->stencil();
   }
   EnableOrDisable(GL_STENCIL_TEST, stencil_enabled_ && have_stencil_buffer);
 }
@@ -7817,6 +7881,7 @@ void WebGLRenderingContextBase::Trace(blink::Visitor* visitor) {
   visitor->Trace(current_program_);
   visitor->Trace(framebuffer_binding_);
   visitor->Trace(renderbuffer_binding_);
+  visitor->Trace(compatible_xr_device_);
   visitor->Trace(texture_units_);
   visitor->Trace(extensions_);
   CanvasRenderingContext::Trace(visitor);
@@ -7851,18 +7916,18 @@ int WebGLRenderingContextBase::ExternallyAllocatedBufferCountPerPixel() {
   int buffer_count = 1;
   buffer_count *= 2;  // WebGL's front and back color buffers.
   int samples = GetDrawingBuffer() ? GetDrawingBuffer()->SampleCount() : 0;
-  Nullable<WebGLContextAttributes> attribs;
+  Optional<WebGLContextAttributes> attribs;
   getContextAttributes(attribs);
-  if (!attribs.IsNull()) {
+  if (attribs) {
     // Handle memory from WebGL multisample and depth/stencil buffers.
     // It is enabled only in case of explicit resolve assuming that there
     // is no memory overhead for MSAA on tile-based GPU arch.
-    if (attribs.Get().antialias() && samples > 0 &&
+    if (attribs->antialias() && samples > 0 &&
         GetDrawingBuffer()->ExplicitResolveOfMultisampleData()) {
-      if (attribs.Get().depth() || attribs.Get().stencil())
+      if (attribs->depth() || attribs->stencil())
         buffer_count += samples;  // depth/stencil multisample buffer
       buffer_count += samples;    // color multisample buffer
-    } else if (attribs.Get().depth() || attribs.Get().stencil()) {
+    } else if (attribs->depth() || attribs->stencil()) {
       buffer_count += 1;  // regular depth/stencil buffer
     }
   }

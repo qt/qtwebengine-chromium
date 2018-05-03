@@ -20,16 +20,17 @@
 #define I915_CACHELINE_SIZE 64
 #define I915_CACHELINE_MASK (I915_CACHELINE_SIZE - 1)
 
-static const uint32_t render_target_formats[] = { DRM_FORMAT_ARGB1555, DRM_FORMAT_ABGR8888,
-						  DRM_FORMAT_ARGB8888, DRM_FORMAT_RGB565,
-						  DRM_FORMAT_XBGR8888, DRM_FORMAT_XRGB1555,
+static const uint32_t render_target_formats[] = { DRM_FORMAT_ABGR8888,    DRM_FORMAT_ARGB1555,
+						  DRM_FORMAT_ARGB8888,    DRM_FORMAT_RGB565,
+						  DRM_FORMAT_XBGR2101010, DRM_FORMAT_XBGR8888,
+						  DRM_FORMAT_XRGB1555,    DRM_FORMAT_XRGB2101010,
 						  DRM_FORMAT_XRGB8888 };
 
-static const uint32_t tileable_texture_source_formats[] = { DRM_FORMAT_GR88, DRM_FORMAT_NV12,
-							    DRM_FORMAT_R8, DRM_FORMAT_UYVY,
-							    DRM_FORMAT_YUYV };
+static const uint32_t tileable_texture_source_formats[] = { DRM_FORMAT_GR88, DRM_FORMAT_R8,
+							    DRM_FORMAT_UYVY, DRM_FORMAT_YUYV };
 
-static const uint32_t texture_source_formats[] = { DRM_FORMAT_YVU420, DRM_FORMAT_YVU420_ANDROID };
+static const uint32_t texture_source_formats[] = { DRM_FORMAT_YVU420, DRM_FORMAT_YVU420_ANDROID,
+						   DRM_FORMAT_NV12 };
 
 struct i915_device {
 	uint32_t gen;
@@ -57,12 +58,12 @@ static int i915_add_kms_item(struct driver *drv, const struct kms_item *item)
 	 * Older hardware can't scanout Y-tiled formats. Newer devices can, and
 	 * report this functionality via format modifiers.
 	 */
-	for (i = 0; i < drv->backend->combos.size; i++) {
-		combo = &drv->backend->combos.data[i];
+	for (i = 0; i < drv_array_size(drv->combos); i++) {
+		combo = (struct combination *)drv_array_at_idx(drv->combos, i);
 		if (combo->format != item->format)
 			continue;
 
-		if (item->modifier == DRM_FORMAT_MOD_NONE &&
+		if (item->modifier == DRM_FORMAT_MOD_LINEAR &&
 		    combo->metadata.tiling == I915_TILING_X) {
 			/*
 			 * FIXME: drv_query_kms() does not report the available modifiers
@@ -70,11 +71,11 @@ static int i915_add_kms_item(struct driver *drv, const struct kms_item *item)
 			 * buffers, so let's add this to our combinations, except for
 			 * cursor, which must not be tiled.
 			 */
-			combo->usage |= item->usage & ~BO_USE_CURSOR;
+			combo->use_flags |= item->use_flags & ~BO_USE_CURSOR;
 		}
 
 		if (combo->metadata.modifier == item->modifier)
-			combo->usage |= item->usage;
+			combo->use_flags |= item->use_flags;
 	}
 
 	return 0;
@@ -83,33 +84,27 @@ static int i915_add_kms_item(struct driver *drv, const struct kms_item *item)
 static int i915_add_combinations(struct driver *drv)
 {
 	int ret;
-	uint32_t i, num_items;
-	struct kms_item *items;
+	uint32_t i;
+	struct drv_array *kms_items;
 	struct format_metadata metadata;
-	uint64_t render_flags, texture_flags;
+	uint64_t render_use_flags, texture_use_flags;
 
-	render_flags = BO_USE_RENDER_MASK;
-	texture_flags = BO_USE_TEXTURE_MASK;
+	render_use_flags = BO_USE_RENDER_MASK;
+	texture_use_flags = BO_USE_TEXTURE_MASK;
 
 	metadata.tiling = I915_TILING_NONE;
 	metadata.priority = 1;
-	metadata.modifier = DRM_FORMAT_MOD_NONE;
+	metadata.modifier = DRM_FORMAT_MOD_LINEAR;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, render_flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, render_use_flags);
 
-	ret = drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
-				   &metadata, texture_flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
+			     &metadata, texture_use_flags);
 
-	ret = drv_add_combinations(drv, tileable_texture_source_formats,
-				   ARRAY_SIZE(tileable_texture_source_formats), &metadata,
-				   texture_flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, tileable_texture_source_formats,
+			     ARRAY_SIZE(tileable_texture_source_formats), &metadata,
+			     texture_use_flags);
 
 	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
@@ -124,59 +119,51 @@ static int i915_add_combinations(struct driver *drv)
 	drv_modify_combination(drv, DRM_FORMAT_R8, &metadata,
 			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
 
-	render_flags &= ~BO_USE_RENDERSCRIPT;
-	render_flags &= ~BO_USE_SW_WRITE_OFTEN;
-	render_flags &= ~BO_USE_SW_READ_OFTEN;
-	render_flags &= ~BO_USE_LINEAR;
+	render_use_flags &= ~BO_USE_RENDERSCRIPT;
+	render_use_flags &= ~BO_USE_SW_WRITE_OFTEN;
+	render_use_flags &= ~BO_USE_SW_READ_OFTEN;
+	render_use_flags &= ~BO_USE_LINEAR;
 
-	texture_flags &= ~BO_USE_RENDERSCRIPT;
-	texture_flags &= ~BO_USE_SW_WRITE_OFTEN;
-	texture_flags &= ~BO_USE_SW_READ_OFTEN;
-	texture_flags &= ~BO_USE_LINEAR;
+	texture_use_flags &= ~BO_USE_RENDERSCRIPT;
+	texture_use_flags &= ~BO_USE_SW_WRITE_OFTEN;
+	texture_use_flags &= ~BO_USE_SW_READ_OFTEN;
+	texture_use_flags &= ~BO_USE_LINEAR;
 
 	metadata.tiling = I915_TILING_X;
 	metadata.priority = 2;
 	metadata.modifier = I915_FORMAT_MOD_X_TILED;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, render_flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, render_use_flags);
 
-	ret = drv_add_combinations(drv, tileable_texture_source_formats,
-				   ARRAY_SIZE(tileable_texture_source_formats), &metadata,
-				   texture_flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, tileable_texture_source_formats,
+			     ARRAY_SIZE(tileable_texture_source_formats), &metadata,
+			     texture_use_flags);
 
 	metadata.tiling = I915_TILING_Y;
 	metadata.priority = 3;
 	metadata.modifier = I915_FORMAT_MOD_Y_TILED;
 
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &metadata, render_flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &metadata, render_use_flags);
 
-	ret = drv_add_combinations(drv, tileable_texture_source_formats,
-				   ARRAY_SIZE(tileable_texture_source_formats), &metadata,
-				   texture_flags);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, tileable_texture_source_formats,
+			     ARRAY_SIZE(tileable_texture_source_formats), &metadata,
+			     texture_use_flags);
 
-	items = drv_query_kms(drv, &num_items);
-	if (!items || !num_items)
+	kms_items = drv_query_kms(drv);
+	if (!kms_items)
 		return 0;
 
-	for (i = 0; i < num_items; i++) {
-		ret = i915_add_kms_item(drv, &items[i]);
+	for (i = 0; i < drv_array_size(kms_items); i++) {
+		ret = i915_add_kms_item(drv, (struct kms_item *)drv_array_at_idx(kms_items, i));
 		if (ret) {
-			free(items);
+			drv_array_destroy(kms_items);
 			return ret;
 		}
 	}
 
-	free(items);
+	drv_array_destroy(kms_items);
 	return 0;
 }
 
@@ -218,7 +205,7 @@ static int i915_align_dimensions(struct bo *bo, uint32_t tiling, uint32_t *strid
 	case DRM_FORMAT_YVU420_ANDROID:
 	case DRM_FORMAT_YVU420:
 		horizontal_alignment *= 2;
-		/* Fall through */
+	/* Fall through */
 	case DRM_FORMAT_NV12:
 		vertical_alignment *= 2;
 		break;
@@ -290,21 +277,26 @@ static int i915_init(struct driver *drv)
 	return i915_add_combinations(drv);
 }
 
-static int i915_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
-			  uint32_t flags)
+static int i915_bo_create_for_modifier(struct bo *bo, uint32_t width, uint32_t height,
+				       uint32_t format, uint64_t modifier)
 {
 	int ret;
 	size_t plane;
 	uint32_t stride;
 	struct drm_i915_gem_create gem_create;
 	struct drm_i915_gem_set_tiling gem_set_tiling;
-	struct combination *combo;
 
-	combo = drv_get_combination(bo->drv, format, flags);
-	if (!combo)
-		return -EINVAL;
-
-	bo->tiling = combo->metadata.tiling;
+	switch (modifier) {
+	case DRM_FORMAT_MOD_LINEAR:
+		bo->tiling = I915_TILING_NONE;
+		break;
+	case I915_FORMAT_MOD_X_TILED:
+		bo->tiling = I915_TILING_X;
+		break;
+	case I915_FORMAT_MOD_Y_TILED:
+		bo->tiling = I915_TILING_Y;
+		break;
+	}
 
 	stride = drv_stride_from_format(format, width, 0);
 
@@ -382,6 +374,35 @@ static int i915_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32
 	return 0;
 }
 
+static int i915_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+			  uint64_t use_flags)
+{
+	struct combination *combo;
+
+	combo = drv_get_combination(bo->drv, format, use_flags);
+	if (!combo)
+		return -EINVAL;
+
+	return i915_bo_create_for_modifier(bo, width, height, format, combo->metadata.modifier);
+}
+
+static int i915_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint32_t height,
+					 uint32_t format, const uint64_t *modifiers, uint32_t count)
+{
+	static const uint64_t modifier_order[] = {
+		I915_FORMAT_MOD_Y_TILED,
+		I915_FORMAT_MOD_X_TILED,
+		DRM_FORMAT_MOD_LINEAR,
+	};
+	uint64_t modifier;
+
+	modifier = drv_pick_modifier(modifiers, count, modifier_order, ARRAY_SIZE(modifier_order));
+
+	bo->format_modifiers[0] = modifier;
+
+	return i915_bo_create_for_modifier(bo, width, height, format, modifier);
+}
+
 static void i915_close(struct driver *drv)
 {
 	free(drv->priv);
@@ -412,17 +433,17 @@ static int i915_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 	return 0;
 }
 
-static void *i915_bo_map(struct bo *bo, struct map_info *data, size_t plane, int prot)
+static void *i915_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
 {
 	int ret;
 	void *addr;
-	struct drm_i915_gem_set_domain set_domain;
 
-	memset(&set_domain, 0, sizeof(set_domain));
-	set_domain.handle = bo->handles[0].u32;
 	if (bo->tiling == I915_TILING_NONE) {
 		struct drm_i915_gem_mmap gem_map;
 		memset(&gem_map, 0, sizeof(gem_map));
+
+		if ((bo->use_flags & BO_USE_SCANOUT) && !(bo->use_flags & BO_USE_RENDERSCRIPT))
+			gem_map.flags = I915_MMAP_WC;
 
 		gem_map.handle = bo->handles[0].u32;
 		gem_map.offset = 0;
@@ -435,9 +456,6 @@ static void *i915_bo_map(struct bo *bo, struct map_info *data, size_t plane, int
 		}
 
 		addr = (void *)(uintptr_t)gem_map.addr_ptr;
-		set_domain.read_domains = I915_GEM_DOMAIN_CPU;
-		set_domain.write_domain = I915_GEM_DOMAIN_CPU;
-
 	} else {
 		struct drm_i915_gem_mmap_gtt gem_map;
 		memset(&gem_map, 0, sizeof(gem_map));
@@ -450,9 +468,8 @@ static void *i915_bo_map(struct bo *bo, struct map_info *data, size_t plane, int
 			return MAP_FAILED;
 		}
 
-		addr = mmap(0, bo->total_size, prot, MAP_SHARED, bo->drv->fd, gem_map.offset);
-		set_domain.read_domains = I915_GEM_DOMAIN_GTT;
-		set_domain.write_domain = I915_GEM_DOMAIN_GTT;
+		addr = mmap(0, bo->total_size, drv_get_prot(map_flags), MAP_SHARED, bo->drv->fd,
+			    gem_map.offset);
 	}
 
 	if (addr == MAP_FAILED) {
@@ -460,53 +477,82 @@ static void *i915_bo_map(struct bo *bo, struct map_info *data, size_t plane, int
 		return addr;
 	}
 
-	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_SET_DOMAIN, &set_domain);
-	if (ret) {
-		fprintf(stderr, "drv: DRM_IOCTL_I915_GEM_SET_DOMAIN failed\n");
-		return MAP_FAILED;
-	}
-
-	data->length = bo->total_size;
+	vma->length = bo->total_size;
 	return addr;
 }
 
-static int i915_bo_unmap(struct bo *bo, struct map_info *data)
+static int i915_bo_invalidate(struct bo *bo, struct mapping *mapping)
+{
+	int ret;
+	struct drm_i915_gem_set_domain set_domain;
+
+	memset(&set_domain, 0, sizeof(set_domain));
+	set_domain.handle = bo->handles[0].u32;
+	if (bo->tiling == I915_TILING_NONE) {
+		set_domain.read_domains = I915_GEM_DOMAIN_CPU;
+		if (mapping->vma->map_flags & BO_MAP_WRITE)
+			set_domain.write_domain = I915_GEM_DOMAIN_CPU;
+	} else {
+		set_domain.read_domains = I915_GEM_DOMAIN_GTT;
+		if (mapping->vma->map_flags & BO_MAP_WRITE)
+			set_domain.write_domain = I915_GEM_DOMAIN_GTT;
+	}
+
+	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_SET_DOMAIN, &set_domain);
+	if (ret) {
+		fprintf(stderr, "drv: DRM_IOCTL_I915_GEM_SET_DOMAIN with %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int i915_bo_flush(struct bo *bo, struct mapping *mapping)
 {
 	struct i915_device *i915 = bo->drv->priv;
 	if (!i915->has_llc && bo->tiling == I915_TILING_NONE)
-		i915_clflush(data->addr, data->length);
+		i915_clflush(mapping->vma->addr, mapping->vma->length);
 
-	return munmap(data->addr, data->length);
+	return 0;
 }
 
-static uint32_t i915_resolve_format(uint32_t format, uint64_t usage)
+static uint32_t i915_resolve_format(uint32_t format, uint64_t use_flags)
 {
 	switch (format) {
 	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
 		/* KBL camera subsystem requires NV12. */
-		if (usage & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
+		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
 			return DRM_FORMAT_NV12;
 		/*HACK: See b/28671744 */
 		return DRM_FORMAT_XBGR8888;
 	case DRM_FORMAT_FLEX_YCbCr_420_888:
-		/* KBL camera subsystem requires NV12. */
-		if (usage & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
-			return DRM_FORMAT_NV12;
-		return DRM_FORMAT_YVU420;
+		/*
+		 * KBL camera subsystem requires NV12. Our other use cases
+		 * don't care:
+		 * - Hardware video supports NV12,
+		 * - USB Camera HALv3 supports NV12,
+		 * - USB Camera HALv1 doesn't use this format.
+		 * Moreover, NV12 is preferred for video, due to overlay
+		 * support on SKL+.
+		 */
+		return DRM_FORMAT_NV12;
 	default:
 		return format;
 	}
 }
 
-struct backend backend_i915 = {
+const struct backend backend_i915 = {
 	.name = "i915",
 	.init = i915_init,
 	.close = i915_close,
 	.bo_create = i915_bo_create,
+	.bo_create_with_modifiers = i915_bo_create_with_modifiers,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_import = i915_bo_import,
 	.bo_map = i915_bo_map,
-	.bo_unmap = i915_bo_unmap,
+	.bo_unmap = drv_bo_munmap,
+	.bo_invalidate = i915_bo_invalidate,
+	.bo_flush = i915_bo_flush,
 	.resolve_format = i915_resolve_format,
 };
 

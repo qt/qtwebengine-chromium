@@ -6,9 +6,9 @@
 
 #include <cstdint>
 #include <ostream>
-#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "net/quic/core/quic_data_writer.h"
 #include "net/quic/core/quic_utils.h"
@@ -18,6 +18,7 @@
 #include "net/quic/platform/api/quic_logging.h"
 #include "net/quic/platform/api/quic_ptr_util.h"
 #include "net/quic/platform/api/quic_str_cat.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 #include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
@@ -30,14 +31,13 @@
 #include "net/spdy/core/spdy_test_utils.h"
 #include "net/test/gtest_util.h"
 
-using std::string;
+using testing::_;
 using testing::AtLeast;
 using testing::InSequence;
 using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 using testing::WithArgs;
-using testing::_;
 
 namespace net {
 namespace test {
@@ -76,7 +76,7 @@ class MockVisitor : public SpdyFramerVisitorInterface {
   MOCK_METHOD2(OnRstStream,
                void(SpdyStreamId stream_id, SpdyErrorCode error_code));
   MOCK_METHOD0(OnSettings, void());
-  MOCK_METHOD2(OnSetting, void(SpdySettingsIds id, uint32_t value));
+  MOCK_METHOD2(OnSetting, void(SpdyKnownSettingsId id, uint32_t value));
   MOCK_METHOD0(OnSettingsAck, void());
   MOCK_METHOD0(OnSettingsEnd, void());
   MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
@@ -232,7 +232,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
   }
 
   void SaveToHandler(size_t size, const QuicHeaderList& header_list) {
-    headers_handler_.reset(new TestHeadersHandler);
+    headers_handler_ = QuicMakeUnique<TestHeadersHandler>();
     headers_handler_->OnHeaderBlockStart();
     for (const auto& p : header_list) {
       headers_handler_->OnHeader(p.first, p.second);
@@ -258,9 +258,9 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
     EXPECT_CALL(session_,
                 WritevData(headers_stream_, kHeadersStreamId, _, _, NO_FIN))
         .WillOnce(WithArgs<2>(Invoke(this, &QuicHeadersStreamTest::SaveIov)));
-    QuicSpdySessionPeer::WriteHeadersImpl(&session_, stream_id,
-                                          headers_.Clone(), fin, priority, 0,
-                                          false, nullptr);
+    QuicSpdySessionPeer::WriteHeadersImpl(
+        &session_, stream_id, headers_.Clone(), fin,
+        Spdy3PriorityToHttp2Weight(priority), 0, false, nullptr);
 
     // Parse the outgoing data and check that it matches was was written.
     if (is_request) {
@@ -276,7 +276,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
                             /*parent_stream_id=*/0,
                             /*exclusive=*/false, fin, kFrameComplete));
     }
-    headers_handler_.reset(new TestHeadersHandler);
+    headers_handler_ = QuicMakeUnique<TestHeadersHandler>();
     EXPECT_CALL(visitor_, OnHeaderFrameStart(stream_id))
         .WillOnce(Return(headers_handler_.get()));
     EXPECT_CALL(visitor_, OnHeaderFrameEnd(stream_id)).Times(1);
@@ -327,10 +327,10 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
   QuicHeadersStream* headers_stream_;
   SpdyHeaderBlock headers_;
   std::unique_ptr<TestHeadersHandler> headers_handler_;
-  string body_;
-  string saved_data_;
-  string saved_header_data_;
-  string saved_payloads_;
+  QuicString body_;
+  QuicString saved_data_;
+  QuicString saved_header_data_;
+  QuicString saved_payloads_;
   std::unique_ptr<SpdyFramer> framer_;
   std::unique_ptr<Http2DecoderAdapter> deframer_;
   StrictMock<MockVisitor> visitor_;
@@ -382,7 +382,7 @@ TEST_P(QuicHeadersStreamTest, WritePushPromises) {
       // Parse the outgoing data and check that it matches was was written.
       EXPECT_CALL(visitor_,
                   OnPushPromise(stream_id, promised_stream_id, kFrameComplete));
-      headers_handler_.reset(new TestHeadersHandler);
+      headers_handler_ = QuicMakeUnique<TestHeadersHandler>();
       EXPECT_CALL(visitor_, OnHeaderFrameStart(stream_id))
           .WillOnce(Return(headers_handler_.get()));
       EXPECT_CALL(visitor_, OnHeaderFrameEnd(stream_id)).Times(1);
@@ -460,6 +460,38 @@ TEST_P(QuicHeadersStreamTest, ProcessPushPromise) {
     if (perspective() == Perspective::IS_CLIENT) {
       stream_frame_.offset += frame.size();
       CheckHeaders();
+    }
+  }
+}
+
+TEST_P(QuicHeadersStreamTest, ProcessPriorityFrame) {
+  QuicStreamId parent_stream_id = 0;
+  for (SpdyPriority priority = 0; priority < 7; ++priority) {
+    for (QuicStreamId stream_id = client_id_1_; stream_id < client_id_3_;
+         stream_id += next_stream_id_) {
+      int weight = Spdy3PriorityToHttp2Weight(priority);
+      SpdyPriorityIR priority_frame(stream_id, parent_stream_id, weight, true);
+      SpdySerializedFrame frame(framer_->SerializeFrame(priority_frame));
+      parent_stream_id = stream_id;
+      if (transport_version() <= QUIC_VERSION_42) {
+        EXPECT_CALL(*connection_,
+                    CloseConnection(QUIC_INVALID_HEADERS_STREAM_DATA,
+                                    "SPDY PRIORITY frame received.", _))
+            .WillRepeatedly(InvokeWithoutArgs(
+                this, &QuicHeadersStreamTest::TearDownLocalConnectionState));
+      } else if (perspective() == Perspective::IS_CLIENT) {
+        EXPECT_CALL(*connection_,
+                    CloseConnection(QUIC_INVALID_HEADERS_STREAM_DATA,
+                                    "Server must not send PRIORITY frames.", _))
+            .WillRepeatedly(InvokeWithoutArgs(
+                this, &QuicHeadersStreamTest::TearDownLocalConnectionState));
+      } else {
+        EXPECT_CALL(session_, OnPriorityFrame(stream_id, priority)).Times(1);
+      }
+      stream_frame_.data_buffer = frame.data();
+      stream_frame_.data_length = frame.size();
+      headers_stream_->OnStreamFrame(stream_frame_);
+      stream_frame_.offset += frame.size();
     }
   }
 }
@@ -563,9 +595,9 @@ TEST_P(QuicHeadersStreamTest, ProcessLargeRawData) {
   // We want to create a frame that is more than the SPDY Framer's max control
   // frame size, which is 16K, but less than the HPACK decoders max decode
   // buffer size, which is 32K.
-  headers_["key0"] = string(1 << 13, '.');
-  headers_["key1"] = string(1 << 13, '.');
-  headers_["key2"] = string(1 << 13, '.');
+  headers_["key0"] = QuicString(1 << 13, '.');
+  headers_["key1"] = QuicString(1 << 13, '.');
+  headers_["key2"] = QuicString(1 << 13, '.');
   for (QuicStreamId stream_id = client_id_1_; stream_id < client_id_3_;
        stream_id += next_stream_id_) {
     for (bool fin : {false, true}) {
@@ -766,9 +798,9 @@ TEST_P(QuicHeadersStreamTest, HpackDecoderDebugVisitor) {
 
   // Create some headers we expect to generate entries in HPACK's
   // dynamic table, in addition to content-length.
-  headers_["key0"] = string(1 << 1, '.');
-  headers_["key1"] = string(1 << 2, '.');
-  headers_["key2"] = string(1 << 3, '.');
+  headers_["key0"] = QuicString(1 << 1, '.');
+  headers_["key1"] = QuicString(1 << 2, '.');
+  headers_["key2"] = QuicString(1 << 3, '.');
   for (QuicStreamId stream_id = client_id_1_; stream_id < client_id_3_;
        stream_id += next_stream_id_) {
     for (bool fin : {false, true}) {
@@ -841,9 +873,6 @@ TEST_P(QuicHeadersStreamTest, AckSentData) {
   EXPECT_CALL(session_,
               WritevData(headers_stream_, kHeadersStreamId, _, _, NO_FIN))
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
-  if (!GetQuicReloadableFlag(quic_allow_multiple_acks_for_data2)) {
-    EXPECT_CALL(*connection_, CloseConnection(QUIC_INTERNAL_ERROR, _, _));
-  }
   InSequence s;
   QuicReferenceCountedPointer<MockAckListener> ack_listener1(
       new MockAckListener());
@@ -873,25 +902,25 @@ TEST_P(QuicHeadersStreamTest, AckSentData) {
   // Packets are acked in order: 2, 3, 1.
   EXPECT_CALL(*ack_listener3, OnPacketAcked(7, _));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(7, _));
-  headers_stream_->OnStreamFrameAcked(21, 7, false, QuicTime::Delta::Zero());
-  headers_stream_->OnStreamFrameAcked(28, 7, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(21, 7, false,
+                                                  QuicTime::Delta::Zero()));
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(28, 7, false,
+                                                  QuicTime::Delta::Zero()));
 
   EXPECT_CALL(*ack_listener3, OnPacketAcked(7, _));
-  headers_stream_->OnStreamFrameAcked(35, 7, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(35, 7, false,
+                                                  QuicTime::Delta::Zero()));
 
   EXPECT_CALL(*ack_listener1, OnPacketAcked(7, _));
   EXPECT_CALL(*ack_listener1, OnPacketAcked(7, _));
-  headers_stream_->OnStreamFrameAcked(0, 7, false, QuicTime::Delta::Zero());
-  headers_stream_->OnStreamFrameAcked(7, 7, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(0, 7, false,
+                                                  QuicTime::Delta::Zero()));
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(7, 7, false,
+                                                  QuicTime::Delta::Zero()));
   // Unsent data is acked.
   EXPECT_CALL(*ack_listener2, OnPacketAcked(7, _));
-  if (GetQuicReloadableFlag(quic_allow_multiple_acks_for_data2)) {
-    headers_stream_->OnStreamFrameAcked(14, 10, false, QuicTime::Delta::Zero());
-  } else {
-    EXPECT_QUIC_BUG(headers_stream_->OnStreamFrameAcked(
-                        14, 10, false, QuicTime::Delta::Zero()),
-                    "Unsent stream data is acked.");
-  }
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(14, 10, false,
+                                                  QuicTime::Delta::Zero()));
 }
 
 TEST_P(QuicHeadersStreamTest, FrameContainsMultipleHeaders) {
@@ -923,21 +952,21 @@ TEST_P(QuicHeadersStreamTest, FrameContainsMultipleHeaders) {
   EXPECT_CALL(*ack_listener2, OnPacketAcked(4, _));
   EXPECT_CALL(*ack_listener3, OnPacketAcked(7, _));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(2, _));
-  headers_stream_->OnStreamFrameAcked(17, 13, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(17, 13, false,
+                                                  QuicTime::Delta::Zero()));
 
   EXPECT_CALL(*ack_listener2, OnPacketAcked(5, _));
   EXPECT_CALL(*ack_listener3, OnPacketAcked(7, _));
-  headers_stream_->OnStreamFrameAcked(30, 12, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(30, 12, false,
+                                                  QuicTime::Delta::Zero()));
 
   EXPECT_CALL(*ack_listener1, OnPacketAcked(14, _));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(3, _));
-  headers_stream_->OnStreamFrameAcked(0, 17, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(0, 17, false,
+                                                  QuicTime::Delta::Zero()));
 }
 
 TEST_P(QuicHeadersStreamTest, HeadersGetAckedMultipleTimes) {
-  if (!GetQuicReloadableFlag(quic_allow_multiple_acks_for_data2)) {
-    return;
-  }
   EXPECT_CALL(session_,
               WritevData(headers_stream_, kHeadersStreamId, _, _, NO_FIN))
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
@@ -959,23 +988,29 @@ TEST_P(QuicHeadersStreamTest, HeadersGetAckedMultipleTimes) {
 
   // Ack [15, 20), [5, 25), [10, 17), [0, 12) and [22, 42).
   EXPECT_CALL(*ack_listener2, OnPacketAcked(5, _));
-  headers_stream_->OnStreamFrameAcked(15, 5, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(15, 5, false,
+                                                  QuicTime::Delta::Zero()));
 
   EXPECT_CALL(*ack_listener1, OnPacketAcked(9, _));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(1, _));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(1, _));
   EXPECT_CALL(*ack_listener3, OnPacketAcked(4, _));
-  headers_stream_->OnStreamFrameAcked(5, 20, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(5, 20, false,
+                                                  QuicTime::Delta::Zero()));
 
-  headers_stream_->OnStreamFrameAcked(10, 7, false, QuicTime::Delta::Zero());
+  // Duplicate ack.
+  EXPECT_FALSE(headers_stream_->OnStreamFrameAcked(10, 7, false,
+                                                   QuicTime::Delta::Zero()));
 
   EXPECT_CALL(*ack_listener1, OnPacketAcked(5, _));
-  headers_stream_->OnStreamFrameAcked(0, 12, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(0, 12, false,
+                                                  QuicTime::Delta::Zero()));
 
   EXPECT_CALL(*ack_listener3, OnPacketAcked(3, _));
   EXPECT_CALL(*ack_listener2, OnPacketAcked(7, _));
   EXPECT_CALL(*ack_listener3, OnPacketAcked(7, _));
-  headers_stream_->OnStreamFrameAcked(22, 20, false, QuicTime::Delta::Zero());
+  EXPECT_TRUE(headers_stream_->OnStreamFrameAcked(22, 20, false,
+                                                  QuicTime::Delta::Zero()));
 }
 
 }  // namespace

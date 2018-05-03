@@ -17,15 +17,15 @@ namespace blink {
 
 const size_t PaintWorklet::kNumGlobalScopes = 2u;
 const size_t kMaxPaintCountToSwitch = 30u;
-DocumentPaintDefinition* const kInvalidDocumentDefinition = nullptr;
+DocumentPaintDefinition* const kInvalidDocumentPaintDefinition = nullptr;
 
 // static
 PaintWorklet* PaintWorklet::From(LocalDOMWindow& window) {
-  PaintWorklet* supplement = static_cast<PaintWorklet*>(
-      Supplement<LocalDOMWindow>::From(window, SupplementName()));
+  PaintWorklet* supplement =
+      Supplement<LocalDOMWindow>::From<PaintWorklet>(window);
   if (!supplement && window.GetFrame()) {
     supplement = Create(window.GetFrame());
-    ProvideTo(window, SupplementName(), supplement);
+    ProvideTo(window, supplement);
   }
   return supplement;
 }
@@ -96,18 +96,19 @@ scoped_refptr<Image> PaintWorklet::Paint(const String& name,
   // Check if the existing document definition is valid or not.
   DocumentPaintDefinition* document_definition =
       document_definition_map_.at(name);
-  if (document_definition == kInvalidDocumentDefinition)
+  if (document_definition == kInvalidDocumentPaintDefinition)
     return nullptr;
 
   PaintWorkletGlobalScopeProxy* proxy =
       PaintWorkletGlobalScopeProxy::From(FindAvailableGlobalScope());
   CSSPaintDefinition* paint_definition = proxy->FindDefinition(name);
+  if (!paint_definition)
+    return nullptr;
   return paint_definition->Paint(observer, container_size, data);
 }
 
-const char* PaintWorklet::SupplementName() {
-  return "PaintWorklet";
-}
+// static
+const char PaintWorklet::kSupplementName[] = "PaintWorklet";
 
 void PaintWorklet::Trace(blink::Visitor* visitor) {
   visitor->Trace(pending_generator_registry_);

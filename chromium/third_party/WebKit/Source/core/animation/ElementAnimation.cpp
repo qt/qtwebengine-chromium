@@ -28,8 +28,8 @@ Animation* ElementAnimation::animate(
     ExceptionState& exception_state) {
   EffectModel::CompositeOperation composite = EffectModel::kCompositeReplace;
   if (options.IsKeyframeAnimationOptions()) {
-    composite = EffectModel::ExtractCompositeOperation(
-        options.GetAsKeyframeAnimationOptions());
+    composite = EffectModel::StringToCompositeOperation(
+        options.GetAsKeyframeAnimationOptions().composite());
   }
 
   KeyframeEffectModelBase* effect = EffectInput::Convert(
@@ -62,15 +62,16 @@ Animation* ElementAnimation::animate(ScriptState* script_state,
 
 HeapVector<Member<Animation>> ElementAnimation::getAnimations(
     Element& element) {
-  HeapVector<Member<Animation>> animations;
+  element.GetDocument().UpdateStyleAndLayoutTreeForNode(&element);
 
+  HeapVector<Member<Animation>> animations;
   if (!element.HasAnimations())
     return animations;
 
   for (const auto& animation :
        element.GetDocument().Timeline().getAnimations()) {
     DCHECK(animation->effect());
-    if (ToKeyframeEffectReadOnly(animation->effect())->Target() == element &&
+    if (ToKeyframeEffectReadOnly(animation->effect())->target() == element &&
         (animation->effect()->IsCurrent() || animation->effect()->IsInEffect()))
       animations.push_back(animation);
   }

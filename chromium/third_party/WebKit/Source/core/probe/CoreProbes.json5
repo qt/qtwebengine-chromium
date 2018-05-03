@@ -45,7 +45,7 @@
         "didRemoveDOMAttr",
         "domContentLoadedEventFired",
         "frameDocumentUpdated",
-        "frameDisconnected",
+        "frameOwnerContentUpdated",
         "pseudoElementCreated",
         "pseudoElementDestroyed",
         "willModifyDOMAttr",
@@ -195,6 +195,7 @@
       probes: [
         "frameStartedLoading",
         "frameStoppedLoading",
+        "didStartWorker",
       ]
     },
     Worker: {

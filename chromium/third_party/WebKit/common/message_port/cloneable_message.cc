@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "third_party/WebKit/common/message_port/cloneable_message.h"
+#include "third_party/WebKit/public/common/message_port/cloneable_message.h"
 
-#include "third_party/WebKit/common/blob/blob.mojom.h"
-#include "third_party/WebKit/common/message_port/message_port.mojom.h"
+#include "third_party/WebKit/public/mojom/blob/blob.mojom.h"
+#include "third_party/WebKit/public/mojom/message_port/message_port.mojom.h"
 
 namespace blink {
 
@@ -34,6 +34,13 @@ CloneableMessage CloneableMessage::ShallowClone() const {
     ignore_result(blob_proxy.PassInterface().PassHandle().release());
   }
   return clone;
+}
+
+void CloneableMessage::EnsureDataIsOwned() {
+  if (encoded_message.data() == owned_encoded_message.data())
+    return;
+  owned_encoded_message.assign(encoded_message.begin(), encoded_message.end());
+  encoded_message = owned_encoded_message;
 }
 
 }  // namespace blink

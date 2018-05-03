@@ -18,7 +18,6 @@
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/modules/presentation/WebPresentationClient.h"
-#include "public/platform/modules/presentation/WebPresentationConnectionCallbacks.h"
 #include "public/platform/modules/remoteplayback/WebRemotePlaybackState.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -390,7 +389,7 @@ TEST_F(RemotePlaybackTest, IsListening) {
   MockPresentationController* mock_controller =
       new MockPresentationController(frame, &presentation_client_);
   Supplement<LocalFrame>::ProvideTo(
-      frame, PresentationController::SupplementName(), mock_controller);
+      frame, static_cast<PresentationController*>(mock_controller));
 
   EXPECT_CALL(*mock_controller,
               AddAvailabilityObserver(::testing::Eq(remote_playback)))

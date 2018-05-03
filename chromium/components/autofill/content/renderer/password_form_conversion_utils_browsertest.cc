@@ -20,6 +20,7 @@
 #include "components/autofill/core/common/password_form.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "content/public/test/render_view_test.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -350,7 +351,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        HTMLDetector_DeveloperGroupAttributes) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
-      password_manager::features::kEnableHtmlBasedUsernameDetector);
+      password_manager::features::kHtmlBasedUsernameDetector);
 
   // Each test case consists of a set of parameters to be plugged into the
   // PasswordFormBuilder below, plus the corresponding expectations.
@@ -472,7 +473,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
 TEST_F(MAYBE_PasswordFormConversionUtilsTest, HTMLDetector_SeveralDetections) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
-      password_manager::features::kEnableHtmlBasedUsernameDetector);
+      password_manager::features::kHtmlBasedUsernameDetector);
 
   // If word matches in more than 2 fields, we don't match on it.
   // We search for match with another word.
@@ -506,7 +507,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        HTMLDetector_UserGroupAttributes) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
-      password_manager::features::kEnableHtmlBasedUsernameDetector);
+      password_manager::features::kHtmlBasedUsernameDetector);
 
   // Each test case consists of a set of parameters to be plugged into the
   // PasswordFormBuilder below, plus the corresponding expectations.
@@ -626,7 +627,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
 TEST_F(MAYBE_PasswordFormConversionUtilsTest, HTMLDetectorCache) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
-      password_manager::features::kEnableHtmlBasedUsernameDetector);
+      password_manager::features::kHtmlBasedUsernameDetector);
 
   PasswordFormBuilder builder(kTestFormActionURL);
   builder.AddTextField("unknown", "12345", nullptr);
@@ -2030,7 +2031,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
   WebInputElement* input_element = ToWebInputElement(&control_elements[3]);
   const base::string16 element_value = input_element->Value().Utf16();
   user_input[control_elements[3]] =
-      std::make_pair(base::MakeUnique<base::string16>(element_value),
+      std::make_pair(std::make_unique<base::string16>(element_value),
                      FieldPropertiesFlags::USER_TYPED);
 
   std::unique_ptr<PasswordForm> password_form = CreatePasswordFormFromWebForm(
@@ -2219,6 +2220,40 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, IsGaiaReauthFormIgnored) {
     LoadWebFormFromHTML(html, &form, test_case.origin);
     EXPECT_EQ(test_case.expected_form_is_reauth,
               IsGaiaReauthenticationForm(form));
+  }
+}
+
+TEST_F(MAYBE_PasswordFormConversionUtilsTest, IsGaiaWithSkipSavePasswordForm) {
+  struct TestCase {
+    const char* origin;
+    bool expected_form_has_skip_save_password;
+  } cases[] = {
+      // A common password form is parsed successfully.
+      {"https://example.com", false},
+      // A common GAIA sign-in page, with no skip save password argument.
+      {"https://accounts.google.com", false},
+      // A common GAIA sign-in page, with "0" skip save password argument.
+      {"https://accounts.google.com/?ssp=0", false},
+      // A common GAIA sign-in page, with skip save password argument.
+      {"https://accounts.google.com/?ssp=1", true},
+      // The Gaia page that is used to start a Chrome sign-in flow when Desktop
+      // Identity Consistency is enable.
+      {GaiaUrls::GetInstance()->signin_chrome_sync_dice().spec().c_str(), true},
+  };
+
+  for (TestCase& test_case : cases) {
+    SCOPED_TRACE(testing::Message("origin=")
+                 << test_case.origin
+                 << ", expected_form_has_skip_save_password="
+                 << test_case.expected_form_has_skip_save_password);
+    std::unique_ptr<PasswordFormBuilder> builder(new PasswordFormBuilder(""));
+    builder->AddTextField("username", "", nullptr);
+    builder->AddPasswordField("password", "", nullptr);
+    std::string html = builder->ProduceHTML();
+    WebFormElement form;
+    LoadWebFormFromHTML(html, &form, test_case.origin);
+    EXPECT_EQ(test_case.expected_form_has_skip_save_password,
+              IsGaiaWithSkipSavePasswordForm(form));
   }
 }
 
@@ -2414,7 +2449,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, ResetPasswordForm) {
   // without any text fields.
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
-      password_manager::features::kEnableHtmlBasedUsernameDetector);
+      password_manager::features::kHtmlBasedUsernameDetector);
   PasswordFormBuilder builder(kTestFormActionURL);
   builder.AddPasswordField("password", "secret", nullptr);
   builder.AddSubmitButton("submit");

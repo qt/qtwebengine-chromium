@@ -8,7 +8,6 @@
 #include "core/input/ScrollManager.h"
 #include "core/style/ComputedStyle.h"
 #include "core/testing/sim/SimCompositor.h"
-#include "core/testing/sim/SimDisplayItemList.h"
 #include "core/testing/sim/SimRequest.h"
 #include "core/testing/sim/SimTest.h"
 
@@ -69,7 +68,7 @@ void OverscrollBehaviorTest::SetInnerOverscrollBehavior(EOverscrollBehavior x,
 void OverscrollBehaviorTest::ScrollBegin(double hint_x, double hint_y) {
   WebGestureEvent event(WebInputEvent::kGestureScrollBegin,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicks().InSeconds());
+                        CurrentTimeTicksInSeconds());
   event.x = event.global_x = 20;
   event.y = event.global_y = 20;
   event.source_device = WebGestureDevice::kWebGestureDeviceTouchscreen;
@@ -83,7 +82,7 @@ void OverscrollBehaviorTest::ScrollBegin(double hint_x, double hint_y) {
 void OverscrollBehaviorTest::ScrollUpdate(double delta_x, double delta_y) {
   WebGestureEvent event(WebInputEvent::kGestureScrollUpdate,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicks().InSeconds());
+                        CurrentTimeTicksInSeconds());
   event.x = event.global_x = 20;
   event.y = event.global_y = 20;
   event.source_device = WebGestureDevice::kWebGestureDeviceTouchscreen;
@@ -96,7 +95,7 @@ void OverscrollBehaviorTest::ScrollUpdate(double delta_x, double delta_y) {
 void OverscrollBehaviorTest::ScrollEnd() {
   WebGestureEvent event(WebInputEvent::kGestureScrollEnd,
                         WebInputEvent::kNoModifiers,
-                        CurrentTimeTicks().InSeconds());
+                        CurrentTimeTicksInSeconds());
   event.x = event.global_x = 20;
   event.y = event.global_y = 20;
   event.source_device = WebGestureDevice::kWebGestureDeviceTouchscreen;

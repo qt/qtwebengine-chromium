@@ -12,6 +12,7 @@
 #include "cc/ipc/cc_param_traits.h"
 #include "cc/resources/resource_provider.h"
 #include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/common/quads/frame_deadline.h"
 #include "components/viz/common/quads/picture_draw_quad.h"
 #include "components/viz/common/quads/render_pass_draw_quad.h"
 #include "ipc/ipc_message.h"
@@ -29,6 +30,7 @@ using cc::ResourceProvider;
 using gfx::Transform;
 using viz::DebugBorderDrawQuad;
 using viz::DrawQuad;
+using viz::FrameDeadline;
 using viz::PictureDrawQuad;
 using viz::RenderPass;
 using viz::RenderPassDrawQuad;
@@ -452,12 +454,18 @@ TEST_F(CCParamTraitsTest, AllQuads) {
   frame_in.render_pass_list.push_back(std::move(pass_in));
   frame_in.metadata.begin_frame_ack.sequence_number =
       viz::BeginFrameArgs::kStartingFrameNumber;
+  const base::TimeTicks now = base::TimeTicks::Now();
+  frame_in.metadata.deadline =
+      FrameDeadline(now, 4u, base::TimeDelta::FromMilliseconds(16), true);
 
   IPC::ParamTraits<CompositorFrame>::Write(&msg, frame_in);
 
   CompositorFrame frame_out;
   base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ParamTraits<CompositorFrame>::Read(&msg, &iter, &frame_out));
+
+  EXPECT_EQ(FrameDeadline(now, 4u, base::TimeDelta::FromMilliseconds(16), true),
+            frame_out.metadata.deadline);
 
   // Make sure the out and cmp RenderPasses match.
   std::unique_ptr<RenderPass> child_pass_out =
@@ -613,7 +621,8 @@ TEST_F(CCParamTraitsTest, Resources) {
 #endif
 
   std::unique_ptr<RenderPass> renderpass_in = RenderPass::Create();
-  renderpass_in->SetNew(1u, gfx::Rect(), gfx::Rect(), gfx::Transform());
+  renderpass_in->SetNew(1u, gfx::Rect(0, 0, 5, 5), gfx::Rect(),
+                        gfx::Transform());
 
   CompositorFrame frame_in;
   frame_in.resource_list.push_back(arbitrary_resource1);

@@ -52,7 +52,7 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
                          const NGConstraintSpace& space,
                          NGBlockBreakToken* break_token = nullptr);
 
-  Optional<MinMaxSize> ComputeMinMaxSize() const override;
+  Optional<MinMaxSize> ComputeMinMaxSize(const MinMaxSizeInput&) const override;
   scoped_refptr<NGLayoutResult> Layout() override;
 
  private:
@@ -63,8 +63,8 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   scoped_refptr<NGConstraintSpace> CreateConstraintSpaceForChild(
       const NGLayoutInputNode child,
       const NGInflowChildData& child_data,
-      const WTF::Optional<NGBfcOffset> floats_bfc_offset = WTF::nullopt,
-      const WTF::Optional<LayoutUnit> fixed_inline_size = WTF::nullopt);
+      const NGLogicalSize child_available_size,
+      const WTF::Optional<NGBfcOffset> floats_bfc_offset = WTF::nullopt);
 
   // @return Estimated BFC offset for the "to be layout" child.
   NGInflowChildData ComputeChildData(const NGPreviousInflowPosition&,
@@ -133,9 +133,9 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   std::pair<scoped_refptr<NGLayoutResult>, NGLayoutOpportunity>
   LayoutNewFormattingContext(NGLayoutInputNode child,
                              NGBreakToken* child_break_token,
-                             bool is_auto_inline_size,
                              const NGInflowChildData&,
-                             LayoutUnit child_origin_block_offset);
+                             LayoutUnit child_origin_block_offset,
+                             bool abort_if_cleared);
 
   // Handle an in-flow child.
   // Returns false if we need to abort layout, because a previously unknown BFC
@@ -188,14 +188,26 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   // Adds a set of positioned floats as children to the current fragment.
   void AddPositionedFloats(const Vector<NGPositionedFloat>& positioned_floats);
 
+  // Positions a list marker for the specified block content.
+  void PositionListMarker(const NGLayoutResult&, const NGLogicalOffset&);
+
   // Calculates logical offset for the current fragment using either {@code
   // intrinsic_block_size_} when the fragment doesn't know it's offset or
   // {@code known_fragment_offset} if the fragment knows it's offset
   // @return Fragment's offset relative to the fragment's parent.
   NGLogicalOffset CalculateLogicalOffset(
+      NGLayoutInputNode child,
       const NGFragment&,
       const NGBoxStrut& child_margins,
       const WTF::Optional<NGBfcOffset>& known_fragment_offset);
+
+  // Computes default content size for HTML and BODY elements in quirks mode.
+  // Returns NGSizeIndefinite in all other cases.
+  LayoutUnit CalculateDefaultBlockSize();
+
+  // Computes minimum size for HTML and BODY elements in quirks mode.
+  // Returns NGSizeIndefinite in all other cases.
+  LayoutUnit CalculateMinimumBlockSize(const NGMarginStrut& end_margin_strut);
 
   NGLogicalSize child_available_size_;
   NGLogicalSize child_percentage_size_;

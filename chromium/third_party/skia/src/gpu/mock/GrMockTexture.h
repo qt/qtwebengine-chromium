@@ -20,11 +20,8 @@ public:
             : GrMockTexture(gpu, desc, mipMapsStatus, info) {
         this->registerWithCache(budgeted);
     }
-    ~GrMockTexture() override {
-        if (fReleaseProc) {
-            fReleaseProc(fReleaseCtx);
-        }
-    }
+    ~GrMockTexture() override {}
+
     GrBackendObject getTextureHandle() const override {
         return reinterpret_cast<GrBackendObject>(&fInfo);
     }
@@ -34,9 +31,8 @@ public:
     }
 
     void textureParamsModified() override {}
-    void setRelease(ReleaseProc proc, ReleaseCtx ctx) override {
-        fReleaseProc = proc;
-        fReleaseCtx = ctx;
+    void setRelease(sk_sp<GrReleaseProcHelper> releaseHelper) override {
+        fReleaseHelper = std::move(releaseHelper);
     }
 
 protected:
@@ -44,20 +40,17 @@ protected:
     GrMockTexture(GrMockGpu* gpu, const GrSurfaceDesc& desc, GrMipMapsStatus mipMapsStatus,
                   const GrMockTextureInfo& info)
             : GrSurface(gpu, desc)
-            , INHERITED(gpu, desc, kITexture2DSampler_GrSLType, GrSamplerState::Filter::kMipMap,
+            , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, GrSamplerState::Filter::kMipMap,
                         mipMapsStatus)
-            , fInfo(info)
-            , fReleaseProc(nullptr)
-            , fReleaseCtx(nullptr) {}
+            , fInfo(info) {}
 
     bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) override {
         return false;
     }
 
 private:
-    GrMockTextureInfo fInfo;
-    ReleaseProc fReleaseProc;
-    ReleaseCtx fReleaseCtx;
+    GrMockTextureInfo          fInfo;
+    sk_sp<GrReleaseProcHelper> fReleaseHelper;
 
     typedef GrTexture INHERITED;
 };
@@ -97,8 +90,13 @@ private:
     }
 
     size_t onGpuMemorySize() const override {
+        int numColorSamples = this->numColorSamples();
+        if (numColorSamples > 1) {
+            // Add one to account for the resolve buffer.
+            ++numColorSamples;
+        }
         return GrSurface::ComputeSize(this->config(), this->width(), this->height(),
-                                      this->numStencilSamples(),
+                                      numColorSamples,
                                       this->texturePriv().mipMapped());
     }
 

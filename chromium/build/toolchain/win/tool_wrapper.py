@@ -16,6 +16,18 @@ import stat
 import string
 import sys
 
+# tool_wrapper.py doesn't get invoked through python.bat so the Python bin
+# directory doesn't get added to the path. The Python module search logic
+# handles this fine and finds win32file.pyd. However the Windows module
+# search logic then looks for pywintypes27.dll and other DLLs in the path and
+# if it finds versions with a different bitness first then win32file.pyd will
+# fail to load with a cryptic error:
+#     ImportError: DLL load failed: %1 is not a valid Win32 application.
+if sys.platform == 'win32':
+  os.environ['PATH'] = os.path.dirname(sys.executable) + \
+                       os.pathsep + os.environ['PATH']
+  import win32file    # pylint: disable=import-error
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # A regex matching an argument corresponding to the output filename passed to
@@ -141,10 +153,14 @@ class WinTool(object):
     # For that reason, since going through the shell doesn't seem necessary on
     # non-Windows don't do that there.
     pdb_name = None
+    pe_name = None
     for arg in args:
       m = _LINK_PDB_OUT_ARG.match(arg)
       if m:
         pdb_name = m.group('out')
+      m = _LINK_EXE_OUT_ARG.match(arg)
+      if m:
+        pe_name = m.group('out')
     for retry_count in range(_LINKER_RETRIES):
       retry = False
       link = subprocess.Popen(args, shell=sys.platform == 'win32', env=env,
@@ -167,6 +183,13 @@ class WinTool(object):
       result = link.wait()
       if not retry:
         break
+    if result == 0 and sys.platform == 'win32':
+      # Flush the file buffers to try to work around a Windows 10 kernel bug,
+      # https://crbug.com/644525
+      output_handle = win32file.CreateFile(pe_name, win32file.GENERIC_WRITE,
+                                      0, None, win32file.OPEN_EXISTING, 0, 0)
+      win32file.FlushFileBuffers(output_handle)
+      output_handle.Close()
     return result
 
   def ExecAsmWrapper(self, arch, *args):

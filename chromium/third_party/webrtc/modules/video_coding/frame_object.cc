@@ -17,13 +17,6 @@
 namespace webrtc {
 namespace video_coding {
 
-FrameObject::FrameObject()
-    : picture_id(0),
-      spatial_layer(0),
-      timestamp(0),
-      num_references(0),
-      inter_layer_predicted(false) {}
-
 RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
                                uint16_t first_seq_num,
                                uint16_t last_seq_num,
@@ -39,18 +32,13 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
   VCMPacket* first_packet = packet_buffer_->GetPacket(first_seq_num);
   RTC_CHECK(first_packet);
 
-  // RtpFrameObject members
+  // EncodedFrame members
   frame_type_ = first_packet->frameType;
   codec_type_ = first_packet->codec;
 
-  // Stereo codec appends CopyCodecSpecific to last packet to avoid copy.
-  VCMPacket* packet_with_codec_specific =
-      codec_type_ == kVideoCodecStereo ? packet_buffer_->GetPacket(last_seq_num)
-                                       : first_packet;
-
-  // TODO(philipel): Remove when encoded image is replaced by FrameObject.
+  // TODO(philipel): Remove when encoded image is replaced by EncodedFrame.
   // VCMEncodedFrame members
-  CopyCodecSpecific(&packet_with_codec_specific->video_header);
+  CopyCodecSpecific(&first_packet->video_header);
   _completeFrame = true;
   _payloadType = first_packet->payloadType;
   _timeStamp = first_packet->timestamp;
@@ -80,7 +68,7 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
   _encodedWidth = first_packet->width;
   _encodedHeight = first_packet->height;
 
-  // FrameObject members
+  // EncodedFrame members
   timestamp = first_packet->timestamp;
 
   VCMPacket* last_packet = packet_buffer_->GetPacket(last_seq_num);

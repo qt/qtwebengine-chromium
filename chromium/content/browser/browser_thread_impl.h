@@ -43,6 +43,10 @@ class CONTENT_EXPORT BrowserThreadImpl : public BrowserThread,
   bool Start();
   bool StartWithOptions(const Options& options);
   bool StartAndWaitForTesting();
+  // Called only by the BrowserThread::IO thread to initialize its
+  // BrowserThreadDelegate after the thread is created. See
+  // https://crbug.com/729596.
+  void InitIOThreadDelegate();
 
   // Redirects tasks posted to |identifier| to |task_runner|.
   static void RedirectThreadIDToTaskRunner(
@@ -76,11 +80,7 @@ class CONTENT_EXPORT BrowserThreadImpl : public BrowserThread,
   // The following are unique function names that makes it possible to tell
   // the thread id from the callstack alone in crash dumps.
   void UIThreadRun(base::RunLoop* run_loop);
-  void DBThreadRun(base::RunLoop* run_loop);
-  void FileThreadRun(base::RunLoop* run_loop);
-  void FileUserBlockingThreadRun(base::RunLoop* run_loop);
   void ProcessLauncherThreadRun(base::RunLoop* run_loop);
-  void CacheThreadRun(base::RunLoop* run_loop);
   void IOThreadRun(base::RunLoop* run_loop);
 
   static bool PostTaskHelper(BrowserThread::ID identifier,

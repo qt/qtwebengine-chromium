@@ -18,6 +18,7 @@
 #include "components/viz/service/frame_sinks/surface_resource_holder.h"
 #include "components/viz/service/frame_sinks/surface_resource_holder_client.h"
 #include "components/viz/service/frame_sinks/video_capture/capturable_frame_sink.h"
+#include "components/viz/service/hit_test/hit_test_aggregator.h"
 #include "components/viz/service/surfaces/surface_client.h"
 #include "components/viz/service/viz_service_export.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
@@ -33,9 +34,15 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
     : public BeginFrameObserver,
       public SurfaceResourceHolderClient,
       public SurfaceClient,
-      public CapturableFrameSink,
-      public mojom::CompositorFrameSink {
+      public CapturableFrameSink {
  public:
+  // Possible outcomes of MaybeSubmitCompositorFrame().
+  enum SubmitResult {
+    ACCEPTED,
+    COPY_OUTPUT_REQUESTS_NOT_ALLOWED,
+    SURFACE_INVARIANTS_VIOLATION,
+  };
+
   using AggregatedDamageCallback =
       base::RepeatingCallback<void(const LocalSurfaceId& local_surface_id,
                                    const gfx::Rect& damage_rect)>;
@@ -51,17 +58,23 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
   const FrameSinkId& frame_sink_id() const { return frame_sink_id_; }
 
-  const SurfaceId& current_surface_id() const { return current_surface_id_; }
+  const SurfaceId& last_activated_surface_id() const {
+    return last_activated_surface_id_;
+  }
 
-  const LocalSurfaceId& local_surface_id() const {
-    return current_surface_id_.local_surface_id();
+  const LocalSurfaceId& last_activated_local_surface_id() const {
+    return last_activated_surface_id_.local_surface_id();
   }
 
   FrameSinkManagerImpl* frame_sink_manager() { return frame_sink_manager_; }
 
+  // Viz hit-test setup is only called when |is_root_| is true (except on
+  // android webview).
+  void SetUpHitTest();
+
   // The provided callback will be run every time a surface owned by this object
   // or one of its descendents is determined to be damaged at aggregation time.
-  void SetAggregatedDamageCallback(AggregatedDamageCallback callback);
+  void SetAggregatedDamageCallbackForTesting(AggregatedDamageCallback callback);
 
   // Sets callback called on destruction.
   void SetDestructionCallback(base::OnceClosure callback);
@@ -71,6 +84,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
   // SurfaceClient implementation.
   void OnSurfaceActivated(Surface* surface) override;
+  void OnSurfaceDiscarded(Surface* surface) override;
   void RefResources(
       const std::vector<TransferableResource>& resources) override;
   void UnrefResources(const std::vector<ReturnedResource>& resources) override;
@@ -78,34 +92,55 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   void ReceiveFromChild(
       const std::vector<TransferableResource>& resources) override;
 
-  // mojom::CompositorFrameSink implementation.
-  void SetNeedsBeginFrame(bool needs_begin_frame) override;
-  void SetWantsAnimateOnlyBeginFrames() override;
-  void DidNotProduceFrame(const BeginFrameAck& ack) override;
-  void SubmitCompositorFrame(const LocalSurfaceId& local_surface_id,
-                             CompositorFrame frame,
-                             mojom::HitTestRegionListPtr hit_test_region_list,
-                             uint64_t submit_time) override;
-
-  void EvictCurrentSurface();
-
-  // Submits a new CompositorFrame to |local_surface_id|. If |local_surface_id|
-  // hasn't been submitted to before then a new Surface will be created for it.
-  // Returns false if |frame| was rejected due to invalid data.
-  // TODO(kylechar): Merge the two SubmitCompositorFrame() methods.
-  bool SubmitCompositorFrame(
+  // mojom::CompositorFrameSink helpers.
+  void SetNeedsBeginFrame(bool needs_begin_frame);
+  void SetWantsAnimateOnlyBeginFrames();
+  void DidNotProduceFrame(const BeginFrameAck& ack);
+  void SubmitCompositorFrame(
       const LocalSurfaceId& local_surface_id,
       CompositorFrame frame,
-      mojom::HitTestRegionListPtr hit_test_region_list = nullptr);
+      mojom::HitTestRegionListPtr hit_test_region_list = nullptr,
+      uint64_t submit_time = 0);
+  // Returns false if the notification was not valid (a duplicate).
+  bool DidAllocateSharedBitmap(mojo::ScopedSharedBufferHandle buffer,
+                               const SharedBitmapId& id);
+  void DidDeleteSharedBitmap(const SharedBitmapId& id);
+
+  void EvictLastActivatedSurface();
+
+  // Attempts to submit a new CompositorFrame to |local_surface_id| and returns
+  // whether the frame was accepted or the reason why it was rejected. If
+  // |local_surface_id| hasn't been submitted before then a new Surface will be
+  // created for it.
+  //
+  // This is called by SubmitCompositorFrame(), which DCHECK-fails on a
+  // non-accepted result. Prefer calling SubmitCompositorFrame() instead of this
+  // method unless the result value affects what the caller will do next.
+  SubmitResult MaybeSubmitCompositorFrame(
+      const LocalSurfaceId& local_surface_id,
+      CompositorFrame frame,
+      mojom::HitTestRegionListPtr hit_test_region_list);
 
   // CapturableFrameSink implementation.
   void AttachCaptureClient(CapturableFrameSink::Client* client) override;
   void DetachCaptureClient(CapturableFrameSink::Client* client) override;
-  gfx::Size GetSurfaceSize() override;
+  gfx::Size GetActiveFrameSize() override;
   void RequestCopyOfSurface(
       std::unique_ptr<CopyOutputRequest> request) override;
 
-  Surface* GetCurrentSurfaceForTesting();
+  HitTestAggregator* GetHitTestAggregator();
+
+  // Permits submitted CompositorFrames to contain CopyOutputRequests, for
+  // special-case testing purposes only.
+  void set_allow_copy_output_requests_for_testing() {
+    allow_copy_output_requests_ = true;
+  }
+
+  Surface* GetLastCreatedSurfaceForTesting();
+
+  // Maps the |result| from MaybeSubmitCompositorFrame() to a human-readable
+  // string.
+  static const char* GetSubmitResultAsString(SubmitResult result);
 
  private:
   friend class FrameSinkManagerTest;
@@ -146,7 +181,8 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   SurfaceManager* const surface_manager_;
 
   const FrameSinkId frame_sink_id_;
-  SurfaceId current_surface_id_;
+  SurfaceId last_activated_surface_id_;
+  SurfaceId last_created_surface_id_;
 
   // If this contains a value then a surface reference from the top-level root
   // to SurfaceId(frame_sink_id_, referenced_local_surface_id_.value()) was
@@ -154,6 +190,9 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   base::Optional<LocalSurfaceId> referenced_local_surface_id_;
 
   SurfaceResourceHolder surface_resource_holder_;
+
+  // This has a HitTestAggregator if and only if |is_root_| is true.
+  std::unique_ptr<HitTestAggregator> hit_test_aggregator_;
 
   // Counts the number of CompositorFrames that have been submitted and have not
   // yet received an ACK.
@@ -177,6 +216,12 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   const bool is_root_;
   const bool needs_sync_tokens_;
 
+  // By default, this is equivalent to |is_root_|, but may be overridden for
+  // testing. Generally, for non-roots, there must not be any CopyOutputRequests
+  // contained within submitted CompositorFrames. Otherwise, unprivileged
+  // clients would be able to capture content for which they are not authorized.
+  bool allow_copy_output_requests_;
+
   // A callback that will be run at the start of the destructor if set.
   base::OnceClosure destruction_callback_;
 
@@ -189,6 +234,11 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // begins and damage, and then make CopyOutputRequests on the appropriate
   // frames.
   std::vector<CapturableFrameSink::Client*> capture_clients_;
+
+  // The set of SharedBitmapIds that have been reported as allocated to this
+  // interface. On closing this interface, the display compositor should drop
+  // ownership of the bitmaps with these ids to avoid leaking them.
+  std::set<SharedBitmapId> owned_bitmaps_;
 
   base::WeakPtrFactory<CompositorFrameSinkSupport> weak_factory_;
 

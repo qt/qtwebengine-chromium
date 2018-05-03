@@ -40,8 +40,7 @@ class WebContentsObserverProxy : public WebContentsObserver {
                    const base::string16& error_description) override;
   void DocumentAvailableInMainFrame() override;
   void DidFirstVisuallyNonEmptyPaint() override;
-  void WasShown() override;
-  void WasHidden() override;
+  void OnVisibilityChanged(content::Visibility visibility) override;
   void TitleWasSet(NavigationEntry* entry) override;
 
   void DidStartNavigation(NavigationHandle* navigation_handle) override;
@@ -52,6 +51,7 @@ class WebContentsObserverProxy : public WebContentsObserver {
   void DocumentLoadedInFrame(RenderFrameHost* render_frame_host) override;
   void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) override;
+  void NavigationEntriesDeleted() override;
   void WebContentsDestroyed() override;
   void DidAttachInterstitialPage() override;
   void DidDetachInterstitialPage() override;

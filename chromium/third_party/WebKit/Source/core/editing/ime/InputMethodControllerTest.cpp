@@ -13,18 +13,18 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/SelectionTemplate.h"
 #include "core/editing/markers/DocumentMarkerController.h"
+#include "core/editing/testing/EditingTestBase.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
 #include "core/html/forms/HTMLInputElement.h"
 #include "core/html/forms/HTMLTextAreaElement.h"
-#include "core/testing/PageTestBase.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
-class InputMethodControllerTest : public PageTestBase {
+class InputMethodControllerTest : public EditingTestBase {
  protected:
   InputMethodController& Controller() {
     return GetFrame().GetInputMethodController();
@@ -53,7 +53,7 @@ void InputMethodControllerTest::CreateHTMLWithCompositionInputEventListeners() {
   GetDocument().GetSettings()->SetScriptEnabled(true);
   Element* editable =
       InsertHTMLElement("<div id='sample' contenteditable></div>", "sample");
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('beforeinput', "
       "  event => document.title = `beforeinput.data:${event.data};`);"
@@ -71,7 +71,7 @@ void InputMethodControllerTest::CreateHTMLWithCompositionEndEventListener(
   GetDocument().GetSettings()->SetScriptEnabled(true);
   Element* editable =
       InsertHTMLElement("<div id='sample' contentEditable></div>", "sample");
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
 
   switch (type) {
     case kNoSelection:
@@ -1168,7 +1168,7 @@ TEST_F(InputMethodControllerTest, CompositionInputEventIsComposing) {
   GetDocument().GetSettings()->SetScriptEnabled(true);
   Element* editable =
       InsertHTMLElement("<div id='sample' contenteditable></div>", "sample");
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('beforeinput', "
       "  event => document.title = "
@@ -2525,7 +2525,7 @@ TEST_F(InputMethodControllerTest,
   InsertHTMLElement("<div id='sample' contenteditable>hello</div>", "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2560,7 +2560,7 @@ TEST_F(InputMethodControllerTest,
       "<div id='sample' contenteditable>hello world</div>", "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2598,7 +2598,7 @@ TEST_F(
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2631,7 +2631,7 @@ TEST_F(InputMethodControllerTest,
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2665,7 +2665,7 @@ TEST_F(InputMethodControllerTest,
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2699,7 +2699,7 @@ TEST_F(InputMethodControllerTest,
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2732,7 +2732,7 @@ TEST_F(InputMethodControllerTest,
       "<div id='sample' contenteditable>hello world</div>", "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2769,7 +2769,7 @@ TEST_F(InputMethodControllerTest,
   InsertHTMLElement("<div id='sample' contenteditable>hello</div>", "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('compositionend', "
       "  event => {"
@@ -2805,7 +2805,7 @@ TEST_F(
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('compositionend', "
       "  event => {"
@@ -2839,7 +2839,7 @@ TEST_F(
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('compositionend', "
       "  event => {"
@@ -2872,7 +2872,7 @@ TEST_F(InputMethodControllerTest,
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('compositionend', "
       "  event => {"
@@ -2904,7 +2904,7 @@ TEST_F(InputMethodControllerTest,
                     "sample");
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('compositionend', "
       "  event => {"
@@ -2936,7 +2936,7 @@ TEST_F(InputMethodControllerTest,
       InsertHTMLElement("<input id='sample' maxlength='2'>", "sample"));
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2966,7 +2966,7 @@ TEST_F(InputMethodControllerTest,
       InsertHTMLElement("<input id='sample' maxlength='2'>", "sample"));
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('input', "
       "  event => {"
@@ -2996,7 +2996,7 @@ TEST_F(InputMethodControllerTest,
       InsertHTMLElement("<input id='sample' maxlength='2'>", "sample"));
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('compositionend', "
       "  event => {"
@@ -3028,7 +3028,7 @@ TEST_F(
       InsertHTMLElement("<input id='sample' maxlength='2'>", "sample"));
 
   GetDocument().GetSettings()->SetScriptEnabled(true);
-  Element* script = GetDocument().createElement("script");
+  Element* script = GetDocument().CreateRawElement(HTMLNames::scriptTag);
   script->SetInnerHTMLFromString(
       "document.getElementById('sample').addEventListener('compositionend', "
       "  event => {"
@@ -3054,6 +3054,13 @@ TEST_F(
 }
 
 TEST_F(InputMethodControllerTest, AutocapitalizeTextInputFlags) {
+  // This test assumes that the behavior tested in
+  // LayoutTests/fast/forms/autocapitalize.html works properly and tests the
+  // following:
+  // - The autocapitalize IDL states map properly to WebTextInputFlags for
+  //   <input> elements, <textarea> elements, and editable regions
+  // - We ignore the value of the IDL attribute for password/email/URL inputs
+  //   and always send None for this case.
   Vector<std::pair<String, int>> element_and_expected_flags_pairs = {
       {"<input type='text'>", kWebTextInputFlagAutocapitalizeSentences},
       {"<input type='text' autocapitalize='none'>",
@@ -3115,11 +3122,15 @@ TEST_F(InputMethodControllerTest, AutocapitalizeTextInputFlags) {
       {"<textarea autocapitalize='words'></textarea>",
        kWebTextInputFlagAutocapitalizeWords},
 
-      {"<div contenteditable></div>", 0},
-      {"<div contenteditable autocapitalize='none'></div>", 0},
-      {"<div contenteditable autocapitalize='characters'></div>", 0},
-      {"<div contenteditable autocapitalize='sentences'></div>", 0},
-      {"<div contenteditable autocapitalize='words'></div>", 0},
+      {"<div contenteditable></div>", kWebTextInputFlagAutocapitalizeSentences},
+      {"<div contenteditable autocapitalize='none'></div>",
+       kWebTextInputFlagAutocapitalizeNone},
+      {"<div contenteditable autocapitalize='characters'></div>",
+       kWebTextInputFlagAutocapitalizeCharacters},
+      {"<div contenteditable autocapitalize='sentences'></div>",
+       kWebTextInputFlagAutocapitalizeSentences},
+      {"<div contenteditable autocapitalize='words'></div>",
+       kWebTextInputFlagAutocapitalizeWords},
   };
 
   const int autocapitalize_mask = kWebTextInputFlagAutocapitalizeNone |
@@ -3157,6 +3168,30 @@ TEST_F(InputMethodControllerTest, ExecCommandDuringComposition) {
 
   // "world" should be bold.
   EXPECT_EQ("hello<b>world</b>", div->InnerHTMLAsString());
+}
+
+TEST_F(InputMethodControllerTest, SetCompositionAfterNonEditableElement) {
+  GetFrame().Selection().SetSelectionAndEndTyping(
+      SetSelectionTextToBody("<div id='sample' contenteditable='true'>"
+                             "<span contenteditable='false'>a</span>|b</div>"));
+  Element* const div = GetDocument().getElementById("sample");
+  div->focus();
+
+  // Open a composition and insert some text.
+  Controller().SetComposition(String::FromUTF8("c"), Vector<ImeTextSpan>(), 1,
+                              1);
+
+  // Add some more text to the composition.
+  Controller().SetComposition(String::FromUTF8("cd"), Vector<ImeTextSpan>(), 2,
+                              2);
+
+  EXPECT_EQ(
+      "<div contenteditable=\"true\" id=\"sample\">"
+      "<span contenteditable=\"false\">a</span>^cd|b</div>",
+      GetSelectionTextFromBody(
+          SelectionInDOMTree::Builder()
+              .SetBaseAndExtent(Controller().CompositionEphemeralRange())
+              .Build()));
 }
 
 }  // namespace blink

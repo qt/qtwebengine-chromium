@@ -242,9 +242,8 @@ void ServiceWorkerGlobalScopeClient::DidHandlePaymentRequestEvent(
 
 void ServiceWorkerGlobalScopeClient::PostMessageToClient(
     const WebString& client_uuid,
-    const WebString& message,
-    Vector<MessagePortChannel> channels) {
-  client_.PostMessageToClient(client_uuid, message, std::move(channels));
+    TransferableMessage message) {
+  client_.PostMessageToClient(client_uuid, std::move(message));
 }
 
 void ServiceWorkerGlobalScopeClient::SkipWaiting(
@@ -270,9 +269,8 @@ void ServiceWorkerGlobalScopeClient::Navigate(
   client_.Navigate(client_uuid, url, std::move(callback));
 }
 
-const char* ServiceWorkerGlobalScopeClient::SupplementName() {
-  return "ServiceWorkerGlobalScopeClient";
-}
+const char ServiceWorkerGlobalScopeClient::kSupplementName[] =
+    "ServiceWorkerGlobalScopeClient";
 
 ServiceWorkerGlobalScopeClient* ServiceWorkerGlobalScopeClient::From(
     ExecutionContext* context) {
@@ -281,8 +279,8 @@ ServiceWorkerGlobalScopeClient* ServiceWorkerGlobalScopeClient::From(
   WorkerClients* worker_clients = ToWorkerGlobalScope(context)->Clients();
   CHECK(worker_clients);
   ServiceWorkerGlobalScopeClient* client =
-      static_cast<ServiceWorkerGlobalScopeClient*>(
-          Supplement<WorkerClients>::From(worker_clients, SupplementName()));
+      Supplement<WorkerClients>::From<ServiceWorkerGlobalScopeClient>(
+          worker_clients);
   CHECK(client);
   return client;
 }
@@ -294,8 +292,7 @@ void ServiceWorkerGlobalScopeClient::Trace(blink::Visitor* visitor) {
 void ProvideServiceWorkerGlobalScopeClientToWorker(
     WorkerClients* clients,
     ServiceWorkerGlobalScopeClient* client) {
-  clients->ProvideSupplement(ServiceWorkerGlobalScopeClient::SupplementName(),
-                             client);
+  clients->ProvideSupplement(client);
 }
 
 }  // namespace blink

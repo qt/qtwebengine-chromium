@@ -10,6 +10,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "components/discardable_memory/service/discardable_shared_memory_manager.h"
 #include "components/viz/host/server_gpu_memory_buffer_manager.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/client/gpu_memory_buffer_impl_shared_memory.h"
@@ -46,15 +47,18 @@ bool HasSplitVizProcess() {
 
 }  // namespace
 
-DefaultGpuHost::DefaultGpuHost(GpuHostDelegate* delegate,
-                               service_manager::Connector* connector)
+DefaultGpuHost::DefaultGpuHost(
+    GpuHostDelegate* delegate,
+    service_manager::Connector* connector,
+    discardable_memory::DiscardableSharedMemoryManager*
+        discardable_shared_memory_manager)
     : delegate_(delegate),
       next_client_id_(kInternalGpuChannelClientId + 1),
       main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       gpu_host_binding_(this),
-      gpu_thread_("GpuThread"),
-      viz_main_wait_(base::WaitableEvent::ResetPolicy::MANUAL,
-                     base::WaitableEvent::InitialState::NOT_SIGNALED) {
+      gpu_thread_("GpuThread") {
+  DCHECK(discardable_shared_memory_manager);
+
   auto request = MakeRequest(&viz_main_);
   if (connector && HasSplitVizProcess()) {
     connector->BindInterface(viz::mojom::kVizServiceName, std::move(request));
@@ -67,11 +71,17 @@ DefaultGpuHost::DefaultGpuHost(GpuHostDelegate* delegate,
                                   base::Passed(MakeRequest(&viz_main_))));
   }
 
+  discardable_memory::mojom::DiscardableSharedMemoryManagerPtr
+      discardable_manager_ptr;
+  service_manager::BindSourceInfo source_info;
+  discardable_shared_memory_manager->Bind(
+      mojo::MakeRequest(&discardable_manager_ptr), source_info);
+
   viz::mojom::GpuHostPtr gpu_host_proxy;
   gpu_host_binding_.Bind(mojo::MakeRequest(&gpu_host_proxy));
-  viz_main_->CreateGpuService(MakeRequest(&gpu_service_),
-                              std::move(gpu_host_proxy),
-                              mojo::ScopedSharedBufferHandle());
+  viz_main_->CreateGpuService(
+      MakeRequest(&gpu_service_), std::move(gpu_host_proxy),
+      std::move(discardable_manager_ptr), mojo::ScopedSharedBufferHandle());
   gpu_memory_buffer_manager_ =
       std::make_unique<viz::ServerGpuMemoryBufferManager>(gpu_service_.get(),
                                                           next_client_id_++);
@@ -79,12 +89,11 @@ DefaultGpuHost::DefaultGpuHost(GpuHostDelegate* delegate,
 
 DefaultGpuHost::~DefaultGpuHost() {
   // TODO(crbug.com/620927): This should be removed once ozone-mojo is done.
-  // Make sure |viz_main_impl_| has been successfully created (i.e. the task
-  // posted in the constructor to run InitializeVizMain() has actually run).
   if (gpu_thread_.IsRunning()) {
-    viz_main_wait_.Wait();
-    viz_main_impl_->TearDown();
-    gpu_thread_.task_runner()->DeleteSoon(FROM_HERE, std::move(viz_main_impl_));
+    // Stop() will return after |viz_main_impl_| has been destroyed.
+    gpu_thread_.task_runner()->PostTask(
+        FROM_HERE, base::BindOnce(&DefaultGpuHost::DestroyVizMain,
+                                  base::Unretained(this)));
     gpu_thread_.Stop();
   }
 }
@@ -139,7 +148,11 @@ void DefaultGpuHost::InitializeVizMain(viz::mojom::VizMainRequest request) {
   deps.create_display_compositor = true;
   viz_main_impl_ = std::make_unique<viz::VizMainImpl>(nullptr, std::move(deps));
   viz_main_impl_->Bind(std::move(request));
-  viz_main_wait_.Signal();
+}
+
+void DefaultGpuHost::DestroyVizMain() {
+  DCHECK(viz_main_impl_);
+  viz_main_impl_.reset();
 }
 
 void DefaultGpuHost::DidInitialize(

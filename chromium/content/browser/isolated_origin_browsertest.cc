@@ -680,10 +680,6 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginTest, ProcessLimit) {
 // https://crbug.com/738634.
 IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
                        ProcessReuseWithResponseStartedFromIsolatedOrigin) {
-  // This test requires PlzNavigate.
-  if (!IsBrowserSideNavigationEnabled())
-    return;
-
   // Set the process limit to 1.
   RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -730,10 +726,6 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
 // an origin lock mismatch. See https://crbug.com/773809.
 IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
                        ProcessReuseWithLazilyAssignedSiteInstance) {
-  // This test requires PlzNavigate.
-  if (!IsBrowserSideNavigationEnabled())
-    return;
-
   // Set the process limit to 1.
   RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -785,10 +777,6 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
 // response. See https://crbug.com/773809.
 IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
                        ProcessReuseWithLazilyAssignedIsolatedSiteInstance) {
-  // This test requires PlzNavigate.
-  if (!IsBrowserSideNavigationEnabled())
-    return;
-
   // Set the process limit to 1.
   RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -840,10 +828,6 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
 // https://crbug.com/738634.
 IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
                        ProcessReuseWithResponseStartedFromUnisolatedOrigin) {
-  // This test requires PlzNavigate.
-  if (!IsBrowserSideNavigationEnabled())
-    return;
-
   // Set the process limit to 1.
   RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -883,10 +867,6 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginTest,
 IN_PROC_BROWSER_TEST_F(
     IsolatedOriginTest,
     IsolatedSubframeDoesNotReuseUnsuitableProcessWithPendingSiteEntry) {
-  // This test requires PlzNavigate.
-  if (!IsBrowserSideNavigationEnabled())
-    return;
-
   // Set the process limit to 1.
   RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -949,10 +929,6 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(
     IsolatedOriginTest,
     IsolatedServiceWorkerDoesNotReuseUnsuitableProcessWithPendingSiteEntry) {
-  // This test requires PlzNavigate.
-  if (!IsBrowserSideNavigationEnabled())
-    return;
-
   // Set the process limit to 1.
   RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -1216,6 +1192,54 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginLongListTest, Test) {
   EXPECT_NE(main_frame->GetSiteInstance(), subframe2->GetSiteInstance());
   EXPECT_NE(subframe1->GetProcess()->GetID(), subframe2->GetProcess()->GetID());
   EXPECT_NE(subframe1->GetSiteInstance(), subframe2->GetSiteInstance());
+}
+
+// Ensure that --disable-site-isolation-trials disables field trials.
+class IsolatedOriginTrialOverrideTest : public IsolatedOriginFieldTrialTest {
+ public:
+  IsolatedOriginTrialOverrideTest() {}
+
+  ~IsolatedOriginTrialOverrideTest() override {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitch(switches::kDisableSiteIsolationTrials);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IsolatedOriginTrialOverrideTest);
+};
+
+IN_PROC_BROWSER_TEST_F(IsolatedOriginTrialOverrideTest, Test) {
+  if (AreAllSitesIsolatedForTesting())
+    return;
+  auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+  EXPECT_FALSE(policy->IsIsolatedOrigin(
+      url::Origin::Create(GURL("https://field.trial.com/"))));
+  EXPECT_FALSE(
+      policy->IsIsolatedOrigin(url::Origin::Create(GURL("https://bar.com/"))));
+}
+
+// Ensure that --disable-site-isolation-trials does not override the flag.
+class IsolatedOriginNoFlagOverrideTest : public IsolatedOriginTest {
+ public:
+  IsolatedOriginNoFlagOverrideTest() {}
+
+  ~IsolatedOriginNoFlagOverrideTest() override {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    IsolatedOriginTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kDisableSiteIsolationTrials);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IsolatedOriginNoFlagOverrideTest);
+};
+
+IN_PROC_BROWSER_TEST_F(IsolatedOriginNoFlagOverrideTest, Test) {
+  GURL isolated_url(
+      embedded_test_server()->GetURL("isolated.foo.com", "/title2.html"));
+  auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+  EXPECT_TRUE(policy->IsIsolatedOrigin(url::Origin::Create(isolated_url)));
 }
 
 }  // namespace content

@@ -58,7 +58,7 @@ class CORE_EXPORT ImageResourceContent final
   static ImageResourceContent* Fetch(FetchParameters&, ResourceFetcher*);
 
   // Returns the NullImage() if the image is not available yet.
-  blink::Image* GetImage();
+  blink::Image* GetImage() const;
   bool HasImage() const { return image_.get(); }
 
   // The device pixel ratio we got from the server for this image, or 1.0.
@@ -213,6 +213,9 @@ class CORE_EXPORT ImageResourceContent final
   Image::SizeAvailability size_available_ = Image::kSizeUnavailable;
 
   Member<ImageResourceInfo> info_;
+
+  float device_pixel_ratio_header_value_;
+  bool has_device_pixel_ratio_header_value_;
 
   scoped_refptr<blink::Image> image_;
 

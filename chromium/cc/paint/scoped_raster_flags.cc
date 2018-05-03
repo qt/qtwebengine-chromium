@@ -11,17 +11,21 @@ namespace cc {
 ScopedRasterFlags::ScopedRasterFlags(const PaintFlags* flags,
                                      ImageProvider* image_provider,
                                      const SkMatrix& ctm,
-                                     uint8_t alpha)
+                                     uint8_t alpha,
+                                     bool create_skia_shader)
     : original_flags_(flags) {
   if (flags->HasDiscardableImages() && image_provider) {
     DCHECK(flags->HasShader());
 
+    // TODO(khushalsagar): The decoding of images in PaintFlags here is a bit of
+    // a mess. We decode image shaders at the correct scale but ignore that
+    // during serialization and just use the original image.
     decode_stashing_image_provider_.emplace(image_provider);
     if (flags->getShader()->shader_type() == PaintShader::Type::kImage) {
       DecodeImageShader(ctm);
     } else if (flags->getShader()->shader_type() ==
                PaintShader::Type::kPaintRecord) {
-      DecodeRecordShader(ctm);
+      DecodeRecordShader(ctm, create_skia_shader);
     } else {
       NOTREACHED();
     }
@@ -83,17 +87,24 @@ void ScopedRasterFlags::DecodeImageShader(const SkMatrix& ctm) {
 
   sk_sp<SkImage> sk_image =
       sk_ref_sp<SkImage>(const_cast<SkImage*>(decoded_image.image().get()));
-  PaintImage decoded_paint_image = PaintImageBuilder::WithDefault()
-                                       .set_id(paint_image.stable_id())
-                                       .set_image(std::move(sk_image))
-                                       .TakePaintImage();
+  PaintImage decoded_paint_image =
+      PaintImageBuilder::WithDefault()
+          .set_id(paint_image.stable_id())
+          .set_image(std::move(sk_image), PaintImage::kNonLazyStableId)
+          .TakePaintImage();
   MutableFlags()->setFilterQuality(decoded_image.filter_quality());
   MutableFlags()->setShader(
       PaintShader::MakeImage(decoded_paint_image, flags()->getShader()->tx(),
                              flags()->getShader()->ty(), &matrix));
 }
 
-void ScopedRasterFlags::DecodeRecordShader(const SkMatrix& ctm) {
+void ScopedRasterFlags::DecodeRecordShader(const SkMatrix& ctm,
+                                           bool create_skia_shader) {
+  // TODO(khushalsagar): For OOP, we have to decode everything during
+  // serialization. This will force us to use original sized decodes.
+  if (!flags()->getShader()->has_animated_images())
+    return;
+
   auto decoded_shader = flags()->getShader()->CreateDecodedPaintRecord(
       ctm, &*decode_stashing_image_provider_);
   if (!decoded_shader) {
@@ -101,6 +112,8 @@ void ScopedRasterFlags::DecodeRecordShader(const SkMatrix& ctm) {
     return;
   }
 
+  if (create_skia_shader)
+    decoded_shader->CreateSkShader(&*decode_stashing_image_provider_);
   MutableFlags()->setShader(std::move(decoded_shader));
 }
 

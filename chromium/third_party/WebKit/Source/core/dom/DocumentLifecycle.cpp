@@ -222,6 +222,7 @@ bool DocumentLifecycle::CanAdvanceTo(LifecycleState next_state) const {
       // Otherwise, we can continue onwards.
       if (next_state == kCompositingClean)
         return true;
+      break;
     case kCompositingClean:
       DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
       if (next_state == kInStyleRecalc)

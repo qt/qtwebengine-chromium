@@ -80,6 +80,8 @@ source_set("browser_state_impl") {
     "//ios/chrome/browser/autofill",
     "//ios/chrome/browser/bookmarks",
     "//ios/chrome/browser/browser_state_metrics",
+    "//ios/chrome/browser/browsing_data",
+    "//ios/chrome/browser/consent_auditor",
     "//ios/chrome/browser/content_settings",
     "//ios/chrome/browser/desktop_promotion",
     "//ios/chrome/browser/dom_distiller",
@@ -109,7 +111,6 @@ source_set("browser_state_impl") {
     "//ios/chrome/browser/ui/browser_list",
     "//ios/chrome/browser/ui/browser_list:browser_list_impl",
     "//ios/chrome/browser/ui/fullscreen",
-    "//ios/chrome/browser/ui/fullscreen:new_fullscreen",
     "//ios/chrome/browser/ui/overlays",
     "//ios/chrome/browser/undo",
     "//ios/net",
@@ -204,7 +205,7 @@ source_set("eg_tests") {
     "//ios/third_party/earl_grey:earl_grey+link",
     "//ios/web:earl_grey_test_support",
     "//ios/web/public",
-    "//services/identity/public/interfaces",
+    "//services/identity/public/mojom",
     "//services/service_manager/public/cpp",
   ]
 }

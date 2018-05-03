@@ -162,9 +162,9 @@ int WebAXObject::GenerateAXID() const {
 bool WebAXObject::UpdateLayoutAndCheckValidity() {
   if (!IsDetached()) {
     Document* document = private_->GetDocument();
-    if (!document || !document->View())
+    if (!document || !document->View() ||
+        !document->View()->UpdateLifecycleToCompositingCleanPlusScrolling())
       return false;
-    document->View()->UpdateLifecycleToCompositingCleanPlusScrolling();
   }
 
   // Doing a layout can cause this object to be invalid, so check again.
@@ -231,13 +231,6 @@ void WebAXObject::GetSparseAXAttributes(
 
   WebAXSparseAttributeClientAdapter adapter(client);
   private_->GetSparseAXAttributes(adapter);
-}
-
-bool WebAXObject::CanSetSelectedAttribute() const {
-  if (IsDetached())
-    return false;
-
-  return private_->CanSetSelectedAttribute();
 }
 
 bool WebAXObject::IsAnchor() const {
@@ -366,11 +359,11 @@ bool WebAXObject::IsRequired() const {
   return private_->IsRequired();
 }
 
-bool WebAXObject::IsSelected() const {
+WebAXSelectedState WebAXObject::IsSelected() const {
   if (IsDetached())
-    return false;
+    return kWebAXSelectedStateUndefined;
 
-  return private_->IsSelected();
+  return static_cast<WebAXSelectedState>(private_->IsSelected());
 }
 
 bool WebAXObject::IsSelectedOptionActive() const {
@@ -1045,8 +1038,11 @@ WebString WebAXObject::ComputedStyleDisplay() const {
   if (!computed_style)
     return WebString();
 
-  return WebString(
-      CSSIdentifierValue::Create(computed_style->Display())->CssText());
+  return WebString(CSSProperty::Get(CSSPropertyDisplay)
+                       .CSSValueFromComputedStyle(
+                           *computed_style, /* layout_object */ nullptr, node,
+                           /* allow_visited_style */ false)
+                       ->CssText());
 }
 
 bool WebAXObject::AccessibilityIsIgnored() const {

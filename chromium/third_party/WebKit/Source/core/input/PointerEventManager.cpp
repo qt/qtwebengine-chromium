@@ -10,6 +10,7 @@
 #include "core/events/MouseEvent.h"
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/LocalFrameView.h"
+#include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/canvas/HTMLCanvasElement.h"
 #include "core/input/EventHandler.h"
@@ -47,7 +48,7 @@ void PointerEventManager::Clear() {
   for (auto& entry : prevent_mouse_event_for_pointer_type_)
     entry = false;
   touch_event_manager_->Clear();
-  scroll_capable_pointers_canceled_ = false;
+  non_hovering_pointers_canceled_ = false;
   pointer_event_factory_.Clear();
   touch_ids_for_canceled_pointerdowns_.clear();
   node_under_pointer_.clear();
@@ -244,25 +245,25 @@ void PointerEventManager::HandlePointerInterruption(
     canceled_pointer_events.push_back(
         pointer_event_factory_.CreatePointerCancelEvent(
             PointerEventFactory::kMouseId,
-            TimeTicks::FromSeconds(web_pointer_event.TimeStampSeconds())));
+            TimeTicksFromSeconds(web_pointer_event.TimeStampSeconds())));
   } else {
-    // TODO(nzolghadr): Maybe canceling all the scroll capable pointers is not
+    // TODO(nzolghadr): Maybe canceling all the non-hovering pointers is not
     // the best strategy here. See the github issue for more details:
     // https://github.com/w3c/pointerevents/issues/226
 
-    // Cancel all scroll capable pointers if the pointer is not mouse.
-    if (!scroll_capable_pointers_canceled_) {
-      Vector<int> scroll_capable_pointer_ids =
-          pointer_event_factory_.GetPointerIdsOfScrollCapablePointers();
+    // Cancel all non-hovering pointers if the pointer is not mouse.
+    if (!non_hovering_pointers_canceled_) {
+      Vector<int> non_hovering_pointer_ids =
+          pointer_event_factory_.GetPointerIdsOfNonHoveringPointers();
 
-      for (int pointer_id : scroll_capable_pointer_ids) {
+      for (int pointer_id : non_hovering_pointer_ids) {
         canceled_pointer_events.push_back(
             pointer_event_factory_.CreatePointerCancelEvent(
                 pointer_id,
-                TimeTicks::FromSeconds(web_pointer_event.TimeStampSeconds())));
+                TimeTicksFromSeconds(web_pointer_event.TimeStampSeconds())));
       }
 
-      scroll_capable_pointers_canceled_ = true;
+      non_hovering_pointers_canceled_ = true;
     }
   }
 
@@ -293,6 +294,51 @@ void PointerEventManager::HandlePointerInterruption(
 
     RemovePointer(pointer_event);
   }
+}
+
+bool PointerEventManager::ShouldAdjustPointerEvent(
+    const WebPointerEvent& pointer_event) const {
+  if (frame_->GetSettings() &&
+      !frame_->GetSettings()->GetTouchAdjustmentEnabled())
+    return false;
+
+  return RuntimeEnabledFeatures::UnifiedTouchAdjustmentEnabled() &&
+         pointer_event.pointer_type ==
+             WebPointerProperties::PointerType::kTouch &&
+         pointer_event.GetType() == WebInputEvent::kPointerDown &&
+         pointer_event_factory_.IsPrimary(pointer_event);
+}
+
+void PointerEventManager::AdjustTouchPointerEvent(
+    WebPointerEvent& pointer_event) {
+  DCHECK(pointer_event.pointer_type ==
+         WebPointerProperties::PointerType::kTouch);
+
+  LayoutSize padding = GetHitTestRectForAdjustment(
+      IntSize(pointer_event.width / 2, pointer_event.height / 2));
+
+  if (padding.IsEmpty())
+    return;
+
+  HitTestRequest::HitTestRequestType hit_type =
+      HitTestRequest::kTouchEvent | HitTestRequest::kReadOnly |
+      HitTestRequest::kActive | HitTestRequest::kListBased;
+  LayoutPoint hit_test_point = frame_->View()->RootFrameToContents(
+      LayoutPoint(pointer_event.PositionInWidget()));
+  HitTestResult hit_test_result =
+      frame_->GetEventHandler().HitTestResultAtPoint(hit_test_point, hit_type,
+                                                     padding);
+
+  Node* adjusted_node = nullptr;
+  IntPoint adjusted_point;
+  bool adjusted = frame_->GetEventHandler().BestClickableNodeForHitTestResult(
+      hit_test_result, adjusted_point, adjusted_node);
+
+  if (adjusted)
+    pointer_event.SetPositionInWidget(adjusted_point.X(), adjusted_point.Y());
+
+  frame_->GetEventHandler().CacheTouchAdjustmentResult(
+      pointer_event.unique_touch_event_id, pointer_event.PositionInWidget());
 }
 
 EventHandlingUtil::PointerEventTarget
@@ -356,15 +402,15 @@ WebInputEventResult PointerEventManager::DispatchTouchPointerEvent(
 
   WebInputEventResult result = WebInputEventResult::kHandledSystem;
   if (pointer_event_target.target_node && pointer_event_target.target_frame &&
-      !scroll_capable_pointers_canceled_) {
+      !non_hovering_pointers_canceled_) {
     PointerEvent* pointer_event = pointer_event_factory_.Create(
         web_pointer_event, coalesced_events,
         pointer_event_target.target_node
             ? pointer_event_target.target_node->GetDocument().domWindow()
             : nullptr);
 
-    result =
-        SendTouchPointerEvent(pointer_event_target.target_node, pointer_event);
+    result = SendTouchPointerEvent(pointer_event_target.target_node,
+                                   pointer_event, web_pointer_event.hovering);
 
     // If a pointerdown has been canceled, queue the unique id to allow
     // suppressing mouse events from gesture events. For mouse events
@@ -384,8 +430,9 @@ WebInputEventResult PointerEventManager::DispatchTouchPointerEvent(
 
 WebInputEventResult PointerEventManager::SendTouchPointerEvent(
     EventTarget* target,
-    PointerEvent* pointer_event) {
-  if (scroll_capable_pointers_canceled_)
+    PointerEvent* pointer_event,
+    bool hovering) {
+  if (non_hovering_pointers_canceled_)
     return WebInputEventResult::kNotHandled;
 
   ProcessCaptureAndPositionOfPointerEvent(pointer_event, target);
@@ -402,11 +449,16 @@ WebInputEventResult PointerEventManager::SendTouchPointerEvent(
       pointer_event->type() == EventTypeNames::pointercancel) {
     ReleasePointerCapture(pointer_event->pointerId());
 
-    // Sending the leave/out events and lostpointercapture because the next
-    // touch event will have a different id.
-    ProcessCaptureAndPositionOfPointerEvent(pointer_event, nullptr);
+    // If the pointer is not hovering it implies that pointerup also means
+    // leaving the screen and the end of the stream for that pointer. So
+    // we should send boundary events as well.
+    if (!hovering) {
+      // Sending the leave/out events and lostpointercapture because the next
+      // touch event will have a different id.
+      ProcessCaptureAndPositionOfPointerEvent(pointer_event, nullptr);
 
-    RemovePointer(pointer_event);
+      RemovePointer(pointer_event);
+    }
   }
 
   return result;
@@ -426,17 +478,20 @@ WebInputEventResult PointerEventManager::HandlePointerEvent(
     return WebInputEventResult::kHandledSystem;
   }
 
-  if (event.scroll_capable) {
+  if (!event.hovering) {
     if (!touch_event_manager_->IsAnyTouchActive()) {
-      scroll_capable_pointers_canceled_ = false;
+      non_hovering_pointers_canceled_ = false;
     }
   }
 
-  // The rest of this function does not handle non-scrolling
+  // The rest of this function does not handle hovering
   // (i.e. mouse like) events yet.
 
+  WebPointerEvent pointer_event = event.WebPointerEventInRootFrame();
+  if (ShouldAdjustPointerEvent(event))
+    AdjustTouchPointerEvent(pointer_event);
   EventHandlingUtil::PointerEventTarget pointer_event_target =
-      ComputePointerEventTarget(event.WebPointerEventInRootFrame());
+      ComputePointerEventTarget(pointer_event);
 
   // Any finger lifting is a user gesture only when it wasn't associated with a
   // scroll.
@@ -447,7 +502,7 @@ WebInputEventResult PointerEventManager::HandlePointerEvent(
   // seems extremely unlikely to matter which document the gesture is
   // associated with so just pick the pointer event that comes.
   if (event.GetType() == WebInputEvent::kPointerUp &&
-      !scroll_capable_pointers_canceled_ && pointer_event_target.target_frame) {
+      !non_hovering_pointers_canceled_ && pointer_event_target.target_frame) {
     user_gesture_holder_ =
         Frame::NotifyUserActivation(pointer_event_target.target_frame);
   }

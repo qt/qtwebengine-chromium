@@ -18,7 +18,11 @@
 #define INCLUDE_PERFETTO_BASE_SCOPED_FILE_H_
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <stdio.h>
 #include <unistd.h>
+
+#include <string>
 
 #include "perfetto/base/logging.h"
 
@@ -49,6 +53,11 @@ class ScopedResource {
     }
     t_ = r;
   }
+  T release() {
+    T t = t_;
+    t_ = InvalidValue;
+    return t;
+  }
   ~ScopedResource() { reset(InvalidValue); }
 
  private:
@@ -59,6 +68,13 @@ class ScopedResource {
 };
 
 using ScopedFile = ScopedResource<int, close, -1>;
+// Always open a ScopedFile with O-CLOEXEC so we can safely fork and exec.
+inline static ScopedFile OpenFile(const std::string& path, int flags) {
+  ScopedFile fd(open(path.c_str(), flags | O_CLOEXEC));
+  return fd;
+}
+
+using ScopedFstream = ScopedResource<FILE*, fclose, nullptr>;
 using ScopedDir = ScopedResource<DIR*, closedir, nullptr>;
 
 }  // namespace base

@@ -70,7 +70,7 @@ void RawDataPresenter::FeedNext(const net::UploadElementReader& reader) {
     const net::UploadFileElementReader* file_reader = reader.AsFileReader();
     FeedNextFile(file_reader->path().AsUTF8Unsafe());
   } else {
-    NOTIMPLEMENTED();
+    DVLOG(1) << "Ignoring unsupported upload data type for WebRequest API.";
   }
 }
 
@@ -123,7 +123,7 @@ void ParsedDataPresenter::FeedNext(const net::UploadElementReader& reader) {
   FormDataParser::Result result;
   while (parser_->GetNextNameValue(&result)) {
     base::Value* list = GetOrCreateList(dictionary_.get(), result.name());
-    list->GetList().emplace_back(result.value());
+    list->GetList().emplace_back(result.take_value());
   }
 }
 

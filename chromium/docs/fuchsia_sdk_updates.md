@@ -4,7 +4,7 @@
    job](https://luci-scheduler.appspot.com/jobs/fuchsia/sdk-x86_64-linux) for a
    recent green archive. On the "SUCCEEDED" link, copy the SHA-1 from the
    `gsutil.upload` link of the `upload fuchsia-sdk` step.
-0. Put that into Chromium's src.git DEPS in the `fuchsia_sdk` step.
+0. Put that into Chromium's src.git `build/fuchsia/update_sdk.py` as `SDK_HASH`.
 0. `gclient sync && ninja ...` and make sure things go OK locally.
 0. Upload the roll CL, making sure to include the `fuchsia` trybot. Tag the roll
    with `Bug: 707030`.
@@ -15,7 +15,7 @@ it's simply a copy of the steps run on the bot above, and so may be out of date.
 
 In order to sync a Fuchsia tree to the state matching an SDK hash, you can use:
 
-`jiri update https://storage.googleapis.com/fuchsia/jiri/snapshots/SDK_HASH_HERE`
+`jiri update https://storage.googleapis.com/fuchsia-snapshots/<SDK_HASH_HERE>`
 
 If you are waiting for a Zircon CL to roll into the SDK, you can check the
 status of the [Zircon
@@ -23,3 +23,12 @@ roller](https://luci-scheduler.appspot.com/jobs/fuchsia/zircon-roller).
 Checking the bot's [list of
 CLs](https://fuchsia-review.googlesource.com/q/owner:zircon-roller%40fuchsia-infra.iam.gserviceaccount.com)
 might be useful too.
+
+Another useful command, if the SDK was pulled by `cipd` (which it is in
+Chromium-related projects like Crashpad, instead of directly pulling the
+.tar.gz), is:
+
+`cipd describe fuchsia/sdk/linux-amd64 -version <CIPD_HASH_HERE>`
+
+This description will show the `jiri_snapshot` "tag" for the CIPD package which
+corresponds to the SDK revision that's specified `update_sdk.py` here.

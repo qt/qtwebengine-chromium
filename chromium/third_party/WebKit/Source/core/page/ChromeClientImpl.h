@@ -60,7 +60,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void SetWindowRect(const IntRect&, LocalFrame&) override;
   IntRect RootWindowRect() override;
   IntRect PageRect() override;
-  void Focus() override;
+  void Focus(LocalFrame*) override;
   bool CanTakeFocus(WebFocusType) override;
   void TakeFocus(WebFocusType) override;
   void FocusedNodeChanged(Node* from_node, Node* to_node) override;
@@ -142,7 +142,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   WebEventListenerProperties EventListenerProperties(
       LocalFrame*,
       WebEventListenerClass) const override;
-  void UpdateEventRectsForSubframeIfNecessary(LocalFrame*);
   // Informs client about the existence of handlers for scroll events so
   // appropriate scroll optimizations can be chosen.
   void SetHasScrollEventHandlers(LocalFrame*, bool has_event_handlers) override;
@@ -207,6 +206,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void DidEndEditingOnTextField(HTMLInputElement&) override;
   void OpenTextDataListChooser(HTMLInputElement&) override;
   void TextFieldDataListChanged(HTMLInputElement&) override;
+  void DidChangeSelectionInSelectControl(HTMLFormControlElement&) override;
   void AjaxSucceeded(LocalFrame*) override;
 
   void ShowVirtualKeyboardOnElementFocus(LocalFrame&) override;

@@ -94,6 +94,7 @@ protected:
     void initLinearBitmap(SkBitmap* bitmap, GradientBitmapType) const;
 
     bool onAppendStages(const StageRec&) const override;
+    bool onIsRasterPipelineOnly(const SkMatrix& ctm) const override;
 
     virtual void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                                       SkRasterPipeline* postPipeline) const = 0;
@@ -209,6 +210,10 @@ public:
                 case SkShader::kMirror_TileMode:
                     fWrapMode = GrSamplerState::WrapMode::kMirrorRepeat;
                     break;
+                case SkShader::kDecal_TileMode:
+                    // TODO: actually support decal
+                    fWrapMode = GrSamplerState::WrapMode::kClamp;
+                    break;
             }
         }
 
@@ -280,7 +285,7 @@ protected:
         } else {
             fp = std::move(gradientFP);
         }
-        return GrFragmentProcessor::MulOutputByInputAlpha(std::move(fp));
+        return GrFragmentProcessor::MulChildByInputAlpha(std::move(fp));
     }
 
 #if GR_TEST_UTILS

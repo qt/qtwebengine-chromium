@@ -259,6 +259,7 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
         CSPDisposition::CHECK,  // should_check_main_world_csp
         false,                  // is_form_submission
         base::nullopt,          // suggested_filename
+        nullptr,                // navigation_ui_data
         "GET",
         nullptr,  // resource_request_body
         Referrer(),
@@ -1045,11 +1046,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   AddDeletingNavigationThrottle();
   SimulateWillStartRequest();
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  } else {
-    EXPECT_EQ(NavigationThrottle::CANCEL_AND_IGNORE, callback_result());
-  }
+  EXPECT_FALSE(was_callback_called());
 
   // Test deletion in WillStartRequest after being deferred.
   CreateNavigationHandle();
@@ -1059,11 +1056,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   EXPECT_NE(nullptr, test_handle());
   Resume();
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  } else {
-    EXPECT_EQ(NavigationThrottle::CANCEL_AND_IGNORE, callback_result());
-  }
+  EXPECT_FALSE(was_callback_called());
 
   // Test deletion in WillRedirectRequest.
   CreateNavigationHandle();
@@ -1071,11 +1064,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   AddDeletingNavigationThrottle();
   SimulateWillRedirectRequest();
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  } else {
-    EXPECT_EQ(NavigationThrottle::CANCEL_AND_IGNORE, callback_result());
-  }
+  EXPECT_FALSE(was_callback_called());
 
   // Test deletion in WillRedirectRequest after being deferred.
   CreateNavigationHandle();
@@ -1086,11 +1075,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   EXPECT_NE(nullptr, test_handle());
   Resume();
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  } else {
-    EXPECT_EQ(NavigationThrottle::CANCEL_AND_IGNORE, callback_result());
-  }
+  EXPECT_FALSE(was_callback_called());
 
   // Test deletion in WillFailRequest.
   CreateNavigationHandle();
@@ -1098,9 +1083,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   AddDeletingNavigationThrottle();
   SimulateWillFailRequest(net::ERR_CERT_DATE_INVALID);
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  }
+  EXPECT_FALSE(was_callback_called());
 
   // Test deletion in WillFailRequest after being deferred.
   CreateNavigationHandle();
@@ -1111,9 +1094,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   EXPECT_NE(nullptr, test_handle());
   Resume();
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  }
+  EXPECT_FALSE(was_callback_called());
 
   // Test deletion in WillProcessResponse.
   CreateNavigationHandle();
@@ -1121,11 +1102,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   AddDeletingNavigationThrottle();
   SimulateWillProcessResponse();
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  } else {
-    EXPECT_EQ(NavigationThrottle::CANCEL_AND_IGNORE, callback_result());
-  }
+  EXPECT_FALSE(was_callback_called());
 
   // Test deletion in WillProcessResponse after being deferred.
   CreateNavigationHandle();
@@ -1136,11 +1113,7 @@ TEST_F(NavigationHandleImplTest, DeletionByNavigationThrottle) {
   EXPECT_NE(nullptr, test_handle());
   Resume();
   EXPECT_EQ(nullptr, test_handle());
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_FALSE(was_callback_called());
-  } else {
-    EXPECT_EQ(NavigationThrottle::CANCEL_AND_IGNORE, callback_result());
-  }
+  EXPECT_FALSE(was_callback_called());
 }
 
 // Checks that data from the SSLInfo passed into SimulateWillStartRequest() is

@@ -52,6 +52,7 @@ from webkitpy.common.system.path import abspath_to_uri
 from webkitpy.layout_tests.layout_package.bot_test_expectations import BotTestExpectationsFactory
 from webkitpy.layout_tests.models.test_configuration import TestConfiguration
 from webkitpy.layout_tests.models.test_expectations import TestExpectationParser
+from webkitpy.layout_tests.models.test_run_results import TestRunException
 from webkitpy.layout_tests.port import driver
 from webkitpy.layout_tests.port import server_process
 from webkitpy.layout_tests.port.factory import PortFactory
@@ -61,6 +62,56 @@ from webkitpy.layout_tests.servers import wptserve
 from webkitpy.w3c.wpt_manifest import WPTManifest
 
 _log = logging.getLogger(__name__)
+
+
+# TODO(https://crbug.com/787020): Remove dependency on msttcorefonts.
+MS_TRUETYPE_FONTS_DIR = '/usr/share/fonts/truetype/msttcorefonts/'
+MS_TRUETYPE_FONTS_PACKAGE = 'ttf-mscorefonts-installer'
+
+# Path relative to the build directory.
+CONTENT_SHELL_FONTS_DIR = "content_shell_test_fonts"
+
+FONT_FILES = [
+    [[MS_TRUETYPE_FONTS_DIR], 'Arial.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Arial_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Comic_Sans_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Courier_New_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Georgia.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Georgia_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Impact.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Trebuchet_MS_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Times_New_Roman_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Verdana.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Verdana_Bold.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Verdana_Bold_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    [[MS_TRUETYPE_FONTS_DIR], 'Verdana_Italic.ttf', MS_TRUETYPE_FONTS_PACKAGE],
+    # The Microsoft font EULA
+    [['/usr/share/doc/ttf-mscorefonts-installer/'], 'READ_ME!.gz', MS_TRUETYPE_FONTS_PACKAGE],
+
+    # Other fonts: Arabic, CJK, Indic, Thai, etc.
+    [[CONTENT_SHELL_FONTS_DIR], 'DejaVuSans.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Garuda.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Lohit-Devanagari.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Lohit-Gurmukhi.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'Lohit-Tamil.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'MuktiNarrow.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'NotoSansKhmer-Regular.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'NotoSansCJKjp-Regular.otf', None],
+]
 
 
 class Port(object):
@@ -93,6 +144,8 @@ class Port(object):
         ('win10', 'x86'),
         ('trusty', 'x86_64'),
 
+        ('fuchsia', 'x86_64'),
+
         # FIXME: Technically this should be 'arm', but adding a third
         # architecture type breaks TestConfigurationConverter.
         # If we need this to be 'arm' in the future, then we first have to
@@ -106,6 +159,15 @@ class Port(object):
         'linux': ['trusty'],
         'android': ['kitkat'],
     }
+
+    # List of ports open on the host that the tests will connect to. When tests
+    # run on a separate machine (Android and Fuchsia) these ports need to be
+    # forwarded back to the host.
+    # 8000, 8080 and 8443 are for http/https tests;
+    # 8880 is for websocket tests (see apache_http.py and pywebsocket.py).
+    # 8001, 8081 and 8444 are for http/https WPT;
+    # 9001 and 9444 are for websocket WPT (see wptserve.py).
+    SERVER_PORTS = [8000, 8001, 8080, 8081, 8443, 8444, 8880, 9001, 9444]
 
     FALLBACK_PATHS = {}
 
@@ -1799,6 +1861,31 @@ class Port(object):
         except OSError:
             pass
         return True
+
+    def _get_font_files(self):
+        """Returns list of font files that should be used by the test."""
+        # TODO(sergeyu): Currently FONT_FILES is valid only on Linux. Make it
+        # usable on other platforms if necessary.
+        result = [self._build_path('AHEM____.TTF')]
+        for (font_dirs, font_file, package) in FONT_FILES:
+            exists = False
+            for font_dir in font_dirs:
+                font_path = os.path.join(font_dir, font_file)
+                if not os.path.isabs(font_path):
+                    font_path = self._build_path(font_path)
+                if self._check_file_exists(font_path, '', more_logging=False):
+                    result.append(font_path)
+                    exists = True
+                    break
+            if not exists:
+                message = 'You are missing %s under %s.' % (font_file, font_dirs)
+                if package:
+                    message += ' Try installing %s. See build instructions.' % package
+
+                _log.error(message)
+                raise TestRunException(exit_codes.SYS_DEPS_EXIT_STATUS, message)
+        return result
+
 
 
 class VirtualTestSuite(object):

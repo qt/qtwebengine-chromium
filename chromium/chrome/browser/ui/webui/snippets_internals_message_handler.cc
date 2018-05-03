@@ -21,9 +21,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/time/time_to_iso8601.h"
 #include "base/values.h"
 #include "chrome/browser/android/chrome_feature_list.h"
 #include "chrome/browser/android/ntp/android_content_suggestions_notifier.h"
@@ -160,15 +160,6 @@ std::set<variations::VariationID> SnippetsExperiments() {
     }
   }
   return result;
-}
-
-std::string TimeToJSONTimeString(const base::Time time) {
-  base::Time::Exploded exploded;
-  time.UTCExplode(&exploded);
-  return base::StringPrintf(
-      "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", exploded.year, exploded.month,
-      exploded.day_of_month, exploded.hour, exploded.minute, exploded.second,
-      exploded.millisecond);
 }
 
 ntp_snippets::BreakingNewsListener* GetBreakingNewsListener(
@@ -331,6 +322,7 @@ void SnippetsInternalsMessageHandler::HandleDownload(
   DCHECK_EQ(0u, args->GetSize());
 
   SendString("remote-status", std::string());
+  SendString("remote-authenticated", std::string());
 
   if (!remote_suggestions_provider_) {
     return;
@@ -611,6 +603,12 @@ void SnippetsInternalsMessageHandler::SendContentSuggestions() {
             ->GetLastStatusForDebugging();
     if (!status.empty()) {
       SendString("remote-status", "Finished: " + status);
+      SendString(
+          "remote-authenticated",
+          remote_suggestions_provider_->suggestions_fetcher_for_debugging()
+                  ->WasLastFetchAuthenticatedForDebugging()
+              ? "Authenticated"
+              : "Non-authenticated");
     }
   }
 
@@ -664,8 +662,8 @@ void SnippetsInternalsMessageHandler::PushDummySuggestion() {
   const base::Time now = base::Time::Now();
   json = base::StringPrintf(
       json.c_str(), base::UTF16ToUTF8(base::TimeFormatTimeOfDay(now)).c_str(),
-      TimeToJSONTimeString(now).c_str(),
-      TimeToJSONTimeString(now + base::TimeDelta::FromMinutes(60)).c_str());
+      base::TimeToISO8601(now).c_str(),
+      base::TimeToISO8601(now + base::TimeDelta::FromMinutes(60)).c_str());
 
   gcm::IncomingMessage message;
   message.data["payload"] = json;

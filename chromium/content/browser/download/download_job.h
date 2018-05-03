@@ -8,25 +8,24 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "components/download/public/common/download_interrupt_reasons.h"
+#include "components/download/public/common/download_request_handle_interface.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_file.h"
-#include "content/browser/download/download_request_handle.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/download_danger_type.h"
-#include "content/public/browser/download_interrupt_reasons.h"
 
 namespace content {
 
 class DownloadItemImpl;
-class WebContents;
 
 // DownloadJob lives on UI thread and subclasses implement actual download logic
 // and interact with DownloadItemImpl.
 // The base class is a friend class of DownloadItemImpl.
 class CONTENT_EXPORT DownloadJob {
  public:
-  DownloadJob(DownloadItemImpl* download_item,
-              std::unique_ptr<DownloadRequestHandleInterface> request_handle);
+  DownloadJob(
+      DownloadItemImpl* download_item,
+      std::unique_ptr<download::DownloadRequestHandleInterface> request_handle);
   virtual ~DownloadJob();
 
   // Download operations.
@@ -34,19 +33,12 @@ class CONTENT_EXPORT DownloadJob {
   // DownloadJob owns download file.
   void Start(DownloadFile* download_file_,
              const DownloadFile::InitializeCallback& callback,
-             const DownloadItem::ReceivedSlices& received_slices);
+             const download::DownloadItem::ReceivedSlices& received_slices);
   virtual void Cancel(bool user_cancel);
   virtual void Pause();
   virtual void Resume(bool resume_request);
 
   bool is_paused() const { return is_paused_; }
-
-  // Return the WebContents associated with the download. Usually used to
-  // associate a browser window for any UI that needs to be displayed to the
-  // user.
-  // Or return nullptr if the download is not associated with an active
-  // WebContents.
-  WebContents* GetWebContents() const;
 
   // Returns whether the download is parallelizable. The download may not send
   // parallel requests as it can be disabled through flags.
@@ -64,7 +56,7 @@ class CONTENT_EXPORT DownloadJob {
   // Callback from file thread when we initialize the DownloadFile.
   virtual void OnDownloadFileInitialized(
       const DownloadFile::InitializeCallback& callback,
-      DownloadInterruptReason result);
+      download::DownloadInterruptReason result);
 
   // Add an input stream to the download sink. Return false if we start to
   // destroy download file.
@@ -76,7 +68,7 @@ class CONTENT_EXPORT DownloadJob {
 
   // Used to perform operations on network request.
   // Can be null on interrupted download.
-  std::unique_ptr<DownloadRequestHandleInterface> request_handle_;
+  std::unique_ptr<download::DownloadRequestHandleInterface> request_handle_;
 
  private:
   // If the download progress is paused by the user.

@@ -22,15 +22,7 @@
 #include "content/public/browser/browser_associated_interface.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "mojo/public/cpp/bindings/strong_associated_binding_set.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
-
-namespace blink {
-class MessagePortChannel;
-}
-
-namespace url {
-class Origin;
-}  // namespace url
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -38,8 +30,6 @@ class ResourceContext;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
 class ServiceWorkerHandle;
-class ServiceWorkerProviderHost;
-class ServiceWorkerVersion;
 
 namespace service_worker_dispatcher_host_unittest {
 class ServiceWorkerDispatcherHostTest;
@@ -98,9 +88,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost
   // be destroyed.
   bool Send(IPC::Message* message) override;
 
-  // This method is virtual only for testing.
+  // These methods are virtual only for testing.
   virtual void RegisterServiceWorkerHandle(
       std::unique_ptr<ServiceWorkerHandle> handle);
+  virtual void UnregisterServiceWorkerHandle(int handle_id);
 
   ServiceWorkerHandle* FindServiceWorkerHandle(int provider_id,
                                                int64_t version_id);
@@ -129,8 +120,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost
       service_worker_dispatcher_host_unittest::BackgroundSyncManagerTest,
       RegisterWithoutLiveSWRegistration);
 
-  using StatusCallback =
-      base::OnceCallback<void(ServiceWorkerStatusCode status)>;
   enum class ProviderStatus { OK, NO_CONTEXT, DEAD_HOST, NO_HOST, NO_URL };
   // Debugging for https://crbug.com/750267
   enum class Phase { kInitial, kAddedToContext, kRemovedFromContext };
@@ -140,45 +129,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost
 
   // IPC Message handlers
   void OnCountFeature(int64_t version_id, uint32_t feature);
-  void OnIncrementServiceWorkerRefCount(int handle_id);
-  void OnDecrementServiceWorkerRefCount(int handle_id);
-  void OnPostMessageToWorker(
-      int handle_id,
-      int provider_id,
-      const base::string16& message,
-      const url::Origin& source_origin,
-      const std::vector<blink::MessagePortChannel>& sent_message_ports);
-
-  void OnTerminateWorker(int handle_id);
-
-  void DispatchExtendableMessageEvent(
-      scoped_refptr<ServiceWorkerVersion> worker,
-      const base::string16& message,
-      const url::Origin& source_origin,
-      const std::vector<blink::MessagePortChannel>& sent_message_ports,
-      ServiceWorkerProviderHost* sender_provider_host,
-      StatusCallback callback);
-  template <typename SourceInfoPtr>
-  void DispatchExtendableMessageEventInternal(
-      scoped_refptr<ServiceWorkerVersion> worker,
-      const base::string16& message,
-      const url::Origin& source_origin,
-      const std::vector<blink::MessagePortChannel>& sent_message_ports,
-      const base::Optional<base::TimeDelta>& timeout,
-      StatusCallback callback,
-      SourceInfoPtr source_info);
-  template <typename SourceInfoPtr>
-  void DispatchExtendableMessageEventAfterStartWorker(
-      scoped_refptr<ServiceWorkerVersion> worker,
-      const base::string16& message,
-      const url::Origin& source_origin,
-      const std::vector<blink::MessagePortChannel>& sent_message_ports,
-      SourceInfoPtr source_info,
-      const base::Optional<base::TimeDelta>& timeout,
-      StatusCallback callback,
-      ServiceWorkerStatusCode status);
-  void ReleaseSourceInfo(blink::mojom::ServiceWorkerClientInfoPtr source_info);
-  void ReleaseSourceInfo(blink::mojom::ServiceWorkerObjectInfoPtr source_info);
 
   ServiceWorkerContextCore* GetContext();
 

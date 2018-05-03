@@ -39,6 +39,7 @@
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/range/range_f.h"
 #include "ui/gfx/render_text_harfbuzz.h"
+#include "ui/gfx/render_text_test_api.h"
 #include "ui/gfx/switches.h"
 #include "ui/gfx/text_utils.h"
 
@@ -58,77 +59,6 @@ using base::UTF8ToUTF16;
 using base::WideToUTF16;
 
 namespace gfx {
-namespace test {
-
-class RenderTextTestApi {
- public:
-  RenderTextTestApi(RenderText* render_text) : render_text_(render_text) {}
-
-  static cc::PaintFlags& GetRendererPaint(
-      internal::SkiaTextRenderer* renderer) {
-    return renderer->flags_;
-  }
-
-  // Callers should ensure that the associated RenderText object is a
-  // RenderTextHarfBuzz instance.
-  const internal::TextRunList* GetHarfBuzzRunList() const {
-    RenderTextHarfBuzz* render_text =
-        static_cast<RenderTextHarfBuzz*>(render_text_);
-    return render_text->GetRunList();
-  }
-
-  void DrawVisualText(internal::SkiaTextRenderer* renderer) {
-    render_text_->EnsureLayout();
-    render_text_->DrawVisualText(renderer);
-  }
-
-  const BreakList<SkColor>& colors() const { return render_text_->colors(); }
-
-  const BreakList<BaselineStyle>& baselines() const {
-    return render_text_->baselines();
-  }
-
-  const BreakList<Font::Weight>& weights() const {
-    return render_text_->weights();
-  }
-
-  const std::vector<BreakList<bool>>& styles() const {
-    return render_text_->styles();
-  }
-
-  const std::vector<internal::Line>& lines() const {
-    return render_text_->lines();
-  }
-
-  SelectionModel EdgeSelectionModel(VisualCursorDirection direction) {
-    return render_text_->EdgeSelectionModel(direction);
-  }
-
-  size_t TextIndexToDisplayIndex(size_t index) {
-    return render_text_->TextIndexToDisplayIndex(index);
-  }
-
-  size_t DisplayIndexToTextIndex(size_t index) {
-    return render_text_->DisplayIndexToTextIndex(index);
-  }
-
-  void EnsureLayout() { render_text_->EnsureLayout(); }
-
-  Vector2d GetAlignmentOffset(size_t line_number) {
-    return render_text_->GetAlignmentOffset(line_number);
-  }
-
-  int GetDisplayTextBaseline() {
-    return render_text_->GetDisplayTextBaseline();
-  }
-
- private:
-  RenderText* render_text_;
-
-  DISALLOW_COPY_AND_ASSIGN(RenderTextTestApi);
-};
-
-}  // namespace test
 
 namespace {
 
@@ -533,8 +463,7 @@ class RenderTextTest : public testing::Test,
 #endif
 
   Rect GetSubstringBoundsUnion(const Range& range) {
-    const std::vector<Rect> bounds =
-        render_text_->GetSubstringBoundsForTesting(range);
+    const std::vector<Rect> bounds = render_text_->GetSubstringBounds(range);
     return std::accumulate(bounds.begin(), bounds.end(), Rect(), UnionRects);
   }
 
@@ -616,7 +545,7 @@ class RenderTextHarfBuzzTest : public RenderTextTest {
 
  protected:
   void SetGlyphWidth(float test_width) {
-    GetRenderTextHarfBuzz()->set_glyph_width_for_test(test_width);
+    test_api()->SetGlyphWidth(test_width);
   }
 
   bool ShapeRunWithFont(const base::string16& text,
@@ -1476,6 +1405,102 @@ TEST_P(RenderTextHarfBuzzTest, MoveCursor_Word) {
   // Move left.
   expected.push_back(Range(4, 8));
   RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_LEFT,
+                                        SELECTION_EXTEND, &expected);
+}
+
+// TODO(asvitkine): RenderTextMac cursor movements. http://crbug.com/131618
+TEST_P(RenderTextHarfBuzzTest, MoveCursor_Word_RTL) {
+  RenderText* render_text = GetRenderText();
+  render_text->SetText(UTF8ToUTF16("אבג דהו זחט"));
+  std::vector<Range> expected;
+
+  // SELECTION_NONE.
+  render_text->SelectRange(Range(6));
+
+  // Move right twice.
+  expected.push_back(Range(4));
+  expected.push_back(Range(0));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_RIGHT,
+                                        SELECTION_NONE, &expected);
+
+  // Move left twice.
+#if defined(OS_WIN)  // Move word left includes space/punctuation.
+  expected.push_back(Range(4));
+  expected.push_back(Range(8));
+#else  // Non-Windows: move word left does NOT include space/punctuation.
+  expected.push_back(Range(3));
+  expected.push_back(Range(7));
+#endif
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_LEFT,
+                                        SELECTION_NONE, &expected);
+
+  // SELECTION_CARET.
+  render_text->SelectRange(Range(6));
+
+  // Move right.
+  expected.push_back(Range(6, 4));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_RIGHT,
+                                        SELECTION_CARET, &expected);
+
+  // Move left twice.
+  expected.push_back(Range(6));
+#if defined(OS_WIN)  // Select word left includes space/punctuation.
+  expected.push_back(Range(6, 8));
+#else  // Non-Windows: select word left does NOT include space/punctuation.
+  expected.push_back(Range(6, 7));
+#endif
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_LEFT,
+                                        SELECTION_CARET, &expected);
+
+  // Move right.
+  expected.push_back(Range(6));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_RIGHT,
+                                        SELECTION_CARET, &expected);
+
+  // SELECTION_RETAIN.
+  render_text->SelectRange(Range(6));
+
+  // Move right.
+  expected.push_back(Range(6, 4));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_RIGHT,
+                                        SELECTION_RETAIN, &expected);
+
+  // Move left twice.
+#if defined(OS_WIN)  // Select word left includes space/punctuation.
+  expected.push_back(Range(6, 8));
+#else  // Non-Windows: select word left does NOT include space/punctuation.
+  expected.push_back(Range(6, 7));
+#endif
+  expected.push_back(Range(6, 11));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_LEFT,
+                                        SELECTION_RETAIN, &expected);
+
+  // Move right.
+  expected.push_back(Range(6, 8));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_RIGHT,
+                                        SELECTION_RETAIN, &expected);
+
+  // SELECTION_EXTEND.
+  render_text->SelectRange(Range(6));
+
+  // Move right.
+  expected.push_back(Range(6, 4));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_RIGHT,
+                                        SELECTION_EXTEND, &expected);
+
+  // Move left twice.
+#if defined(OS_WIN)  // Select word left includes space/punctuation.
+  expected.push_back(Range(4, 8));
+#else  // Non-Windows: select word left does NOT include space/punctuation.
+  expected.push_back(Range(4, 7));
+#endif
+  expected.push_back(Range(4, 11));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_LEFT,
+                                        SELECTION_EXTEND, &expected);
+
+  // Move right.
+  expected.push_back(Range(4, 8));
+  RunMoveCursorTestAndClearExpectations(render_text, WORD_BREAK, CURSOR_RIGHT,
                                         SELECTION_EXTEND, &expected);
 }
 
@@ -2477,25 +2502,26 @@ TEST_P(RenderTextTest, StringSizeEmptyString) {
 }
 
 TEST_P(RenderTextTest, StringSizeRespectsFontListMetrics) {
-  // Check that Arial and the CJK font have different font metrics.
-  Font arial_font("Arial", 16);
-  ASSERT_EQ("arial",
-            base::ToLowerASCII(arial_font.GetActualFontNameForTesting()));
+  // Check that Verdana and the CJK font have different font metrics.
+  Font verdana_font("Verdana", 16);
+  ASSERT_EQ("verdana",
+            base::ToLowerASCII(verdana_font.GetActualFontNameForTesting()));
   Font cjk_font(kCJKFontName, 16);
   ASSERT_EQ(base::ToLowerASCII(kCJKFontName),
             base::ToLowerASCII(cjk_font.GetActualFontNameForTesting()));
-  EXPECT_NE(arial_font.GetHeight(), cjk_font.GetHeight());
-  EXPECT_NE(arial_font.GetBaseline(), cjk_font.GetBaseline());
-  // "a" should be rendered with Arial, not with the CJK font.
-  const char* arial_font_text = "a";
-  // "円" (U+5168 Han character YEN) should render with the CJK font, not Arial.
+  EXPECT_NE(verdana_font.GetHeight(), cjk_font.GetHeight());
+  EXPECT_NE(verdana_font.GetBaseline(), cjk_font.GetBaseline());
+  // "a" should be rendered with Verdana, not with the CJK font.
+  const char* verdana_font_text = "a";
+  // "円" (U+5168 Han character YEN) should render with the CJK font, not
+  // Verdana.
   const char* cjk_font_text = "\u5168";
-  Font smaller_font = arial_font;
+  Font smaller_font = verdana_font;
   Font larger_font = cjk_font;
-  const char* smaller_font_text = arial_font_text;
+  const char* smaller_font_text = verdana_font_text;
   const char* larger_font_text = cjk_font_text;
-  if (cjk_font.GetHeight() < arial_font.GetHeight() &&
-      cjk_font.GetBaseline() < arial_font.GetBaseline()) {
+  if (cjk_font.GetHeight() < verdana_font.GetHeight() &&
+      cjk_font.GetBaseline() < verdana_font.GetBaseline()) {
     std::swap(smaller_font, larger_font);
     std::swap(smaller_font_text, larger_font_text);
   }

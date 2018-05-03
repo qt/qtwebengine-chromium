@@ -59,7 +59,6 @@ class SpellCheckProvider
   void set_spellcheck(SpellCheck* spellcheck) { spellcheck_ = spellcheck; }
 
   // content::RenderFrameObserver:
-  bool OnMessageReceived(const IPC::Message& message) override;
   void FocusedNodeChanged(const blink::WebNode& node) override;
 
  private:
@@ -124,10 +123,13 @@ class SpellCheckProvider
   // Weak pointer to shared (per renderer) spellcheck data.
   SpellCheck* spellcheck_;
 
+  // Not owned. |embedder_provider_| should outlive SpellCheckProvider.
   service_manager::LocalInterfaceProvider* embedder_provider_;
 
   // Interface to the SpellCheckHost.
   spellcheck::mojom::SpellCheckHostPtr spell_check_host_;
+
+  base::WeakPtrFactory<SpellCheckProvider> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SpellCheckProvider);
 };

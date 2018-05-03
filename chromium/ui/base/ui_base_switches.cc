@@ -4,14 +4,6 @@
 
 #include "ui/base/ui_base_switches.h"
 
-namespace features {
-
-// Enables the floating virtual keyboard behavior.
-const base::Feature kEnableFloatingVirtualKeyboard = {
-    "enable-floating-virtual-keyboard", base::FEATURE_DISABLED_BY_DEFAULT};
-
-}  // namespace features
-
 namespace switches {
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
@@ -44,6 +36,10 @@ const char kDisableTouchDragDrop[] = "disable-touch-drag-drop";
 
 // Enables touch event based drag and drop.
 const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
+
+// Enables touchable app context menus and notification indicators.
+const char kEnableTouchableAppContextMenu[] =
+    "enable-touchable-app-context-menus";
 
 // Forces high-contrast mode in native UI drawing, regardless of system
 // settings. Note that this has limited effect on Windows: only Aura colors will
@@ -78,6 +74,10 @@ const char kTopChromeMDMaterialAuto[] = "material-auto";
 // mouse/touch hybrid devices.
 const char kTopChromeMDMaterialHybrid[] = "material-hybrid";
 
+// Material design mode that is more optimized for touch devices for the
+// |kTopChromeMD| switch.
+const char kTopChromeMDMaterialTouchOptimized[] = "material-touch-optimized";
+
 // Classic, non-material, mode for the |kTopChromeMD| switch.
 const char kTopChromeMDNonMaterial[] = "non-material";
 
@@ -95,9 +95,6 @@ const char kUIDisablePartialSwap[] = "ui-disable-partial-swap";
 // Pink: Overdrawn three times.
 // Red: Overdrawn four or more times.
 const char kShowOverdrawFeedback[] = "show-overdraw-feedback";
-
-// Use draw occlusion to skip draw quads when they are not shown on screen.
-const char kEnableDrawOcclusion[] = "enable-draw-occlusion";
 
 // Use SkiaRenderer instead of GLRenderer for direct rendering.
 const char kUseSkiaRenderer[] = "use-skia-renderer";
@@ -119,15 +116,5 @@ const char kSlowDownCompositingScaleFactor[] =
 
 // Tint GL-composited color.
 const char kTintGlCompositedContent[] = "tint-gl-composited-content";
-
-#if defined(USE_AURA)
-// Used to enable the mus service (aka the UI service). This makes mus run in
-// process. It is also used to notify the clients that the UI service is being
-// used.
-const char kMus[] = "mus";
-
-// If set mus is hosting Viz. Only applicable is kMus if specified.
-const char kMusHostingViz[] = "mus-hosting-viz";
-#endif
 
 }  // namespace switches

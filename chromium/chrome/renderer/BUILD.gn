@@ -31,8 +31,8 @@ grit("resources") {
     "//chrome/common/media_router/mojo:media_router_js",
     "//mojo/common:common_custom_types_js",
     "//net/interfaces:interfaces_js",
-    "//url/mojo:url_mojom_gurl_js",
-    "//url/mojo:url_mojom_origin_js",
+    "//url/mojom:url_mojom_gurl_js",
+    "//url/mojom:url_mojom_origin_js",
   ]
 }
 
@@ -130,7 +130,7 @@ static_library("renderer") {
     "//components/spellcheck:build_features",
     "//components/startup_metric_utils/common:interfaces",
     "//components/subresource_filter/content/renderer",
-    "//components/task_scheduler_util/renderer",
+    "//components/task_scheduler_util/common",
     "//components/translate/content/renderer",
     "//components/translate/core/common",
     "//components/translate/core/language_detection",
@@ -149,7 +149,7 @@ static_library("renderer") {
     "//ppapi/features",
     "//printing/features",
     "//services/metrics/public/cpp:metrics_cpp",
-    "//services/metrics/public/interfaces",
+    "//services/metrics/public/mojom",
     "//services/service_manager/public/cpp",
     "//skia",
     "//storage/common",

@@ -54,6 +54,10 @@ gl::Error BufferVk::setData(const gl::Context *context,
         // Release and re-create the memory and buffer.
         release(contextVk->getRenderer());
 
+        const VkImageUsageFlags usageFlags =
+            (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+             VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
         // TODO(jmadill): Proper usage bit implementation. Likely will involve multiple backing
         // buffers like in D3D11.
         VkBufferCreateInfo createInfo;
@@ -61,15 +65,18 @@ gl::Error BufferVk::setData(const gl::Context *context,
         createInfo.pNext                 = nullptr;
         createInfo.flags                 = 0;
         createInfo.size                  = size;
-        createInfo.usage = (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        createInfo.usage                 = usageFlags;
         createInfo.sharingMode           = VK_SHARING_MODE_EXCLUSIVE;
         createInfo.queueFamilyIndexCount = 0;
         createInfo.pQueueFamilyIndices   = nullptr;
 
         ANGLE_TRY(mBuffer.init(device, createInfo));
-        ANGLE_TRY(vk::AllocateBufferMemory(contextVk, size, &mBuffer, &mBufferMemory,
-                                           &mCurrentRequiredSize));
+
+        // Assume host vislble/coherent memory available.
+        const VkMemoryPropertyFlags memoryPropertyFlags =
+            (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        ANGLE_TRY(vk::AllocateBufferMemory(contextVk->getRenderer(), memoryPropertyFlags, &mBuffer,
+                                           &mBufferMemory, &mCurrentRequiredSize));
     }
 
     if (data)
@@ -165,6 +172,7 @@ gl::Error BufferVk::getIndexRange(const gl::Context *context,
 
     *outRange = gl::ComputeIndexRange(type, mapPointer, count, primitiveRestartEnabled);
 
+    mBufferMemory.unmap(device);
     return gl::NoError();
 }
 
@@ -191,8 +199,10 @@ vk::Error BufferVk::setDataImpl(ContextVk *contextVk,
         stagingBuffer.getDeviceMemory().unmap(device);
 
         // Enqueue a copy command on the GPU.
+        // 'beginWriteResource' will stop any subsequent rendering from using the old buffer data,
+        // by marking any current read operations / command buffers as 'finished'.
         vk::CommandBuffer *commandBuffer = nullptr;
-        ANGLE_TRY(recordWriteCommands(renderer, &commandBuffer));
+        ANGLE_TRY(beginWriteResource(renderer, &commandBuffer));
 
         // Insert a barrier to ensure reads from the buffer are complete.
         // TODO(jmadill): Insert minimal barriers.
@@ -210,7 +220,7 @@ vk::Error BufferVk::setDataImpl(ContextVk *contextVk,
         commandBuffer->singleBufferBarrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, bufferBarrier);
 
-        VkBufferCopy copyRegion = {offset, 0, size};
+        VkBufferCopy copyRegion = {0, offset, size};
         commandBuffer->copyBuffer(stagingBuffer.getBuffer(), mBuffer, 1, &copyRegion);
 
         // Immediately release staging buffer.

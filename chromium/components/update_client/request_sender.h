@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -51,14 +52,19 @@ class RequestSender : public net::URLFetcherDelegate {
   // avoiding collisions with known network errors is desirable.
   enum : int { kErrorResponseNotTrusted = -10000 };
 
-  explicit RequestSender(const scoped_refptr<Configurator>& config);
+  explicit RequestSender(scoped_refptr<Configurator> config);
   ~RequestSender() override;
 
   // |use_signing| enables CUP signing of protocol messages exchanged using
-  // this class.
-  void Send(bool use_signing,
+  // this class. |is_foreground| controls the presence and the value for the
+  // X-GoogleUpdate-Interactvity header serialized in the protocol request.
+  // If this optional parameter is set, the values of "fg" or "bg" are sent
+  // for true or false values of this parameter. Otherwise the header is not
+  // sent at all.
+  void Send(const std::vector<GURL>& urls,
+            const std::map<std::string, std::string>& request_extra_headers,
             const std::string& request_body,
-            const std::vector<GURL>& urls,
+            bool use_signing,
             RequestSenderCallback request_sender_callback);
 
  private:
@@ -97,9 +103,11 @@ class RequestSender : public net::URLFetcherDelegate {
   base::ThreadChecker thread_checker_;
 
   const scoped_refptr<Configurator> config_;
-  bool use_signing_;  // True if CUP signing is used.
+
   std::vector<GURL> urls_;
+  std::map<std::string, std::string> request_extra_headers_;
   std::string request_body_;
+  bool use_signing_;  // True if CUP signing is used.
   RequestSenderCallback request_sender_callback_;
 
   std::string public_key_;

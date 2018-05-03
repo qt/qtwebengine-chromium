@@ -17,6 +17,7 @@
 #include "base/time/time.h"
 #include "base/timer/mock_timer.h"
 #include "build/build_config.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/fake_gaia_cookie_manager_service.h"
@@ -25,10 +26,10 @@
 #include "components/signin/core/browser/mirror_account_reconcilor_delegate.h"
 #include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
-#include "components/signin/core/browser/scoped_account_consistency.h"
 #include "components/signin/core/browser/signin_features.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_metrics.h"
+#include "components/signin/core/browser/signin_pref_names.h"
 #include "components/signin/core/browser/test_signin_client.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
@@ -156,13 +157,11 @@ class DummyAccountReconcilorWithDelegate : public AccountReconcilor {
       case signin::AccountConsistencyMethod::kDiceFixAuthErrors:
         return std::make_unique<signin::AccountReconcilorDelegate>();
       case signin::AccountConsistencyMethod::kDicePrepareMigration:
-      case signin::AccountConsistencyMethod::
-          kDicePrepareMigrationChromeSyncEndpoint:
       case signin::AccountConsistencyMethod::kDiceMigration:
       case signin::AccountConsistencyMethod::kDice:
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
         return std::make_unique<signin::DiceAccountReconcilorDelegate>(
-            signin_client);
+            signin_client, account_consistency);
 #else
         NOTREACHED();
         return nullptr;
@@ -277,7 +276,6 @@ class AccountReconcilorTest : public ::testing::Test {
  private:
   base::MessageLoop loop;
   signin::AccountConsistencyMethod account_consistency_;
-  std::unique_ptr<signin::ScopedAccountConsistency> scoped_account_consistency_;
   sync_preferences::TestingPrefServiceSyncable pref_service_;
   FakeProfileOAuth2TokenService token_service_;
   DiceTestSigninClient test_signin_client_;
@@ -311,6 +309,8 @@ AccountReconcilorTest::AccountReconcilorTest()
   AccountTrackerService::RegisterPrefs(pref_service_.registry());
   SigninManagerBase::RegisterProfilePrefs(pref_service_.registry());
   SigninManagerBase::RegisterPrefs(pref_service_.registry());
+  pref_service_.registry()->RegisterBooleanPref(
+      prefs::kTokenServiceDiceCompatible, false);
   get_check_connection_info_url_ =
       GaiaUrls::GetInstance()->GetCheckConnectionInfoURLWithSource(
           GaiaConstants::kChromeSource);
@@ -390,8 +390,6 @@ void AccountReconcilorTest::SimulateCookieContentSettingsChanged(
 void AccountReconcilorTest::SetAccountConsistency(
     signin::AccountConsistencyMethod method) {
   account_consistency_ = method;
-  scoped_account_consistency_ =
-      std::make_unique<signin::ScopedAccountConsistency>(method);
 }
 
 TEST_F(AccountReconcilorTest, Basic) {
@@ -1020,6 +1018,7 @@ TEST_F(AccountReconcilorTest, UnverifiedAccountMerge) {
 TEST_F(AccountReconcilorTest, DiceMigrationAfterNoop) {
   // Enable Dice migration.
   SetAccountConsistency(signin::AccountConsistencyMethod::kDiceMigration);
+  pref_service()->SetBoolean(prefs::kTokenServiceDiceCompatible, true);
 
   // Chrome account is consistent with the cookie.
   const std::string account_id =
@@ -1029,7 +1028,6 @@ TEST_F(AccountReconcilorTest, DiceMigrationAfterNoop) {
                                                               "12345");
   AccountReconcilor* reconcilor = GetMockReconcilor();
   // Dice is not enabled by default.
-  ASSERT_FALSE(signin::IsDiceEnabledForProfile(pref_service()));
   EXPECT_FALSE(reconcilor->delegate_->IsAccountConsistencyEnforced());
 
   // No-op reconcile.
@@ -1045,10 +1043,39 @@ TEST_F(AccountReconcilorTest, DiceMigrationAfterNoop) {
   EXPECT_TRUE(test_signin_client()->is_ready_for_dice_migration());
 }
 
+// Tests that the Dice no migration happens if the token service is not ready.
+TEST_F(AccountReconcilorTest, DiceNoMigrationWhenTokensNotReady) {
+  // Enable Dice migration.
+  SetAccountConsistency(signin::AccountConsistencyMethod::kDiceMigration);
+
+  // Chrome account is consistent with the cookie.
+  const std::string account_id =
+      PickAccountIdForAccount("12345", "user@gmail.com");
+  token_service()->UpdateCredentials(account_id, "refresh_token");
+  cookie_manager_service()->SetListAccountsResponseOneAccount("user@gmail.com",
+                                                              "12345");
+  AccountReconcilor* reconcilor = GetMockReconcilor();
+  // Dice is not enabled by default.
+  EXPECT_FALSE(reconcilor->delegate_->IsAccountConsistencyEnforced());
+
+  // No-op reconcile.
+  EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(testing::_)).Times(0);
+  EXPECT_CALL(*GetMockReconcilor(), PerformLogoutAllAccountsAction()).Times(0);
+  reconcilor->StartReconcile();
+  ASSERT_TRUE(reconcilor->is_reconcile_started_);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_FALSE(reconcilor->is_reconcile_started_);
+  ASSERT_EQ(signin_metrics::ACCOUNT_RECONCILOR_OK, reconcilor->GetState());
+
+  // Migration did not happen.
+  EXPECT_FALSE(test_signin_client()->is_ready_for_dice_migration());
+}
+
 // Tests that the Dice migration does not happen after a busy reconcile.
 TEST_F(AccountReconcilorTest, DiceNoMigrationAfterReconcile) {
   // Enable Dice migration.
   SetAccountConsistency(signin::AccountConsistencyMethod::kDiceMigration);
+  pref_service()->SetBoolean(prefs::kTokenServiceDiceCompatible, true);
 
   // Add a token in Chrome.
   const std::string account_id =
@@ -1057,7 +1084,6 @@ TEST_F(AccountReconcilorTest, DiceNoMigrationAfterReconcile) {
   AccountReconcilor* reconcilor = GetMockReconcilor();
 
   // Dice is not enabled by default.
-  ASSERT_FALSE(signin::IsDiceEnabledForProfile(pref_service()));
   EXPECT_FALSE(reconcilor->delegate_->IsAccountConsistencyEnforced());
 
   // Busy reconcile.
@@ -1079,6 +1105,7 @@ TEST_F(AccountReconcilorTest, DiceNoMigrationAfterReconcile) {
 TEST_F(AccountReconcilorTest, MigrationClearSecondaryTokens) {
   // Enable Dice migration.
   SetAccountConsistency(signin::AccountConsistencyMethod::kDiceMigration);
+  pref_service()->SetBoolean(prefs::kTokenServiceDiceCompatible, true);
 
   // Add a tokens in Chrome, signin to Sync, but no Gaia cookies.
   const std::string account_id_1 =
@@ -1113,6 +1140,7 @@ TEST_F(AccountReconcilorTest, MigrationClearSecondaryTokens) {
 TEST_F(AccountReconcilorTest, MigrationClearAllTokens) {
   // Enable Dice migration.
   SetAccountConsistency(signin::AccountConsistencyMethod::kDiceMigration);
+  pref_service()->SetBoolean(prefs::kTokenServiceDiceCompatible, true);
 
   // Add a tokens in Chrome but no Gaia cookies.
   const std::string account_id_1 =

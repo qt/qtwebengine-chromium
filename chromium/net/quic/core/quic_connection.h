@@ -21,7 +21,6 @@
 #include <list>
 #include <map>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "base/macros.h"
@@ -44,6 +43,7 @@
 #include "net/quic/platform/api/quic_containers.h"
 #include "net/quic/platform/api/quic_export.h"
 #include "net/quic/platform/api/quic_socket_address.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
 namespace net {
@@ -114,7 +114,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called when the connection is closed either locally by the framer, or
   // remotely by the peer.
   virtual void OnConnectionClosed(QuicErrorCode error,
-                                  const std::string& error_details,
+                                  const QuicString& error_details,
                                   ConnectionCloseSource source) = 0;
 
   // Called when the connection failed to write because the socket was blocked.
@@ -122,7 +122,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
 
   // Called once a specific QUIC version is agreed by both endpoints.
   virtual void OnSuccessfulVersionNegotiation(
-      const QuicTransportVersion& version) = 0;
+      const ParsedQuicVersion& version) = 0;
 
   // Called when a connectivity probe has been received by the connection.
   virtual void OnConnectivityProbeReceived(
@@ -136,7 +136,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   virtual void OnCongestionWindowChange(QuicTime now) = 0;
 
   // Called when the connection receives a packet from a migrated client.
-  virtual void OnConnectionMigration(PeerAddressChangeType type) = 0;
+  virtual void OnConnectionMigration(AddressChangeType type) = 0;
 
   // Called when the peer seems unreachable over the current path.
   virtual void OnPathDegrading() = 0;
@@ -151,6 +151,9 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // packets sent. To instigate an ack from peer, a retransmittable frame needs
   // to be added.
   virtual void OnAckNeedsRetransmittableFrame() = 0;
+
+  // Called when a ping needs to be sent.
+  virtual void SendPing() = 0;
 
   // Called to ask if the visitor wants to schedule write resumption as it both
   // has pending data to write, and is able to write (e.g. based on flow control
@@ -254,7 +257,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
 
   // Called when the connection is closed.
   virtual void OnConnectionClosed(QuicErrorCode error,
-                                  const std::string& error_details,
+                                  const QuicString& error_details,
                                   ConnectionCloseSource source) {}
 
   // Called when the version negotiation is successful.
@@ -315,11 +318,12 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   enum AckMode { TCP_ACKING, ACK_DECIMATION, ACK_DECIMATION_WITH_REORDERING };
 
-  // Constructs a new QuicConnection for |connection_id| and |address| using
-  // |writer| to write packets. |owns_writer| specifies whether the connection
-  // takes ownership of |writer|. |helper| must outlive this connection.
+  // Constructs a new QuicConnection for |connection_id| and
+  // |initial_peer_address| using |writer| to write packets. |owns_writer|
+  // specifies whether the connection takes ownership of |writer|. |helper| must
+  // outlive this connection.
   QuicConnection(QuicConnectionId connection_id,
-                 QuicSocketAddress address,
+                 QuicSocketAddress initial_peer_address,
                  QuicConnectionHelperInterface* helper,
                  QuicAlarmFactory* alarm_factory,
                  QuicPacketWriter* writer,
@@ -347,6 +351,10 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Called by the Session when a max pacing rate for the connection is needed.
   virtual void SetMaxPacingRate(QuicBandwidth max_pacing_rate);
 
+  // Allows the client to adjust network parameters based on external
+  // information.
+  void AdjustNetworkParameters(QuicBandwidth bandwidth, QuicTime::Delta rtt);
+
   // Returns the max pacing rate for the connection.
   QuicBandwidth MaxPacingRate() const;
 
@@ -363,10 +371,17 @@ class QUIC_EXPORT_PRIVATE QuicConnection
                                           QuicStreamOffset offset,
                                           StreamSendingState state);
 
+  // Send |frame| to the peer. Returns true if frame is consumed, false
+  // otherwise.
+  virtual bool SendControlFrame(const QuicFrame& frame);
+
   // Send a RST_STREAM frame to the peer.
   virtual void SendRstStream(QuicStreamId id,
                              QuicRstStreamErrorCode error,
                              QuicStreamOffset bytes_written);
+
+  // Called when stream |id| is reset because of |error|.
+  virtual void OnStreamReset(QuicStreamId id, QuicRstStreamErrorCode error);
 
   // Send a BLOCKED frame to the peer.
   virtual void SendBlocked(QuicStreamId id);
@@ -379,13 +394,13 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // packet is sent to the peer.
   virtual void CloseConnection(
       QuicErrorCode error,
-      const std::string& details,
+      const QuicString& details,
       ConnectionCloseBehavior connection_close_behavior);
 
-  // Sends a GOAWAY frame. Does nothing if a GOAWAY frame has already been sent.
+  // Sends a GOAWAY frame.
   virtual void SendGoAway(QuicErrorCode error,
                           QuicStreamId last_good_stream_id,
-                          const std::string& reason);
+                          const QuicString& reason);
 
   // Returns statistics tracked for this connection.
   const QuicConnectionStats& GetStats();
@@ -455,6 +470,11 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   bool OnPacketHeader(const QuicPacketHeader& header) override;
   bool OnStreamFrame(const QuicStreamFrame& frame) override;
   bool OnAckFrame(const QuicAckFrame& frame) override;
+  bool OnAckFrameStart(QuicPacketNumber largest_acked,
+                       QuicTime::Delta ack_delay_time) override;
+  bool OnAckRange(QuicPacketNumber start,
+                  QuicPacketNumber end,
+                  bool last_range) override;
   bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) override;
   bool OnPaddingFrame(const QuicPaddingFrame& frame) override;
   bool OnPingFrame(const QuicPingFrame& frame) override;
@@ -467,7 +487,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // QuicConnectionCloseDelegateInterface
   void OnUnrecoverableError(QuicErrorCode error,
-                            const std::string& error_details,
+                            const QuicString& error_details,
                             ConnectionCloseSource source) override;
 
   // QuicPacketGenerator::DelegateInterface
@@ -519,10 +539,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   size_t mtu_probe_count() const { return mtu_probe_count_; }
 
   bool connected() const { return connected_; }
-
-  bool goaway_sent() const { return goaway_sent_; }
-
-  bool goaway_received() const { return goaway_received_; }
 
   // Must only be called on client connections.
   const ParsedQuicVersionVector& server_supported_versions() const {
@@ -685,6 +701,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Set data producer in framer.
   void SetDataProducer(QuicStreamFrameDataProducer* data_producer);
 
+  // Set transmission type of next sending packets.
+  void SetTransmissionType(TransmissionType type);
+
   // Return the id of the cipher of the primary decrypter of the framer.
   uint32_t cipher_id() const { return framer_.decrypter()->cipher_id(); }
 
@@ -729,6 +748,10 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     defer_send_in_response_to_packets_ = defer;
   }
 
+  bool use_control_frame_manager() const { return use_control_frame_manager_; }
+
+  bool session_decides_what_to_write() const;
+
  protected:
   // Calls cancel() on all the alarms owned by this connection.
   void CancelAllAlarms();
@@ -739,7 +762,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Called after a packet is received from a new peer address and is decrypted.
   // Starts validation of peer's address change.
-  virtual void StartPeerMigration(PeerAddressChangeType peer_migration_type);
+  virtual void StartPeerMigration(AddressChangeType peer_migration_type);
 
   // Called when a peer address migration is validated.
   virtual void OnPeerMigrationValidated();
@@ -758,14 +781,14 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     per_packet_options_ = options;
   }
 
-  PeerAddressChangeType active_peer_migration_type() {
+  AddressChangeType active_peer_migration_type() {
     return active_peer_migration_type_;
   }
 
   // Sends the connection close packet to the peer. |ack_mode| determines
   // whether ack frame will be bundled with the connection close packet.
   virtual void SendConnectionClosePacket(QuicErrorCode error,
-                                         const std::string& details,
+                                         const QuicString& details,
                                          AckBundling ack_mode);
 
   // Returns true if the packet should be discarded and not sent.
@@ -780,7 +803,12 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Notify various components(SendPacketManager, Session etc.) that this
   // connection has been migrated.
-  void OnConnectionMigration(PeerAddressChangeType addr_change_type);
+  void OnConnectionMigration(AddressChangeType addr_change_type);
+
+  // Return whether the packet being processed is a connectivity probing.
+  // A packet is a connectivity probing if it is a padded ping packet with self
+  // and/or peer address changes.
+  bool IsCurrentPacketConnectivityProbing() const;
 
  private:
   friend class test::QuicConnectionPeer;
@@ -797,7 +825,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Notifies the visitor of the close and marks the connection as disconnected.
   // Does not send a connection close frame to the peer.
   void TearDownLocalConnectionState(QuicErrorCode error,
-                                    const std::string& details,
+                                    const QuicString& details,
                                     ConnectionCloseSource source);
 
   // Writes the given packet to socket, encrypted with packet's
@@ -826,6 +854,10 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Deletes and clears any queued packets.
   void ClearQueuedPackets();
+
+  // Closes the connection if the sent packet manager is tracking too many
+  // outstanding packets.
+  void CloseIfTooManyOutstandingSentPackets();
 
   // Writes as many queued packets as possible.  The connection must not be
   // blocked when this is called.
@@ -885,8 +917,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Consider receiving crypto frame on non crypto stream as memory corruption.
   bool MaybeConsiderAsMemoryCorruption(const QuicStreamFrame& frame);
 
-  const QuicTime::Delta DelayedAckTime();
-
   // Check if the connection has no outstanding data to send and notify
   // congestion controller if it is the case.
   void CheckIfApplicationLimited();
@@ -896,11 +926,14 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // probe and |current_peer_migration_type_| indicates peer address change.
   void UpdatePacketContent(PacketContent type);
 
-  QuicFramer framer_;
+  // Enables session decide what to write based on version and flags.
+  void MaybeEnableSessionDecidesWhatToWrite();
 
-  // If true, server will respect client's connectivity probing packets and send
-  // connectivity probing to the source address of the received probing.
-  bool server_reply_to_connectivity_probes_;
+  // Called when last received ack frame has been processed.
+  // |send_stop_waiting| indicates whether a stop waiting needs to be sent.
+  void PostProcessAfterAckFrame(bool send_stop_waiting);
+
+  QuicFramer framer_;
 
   // Contents received in the current packet, especially used to identify
   // whether the current packet is a padded PING packet.
@@ -908,7 +941,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Caches the current peer migration type if a peer migration might be
   // initiated. As soon as the current packet is confirmed not a connectivity
   // probe, peer migration will start.
-  PeerAddressChangeType current_peer_migration_type_;
+  AddressChangeType current_peer_migration_type_;
   QuicConnectionHelperInterface* helper_;  // Not owned.
   QuicAlarmFactory* alarm_factory_;        // Not owned.
   PerPacketOptions* per_packet_options_;   // Not owned.
@@ -928,7 +961,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Records change type when the peer initiates migration to a new peer
   // address. Reset to NO_CHANGE after peer migration is validated.
-  PeerAddressChangeType active_peer_migration_type_;
+  AddressChangeType active_peer_migration_type_;
 
   // Records highest sent packet number when peer migration is started.
   QuicPacketNumber highest_packet_sent_before_peer_migration_;
@@ -961,6 +994,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Maximum number of undecryptable packets the connection will store.
   size_t max_undecryptable_packets_;
+
+  // Maximum number of tracked packets.
+  QuicPacketCount max_tracked_packets_;
 
   // When the version negotiation packet could not be sent because the socket
   // was not writable, this is set to true.
@@ -1136,12 +1172,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // The size of the largest packet received from peer.
   QuicByteCount largest_received_packet_size_;
 
-  // Whether a GoAway has been sent.
-  bool goaway_sent_;
-
-  // Whether a GoAway has been received.
-  bool goaway_received_;
-
   // Indicates whether a write error is encountered currently. This is used to
   // avoid infinite write errors.
   bool write_error_occurred_;
@@ -1166,6 +1196,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Id of latest sent control frame. 0 if no control frame has been sent.
   QuicControlFrameId last_control_frame_id_;
+
+  // Latched value of quic_reloadable_flag_quic_use_control_frame_manager.
+  const bool use_control_frame_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

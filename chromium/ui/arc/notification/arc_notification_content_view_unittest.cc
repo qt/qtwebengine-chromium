@@ -32,7 +32,7 @@
 #include "ui/aura/window.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/test/event_generator.h"
-#include "ui/message_center/notification.h"
+#include "ui/message_center/public/cpp/notification.h"
 #include "ui/message_center/views/message_view_factory.h"
 #include "ui/message_center/views/notification_control_buttons_view.h"
 #include "ui/message_center/views/padded_button.h"
@@ -113,6 +113,7 @@ class MockArcNotificationItem : public ArcNotificationItem {
     return base::EmptyString16();
   };
   void OnUpdatedFromAndroid(mojom::ArcNotificationDataPtr data) override {}
+  bool IsManuallyExpandedOrCollapsed() const override { return false; }
 
  private:
   std::string notification_key_;

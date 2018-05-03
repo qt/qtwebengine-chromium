@@ -75,6 +75,7 @@ class RecordTest;
 class SequenceTest;
 class SerializedScriptValue;
 class ShadowRoot;
+class StaticSelection;
 class TypeConversions;
 class UnionTypesTest;
 class ScrollState;
@@ -110,12 +111,11 @@ class Internals final : public ScriptWrappable {
                                bool shrinks_layout);
   void setBrowserControlsShownRatio(float);
 
+  Node* effectiveRootScroller(Document*);
+
   ShadowRoot* createUserAgentShadowRoot(Element* host);
 
   ShadowRoot* shadowRoot(Element* host);
-  ShadowRoot* youngestShadowRoot(Element* host);
-  ShadowRoot* oldestShadowRoot(Element* host);
-  ShadowRoot* youngerShadowRoot(Node* shadow, ExceptionState&);
   String shadowRootType(const Node*, ExceptionState&) const;
   bool hasShadowInsertionPoint(const Node*, ExceptionState&) const;
   bool hasContentElement(const Node*, ExceptionState&) const;
@@ -350,6 +350,7 @@ class Internals final : public ScriptWrappable {
 
   String scrollingStateTreeAsText(Document*) const;
   String mainThreadScrollingReasons(Document*, ExceptionState&) const;
+  void markGestureScrollRegionDirty(Document*, ExceptionState&) const;
   DOMRectList* nonFastScrollableRects(Document*, ExceptionState&) const;
 
   void evictAllResources() const;
@@ -397,6 +398,8 @@ class Internals final : public ScriptWrappable {
   void mediaPlayerPlayingRemotelyChanged(HTMLMediaElement*, bool);
   void setMediaElementNetworkState(HTMLMediaElement*, int state);
   void setPersistent(HTMLVideoElement*, bool);
+  void forceStaleStateForMediaElement(HTMLMediaElement*);
+  bool isMediaElementSuspended(HTMLMediaElement*);
 
   void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme);
   void registerURLSchemeAsBypassingContentSecurityPolicy(
@@ -451,6 +454,7 @@ class Internals final : public ScriptWrappable {
   int selectPopupItemStyleFontHeight(Node*, int);
   void resetTypeAheadSession(HTMLSelectElement*);
 
+  StaticSelection* getSelectionInFlatTree(DOMWindow*, ExceptionState&);
   Node* visibleSelectionAnchorNode();
   unsigned visibleSelectionAnchorOffset();
   Node* visibleSelectionFocusNode();
@@ -496,12 +500,10 @@ class Internals final : public ScriptWrappable {
 
   void setNetworkConnectionInfoOverride(bool,
                                         const String&,
+                                        const String&,
+                                        unsigned long http_rtt_msec,
                                         double downlink_max_mbps,
                                         ExceptionState&);
-  void setNetworkQualityInfoOverride(const String&,
-                                     unsigned long transport_rtt_msec,
-                                     double downlink_throughput_mbps,
-                                     ExceptionState&);
   void setSaveDataEnabled(bool);
 
   void clearNetworkConnectionInfoOverride();

@@ -71,10 +71,10 @@
     <paper-input-container no-label-float>
       <input id="searchInput" type="search" on-search="onSearchTermSearch"
           on-input="onSearchTermInput" aria-label$="[[label]]" incremental
-          autofocus$="[[autofocus]]" placeholder="[[label]]">
-      <button suffix is="paper-icon-button-light" id="clearSearch"
-          class="icon-cancel" on-tap="onTapClear_" title="[[clearLabel]]"
-          hidden$="[[!hasSearchText]]">
+          autofocus$="[[autofocus]]" placeholder="[[label]]" slot="input">
+      <button is="paper-icon-button-light" id="clearSearch"
+          class="icon-cancel" on-click="onTapClear_" title="[[clearLabel]]"
+          hidden$="[[!hasSearchText]]" slot="suffix">
       </button>
     </paper-input-container>
   </template>

@@ -17,6 +17,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "components/crash/core/common/crash_key.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/cdm_initialized_promise.h"
 #include "media/base/cdm_key_information.h"
@@ -35,6 +36,7 @@
 #include "media/cdm/cdm_module.h"
 #include "media/cdm/cdm_wrapper.h"
 #include "ui/gfx/geometry/rect.h"
+#include "url/origin.h"
 
 namespace media {
 
@@ -381,8 +383,7 @@ void ToCdmInputBuffer(const scoped_refptr<DecoderBuffer>& encrypted_buffer,
   if (num_subsamples > 0) {
     subsamples->reserve(num_subsamples);
     for (const auto& sample : decrypt_config->subsamples()) {
-      subsamples->push_back(
-          cdm::SubsampleEntry(sample.clear_bytes, sample.cypher_bytes));
+      subsamples->push_back({sample.clear_bytes, sample.cypher_bytes});
     }
   }
 
@@ -448,11 +449,15 @@ void ReportOutputProtectionUMA(OutputProtectionStatus status) {
                             OutputProtectionStatus::kStatusCount);
 }
 
+crash_reporter::CrashKeyString<256> g_origin_crash_key("cdm-origin");
+using crash_reporter::ScopedCrashKeyString;
+
 }  // namespace
 
 // static
 void CdmAdapter::Create(
     const std::string& key_system,
+    const url::Origin& security_origin,
     const CdmConfig& cdm_config,
     std::unique_ptr<CdmAuxiliaryHelper> helper,
     const SessionMessageCB& session_message_cb,
@@ -466,9 +471,10 @@ void CdmAdapter::Create(
   DCHECK(!session_keys_change_cb.is_null());
   DCHECK(!session_expiration_update_cb.is_null());
 
-  scoped_refptr<CdmAdapter> cdm = new CdmAdapter(
-      key_system, cdm_config, std::move(helper), session_message_cb,
-      session_closed_cb, session_keys_change_cb, session_expiration_update_cb);
+  scoped_refptr<CdmAdapter> cdm =
+      new CdmAdapter(key_system, security_origin, cdm_config, std::move(helper),
+                     session_message_cb, session_closed_cb,
+                     session_keys_change_cb, session_expiration_update_cb);
 
   // |cdm| ownership passed to the promise.
   cdm->Initialize(std::make_unique<CdmInitializedPromise>(cdm_created_cb, cdm));
@@ -476,6 +482,7 @@ void CdmAdapter::Create(
 
 CdmAdapter::CdmAdapter(
     const std::string& key_system,
+    const url::Origin& security_origin,
     const CdmConfig& cdm_config,
     std::unique_ptr<CdmAuxiliaryHelper> helper,
     const SessionMessageCB& session_message_cb,
@@ -483,6 +490,7 @@ CdmAdapter::CdmAdapter(
     const SessionKeysChangeCB& session_keys_change_cb,
     const SessionExpirationUpdateCB& session_expiration_update_cb)
     : key_system_(key_system),
+      origin_string_(security_origin.Serialize()),
       cdm_config_(cdm_config),
       session_message_cb_(session_message_cb),
       session_closed_cb_(session_closed_cb),
@@ -660,7 +668,7 @@ Decryptor* CdmAdapter::GetDecryptor() {
 
 int CdmAdapter::GetCdmId() const {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  return kInvalidCdmId;
+  return helper_->GetCdmProxyCdmId();
 }
 
 void CdmAdapter::RegisterNewKeyCB(StreamType stream_type,
@@ -685,8 +693,9 @@ void CdmAdapter::Decrypt(StreamType stream_type,
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   TRACE_EVENT0("media", "CdmAdapter::Decrypt");
+  ScopedCrashKeyString scoped_crash_key(&g_origin_crash_key, origin_string_);
 
-  cdm::InputBuffer input_buffer;
+  cdm::InputBuffer input_buffer = {};
   std::vector<cdm::SubsampleEntry> subsamples;
   std::unique_ptr<DecryptedBlockImpl> decrypted_block(new DecryptedBlockImpl());
 
@@ -717,7 +726,7 @@ void CdmAdapter::InitializeAudioDecoder(const AudioDecoderConfig& config,
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(audio_init_cb_.is_null());
 
-  cdm::AudioDecoderConfig cdm_decoder_config;
+  cdm::AudioDecoderConfig cdm_decoder_config = {};
   cdm_decoder_config.codec = ToCdmAudioCodec(config.codec());
   cdm_decoder_config.channel_count =
       ChannelLayoutToChannelCount(config.channel_layout());
@@ -752,7 +761,7 @@ void CdmAdapter::InitializeVideoDecoder(const VideoDecoderConfig& config,
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(video_init_cb_.is_null());
 
-  cdm::VideoDecoderConfig cdm_decoder_config;
+  cdm::VideoDecoderConfig cdm_decoder_config = {};
   cdm_decoder_config.codec = ToCdmVideoCodec(config.codec());
   cdm_decoder_config.profile = ToCdmVideoCodecProfile(config.profile());
   cdm_decoder_config.format = ToCdmVideoFormat(config.format());
@@ -788,8 +797,9 @@ void CdmAdapter::DecryptAndDecodeAudio(
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   TRACE_EVENT0("media", "CdmAdapter::DecryptAndDecodeAudio");
+  ScopedCrashKeyString scoped_crash_key(&g_origin_crash_key, origin_string_);
 
-  cdm::InputBuffer input_buffer;
+  cdm::InputBuffer input_buffer = {};
   std::vector<cdm::SubsampleEntry> subsamples;
   std::unique_ptr<AudioFramesImpl> audio_frames(new AudioFramesImpl());
 
@@ -823,8 +833,9 @@ void CdmAdapter::DecryptAndDecodeVideo(
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   TRACE_EVENT0("media", "CdmAdapter::DecryptAndDecodeVideo");
+  ScopedCrashKeyString scoped_crash_key(&g_origin_crash_key, origin_string_);
 
-  cdm::InputBuffer input_buffer;
+  cdm::InputBuffer input_buffer = {};
   std::vector<cdm::SubsampleEntry> subsamples;
   std::unique_ptr<VideoFrameImpl> video_frame = helper_->CreateCdmVideoFrame();
 
@@ -1201,7 +1212,7 @@ void CdmAdapter::OnInitialized(bool success) {
   init_promise_id_ = CdmPromiseAdapter::kInvalidPromiseId;
 }
 
-cdm::CdmProxy* CdmAdapter::CreateCdmProxy(cdm::CdmProxyClient* client) {
+cdm::CdmProxy* CdmAdapter::RequestCdmProxy(cdm::CdmProxyClient* client) {
   DVLOG(3) << __func__;
   DCHECK(task_runner_->BelongsToCurrentThread());
 

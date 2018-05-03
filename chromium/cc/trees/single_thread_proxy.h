@@ -25,6 +25,7 @@ namespace cc {
 class MutatorEvents;
 class LayerTreeHost;
 class LayerTreeHostSingleThreadClient;
+class RenderFrameMetadataObserver;
 
 class CC_EXPORT SingleThreadProxy : public Proxy,
                                     LayerTreeHostImplClient,
@@ -63,6 +64,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
     // need to record UKM in that case.
   }
   void ClearHistoryOnNavigation() override;
+  void SetRenderFrameObserver(
+      std::unique_ptr<RenderFrameMetadataObserver> observer) override;
 
   // Blink layout tests might call into this even though an unthreaded CC
   // doesn't have BrowserControls itself.
@@ -71,7 +74,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
                                   bool animate) override {}
 
   // SchedulerClient implementation
-  void WillBeginImplFrame(const viz::BeginFrameArgs& args) override;
+  bool WillBeginImplFrame(const viz::BeginFrameArgs& args) override;
   void DidFinishImplFrame() override;
   void DidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ScheduledActionSendBeginMainFrame(
@@ -90,6 +93,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   size_t CompositedAnimationsCount() const override;
   size_t MainThreadAnimationsCount() const override;
   size_t MainThreadCompositableAnimationsCount() const override;
+  bool CurrentFrameHadRAF() const override;
+  bool NextFrameHasPendingRAF() const override;
 
   // LayerTreeHostImplClient implementation
   void DidLoseLayerTreeFrameSinkOnImplThread() override;
@@ -126,7 +131,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void RequestNewLayerTreeFrameSink();
 
   // Called by the legacy path where RenderWidget does the scheduling.
-  void CompositeImmediately(base::TimeTicks frame_begin_time);
+  // Rasterization of tiles is only performed when |raster| is true.
+  void CompositeImmediately(base::TimeTicks frame_begin_time, bool raster);
 
  protected:
   SingleThreadProxy(LayerTreeHost* layer_tree_host,

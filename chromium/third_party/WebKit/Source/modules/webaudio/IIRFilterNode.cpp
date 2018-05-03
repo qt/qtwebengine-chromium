@@ -10,12 +10,33 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/ConsoleMessage.h"
-#include "modules/webaudio/AudioBasicProcessorHandler.h"
 #include "modules/webaudio/BaseAudioContext.h"
 #include "modules/webaudio/IIRFilterOptions.h"
 #include "platform/Histogram.h"
 
 namespace blink {
+
+IIRFilterHandler::IIRFilterHandler(AudioNode& node,
+                                   float sample_rate,
+                                   const Vector<double>& feedforward_coef,
+                                   const Vector<double>& feedback_coef)
+    : AudioBasicProcessorHandler(
+          kNodeTypeIIRFilter,
+          node,
+          sample_rate,
+          std::make_unique<IIRProcessor>(sample_rate,
+                                         1,
+                                         feedforward_coef,
+                                         feedback_coef)) {}
+
+scoped_refptr<IIRFilterHandler> IIRFilterHandler::Create(
+    AudioNode& node,
+    float sample_rate,
+    const Vector<double>& feedforward_coef,
+    const Vector<double>& feedback_coef) {
+  return base::AdoptRef(
+      new IIRFilterHandler(node, sample_rate, feedforward_coef, feedback_coef));
+}
 
 // Determine if filter is stable based on the feedback coefficients.
 // We compute the reflection coefficients for the filter.  If, at any
@@ -66,10 +87,8 @@ IIRFilterNode::IIRFilterNode(BaseAudioContext& context,
                              const Vector<double>& feedforward_coef,
                              const Vector<double>& feedback_coef)
     : AudioNode(context) {
-  SetHandler(AudioBasicProcessorHandler::Create(
-      AudioHandler::kNodeTypeIIRFilter, *this, context.sampleRate(),
-      std::make_unique<IIRProcessor>(context.sampleRate(), 1, feedforward_coef,
-                                     feedback_coef)));
+  SetHandler(IIRFilterHandler::Create(*this, context.sampleRate(),
+                                      feedforward_coef, feedback_coef));
 
   // Histogram of the IIRFilter order.  createIIRFilter ensures that the length
   // of |feedbackCoef| is in the range [1, IIRFilter::kMaxOrder + 1].  The order
@@ -182,9 +201,9 @@ void IIRFilterNode::Trace(blink::Visitor* visitor) {
   AudioNode::Trace(visitor);
 }
 
-IIRProcessor* IIRFilterNode::IirProcessor() const {
+IIRProcessor* IIRFilterNode::GetIIRFilterProcessor() const {
   return static_cast<IIRProcessor*>(
-      static_cast<AudioBasicProcessorHandler&>(Handler()).Processor());
+      static_cast<IIRFilterHandler&>(Handler()).Processor());
 }
 
 void IIRFilterNode::getFrequencyResponse(
@@ -192,45 +211,31 @@ void IIRFilterNode::getFrequencyResponse(
     NotShared<DOMFloat32Array> mag_response,
     NotShared<DOMFloat32Array> phase_response,
     ExceptionState& exception_state) {
-  if (!frequency_hz.View()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
-                                      "frequencyHz array cannot be null");
-    return;
-  }
-
-  if (!mag_response.View()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
-                                      "magResponse array cannot be null");
-    return;
-  }
-
-  if (!phase_response.View()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
-                                      "phaseResponse array cannot be null");
-    return;
-  }
-
   unsigned frequency_hz_length = frequency_hz.View()->length();
 
-  if (mag_response.View()->length() < frequency_hz_length) {
+  // All the arrays must have the same length.  Just verify that all
+  // the arrays have the same length as the |frequency_hz| array.
+  if (mag_response.View()->length() != frequency_hz_length) {
     exception_state.ThrowDOMException(
-        kNotSupportedError,
-        ExceptionMessages::IndexExceedsMinimumBound(
+        kInvalidAccessError,
+        ExceptionMessages::IndexOutsideRange(
             "magResponse length", mag_response.View()->length(),
-            frequency_hz_length));
+            frequency_hz_length, ExceptionMessages::kInclusiveBound,
+            frequency_hz_length, ExceptionMessages::kInclusiveBound));
     return;
   }
 
-  if (phase_response.View()->length() < frequency_hz_length) {
+  if (phase_response.View()->length() != frequency_hz_length) {
     exception_state.ThrowDOMException(
-        kNotSupportedError,
-        ExceptionMessages::IndexExceedsMinimumBound(
+        kInvalidAccessError,
+        ExceptionMessages::IndexOutsideRange(
             "phaseResponse length", phase_response.View()->length(),
-            frequency_hz_length));
+            frequency_hz_length, ExceptionMessages::kInclusiveBound,
+            frequency_hz_length, ExceptionMessages::kInclusiveBound));
     return;
   }
 
-  IirProcessor()->GetFrequencyResponse(
+  GetIIRFilterProcessor()->GetFrequencyResponse(
       frequency_hz_length, frequency_hz.View()->Data(),
       mag_response.View()->Data(), phase_response.View()->Data());
 }

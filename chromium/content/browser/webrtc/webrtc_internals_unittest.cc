@@ -73,14 +73,6 @@ class MockWakeLock : public device::mojom::WakeLock {
 
 }  // namespace
 
-class WebRtcEventLogManagerForTesting : public WebRtcEventLogManager {
- public:
-  WebRtcEventLogManagerForTesting() {
-    SetTaskRunnerForTesting(base::ThreadTaskRunnerHandle::Get());
-  }
-  ~WebRtcEventLogManagerForTesting() override = default;
-};
-
 // Derived class for testing only.  Allows the tests to have their own instance
 // for testing and control the period for which WebRTCInternals will bulk up
 // updates (changes down from 500ms to 1ms).
@@ -96,10 +88,14 @@ class WebRTCInternalsForTest : public WebRTCInternals {
 
  private:
   MockWakeLock mock_wake_lock_;
-  WebRtcEventLogManagerForTesting synchronous_webrtc_event_log_manager_;
 };
 
 class WebRtcInternalsTest : public testing::Test {
+ public:
+  WebRtcInternalsTest()
+      : synchronous_webrtc_event_log_manager_(
+            base::ThreadTaskRunnerHandle::Get()) {}
+
  protected:
   void VerifyString(const base::DictionaryValue* dict,
                     const std::string& key,
@@ -142,6 +138,9 @@ class WebRtcInternalsTest : public testing::Test {
   }
 
   TestBrowserThreadBundle test_browser_thread_bundle_;
+
+  // Must be constructed before the unit under test.
+  WebRtcEventLogManager synchronous_webrtc_event_log_manager_;
 };
 
 TEST_F(WebRtcInternalsTest, AddRemoveObserver) {

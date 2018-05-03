@@ -88,16 +88,15 @@ class SigninManagerTest : public testing::Test {
         url_fetcher_factory_(nullptr) {
     test_signin_client_.SetURLRequestContext(
         new net::TestURLRequestContextGetter(loop_.task_runner()));
-    signin::SetGaiaOriginIsolatedCallback(base::Bind([] { return true; }));
     cookie_manager_service_.Init(&url_fetcher_factory_);
-    signin::RegisterAccountConsistencyProfilePrefs(user_prefs_.registry());
     AccountFetcherService::RegisterPrefs(user_prefs_.registry());
     AccountTrackerService::RegisterPrefs(user_prefs_.registry());
     SigninManagerBase::RegisterProfilePrefs(user_prefs_.registry());
     SigninManagerBase::RegisterPrefs(local_state_.registry());
     account_tracker_.Initialize(&test_signin_client_);
     account_fetcher_.Initialize(&test_signin_client_, &token_service_,
-                                &account_tracker_);
+                                &account_tracker_,
+                                std::make_unique<TestImageDecoder>());
   }
 
   ~SigninManagerTest() override {
@@ -131,7 +130,8 @@ class SigninManagerTest : public testing::Test {
     DCHECK(!manager_);
     manager_ = std::make_unique<SigninManager>(
         &test_signin_client_, &token_service_, &account_tracker_,
-        &cookie_manager_service_, nullptr /* signin_error_controller */);
+        &cookie_manager_service_, nullptr /* signin_error_controller */,
+        signin::AccountConsistencyMethod::kDisabled);
     manager_->Initialize(&local_state_);
     manager_->AddObserver(&test_observer_);
   }

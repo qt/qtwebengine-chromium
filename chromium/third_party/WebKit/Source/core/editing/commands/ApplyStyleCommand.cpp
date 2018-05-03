@@ -44,6 +44,7 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/serializers/HTMLInterchange.h"
 #include "core/frame/UseCounter.h"
@@ -182,10 +183,9 @@ void ApplyStyleCommand::UpdateStartEnd(const Position& new_start,
     use_ending_selection_ = true;
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
   const bool was_base_first =
-      StartingSelection().IsBaseFirst() || !StartingSelection().IsDirectional();
+      StartingSelection().IsBaseFirst() || !SelectionIsDirectional();
   const EphemeralRange range(new_start, new_end);
   SelectionInDOMTree::Builder builder;
-  builder.SetIsDirectional(EndingSelection().IsDirectional());
   if (was_base_first)
     builder.SetAsForwardSelection(range);
   else
@@ -1383,7 +1383,7 @@ void ApplyStyleCommand::PushDownInlineStyleAroundNode(
         continue;
       if (!child->contains(target_node) && elements_to_push_down.size()) {
         for (const auto& element : elements_to_push_down) {
-          Element* wrapper = element->CloneElementWithoutChildren();
+          Element* wrapper = element->CloneWithoutChildren();
           wrapper->removeAttribute(styleAttr);
           // Delete id attribute from the second element because the same id
           // cannot be used for more than one element
@@ -2000,10 +2000,11 @@ void ApplyStyleCommand::ApplyInlineStyleChange(
       return;
   }
 
-  if (styled_inline_element_ && add_styled_element == kAddStyledElement)
-    SurroundNodeRangeWithElement(
-        start_node, end_node,
-        styled_inline_element_->CloneElementWithoutChildren(), editing_state);
+  if (styled_inline_element_ && add_styled_element == kAddStyledElement) {
+    SurroundNodeRangeWithElement(start_node, end_node,
+                                 styled_inline_element_->CloneWithoutChildren(),
+                                 editing_state);
+  }
 }
 
 float ApplyStyleCommand::ComputedFontSize(Node* node) {

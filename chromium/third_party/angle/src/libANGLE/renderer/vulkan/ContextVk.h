@@ -13,13 +13,14 @@
 #include <vulkan/vulkan.h>
 
 #include "libANGLE/renderer/ContextImpl.h"
-#include "libANGLE/renderer/vulkan/renderervk_utils.h"
+#include "libANGLE/renderer/vulkan/StreamingBuffer.h"
+#include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 
 namespace rx
 {
 class RendererVk;
 
-class ContextVk : public ContextImpl, public ResourceVk
+class ContextVk : public ContextImpl
 {
   public:
     ContextVk(const gl::ContextState &state, RendererVk *renderer);
@@ -114,7 +115,7 @@ class ContextVk : public ContextImpl, public ResourceVk
     TextureImpl *createTexture(const gl::TextureState &state) override;
 
     // Renderbuffer creation
-    RenderbufferImpl *createRenderbuffer() override;
+    RenderbufferImpl *createRenderbuffer(const gl::RenderbufferState &state) override;
 
     // Buffer creation
     BufferImpl *createBuffer(const gl::BufferState &state) override;
@@ -152,22 +153,25 @@ class ContextVk : public ContextImpl, public ResourceVk
     VkDevice getDevice() const;
     RendererVk *getRenderer() { return mRenderer; }
 
-    // TODO(jmadill): Use pipeline cache.
     void invalidateCurrentPipeline();
-
     void onVertexArrayChange();
 
     vk::DescriptorPool *getDescriptorPool();
+
+    const VkClearValue &getClearColorValue() const;
+    const VkClearValue &getClearDepthStencilValue() const;
 
   private:
     gl::Error initPipeline(const gl::Context *context);
     gl::Error setupDraw(const gl::Context *context,
                         GLenum mode,
                         DrawType drawType,
+                        int firstVertex,
+                        int lastVertex,
                         vk::CommandBuffer **commandBuffer);
 
     RendererVk *mRenderer;
-    vk::Pipeline mCurrentPipeline;
+    vk::PipelineAndSerial *mCurrentPipeline;
     GLenum mCurrentDrawMode;
 
     // Keep a cached pipeline description structure that can be used to query the pipeline cache.
@@ -175,12 +179,20 @@ class ContextVk : public ContextImpl, public ResourceVk
     std::unique_ptr<vk::PipelineDesc> mPipelineDesc;
 
     // The descriptor pool is externally sychronized, so cannot be accessed from different threads
-    // simulataneously. Hence, we keep it in the ContextVk instead of the RendererVk.
+    // simultaneously. Hence, we keep it in the ContextVk instead of the RendererVk.
     vk::DescriptorPool mDescriptorPool;
 
     // Triggers adding dependencies to the command graph.
     bool mVertexArrayDirty;
     bool mTexturesDirty;
+
+    // Cached clear value for color and depth/stencil.
+    VkClearValue mClearColorValue;
+    VkClearValue mClearDepthStencilValue;
+
+    StreamingBuffer mStreamingVertexData;
+
+    vk::LineLoopHandler mLineLoopHandler;
 };
 
 }  // namespace rx

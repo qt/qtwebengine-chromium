@@ -69,7 +69,8 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
   static void EnsureSharedBackingThread() {
     DCHECK(IsMainThread());
     WorkletThreadHolder<ThreadedWorkletThreadForTest>::CreateForTest(
-        "ThreadedWorkletThreadForTest");
+        WebThreadCreationParams(WebThreadType::kTestThread)
+            .SetThreadName("ThreadedWorkletThreadForTest"));
   }
 
   static void ClearSharedBackingThread() {
@@ -138,7 +139,7 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
 
   void TestTaskRunner() {
     EXPECT_TRUE(IsCurrentThread());
-    scoped_refptr<WebTaskRunner> task_runner =
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner =
         GlobalScope()->GetTaskRunner(TaskType::kInternalTest);
     EXPECT_TRUE(task_runner->RunsTasksInCurrentSequence());
     PostCrossThreadTask(
@@ -155,8 +156,8 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
 
   bool IsOwningBackingThread() const final { return false; }
 
-  scheduler::ThreadType GetThreadType() const override {
-    return scheduler::ThreadType::kUnspecifiedWorkerThread;
+  WebThreadType GetThreadType() const override {
+    return WebThreadType::kUnspecifiedWorkerThread;
   }
 };
 
@@ -182,9 +183,11 @@ class ThreadedWorkletMessagingProxyForTest
             document->Url(), document->UserAgent(),
             document->GetContentSecurityPolicy()->Headers().get(),
             document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-            worker_clients, document->AddressSpace(),
+            document->IsSecureContext(), worker_clients,
+            document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
-            std::move(worker_settings), kV8CacheOptionsDefault),
+            base::UnguessableToken::Create(), std::move(worker_settings),
+            kV8CacheOptionsDefault),
         WTF::nullopt);
   }
 

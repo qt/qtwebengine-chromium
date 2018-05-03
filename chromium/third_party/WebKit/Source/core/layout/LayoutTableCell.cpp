@@ -313,35 +313,39 @@ void LayoutTableCell::UpdateLayout() {
 }
 
 LayoutUnit LayoutTableCell::PaddingTop() const {
-  LayoutUnit result = ComputedCSSPaddingTop();
-  result += LogicalIntrinsicPaddingToPhysical().Top();
+  auto result =
+      ComputedCSSPaddingTop() + LogicalIntrinsicPaddingToPhysical().Top();
   // TODO(crbug.com/377847): The ToInt call should be removed when Table is
   // sub-pixel aware.
-  return LayoutUnit(result.ToInt());
+  return Style()->IsHorizontalWritingMode() ? LayoutUnit(result.ToInt())
+                                            : result;
 }
 
 LayoutUnit LayoutTableCell::PaddingBottom() const {
-  LayoutUnit result = ComputedCSSPaddingBottom();
-  result += LogicalIntrinsicPaddingToPhysical().Bottom();
+  auto result =
+      ComputedCSSPaddingBottom() + LogicalIntrinsicPaddingToPhysical().Bottom();
   // TODO(crbug.com/377847): The ToInt call should be removed when Table is
   // sub-pixel aware.
-  return LayoutUnit(result.ToInt());
+  return Style()->IsHorizontalWritingMode() ? LayoutUnit(result.ToInt())
+                                            : result;
 }
 
 LayoutUnit LayoutTableCell::PaddingLeft() const {
-  LayoutUnit result = ComputedCSSPaddingLeft();
-  result += LogicalIntrinsicPaddingToPhysical().Left();
+  auto result =
+      ComputedCSSPaddingLeft() + LogicalIntrinsicPaddingToPhysical().Left();
   // TODO(crbug.com/377847): The ToInt call should be removed when Table is
   // sub-pixel aware.
-  return LayoutUnit(result.ToInt());
+  return Style()->IsHorizontalWritingMode() ? result
+                                            : LayoutUnit(result.ToInt());
 }
 
 LayoutUnit LayoutTableCell::PaddingRight() const {
-  LayoutUnit result = ComputedCSSPaddingRight();
-  result += LogicalIntrinsicPaddingToPhysical().Right();
+  auto result =
+      ComputedCSSPaddingRight() + LogicalIntrinsicPaddingToPhysical().Right();
   // TODO(crbug.com/377847): The ToInt call should be removed when Table is
   // sub-pixel aware.
-  return LayoutUnit(result.ToInt());
+  return Style()->IsHorizontalWritingMode() ? result
+                                            : LayoutUnit(result.ToInt());
 }
 
 void LayoutTableCell::SetOverrideLogicalContentHeightFromRowHeight(

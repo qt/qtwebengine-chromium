@@ -18,7 +18,7 @@
 
 const REPO_URL = 'https://android.googlesource.com/platform/external/perfetto/';
 const GERRIT_REVIEW_URL = 'https://android-review.googlesource.com/c/platform/external/perfetto';
-const CHANGES_URL = '/changes/?q=project:platform/external/perfetto+-age:7days&o=DETAILED_ACCOUNTS';
+const CHANGES_URL = '/changes/?q=project:platform/external/perfetto+-age:7days+-is:abandoned&o=DETAILED_ACCOUNTS';
 const REPO = 'catapult-project/perfetto';
 
 let botIndex = {};
@@ -89,6 +89,7 @@ function GetTravisStatusForBranch(branch, div) {
 function CreateRowForBranch(branch, href, subject, status, author, updated) {
     let table = document.getElementById('cls');
     let tr = document.createElement('tr');
+    tr.classList.add(status);
 
     let link = document.createElement('a');
     link.href = href;

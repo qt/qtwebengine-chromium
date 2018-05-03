@@ -982,6 +982,13 @@ void GLES2InterfaceStub::VerifySyncTokensCHROMIUM(GLbyte** /* sync_tokens */,
                                                   GLsizei /* count */) {}
 void GLES2InterfaceStub::WaitSyncTokenCHROMIUM(const GLbyte* /* sync_token */) {
 }
+void GLES2InterfaceStub::UnpremultiplyAndDitherCopyCHROMIUM(
+    GLuint /* source_id */,
+    GLuint /* dest_id */,
+    GLint /* x */,
+    GLint /* y */,
+    GLsizei /* width */,
+    GLsizei /* height */) {}
 void GLES2InterfaceStub::DrawBuffersEXT(GLsizei /* count */,
                                         const GLenum* /* bufs */) {}
 void GLES2InterfaceStub::DiscardBackbufferCHROMIUM() {}
@@ -1199,7 +1206,8 @@ void GLES2InterfaceStub::BeginRasterCHROMIUM(
     GLuint /* msaa_sample_count */,
     GLboolean /* can_use_lcd_text */,
     GLboolean /* use_distance_field_text */,
-    GLint /* pixel_config */) {}
+    GLint /* color_type */,
+    GLuint /* color_space_transfer_cache_id */) {}
 void* GLES2InterfaceStub::MapRasterCHROMIUM(GLsizeiptr /* size */) {
   return 0;
 }

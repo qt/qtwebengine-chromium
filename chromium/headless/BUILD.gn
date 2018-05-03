@@ -12,6 +12,7 @@ import("//testing/test.gni")
 import("//third_party/closure_compiler/compile_js.gni")
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 
 config("headless_implementation") {
   defines = [ "HEADLESS_IMPLEMENTATION" ]
@@ -449,6 +450,19 @@ component("headless") {
         "//components/printing/service/public/interfaces",
       ]
     }
+
+    # Normally set to false (see build/args/headless.gn), but we can optionally
+    # use external v8 startup data too.
+    if (v8_use_external_startup_data) {
+      sources += [ "$root_out_dir/natives_blob.bin" ]
+      public_deps += [ "//v8" ]
+      if (use_v8_context_snapshot) {
+        sources += [ "$root_out_dir/v8_context_snapshot.bin" ]
+        public_deps += [ "//tools/v8_context_snapshot" ]
+      } else {
+        sources += [ "$root_out_dir/snapshot_blob.bin" ]
+      }
+    }
   }
 
   if (is_mac) {
@@ -518,7 +532,7 @@ if (!is_component_build) {
   }
 }
 
-static_library("headless_test_support") {
+static_library("headless_url_mocks") {
   testonly = true
 
   sources = [
@@ -526,6 +540,19 @@ static_library("headless_test_support") {
     "public/util/testing/fake_managed_dispatch_url_request_job.h",
     "public/util/testing/generic_url_request_mocks.cc",
     "public/util/testing/generic_url_request_mocks.h",
+  ]
+
+  public_deps = [
+    ":headless_renderer",
+    "//base",
+    "//net",
+  ]
+}
+
+static_library("headless_test_support") {
+  testonly = true
+
+  sources = [
     "public/util/testing/mock_devtools_agent_host.cc",
     "public/util/testing/mock_devtools_agent_host.h",
   ]
@@ -537,6 +564,7 @@ static_library("headless_test_support") {
   ]
 
   deps = [
+    ":headless_url_mocks",
     "//testing/gmock",
   ]
 }
@@ -951,5 +979,6 @@ executable("headless_example") {
   deps = [
     ":headless_shell_lib",
     "//build/config:exe_and_shlib_deps",
+    "//skia",  # we need this to override font render hinting in headless build
   ]
 }

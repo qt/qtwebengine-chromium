@@ -183,10 +183,10 @@ void SVGUseElement::CollectStyleForPresentationAttribute(
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == x_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &x_->CssValue());
+                                            x_->CssValue());
   } else if (property == y_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &y_->CssValue());
+                                            y_->CssValue());
   } else {
     SVGGraphicsElement::CollectStyleForPresentationAttribute(name, value,
                                                              style);
@@ -237,9 +237,8 @@ void SVGUseElement::SvgAttributeChanged(const QualifiedName& attr_name) {
           *target_element_instance_->CorrespondingElement());
     }
 
-    LayoutObject* object = this->GetLayoutObject();
-    if (object)
-      MarkForLayoutAndParentResourceInvalidation(object);
+    if (LayoutObject* object = GetLayoutObject())
+      MarkForLayoutAndParentResourceInvalidation(*object);
     return;
   }
 
@@ -402,7 +401,7 @@ static void MoveChildrenToReplacementElement(ContainerNode& source_root,
 }
 
 Element* SVGUseElement::CreateInstanceTree(SVGElement& target_root) const {
-  Element* instance_root = target_root.CloneElementWithChildren();
+  Element* instance_root = target_root.CloneWithChildren();
   DCHECK(instance_root->IsSVGElement());
   if (IsSVGSymbolElement(target_root)) {
     // Spec: The referenced 'symbol' and its contents are deep-cloned into
@@ -415,9 +414,9 @@ Element* SVGUseElement::CreateInstanceTree(SVGElement& target_root) const {
     // values of 100% for these attributes.
     SVGSVGElement* svg_element =
         SVGSVGElement::Create(target_root.GetDocument());
-    // Transfer all data (attributes, etc.) from the <symbol> to the new
-    // <svg> element.
-    svg_element->CloneDataFromElement(*instance_root);
+    // Transfer all attributes from the <symbol> to the new <svg>
+    // element.
+    svg_element->CloneAttributesFrom(*instance_root);
     // Move already cloned elements to the new <svg> element.
     MoveChildrenToReplacementElement(*instance_root, *svg_element);
     instance_root = svg_element;
@@ -624,7 +623,7 @@ bool SVGUseElement::ExpandUseElementsInShadowTree() {
     // Setup sub-shadow tree root node
     SVGGElement* clone_parent = SVGGElement::Create(original_use.GetDocument());
     // Transfer all data (attributes, etc.) from <use> to the new <g> element.
-    clone_parent->CloneDataFromElement(*use);
+    clone_parent->CloneAttributesFrom(*use);
     clone_parent->SetCorrespondingElement(&original_use);
 
     RemoveAttributesFromReplacementElement(*clone_parent);

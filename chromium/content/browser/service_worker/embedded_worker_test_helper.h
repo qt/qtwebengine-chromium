@@ -27,8 +27,8 @@
 #include "ipc/ipc_test_sink.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/http/http_response_info.h"
-#include "third_party/WebKit/common/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
 #include "url/gurl.h"
 
 class GURL;
@@ -45,7 +45,6 @@ class ServiceWorkerDispatcherHost;
 class TestBrowserContext;
 struct PlatformNotificationData;
 struct PushEventPayload;
-struct ServiceWorkerFetchRequest;
 
 // In-Process EmbeddedWorker test helper.
 //
@@ -237,13 +236,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
       mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
           finish_callback);
-  virtual void OnLegacyFetchEvent(
-      int embedded_worker_id,
-      const ServiceWorkerFetchRequest& request,
-      mojom::FetchEventPreloadHandlePtr preload_handle,
-      mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-          finish_callback);
   virtual void OnNotificationClickEvent(
       const std::string& notification_id,
       const PlatformNotificationData& notification_data,
@@ -297,9 +289,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void OnStartWorkerStub(mojom::EmbeddedWorkerStartParamsPtr params);
   void OnResumeAfterDownloadStub(int embedded_worker_id);
   void OnStopWorkerStub(int embedded_worker_id);
-  void OnMessageToWorkerStub(int thread_id,
-                             int embedded_worker_id,
-                             const IPC::Message& message);
   void OnActivateEventStub(
       mojom::ServiceWorkerEventDispatcher::DispatchActivateEventCallback
           callback);
@@ -330,13 +319,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void OnInstallEventStub(
       mojom::ServiceWorkerEventDispatcher::DispatchInstallEventCallback
           callback);
-  void OnLegacyFetchEventStub(
-      int thread_id,
-      const ServiceWorkerFetchRequest& request,
-      mojom::FetchEventPreloadHandlePtr preload_handle,
-      mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-          finish_callback);
   void OnFetchEventStub(
       int thread_id,
       const network::ResourceRequest& request,

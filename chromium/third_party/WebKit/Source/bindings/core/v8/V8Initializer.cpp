@@ -40,10 +40,12 @@
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "bindings/core/v8/V8ContextSnapshot.h"
 #include "bindings/core/v8/V8DOMException.h"
+#include "bindings/core/v8/V8EmbedderGraphBuilder.h"
 #include "bindings/core/v8/V8ErrorEvent.h"
 #include "bindings/core/v8/V8ErrorHandler.h"
 #include "bindings/core/v8/V8GCController.h"
 #include "bindings/core/v8/V8IdleTaskRunner.h"
+#include "bindings/core/v8/V8WasmResponseExtensions.h"
 #include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
@@ -55,7 +57,7 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/bindings/DOMWrapperWorld.h"
-#include "platform/bindings/ScriptWrappableVisitor.h"
+#include "platform/bindings/ScriptWrappableMarkingVisitor.h"
 #include "platform/bindings/V8PerContextData.h"
 #include "platform/bindings/V8PrivateProperty.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
@@ -70,7 +72,6 @@
 #include "platform/wtf/typed_arrays/ArrayBufferContents.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
-#include "v8/include/v8-debug.h"
 #include "v8/include/v8-profiler.h"
 
 namespace blink {
@@ -254,8 +255,7 @@ static void PromiseRejectHandler(v8::PromiseRejectMessage data,
 
   DCHECK_EQ(data.GetEvent(), v8::kPromiseRejectWithNoHandler);
 
-  v8::Local<v8::Promise> promise = data.GetPromise();
-  v8::Isolate* isolate = promise->GetIsolate();
+  v8::Isolate* isolate = script_state->GetIsolate();
   ExecutionContext* context = ExecutionContext::From(script_state);
 
   v8::Local<v8::Value> exception = data.GetValue();
@@ -515,12 +515,12 @@ static void HostGetImportMetaProperties(v8::Local<v8::Context> context,
 static void InitializeV8Common(v8::Isolate* isolate) {
   isolate->AddGCPrologueCallback(V8GCController::GcPrologue);
   isolate->AddGCEpilogueCallback(V8GCController::GcEpilogue);
-  std::unique_ptr<ScriptWrappableVisitor> visitor(
-      new ScriptWrappableVisitor(isolate));
-  V8PerIsolateData::From(isolate)->SetScriptWrappableVisitor(
+  std::unique_ptr<ScriptWrappableMarkingVisitor> visitor(
+      new ScriptWrappableMarkingVisitor(isolate));
+  V8PerIsolateData::From(isolate)->SetScriptWrappableMarkingVisitor(
       std::move(visitor));
   isolate->SetEmbedderHeapTracer(
-      V8PerIsolateData::From(isolate)->GetScriptWrappableVisitor());
+      V8PerIsolateData::From(isolate)->GetScriptWrappableMarkingVisitor());
 
   isolate->SetMicrotasksPolicy(v8::MicrotasksPolicy::kScoped);
 
@@ -537,6 +537,8 @@ static void InitializeV8Common(v8::Isolate* isolate) {
   }
 
   V8ContextSnapshot::EnsureInterfaceTemplates(isolate);
+
+  WasmResponseExtensions::Initialize(isolate);
 }
 
 namespace {
@@ -557,38 +559,6 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 
   void Free(void* data, size_t size) override {
     WTF::ArrayBufferContents::FreeMemory(data);
-  }
-
-  void* Reserve(size_t length) override {
-    return WTF::ArrayBufferContents::ReserveMemory(length);
-  }
-
-  void Free(void* data, size_t length, AllocationMode mode) override {
-    switch (mode) {
-      case AllocationMode::kNormal:
-        Free(data, length);
-        return;
-      case AllocationMode::kReservation:
-        WTF::ArrayBufferContents::ReleaseReservedMemory(data, length);
-        return;
-      default:
-        NOTREACHED();
-    }
-  }
-
-  void SetProtection(void* data,
-                     size_t length,
-                     Protection protection) override {
-    switch (protection) {
-      case Protection::kNoAccess:
-        CHECK(WTF::SetSystemPagesAccess(data, length, WTF::PageInaccessible));
-        return;
-      case Protection::kReadWrite:
-        CHECK(WTF::SetSystemPagesAccess(data, length, WTF::PageReadWrite));
-        return;
-      default:
-        NOTREACHED();
-    }
   }
 };
 
@@ -643,9 +613,8 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
 #endif  // USE_V8_CONTEXT_SNAPSHOT
 
   v8::Isolate* isolate = V8PerIsolateData::Initialize(
-      scheduler
-          ? scheduler->V8TaskRunner()
-          : Platform::Current()->CurrentThread()->GetSingleThreadTaskRunner(),
+      scheduler ? scheduler->V8TaskRunner()
+                : Platform::Current()->CurrentThread()->GetTaskRunner(),
       v8_context_snapshot_mode);
 
   InitializeV8Common(isolate);
@@ -674,13 +643,15 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
     profiler->SetWrapperClassInfoProvider(
         WrapperTypeInfo::kNodeClassId, &RetainedDOMInfo::CreateRetainedDOMInfo);
     profiler->SetGetRetainerInfosCallback(&V8GCController::GetRetainerInfos);
+    profiler->SetBuildEmbedderGraphCallback(
+        &V8EmbedderGraphBuilder::BuildEmbedderGraphCallback);
   }
 
   DCHECK(ThreadState::MainThreadState());
   ThreadState::MainThreadState()->RegisterTraceDOMWrappers(
       isolate, V8GCController::TraceDOMWrappers,
-      ScriptWrappableVisitor::InvalidateDeadObjectsInMarkingDeque,
-      ScriptWrappableVisitor::PerformCleanup);
+      ScriptWrappableMarkingVisitor::InvalidateDeadObjectsInMarkingDeque,
+      ScriptWrappableMarkingVisitor::PerformCleanup);
 
   V8PerIsolateData::From(isolate)->SetThreadDebugger(
       std::make_unique<MainThreadDebugger>(isolate));

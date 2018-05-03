@@ -16,7 +16,6 @@
             "persistence": "closeable",
             "order": 100,
             "className": "Timeline.PerformanceMonitor",
-            "experiment": "performanceMonitor",
             "tags": "performance, system monitor, monitor, activity, metrics"
         },
         {
@@ -45,7 +44,7 @@
             "order": 15
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "timeline.toggle-recording",
             "iconClass": "largeicon-start-recording",
             "toggledIconClass": "largeicon-stop-recording",
@@ -76,7 +75,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "timeline.record-reload",
             "iconClass": "largeicon-refresh",
             "contextTypes": [
@@ -97,7 +96,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "category": "Timeline",
             "actionId": "timeline.save-to-file",
             "contextTypes": [
@@ -117,7 +116,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "category": "Timeline",
             "actionId": "timeline.load-from-file",
             "contextTypes": [
@@ -137,7 +136,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "timeline.jump-to-previous-frame",
             "contextTypes": [
                 "Timeline.TimelinePanel"
@@ -150,7 +149,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "timeline.jump-to-next-frame",
             "contextTypes": [
                 "Timeline.TimelinePanel"
@@ -163,7 +162,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "timeline.show-history",
             "className": "Timeline.TimelinePanel.ActionDelegate",
             "category": "Performance",
@@ -182,18 +181,65 @@
                     "shortcut": "Meta+Y"
                 }
             ]
+        },
+        {
+            "type": "view",
+            "location": "panel",
+            "id": "js_profiler",
+            "title": "JavaScript Profiler",
+            "persistence": "closeable",
+            "order": 65,
+            "className": "Profiler.JSProfilerPanel"
+        },
+        {
+            "type": "action",
+            "actionId": "timeline.previous-recording",
+            "className": "Timeline.TimelinePanel.ActionDelegate",
+            "experiment": "timelineKeepHistory",
+            "contextTypes": [
+                "Timeline.TimelinePanel"
+            ],
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Alt+Left"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+Left"
+                }
+            ]
+        },
+        {
+            "type": "action",
+            "actionId": "timeline.next-recording",
+            "className": "Timeline.TimelinePanel.ActionDelegate",
+            "experiment": "timelineKeepHistory",
+            "contextTypes": [
+                "Timeline.TimelinePanel"
+            ],
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Alt+Right"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+Right"
+                }
+            ]
         }
     ],
     "dependencies": [
-        "components",
+        "browser_components",
         "layer_viewer",
         "timeline_model",
         "perf_ui",
         "extensions",
         "data_grid",
         "product_registry",
-        "mobile_throttling",
-        "network_priorities"
+        "profiler",
+        "mobile_throttling"
     ],
     "scripts": [
         "PerformanceMonitor.js",

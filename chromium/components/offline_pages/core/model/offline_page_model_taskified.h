@@ -14,6 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/time/clock.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/offline_pages/core/model/clear_storage_task.h"
 #include "components/offline_pages/core/offline_page_archiver.h"
@@ -38,6 +39,7 @@ class ArchiveManager;
 class ClientPolicyController;
 class OfflinePageArchiver;
 class OfflinePageMetadataStoreSQL;
+class SystemDownloadManager;
 
 // Implementaion of OfflinePageModel, which is a service for saving pages
 // offline. It's an entry point to get information about Offline Pages and the
@@ -49,24 +51,23 @@ class OfflinePageModelTaskified : public OfflinePageModel,
                                   public TaskQueue::Delegate {
  public:
   // Initial delay after which a list of items for upgrade will be generated.
-  // TODO(fgorski): We need to measure the cost of opening and closing the DB,
-  // before we split |kInitializingTaskDelay| and
-  // |kInitialUpgradeSelectionDelay| further apart, than 20 seconds.
   static constexpr base::TimeDelta kInitialUpgradeSelectionDelay =
       base::TimeDelta::FromSeconds(45);
 
-  // Initial delay of other tasks triggered at the startup.
-  static constexpr base::TimeDelta kInitializingTaskDelay =
-      base::TimeDelta::FromSeconds(30);
+  // Delay between the scheduling and actual running of maintenance tasks. To
+  // not cause the re-opening of the metadata store this delay should be kept
+  // smaller than OfflinePageMetadataStoreSQL::kClosingDelay.
+  static constexpr base::TimeDelta kMaintenanceTasksDelay =
+      base::TimeDelta::FromSeconds(10);
 
-  // The time that the storage cleanup will be triggered again since the last
-  // one.
+  // Minimum delay between runs of maintenance tasks during a Chrome session.
   static constexpr base::TimeDelta kClearStorageInterval =
       base::TimeDelta::FromMinutes(30);
 
   OfflinePageModelTaskified(
       std::unique_ptr<OfflinePageMetadataStoreSQL> store,
       std::unique_ptr<ArchiveManager> archive_manager,
+      std::unique_ptr<SystemDownloadManager> download_manager,
       const scoped_refptr<base::SequencedTaskRunner>& task_runner,
       std::unique_ptr<base::Clock> clock);
   ~OfflinePageModelTaskified() override;
@@ -89,6 +90,10 @@ class OfflinePageModelTaskified : public OfflinePageModel,
                               const DeletePageCallback& callback) override;
   void DeletePagesByClientIds(const std::vector<ClientId>& client_ids,
                               const DeletePageCallback& callback) override;
+  void DeletePagesByClientIdsAndOrigin(
+      const std::vector<ClientId>& client_ids,
+      const std::string& origin,
+      const DeletePageCallback& callback) override;
   void DeleteCachedPagesByURLPredicate(
       const UrlPredicate& predicate,
       const DeletePageCallback& callback) override;
@@ -115,6 +120,10 @@ class OfflinePageModelTaskified : public OfflinePageModel,
   void GetPagesByRequestOrigin(
       const std::string& request_origin,
       const MultipleOfflinePageItemCallback& callback) override;
+  void GetPageBySizeAndDigest(
+      int64_t file_size,
+      const std::string& digest,
+      const SingleOfflinePageItemCallback& callback) override;
 
   void GetOfflineIdsForClientId(
       const ClientId& client_id,
@@ -173,19 +182,12 @@ class OfflinePageModelTaskified : public OfflinePageModel,
       DeletePageResult result,
       const std::vector<OfflinePageModel::DeletedPageInfo>& infos);
 
-  // Methods for clearing temporary pages.
-  void PostClearLegacyTemporaryPagesTask();
-  void ClearLegacyTemporaryPages();
-  void PostClearCachedPagesTask(bool is_initializing);
-  void ClearCachedPages();
-  void OnClearCachedPagesDone(base::Time start_time,
-                              size_t deleted_page_count,
+  // Methods for clearing temporary pages and performing consistency checks. The
+  // latter are executed only once per Chrome session.
+  void ScheduleMaintenanceTasks();
+  void RunMaintenanceTasks(const base::Time now, bool first_run);
+  void OnClearCachedPagesDone(size_t deleted_page_count,
                               ClearStorageTask::ClearStorageResult result);
-
-  // Methods for consistency check.
-  void PostCheckMetadataConsistencyTask(bool is_initializing);
-  void CheckTemporaryPagesConsistency();
-  void CheckPersistentPagesConsistency();
 
   // Method for upgrade to public storage.
   void PostSelectItemsMarkedForUpgrade();
@@ -193,8 +195,24 @@ class OfflinePageModelTaskified : public OfflinePageModel,
   void OnSelectItemsMarkedForUpgradeDone(
       const MultipleOfflinePageItemResult& pages_for_upgrade);
 
+  // Methods for publishing the page to the public directory.
+  void PublishArchive(const OfflinePageItem& offline_page,
+                      const SavePageCallback& callback,
+                      OfflinePageArchiver* archiver);
+
+  // Callback for when PublishArchive has completd.
+  void PublishArchiveDone(const SavePageCallback& save_page_callback,
+                          const OfflinePageItem& offline_page,
+                          PublishArchiveResult* archive_result);
+
+  // Method for unpublishing the page from the system download manager.
+  static void RemoveFromDownloadManager(
+      SystemDownloadManager* download_manager,
+      const std::vector<int64_t>& system_download_ids);
+
   // Other utility methods.
   void RemovePagesMatchingUrlAndNamespace(const OfflinePageItem& page);
+  void ErasePendingArchiver(OfflinePageArchiver* archiver);
   void CreateArchivesDirectoryIfNeeded();
   base::Time GetCurrentTime();
 
@@ -203,6 +221,9 @@ class OfflinePageModelTaskified : public OfflinePageModel,
 
   // Manager for the offline archive files and directory.
   std::unique_ptr<ArchiveManager> archive_manager_;
+
+  // Manages interaction with the OS download manager, if present.
+  std::unique_ptr<SystemDownloadManager> download_manager_;
 
   // Controller of the client policies.
   std::unique_ptr<ClientPolicyController> policy_controller_;
@@ -225,14 +246,16 @@ class OfflinePageModelTaskified : public OfflinePageModel,
   // The task queue used for executing various tasks.
   TaskQueue task_queue_;
 
-  // Time of when the most recent cached pages clearing happened. The value will
-  // not persist across Chrome restarts.
-  base::Time last_clear_cached_pages_time_;
+  // The last scheduling timestamp of the model maintenance tasks that took
+  // place during the current Chrome session.
+  base::Time last_maintenance_tasks_schedule_time_;
 
   // For testing only.
   // This value will be affecting the CreateArchiveTasks that are created by the
   // model to skip saving original_urls.
   bool skip_clearing_original_url_for_testing_;
+
+  const scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   base::WeakPtrFactory<OfflinePageModelTaskified> weak_ptr_factory_;
 

@@ -8,13 +8,14 @@
 
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/version.h"
-#include "components/patch_service/file_patcher_impl.h"
 #include "components/patch_service/patch_service.h"
-#include "components/patch_service/public/interfaces/file_patcher.mojom.h"
 #include "components/prefs/pref_service.h"
+#include "components/unzip_service/unzip_service.h"
 #include "components/update_client/activity_data_service.h"
 #include "net/url_request/url_request_test_util.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "services/service_manager/public/cpp/service.h"
+#include "services/service_manager/public/cpp/test/test_connector_factory.h"
 #include "url/gurl.h"
 
 namespace update_client {
@@ -36,12 +37,17 @@ TestConfigurator::TestConfigurator()
       ondemand_time_(0),
       enabled_cup_signing_(false),
       enabled_component_updates_(true),
-      connector_factory_(
-          service_manager::TestConnectorFactory::CreateForUniqueService(
-              std::make_unique<patch::PatchService>())),
-      connector_(connector_factory_->CreateConnector()),
       context_(base::MakeRefCounted<net::TestURLRequestContextGetter>(
-          base::ThreadTaskRunnerHandle::Get())) {}
+          base::ThreadTaskRunnerHandle::Get())) {
+  service_manager::TestConnectorFactory::NameToServiceMap services;
+  services.insert(
+      std::make_pair("patch_service", std::make_unique<patch::PatchService>()));
+  services.insert(
+      std::make_pair("unzip_service", std::make_unique<unzip::UnzipService>()));
+  connector_factory_ = service_manager::TestConnectorFactory::CreateForServices(
+      std::move(services));
+  connector_ = connector_factory_->CreateConnector();
+}
 
 TestConfigurator::~TestConfigurator() {
 }
@@ -109,8 +115,9 @@ std::string TestConfigurator::GetDownloadPreference() const {
   return download_preference_;
 }
 
-net::URLRequestContextGetter* TestConfigurator::RequestContext() const {
-  return context_.get();
+scoped_refptr<net::URLRequestContextGetter> TestConfigurator::RequestContext()
+    const {
+  return context_;
 }
 
 std::unique_ptr<service_manager::Connector>

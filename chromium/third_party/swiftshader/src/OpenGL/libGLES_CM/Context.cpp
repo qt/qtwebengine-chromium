@@ -149,9 +149,14 @@ Context::Context(egl::Display *const display, const Context *shareContext, const
 	mTextureExternalZero = new TextureExternal(0);
 
 	mState.activeSampler = 0;
+
+	for(int type = 0; type < TEXTURE_TYPE_COUNT; type++)
+	{
+		bindTexture((TextureType)type, 0);
+	}
+
 	bindArrayBuffer(0);
 	bindElementArrayBuffer(0);
-	bindTexture2D(0);
 	bindFramebuffer(0);
 	bindRenderbuffer(0);
 
@@ -1012,18 +1017,11 @@ void Context::bindElementArrayBuffer(unsigned int buffer)
 	mState.elementArrayBuffer = getBuffer(buffer);
 }
 
-void Context::bindTexture2D(GLuint texture)
+void Context::bindTexture(TextureType type, GLuint texture)
 {
-	mResourceManager->checkTextureAllocation(texture, TEXTURE_2D);
+	mResourceManager->checkTextureAllocation(texture, type);
 
-	mState.samplerTexture[TEXTURE_2D][mState.activeSampler] = getTexture(texture);
-}
-
-void Context::bindTextureExternal(GLuint texture)
-{
-	mResourceManager->checkTextureAllocation(texture, TEXTURE_EXTERNAL);
-
-	mState.samplerTexture[TEXTURE_EXTERNAL][mState.activeSampler] = getTexture(texture);
+	mState.samplerTexture[type][mState.activeSampler] = getTexture(texture);
 }
 
 void Context::bindFramebuffer(GLuint framebuffer)
@@ -1368,7 +1366,6 @@ bool Context::getIntegerv(GLenum pname, GLint *params)
 		}
 		break;
 	case GL_TEXTURE_BINDING_2D:                  *params = mState.samplerTexture[TEXTURE_2D][mState.activeSampler].name();                   break;
-	case GL_TEXTURE_BINDING_CUBE_MAP_OES:        *params = mState.samplerTexture[TEXTURE_CUBE][mState.activeSampler].name();                 break;
 	case GL_TEXTURE_BINDING_EXTERNAL_OES:        *params = mState.samplerTexture[TEXTURE_EXTERNAL][mState.activeSampler].name();             break;
 	case GL_MAX_LIGHTS:                          *params = MAX_LIGHTS;                                                                       break;
 	case GL_MAX_MODELVIEW_STACK_DEPTH:           *params = MAX_MODELVIEW_STACK_DEPTH;                                                        break;
@@ -2413,7 +2410,7 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 		}
 	}
 
-	GLsizei outputPitch = egl::ComputePitch(width, format, type, mState.packAlignment);
+	GLsizei outputPitch = gl::ComputePitch(width, format, type, mState.packAlignment);
 
 	// Sized query sanity check
 	if(bufSize)
@@ -2435,7 +2432,7 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 	sw::Rect rect = {x, y, x + width, y + height};
 	rect.clip(0, 0, renderTarget->getWidth(), renderTarget->getHeight());
 
-	unsigned char *source = (unsigned char*)renderTarget->lock(rect.x0, rect.y0, sw::LOCK_READONLY);
+	unsigned char *source = (unsigned char*)renderTarget->lock(rect.x0, rect.y0, 0, sw::LOCK_READONLY);
 	unsigned char *dest = (unsigned char*)pixels;
 	int inputPitch = (int)renderTarget->getPitch();
 
@@ -2444,12 +2441,12 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 		unsigned short *dest16 = (unsigned short*)dest;
 		unsigned int *dest32 = (unsigned int*)dest;
 
-		if(renderTarget->getInternalFormat() == sw::FORMAT_A8B8G8R8 &&
+		if(renderTarget->getExternalFormat() == sw::FORMAT_A8B8G8R8 &&
 		   format == GL_RGBA && type == GL_UNSIGNED_BYTE)
 		{
 			memcpy(dest, source, (rect.x1 - rect.x0) * 4);
 		}
-		else if(renderTarget->getInternalFormat() == sw::FORMAT_A8R8G8B8 &&
+		else if(renderTarget->getExternalFormat() == sw::FORMAT_A8R8G8B8 &&
 				format == GL_RGBA && type == GL_UNSIGNED_BYTE)
 		{
 			for(int i = 0; i < rect.x1 - rect.x0; i++)
@@ -2459,7 +2456,7 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 				dest32[i] = (argb & 0xFF00FF00) | ((argb & 0x000000FF) << 16) | ((argb & 0x00FF0000) >> 16);
 			}
 		}
-		else if(renderTarget->getInternalFormat() == sw::FORMAT_X8R8G8B8 &&
+		else if(renderTarget->getExternalFormat() == sw::FORMAT_X8R8G8B8 &&
 				format == GL_RGBA && type == GL_UNSIGNED_BYTE)
 		{
 			for(int i = 0; i < rect.x1 - rect.x0; i++)
@@ -2469,7 +2466,7 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 				dest32[i] = (xrgb & 0xFF00FF00) | ((xrgb & 0x000000FF) << 16) | ((xrgb & 0x00FF0000) >> 16) | 0xFF000000;
 			}
 		}
-		else if(renderTarget->getInternalFormat() == sw::FORMAT_X8R8G8B8 &&
+		else if(renderTarget->getExternalFormat() == sw::FORMAT_X8R8G8B8 &&
 				format == GL_BGRA_EXT && type == GL_UNSIGNED_BYTE)
 		{
 			for(int i = 0; i < rect.x1 - rect.x0; i++)
@@ -2479,17 +2476,17 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 				dest32[i] = xrgb | 0xFF000000;
 			}
 		}
-		else if(renderTarget->getInternalFormat() == sw::FORMAT_A8R8G8B8 &&
+		else if(renderTarget->getExternalFormat() == sw::FORMAT_A8R8G8B8 &&
 				format == GL_BGRA_EXT && type == GL_UNSIGNED_BYTE)
 		{
 			memcpy(dest, source, (rect.x1 - rect.x0) * 4);
 		}
-		else if(renderTarget->getInternalFormat() == sw::FORMAT_A1R5G5B5 &&
+		else if(renderTarget->getExternalFormat() == sw::FORMAT_A1R5G5B5 &&
 				format == GL_BGRA_EXT && type == GL_UNSIGNED_SHORT_1_5_5_5_REV_EXT)
 		{
 			memcpy(dest, source, (rect.x1 - rect.x0) * 2);
 		}
-		else if(renderTarget->getInternalFormat() == sw::FORMAT_R5G6B5 &&
+		else if(renderTarget->getExternalFormat() == sw::FORMAT_R5G6B5 &&
 				format == 0x80E0 && type == GL_UNSIGNED_SHORT_5_6_5)   // GL_BGR_EXT
 		{
 			memcpy(dest, source, (rect.x1 - rect.x0) * 2);
@@ -2503,7 +2500,7 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 				float b;
 				float a;
 
-				switch(renderTarget->getInternalFormat())
+				switch(renderTarget->getExternalFormat())
 				{
 				case sw::FORMAT_R5G6B5:
 					{
@@ -2577,7 +2574,7 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
 					break;
 				default:
 					UNIMPLEMENTED();   // FIXME
-					UNREACHABLE(renderTarget->getInternalFormat());
+					UNREACHABLE(renderTarget->getExternalFormat());
 				}
 
 				switch(format)

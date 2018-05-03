@@ -13,9 +13,9 @@
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/time/time.h"
 #include "base/timer/mock_timer.h"
+#include "build/build_config.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
@@ -28,6 +28,7 @@
 #include "net/log/net_log_source_type.h"
 #include "net/log/test_net_log.h"
 #include "net/log/test_net_log_util.h"
+#include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/chromium/spdy_session.h"
 #include "net/spdy/chromium/spdy_test_util_common.h"
@@ -47,6 +48,7 @@ namespace {
 
 const char kBodyData[] = "Body data";
 const size_t kBodyDataSize = arraysize(kBodyData);
+const std::string kBodyDataString(kBodyData, kBodyDataSize);
 // Size of the buffer to be allocated for each read.
 const size_t kReadBufferSize = 4096;
 
@@ -391,12 +393,13 @@ class BidirectionalStreamTest : public testing::Test {
   BidirectionalStreamTest()
       : default_url_(kDefaultUrl),
         host_port_pair_(HostPortPair::FromURL(default_url_)),
-        key_(host_port_pair_, ProxyServer::Direct(), PRIVACY_MODE_DISABLED),
         ssl_data_(SSLSocketDataProvider(ASYNC, OK)) {
     ssl_data_.next_proto = kProtoHTTP2;
     ssl_data_.ssl_info.cert =
         ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
     net_log_.SetCaptureMode(NetLogCaptureMode::IncludeSocketBytes());
+    socket_factory_ = new MockTaggingClientSocketFactory();
+    session_deps_.socket_factory.reset(socket_factory_);
   }
 
  protected:
@@ -411,7 +414,8 @@ class BidirectionalStreamTest : public testing::Test {
   void InitSession(MockRead* reads,
                    size_t reads_count,
                    MockWrite* writes,
-                   size_t writes_count) {
+                   size_t writes_count,
+                   const SocketTag& socket_tag) {
     ASSERT_TRUE(ssl_data_.ssl_info.cert.get());
     session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl_data_);
     sequenced_data_.reset(
@@ -419,7 +423,9 @@ class BidirectionalStreamTest : public testing::Test {
     session_deps_.socket_factory->AddSocketDataProvider(sequenced_data_.get());
     session_deps_.net_log = net_log_.bound().net_log();
     http_session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
-    session_ = CreateSpdySession(http_session_.get(), key_, net_log_.bound());
+    SpdySessionKey key(host_port_pair_, ProxyServer::Direct(),
+                       PRIVACY_MODE_DISABLED, socket_tag);
+    session_ = CreateSpdySession(http_session_.get(), key, net_log_.bound());
   }
 
   BoundTestNetLog net_log_;
@@ -427,9 +433,9 @@ class BidirectionalStreamTest : public testing::Test {
   SpdySessionDependencies session_deps_;
   const GURL default_url_;
   const HostPortPair host_port_pair_;
-  const SpdySessionKey key_;
   std::unique_ptr<SequencedSocketData> sequenced_data_;
   std::unique_ptr<HttpNetworkSession> http_session_;
+  MockTaggingClientSocketFactory* socket_factory_;
 
  private:
   SSLSocketDataProvider ssl_data_;
@@ -455,8 +461,8 @@ TEST_F(BidirectionalStreamTest, CreateInsecureStream) {
 TEST_F(BidirectionalStreamTest, SimplePostRequest) {
   SpdySerializedFrame req(spdy_util_.ConstructSpdyPost(
       kDefaultUrl, 1, kBodyDataSize, LOW, nullptr, 0));
-  SpdySerializedFrame data_frame(spdy_util_.ConstructSpdyDataFrame(
-      1, kBodyData, kBodyDataSize, /*fin=*/true));
+  SpdySerializedFrame data_frame(
+      spdy_util_.ConstructSpdyDataFrame(1, kBodyDataString, /*fin=*/true));
   MockWrite writes[] = {
       CreateMockWrite(req, 0), CreateMockWrite(data_frame, 3),
   };
@@ -468,7 +474,7 @@ TEST_F(BidirectionalStreamTest, SimplePostRequest) {
       MockRead(ASYNC, ERR_IO_PENDING, 2),  // Force a pause.
       CreateMockRead(response_body_frame, 4), MockRead(ASYNC, 0, 5),
   };
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -482,9 +488,8 @@ TEST_F(BidirectionalStreamTest, SimplePostRequest) {
   delegate->Start(std::move(request_info), http_session_.get());
   sequenced_data_->RunUntilPaused();
 
-  scoped_refptr<StringIOBuffer> write_buffer(
-      new StringIOBuffer(std::string(kBodyData, kBodyDataSize)));
-  delegate->SendData(write_buffer.get(), write_buffer->size(), true);
+  scoped_refptr<StringIOBuffer> buf(new StringIOBuffer(kBodyDataString));
+  delegate->SendData(buf.get(), buf->size(), true);
   sequenced_data_->Resume();
   base::RunLoop().RunUntilIdle();
   LoadTimingInfo load_timing_info;
@@ -502,9 +507,9 @@ TEST_F(BidirectionalStreamTest, SimplePostRequest) {
 
 TEST_F(BidirectionalStreamTest, LoadTimingTwoRequests) {
   SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, /*stream_id=*/1, LOW, true));
+      spdy_util_.ConstructSpdyGet(nullptr, 0, /*stream_id=*/1, LOW));
   SpdySerializedFrame req2(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, /*stream_id=*/3, LOW, true));
+      spdy_util_.ConstructSpdyGet(nullptr, 0, /*stream_id=*/3, LOW));
   MockWrite writes[] = {
       CreateMockWrite(req, 0), CreateMockWrite(req2, 2),
   };
@@ -519,7 +524,7 @@ TEST_F(BidirectionalStreamTest, LoadTimingTwoRequests) {
   MockRead reads[] = {CreateMockRead(resp, 1), CreateMockRead(resp_body, 3),
                       CreateMockRead(resp2, 4), CreateMockRead(resp_body2, 5),
                       MockRead(ASYNC, 0, 6)};
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -601,7 +606,7 @@ TEST_F(BidirectionalStreamTest, TestReadDataAfterClose) {
       MockRead(SYNCHRONOUS, 0, 7),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -660,8 +665,8 @@ TEST_F(BidirectionalStreamTest, TestReadDataAfterClose) {
 TEST_F(BidirectionalStreamTest, TestNetLogContainEntries) {
   SpdySerializedFrame req(spdy_util_.ConstructSpdyPost(
       kDefaultUrl, 1, kBodyDataSize * 3, LOWEST, nullptr, 0));
-  SpdySerializedFrame data_frame(spdy_util_.ConstructSpdyDataFrame(
-      1, kBodyData, kBodyDataSize, /*fin=*/true));
+  SpdySerializedFrame data_frame(
+      spdy_util_.ConstructSpdyDataFrame(1, kBodyDataString, /*fin=*/true));
   MockWrite writes[] = {
       CreateMockWrite(req, 0), CreateMockWrite(data_frame, 3),
   };
@@ -687,7 +692,7 @@ TEST_F(BidirectionalStreamTest, TestNetLogContainEntries) {
       MockRead(ASYNC, 0, 8),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -708,8 +713,7 @@ TEST_F(BidirectionalStreamTest, TestNetLogContainEntries) {
   sequenced_data_->RunUntilPaused();
   EXPECT_FALSE(timer->IsRunning());
 
-  scoped_refptr<StringIOBuffer> buf(
-      new StringIOBuffer(std::string(kBodyData, kBodyDataSize)));
+  scoped_refptr<StringIOBuffer> buf(new StringIOBuffer(kBodyDataString));
   // Send a DATA frame.
   delegate->SendData(buf, buf->size(), true);
   // ReadData returns asynchronously because no data is buffered.
@@ -804,12 +808,12 @@ TEST_F(BidirectionalStreamTest, TestNetLogContainEntries) {
 TEST_F(BidirectionalStreamTest, TestInterleaveReadDataAndSendData) {
   SpdySerializedFrame req(spdy_util_.ConstructSpdyPost(
       kDefaultUrl, 1, kBodyDataSize * 3, LOWEST, nullptr, 0));
-  SpdySerializedFrame data_frame1(spdy_util_.ConstructSpdyDataFrame(
-      1, kBodyData, kBodyDataSize, /*fin=*/false));
-  SpdySerializedFrame data_frame2(spdy_util_.ConstructSpdyDataFrame(
-      1, kBodyData, kBodyDataSize, /*fin=*/false));
-  SpdySerializedFrame data_frame3(spdy_util_.ConstructSpdyDataFrame(
-      1, kBodyData, kBodyDataSize, /*fin=*/true));
+  SpdySerializedFrame data_frame1(
+      spdy_util_.ConstructSpdyDataFrame(1, kBodyDataString, /*fin=*/false));
+  SpdySerializedFrame data_frame2(
+      spdy_util_.ConstructSpdyDataFrame(1, kBodyDataString, /*fin=*/false));
+  SpdySerializedFrame data_frame3(
+      spdy_util_.ConstructSpdyDataFrame(1, kBodyDataString, /*fin=*/true));
   MockWrite writes[] = {
       CreateMockWrite(req, 0), CreateMockWrite(data_frame1, 3),
       CreateMockWrite(data_frame2, 6), CreateMockWrite(data_frame3, 9),
@@ -831,7 +835,7 @@ TEST_F(BidirectionalStreamTest, TestInterleaveReadDataAndSendData) {
       MockRead(ASYNC, 0, 10),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -853,8 +857,7 @@ TEST_F(BidirectionalStreamTest, TestInterleaveReadDataAndSendData) {
   EXPECT_FALSE(timer->IsRunning());
 
   // Send a DATA frame.
-  scoped_refptr<StringIOBuffer> buf(
-      new StringIOBuffer(std::string(kBodyData, kBodyDataSize)));
+  scoped_refptr<StringIOBuffer> buf(new StringIOBuffer(kBodyDataString));
 
   // Send a DATA frame.
   delegate->SendData(buf, buf->size(), false);
@@ -907,8 +910,8 @@ TEST_F(BidirectionalStreamTest, TestCoalesceSmallDataBuffers) {
   SpdySerializedFrame req(spdy_util_.ConstructSpdyPost(
       kDefaultUrl, 1, kBodyDataSize * 1, LOWEST, nullptr, 0));
   std::string body_data = "some really long piece of data";
-  SpdySerializedFrame data_frame1(spdy_util_.ConstructSpdyDataFrame(
-      1, body_data.c_str(), body_data.size(), /*fin=*/true));
+  SpdySerializedFrame data_frame1(
+      spdy_util_.ConstructSpdyDataFrame(1, body_data, /*fin=*/true));
   MockWrite writes[] = {
       CreateMockWrite(req, 0), CreateMockWrite(data_frame1, 1),
   };
@@ -922,7 +925,7 @@ TEST_F(BidirectionalStreamTest, TestCoalesceSmallDataBuffers) {
       CreateMockRead(response_body_frame1, 4), MockRead(ASYNC, 0, 5),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1016,7 +1019,7 @@ TEST_F(BidirectionalStreamTest, TestCompleteAsyncRead) {
   SpdySerializedFrame resp(spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
 
   SpdySerializedFrame response_body_frame(
-      spdy_util_.ConstructSpdyDataFrame(1, nullptr, 0, true));
+      spdy_util_.ConstructSpdyDataFrame(1, "", true));
 
   MockRead reads[] = {
       CreateMockRead(resp, 1),
@@ -1024,7 +1027,7 @@ TEST_F(BidirectionalStreamTest, TestCompleteAsyncRead) {
       CreateMockRead(response_body_frame, 3), MockRead(SYNCHRONOUS, 0, 4),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1084,7 +1087,7 @@ TEST_F(BidirectionalStreamTest, TestBuffering) {
       MockRead(SYNCHRONOUS, 0, 6),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1163,7 +1166,7 @@ TEST_F(BidirectionalStreamTest, TestBufferingWithTrailers) {
       MockRead(SYNCHRONOUS, 0, 7),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   scoped_refptr<IOBuffer> read_buffer(new IOBuffer(kReadBufferSize));
   MockTimer* timer = new MockTimer();
@@ -1212,8 +1215,8 @@ TEST_F(BidirectionalStreamTest, TestBufferingWithTrailers) {
 TEST_F(BidirectionalStreamTest, DeleteStreamAfterSendData) {
   SpdySerializedFrame req(spdy_util_.ConstructSpdyPost(
       kDefaultUrl, 1, kBodyDataSize * 3, LOWEST, nullptr, 0));
-  SpdySerializedFrame data_frame(spdy_util_.ConstructSpdyDataFrame(
-      1, kBodyData, kBodyDataSize, /*fin=*/false));
+  SpdySerializedFrame data_frame(
+      spdy_util_.ConstructSpdyDataFrame(1, kBodyDataString, /*fin=*/false));
   SpdySerializedFrame rst(
       spdy_util_.ConstructSpdyRstStream(1, ERROR_CODE_CANCEL));
 
@@ -1230,7 +1233,7 @@ TEST_F(BidirectionalStreamTest, DeleteStreamAfterSendData) {
       MockRead(ASYNC, 0, 6),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1251,8 +1254,7 @@ TEST_F(BidirectionalStreamTest, DeleteStreamAfterSendData) {
   EXPECT_EQ(kProtoHTTP2, delegate->GetProtocol());
 
   // Send a DATA frame.
-  scoped_refptr<StringIOBuffer> buf(
-      new StringIOBuffer(std::string(kBodyData, kBodyDataSize)));
+  scoped_refptr<StringIOBuffer> buf(new StringIOBuffer(kBodyDataString));
   delegate->SendData(buf, buf->size(), false);
   sequenced_data_->Resume();
   base::RunLoop().RunUntilIdle();
@@ -1292,7 +1294,7 @@ TEST_F(BidirectionalStreamTest, DeleteStreamDuringReadData) {
       CreateMockRead(response_body_frame, 3), MockRead(ASYNC, 0, 5),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1352,7 +1354,7 @@ TEST_F(BidirectionalStreamTest, PropagateProtocolError) {
       CreateMockRead(resp, 1), MockRead(ASYNC, 0, 3),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1418,7 +1420,7 @@ TEST_F(BidirectionalStreamTest, DeleteStreamDuringOnHeadersReceived) {
       CreateMockRead(resp, 1), MockRead(ASYNC, 0, 3),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1471,7 +1473,7 @@ TEST_F(BidirectionalStreamTest, DeleteStreamDuringOnDataRead) {
       MockRead(ASYNC, 0, 4),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1529,7 +1531,7 @@ TEST_F(BidirectionalStreamTest, DeleteStreamDuringOnTrailersReceived) {
       CreateMockRead(response_trailers, 3), MockRead(ASYNC, 0, 5),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1579,7 +1581,7 @@ TEST_F(BidirectionalStreamTest, DeleteStreamDuringOnFailed) {
       CreateMockRead(resp, 1), MockRead(ASYNC, 0, 3),
   };
 
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1629,7 +1631,7 @@ TEST_F(BidirectionalStreamTest, TestHonorAlternativeServiceHeader) {
   // Enable QUIC so that the alternative service header can be added to
   // HttpServerProperties.
   session_deps_.enable_quic = true;
-  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), SocketTag());
 
   std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
       new BidirectionalStreamRequestInfo);
@@ -1663,6 +1665,57 @@ TEST_F(BidirectionalStreamTest, TestHonorAlternativeServiceHeader) {
   AlternativeService alternative_service(kProtoQUIC, "www.example.org", 443);
   EXPECT_EQ(alternative_service,
             alternative_service_info_vector[0].alternative_service());
+}
+
+// Test that a BidirectionalStream created with a specific tag, tags the
+// underlying socket appropriately.
+TEST_F(BidirectionalStreamTest, Tagging) {
+  SpdySerializedFrame req(spdy_util_.ConstructSpdyPost(
+      kDefaultUrl, 1, kBodyDataSize, LOW, nullptr, 0));
+  SpdySerializedFrame data_frame(
+      spdy_util_.ConstructSpdyDataFrame(1, kBodyDataString, /*fin=*/true));
+  MockWrite writes[] = {
+      CreateMockWrite(req, 0), CreateMockWrite(data_frame, 3),
+  };
+  SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  SpdySerializedFrame response_body_frame(
+      spdy_util_.ConstructSpdyDataFrame(1, /*fin=*/true));
+  MockRead reads[] = {
+      CreateMockRead(resp, 1),
+      MockRead(ASYNC, ERR_IO_PENDING, 2),  // Force a pause.
+      CreateMockRead(response_body_frame, 4), MockRead(ASYNC, 0, 5),
+  };
+#if defined(OS_ANDROID)
+  SocketTag tag(0x12345678, 0x87654321);
+#else
+  SocketTag tag;
+#endif
+  InitSession(reads, arraysize(reads), writes, arraysize(writes), tag);
+
+  std::unique_ptr<BidirectionalStreamRequestInfo> request_info(
+      new BidirectionalStreamRequestInfo);
+  request_info->method = "POST";
+  request_info->url = default_url_;
+  request_info->extra_headers.SetHeader(net::HttpRequestHeaders::kContentLength,
+                                        base::NumberToString(kBodyDataSize));
+  request_info->socket_tag = tag;
+  scoped_refptr<IOBuffer> read_buffer(new IOBuffer(kReadBufferSize));
+  std::unique_ptr<TestDelegateBase> delegate(
+      new TestDelegateBase(read_buffer.get(), kReadBufferSize));
+  delegate->Start(std::move(request_info), http_session_.get());
+  sequenced_data_->RunUntilPaused();
+
+  EXPECT_EQ(socket_factory_->GetLastProducedTCPSocket()->tag(), tag);
+  EXPECT_TRUE(
+      socket_factory_->GetLastProducedTCPSocket()->tagged_before_connected());
+  void* socket = socket_factory_->GetLastProducedTCPSocket();
+
+  scoped_refptr<StringIOBuffer> buf(new StringIOBuffer(kBodyDataString));
+  delegate->SendData(buf.get(), buf->size(), true);
+  sequenced_data_->Resume();
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(socket, socket_factory_->GetLastProducedTCPSocket());
 }
 
 }  // namespace net

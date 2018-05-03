@@ -42,8 +42,7 @@
 #include "core/paint/ScrollbarManager.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "platform/PlatformFrameView.h"
-#include "platform/animation/CompositorAnimationHost.h"
-#include "platform/animation/CompositorAnimationTimeline.h"
+#include "platform/UkmTimeAggregator.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
@@ -91,11 +90,11 @@ class PaintController;
 class Page;
 class PrintContext;
 class ScrollingCoordinator;
+class ScrollingCoordinatorContext;
 class TracedValue;
 class TransformState;
 class WebPluginContainerImpl;
 struct AnnotatedRegionValue;
-struct CompositedSelection;
 struct IntrinsicSizingInfo;
 struct WebScrollIntoViewParams;
 
@@ -121,17 +120,21 @@ class CORE_EXPORT LocalFrameView final
   void Invalidate() { InvalidateRect(IntRect(0, 0, Width(), Height())); }
   void InvalidateRect(const IntRect&);
   void SetFrameRect(const IntRect&) override;
-  const IntRect& FrameRect() const override { return frame_rect_; }
-  int X() const { return frame_rect_.X(); }
-  int Y() const { return frame_rect_.Y(); }
-  int Width() const { return frame_rect_.Width(); }
-  int Height() const { return frame_rect_.Height(); }
+  IntRect FrameRect() const override { return IntRect(Location(), Size()); }
+  IntPoint Location() const;
+  int X() const { return Location().X(); }
+  int Y() const { return Location().Y(); }
+  int Width() const { return Size().Width(); }
+  int Height() const { return Size().Height(); }
   IntSize Size() const { return frame_rect_.Size(); }
-  IntPoint Location() const { return frame_rect_.Location(); }
-  void Resize(int width, int height) {
-    SetFrameRect(IntRect(frame_rect_.X(), frame_rect_.Y(), width, height));
+  void Resize(int width, int height) { Resize(IntSize(width, height)); }
+  void Resize(const IntSize& size) {
+    SetFrameRect(IntRect(frame_rect_.Location(), size));
   }
-  void Resize(const IntSize& size) { SetFrameRect(IntRect(Location(), size)); }
+
+  // Called when our frame rect changes (or the rect/scroll offset of an
+  // ancestor changes).
+  void FrameRectsChanged() override;
 
   LocalFrame& GetFrame() const {
     DCHECK(frame_);
@@ -149,12 +152,13 @@ class CORE_EXPORT LocalFrameView final
   void SetCanHaveScrollbars(bool);
   bool CanHaveScrollbars() const { return can_have_scrollbars_; }
 
-  Scrollbar* CreateScrollbar(ScrollbarOrientation);
+  Scrollbar* CreateScrollbar(ScrollbarOrientation) override;
 
   void SetLayoutOverflowSize(const IntSize&);
 
   void UpdateLayout();
   bool DidFirstLayout() const;
+  bool LifecycleUpdatesActive() const;
   void ScheduleRelayout();
   void ScheduleRelayoutOfSubtree(LayoutObject*);
   bool LayoutPending() const;
@@ -206,8 +210,8 @@ class CORE_EXPORT LocalFrameView final
   int InitialViewportWidth() const;
   int InitialViewportHeight() const;
 
-  bool GetIntrinsicSizingInfo(IntrinsicSizingInfo&) const;
-  bool HasIntrinsicSizingInfo() const;
+  bool GetIntrinsicSizingInfo(IntrinsicSizingInfo&) const override;
+  bool HasIntrinsicSizingInfo() const override;
 
   void UpdateAcceleratedCompositingSettings();
 
@@ -273,7 +277,7 @@ class CORE_EXPORT LocalFrameView final
     return background_attachment_fixed_objects_.size();
   }
   bool HasBackgroundAttachmentFixedDescendants(const LayoutObject&) const;
-  void InvalidateBackgroundAttachmentFixedObjects();
+  void InvalidateBackgroundAttachmentFixedDescendants(const LayoutObject&);
 
   void HandleLoadCompleted();
 
@@ -282,7 +286,6 @@ class CORE_EXPORT LocalFrameView final
   void DidAttachDocument();
 
   void RestoreScrollbar();
-  bool RestoreScrollAnchor(const ScrollAnchor::SerializedAnchor&);
 
   void PostLayoutTimerFired(TimerBase*);
 
@@ -309,7 +312,7 @@ class CORE_EXPORT LocalFrameView final
   void UpdateAllLifecyclePhases();
 
   // Everything except paint (the last phase).
-  void UpdateAllLifecyclePhasesExceptPaint();
+  bool UpdateAllLifecyclePhasesExceptPaint();
 
   // Printing needs everything up-to-date except paint (which will be done
   // specially). We may also print a detached frame or a descendant of a
@@ -319,23 +322,31 @@ class CORE_EXPORT LocalFrameView final
   // Computes the style, layout, compositing and pre-paint lifecycle stages
   // if needed.
   // After calling this method, all frames will be in a lifecycle
-  // state >= PrePaintClean
-  void UpdateLifecycleToPrePaintClean();
+  // state >= PrePaintClean, unless the frame was throttled or inactive.
+  // Returns whether the lifecycle was successfully updated to the
+  // desired state.
+  bool UpdateLifecycleToPrePaintClean();
 
   // After calling this method, all frames will be in a lifecycle
   // state >= CompositingClean, and scrolling has been updated (unless
-  // throttling is allowed).
-  void UpdateLifecycleToCompositingCleanPlusScrolling();
+  // throttling is allowed), unless the frame was throttled or inactive.
+  // Returns whether the lifecycle was successfully updated to the
+  // desired state.
+  bool UpdateLifecycleToCompositingCleanPlusScrolling();
 
   // Computes the style, layout, and compositing inputs lifecycle stages if
   // needed. After calling this method, all frames will be in a lifecycle state
-  // >= CompositingInputsClean (unless throttling is allowed).
-  void UpdateLifecycleToCompositingInputsClean();
+  // >= CompositingInputsClean, unless the frame was throttled or inactive.
+  // Returns whether the lifecycle was successfully updated to the
+  // desired state.
+  bool UpdateLifecycleToCompositingInputsClean();
 
   // Computes only the style and layout lifecycle stages.
   // After calling this method, all frames will be in a lifecycle
-  // state >= LayoutClean (unless throttling is allowed).
-  void UpdateLifecycleToLayoutClean();
+  // state >= LayoutClean, unless the frame was throttled or inactive.
+  // Returns whether the lifecycle was successfully updated to the
+  // desired state.
+  bool UpdateLifecycleToLayoutClean();
 
   void ScheduleVisualUpdateForPaintInvalidationIfNeeded();
 
@@ -373,6 +384,8 @@ class CORE_EXPORT LocalFrameView final
                                       const LayoutPoint&) const;
   LayoutPoint ConvertToLayoutObject(const LayoutObject&,
                                     const LayoutPoint&) const;
+  FloatPoint ConvertToLayoutObject(const LayoutObject&,
+                                   const FloatPoint&) const;
 
   bool IsFrameViewScrollCorner(LayoutScrollbarPart* scroll_corner) const {
     return scroll_corner_ == scroll_corner;
@@ -485,7 +498,7 @@ class CORE_EXPORT LocalFrameView final
   FloatQuad LocalToVisibleContentQuad(const FloatQuad&,
                                       const LayoutObject*,
                                       unsigned = 0) const final;
-  scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const final;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() const final;
 
   LayoutRect ScrollIntoView(const LayoutRect& rect_in_content,
                             const WebScrollIntoViewParams& params) override;
@@ -541,36 +554,15 @@ class CORE_EXPORT LocalFrameView final
   // advisory. In other words the underlying native widget may choose not to
   // honor the requested modes.
   void SetScrollbarModes(ScrollbarMode horizontal_mode,
-                         ScrollbarMode vertical_mode,
-                         bool horizontal_lock = false,
-                         bool vertical_lock = false);
-  void SetHorizontalScrollbarMode(ScrollbarMode mode, bool lock = false) {
-    SetScrollbarModes(mode, VerticalScrollbarMode(), lock,
-                      VerticalScrollbarLock());
+                         ScrollbarMode vertical_mode);
+  void SetHorizontalScrollbarMode(ScrollbarMode mode) {
+    SetScrollbarModes(mode, vertical_scrollbar_mode_);
   }
-  void SetVerticalScrollbarMode(ScrollbarMode mode, bool lock = false) {
-    SetScrollbarModes(HorizontalScrollbarMode(), mode,
-                      HorizontalScrollbarLock(), lock);
+  void SetVerticalScrollbarMode(ScrollbarMode mode) {
+    SetScrollbarModes(horizontal_scrollbar_mode_, mode);
   }
-  ScrollbarMode HorizontalScrollbarMode() const {
-    return horizontal_scrollbar_mode_;
-  }
-  ScrollbarMode VerticalScrollbarMode() const {
-    return vertical_scrollbar_mode_;
-  }
-
-  void SetHorizontalScrollbarLock(bool lock = true) {
-    horizontal_scrollbar_lock_ = lock;
-  }
-  bool HorizontalScrollbarLock() const { return horizontal_scrollbar_lock_; }
-  void SetVerticalScrollbarLock(bool lock = true) {
-    vertical_scrollbar_lock_ = lock;
-  }
-  bool VerticalScrollbarLock() const { return vertical_scrollbar_lock_; }
-
-  void SetScrollingModesLock(bool lock = true) {
-    horizontal_scrollbar_lock_ = vertical_scrollbar_lock_ = lock;
-  }
+  ScrollbarMode EffectiveHorizontalScrollbarMode() const;
+  ScrollbarMode EffectiveVerticalScrollbarMode() const;
 
   // The visible content rect has a location that is the scrolled offset of
   // the document. The width and height are the layout viewport width and
@@ -580,6 +572,10 @@ class CORE_EXPORT LocalFrameView final
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
   IntSize VisibleContentSize(
       IncludeScrollbarsInRect = kExcludeScrollbars) const;
+
+  // The visible scroll snapport rect is contracted from the visible content
+  // rect, by the amount of the document's scroll-padding.
+  LayoutRect VisibleScrollSnapportRect() const override;
 
   // Clips the provided rect to the visible content area. For this purpose, we
   // also query the chrome client for any active overrides to the visible area
@@ -697,10 +693,19 @@ class CORE_EXPORT LocalFrameView final
   // coordinates". https://crbug.com/417782.
   IntRect AbsoluteToRootFrame(const IntRect&) const;
   IntPoint AbsoluteToRootFrame(const IntPoint&) const;
+  LayoutRect AbsoluteToRootFrame(const LayoutRect&) const;
   IntRect RootFrameToDocument(const IntRect&);
+  IntPoint RootFrameToDocument(const IntPoint&);
   FloatPoint RootFrameToDocument(const FloatPoint&);
+  LayoutPoint RootFrameToAbsolute(const LayoutPoint&) const;
+  IntRect RootFrameToAbsolute(const IntRect&) const;
   DoublePoint DocumentToAbsolute(const DoublePoint&) const;
   FloatPoint DocumentToAbsolute(const FloatPoint&) const;
+  LayoutPoint DocumentToAbsolute(const LayoutPoint&) const;
+  LayoutRect DocumentToAbsolute(const LayoutRect&) const;
+
+  LayoutPoint AbsoluteToDocument(const LayoutPoint&) const;
+  LayoutRect AbsoluteToDocument(const LayoutRect&) const;
 
   // Handles painting of the contents of the view as well as the scrollbars.
   void Paint(GraphicsContext&,
@@ -845,10 +850,12 @@ class CORE_EXPORT LocalFrameView final
   // queries.
   FloatSize ViewportSizeForMediaQueries() const;
 
+  bool RestoreScrollAnchor(const SerializedAnchor&) override;
   ScrollAnchor* GetScrollAnchor() override { return &scroll_anchor_; }
   void ClearScrollAnchor();
   bool ShouldPerformScrollAnchoring() const override;
   void EnqueueScrollAnchoringAdjustment(ScrollableArea*);
+  void DequeueScrollAnchoringAdjustment(ScrollableArea*);
   void PerformScrollAnchoringAdjustments();
 
   // Only for SPv2.
@@ -897,14 +904,6 @@ class CORE_EXPORT LocalFrameView final
 
   void ApplyTransformForTopFrameSpace(TransformState&);
 
-  // TODO(kenrb): These are temporary methods pending resolution of
-  // https://crbug.com/680606. Animation timelines and hosts for scrolling
-  // are normally owned by ScrollingCoordinator, but there is only one
-  // of those objects per page. To get around this, we temporarily stash a
-  // unique timeline and host on each OOPIF LocalFrameView.
-  void SetAnimationTimeline(std::unique_ptr<CompositorAnimationTimeline>);
-  void SetAnimationHost(std::unique_ptr<CompositorAnimationHost>);
-
   void CrossOriginStatusChanged();
 
   // The visual viewport can supply scrollbars which affect the existence of
@@ -943,23 +942,17 @@ class CORE_EXPORT LocalFrameView final
       ForceThrottlingInvalidationBehavior = kDontForceThrottlingInvalidation,
       NotifyChildrenBehavior = kNotifyChildren);
 
-  // The following three functions may change when https://crbug.com/680606 is
-  // resolved.
-
-  // Indicates that the local root's subtree needs to have its non-fast
-  // scrollable regions updated by ScrollingCoordinator. Should only ever be
-  // called on the local root's view.
-  bool ScrollGestureRegionIsDirty() const;
-
-  // Updates a flag on the local root's LocalFrameView to mark the local
-  // subtree as needing to update its regions with ScrollingCoordinator.
-  // Only ScrollingCoordinator should ever call this function with |dirty| set
-  // to |false|.
-  void SetScrollGestureRegionIsDirty(bool dirty);
+  // Keeps track of whether the scrollable state for the LocalRoot has changed
+  // since ScrollingCoordinator last checked. Only ScrollingCoordinator should
+  // ever call the clearing function.
+  bool FrameIsScrollableDidChange();
+  void ClearFrameIsScrollableDidChange();
 
   // Should be called whenever this LocalFrameView adds or removes a
   // scrollable area, or gains/loses a composited layer.
   void ScrollableAreasDidChange();
+
+  ScrollingCoordinatorContext* GetScrollingContext() const;
 
  protected:
   // Scroll the content via the compositor.
@@ -1032,7 +1025,9 @@ class CORE_EXPORT LocalFrameView final
   void SetupPrintContext();
   void ClearPrintContext();
 
-  void UpdateLifecyclePhasesInternal(
+  // Returns whethre the lifecycle was succesfully updated to the
+  // target state.
+  bool UpdateLifecyclePhasesInternal(
       DocumentLifecycle::LifecycleState target_state);
 
   void ScrollContentsIfNeededRecursive();
@@ -1049,10 +1044,6 @@ class CORE_EXPORT LocalFrameView final
   void Init();
 
   void ClearLayoutSubtreeRootsAndMarkContainingBlocks();
-
-  // Called when our frame rect changes (or the rect/scroll offset of an
-  // ancestor changes).
-  void FrameRectsChanged() override;
 
   bool ContentsInCompositedLayer() const;
 
@@ -1077,11 +1068,13 @@ class CORE_EXPORT LocalFrameView final
   IntPoint ConvertFromContainingEmbeddedContentView(const IntPoint&) const;
   LayoutPoint ConvertFromContainingEmbeddedContentView(
       const LayoutPoint&) const;
+  FloatPoint ConvertFromContainingEmbeddedContentView(const FloatPoint&) const;
+  DoublePoint ConvertFromContainingEmbeddedContentView(
+      const DoublePoint&) const;
 
   void DidChangeGlobalRootScroller() override;
 
   void UpdateGeometriesIfNeeded();
-  void UpdateGeometries();
 
   bool WasViewportResized();
   void SendResizeEventIfNeeded();
@@ -1099,7 +1092,6 @@ class CORE_EXPORT LocalFrameView final
 
   void UpdateLayersAndCompositingAfterScrollIfNeeded();
 
-  static bool ComputeCompositedSelection(LocalFrame&, CompositedSelection&);
   void UpdateCompositedSelectionIfNeeded();
   void SetNeedsCompositingUpdate(CompositingUpdateType);
 
@@ -1163,6 +1155,8 @@ class CORE_EXPORT LocalFrameView final
   PaintController* GetPaintController() { return paint_controller_.get(); }
 
   void LayoutFromRootObject(LayoutObject& root);
+
+  UkmTimeAggregator& EnsureUkmTimeAggregator();
 
   LayoutSize size_;
 
@@ -1242,14 +1236,14 @@ class CORE_EXPORT LocalFrameView final
   ScrollbarMode horizontal_scrollbar_mode_;
   ScrollbarMode vertical_scrollbar_mode_;
 
-  bool horizontal_scrollbar_lock_;
-  bool vertical_scrollbar_lock_;
-
   PluginSet plugins_;
   HeapHashSet<Member<Scrollbar>> scrollbars_;
 
   ScrollOffset pending_scroll_delta_;
   ScrollOffset scroll_offset_;
+
+  // TODO(bokan): This is unneeded when root-layer-scrolls is turned on.
+  // crbug.com/417782.
   IntSize layout_overflow_size_;
 
   bool scrollbars_suppressed_;
@@ -1314,11 +1308,13 @@ class CORE_EXPORT LocalFrameView final
   bool forcing_layout_parent_view_;
   bool needs_intersection_observation_;
   bool needs_forced_compositing_update_;
-  bool scroll_gesture_region_is_dirty_;
 
   Member<ElementVisibilityObserver> visibility_observer_;
 
   IntRect remote_viewport_intersection_;
+
+  // Lazily created, but should only be created on a local frame root's view.
+  mutable std::unique_ptr<ScrollingCoordinatorContext> scrolling_context_;
 
   // For testing.
   struct ObjectPaintInvalidation {
@@ -1334,9 +1330,7 @@ class CORE_EXPORT LocalFrameView final
 
   MainThreadScrollingReasons main_thread_scrolling_reasons_;
 
-  // TODO(kenrb): Remove these when https://crbug.com/680606 is resolved.
-  std::unique_ptr<CompositorAnimationTimeline> animation_timeline_;
-  std::unique_ptr<CompositorAnimationHost> animation_host_;
+  std::unique_ptr<UkmTimeAggregator> ukm_time_aggregator_;
 
   Member<PrintContext> print_context_;
 

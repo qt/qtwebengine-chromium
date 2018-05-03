@@ -41,6 +41,7 @@ struct SkJumper_Engine;
     M(move_src_dst) M(move_dst_src)                                \
     M(clamp_0) M(clamp_1) M(clamp_a) M(clamp_a_dst)                \
     M(unpremul) M(premul) M(premul_dst)                            \
+    M(force_opaque) M(force_opaque_dst)                            \
     M(set_rgb) M(swap_rb) M(invert)                                \
     M(from_srgb) M(from_srgb_dst) M(to_srgb)                       \
     M(black_color) M(white_color) M(uniform_color)                 \
@@ -53,6 +54,7 @@ struct SkJumper_Engine;
     M(load_f32)  M(load_f32_dst)  M(store_f32)                     \
     M(load_8888) M(load_8888_dst) M(store_8888) M(gather_8888)     \
     M(load_bgra) M(load_bgra_dst) M(store_bgra) M(gather_bgra)     \
+    M(load_1010102) M(load_1010102_dst) M(store_1010102) M(gather_1010102) \
     M(bilerp_clamp_8888)                                           \
     M(load_u16_be) M(load_rgb_u16_be) M(store_u16_be)              \
     M(load_tables_u16_be) M(load_tables_rgb_u16_be) M(load_tables) \
@@ -76,6 +78,8 @@ struct SkJumper_Engine;
     M(lab_to_xyz)                                                  \
                  M(mirror_x)   M(repeat_x)                         \
                  M(mirror_y)   M(repeat_y)                         \
+                 M(decal_x)    M(decal_y)   M(decal_x_and_y)       \
+    M(check_decal_mask)                                            \
     M(negate_x)                                                    \
     M(bilinear_nx) M(bilinear_px) M(bilinear_ny) M(bilinear_py)    \
     M(bicubic_n3x) M(bicubic_n1x) M(bicubic_p1x) M(bicubic_p3x)    \

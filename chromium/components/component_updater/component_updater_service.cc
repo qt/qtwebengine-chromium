@@ -17,7 +17,6 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_checker.h"
@@ -57,9 +56,8 @@ ComponentInfo::ComponentInfo(const ComponentInfo& other) = default;
 ComponentInfo::ComponentInfo(ComponentInfo&& other) = default;
 ComponentInfo::~ComponentInfo() {}
 
-CrxUpdateService::CrxUpdateService(
-    const scoped_refptr<Configurator>& config,
-    const scoped_refptr<UpdateClient>& update_client)
+CrxUpdateService::CrxUpdateService(scoped_refptr<Configurator> config,
+                                   scoped_refptr<UpdateClient> update_client)
     : config_(config), update_client_(update_client) {
   AddObserver(this);
 }
@@ -202,7 +200,7 @@ std::unique_ptr<ComponentInfo> CrxUpdateService::GetComponentForMimeType(
   auto* const component = GetComponent(it->second);
   if (!component)
     return nullptr;
-  return base::MakeUnique<ComponentInfo>(
+  return std::make_unique<ComponentInfo>(
       GetCrxComponentID(*component), component->fingerprint,
       base::UTF8ToUTF16(component->name), component->version);
 }
@@ -401,7 +399,8 @@ void CrxUpdateService::OnEvent(Events event, const std::string& id) {
 
   // Unblock all throttles for the component.
   if (event == Observer::Events::COMPONENT_UPDATED ||
-      event == Observer::Events::COMPONENT_NOT_UPDATED) {
+      event == Observer::Events::COMPONENT_NOT_UPDATED ||
+      event == Observer::Events::COMPONENT_UPDATE_ERROR) {
     auto callbacks = ready_callbacks_.equal_range(id);
     for (auto it = callbacks.first; it != callbacks.second; ++it) {
       std::move(it->second).Run();
@@ -434,10 +433,10 @@ void CrxUpdateService::OnEvent(Events event, const std::string& id) {
 // is the job of the browser process.
 // TODO(sorin): consider making this a singleton.
 std::unique_ptr<ComponentUpdateService> ComponentUpdateServiceFactory(
-    const scoped_refptr<Configurator>& config) {
+    scoped_refptr<Configurator> config) {
   DCHECK(config);
   auto update_client = update_client::UpdateClientFactory(config);
-  return base::MakeUnique<CrxUpdateService>(config, std::move(update_client));
+  return std::make_unique<CrxUpdateService>(config, std::move(update_client));
 }
 
 }  // namespace component_updater

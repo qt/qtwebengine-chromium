@@ -22,6 +22,8 @@ blink_modules_sources("xr") {
     "XRFrameRequestCallbackCollection.h",
     "XRLayer.cpp",
     "XRLayer.h",
+    "XRPresentationContext.cpp",
+    "XRPresentationContext.h",
     "XRPresentationFrame.cpp",
     "XRPresentationFrame.h",
     "XRSession.cpp",
@@ -39,6 +41,6 @@ blink_modules_sources("xr") {
   ]
 
   deps = [
-    "//device/vr:mojo_bindings_blink",
+    "//device/vr/public/mojom:mojom_blink",
   ]
 }

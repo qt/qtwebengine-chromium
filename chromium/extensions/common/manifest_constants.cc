@@ -502,9 +502,11 @@ const char kInvalidKioskRequiredPlatformVersion[] =
 const char kInvalidKioskSecondaryApps[] =
     "Invalid value for 'kiosk_secondary_apps'";
 const char kInvalidKioskSecondaryAppsBadAppEntry[] =
-    "Invalid app id item for 'kiosk_secondary_apps'";
-const char kInvalidKioskSecondaryAppsBadAppId[] =
-    "Invalid app id value for 'kiosk_secondary_apps'";
+    "Invalid app item for 'kiosk_secondary_apps'";
+const char kInvalidKioskSecondaryAppsDuplicateApp[] =
+    "Duplicate app id in 'kiosk_secondary_apps': '*'.";
+const char kInvalidKioskSecondaryAppsPropertyUnavailable[] =
+    "Property '*' not allowed for 'kiosk_secondary_apps' item '*'.";
 const char kInvalidLaunchContainer[] =
     "Invalid value for 'app.launch.container'.";
 const char kInvalidLaunchValue[] =
@@ -519,8 +521,7 @@ const char kInvalidLinkedAppIconURL[] =
     "Invalid 'url' for linked app icon. Must be a string that is a valid URL";
 const char kInvalidLinkedAppIcons[] =
     "Invalid 'app.linked_icons'. Must be an array";
-const char kInvalidManifest[] =
-    "Manifest file is invalid.";
+const char kInvalidManifest[] = "Manifest file is invalid";
 const char kInvalidManifestVersion[] =
     "Invalid value for 'manifest_version'. Must be an integer greater than "
     "zero.";
@@ -715,8 +716,7 @@ const char kLocalesTreeMissing[] =
     "Default locale was specified, but _locales subtree is missing.";
 const char kManifestParseError[] =
     "Manifest is not valid JSON.";
-const char kManifestUnreadable[] =
-    "Manifest file is missing or unreadable.";
+const char kManifestUnreadable[] = "Manifest file is missing or unreadable";
 const char kMissingFile[] =
     "At least one js or css file is required for 'content_scripts[*]'.";
 const char kMultipleOverrides[] =

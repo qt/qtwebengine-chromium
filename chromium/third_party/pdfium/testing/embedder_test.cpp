@@ -8,6 +8,8 @@
 
 #include <fstream>
 #include <list>
+#include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,7 +23,9 @@
 #include "testing/image_diff/image_diff_png.h"
 #include "testing/test_support.h"
 #include "testing/utils/path_service.h"
+#include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_V8
 #include "v8/include/v8-platform.h"
@@ -49,17 +53,8 @@ int GetBitmapBytesPerPixel(FPDF_BITMAP bitmap) {
 }  // namespace
 
 EmbedderTest::EmbedderTest()
-    : default_delegate_(new EmbedderTest::Delegate()),
-      document_(nullptr),
-      form_handle_(nullptr),
-      avail_(nullptr),
-      external_isolate_(nullptr),
-      loader_(nullptr),
-      file_length_(0),
-      file_contents_(nullptr) {
-  memset(&file_access_, 0, sizeof(file_access_));
-  delegate_ = default_delegate_.get();
-
+    : default_delegate_(pdfium::MakeUnique<EmbedderTest::Delegate>()),
+      delegate_(default_delegate_.get()) {
   FPDF_FILEWRITE::version = 1;
   FPDF_FILEWRITE::WriteBlock = WriteBlockCallback;
 }
@@ -80,10 +75,15 @@ void EmbedderTest::SetUp() {
   info->FSDK_UnSupport_Handler = UnsupportedHandlerTrampoline;
   FSDK_SetUnSpObjProcessHandler(info);
 
-  m_SavedDocument = nullptr;
+  saved_document_ = nullptr;
 }
 
 void EmbedderTest::TearDown() {
+  // Use an EXPECT_EQ() here and continue to let TearDown() finish as cleanly as
+  // possible. This can fail when an ASSERT test fails in a test case.
+  EXPECT_EQ(0U, page_map_.size());
+  EXPECT_EQ(0U, saved_page_map_.size());
+
   if (document_) {
     FORM_DoDocumentAAction(form_handle_, FPDFDOC_AACTION_WC);
     FPDFDOC_ExitFormFillEnvironment(form_handle_);
@@ -129,9 +129,12 @@ bool EmbedderTest::OpenDocumentWithOptions(const std::string& filename,
 
   EXPECT_TRUE(!loader_);
   loader_ = new TestLoader(file_contents_.get(), file_length_);
+
+  memset(&file_access_, 0, sizeof(file_access_));
   file_access_.m_FileLen = static_cast<unsigned long>(file_length_);
   file_access_.m_GetBlock = TestLoader::GetBlock;
   file_access_.m_Param = loader_;
+
   fake_file_access_ = pdfium::MakeUnique<FakeFileAccess>(&file_access_);
   return OpenDocumentHelper(password, must_linearize, fake_file_access_.get(),
                             &document_, &avail_, &form_handle_);
@@ -250,10 +253,8 @@ int EmbedderTest::GetPageCount() {
 
 FPDF_PAGE EmbedderTest::LoadPage(int page_number) {
   ASSERT(form_handle_);
-  // First check whether it is loaded already.
-  auto it = page_map_.find(page_number);
-  if (it != page_map_.end())
-    return it->second;
+  ASSERT(page_number >= 0);
+  ASSERT(!pdfium::ContainsKey(page_map_, page_number));
 
   FPDF_PAGE page = FPDF_LoadPage(document_, page_number);
   if (!page)
@@ -261,100 +262,140 @@ FPDF_PAGE EmbedderTest::LoadPage(int page_number) {
 
   FORM_OnAfterLoadPage(page, form_handle_);
   FORM_DoPageAAction(page, form_handle_, FPDFPAGE_AACTION_OPEN);
-  // Cache the page.
   page_map_[page_number] = page;
-  page_reverse_map_[page] = page_number;
   return page;
-}
-
-FPDF_BITMAP EmbedderTest::RenderPage(FPDF_PAGE page) {
-  return RenderPageWithFlags(page, form_handle_, 0);
-}
-
-FPDF_BITMAP EmbedderTest::RenderPageWithFlags(FPDF_PAGE page,
-                                              FPDF_FORMHANDLE handle,
-                                              int flags) {
-  int width = static_cast<int>(FPDF_GetPageWidth(page));
-  int height = static_cast<int>(FPDF_GetPageHeight(page));
-  int alpha = FPDFPage_HasTransparency(page) ? 1 : 0;
-  FPDF_BITMAP bitmap = FPDFBitmap_Create(width, height, alpha);
-  FPDF_DWORD fill_color = alpha ? 0x00000000 : 0xFFFFFFFF;
-  FPDFBitmap_FillRect(bitmap, 0, 0, width, height, fill_color);
-  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, flags);
-  FPDF_FFLDraw(handle, bitmap, page, 0, 0, width, height, 0, flags);
-  return bitmap;
 }
 
 void EmbedderTest::UnloadPage(FPDF_PAGE page) {
   ASSERT(form_handle_);
+
+  int page_number = GetPageNumberForLoadedPage(page);
+  if (page_number < 0) {
+    NOTREACHED();
+    return;
+  }
+
   FORM_DoPageAAction(page, form_handle_, FPDFPAGE_AACTION_CLOSE);
   FORM_OnBeforeClosePage(page, form_handle_);
   FPDF_ClosePage(page);
 
-  auto it = page_reverse_map_.find(page);
-  if (it == page_reverse_map_.end())
-    return;
+  page_map_.erase(page_number);
+}
 
-  page_map_.erase(it->second);
-  page_reverse_map_.erase(it);
+std::unique_ptr<void, FPDFBitmapDeleter> EmbedderTest::RenderLoadedPage(
+    FPDF_PAGE page) {
+  return RenderLoadedPageWithFlags(page, 0);
+}
+
+std::unique_ptr<void, FPDFBitmapDeleter>
+EmbedderTest::RenderLoadedPageWithFlags(FPDF_PAGE page, int flags) {
+  if (GetPageNumberForLoadedPage(page) < 0) {
+    NOTREACHED();
+    return nullptr;
+  }
+  return RenderPageWithFlags(page, form_handle_, flags);
+}
+
+std::unique_ptr<void, FPDFBitmapDeleter> EmbedderTest::RenderSavedPage(
+    FPDF_PAGE page) {
+  return RenderSavedPageWithFlags(page, 0);
+}
+
+std::unique_ptr<void, FPDFBitmapDeleter> EmbedderTest::RenderSavedPageWithFlags(
+    FPDF_PAGE page,
+    int flags) {
+  if (GetPageNumberForSavedPage(page) < 0) {
+    NOTREACHED();
+    return nullptr;
+  }
+  return RenderPageWithFlags(page, saved_form_handle_, flags);
+}
+
+// static
+std::unique_ptr<void, FPDFBitmapDeleter> EmbedderTest::RenderPageWithFlags(
+    FPDF_PAGE page,
+    FPDF_FORMHANDLE handle,
+    int flags) {
+  int width = static_cast<int>(FPDF_GetPageWidth(page));
+  int height = static_cast<int>(FPDF_GetPageHeight(page));
+  int alpha = FPDFPage_HasTransparency(page) ? 1 : 0;
+  std::unique_ptr<void, FPDFBitmapDeleter> bitmap(
+      FPDFBitmap_Create(width, height, alpha));
+  FPDF_DWORD fill_color = alpha ? 0x00000000 : 0xFFFFFFFF;
+  FPDFBitmap_FillRect(bitmap.get(), 0, 0, width, height, fill_color);
+  FPDF_RenderPageBitmap(bitmap.get(), page, 0, 0, width, height, 0, flags);
+  FPDF_FFLDraw(handle, bitmap.get(), page, 0, 0, width, height, 0, flags);
+  return bitmap;
 }
 
 FPDF_DOCUMENT EmbedderTest::OpenSavedDocument(const char* password) {
   memset(&saved_file_access_, 0, sizeof(saved_file_access_));
-  saved_file_access_.m_FileLen = m_String.size();
+  saved_file_access_.m_FileLen = data_string_.size();
   saved_file_access_.m_GetBlock = GetBlockFromString;
-  saved_file_access_.m_Param = &m_String;
+  saved_file_access_.m_Param = &data_string_;
 
   saved_fake_file_access_ =
       pdfium::MakeUnique<FakeFileAccess>(&saved_file_access_);
 
   EXPECT_TRUE(OpenDocumentHelper(password, false, saved_fake_file_access_.get(),
-                                 &m_SavedDocument, &m_SavedAvail,
-                                 &m_SavedForm));
-  return m_SavedDocument;
+                                 &saved_document_, &saved_avail_,
+                                 &saved_form_handle_));
+  return saved_document_;
 }
 
 void EmbedderTest::CloseSavedDocument() {
-  ASSERT(m_SavedDocument);
+  ASSERT(saved_document_);
 
-  FPDFDOC_ExitFormFillEnvironment(m_SavedForm);
-  FPDF_CloseDocument(m_SavedDocument);
-  FPDFAvail_Destroy(m_SavedAvail);
+  FPDFDOC_ExitFormFillEnvironment(saved_form_handle_);
+  FPDF_CloseDocument(saved_document_);
+  FPDFAvail_Destroy(saved_avail_);
 
-  m_SavedForm = nullptr;
-  m_SavedDocument = nullptr;
-  m_SavedAvail = nullptr;
+  saved_form_handle_ = nullptr;
+  saved_document_ = nullptr;
+  saved_avail_ = nullptr;
 }
 
 FPDF_PAGE EmbedderTest::LoadSavedPage(int page_number) {
-  ASSERT(m_SavedDocument);
+  ASSERT(saved_form_handle_);
+  ASSERT(page_number >= 0);
+  ASSERT(!pdfium::ContainsKey(saved_page_map_, page_number));
 
-  EXPECT_LT(page_number, FPDF_GetPageCount(m_SavedDocument));
-  FPDF_PAGE page = FPDF_LoadPage(m_SavedDocument, page_number);
+  FPDF_PAGE page = FPDF_LoadPage(saved_document_, page_number);
+  if (!page)
+    return nullptr;
 
-  ASSERT(page);
+  FORM_OnAfterLoadPage(page, saved_form_handle_);
+  FORM_DoPageAAction(page, saved_form_handle_, FPDFPAGE_AACTION_OPEN);
+  saved_page_map_[page_number] = page;
   return page;
 }
 
-FPDF_BITMAP EmbedderTest::RenderSavedPage(FPDF_PAGE page) {
-  return RenderPageWithFlags(page, m_SavedForm, 0);
-}
-
 void EmbedderTest::CloseSavedPage(FPDF_PAGE page) {
-  ASSERT(page);
+  ASSERT(saved_form_handle_);
+
+  int page_number = GetPageNumberForSavedPage(page);
+  if (page_number < 0) {
+    NOTREACHED();
+    return;
+  }
+
+  FORM_DoPageAAction(page, saved_form_handle_, FPDFPAGE_AACTION_CLOSE);
+  FORM_OnBeforeClosePage(page, saved_form_handle_);
   FPDF_ClosePage(page);
+
+  saved_page_map_.erase(page_number);
 }
 
 void EmbedderTest::VerifySavedRendering(FPDF_PAGE page,
                                         int width,
                                         int height,
                                         const char* md5) {
-  ASSERT(m_SavedDocument);
+  ASSERT(saved_document_);
   ASSERT(page);
 
-  FPDF_BITMAP new_bitmap = RenderPageWithFlags(page, m_SavedForm, FPDF_ANNOT);
-  CompareBitmap(new_bitmap, width, height, md5);
-  FPDFBitmap_Destroy(new_bitmap);
+  std::unique_ptr<void, FPDFBitmapDeleter> bitmap =
+      RenderSavedPageWithFlags(page, FPDF_ANNOT);
+  CompareBitmap(bitmap.get(), width, height, md5);
 }
 
 void EmbedderTest::VerifySavedDocument(int width, int height, const char* md5) {
@@ -479,7 +520,7 @@ int EmbedderTest::WriteBlockCallback(FPDF_FILEWRITE* pFileWrite,
                                      const void* data,
                                      unsigned long size) {
   EmbedderTest* pThis = static_cast<EmbedderTest*>(pFileWrite);
-  pThis->m_String.append(static_cast<const char*>(data), size);
+  pThis->data_string_.append(static_cast<const char*>(data), size);
   return 1;
 }
 
@@ -498,4 +539,25 @@ int EmbedderTest::GetBlockFromString(void* param,
 
   memcpy(buf, new_file->data() + pos, size);
   return 1;
+}
+
+// static
+int EmbedderTest::GetPageNumberForPage(const PageNumberToHandleMap& page_map,
+                                       FPDF_PAGE page) {
+  for (const auto& it : page_map) {
+    if (it.second == page) {
+      int page_number = it.first;
+      ASSERT(page_number >= 0);
+      return page_number;
+    }
+  }
+  return -1;
+}
+
+int EmbedderTest::GetPageNumberForLoadedPage(FPDF_PAGE page) const {
+  return GetPageNumberForPage(page_map_, page);
+}
+
+int EmbedderTest::GetPageNumberForSavedPage(FPDF_PAGE page) const {
+  return GetPageNumberForPage(saved_page_map_, page);
 }

@@ -14,7 +14,9 @@
 #include "platform/Histogram.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/scheduler/base/task_queue_manager.h"
+#include "platform/scheduler/child/default_params.h"
 #include "platform/scheduler/child/worker_scheduler_helper.h"
+#include "platform/scheduler/child/worker_scheduler_proxy.h"
 
 namespace blink {
 namespace scheduler {
@@ -44,7 +46,8 @@ base::TimeTicks MonotonicTimeInSecondsToTimeTicks(
 }  // namespace
 
 WorkerSchedulerImpl::WorkerSchedulerImpl(
-    std::unique_ptr<TaskQueueManager> task_queue_manager)
+    std::unique_ptr<TaskQueueManager> task_queue_manager,
+    WorkerSchedulerProxy* proxy)
     : WorkerScheduler(
           std::make_unique<WorkerSchedulerHelper>(std::move(task_queue_manager),
                                                   this)),
@@ -57,11 +60,18 @@ WorkerSchedulerImpl::WorkerSchedulerImpl(
                                           idle_helper_.IdleTaskRunner()),
       load_tracker_(helper_->NowTicks(),
                     base::Bind(&ReportWorkerTaskLoad),
-                    kUnspecifiedWorkerThreadLoadTrackerReportingInterval) {
-  initialized_ = false;
+                    kUnspecifiedWorkerThreadLoadTrackerReportingInterval),
+      throttling_state_(
+          proxy ? proxy->throttling_state()
+                : WebFrameScheduler::ThrottlingState::kNotThrottled),
+      weak_factory_(this) {
   thread_start_time_ = helper_->NowTicks();
   load_tracker_.Resume(thread_start_time_);
   helper_->AddTaskTimeObserver(this);
+
+  if (proxy)
+    proxy->OnWorkerSchedulerCreated(GetWeakPtr());
+
   TRACE_EVENT_OBJECT_CREATED_WITH_ID(
       TRACE_DISABLED_BY_DEFAULT("worker.scheduler"), "WorkerScheduler", this);
 }
@@ -69,6 +79,7 @@ WorkerSchedulerImpl::WorkerSchedulerImpl(
 WorkerSchedulerImpl::~WorkerSchedulerImpl() {
   TRACE_EVENT_OBJECT_DELETED_WITH_ID(
       TRACE_DISABLED_BY_DEFAULT("worker.scheduler"), "WorkerScheduler", this);
+
   helper_->RemoveTaskTimeObserver(this);
 }
 
@@ -162,11 +173,6 @@ base::TimeTicks WorkerSchedulerImpl::CurrentIdleTaskDeadlineForTesting() const {
 void WorkerSchedulerImpl::WillProcessTask(double start_time) {}
 
 void WorkerSchedulerImpl::DidProcessTask(double start_time, double end_time) {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, task_time_counter,
-                                  ("WorkerThread.Task.Time", 0, 10000000, 50));
-  task_time_counter.Count((end_time - start_time) *
-                          base::Time::kMicrosecondsPerSecond);
-
   base::TimeTicks start_time_ticks =
       MonotonicTimeInSecondsToTimeTicks(start_time);
   base::TimeTicks end_time_ticks = MonotonicTimeInSecondsToTimeTicks(end_time);
@@ -174,9 +180,22 @@ void WorkerSchedulerImpl::DidProcessTask(double start_time, double end_time) {
   load_tracker_.RecordTaskTime(start_time_ticks, end_time_ticks);
 }
 
-void WorkerSchedulerImpl::SetThreadType(ThreadType thread_type) {
-  DCHECK_NE(thread_type, ThreadType::kMainThread);
+void WorkerSchedulerImpl::SetThreadType(WebThreadType thread_type) {
+  DCHECK_NE(thread_type, WebThreadType::kMainThread);
   worker_metrics_helper_.SetThreadType(thread_type);
+}
+
+void WorkerSchedulerImpl::OnThrottlingStateChanged(
+    WebFrameScheduler::ThrottlingState throttling_state) {
+  throttling_state_ = throttling_state;
+}
+
+scoped_refptr<WorkerTaskQueue> WorkerSchedulerImpl::ControlTaskQueue() {
+  return helper_->ControlWorkerTaskQueue();
+}
+
+base::WeakPtr<WorkerSchedulerImpl> WorkerSchedulerImpl::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }
 
 }  // namespace scheduler

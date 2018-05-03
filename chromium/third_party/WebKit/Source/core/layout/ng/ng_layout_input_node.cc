@@ -9,6 +9,7 @@
 #include "core/layout/MinMaxSize.h"
 #include "core/layout/ng/geometry/ng_logical_size.h"
 #include "core/layout/ng/inline/ng_inline_node.h"
+#include "core/layout/ng/list/layout_ng_list_marker.h"
 #include "core/layout/ng/ng_block_node.h"
 #include "core/layout/ng/ng_layout_result.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -86,6 +87,14 @@ bool NGLayoutInputNode::ShouldBeConsideredAsReplaced() const {
   return box_->ShouldBeConsideredAsReplaced();
 }
 
+bool NGLayoutInputNode::IsListItem() const {
+  return IsBlock() && box_->IsLayoutNGListItem();
+}
+
+bool NGLayoutInputNode::IsListMarker() const {
+  return IsBlock() && box_->IsLayoutNGListMarker();
+}
+
 bool NGLayoutInputNode::IsQuirkyContainer() const {
   return box_->GetDocument().InQuirksMode() &&
          (box_->IsBody() || box_->IsTableCell());
@@ -99,6 +108,14 @@ bool NGLayoutInputNode::IsFixedContainer() const {
   return box_->CanContainFixedPositionObjects();
 }
 
+bool NGLayoutInputNode::IsBody() const {
+  return IsBlock() && box_->IsBody();
+}
+
+bool NGLayoutInputNode::IsDocumentElement() const {
+  return box_->IsDocumentElement();
+}
+
 bool NGLayoutInputNode::CreatesNewFormattingContext() const {
   return IsBlock() && box_->AvoidsFloats();
 }
@@ -110,9 +127,9 @@ scoped_refptr<NGLayoutResult> NGLayoutInputNode::Layout(
                     : ToNGBlockNode(*this).Layout(space, break_token);
 }
 
-MinMaxSize NGLayoutInputNode::ComputeMinMaxSize() {
-  return IsInline() ? ToNGInlineNode(*this).ComputeMinMaxSize()
-                    : ToNGBlockNode(*this).ComputeMinMaxSize();
+MinMaxSize NGLayoutInputNode::ComputeMinMaxSize(const MinMaxSizeInput& input) {
+  return IsInline() ? ToNGInlineNode(*this).ComputeMinMaxSize(input)
+                    : ToNGBlockNode(*this).ComputeMinMaxSize(input);
 }
 
 void NGLayoutInputNode::IntrinsicSize(
@@ -151,9 +168,10 @@ Document& NGLayoutInputNode::GetDocument() const {
 }
 
 NGPhysicalSize NGLayoutInputNode::InitialContainingBlockSize() const {
-  LayoutView* view = GetDocument().GetLayoutView();
-  FloatSize size = view->ViewportSizeForViewportUnits();
-  return NGPhysicalSize{LayoutUnit(size.Width()), LayoutUnit(size.Height())};
+  IntSize icb_size =
+      GetDocument().GetLayoutView()->GetLayoutSize(kExcludeScrollbars);
+  return NGPhysicalSize{LayoutUnit(icb_size.Width()),
+                        LayoutUnit(icb_size.Height())};
 }
 
 LayoutObject* NGLayoutInputNode::GetLayoutObject() const {

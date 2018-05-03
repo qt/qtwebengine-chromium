@@ -57,6 +57,8 @@ PermissionType PermissionDescriptorToPermissionType(
       return PermissionType::CLIPBOARD_READ;
     case PermissionName::CLIPBOARD_WRITE:
       return PermissionType::CLIPBOARD_WRITE;
+    case PermissionName::PAYMENT_HANDLER:
+      return PermissionType::PAYMENT_HANDLER;
   }
 
   NOTREACHED();
@@ -106,23 +108,7 @@ PermissionServiceImpl::PermissionServiceImpl(PermissionServiceContext* context,
                                              const url::Origin& origin)
     : context_(context), origin_(origin), weak_factory_(this) {}
 
-PermissionServiceImpl::~PermissionServiceImpl() {
-  BrowserContext* browser_context = context_->GetBrowserContext();
-  if (!browser_context)
-    return;
-
-  PermissionManager* permission_manager =
-      browser_context->GetPermissionManager();
-  if (!permission_manager)
-    return;
-
-  // Cancel pending requests.
-  for (RequestsMap::Iterator<PendingRequest> it(&pending_requests_);
-       !it.IsAtEnd(); it.Advance()) {
-    permission_manager->CancelPermissionRequest(it.GetCurrentValue()->id());
-  }
-  pending_requests_.Clear();
-}
+PermissionServiceImpl::~PermissionServiceImpl() {}
 
 void PermissionServiceImpl::RequestPermission(
     PermissionDescriptorPtr permission,
@@ -132,7 +118,7 @@ void PermissionServiceImpl::RequestPermission(
   permissions.push_back(std::move(permission));
   RequestPermissions(std::move(permissions), user_gesture,
                      base::BindOnce(&PermissionRequestResponseCallbackWrapper,
-                                    base::Passed(&callback)));
+                                    std::move(callback)));
 }
 
 void PermissionServiceImpl::RequestPermissions(

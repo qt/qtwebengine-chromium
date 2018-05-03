@@ -11,9 +11,9 @@
 
 #include <utility>
 
+#include "api/call/callfactoryinterface.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder_factory.h"
-#include "call/callfactoryinterface.h"
 #include "logging/rtc_event_log/rtc_event_log_factory_interface.h"
 #include "media/engine/webrtcmediaengine.h"
 #include "modules/audio_device/include/audio_device.h"
@@ -30,6 +30,7 @@ RtcEventLogFactoryInterface* CreateRtcEventLogFactory() {
   return webrtc::CreateRtcEventLogFactory().release();
 }
 
+#if defined(USE_BUILTIN_SW_CODECS)
 cricket::MediaEngineInterface* CreateMediaEngine(
     AudioDeviceModule* adm,
     const rtc::scoped_refptr<AudioEncoderFactory>& audio_encoder_factory,
@@ -42,6 +43,7 @@ cricket::MediaEngineInterface* CreateMediaEngine(
       adm, audio_encoder_factory, audio_decoder_factory, video_encoder_factory,
       video_decoder_factory, audio_mixer, audio_processor);
 }
+#endif
 
 cricket::MediaEngineInterface* CreateMediaEngine(
     rtc::scoped_refptr<AudioDeviceModule> adm,

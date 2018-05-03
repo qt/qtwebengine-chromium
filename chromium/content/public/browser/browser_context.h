@@ -50,6 +50,7 @@ class URLRequestContextGetter;
 }
 
 namespace storage {
+class BlobStorageContext;
 class SpecialStoragePolicy;
 }
 
@@ -132,6 +133,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
       BrowserContext* browser_context);
 
   using BlobCallback = base::OnceCallback<void(std::unique_ptr<BlobHandle>)>;
+  using BlobContextGetter =
+      base::RepeatingCallback<base::WeakPtr<storage::BlobStorageContext>()>;
 
   // |callback| returns a nullptr scoped_ptr on failure.
   static void CreateMemoryBackedBlob(BrowserContext* browser_context,
@@ -147,6 +150,10 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
                                    int64_t size,
                                    const base::Time& expected_modification_time,
                                    BlobCallback callback);
+
+  // Get a BlobStorageContext getter that needs to run on IO thread.
+  static BlobContextGetter GetBlobStorageContext(
+      BrowserContext* browser_context);
 
   // Delivers a push message with |data| to the Service Worker identified by
   // |origin| and |service_worker_registration_id|.
@@ -181,7 +188,7 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Returns a Service User ID associated with this BrowserContext. This ID is
   // not persistent across runs. See
-  // services/service_manager/public/interfaces/connector.mojom. By default,
+  // services/service_manager/public/mojom/connector.mojom. By default,
   // this user id is randomly generated when Initialize() is called.
   static const std::string& GetServiceUserIdFor(
       BrowserContext* browser_context);

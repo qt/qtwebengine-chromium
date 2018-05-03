@@ -9,8 +9,8 @@
 
 #include "base/macros.h"
 #include "base/single_thread_task_runner.h"
+#include "device/vr/public/mojom/vr_service.mojom.h"
 #include "device/vr/vr_device_base.h"
-#include "device/vr/vr_service.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "third_party/libovr/src/Include/OVR_CAPI.h"
 
@@ -20,7 +20,7 @@ class OculusRenderLoop;
 
 class OculusDevice : public VRDeviceBase {
  public:
-  explicit OculusDevice(ovrSession session);
+  explicit OculusDevice(ovrSession session, ovrGraphicsLuid luid);
   ~OculusDevice() override;
 
   // VRDeviceBase
@@ -28,6 +28,7 @@ class OculusDevice : public VRDeviceBase {
       VRDisplayImpl* display,
       mojom::VRSubmitFrameClientPtr submit_client,
       mojom::VRPresentationProviderRequest request,
+      mojom::VRRequestPresentOptionsPtr present_options,
       mojom::VRDisplayHost::RequestPresentCallback callback) override;
   void ExitPresent() override;
   void OnMagicWindowPoseRequest(
@@ -35,7 +36,8 @@ class OculusDevice : public VRDeviceBase {
 
   void OnRequestPresentResult(
       mojom::VRDisplayHost::RequestPresentCallback callback,
-      bool result);
+      bool result,
+      mojom::VRDisplayFrameTransportOptionsPtr transport_options);
 
  private:
   std::unique_ptr<OculusRenderLoop> render_loop_;

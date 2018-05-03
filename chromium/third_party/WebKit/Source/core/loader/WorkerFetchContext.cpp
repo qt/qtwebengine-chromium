@@ -4,6 +4,8 @@
 
 #include "core/loader/WorkerFetchContext.h"
 
+#include "base/single_thread_task_runner.h"
+#include "core/fileapi/PublicURLManager.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/UseCounter.h"
 #include "core/loader/MixedContentChecker.h"
@@ -13,7 +15,6 @@
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/Supplementable.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/network/NetworkStateNotifier.h"
@@ -42,10 +43,9 @@ class WorkerFetchContextHolder final
 
  public:
   static WorkerFetchContextHolder* From(WorkerClients& clients) {
-    return static_cast<WorkerFetchContextHolder*>(
-        Supplement<WorkerClients>::From(clients, SupplementName()));
+    return Supplement<WorkerClients>::From<WorkerFetchContextHolder>(clients);
   }
-  static const char* SupplementName() { return "WorkerFetchContextHolder"; }
+  static const char kSupplementName[];
 
   explicit WorkerFetchContextHolder(
       std::unique_ptr<WebWorkerFetchContext> web_context)
@@ -66,6 +66,10 @@ class WorkerFetchContextHolder final
 
 }  // namespace
 
+// static
+const char WorkerFetchContextHolder::kSupplementName[] =
+    "WorkerFetchContextHolder";
+
 WorkerFetchContext::~WorkerFetchContext() = default;
 
 WorkerFetchContext* WorkerFetchContext::Create(
@@ -75,8 +79,8 @@ WorkerFetchContext* WorkerFetchContext::Create(
   WorkerClients* worker_clients = global_scope.Clients();
   DCHECK(worker_clients);
   WorkerFetchContextHolder* holder =
-      static_cast<WorkerFetchContextHolder*>(Supplement<WorkerClients>::From(
-          *worker_clients, WorkerFetchContextHolder::SupplementName()));
+      Supplement<WorkerClients>::From<WorkerFetchContextHolder>(
+          *worker_clients);
   if (!holder)
     return nullptr;
   std::unique_ptr<WebWorkerFetchContext> web_context = holder->TakeContext();
@@ -92,7 +96,7 @@ WorkerFetchContext::WorkerFetchContext(
       loading_task_runner_(
           global_scope_->GetTaskRunner(TaskType::kUnspecedLoading)),
       save_data_enabled_(GetNetworkStateNotifier().SaveDataEnabled()) {
-  web_context_->InitializeOnWorkerThread(loading_task_runner_);
+  web_context_->InitializeOnWorkerThread();
   std::unique_ptr<blink::WebDocumentSubresourceFilter> web_filter =
       web_context_->TakeSubresourceFilter();
   if (web_filter) {
@@ -222,11 +226,34 @@ const SecurityOrigin* WorkerFetchContext::GetSecurityOrigin() const {
 
 std::unique_ptr<WebURLLoader> WorkerFetchContext::CreateURLLoader(
     const ResourceRequest& request,
-    scoped_refptr<WebTaskRunner> task_runner) {
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    const ResourceLoaderOptions& options) {
   CountUsage(WebFeature::kOffMainThreadFetch);
+  WrappedResourceRequest wrapped(request);
+
+  network::mojom::blink::URLLoaderFactoryPtr url_loader_factory;
+  if (options.url_loader_factory) {
+    options.url_loader_factory->data->Clone(MakeRequest(&url_loader_factory));
+  }
+  // Resolve any blob: URLs that haven't been resolved yet. The XHR and fetch()
+  // API implementations resolve blob URLs earlier because there can be
+  // arbitrarily long delays between creating requests with those APIs and
+  // actually creating the URL loader here. Other subresource loading will
+  // immediately create the URL loader so resolving those blob URLs here is
+  // simplest.
+  if (request.Url().ProtocolIs("blob") &&
+      RuntimeEnabledFeatures::MojoBlobURLsEnabled() && !url_loader_factory) {
+    global_scope_->GetPublicURLManager().Resolve(
+        request.Url(), MakeRequest(&url_loader_factory));
+  }
+  if (url_loader_factory) {
+    return web_context_
+        ->WrapURLLoaderFactory(url_loader_factory.PassInterface().PassHandle())
+        ->CreateURLLoader(wrapped, task_runner);
+  }
+
   if (!url_loader_factory_)
     url_loader_factory_ = web_context_->CreateURLLoaderFactory();
-  WrappedResourceRequest wrapped(request);
   return url_loader_factory_->CreateURLLoader(wrapped, task_runner);
 }
 
@@ -316,7 +343,8 @@ void WorkerFetchContext::DispatchDidFinishLoading(
                           blocked_cross_site_document);
 }
 
-void WorkerFetchContext::DispatchDidFail(unsigned long identifier,
+void WorkerFetchContext::DispatchDidFail(const KURL& url,
+                                         unsigned long identifier,
                                          const ResourceError& error,
                                          int64_t encoded_data_length,
                                          bool is_internal_request) {
@@ -351,7 +379,8 @@ void WorkerFetchContext::SetFirstPartyCookieAndRequestorOrigin(
     out_request.SetRequestorOrigin(GetSecurityOrigin());
 }
 
-scoped_refptr<WebTaskRunner> WorkerFetchContext::GetLoadingTaskRunner() {
+scoped_refptr<base::SingleThreadTaskRunner>
+WorkerFetchContext::GetLoadingTaskRunner() {
   return loading_task_runner_;
 }
 
@@ -367,8 +396,7 @@ void ProvideWorkerFetchContextToWorker(
     std::unique_ptr<WebWorkerFetchContext> web_context) {
   DCHECK(clients);
   WorkerFetchContextHolder::ProvideTo(
-      *clients, WorkerFetchContextHolder::SupplementName(),
-      new WorkerFetchContextHolder(std::move(web_context)));
+      *clients, new WorkerFetchContextHolder(std::move(web_context)));
 }
 
 }  // namespace blink

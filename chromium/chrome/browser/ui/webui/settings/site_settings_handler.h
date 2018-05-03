@@ -16,7 +16,8 @@
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "third_party/WebKit/common/quota/quota_types.mojom.h"
+#include "ppapi/features/features.h"
+#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
 
 class HostContentSettingsMap;
 class Profile;
@@ -46,7 +47,9 @@ class SiteSettingsHandler : public SettingsPageUIHandler,
 
   // Usage info.
   void OnGetUsageInfo(const storage::UsageInfoEntries& entries);
-  void OnUsageInfoCleared(blink::mojom::QuotaStatusCode code);
+  void OnStorageCleared(base::OnceClosure callback,
+                        blink::mojom::QuotaStatusCode code);
+  void OnUsageCleared();
 
 #if defined(OS_CHROMEOS)
   // Alert the Javascript that the |kEnableDRM| pref has changed.
@@ -70,6 +73,10 @@ class SiteSettingsHandler : public SettingsPageUIHandler,
  private:
   friend class SiteSettingsHandlerTest;
   friend class SiteSettingsHandlerInfobarTest;
+#if BUILDFLAG(ENABLE_PLUGINS)
+  FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest,
+                           ChangingFlashSettingForSiteIsRemembered);
+#endif
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest, DefaultSettingSource);
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest, ExceptionHelpers);
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest, ExtensionDisplayName);
@@ -109,6 +116,10 @@ class SiteSettingsHandler : public SettingsPageUIHandler,
   // '*CategoryPermissionForPattern' equivalents below with these methods.
   void HandleGetOriginPermissions(const base::ListValue* args);
   void HandleSetOriginPermissions(const base::ListValue* args);
+
+  // Clears the Flash data setting used to remember if the user has changed the
+  // Flash permission for an origin.
+  void HandleClearFlashPref(const base::ListValue* args);
 
   // Handles setting and resetting an origin permission.
   void HandleResetCategoryPermissionForPattern(const base::ListValue* args);

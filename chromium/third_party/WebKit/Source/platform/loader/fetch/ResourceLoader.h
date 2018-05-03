@@ -84,7 +84,7 @@ class PLATFORM_EXPORT ResourceLoader final
   }
 
   ResourceFetcher* Fetcher() { return fetcher_; }
-  bool GetKeepalive() const;
+  bool ShouldBeKeptAliveWhenDetached() const;
 
   // WebURLLoaderClient
   //
@@ -131,6 +131,8 @@ class PLATFORM_EXPORT ResourceLoader final
   // ResourceLoadSchedulerClient.
   void Run() override;
 
+  scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner();
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceLoaderTest, DetermineCORSStatus);
 
@@ -153,6 +155,7 @@ class PLATFORM_EXPORT ResourceLoader final
   void Restart(const ResourceRequest&);
 
   FetchContext& Context() const;
+  scoped_refptr<const SecurityOrigin> GetSourceOrigin() const;
 
   CORSStatus DetermineCORSStatus(const ResourceResponse&, StringBuilder&) const;
 

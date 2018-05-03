@@ -299,7 +299,12 @@ class BlinkScrollbarPartAnimationTimer {
  public:
   BlinkScrollbarPartAnimationTimer(BlinkScrollbarPartAnimation* animation,
                                    CFTimeInterval duration)
-      : timer_(this, &BlinkScrollbarPartAnimationTimer::TimerFired),
+      : timer_(Platform::Current()
+                   ->MainThread()
+                   ->Scheduler()
+                   ->CompositorTaskRunner(),
+               this,
+               &BlinkScrollbarPartAnimationTimer::TimerFired),
         start_time_(0.0),
         duration_(duration),
         animation_(animation),
@@ -333,7 +338,7 @@ class BlinkScrollbarPartAnimationTimer {
     [animation_ setCurrentProgress:progress];
   }
 
-  Timer<BlinkScrollbarPartAnimationTimer> timer_;
+  TaskRunnerTimer<BlinkScrollbarPartAnimationTimer> timer_;
   double start_time_;                       // In seconds.
   double duration_;                         // In seconds.
   BlinkScrollbarPartAnimation* animation_;  // Weak, owns this.
@@ -698,8 +703,10 @@ ScrollAnimatorBase* ScrollAnimatorBase::Create(
 
 ScrollAnimatorMac::ScrollAnimatorMac(blink::ScrollableArea* scrollable_area)
     : ScrollAnimatorBase(scrollable_area),
-      task_runner_(
-          Platform::Current()->CurrentThread()->Scheduler()->TimerTaskRunner()),
+      task_runner_(Platform::Current()
+                       ->CurrentThread()
+                       ->Scheduler()
+                       ->CompositorTaskRunner()),
       have_scrolled_since_page_load_(false),
       needs_scroller_style_update_(false) {
   scroll_animation_helper_delegate_.AdoptNS(
@@ -724,6 +731,14 @@ ScrollAnimatorMac::~ScrollAnimatorMac() {}
 
 void ScrollAnimatorMac::Dispose() {
   BEGIN_BLOCK_OBJC_EXCEPTIONS;
+  ScrollbarPainter horizontal_scrollbar_painter =
+      [scrollbar_painter_controller_.Get() horizontalScrollerImp];
+  [horizontal_scrollbar_painter setDelegate:nil];
+
+  ScrollbarPainter vertical_scrollbar_painter =
+      [scrollbar_painter_controller_.Get() verticalScrollerImp];
+  [vertical_scrollbar_painter setDelegate:nil];
+
   [scrollbar_painter_controller_delegate_.Get() invalidate];
   [scrollbar_painter_controller_.Get() setDelegate:nil];
   [horizontal_scrollbar_painter_delegate_.Get() invalidate];
@@ -891,14 +906,14 @@ void ScrollAnimatorMac::DidAddVerticalScrollbar(Scrollbar& scrollbar) {
 
 void ScrollAnimatorMac::WillRemoveVerticalScrollbar(Scrollbar& scrollbar) {
   ScrollbarPainter painter = ScrollbarPainterForScrollbar(scrollbar);
+  DCHECK_EQ([scrollbar_painter_controller_.Get() verticalScrollerImp], painter);
   if (!painter)
     return;
 
   DCHECK(vertical_scrollbar_painter_delegate_);
+  [painter setDelegate:nil];
   [vertical_scrollbar_painter_delegate_.Get() invalidate];
   vertical_scrollbar_painter_delegate_ = nullptr;
-
-  [painter setDelegate:nil];
   [scrollbar_painter_controller_.Get() setVerticalScrollerImp:nil];
 }
 
@@ -917,14 +932,15 @@ void ScrollAnimatorMac::DidAddHorizontalScrollbar(Scrollbar& scrollbar) {
 
 void ScrollAnimatorMac::WillRemoveHorizontalScrollbar(Scrollbar& scrollbar) {
   ScrollbarPainter painter = ScrollbarPainterForScrollbar(scrollbar);
+  DCHECK_EQ([scrollbar_painter_controller_.Get() horizontalScrollerImp],
+            painter);
   if (!painter)
     return;
 
   DCHECK(horizontal_scrollbar_painter_delegate_);
+  [painter setDelegate:nil];
   [horizontal_scrollbar_painter_delegate_.Get() invalidate];
   horizontal_scrollbar_painter_delegate_ = nullptr;
-
-  [painter setDelegate:nil];
   [scrollbar_painter_controller_.Get() setHorizontalScrollerImp:nil];
 }
 
@@ -984,6 +1000,9 @@ void ScrollAnimatorMac::UpdateScrollerStyle() {
                  controlSize:(NSControlSize)vertical_scrollbar->GetControlSize()
                   horizontal:NO
         replacingScrollerImp:old_vertical_painter];
+    [old_vertical_painter setDelegate:nil];
+    [new_vertical_painter
+        setDelegate:vertical_scrollbar_painter_delegate_.Get()];
     [scrollbar_painter_controller_.Get()
         setVerticalScrollerImp:new_vertical_painter];
     mac_theme->SetNewPainterForScrollbar(*vertical_scrollbar,
@@ -1012,6 +1031,9 @@ void ScrollAnimatorMac::UpdateScrollerStyle() {
                                      horizontal_scrollbar->GetControlSize()
                       horizontal:YES
             replacingScrollerImp:old_horizontal_painter];
+    [old_horizontal_painter setDelegate:nil];
+    [new_horizontal_painter
+        setDelegate:horizontal_scrollbar_painter_delegate_.Get()];
     [scrollbar_painter_controller_.Get()
         setHorizontalScrollerImp:new_horizontal_painter];
     mac_theme->SetNewPainterForScrollbar(*horizontal_scrollbar,

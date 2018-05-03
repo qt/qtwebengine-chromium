@@ -15,8 +15,8 @@
 
 #include "core/fxcrt/observable.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
+#include "fxjs/cfxjs_engine.h"
 #include "fxjs/cjs_eventhandler.h"
-#include "fxjs/fxjs_v8.h"
 #include "fxjs/ijs_runtime.h"
 
 class CJS_EventContext;
@@ -27,7 +27,7 @@ class CJS_Runtime : public IJS_Runtime,
  public:
   using FieldEvent = std::pair<WideString, JS_EVENT_T>;
 
-  static CJS_Runtime* CurrentRuntimeFromIsolate(v8::Isolate* pIsolate);
+  static CJS_Runtime* RuntimeFromIsolateCurrentContext(v8::Isolate* pIsolate);
 
   explicit CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv);
   ~CJS_Runtime() override;
@@ -53,10 +53,10 @@ class CJS_Runtime : public IJS_Runtime,
   v8::Local<v8::Value> MaybeCoerceToNumber(v8::Local<v8::Value> value);
 
 #ifdef PDF_ENABLE_XFA
-  bool GetValueByName(const ByteStringView& utf8Name,
-                      CFXJSE_Value* pValue) override;
-  bool SetValueByName(const ByteStringView& utf8Name,
-                      CFXJSE_Value* pValue) override;
+  bool GetValueByNameFromGlobalObject(const ByteStringView& utf8Name,
+                                      CFXJSE_Value* pValue) override;
+  bool SetValueByNameInGlobalObject(const ByteStringView& utf8Name,
+                                    CFXJSE_Value* pValue) override;
 #endif  // PDF_ENABLE_XFA
 
  private:

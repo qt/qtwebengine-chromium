@@ -23,10 +23,12 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "components/discardable_memory/service/discardable_shared_memory_manager.h"
 #include "components/tracing/common/tracing_switches.h"
 #include "components/viz/common/switches.h"
 #include "content/browser/browser_child_process_host_impl.h"
@@ -44,6 +46,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/gpu_utils.h"
+#include "content/public/common/bind_interface_helpers.h"
 #include "content/public/common/connection_filter.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -61,10 +64,13 @@
 #include "media/media_features.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
+#include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "services/service_manager/sandbox/switches.h"
+#include "services/ui/public/interfaces/constants.mojom.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 #include "ui/gfx/switches.h"
@@ -102,7 +108,7 @@ namespace content {
 
 bool GpuProcessHost::gpu_enabled_ = true;
 bool GpuProcessHost::hardware_gpu_enabled_ = true;
-int GpuProcessHost::gpu_crash_count_ = 0;
+base::subtle::Atomic32 GpuProcessHost::gpu_crash_count_ = 0;
 int GpuProcessHost::gpu_recent_crash_count_ = 0;
 bool GpuProcessHost::crashed_before_ = false;
 int GpuProcessHost::swiftshader_crash_count_ = 0;
@@ -114,6 +120,12 @@ static const char* const kSwitchNames[] = {
     service_manager::switches::kDisableSeccompFilterSandbox,
     service_manager::switches::kGpuSandboxAllowSysVShm,
     service_manager::switches::kGpuSandboxFailuresFatal,
+#if defined(OS_WIN)
+    service_manager::switches::kAddGpuAppContainerCaps,
+    service_manager::switches::kDisableGpuAppContainer,
+    service_manager::switches::kDisableGpuLpac,
+    service_manager::switches::kEnableGpuAppContainer,
+#endif  // defined(OS_WIN)
     switches::kDisableBreakpad,
     switches::kDisableGpuRasterization,
     switches::kDisableGpuSandbox,
@@ -145,11 +157,13 @@ static const char* const kSwitchNames[] = {
     switches::kVModule,
 #if defined(OS_MACOSX)
     switches::kDisableAVFoundationOverlays,
+    switches::kDisableMacOverlays,
     switches::kDisableRemoteCoreAnimation,
     switches::kEnableSandboxLogging,
     switches::kShowMacOverlayBorders,
 #endif
 #if defined(USE_OZONE)
+    switches::kEnableDrmMojo,
     switches::kOzonePlatform,
     switches::kOzoneDumpFile,
 #endif
@@ -161,7 +175,7 @@ static const char* const kSwitchNames[] = {
     switches::kUseCmdDecoder,
     switches::kForceVideoOverlays,
 #if defined(OS_ANDROID)
-    switches::kMadviseRandomExecutableCode,
+    switches::kOrderfileMemoryOptimization,
 #endif
 };
 
@@ -195,6 +209,27 @@ void SendGpuProcessMessage(base::WeakPtr<GpuProcessHost> host,
     delete message;
 }
 
+// Helper to register Mus/conventional thread bouncers for ozone startup.
+void OzoneRegisterStartupCallbackHelper(
+    base::OnceCallback<void(ui::OzonePlatform*)> io_callback) {
+  // The callback registered in ozone can be called in any thread. So use an
+  // intermediary callback that bounces to the IO thread if needed, before
+  // running the callback.
+  auto bounce_callback = base::BindOnce(
+      [](base::TaskRunner* task_runner,
+         base::OnceCallback<void(ui::OzonePlatform*)> callback,
+         ui::OzonePlatform* platform) {
+        if (task_runner->RunsTasksInCurrentSequence()) {
+          std::move(callback).Run(platform);
+        } else {
+          task_runner->PostTask(FROM_HERE,
+                                base::BindOnce(std::move(callback), platform));
+        }
+      },
+      base::RetainedRef(base::ThreadTaskRunnerHandle::Get()),
+      base::Passed(&io_callback));
+  ui::OzonePlatform::RegisterStartupCallback(std::move(bounce_callback));
+}
 #endif  // defined(USE_OZONE)
 
 void OnGpuProcessHostDestroyedOnUI(int host_id, const std::string& message) {
@@ -215,7 +250,8 @@ class GpuSandboxedProcessLauncherDelegate
   explicit GpuSandboxedProcessLauncherDelegate(
       const base::CommandLine& cmd_line)
 #if defined(OS_WIN)
-      : cmd_line_(cmd_line)
+      : cmd_line_(cmd_line),
+        enable_appcontainer_(true)
 #endif
   {
   }
@@ -227,13 +263,36 @@ class GpuSandboxedProcessLauncherDelegate
     return true;
   }
 
+  enum GPUAppContainerEnableState{
+      AC_ENABLED = 0, AC_DISABLED_GL = 1, AC_DISABLED_FORCE = 2,
+      MAX_ENABLE_STATE = 3,
+  };
+
+  bool GetAppContainerId(std::string* appcontainer_id) override {
+    if (UseOpenGLRenderer()) {
+      base::UmaHistogramEnumeration("GPU.AppContainer.EnableState",
+                                    AC_DISABLED_GL, MAX_ENABLE_STATE);
+      return false;
+    }
+
+    if (!enable_appcontainer_) {
+      base::UmaHistogramEnumeration("GPU.AppContainer.EnableState",
+                                    AC_DISABLED_FORCE, MAX_ENABLE_STATE);
+      return false;
+    }
+
+    *appcontainer_id = base::WideToUTF8(cmd_line_.GetProgram().value());
+    base::UmaHistogramEnumeration("GPU.AppContainer.EnableState", AC_ENABLED,
+                                  MAX_ENABLE_STATE);
+    return true;
+  }
+
   // For the GPU process we gotten as far as USER_LIMITED. The next level
   // which is USER_RESTRICTED breaks both the DirectX backend and the OpenGL
   // backend. Note that the GPU process is connected to the interactive
   // desktop.
   bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
-    if (cmd_line_.GetSwitchValueASCII(switches::kUseGL) ==
-        gl::kGLImplementationDesktopName) {
+    if (UseOpenGLRenderer()) {
       // Open GL path.
       policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
                             sandbox::USER_LIMITED);
@@ -256,18 +315,8 @@ class GpuSandboxedProcessLauncherDelegate
               JOB_OBJECT_UILIMIT_EXITWINDOWS |
               JOB_OBJECT_UILIMIT_DISPLAYSETTINGS,
           policy);
-
       policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
     }
-
-    // Allow the server side of GPU sockets, which are pipes that have
-    // the "chrome.gpu" namespace and an arbitrary suffix.
-    sandbox::ResultCode result = policy->AddRule(
-        sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
-        sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
-        L"\\\\.\\pipe\\chrome.gpu.*");
-    if (result != sandbox::SBOX_ALL_OK)
-      return false;
 
     // Block this DLL even if it is not loaded by the browser process.
     policy->AddDllToUnload(L"cmsetac.dll");
@@ -275,9 +324,9 @@ class GpuSandboxedProcessLauncherDelegate
     if (cmd_line_.HasSwitch(switches::kEnableLogging)) {
       base::string16 log_file_path = logging::GetLogFileFullPath();
       if (!log_file_path.empty()) {
-        result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                                 sandbox::TargetPolicy::FILES_ALLOW_ANY,
-                                 log_file_path.c_str());
+        sandbox::ResultCode result = policy->AddRule(
+            sandbox::TargetPolicy::SUBSYS_FILES,
+            sandbox::TargetPolicy::FILES_ALLOW_ANY, log_file_path.c_str());
         if (result != sandbox::SBOX_ALL_OK)
           return false;
       }
@@ -285,6 +334,9 @@ class GpuSandboxedProcessLauncherDelegate
 
     return true;
   }
+
+  // TODO: Remove this once AppContainer sandbox is enabled by default.
+  void DisableAppContainer() { enable_appcontainer_ = false; }
 #endif  // OS_WIN
 
   service_manager::SandboxType GetSandboxType() override {
@@ -299,7 +351,13 @@ class GpuSandboxedProcessLauncherDelegate
 
  private:
 #if defined(OS_WIN)
+  bool UseOpenGLRenderer() {
+    return cmd_line_.GetSwitchValueASCII(switches::kUseGL) ==
+           gl::kGLImplementationDesktopName;
+  }
+
   base::CommandLine cmd_line_;
+  bool enable_appcontainer_;
 #endif  // OS_WIN
 };
 
@@ -310,6 +368,43 @@ void BindJavaInterface(mojo::InterfaceRequest<Interface> request) {
   content::GetGlobalJavaInterfaces()->GetInterface(std::move(request));
 }
 #endif  // defined(OS_ANDROID)
+
+#if defined(OS_WIN)
+void RecordAppContainerStatus(int error_code, bool crashed_before) {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (!crashed_before &&
+      service_manager::SandboxWin::IsAppContainerEnabledForSandbox(
+          *command_line, service_manager::SANDBOX_TYPE_GPU)) {
+    base::UmaHistogramSparse("GPU.AppContainer.Status", error_code);
+  }
+}
+#endif  // defined(OS_WIN)
+
+void BindDiscardableMemoryRequestOnIO(
+    discardable_memory::mojom::DiscardableSharedMemoryManagerRequest request,
+    discardable_memory::DiscardableSharedMemoryManager* manager) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  service_manager::BindSourceInfo source_info;
+  manager->Bind(std::move(request), source_info);
+}
+
+void BindDiscardableMemoryRequestOnUI(
+    discardable_memory::mojom::DiscardableSharedMemoryManagerRequest request) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+#if defined(USE_AURA)
+  if (features::IsMusEnabled()) {
+    ServiceManagerConnection::GetForProcess()->GetConnector()->BindInterface(
+        ui::mojom::kServiceName, std::move(request));
+    return;
+  }
+#endif
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::BindOnce(
+          &BindDiscardableMemoryRequestOnIO, std::move(request),
+          BrowserMainLoop::GetInstance()->discardable_shared_memory_manager()));
+}
 
 }  // anonymous namespace
 
@@ -452,6 +547,11 @@ GpuProcessHost* GpuProcessHost::FromID(int host_id) {
   return nullptr;
 }
 
+// static
+int GpuProcessHost::GetGpuCrashCount() {
+  return static_cast<int>(base::subtle::NoBarrier_Load(&gpu_crash_count_));
+}
+
 GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
     : host_id_(host_id),
       valid_(true),
@@ -481,6 +581,8 @@ GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
 
 GpuProcessHost::~GpuProcessHost() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (in_process_gpu_thread_)
+    DCHECK(process_);
 
   SendOutstandingReplies(EstablishChannelStatus::GPU_HOST_INVALID);
 
@@ -572,6 +674,55 @@ GpuProcessHost::~GpuProcessHost() {
       base::BindOnce(&OnGpuProcessHostDestroyedOnUI, host_id_, message));
 }
 
+#if defined(USE_OZONE)
+void GpuProcessHost::InitOzone() {
+  // Ozone needs to send the primary DRM device to GPU process as early as
+  // possible to ensure the latter always has a valid device. crbug.com/608839
+  // When running with mus, the OzonePlatform may not have been created yet. So
+  // defer the callback until OzonePlatform instance is created.
+  base::CommandLine* browser_command_line =
+      base::CommandLine::ForCurrentProcess();
+  if (browser_command_line->HasSwitch(switches::kEnableDrmMojo)) {
+    // TODO(rjkroege): Remove the legacy IPC code paths when no longer
+    // necessary. https://crbug.com/806092
+    auto interface_binder = base::BindRepeating(&GpuProcessHost::BindInterface,
+                                                weak_ptr_factory_.GetWeakPtr());
+
+    auto io_callback = base::BindOnce(
+        [](const base::RepeatingCallback<void(const std::string&,
+                                              mojo::ScopedMessagePipeHandle)>&
+               interface_binder,
+           ui::OzonePlatform* platform) {
+          DCHECK_CURRENTLY_ON(BrowserThread::IO);
+          platform->GetGpuPlatformSupportHost()->OnGpuServiceLaunched(
+              BrowserThread::GetTaskRunnerForThread(BrowserThread::UI),
+              BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
+              interface_binder);
+        },
+        interface_binder);
+
+    OzoneRegisterStartupCallbackHelper(std::move(io_callback));
+  } else {
+    auto send_callback = base::BindRepeating(&SendGpuProcessMessage,
+                                             weak_ptr_factory_.GetWeakPtr());
+    // Create the callback that should run on the current thread (i.e. IO
+    // thread).
+    auto io_callback = base::BindOnce(
+        [](int host_id,
+           const base::RepeatingCallback<void(IPC::Message*)>& send_callback,
+           ui::OzonePlatform* platform) {
+          DCHECK_CURRENTLY_ON(BrowserThread::IO);
+          platform->GetGpuPlatformSupportHost()->OnGpuProcessLaunched(
+              host_id, BrowserThread::GetTaskRunnerForThread(BrowserThread::UI),
+              BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
+              send_callback);
+        },
+        host_id_, send_callback);
+    OzoneRegisterStartupCallbackHelper(std::move(io_callback));
+  }
+}
+#endif  // defined(USE_OZONE)
+
 bool GpuProcessHost::Init() {
   init_start_time_ = base::TimeTicks::Now();
 
@@ -597,7 +748,7 @@ bool GpuProcessHost::Init() {
             process_->child_connection()->service_token()),
         gpu_preferences));
     base::Thread::Options options;
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
     // WGL needs to create its own window and pump messages on it.
     options.message_loop_type = base::MessageLoop::TYPE_UI;
 #endif
@@ -616,46 +767,20 @@ bool GpuProcessHost::Init() {
       ->GetRemoteAssociatedInterface(&gpu_main_ptr_);
   viz::mojom::GpuHostPtr host_proxy;
   gpu_host_binding_.Bind(mojo::MakeRequest(&host_proxy));
-  gpu_main_ptr_->CreateGpuService(mojo::MakeRequest(&gpu_service_ptr_),
-                                  std::move(host_proxy),
-                                  activity_flags_.CloneHandle());
+
+  discardable_memory::mojom::DiscardableSharedMemoryManagerPtr
+      discardable_manager_ptr;
+  auto discardable_request = mojo::MakeRequest(&discardable_manager_ptr);
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                          base::BindOnce(&BindDiscardableMemoryRequestOnUI,
+                                         std::move(discardable_request)));
+
+  gpu_main_ptr_->CreateGpuService(
+      mojo::MakeRequest(&gpu_service_ptr_), std::move(host_proxy),
+      std::move(discardable_manager_ptr), activity_flags_.CloneHandle());
 
 #if defined(USE_OZONE)
-  // Ozone needs to send the primary DRM device to GPU process as early as
-  // possible to ensure the latter always has a valid device. crbug.com/608839
-  // When running with mus, the OzonePlatform may not have been created yet. So
-  // defer the callback until OzonePlatform instance is created.
-  auto send_callback = base::BindRepeating(&SendGpuProcessMessage,
-                                           weak_ptr_factory_.GetWeakPtr());
-  // Create the callback that should run on the current thread (i.e. IO thread).
-  auto io_callback = base::BindOnce(
-      [](int host_id,
-         const base::RepeatingCallback<void(IPC::Message*)>& send_callback,
-         ui::OzonePlatform* platform) {
-        DCHECK_CURRENTLY_ON(BrowserThread::IO);
-        platform->GetGpuPlatformSupportHost()->OnGpuProcessLaunched(
-            host_id, BrowserThread::GetTaskRunnerForThread(BrowserThread::UI),
-            BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
-            send_callback);
-      },
-      host_id_, send_callback);
-  // The callback registered in ozone can be called in any thread. So use an
-  // intermediary callback that bounces to the IO thread if needed, before
-  // running the callback.
-  auto bounce_callback = base::BindOnce(
-      [](base::TaskRunner* task_runner,
-         base::OnceCallback<void(ui::OzonePlatform*)> callback,
-         ui::OzonePlatform* platform) {
-        if (task_runner->RunsTasksInCurrentSequence()) {
-          std::move(callback).Run(platform);
-        } else {
-          task_runner->PostTask(FROM_HERE,
-                                base::BindOnce(std::move(callback), platform));
-        }
-      },
-      base::RetainedRef(base::ThreadTaskRunnerHandle::Get()),
-      base::Passed(&io_callback));
-  ui::OzonePlatform::RegisterStartupCallback(std::move(bounce_callback));
+  InitOzone();
 #endif  // defined(USE_OZONE)
 
   return true;
@@ -765,8 +890,11 @@ void GpuProcessHost::ConnectFrameSinkManager(
   viz::mojom::FrameSinkManagerParamsPtr params =
       viz::mojom::FrameSinkManagerParams::New();
   params->restart_id = host_id_;
-  params->number_of_frames_to_activation_deadline =
+  base::Optional<uint32_t> activation_deadline_in_frames =
       switches::GetDeadlineToSynchronizeSurfaces();
+  params->use_activation_deadline = activation_deadline_in_frames.has_value();
+  params->activation_deadline_in_frames =
+      activation_deadline_in_frames.value_or(0u);
   params->frame_sink_manager = std::move(request);
   params->frame_sink_manager_client = std::move(client);
   params->compositing_mode_watcher = std::move(mode_watcher);
@@ -848,10 +976,17 @@ void GpuProcessHost::OnDestroyingVideoSurfaceAck() {
 void GpuProcessHost::OnProcessLaunched() {
   UMA_HISTOGRAM_TIMES("GPU.GPUProcessLaunchTime",
                       base::TimeTicks::Now() - init_start_time_);
+#if defined(OS_WIN)
+  if (kind_ == GPU_PROCESS_KIND_SANDBOXED)
+    RecordAppContainerStatus(sandbox::SBOX_ALL_OK, crashed_before_);
+#endif  // defined(OS_WIN)
 }
 
 void GpuProcessHost::OnProcessLaunchFailed(int error_code) {
-  // TODO(wfh): do something more useful with this error code.
+#if defined(OS_WIN)
+  if (kind_ == GPU_PROCESS_KIND_SANDBOXED)
+    RecordAppContainerStatus(error_code, crashed_before_);
+#endif  // defined(OS_WIN)
   RecordProcessCrash();
 }
 
@@ -1116,6 +1251,10 @@ bool GpuProcessHost::LaunchGpuProcess() {
 
   std::unique_ptr<GpuSandboxedProcessLauncherDelegate> delegate =
       std::make_unique<GpuSandboxedProcessLauncherDelegate>(*cmd_line);
+#if defined(OS_WIN)
+  if (crashed_before_)
+    delegate->DisableAppContainer();
+#endif  // defined(OS_WIN)
   process_->Launch(std::move(delegate), std::move(cmd_line), true);
   process_launched_ = true;
 
@@ -1196,14 +1335,14 @@ void GpuProcessHost::RecordProcessCrash() {
           !disable_crash_limit) {
         // SwiftShader is too unstable to use. Disable it for current session.
         gpu_enabled_ = false;
-        GpuDataManagerImpl::GetInstance()->DisableSwiftShader();
+        GpuDataManagerImpl::GetInstance()->BlockSwiftShader();
       }
     } else {
-      ++gpu_crash_count_;
+      int count = static_cast<int>(
+          base::subtle::NoBarrier_AtomicIncrement(&gpu_crash_count_, 1));
       UMA_HISTOGRAM_EXACT_LINEAR(
           "GPU.GPUProcessLifetimeEvents",
-          std::min(DIED_FIRST_TIME + gpu_crash_count_,
-                   GPU_PROCESS_LIFETIME_EVENT_MAX - 1),
+          std::min(DIED_FIRST_TIME + count, GPU_PROCESS_LIFETIME_EVENT_MAX - 1),
           static_cast<int>(GPU_PROCESS_LIFETIME_EVENT_MAX));
 
       // Allow about 1 GPU crash per hour to be removed from the crash count,

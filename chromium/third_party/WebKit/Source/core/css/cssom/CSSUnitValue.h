@@ -31,7 +31,6 @@ class CORE_EXPORT CSSUnitValue final : public CSSNumericValue {
   // Setters and getters for attributes defined in the IDL.
   void setValue(double new_value) { value_ = new_value; }
   double value() const { return value_; }
-  void setUnit(const String& new_unit, ExceptionState&);
   String unit() const;
 
   // Internal methods.
@@ -46,11 +45,8 @@ class CORE_EXPORT CSSUnitValue final : public CSSNumericValue {
 
   // From CSSStyleValue.
   StyleValueType GetType() const final;
-  bool ContainsPercent() const final {
-    return unit_ == CSSPrimitiveValue::UnitType::kPercentage;
-  }
-
   const CSSPrimitiveValue* ToCSSValue() const final;
+  const CSSPrimitiveValue* ToCSSValueWithProperty(CSSPropertyID) const final;
   CSSCalcExpressionNode* ToCalcExpressionNode() const final;
 
  private:
@@ -61,6 +57,8 @@ class CORE_EXPORT CSSUnitValue final : public CSSNumericValue {
 
   double ConvertFixedLength(CSSPrimitiveValue::UnitType) const;
   double ConvertAngle(CSSPrimitiveValue::UnitType) const;
+
+  void BuildCSSText(Nested, ParenLess, StringBuilder&) const final;
 
   // From CSSNumericValue
   CSSNumericValue* Negate() final;

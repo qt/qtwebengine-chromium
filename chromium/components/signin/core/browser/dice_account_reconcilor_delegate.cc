@@ -9,23 +9,26 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
-#include "components/signin/core/browser/profile_management_switches.h"
+#include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/signin_client.h"
+#include "components/signin/core/browser/signin_pref_names.h"
 
 namespace signin {
 
 DiceAccountReconcilorDelegate::DiceAccountReconcilorDelegate(
-    SigninClient* signin_client)
-    : signin_client_(signin_client) {
+    SigninClient* signin_client,
+    AccountConsistencyMethod account_consistency)
+    : signin_client_(signin_client), account_consistency_(account_consistency) {
   DCHECK(signin_client_);
 }
 
 bool DiceAccountReconcilorDelegate::IsReconcileEnabled() const {
-  return IsDicePrepareMigrationEnabled();
+  return DiceMethodGreaterOrEqual(
+      account_consistency_, AccountConsistencyMethod::kDicePrepareMigration);
 }
 
 bool DiceAccountReconcilorDelegate::IsAccountConsistencyEnforced() const {
-  return IsDiceEnabledForProfile(signin_client_->GetPrefs());
+  return account_consistency_ == AccountConsistencyMethod::kDice;
 }
 
 // - On first execution, the candidates are examined in this order:
@@ -102,8 +105,10 @@ bool DiceAccountReconcilorDelegate::
         const std::vector<gaia::ListedAccount>& gaia_accounts) {
   // During the Dice migration step, before Dice is actually enabled, chrome
   // tokens must be cleared when the cookies are cleared.
-  return signin::IsDicePrepareMigrationEnabled() &&
-         !signin::IsDiceEnabledForProfile(signin_client_->GetPrefs()) &&
+  return DiceMethodGreaterOrEqual(
+             account_consistency_,
+             AccountConsistencyMethod::kDicePrepareMigration) &&
+         (account_consistency_ != AccountConsistencyMethod::kDice) &&
          gaia_accounts.empty();
 }
 
@@ -112,9 +117,15 @@ void DiceAccountReconcilorDelegate::OnReconcileFinished(
     bool reconcile_is_noop) {
   last_known_first_account_ = first_account;
 
-  // Migration happens on startup if the last reconcile was a no-op.
-  if (IsDicePrepareMigrationEnabled())
-    signin_client_->SetReadyForDiceMigration(reconcile_is_noop);
+  // Migration happens on startup if the last reconcile was a no-op and the
+  // refresh tokens are Dice-compatible.
+  if (DiceMethodGreaterOrEqual(
+          account_consistency_,
+          AccountConsistencyMethod::kDicePrepareMigration)) {
+    signin_client_->SetReadyForDiceMigration(
+        reconcile_is_noop && signin_client_->GetPrefs()->GetBoolean(
+                                 prefs::kTokenServiceDiceCompatible));
+  }
 }
 
 }  // namespace signin

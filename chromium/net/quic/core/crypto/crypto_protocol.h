@@ -6,9 +6,9 @@
 #define NET_QUIC_CORE_CRYPTO_CRYPTO_PROTOCOL_H_
 
 #include <cstddef>
-#include <string>
 
 #include "net/quic/core/quic_tag.h"
+#include "net/quic/platform/api/quic_string.h"
 
 // Version and Crypto tags are written to the wire with a big-endian
 // representation of the name of the tag.  For example
@@ -24,7 +24,7 @@
 
 namespace net {
 
-typedef std::string ServerConfigID;
+typedef QuicString ServerConfigID;
 
 // clang-format off
 const QuicTag kCHLO = TAG('C', 'H', 'L', 'O');   // Client hello
@@ -123,6 +123,12 @@ const QuicTag kMIN4 = TAG('M', 'I', 'N', '4');   // Min CWND of 4 packets,
                                                  // with a min rate of 1 BDP.
 const QuicTag kTLPR = TAG('T', 'L', 'P', 'R');   // Tail loss probe delay of
                                                  // 0.5RTT.
+const QuicTag kMAD0 = TAG('M', 'A', 'D', '0');   // Ignore ack delay
+const QuicTag kMAD1 = TAG('M', 'A', 'D', '1');   // 25ms initial max ack delay
+const QuicTag kMAD2 = TAG('M', 'A', 'D', '2');   // No min TLP
+const QuicTag kMAD3 = TAG('M', 'A', 'D', '3');   // No min RTO
+const QuicTag kMAD4 = TAG('M', 'A', 'D', '4');   // IETF style TLP
+const QuicTag kMAD5 = TAG('M', 'A', 'D', '5');   // IETF style TLP with 2x mult
 const QuicTag kACKD = TAG('A', 'C', 'K', 'D');   // Ack decimation style acking.
 const QuicTag kAKD2 = TAG('A', 'K', 'D', '2');   // Ack decimation tolerating
                                                  // out of order packets.

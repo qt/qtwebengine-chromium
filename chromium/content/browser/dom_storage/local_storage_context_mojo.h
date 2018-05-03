@@ -14,11 +14,12 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/sequenced_task_runner.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "content/common/content_export.h"
 #include "content/common/leveldb_wrapper.mojom.h"
 #include "content/public/browser/browser_thread.h"
-#include "services/file/public/interfaces/file_system.mojom.h"
+#include "services/file/public/mojom/file_system.mojom.h"
 #include "url/origin.h"
 
 namespace service_manager {
@@ -47,7 +48,7 @@ class CONTENT_EXPORT LocalStorageContextMojo
       base::OnceCallback<void(std::vector<LocalStorageUsageInfo>)>;
 
   LocalStorageContextMojo(
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+      scoped_refptr<base::SequencedTaskRunner> task_runner,
       service_manager::Connector* connector,
       scoped_refptr<DOMStorageTaskRunner> legacy_task_runner,
       const base::FilePath& old_localstorage_path,
@@ -57,9 +58,9 @@ class CONTENT_EXPORT LocalStorageContextMojo
   void OpenLocalStorage(const url::Origin& origin,
                         mojom::LevelDBWrapperRequest request);
   void GetStorageUsage(GetStorageUsageCallback callback);
-  void DeleteStorage(const url::Origin& origin);
-  // Like DeleteStorage(), but also deletes storage for all sub-origins.
-  void DeleteStorageForPhysicalOrigin(const url::Origin& origin);
+  // |callback| is called when the deletion is sent to the database and
+  // GetStorageUsage() will not return entries for |origin| anymore.
+  void DeleteStorage(const url::Origin& origin, base::OnceClosure callback);
   void Flush();
   void FlushOriginForTesting(const url::Origin& origin);
 
@@ -93,7 +94,7 @@ class CONTENT_EXPORT LocalStorageContextMojo
   static std::vector<uint8_t> MigrateString(const base::string16& input);
 
  private:
-  friend class MojoDOMStorageBrowserTest;
+  friend class DOMStorageBrowserTest;
 
   class LevelDBWrapperHolder;
 
@@ -127,10 +128,6 @@ class CONTENT_EXPORT LocalStorageContextMojo
   void OnGotMetaData(GetStorageUsageCallback callback,
                      leveldb::mojom::DatabaseError status,
                      std::vector<leveldb::mojom::KeyValuePtr> data);
-
-  void OnGotStorageUsageForDeletePhysicalOrigin(
-      const url::Origin& origin,
-      std::vector<LocalStorageUsageInfo> usage);
 
   void OnGotStorageUsageForShutdown(std::vector<LocalStorageUsageInfo> usage);
   void OnShutdownComplete(leveldb::mojom::DatabaseError error);

@@ -47,6 +47,7 @@ source_set("common") {
     "android/media_metadata_android.h",
     "android/sync_compositor_statics.cc",
     "android/sync_compositor_statics.h",
+    "android/use_zoom_for_dsf_policy_android.cc",
     "appcache_interfaces.cc",
     "appcache_interfaces.h",
     "associated_interface_provider_impl.cc",
@@ -109,6 +110,8 @@ source_set("common") {
     "dom_storage/dom_storage_map.cc",
     "dom_storage/dom_storage_map.h",
     "dom_storage/dom_storage_messages.h",
+    "dom_storage/dom_storage_namespace_ids.cc",
+    "dom_storage/dom_storage_namespace_ids.h",
     "dom_storage/dom_storage_types.h",
     "download/mhtml_save_status.cc",
     "download/mhtml_save_status.h",
@@ -128,6 +131,8 @@ source_set("common") {
     "font_list_mac.mm",
     "font_list_win.cc",
     "frame_message_enums.h",
+    "frame_message_structs.cc",
+    "frame_message_structs.h",
     "frame_messages.h",
     "frame_messages_forward.h",
     "frame_owner_properties.cc",
@@ -229,7 +234,6 @@ source_set("common") {
     "origin_trials/trial_policy_impl.cc",
     "origin_trials/trial_policy_impl.h",
     "origin_util.cc",
-    "p2p_socket_type.h",
     "page_message_enums.h",
     "page_messages.h",
     "page_state_serialization.cc",
@@ -249,11 +253,6 @@ source_set("common") {
     "presentation/presentation_struct_traits.cc",
     "presentation/presentation_struct_traits.h",
     "process_type.cc",
-    "quarantine/quarantine.cc",
-    "quarantine/quarantine_constants_linux.h",
-    "quarantine/quarantine_linux.cc",
-    "quarantine/quarantine_mac.mm",
-    "quarantine/quarantine_win.cc",
     "render_widget_surface_properties.cc",
     "render_widget_surface_properties.h",
     "resize_params.cc",
@@ -280,6 +279,8 @@ source_set("common") {
     "service_worker/service_worker_types.h",
     "service_worker/service_worker_utils.cc",
     "service_worker/service_worker_utils.h",
+    "single_request_url_loader_factory.cc",
+    "single_request_url_loader_factory.h",
     "speech_recognition_messages.h",
     "swapped_out_messages.cc",
     "swapped_out_messages.h",
@@ -317,10 +318,10 @@ source_set("common") {
     "//cc",
     "//gpu/command_buffer/common",
     "//ipc",
-    "//services/network/public/cpp",
+    "//services/network:network_service",
     "//services/service_manager/sandbox",
-    "//third_party/WebKit/common:blink_common",
     "//third_party/WebKit/public:blink_headers",
+    "//third_party/WebKit/public/common",
     "//ui/accessibility",
   ]
   deps = [
@@ -366,15 +367,15 @@ source_set("common") {
     "//sandbox",
     "//sandbox:sandbox_features",
     "//services/network/public/cpp",
-    "//services/network/public/interfaces",
+    "//services/network/public/mojom",
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
     "//services/service_manager",
     "//services/service_manager/embedder",
     "//services/service_manager/public/cpp",
-    "//services/service_manager/public/interfaces",
+    "//services/service_manager/public/mojom",
     "//services/service_manager/runner/common",
     "//services/ui/public/interfaces",
-    "//services/video_capture/public/interfaces",
+    "//services/video_capture/public/mojom",
     "//services/viz/public/interfaces",
     "//skia",
     "//storage/common",
@@ -439,7 +440,10 @@ source_set("common") {
   }
 
   if (enable_webrtc) {
-    sources += [ "p2p_messages.h" ]
+    sources += [
+      "p2p_messages.h",
+      "p2p_socket_type.h",
+    ]
     deps += [
       "//third_party/webrtc/rtc_base:rtc_base",
       "//third_party/webrtc_overrides",
@@ -544,9 +548,11 @@ mojom("mojo_bindings") {
     "indexed_db/indexed_db.mojom",
     "input/input_handler.mojom",
     "input/input_injector.mojom",
+    "input/synchronous_compositor.mojom",
     "leveldb_wrapper.mojom",
     "manifest_observer.mojom",
     "media/media_stream.mojom",
+    "media/peer_connection_tracker.mojom",
     "media/renderer_audio_input_stream_factory.mojom",
     "media/renderer_audio_output_stream_factory.mojom",
     "memory_coordinator.mojom",
@@ -555,11 +561,13 @@ mojom("mojo_bindings") {
     "page_state.mojom",
     "push_messaging.mojom",
     "render_frame_message_filter.mojom",
+    "render_frame_metadata.mojom",
     "render_message_filter.mojom",
     "render_widget_window_tree_client_factory.mojom",
     "renderer.mojom",
     "renderer_host.mojom",
     "service_worker/controller_service_worker.mojom",
+    "service_worker/dispatch_fetch_event_params.mojom",
     "service_worker/embedded_worker.mojom",
     "service_worker/service_worker.mojom",
     "service_worker/service_worker_container.mojom",
@@ -574,7 +582,6 @@ mojom("mojo_bindings") {
     "shared_worker/shared_worker_info.mojom",
     "storage_partition_service.mojom",
     "url_loader_factory_bundle.mojom",
-    "video_capture.mojom",
     "widget.mojom",
   ]
 
@@ -588,26 +595,25 @@ mojom("mojo_bindings") {
     "//components/leveldb/public/interfaces",
     "//content/public/common:interfaces",
     "//ipc:mojom_constants",
-    "//media/capture/mojo:capture_types",
     "//media/mojo/interfaces",
     "//mojo/common:common_custom_types",
-    "//services/network/public/interfaces",
-    "//services/service_manager/public/interfaces",
+    "//services/network/public/mojom",
+    "//services/service_manager/public/mojom",
     "//services/ui/public/interfaces",
-    "//services/video_capture/public/interfaces",
+    "//services/video_capture/public/mojom",
     "//services/viz/public/interfaces",
     "//skia/public/interfaces",
-    "//third_party/WebKit/common:mojo_platform_bindings",
     "//third_party/WebKit/public:mojo_bindings",
+    "//third_party/WebKit/public/mojom",
     "//ui/base/mojo:mojo_bindings",
     "//ui/gfx/geometry/mojo",
     "//ui/gfx/mojo",
-    "//url/mojo:url_mojom_gurl",
-    "//url/mojo:url_mojom_origin",
+    "//url/mojom:url_mojom_gurl",
+    "//url/mojom:url_mojom_origin",
   ]
 
-  overridden_deps = [ "//third_party/WebKit/common:mojo_platform_bindings" ]
-  component_deps = [ "//third_party/WebKit/common:blink_common" ]
+  overridden_deps = [ "//third_party/WebKit/public/mojom" ]
+  component_deps = [ "//third_party/WebKit/public/common" ]
 
   component_output_prefix = "content_common_mojo_bindings"
   export_class_attribute = "CONTENT_EXPORT"

@@ -142,15 +142,12 @@ bool IDBValueWrapper::WrapIfBiggerThan(unsigned max_bytes) {
 
   // TODO(pwnall): The MIME type should probably be an atomic string.
   String mime_type(kWrapMimeType);
-  // TODO(crbug.com/721516): Use WebBlobRegistry::CreateBuilder instead of
-  //                         Blob::Create to avoid a buffer copy.
   std::unique_ptr<BlobData> wrapper_blob_data = BlobData::Create();
   wrapper_blob_data->SetContentType(String(kWrapMimeType));
   wrapper_blob_data->AppendBytes(wire_data_.data(), wire_data_size);
   scoped_refptr<BlobDataHandle> wrapper_handle =
       BlobDataHandle::Create(std::move(wrapper_blob_data), wire_data_size);
-  blob_info_.emplace_back(wrapper_handle->Uuid(), wrapper_handle->GetType(),
-                          wire_data_size);
+  blob_info_.emplace_back(wrapper_handle);
   blob_handles_.push_back(std::move(wrapper_handle));
 
   wire_data_buffer_.clear();
@@ -244,11 +241,11 @@ bool IDBValueUnwrapper::Parse(IDBValue* value) {
   if (!ReadVarInt(blob_offset))
     return Reset();
 
-  size_t value_blob_count = value->blob_data_.size();
+  size_t value_blob_count = value->blob_info_.size();
   if (!value_blob_count || blob_offset != value_blob_count - 1)
     return Reset();
 
-  blob_handle_ = value->blob_data_.back();
+  blob_handle_ = value->blob_info_.back().GetBlobHandle();
   if (blob_handle_->size() != blob_size_)
     return Reset();
 

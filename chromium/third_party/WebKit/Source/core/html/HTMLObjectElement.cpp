@@ -49,20 +49,19 @@ namespace blink {
 using namespace HTMLNames;
 
 inline HTMLObjectElement::HTMLObjectElement(Document& document,
-                                            bool created_by_parser)
+                                            const CreateElementFlags flags)
     : HTMLPlugInElement(objectTag,
                         document,
-                        created_by_parser,
+                        flags,
                         kShouldNotPreferPlugInsForImages),
       use_fallback_content_(false) {}
 
 inline HTMLObjectElement::~HTMLObjectElement() = default;
 
 HTMLObjectElement* HTMLObjectElement::Create(Document& document,
-                                             bool created_by_parser) {
-  HTMLObjectElement* element =
-      new HTMLObjectElement(document, created_by_parser);
-  element->EnsureUserAgentShadowRootV1();
+                                             const CreateElementFlags flags) {
+  auto* element = new HTMLObjectElement(document, flags);
+  element->EnsureUserAgentShadowRoot();
   return element;
 }
 
@@ -128,28 +127,21 @@ void HTMLObjectElement::ParseAttribute(
   }
 }
 
-static void MapDataParamToSrc(Vector<String>* param_names,
-                              Vector<String>* param_values) {
+static void MapDataParamToSrc(PluginParameters& plugin_params) {
   // Some plugins don't understand the "data" attribute of the OBJECT tag (i.e.
   // Real and WMP require "src" attribute).
-  int src_index = -1, data_index = -1;
-  for (unsigned i = 0; i < param_names->size(); ++i) {
-    if (DeprecatedEqualIgnoringCase((*param_names)[i], "src"))
-      src_index = i;
-    else if (DeprecatedEqualIgnoringCase((*param_names)[i], "data"))
-      data_index = i;
-  }
+  int src_index = plugin_params.FindStringInNames("src");
+  int data_index = plugin_params.FindStringInNames("data");
 
   if (src_index == -1 && data_index != -1) {
-    param_names->push_back("src");
-    param_values->push_back((*param_values)[data_index]);
+    plugin_params.AppendNameWithValue("src",
+                                      plugin_params.Values()[data_index]);
   }
 }
 
 // TODO(schenney): crbug.com/572908 This function should not deal with url or
 // serviceType!
-void HTMLObjectElement::ParametersForPlugin(Vector<String>& param_names,
-                                            Vector<String>& param_values) {
+void HTMLObjectElement::ParametersForPlugin(PluginParameters& plugin_params) {
   HashSet<StringImpl*, CaseFoldingHash> unique_param_names;
 
   // Scan the PARAM children and store their name/value pairs.
@@ -161,8 +153,7 @@ void HTMLObjectElement::ParametersForPlugin(Vector<String>& param_names,
       continue;
 
     unique_param_names.insert(name.Impl());
-    param_names.push_back(p->GetName());
-    param_values.push_back(p->Value());
+    plugin_params.AppendNameWithValue(p->GetName(), p->Value());
 
     // TODO(schenney): crbug.com/572908 url adjustment does not belong in this
     // function.
@@ -189,13 +180,11 @@ void HTMLObjectElement::ParametersForPlugin(Vector<String>& param_names,
   AttributeCollection attributes = Attributes();
   for (const Attribute& attribute : attributes) {
     const AtomicString& name = attribute.GetName().LocalName();
-    if (!unique_param_names.Contains(name.Impl())) {
-      param_names.push_back(name.GetString());
-      param_values.push_back(attribute.Value().GetString());
-    }
+    if (!unique_param_names.Contains(name.Impl()))
+      plugin_params.AppendAttribute(attribute);
   }
 
-  MapDataParamToSrc(&param_names, &param_values);
+  MapDataParamToSrc(plugin_params);
 }
 
 bool HTMLObjectElement::HasFallbackContent() const {
@@ -268,11 +257,8 @@ void HTMLObjectElement::UpdatePluginInternal() {
     return;
   }
 
-  // TODO(schenney): crbug.com/572908 These should be joined into a
-  // PluginParameters class.
-  Vector<String> param_names;
-  Vector<String> param_values;
-  ParametersForPlugin(param_names, param_values);
+  PluginParameters plugin_params;
+  ParametersForPlugin(plugin_params);
 
   // Note: url is modified above by parametersForPlugin.
   if (!AllowedToLoadFrameURL(url_)) {
@@ -294,7 +280,7 @@ void HTMLObjectElement::UpdatePluginInternal() {
     service_type_ = "text/html";
   }
 
-  if (!HasValidClassId() || !RequestObject(param_names, param_values)) {
+  if (!HasValidClassId() || !RequestObject(plugin_params)) {
     if (!url_.IsEmpty())
       DispatchErrorEvent();
     if (HasFallbackContent())

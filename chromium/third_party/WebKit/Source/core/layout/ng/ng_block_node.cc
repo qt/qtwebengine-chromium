@@ -104,16 +104,11 @@ void UpdateLegacyMultiColumnFlowThread(
                                 border_scrollbar_padding.InlineSum());
     column_set->SetLogicalHeight(column_block_size);
     column_set->EndFlow(flow_end);
-    column_set->UpdateFromNG();
   }
   // TODO(mstensho): Update all column boxes, not just the first column set
   // (like we do above). This is needed to support column-span:all.
-  for (LayoutBox* column_box = flow_thread->FirstMultiColumnBox(); column_box;
-       column_box = column_box->NextSiblingMultiColumnBox()) {
-    column_box->ClearNeedsLayout();
-    column_box->UpdateAfterLayout();
-  }
 
+  flow_thread->UpdateFromNG();
   flow_thread->ValidateColumnSets();
   flow_thread->SetLogicalHeight(flow_end);
   flow_thread->UpdateAfterLayout();
@@ -185,15 +180,8 @@ scoped_refptr<NGLayoutResult> NGBlockNode::Layout(
 
     NGLayoutInputNode first_child = FirstChild();
     if (block_flow && first_child && first_child.IsInline()) {
-      if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled()) {
-        // TODO(ikilpatrick): Move line-box creation logic from
-        // NGInlineNode::CopyFragmentDataToLayoutBox to NGBlockNode.
-        NGInlineNode node = ToNGInlineNode(first_child);
-        node.CopyFragmentDataToLayoutBox(constraint_space, *layout_result);
-      } else {
         CopyFragmentDataToLayoutBoxForInlineChildren(
             ToNGPhysicalBoxFragment(*layout_result->PhysicalFragment()));
-      }
 
       block_flow->SetPaintFragment(layout_result->PhysicalFragment());
     }
@@ -206,7 +194,7 @@ scoped_refptr<NGLayoutResult> NGBlockNode::Layout(
   return layout_result;
 }
 
-MinMaxSize NGBlockNode::ComputeMinMaxSize() {
+MinMaxSize NGBlockNode::ComputeMinMaxSize(const MinMaxSizeInput& input) {
   MinMaxSize sizes;
   if (!CanUseNewLayout()) {
     // TODO(layout-ng): This could be somewhat optimized by directly calling
@@ -232,7 +220,7 @@ MinMaxSize NGBlockNode::ComputeMinMaxSize() {
 
   // TODO(cbiesinger): For orthogonal children, we need to always synthesize.
   NGBlockLayoutAlgorithm minmax_algorithm(*this, *constraint_space);
-  Optional<MinMaxSize> maybe_sizes = minmax_algorithm.ComputeMinMaxSize();
+  Optional<MinMaxSize> maybe_sizes = minmax_algorithm.ComputeMinMaxSize(input);
   if (maybe_sizes.has_value())
     return *maybe_sizes;
 
@@ -268,7 +256,7 @@ NGBoxStrut NGBlockNode::GetScrollbarSizes() const {
     LayoutUnit vertical = LayoutUnit(box->VerticalScrollbarWidth());
     LayoutUnit horizontal = LayoutUnit(box->HorizontalScrollbarHeight());
     sizes.bottom = horizontal;
-    if (style->ShouldPlaceBlockDirectionScrollbarOnLogicalLeft())
+    if (box->ShouldPlaceBlockDirectionScrollbarOnLogicalLeft())
       sizes.left = vertical;
     else
       sizes.right = vertical;
@@ -295,11 +283,16 @@ NGLayoutInputNode NGBlockNode::FirstChild() const {
   return NGBlockNode(ToLayoutBox(child));
 }
 
-bool NGBlockNode::CanUseNewLayout() const {
-  if (!box_->IsLayoutNGMixin())
-    return false;
+bool NGBlockNode::CanUseNewLayout(const LayoutBox& box) {
+  DCHECK(RuntimeEnabledFeatures::LayoutNGEnabled());
 
-  return RuntimeEnabledFeatures::LayoutNGEnabled();
+  // When the style has |ForceLegacyLayout|, it's usually not LayoutNGMixin,
+  // but anonymous block can be.
+  return box.IsLayoutNGMixin() && !box.StyleRef().ForceLegacyLayout();
+}
+
+bool NGBlockNode::CanUseNewLayout() const {
+  return CanUseNewLayout(*box_);
 }
 
 String NGBlockNode::ToString() const {
@@ -457,7 +450,8 @@ void NGBlockNode::CopyChildFragmentPosition(
       (layout_box->ContainingBlock()->IsLayoutFlowThread() &&
        box_ == layout_box->ContainingBlock()->ContainingBlock()) ||
       (layout_box->ContainingBlock()->IsInline() &&  // anonymous wrapper case
-       box_->Parent() == layout_box->ContainingBlock()));
+       box_->Parent() == layout_box->ContainingBlock()) ||
+      (box_->IsLayoutNGListItem() && layout_box->IsLayoutNGListMarker()));
 
   // LegacyLayout flips vertical-rl horizontal coordinates before paint.
   // NGLayout flips X location for LegacyLayout compatibility.
@@ -514,7 +508,14 @@ scoped_refptr<NGLayoutResult> NGBlockNode::LayoutAtomicInline(
 
 scoped_refptr<NGLayoutResult> NGBlockNode::RunOldLayout(
     const NGConstraintSpace& constraint_space) {
-  NGLogicalSize available_size = constraint_space.PercentageResolutionSize();
+  LayoutUnit inline_size =
+      Style().LogicalWidth().IsPercent()
+          ? constraint_space.PercentageResolutionSize().inline_size
+          : constraint_space.AvailableSize().inline_size;
+  LayoutUnit block_size =
+      Style().LogicalHeight().IsPercent()
+          ? constraint_space.PercentageResolutionSize().block_size
+          : constraint_space.AvailableSize().block_size;
   LayoutObject* containing_block = box_->ContainingBlock();
   WritingMode writing_mode = Style().GetWritingMode();
   bool parallel_writing_mode;
@@ -525,16 +526,12 @@ scoped_refptr<NGLayoutResult> NGBlockNode::RunOldLayout(
         containing_block->StyleRef().GetWritingMode(), writing_mode);
   }
   if (parallel_writing_mode) {
-    box_->SetOverrideContainingBlockContentLogicalWidth(
-        available_size.inline_size);
-    box_->SetOverrideContainingBlockContentLogicalHeight(
-        available_size.block_size);
+    box_->SetOverrideContainingBlockContentLogicalWidth(inline_size);
+    box_->SetOverrideContainingBlockContentLogicalHeight(block_size);
   } else {
     // OverrideContainingBlock should be in containing block writing mode.
-    box_->SetOverrideContainingBlockContentLogicalWidth(
-        available_size.block_size);
-    box_->SetOverrideContainingBlockContentLogicalHeight(
-        available_size.inline_size);
+    box_->SetOverrideContainingBlockContentLogicalWidth(block_size);
+    box_->SetOverrideContainingBlockContentLogicalHeight(inline_size);
   }
 
   // TODO(layout-ng): Does this handle scrollbars correctly?
@@ -563,6 +560,7 @@ scoped_refptr<NGLayoutResult> NGBlockNode::RunOldLayout(
   builder.SetIsOldLayoutRoot();
   builder.SetInlineSize(box_size.inline_size);
   builder.SetBlockSize(box_size.block_size);
+  builder.SetPadding(ComputePadding(constraint_space, box_->StyleRef()));
 
   // For now we copy the exclusion space straight through, this is incorrect
   // but needed as not all elements which participate in a BFC are switched
@@ -635,7 +633,10 @@ void NGBlockNode::SaveStaticOffsetForLegacy(
   DCHECK(box_->IsOutOfFlowPositioned());
   // Only set static position if the current offset container
   // is one that Legacy layout expects static offset from.
-  if (box_->Parent() == offset_container) {
+  const LayoutObject* parent = box_->Parent();
+  if (parent == offset_container ||
+      (parent && parent->IsLayoutInline() &&
+       parent->ContainingBlock() == offset_container)) {
     DCHECK(box_->Layer());
     box_->Layer()->SetStaticBlockPosition(offset.block_offset);
     box_->Layer()->SetStaticInlinePosition(offset.inline_offset);

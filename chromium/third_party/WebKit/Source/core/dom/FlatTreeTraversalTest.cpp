@@ -15,6 +15,7 @@
 #include "core/html/HTMLElement.h"
 #include "core/testing/PageTestBase.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/wtf/Compiler.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Vector.h"
@@ -22,7 +23,14 @@
 
 namespace blink {
 
-class FlatTreeTraversalTest : public PageTestBase {
+class FlatTreeTraversalTest : public PageTestBase,
+                              private ScopedSlotInFlatTreeForTest,
+                              ScopedIncrementalShadowDOMForTest {
+ public:
+  FlatTreeTraversalTest()
+      : ScopedSlotInFlatTreeForTest(false),
+        ScopedIncrementalShadowDOMForTest(false) {}
+
  protected:
   // Sets |mainHTML| to BODY element with |innerHTML| property and attaches
   // shadow root to child with |shadowHTML|, then update distribution for
@@ -310,6 +318,23 @@ TEST_F(FlatTreeTraversalTest, nextSkippingChildren) {
   // Node in shadow tree to main tree
   EXPECT_EQ(*m2, FlatTreeTraversal::NextSkippingChildren(*s12));
   EXPECT_EQ(*m1, FlatTreeTraversal::PreviousSkippingChildren(*m2));
+}
+
+TEST_F(FlatTreeTraversalTest, AncestorsOf) {
+  SetupDocumentTree("<div><div><div id=sample></div></div></div>");
+  Element* const sample = GetDocument().getElementById("sample");
+
+  HeapVector<Member<Node>> expected_nodes;
+  for (Node* parent = FlatTreeTraversal::Parent(*sample); parent;
+       parent = FlatTreeTraversal::Parent(*parent)) {
+    expected_nodes.push_back(parent);
+  }
+
+  HeapVector<Member<Node>> actual_nodes;
+  for (Node& ancestor : FlatTreeTraversal::AncestorsOf(*sample))
+    actual_nodes.push_back(&ancestor);
+
+  EXPECT_EQ(expected_nodes, actual_nodes);
 }
 
 TEST_F(FlatTreeTraversalTest, InclusiveAncestorsOf) {
@@ -720,6 +745,23 @@ TEST_F(FlatTreeTraversalTest, v1AllFallbackContent) {
   EXPECT_EQ(fallback_y, FlatTreeTraversal::PreviousSibling(*fallback_z));
   EXPECT_EQ(fallback_x, FlatTreeTraversal::PreviousSibling(*fallback_y));
   EXPECT_EQ(nullptr, FlatTreeTraversal::PreviousSibling(*fallback_x));
+}
+
+TEST_F(FlatTreeTraversalTest, v0ParentDetailsInsertionPoint) {
+  const char* main_html = "<div><span></span></div>";
+  const char* shadow_html = "<content></content>";
+
+  SetupSampleHTML(main_html, shadow_html, 0);
+
+  Element* span = GetDocument().body()->QuerySelector("span");
+  ASSERT_TRUE(span);
+
+  FlatTreeTraversal::ParentTraversalDetails details;
+  EXPECT_FALSE(details.GetInsertionPoint());
+
+  ContainerNode* parent = FlatTreeTraversal::Parent(*span, &details);
+  ASSERT_TRUE(parent);
+  EXPECT_TRUE(details.GetInsertionPoint());
 }
 
 }  // namespace blink

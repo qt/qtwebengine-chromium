@@ -33,6 +33,7 @@ float RunSubtractorTest(int num_blocks_to_process,
   config.filter.main.length_blocks = config.filter.shadow.length_blocks =
       filter_length_blocks;
   Subtractor subtractor(config, &data_dumper, DetectOptimization());
+  rtc::Optional<DelayEstimate> delay_estimate;
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::vector<float> y(kBlockSize, 0.f);
   std::array<float, kBlockSize> x_old;
@@ -41,7 +42,7 @@ float RunSubtractorTest(int num_blocks_to_process,
   config.delay.default_delay = 1;
   std::unique_ptr<RenderDelayBuffer> render_delay_buffer(
       RenderDelayBuffer::Create(config, 3));
-  RenderSignalAnalyzer render_signal_analyzer;
+  RenderSignalAnalyzer render_signal_analyzer(config);
   Random random_generator(42U);
   Aec3Fft fft;
   std::array<float, kFftLengthBy2Plus1> Y2;
@@ -67,7 +68,7 @@ float RunSubtractorTest(int num_blocks_to_process,
     }
     render_delay_buffer->PrepareCaptureProcessing();
     render_signal_analyzer.Update(*render_delay_buffer->GetRenderBuffer(),
-                                  aec_state.FilterDelay());
+                                  aec_state.FilterDelayBlocks());
 
     // Handle echo path changes.
     if (std::find(blocks_with_echo_path_changes.begin(),
@@ -82,11 +83,11 @@ float RunSubtractorTest(int num_blocks_to_process,
 
     aec_state.HandleEchoPathChange(EchoPathVariability(
         false, EchoPathVariability::DelayAdjustment::kNone, false));
-    aec_state.Update(subtractor.FilterFrequencyResponse(),
+    aec_state.Update(delay_estimate, subtractor.FilterFrequencyResponse(),
                      subtractor.FilterImpulseResponse(),
-                     subtractor.ConvergedFilter(),
+                     subtractor.ConvergedFilter(), subtractor.DivergedFilter(),
                      *render_delay_buffer->GetRenderBuffer(), E2_main, Y2,
-                     output.s_main, false);
+                     output.s_main);
   }
 
   const float output_power = std::inner_product(
@@ -125,7 +126,7 @@ TEST(Subtractor, DISABLED_NullOutput) {
   Subtractor subtractor(config, &data_dumper, DetectOptimization());
   std::unique_ptr<RenderDelayBuffer> render_delay_buffer(
       RenderDelayBuffer::Create(config, 3));
-  RenderSignalAnalyzer render_signal_analyzer;
+  RenderSignalAnalyzer render_signal_analyzer(config);
   std::vector<float> y(kBlockSize, 0.f);
 
   EXPECT_DEATH(
@@ -141,7 +142,7 @@ TEST(Subtractor, WrongCaptureSize) {
   Subtractor subtractor(config, &data_dumper, DetectOptimization());
   std::unique_ptr<RenderDelayBuffer> render_delay_buffer(
       RenderDelayBuffer::Create(config, 3));
-  RenderSignalAnalyzer render_signal_analyzer;
+  RenderSignalAnalyzer render_signal_analyzer(config);
   std::vector<float> y(kBlockSize - 1, 0.f);
   SubtractorOutput output;
 

@@ -19,7 +19,7 @@
 #include "platform/network/mime/MIMETypeRegistry.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityPolicy.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-blink.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
 
 namespace blink {
 
@@ -30,14 +30,14 @@ void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
     if (!request.DidSetHTTPReferrer()) {
       request.SetHTTPReferrer(SecurityPolicy::GenerateReferrer(
           GetReferrerPolicy(), request.Url(), GetOutgoingReferrer()));
-      request.AddHTTPOriginIfNeeded(GetSecurityOrigin());
+      request.SetHTTPOriginIfNeeded(GetSecurityOrigin());
     } else {
       DCHECK_EQ(SecurityPolicy::GenerateReferrer(request.GetReferrerPolicy(),
                                                  request.Url(),
                                                  request.HttpReferrer())
                     .referrer,
                 request.HttpReferrer());
-      request.AddHTTPOriginIfNeeded(request.HttpReferrer());
+      request.SetHTTPOriginToMatchReferrerIfNeeded();
     }
   }
 
@@ -81,6 +81,19 @@ void BaseFetchContext::AddErrorConsoleMessage(const String& message,
   DCHECK_EQ(source, kJSSource);
   AddConsoleMessage(
       ConsoleMessage::Create(kJSMessageSource, kErrorMessageLevel, message));
+}
+
+bool BaseFetchContext::IsAdResource(
+    const KURL& resource_url,
+    Resource::Type type,
+    WebURLRequest::RequestContext request_context) const {
+  SubresourceFilter* filter = GetSubresourceFilter();
+
+  // We do not need main document tagging currently so skipping main resources.
+  if (filter && type != Resource::kMainResource) {
+    return filter->IsAdResource(resource_url, request_context);
+  }
+  return false;
 }
 
 void BaseFetchContext::PrintAccessDeniedMessage(const KURL& url) const {
@@ -206,6 +219,7 @@ ResourceRequestBlockedReason BaseFetchContext::CanRequestInternal(
       break;
     case Resource::kXSLStyleSheet:
       DCHECK(RuntimeEnabledFeatures::XSLTEnabled());
+      FALLTHROUGH;
     case Resource::kSVGDocument:
       if (!security_origin->CanRequest(url)) {
         PrintAccessDeniedMessage(url);

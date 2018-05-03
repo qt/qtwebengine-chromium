@@ -10,14 +10,30 @@
 #include <ostream>
 #include <sstream>
 
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/no_destructor.h"
 #include "base/strings/stringprintf.h"
 #include "base/third_party/nspr/prtime.h"
+#include "base/time/time_override.h"
 #include "build/build_config.h"
 
 namespace base {
+
+namespace internal {
+
+TimeNowFunction g_time_now_function = &subtle::TimeNowIgnoringOverride;
+
+TimeNowFunction g_time_now_from_system_time_function =
+    &subtle::TimeNowFromSystemTimeIgnoringOverride;
+
+TimeTicksNowFunction g_time_ticks_now_function =
+    &subtle::TimeTicksNowIgnoringOverride;
+
+ThreadTicksNowFunction g_thread_ticks_now_function =
+    &subtle::ThreadTicksNowIgnoringOverride;
+
+}  // namespace internal
 
 // TimeDelta ------------------------------------------------------------------
 
@@ -133,6 +149,17 @@ std::ostream& operator<<(std::ostream& os, TimeDelta time_delta) {
 }
 
 // Time -----------------------------------------------------------------------
+
+// static
+Time Time::Now() {
+  return internal::g_time_now_function();
+}
+
+// static
+Time Time::NowFromSystemTime() {
+  // Just use g_time_now_function because it returns the system time.
+  return internal::g_time_now_from_system_time_function();
+}
 
 // static
 Time Time::FromDeltaSinceWindowsEpoch(TimeDelta delta) {
@@ -298,27 +325,20 @@ std::ostream& operator<<(std::ostream& os, Time time) {
                             exploded.millisecond);
 }
 
-// Local helper class to hold the conversion from Time to TickTime at the
-// time of the Unix epoch.
-class UnixEpochSingleton {
- public:
-  UnixEpochSingleton()
-      : unix_epoch_(TimeTicks::Now() - (Time::Now() - Time::UnixEpoch())) {}
+// TimeTicks ------------------------------------------------------------------
 
-  TimeTicks unix_epoch() const { return unix_epoch_; }
+// static
+TimeTicks TimeTicks::Now() {
+  return internal::g_time_ticks_now_function();
+}
 
- private:
-  const TimeTicks unix_epoch_;
-
-  DISALLOW_COPY_AND_ASSIGN(UnixEpochSingleton);
-};
-
-static LazyInstance<UnixEpochSingleton>::Leaky
-    leaky_unix_epoch_singleton_instance = LAZY_INSTANCE_INITIALIZER;
-
-// Static
+// static
 TimeTicks TimeTicks::UnixEpoch() {
-  return leaky_unix_epoch_singleton_instance.Get().unix_epoch();
+  static const base::NoDestructor<base::TimeTicks> epoch([]() {
+    return subtle::TimeTicksNowIgnoringOverride() -
+           (subtle::TimeNowIgnoringOverride() - Time::UnixEpoch());
+  }());
+  return *epoch;
 }
 
 TimeTicks TimeTicks::SnappedToNextTick(TimeTicks tick_phase,
@@ -342,6 +362,13 @@ std::ostream& operator<<(std::ostream& os, TimeTicks time_ticks) {
   // down during a single run.
   const TimeDelta as_time_delta = time_ticks - TimeTicks();
   return os << as_time_delta.InMicroseconds() << " bogo-microseconds";
+}
+
+// ThreadTicks ----------------------------------------------------------------
+
+// static
+ThreadTicks ThreadTicks::Now() {
+  return internal::g_thread_ticks_now_function();
 }
 
 std::ostream& operator<<(std::ostream& os, ThreadTicks thread_ticks) {

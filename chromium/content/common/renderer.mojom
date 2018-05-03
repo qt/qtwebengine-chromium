@@ -9,8 +9,9 @@ import "content/common/service_worker/embedded_worker.mojom";
 import "ipc/constants.mojom";
 import "mojo/common/time.mojom";
 import "mojo/common/unguessable_token.mojom";
-import "services/network/public/interfaces/network_types.mojom";
-import "services/service_manager/public/interfaces/interface_provider.mojom";
+import "services/network/public/mojom/network_types.mojom";
+import "services/service_manager/public/mojom/interface_provider.mojom";
+import "services/service_manager/public/mojom/service.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 import "ui/gfx/mojo/icc_profile.mojom";
 
@@ -39,7 +40,7 @@ struct CreateViewParams {
   int32 main_frame_widget_routing_id = IPC.mojom.kRoutingIdNone;
 
   // The session storage namespace ID this view should use.
-  int64 session_storage_namespace_id;
+  string session_storage_namespace_id;
 
   // The route ID of the opener RenderFrame or RenderFrameProxy, if we need to
   // set one (MSG_ROUTING_NONE otherwise).
@@ -177,6 +178,12 @@ struct UpdateScrollbarThemeParams {
 // This should be used for implementing browser-to-renderer control messages
 // which need to retain FIFO with respect to legacy IPC messages.
 interface Renderer {
+  // Tells the renderer to ask its embedder to bind |service_request| to an
+  // embedder-provided renderer-side service implementation. This is required to
+  // ensure that embedder-provided renderer-side service is initialized at the
+  // appropriate time.
+  CreateEmbedderRendererService(service_manager.mojom.Service& service_request);
+
   // Tells the renderer to create a new view.
   CreateView(CreateViewParams params);
 
@@ -197,9 +204,13 @@ interface Renderer {
   // is MSG_ROUTING_NONE.  The new proxy should be created as a child of the
   // object identified by |parent_routing_id| or as top level if that is
   // MSG_ROUTING_NONE.
+  // |devtools_frame_token| is used for devtools instrumentation
+  // and trace-ability. It is defined by the browser and is never
+  // sent back from the renderer in the control calls.
   CreateFrameProxy(int32 routing_id, int32 render_view_routing_id,
                    int32 opener_routing_id, int32 parent_routing_id,
-                   FrameReplicationState replication_state);
+                   FrameReplicationState replication_state,
+                   mojo.common.mojom.UnguessableToken devtools_frame_token);
 
   // Tells the renderer that the network type has changed so that
   // navigator.onLine and navigator.connection can be updated.

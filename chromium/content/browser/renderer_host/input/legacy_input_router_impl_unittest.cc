@@ -1991,15 +1991,15 @@ class LegacyInputRouterImplScaleTouchEventTest
     EXPECT_EQ(40, sent_event->touches[0].PositionInWidget().y);
     EXPECT_EQ(10, sent_event->touches[0].PositionInScreen().x);
     EXPECT_EQ(20, sent_event->touches[0].PositionInScreen().y);
-    EXPECT_EQ(2, sent_event->touches[0].radius_x);
-    EXPECT_EQ(2, sent_event->touches[0].radius_y);
+    EXPECT_EQ(40, sent_event->touches[0].radius_x);
+    EXPECT_EQ(40, sent_event->touches[0].radius_y);
 
     EXPECT_EQ(200, sent_event->touches[1].PositionInWidget().x);
     EXPECT_EQ(400, sent_event->touches[1].PositionInWidget().y);
     EXPECT_EQ(100, sent_event->touches[1].PositionInScreen().x);
     EXPECT_EQ(200, sent_event->touches[1].PositionInScreen().y);
-    EXPECT_EQ(2, sent_event->touches[1].radius_x);
-    EXPECT_EQ(2, sent_event->touches[1].radius_y);
+    EXPECT_EQ(40, sent_event->touches[1].radius_x);
+    EXPECT_EQ(40, sent_event->touches[1].radius_y);
 
     const WebTouchEvent* filter_event = GetFilterWebInputEvent<WebTouchEvent>();
     ASSERT_EQ(2u, filter_event->touches_length);
@@ -2007,15 +2007,15 @@ class LegacyInputRouterImplScaleTouchEventTest
     EXPECT_EQ(20, filter_event->touches[0].PositionInWidget().y);
     EXPECT_EQ(10, filter_event->touches[0].PositionInScreen().x);
     EXPECT_EQ(20, filter_event->touches[0].PositionInScreen().y);
-    EXPECT_EQ(1, filter_event->touches[0].radius_x);
-    EXPECT_EQ(1, filter_event->touches[0].radius_y);
+    EXPECT_EQ(20, filter_event->touches[0].radius_x);
+    EXPECT_EQ(20, filter_event->touches[0].radius_y);
 
     EXPECT_EQ(100, filter_event->touches[1].PositionInWidget().x);
     EXPECT_EQ(200, filter_event->touches[1].PositionInWidget().y);
     EXPECT_EQ(100, filter_event->touches[1].PositionInScreen().x);
     EXPECT_EQ(200, filter_event->touches[1].PositionInScreen().y);
-    EXPECT_EQ(1, filter_event->touches[1].radius_x);
-    EXPECT_EQ(1, filter_event->touches[1].radius_y);
+    EXPECT_EQ(20, filter_event->touches[1].radius_x);
+    EXPECT_EQ(20, filter_event->touches[1].radius_y);
   }
 
   void FlushTouchEvent(WebInputEvent::Type type) {
@@ -2287,7 +2287,13 @@ TEST_F(LegacyInputRouterImplScaleGestureEventTest, GestureTwoFingerTap) {
   EXPECT_EQ(40, filter_event->data.two_finger_tap.first_finger_height);
 }
 
-TEST_F(LegacyInputRouterImplScaleGestureEventTest, GestureFlingStart) {
+// Thie test is flaky on Fuchsia. crbug.com/807803
+#if defined(OS_FUCHSIA)
+#define MAYBE_GestureFlingStart DISABLED_GestureFlingStart
+#else
+#define MAYBE_GestureFlingStart GestureFlingStart
+#endif
+TEST_F(LegacyInputRouterImplScaleGestureEventTest, MAYBE_GestureFlingStart) {
   // Simulate a GSB since touchscreen flings must happen inside scroll.
   SimulateGestureEvent(SyntheticWebGestureEventBuilder::BuildScrollBegin(
       10.f, 20.f, blink::kWebGestureDeviceTouchscreen));

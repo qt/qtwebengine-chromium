@@ -23,6 +23,12 @@ declare_args() {
   # with typemapping disabled, so it is never valid to set this to |false| in
   # any Chromium build configuration.
   enable_mojom_typemapping = true
+
+  # Controls message ID scrambling behavior. If |true|, message IDs are
+  # scrambled (i.e. randomized based on the contents of //chrome/VERSION) on
+  # non-Chrome OS desktop platforms. Set to |false| to disable message ID
+  # scrambling on all platforms.
+  enable_mojom_message_id_scrambling = true
 }
 
 # NOTE: We would like to avoid scrambling message IDs where it doesn't add
@@ -39,8 +45,9 @@ declare_args() {
 # consequently also when building for NaCl toolchains.) For this reason we
 # check |target_os| explicitly, as it's consistent across all toolchains.
 enable_scrambled_message_ids =
-    is_mac || is_win || (is_linux && !is_chromeos) ||
-    ((enable_nacl || is_nacl || is_nacl_nonsfi) && target_os != "chromeos")
+    enable_mojom_message_id_scrambling &&
+    (is_mac || is_win || (is_linux && !is_chromeos) ||
+     ((enable_nacl || is_nacl || is_nacl_nonsfi) && target_os != "chromeos"))
 
 mojom_generator_root = "//mojo/public/tools/bindings"
 mojom_generator_script = "$mojom_generator_root/mojom_bindings_generator.py"
@@ -82,14 +89,24 @@ if (enable_scrambled_message_ids) {
     }
   }
 
-  mojom_generator_sources += [ mojom_message_id_salt_path ]
-  if (mojom_message_id_salt_suffix_path != "") {
-    mojom_generator_sources += [ mojom_message_id_salt_suffix_path ]
-  }
-}
+  assert(mojom_message_id_salt_path != "")
+  message_scrambling_args = [
+    "--scrambled_message_id_salt_path",
+    rebase_path(mojom_message_id_salt_path, root_build_dir),
+  ]
+  message_scrambling_inputs = [ mojom_message_id_salt_path ]
 
-generate_export_header_script =
-    "$mojom_generator_root/generate_export_header.py"
+  if (mojom_message_id_salt_suffix_path != "") {
+    message_scrambling_args += [
+      "--scrambled_message_id_salt_path",
+      rebase_path(mojom_message_id_salt_suffix_path, root_build_dir),
+    ]
+    message_scrambling_inputs += [ mojom_message_id_salt_suffix_path ]
+  }
+} else {
+  message_scrambling_args = []
+  message_scrambling_inputs = []
+}
 
 if (enable_mojom_typemapping) {
   if (!is_ios) {
@@ -199,11 +216,16 @@ if (enable_mojom_typemapping) {
 #       If |true|, no variant sources will be generated for the target. Defaults
 #       to |false|.
 #
-#   allow_native_structs (optional)
-#       If set to |true| (the default), mojoms in this target may apply the
-#       [Native] attribute to struct declarations, causing that mojom struct to
-#       be serialized and deserialized using a legacy IPC::ParamTraits
-#       specialization.
+#   disallow_native_types (optional)
+#       If set to |true|, mojoms in this target may not apply the [Native]
+#       attribute to struct or enum declarations. This avoids emitting code
+#       which depends on legacy IPC serialization. Default is |false|, meaning
+#       [Native] types are allowed.
+#
+#   disallow_interfaces (optional)
+#       If set to |true|, mojoms in this target may not define interfaces.
+#       Generates bindings with a smaller set of dependencies. Defaults to
+#       |false|.
 #
 #   scramble_message_ids (optional)
 #       If set to |true| (the default), generated mojom interfaces will use
@@ -222,10 +244,17 @@ if (enable_mojom_typemapping) {
 #       This specifies a macro prefix to use for component export macros and
 #       should therefore be globally unique in the project. For example if this
 #       is "FOO_BAR", then the generated C++ sources will be built with
-#       FOO_BAR_IMPL defined, and the generated public headers will affix
-#       FOO_BAR_EXPORT to all public symbol definitions; the meaning of the
-#       EXPORT macro depends on whether the corresponding IMPL macro is defined,
-#       per standard practice with Chromium component exports.
+#       IS_FOO_BAR_{suffix}_IMPL defined, and the generated public headers will
+#       annotate public symbol definitions with
+#       COMPONENT_EXPORT(FOO_BAR_{suffix}). "suffix" in this case depends on
+#       which internal subtarget is generating the code (e.g. "SHARED", or a
+#       variant name like "BLINK").
+#
+#   enabled_features (optional)
+#       Definitions in a mojom file can be guarded by an EnableIf attribute. If
+#       the value specified by the attribute does not match any items in the
+#       list of enabled_features, the definition will be disabled, with no code
+#       emitted for it.
 #
 # The following parameters are used to support the component build. They are
 # needed so that bindings which are linked with a component can use the same
@@ -258,6 +287,11 @@ if (enable_mojom_typemapping) {
 #   overridden_deps_blink (optional)
 #   component_deps_blink (optional)
 #       These two parameters are the blink variants of the previous two.
+#
+# check_includes_blink (optional)
+#     Overrides the check_includes variable for the blink variant.
+#     If check_includes_blink is not defined, the check_includes variable
+#     retains its original value.
 template("mojom") {
   assert(
       defined(invoker.sources) || defined(invoker.deps) ||
@@ -290,6 +324,11 @@ template("mojom") {
     assert(defined(invoker.component_deps_blink))
   }
 
+  require_full_cpp_deps =
+      !defined(invoker.disallow_native_types) ||
+      !invoker.disallow_native_types || !defined(invoker.disallow_interfaces) ||
+      !invoker.disallow_interfaces
+
   all_deps = []
   if (defined(invoker.deps)) {
     all_deps += invoker.deps
@@ -316,6 +355,71 @@ template("mojom") {
     }
   }
 
+  if (defined(invoker.sources)) {
+    parser_target_name = "${target_name}__parser"
+    enabled_features = []
+    if (defined(invoker.enabled_features)) {
+      enabled_features += invoker.enabled_features
+    }
+    if (is_posix) {
+      enabled_features += [ "is_posix" ]
+    }
+    if (is_android) {
+      enabled_features += [ "is_android" ]
+    } else if (is_chromeos) {
+      enabled_features += [ "is_chromeos" ]
+    } else if (is_fuchsia) {
+      enabled_features += [ "is_fuschia" ]
+    } else if (is_ios) {
+      enabled_features += [ "is_ios" ]
+    } else if (is_linux) {
+      enabled_features += [ "is_linux" ]
+    } else if (is_mac) {
+      enabled_features += [ "is_mac" ]
+    } else if (is_win) {
+      enabled_features += [ "is_win" ]
+    }
+    action_foreach(parser_target_name) {
+      script = mojom_generator_script
+      inputs = mojom_generator_sources
+      sources = invoker.sources
+      outputs = [
+        "{{source_gen_dir}}/{{source_name_part}}.p",
+      ]
+      args = [
+        "parse",
+        "{{source}}",
+        "-o",
+        rebase_path(root_gen_dir, root_build_dir),
+        "-d",
+        rebase_path("//", root_build_dir),
+      ]
+      foreach(enabled_feature, enabled_features) {
+        args += [
+          "--enable_feature",
+          enabled_feature,
+        ]
+      }
+    }
+  }
+
+  parsed_target_name = "${target_name}__parsed"
+  group(parsed_target_name) {
+    public_deps = []
+    if (defined(invoker.sources)) {
+      public_deps += [ ":$parser_target_name" ]
+    }
+    foreach(d, all_deps) {
+      # Resolve the name, so that a target //mojo/something becomes
+      # //mojo/something:something and we can append the parsed
+      # suffix to get the mojom dependency name.
+      full_name = get_label_info("$d", "label_no_toolchain")
+      public_deps += [ "${full_name}__parsed" ]
+    }
+  }
+
+  generator_cpp_message_ids_target_name = "${target_name}__generate_message_ids"
+
   # Generate code that is shared by different variants.
   if (defined(invoker.sources)) {
     common_generator_args = [
@@ -332,27 +436,13 @@ template("mojom") {
       rebase_path("$root_gen_dir/mojo/public/tools/bindings", root_build_dir),
     ]
 
-    if (!defined(invoker.scramble_message_ids) || invoker.scramble_message_ids) {
-      # Scramble message IDs if enabled, unless the target has explicitly opted
-      # out.
-      if (enable_scrambled_message_ids) {
-        assert(mojom_message_id_salt_path != "")
-        common_generator_args += [
-          "--scrambled_message_id_salt_path",
-          rebase_path(mojom_message_id_salt_path, root_build_dir),
-        ]
-
-        if (mojom_message_id_salt_suffix_path != "") {
-          common_generator_args += [
-            "--scrambled_message_id_salt_path",
-            rebase_path(mojom_message_id_salt_suffix_path, root_build_dir),
-          ]
-        }
-      }
+    if (defined(invoker.disallow_native_types) &&
+        invoker.disallow_native_types) {
+      common_generator_args += [ "--disallow_native_types" ]
     }
 
-    if (!defined(invoker.allow_native_structs) || invoker.allow_native_structs) {
-      common_generator_args += [ "--allow_native_structs" ]
+    if (defined(invoker.disallow_interfaces) && invoker.disallow_interfaces) {
+      common_generator_args += [ "--disallow_interfaces" ]
     }
 
     if (defined(invoker.import_dirs)) {
@@ -366,9 +456,9 @@ template("mojom") {
 
     if (defined(invoker.component_macro_prefix)) {
       shared_component_export_macro =
-          "${invoker.component_macro_prefix}_SHARED_EXPORT"
+          "COMPONENT_EXPORT(${invoker.component_macro_prefix}_SHARED)"
       shared_component_impl_macro =
-          "${invoker.component_macro_prefix}_SHARED_IMPL"
+          "IS_${invoker.component_macro_prefix}_SHARED_IMPL"
       shared_component_output_name = "${invoker.component_output_prefix}_shared"
     } else if (defined(invoker.export_class_attribute_shared) ||
                defined(invoker.export_class_attribute)) {
@@ -380,11 +470,11 @@ template("mojom") {
         assert(!defined(invoker.export_header_shared))
 
         # If no explicit shared attribute/define was provided by the invoker,
-        # we derive some reasonable settings frorm the default variant. A new
-        # export header will be generated for these and used by shared code.
-        shared_component_export_macro =
-            "MOJOM_SHARED_" + invoker.export_class_attribute
-        shared_component_impl_macro = "MOJOM_SHARED_" + invoker.export_define
+        # we derive some reasonable settings frorm the default variant.
+        shared_component_export_macro = "COMPONENT_EXPORT(MOJOM_SHARED_" +
+                                        invoker.export_class_attribute + ")"
+        shared_component_impl_macro =
+            "IS_MOJOM_SHARED_" + invoker.export_class_attribute + "_IMPL"
       }
 
       if (defined(invoker.component_output_prefix)) {
@@ -395,14 +485,30 @@ template("mojom") {
       }
     }
 
-    if (defined(shared_component_export_macro) &&
-        !defined(invoker.export_header_shared)) {
-      generated_shared_export_header =
-          rebase_path("${target_name}_shared_export.h", "", target_gen_dir)
-      shared_export_header =
-          rebase_path(generated_shared_export_header, root_gen_dir)
-    } else if (defined(invoker.export_header_shared)) {
-      shared_export_header = invoker.export_header_shared
+    action_foreach(generator_cpp_message_ids_target_name) {
+      script = mojom_generator_script
+      inputs = mojom_generator_sources
+      sources = invoker.sources
+      deps = [
+        ":$parsed_target_name",
+        "//mojo/public/tools/bindings:precompile_templates",
+      ]
+      outputs = [
+        "{{source_gen_dir}}/{{source_name_part}}.mojom-shared-message-ids.h",
+      ]
+      args = common_generator_args
+      args += [
+        "--generate_non_variant_code",
+        "--generate_message_ids",
+        "-g",
+        "c++",
+      ]
+
+      if (!defined(invoker.scramble_message_ids) ||
+          invoker.scramble_message_ids) {
+        inputs += message_scrambling_inputs
+        args += message_scrambling_args
+      }
     }
 
     generator_shared_cpp_outputs = [
@@ -416,6 +522,7 @@ template("mojom") {
       inputs = mojom_generator_sources
       sources = invoker.sources
       deps = [
+        ":$parsed_target_name",
         "//mojo/public/tools/bindings:precompile_templates",
       ]
       outputs = generator_shared_cpp_outputs
@@ -425,43 +532,18 @@ template("mojom") {
         "-g",
         "c++",
       ]
-      depfile = "{{source_gen_dir}}/${generator_shared_target_name}_{{source_name_part}}.d"
-      args += [
-        "--depfile",
-        depfile,
-        "--depfile_target",
-        "{{source_gen_dir}}/{{source_name_part}}.mojom-shared-internal.h",
-      ]
 
       if (defined(shared_component_export_macro)) {
         args += [
           "--export_attribute",
           shared_component_export_macro,
           "--export_header",
-          shared_export_header,
+          "base/component_export.h",
         ]
       }
     }
-  }
-
-  if (defined(generated_shared_export_header)) {
-    shared_export_generator_target_name =
-        "${target_name}__generate_shared_export_header"
-    action(shared_export_generator_target_name) {
-      script = generate_export_header_script
-      outputs = [
-        get_path_info(generated_shared_export_header, "abspath"),
-      ]
-      args = [
-        "--export_macro",
-        shared_component_export_macro,
-        "--impl_macro",
-        shared_component_impl_macro,
-        "--output_file",
-        rebase_path(generated_shared_export_header, root_build_dir),
-        "--relative_path",
-        rebase_path(generated_shared_export_header, root_gen_dir),
-      ]
+  } else {
+    group(generator_cpp_message_ids_target_name) {
     }
   }
 
@@ -476,9 +558,15 @@ template("mojom") {
           process_file_template(invoker.sources, generator_shared_cpp_outputs)
       deps += [ ":$generator_shared_target_name" ]
     }
-    public_deps = [
-      "//mojo/public/cpp/bindings",
-    ]
+    if (require_full_cpp_deps) {
+      public_deps = [
+        "//mojo/public/cpp/bindings",
+      ]
+    } else {
+      public_deps = [
+        "//mojo/public/cpp/bindings:bindings_base",
+      ]
+    }
     foreach(d, all_deps) {
       # Resolve the name, so that a target //mojo/something becomes
       # //mojo/something:something and we can append shared_cpp_sources_suffix
@@ -488,10 +576,6 @@ template("mojom") {
     }
     if (defined(shared_component_impl_macro)) {
       defines = [ shared_component_impl_macro ]
-    }
-    if (defined(generated_shared_export_header)) {
-      sources += [ get_path_info(generated_shared_export_header, "abspath") ]
-      public_deps += [ ":$shared_export_generator_target_name" ]
     }
   }
 
@@ -543,7 +627,6 @@ template("mojom") {
     enabled_sources = []
     if (defined(invoker.sources)) {
       generator_cpp_outputs = []
-      generator_java_outputs = []
       variant_dash_suffix = ""
       if (defined(variant)) {
         variant_dash_suffix = "-${variant}"
@@ -606,58 +689,22 @@ template("mojom") {
         }
       }
 
-      if (defined(invoker.component_macro_prefix)) {
-        export_header_generator_target_name =
-            "${target_name}${variant_suffix}__generate_export_header"
-        generated_export_header =
-            rebase_path("${target_name}${variant_suffix}_export.h",
-                        "",
-                        target_gen_dir)
-        action(export_header_generator_target_name) {
-          script = generate_export_header_script
-          outputs = [
-            get_path_info(generated_export_header, "abspath"),
-          ]
-          args = [
-            "--export_macro",
-            "${invoker.component_macro_prefix}${bindings_configuration.component_macro_suffix}_EXPORT",
-            "--impl_macro",
-            "${invoker.component_macro_prefix}${bindings_configuration.component_macro_suffix}_IMPL",
-            "--output_file",
-            rebase_path(generated_export_header, root_build_dir),
-            "--relative_path",
-            rebase_path(generated_export_header, root_gen_dir),
-          ]
-        }
-      }
-
-      if (!cpp_only) {
-        generator_java_outputs =
-            [ "{{source_gen_dir}}/{{source_name_part}}.mojom.srcjar" ]
-      }
       generator_target_name = "${target_name}${variant_suffix}__generator"
       action_foreach(generator_target_name) {
         script = mojom_generator_script
         inputs = mojom_generator_sources
         sources = invoker.sources
         deps = [
+          ":$parsed_target_name",
           ":$type_mappings_target_name",
           "//mojo/public/tools/bindings:precompile_templates",
         ]
-        outputs = generator_cpp_outputs + generator_java_outputs
+        outputs = generator_cpp_outputs
         args = common_generator_args
-
-        if (cpp_only) {
-          args += [
-            "-g",
-            "c++",
-          ]
-        } else {
-          args += [
-            "-g",
-            "c++,java",
-          ]
-        }
+        args += [
+          "-g",
+          "c++",
+        ]
 
         if (defined(bindings_configuration.variant)) {
           args += [
@@ -665,14 +712,6 @@ template("mojom") {
             bindings_configuration.variant,
           ]
         }
-        depfile =
-            "{{source_gen_dir}}/${generator_target_name}_{{source_name_part}}.d"
-        args += [
-          "--depfile",
-          depfile,
-          "--depfile_target",
-          "{{source_gen_dir}}/{{source_name_part}}.mojom${variant_dash_suffix}.cc",
-        ]
 
         args += [
           "--typemap",
@@ -682,9 +721,10 @@ template("mojom") {
         if (defined(invoker.component_macro_prefix)) {
           args += [
             "--export_attribute",
-            "${invoker.component_macro_prefix}${bindings_configuration.component_macro_suffix}_EXPORT",
+            "COMPONENT_EXPORT(${invoker.component_macro_prefix}" +
+                "${bindings_configuration.component_macro_suffix})",
             "--export_header",
-            rebase_path(generated_export_header, root_gen_dir),
+            "base/component_export.h",
           ]
         }
 
@@ -722,7 +762,7 @@ template("mojom") {
     }
 
     action(type_mappings_target_name) {
-      inputs = _bindings_configuration_files
+      inputs = _bindings_configuration_files + mojom_generator_sources
       outputs = [
         type_mappings_path,
       ]
@@ -801,9 +841,6 @@ template("mojom") {
         testonly = invoker.testonly
       }
       defines = []
-      if (defined(invoker.testonly)) {
-        testonly = invoker.testonly
-      }
       if (defined(invoker.export_define)) {
         defines += [ invoker.export_define ]
       }
@@ -814,6 +851,7 @@ template("mojom") {
         sources = process_file_template(enabled_sources, generator_cpp_outputs)
       }
       deps = [
+        ":$generator_cpp_message_ids_target_name",
         "//mojo/public/cpp/bindings:struct_traits",
         "//mojo/public/interfaces/bindings:bindings__generator",
         "//mojo/public/interfaces/bindings:bindings_shared__generator",
@@ -821,16 +859,20 @@ template("mojom") {
       public_deps = [
         ":$shared_cpp_library_target_name",
         "//base",
-        "//mojo/public/cpp/bindings",
       ]
+      if (require_full_cpp_deps) {
+        public_deps += [ "//mojo/public/cpp/bindings" ]
+      } else {
+        public_deps += [ "//mojo/public/cpp/bindings:bindings_base" ]
+      }
+
       if (enabled_sources != []) {
         public_deps += [ ":$generator_target_name" ]
       }
       if (defined(invoker.component_macro_prefix)) {
         output_name = "${invoker.component_output_prefix}${variant_suffix}"
-        defines += [ "${invoker.component_macro_prefix}${bindings_configuration.component_macro_suffix}_IMPL" ]
-        sources += [ get_path_info(generated_export_header, "abspath") ]
-        deps += [ ":$export_header_generator_target_name" ]
+        defines += [ "IS_${invoker.component_macro_prefix}" +
+                     "${bindings_configuration.component_macro_suffix}_IMPL" ]
       }
       foreach(d, all_deps) {
         # Resolve the name, so that a target //mojo/something becomes
@@ -851,7 +893,13 @@ template("mojom") {
           }
           public_deps += invoker.component_deps_blink
         }
+        if (defined(invoker.check_includes_blink)) {
+          check_includes = invoker.check_includes_blink
+        }
       } else {
+        if (defined(invoker.check_includes_blink)) {
+          not_needed(invoker, [ "check_includes_blink" ])
+        }
         if (defined(invoker.overridden_deps)) {
           foreach(d, invoker.overridden_deps) {
             # Resolve the name, so that a target //mojo/something becomes
@@ -889,6 +937,37 @@ template("mojom") {
     if (!cpp_only && is_android) {
       import("//build/config/android/rules.gni")
 
+      java_generator_target_name = target_name + "_java__generator"
+      if (enabled_sources != []) {
+        generator_java_outputs =
+            [ "{{source_gen_dir}}/{{source_name_part}}.mojom.srcjar" ]
+        action_foreach(java_generator_target_name) {
+          script = mojom_generator_script
+          inputs = mojom_generator_sources
+          sources = enabled_sources
+          deps = [
+            ":$parsed_target_name",
+            ":$type_mappings_target_name",
+            "//mojo/public/tools/bindings:precompile_templates",
+          ]
+          outputs = generator_java_outputs
+          args = common_generator_args
+          args += [
+            "-g",
+            "java",
+          ]
+
+          if (!defined(invoker.scramble_message_ids) ||
+              invoker.scramble_message_ids) {
+            inputs += message_scrambling_inputs
+            args += message_scrambling_args
+          }
+        }
+      } else {
+        group(java_generator_target_name) {
+        }
+      }
+
       java_srcjar_target_name = target_name + "_java_sources"
       action(java_srcjar_target_name) {
         script = "//mojo/public/tools/gn/zip.py"
@@ -910,7 +989,7 @@ template("mojom") {
         deps = []
         if (enabled_sources != []) {
           deps = [
-            ":$generator_target_name",
+            ":$java_generator_target_name",
           ]
         }
       }
@@ -922,6 +1001,9 @@ template("mojom") {
           "//mojo/public/java:bindings_java",
           "//mojo/public/java:system_java",
         ]
+
+        # Disable warnings/checks on these generated files.
+        chromium_code = false
 
         foreach(d, all_deps) {
           # Resolve the name, so that a target //mojo/something becomes
@@ -949,6 +1031,7 @@ template("mojom") {
           sources += invoker.sources
         }
         deps = [
+          ":$parsed_target_name",
           "//mojo/public/tools/bindings:precompile_templates",
         ]
         outputs = generator_js_outputs
@@ -957,6 +1040,12 @@ template("mojom") {
           "-g",
           "javascript",
         ]
+
+        if (!defined(invoker.scramble_message_ids) ||
+            invoker.scramble_message_ids) {
+          inputs += message_scrambling_inputs
+          args += message_scrambling_args
+        }
       }
     }
 

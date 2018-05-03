@@ -66,6 +66,8 @@ if (current_toolchain == host_toolchain) {
 }
 
 group("protobuf_full_deps") {
+  testonly = true
+
   if (!build_with_chromium) {
     public_deps = [
       "//buildtools:protobuf_full",
@@ -94,8 +96,21 @@ group("default_deps") {
 }
 
 config("default_config") {
+  if (build_with_chromium) {
+    defines = [ "PERFETTO_BUILD_WITH_CHROMIUM" ]
+
+    if (is_android) {
+      # Included for __android_log_print
+      libs = [ "log" ]
+    }
+  }
+
   include_dirs = [
     "..",
     "../include",
   ]
+}
+
+config("public_config") {
+  include_dirs = [ "../include" ]
 }

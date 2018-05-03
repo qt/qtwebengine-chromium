@@ -6,6 +6,7 @@
 
 #include "base/location.h"
 #include "build/build_config.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
@@ -184,7 +185,7 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
       mime_type_(mime_type),
       start_time_(start_time),
       static_bitmap_image_loaded_(false),
-      callback_(callback),
+      callback_(ToV8PersistentCallbackFunction(callback)),
       script_promise_resolver_(resolver) {
   DCHECK(image);
   sk_sp<SkImage> skia_image = image_->PaintImageForCurrentFrame().GetSkImage();
@@ -216,11 +217,14 @@ void CanvasAsyncBlobCreator::Dispose() {
   parent_frame_task_runner_.Clear();
   callback_.Clear();
   script_promise_resolver_.Clear();
+  image_ = nullptr;
 }
 
 bool CanvasAsyncBlobCreator::EncodeImage(const double& quality) {
-    return ImageDataBuffer(src_data_).EncodeImage("image/webp", quality,
-                                                  &encoded_image_);
+  std::unique_ptr<ImageDataBuffer> buffer = ImageDataBuffer::Create(src_data_);
+  if (!buffer)
+    return false;
+  return buffer->EncodeImage("image/webp", quality, &encoded_image_);
 }
 
 void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
@@ -398,8 +402,10 @@ void CanvasAsyncBlobCreator::CreateBlobAndReturnResult() {
   if (function_type_ == kHTMLCanvasToBlobCallback) {
     context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
         ->PostTask(FROM_HERE,
-                   WTF::Bind(&V8BlobCallback::InvokeAndReportException,
-                             callback_, nullptr, WrapPersistent(result_blob)));
+                   WTF::Bind(&V8PersistentCallbackFunction<
+                                 V8BlobCallback>::InvokeAndReportException,
+                             WrapPersistent(callback_.Get()), nullptr,
+                             WrapPersistent(result_blob)));
   } else {
     script_promise_resolver_->Resolve(result_blob);
   }
@@ -413,12 +419,14 @@ void CanvasAsyncBlobCreator::CreateNullAndReturnResult() {
     DCHECK(IsMainThread());
     RecordIdleTaskStatusHistogram(idle_task_status_);
     context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
-        ->PostTask(FROM_HERE,
-                   WTF::Bind(&V8BlobCallback::InvokeAndReportException,
-                             callback_, nullptr, nullptr));
+        ->PostTask(
+            FROM_HERE,
+            WTF::Bind(&V8PersistentCallbackFunction<
+                          V8BlobCallback>::InvokeAndReportException,
+                      WrapPersistent(callback_.Get()), nullptr, nullptr));
   } else {
-    Blob* result_blob = nullptr;
-    script_promise_resolver_->Resolve(result_blob);
+    script_promise_resolver_->Reject(DOMException::Create(
+        kEncodingError, "Encoding of the source image has failed."));
   }
   // Avoid unwanted retention, see dispose().
   Dispose();
@@ -540,6 +548,7 @@ void CanvasAsyncBlobCreator::PostDelayedTaskToCurrentThread(
 void CanvasAsyncBlobCreator::Trace(blink::Visitor* visitor) {
   visitor->Trace(context_);
   visitor->Trace(parent_frame_task_runner_);
+  visitor->Trace(callback_);
   visitor->Trace(script_promise_resolver_);
 }
 

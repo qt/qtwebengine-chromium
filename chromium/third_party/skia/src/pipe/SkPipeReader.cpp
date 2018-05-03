@@ -181,7 +181,6 @@ static SkPaint read_paint(SkReadBuffer& reader) {
     CHECK_SET_FLATTENABLE(Shader);
     CHECK_SET_FLATTENABLE(MaskFilter);
     CHECK_SET_FLATTENABLE(ColorFilter);
-    CHECK_SET_FLATTENABLE(Rasterizer);
     CHECK_SET_FLATTENABLE(ImageFilter);
     CHECK_SET_FLATTENABLE(DrawLooper);
 
@@ -207,8 +206,9 @@ public:
         return factory;
     }
 
-    void readPaint(SkPaint* paint) override {
+    bool readPaint(SkPaint* paint) override {
         *paint = read_paint(*this);
+        return this->isValid();
     }
 };
 

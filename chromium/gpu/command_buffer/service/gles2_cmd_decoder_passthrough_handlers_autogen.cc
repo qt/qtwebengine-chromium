@@ -4190,6 +4190,32 @@ error::Error GLES2DecoderPassthroughImpl::HandleLoseContextCHROMIUM(
   return error::kNoError;
 }
 
+error::Error
+GLES2DecoderPassthroughImpl::HandleUnpremultiplyAndDitherCopyCHROMIUM(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::UnpremultiplyAndDitherCopyCHROMIUM& c =
+      *static_cast<
+          const volatile gles2::cmds::UnpremultiplyAndDitherCopyCHROMIUM*>(
+          cmd_data);
+  if (!features().unpremultiply_and_dither_copy) {
+    return error::kUnknownCommand;
+  }
+
+  GLuint source_id = static_cast<GLuint>(c.source_id);
+  GLuint dest_id = static_cast<GLuint>(c.dest_id);
+  GLint x = static_cast<GLint>(c.x);
+  GLint y = static_cast<GLint>(c.y);
+  GLsizei width = static_cast<GLsizei>(c.width);
+  GLsizei height = static_cast<GLsizei>(c.height);
+  error::Error error = DoUnpremultiplyAndDitherCopyCHROMIUM(
+      source_id, dest_id, x, y, width, height);
+  if (error != error::kNoError) {
+    return error;
+  }
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderPassthroughImpl::HandleDrawBuffersEXTImmediate(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
@@ -4540,10 +4566,12 @@ error::Error GLES2DecoderPassthroughImpl::HandleBeginRasterCHROMIUM(
   GLboolean can_use_lcd_text = static_cast<GLboolean>(c.can_use_lcd_text);
   GLboolean use_distance_field_text =
       static_cast<GLboolean>(c.use_distance_field_text);
-  GLint pixel_config = static_cast<GLint>(c.pixel_config);
+  GLint color_type = static_cast<GLint>(c.color_type);
+  GLuint color_space_transfer_cache_id =
+      static_cast<GLuint>(c.color_space_transfer_cache_id);
   error::Error error = DoBeginRasterCHROMIUM(
       texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-      use_distance_field_text, pixel_config);
+      use_distance_field_text, color_type, color_space_transfer_cache_id);
   if (error != error::kNoError) {
     return error;
   }

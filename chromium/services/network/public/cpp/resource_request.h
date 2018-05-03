@@ -8,21 +8,22 @@
 #include <stdint.h>
 #include <string>
 
+#include "base/component_export.h"
 #include "base/memory/ref_counted.h"
 #include "base/optional.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_request_headers.h"
 #include "net/url_request/url_request.h"
 #include "services/network/public/cpp/resource_request_body.h"
-#include "services/network/public/interfaces/cors.mojom-shared.h"
-#include "services/network/public/interfaces/fetch_api.mojom-shared.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-shared.h"
+#include "services/network/public/mojom/cors.mojom-shared.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
 namespace network {
 
-struct ResourceRequest {
+struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   ResourceRequest();
   ResourceRequest(const ResourceRequest& request);
   ~ResourceRequest();
@@ -116,10 +117,9 @@ struct ResourceRequest {
 
   // The service worker mode that indicates which service workers should get
   // events for this request.
-  // Note: this is an enum of type content::ServiceWorkerMode.
   // TODO(jam): remove this from the struct since network service shouldn't know
   // about this.
-  int service_worker_mode = 0;
+  bool skip_service_worker = false;
 
   // The request mode passed to the ServiceWorker.
   mojom::FetchRequestMode fetch_request_mode =
@@ -214,10 +214,6 @@ struct ResourceRequest {
 
   // Wether or not the initiator of this request is a secure context.
   bool initiated_in_secure_context = false;
-
-  // The response should be downloaded and stored in the network cache, but not
-  // sent back to the renderer.
-  bool download_to_network_cache_only = false;
 };
 
 }  // namespace network

@@ -152,6 +152,7 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
     SkSL::Program::Settings settings;
     settings.fCaps = this->gpu()->glCaps().shaderCaps();
     settings.fFlipY = this->pipeline().proxy()->origin() != kTopLeft_GrSurfaceOrigin;
+    settings.fSharpenTextures = this->gpu()->getContext()->contextPriv().sharpenMipmappedTextures();
     SkSL::Program::Inputs inputs;
     SkTDArray<GrGLuint> shadersToDelete;
     bool cached = nullptr != fCached.get();
@@ -274,10 +275,10 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
             // store shader in cache
             sk_sp<SkData> key = SkData::MakeWithoutCopy(desc()->asKey(), desc()->keyLength());
             GrGLenum binaryFormat;
-            std::unique_ptr<char> binary(new char[length]);
+            std::unique_ptr<char[]> binary(new char[length]);
             GL_CALL(GetProgramBinary(programID, length, &length, &binaryFormat, binary.get()));
             size_t dataLength = sizeof(inputs) + sizeof(binaryFormat) + length;
-            std::unique_ptr<uint8_t> data((uint8_t*) malloc(dataLength));
+            std::unique_ptr<uint8_t[]> data(new uint8_t[dataLength]);
             size_t offset = 0;
             memcpy(data.get() + offset, &inputs, sizeof(inputs));
             offset += sizeof(inputs);

@@ -35,7 +35,7 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-shared.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 
 namespace blink {
 
@@ -246,7 +246,7 @@ void RawResource::ReportResourceTimingToClients(
 }
 
 bool RawResource::MatchPreload(const FetchParameters& params,
-                               WebTaskRunner* task_runner) {
+                               base::SingleThreadTaskRunner* task_runner) {
   if (!Resource::MatchPreload(params, task_runner))
     return false;
 
@@ -323,7 +323,9 @@ static bool IsCacheableHTTPMethod(const AtomicString& method) {
          method != "DELETE";
 }
 
-bool RawResource::CanReuse(const FetchParameters& new_fetch_parameters) const {
+bool RawResource::CanReuse(
+    const FetchParameters& new_fetch_parameters,
+    scoped_refptr<const SecurityOrigin> new_source_origin) const {
   const ResourceRequest& new_request =
       new_fetch_parameters.GetResourceRequest();
 
@@ -364,7 +366,7 @@ bool RawResource::CanReuse(const FetchParameters& new_fetch_parameters) const {
       return false;
   }
 
-  return Resource::CanReuse(new_fetch_parameters);
+  return Resource::CanReuse(new_fetch_parameters, std::move(new_source_origin));
 }
 
 RawResourceClientStateChecker::RawResourceClientStateChecker()

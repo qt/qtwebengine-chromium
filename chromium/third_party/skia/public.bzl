@@ -55,7 +55,11 @@ def skia_glob(srcs):
 ## skia_{all,public}_hdrs()
 ################################################################################
 def skia_all_hdrs():
-  return native.glob(["src/**/*.h", "include/**/*.h"])
+  return native.glob([
+      "src/**/*.h",
+      "include/**/*.h",
+      "third_party/**/*.h",
+  ])
 
 def skia_public_hdrs():
   return native.glob(["include/**/*.h"],
@@ -77,6 +81,8 @@ SKIA_OPTS_SSE41 = "SSE41"
 SKIA_OPTS_SSE42 = "SSE42"
 
 SKIA_OPTS_AVX = "AVX"
+
+SKIA_OPTS_HSW = "HSW"
 
 # Arm
 SKIA_OPTS_NEON = "NEON"
@@ -106,6 +112,10 @@ def opts_srcs(opts):
     return native.glob([
         "src/opts/*_avx.cpp",
     ])
+  elif opts == SKIA_OPTS_HSW:
+    return native.glob([
+        "src/opts/*_hsw.cpp",
+    ])
   elif opts == SKIA_OPTS_NEON:
     return native.glob([
         "src/opts/*_neon.cpp",
@@ -128,6 +138,8 @@ def opts_cflags(opts):
     return ["-msse4.2"]
   elif opts == SKIA_OPTS_AVX:
     return ["-mavx"]
+  elif opts == SKIA_OPTS_HSW:
+    return ["-mavx2", "-mf16c", "-mfma"]
   elif opts == SKIA_OPTS_NEON:
     return ["-mfpu=neon"]
   elif opts == SKIA_OPTS_CRC32:
@@ -186,6 +198,7 @@ def skia_opts_deps(cpu):
         ":opts_sse41",
         ":opts_sse42",
         ":opts_avx",
+        ":opts_hsw",
     ]
 
   return res
@@ -204,8 +217,6 @@ BASE_SRCS_ALL = struct(
         "src/jumper/SkJumper_generated.S",
 
         # Third Party
-        "third_party/etc1/*.cpp",
-        "third_party/etc1/*.h",
         "third_party/gif/*.cpp",
         "third_party/gif/*.h",
     ],
@@ -412,7 +423,6 @@ INCLUDES = [
     "src/shaders",
     "src/sksl",
     "src/utils",
-    "third_party/etc1",
     "third_party/gif",
 ]
 
@@ -437,16 +447,23 @@ DM_SRCS_ALL = struct(
         "tools/Resources.cpp",
         "tools/Resources.h",
         "tools/SkJSONCPP.h",
-        "tools/SkRandomScalerContext.cpp",
-        "tools/SkRandomScalerContext.h",
-        "tools/SkTestScalerContext.cpp",
-        "tools/SkTestScalerContext.h",
         "tools/UrlDataManager.cpp",
         "tools/UrlDataManager.h",
         "tools/debugger/*.cpp",
         "tools/debugger/*.h",
         "tools/flags/*.cpp",
         "tools/flags/*.h",
+        "tools/fonts/SkRandomScalerContext.cpp",
+        "tools/fonts/SkRandomScalerContext.h",
+        "tools/fonts/SkTestFontMgr.cpp",
+        "tools/fonts/SkTestFontMgr.h",
+        "tools/fonts/SkTestScalerContext.cpp",
+        "tools/fonts/SkTestScalerContext.h",
+        "tools/fonts/sk_tool_utils_font.cpp",
+        "tools/fonts/test_font_monospace.inc",
+        "tools/fonts/test_font_sans_serif.inc",
+        "tools/fonts/test_font_serif.inc",
+        "tools/fonts/test_font_index.inc",
         "tools/gpu/**/*.cpp",
         "tools/gpu/**/*.h",
         "tools/picture_utils.cpp",
@@ -455,11 +472,6 @@ DM_SRCS_ALL = struct(
         "tools/random_parse_path.h",
         "tools/sk_tool_utils.cpp",
         "tools/sk_tool_utils.h",
-        "tools/sk_tool_utils_font.cpp",
-        "tools/test_font_monospace.inc",
-        "tools/test_font_sans_serif.inc",
-        "tools/test_font_serif.inc",
-        "tools/test_font_index.inc",
         "tools/timer/*.cpp",
         "tools/timer/*.h",
         "tools/trace/*.cpp",
@@ -468,7 +480,6 @@ DM_SRCS_ALL = struct(
     exclude = [
         "tests/FontMgrAndroidParserTest.cpp",  # Android-only.
         "tests/skia_test.cpp",  # Old main.
-        "tests/SkpSkGrTest.cpp",  # Alternate main.
         "tests/SVGDeviceTest.cpp",
         "tools/gpu/atlastext/*",
         "tools/gpu/gl/angle/*",
@@ -520,6 +531,7 @@ DM_INCLUDES = [
     "tools",
     "tools/debugger",
     "tools/flags",
+    "tools/fonts",
     "tools/gpu",
     "tools/timer",
     "tools/trace",

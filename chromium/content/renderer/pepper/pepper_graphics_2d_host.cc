@@ -361,7 +361,7 @@ void PepperGraphics2DHost::Paint(blink::WebCanvas* canvas,
     // show white (typically less jarring) rather than black or uninitialized.
     // We don't do this for non-full-frame plugins since we specifically want
     // the page background to show through.
-    cc::PaintCanvasAutoRestore auto_restore(canvas, true);
+    cc::PaintCanvasAutoRestore full_page_auto_restore(canvas, true);
     SkRect image_data_rect =
         gfx::RectToSkRect(gfx::Rect(plugin_rect.origin(), image_size));
     canvas->clipRect(image_data_rect, SkClipOp::kDifference);
@@ -743,8 +743,8 @@ bool PepperGraphics2DHost::PrepareTransferableResource(
         std::move(gpu_mailbox), GL_LINEAR, texture_target,
         std::move(sync_token), size, overlay_candidate);
     *release_callback = viz::SingleReleaseCallback::Create(
-        base::Bind(&ReleaseTextureCallback, this->AsWeakPtr(),
-                   main_thread_context_, texture_id));
+        base::BindOnce(&ReleaseTextureCallback, this->AsWeakPtr(),
+                       main_thread_context_, texture_id));
     composited_output_modified_ = false;
     return true;
   }
@@ -771,7 +771,7 @@ bool PepperGraphics2DHost::PrepareTransferableResource(
 
   *transferable_resource = viz::TransferableResource::MakeSoftware(
       shared_bitmap->id(), shared_bitmap->sequence_number(), pixel_image_size);
-  *release_callback = viz::SingleReleaseCallback::Create(base::Bind(
+  *release_callback = viz::SingleReleaseCallback::Create(base::BindOnce(
       &PepperGraphics2DHost::ReleaseSoftwareCallback, this->AsWeakPtr(),
       base::Passed(&shared_bitmap), pixel_image_size));
   composited_output_modified_ = false;
@@ -886,9 +886,11 @@ int32_t PepperGraphics2DHost::Flush(PP_Resource* old_image_data) {
 void PepperGraphics2DHost::ExecuteTransform(const float& scale,
                                             const gfx::PointF& translate,
                                             gfx::Rect* invalidated_rect) {
-  bound_instance_->SetGraphics2DTransform(scale, translate);
-  *invalidated_rect =
-      gfx::Rect(0, 0, image_data_->width(), image_data_->height());
+  if (bound_instance_) {
+    bound_instance_->SetGraphics2DTransform(scale, translate);
+    *invalidated_rect =
+        gfx::Rect(0, 0, image_data_->width(), image_data_->height());
+  }
 }
 
 void PepperGraphics2DHost::ExecutePaintImageData(PPB_ImageData_Impl* image,

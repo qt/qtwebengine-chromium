@@ -4,12 +4,13 @@
 
 #include "components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_impl.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/optional.h"
 #include "base/run_loop.h"
-#include "base/test/simple_test_tick_clock.h"
-#include "base/test/test_simple_task_runner.h"
+#include "base/test/test_mock_time_task_runner.h"
 #include "base/time/time.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
@@ -135,7 +136,7 @@ class MockConsumer : public mojom::FrameSinkVideoConsumer {
     frames_.push_back(std::move(frame));
     done_callbacks_.push_back(
         base::BindOnce(&mojom::FrameSinkVideoConsumerFrameCallbacks::Done,
-                       base::Passed(&callbacks)));
+                       std::move(callbacks)));
   }
 
   mojo::Binding<mojom::FrameSinkVideoConsumer> binding_;
@@ -195,7 +196,7 @@ class FakeCapturableFrameSink : public CapturableFrameSink {
     client_ = nullptr;
   }
 
-  gfx::Size GetSurfaceSize() override { return kSourceSize; }
+  gfx::Size GetActiveFrameSize() override { return kSourceSize; }
 
   void RequestCopyOfSurface(
       std::unique_ptr<CopyOutputRequest> request) override {
@@ -211,7 +212,7 @@ class FakeCapturableFrameSink : public CapturableFrameSink {
            std::unique_ptr<CopyOutputResult> result) {
           request->SendResult(std::move(result));
         },
-        base::Passed(&request), base::Passed(&result)));
+        std::move(request), std::move(result)));
   }
 
   void SetCopyOutputColor(YUVColor color) { color_ = color; }
@@ -273,19 +274,23 @@ MATCHER_P(IsLetterboxedFrame, color, "") {
 class FrameSinkVideoCapturerTest : public testing::Test {
  public:
   FrameSinkVideoCapturerTest()
-      : retry_timer_task_runner_(new base::TestSimpleTaskRunner()),
-        capturer_(&frame_sink_manager_,
+      : capturer_(&frame_sink_manager_,
                   mojom::FrameSinkVideoCapturerRequest()) {}
 
   void SetUp() override {
-    // Override the capturer's TickClock with the one controlled by the tests.
-    start_time_ = base::TimeTicks() + base::TimeDelta::FromSeconds(1);
-    clock_.SetNowTicks(start_time_);
-    capturer_.clock_ = &clock_;
+    // Override the capturer's TickClock with a virtual clock managed by a
+    // manually-driven task runner.
+    task_runner_ = new base::TestMockTimeTaskRunner(
+        base::Time::Now(), base::TimeTicks() + base::TimeDelta::FromSeconds(1),
+        base::TestMockTimeTaskRunner::Type::kStandalone);
+    start_time_ = task_runner_->NowTicks();
+    clock_ = task_runner_->GetMockTickClock();
+    capturer_.clock_ = clock_.get();
 
-    // Point the retry timer at this test's manually-controlled task runner.
-    capturer_.refresh_frame_retry_timer_.SetTaskRunner(
-        retry_timer_task_runner_);
+    // Replace the retry timer with one that uses this test's fake clock and
+    // task runner.
+    capturer_.refresh_frame_retry_timer_.emplace(clock_.get());
+    capturer_.refresh_frame_retry_timer_->SetTaskRunner(task_runner_);
 
     // Before setting the format, ensure the defaults are in-place. Then, for
     // these tests, set a specific format and color space.
@@ -307,7 +312,7 @@ class FrameSinkVideoCapturerTest : public testing::Test {
     capturer_.SetResolutionConstraints(kCaptureSize, kCaptureSize, false);
   }
 
-  void TearDown() override { retry_timer_task_runner_->ClearPendingTasks(); }
+  void TearDown() override { task_runner_->ClearPendingTasks(); }
 
   void StartCapture(MockConsumer* consumer) {
     capturer_.Start(consumer->BindVideoConsumer());
@@ -320,17 +325,17 @@ class FrameSinkVideoCapturerTest : public testing::Test {
   }
 
   void AdvanceClockToNextVsync() {
-    const auto num_vsyncs_elapsed =
-        (clock_.NowTicks() - start_time_) / kVsyncInterval;
+    const auto now = task_runner_->NowTicks();
+    const auto num_vsyncs_elapsed = (now - start_time_) / kVsyncInterval;
     const auto advance_to_time =
         start_time_ + (num_vsyncs_elapsed + 1) * kVsyncInterval;
-    clock_.Advance(advance_to_time - clock_.NowTicks());
+    task_runner_->FastForwardBy(advance_to_time - now);
   }
 
   void NotifyBeginFrame(int source_id, int frame_number) {
     BeginFrameArgs args;
     args.interval = kVsyncInterval;
-    args.frame_time = clock_.NowTicks();
+    args.frame_time = task_runner_->NowTicks();
     args.sequence_number = BeginFrameArgs::kStartingFrameNumber + frame_number;
     args.source_id = source_id;
     capturer_.OnBeginFrame(args);
@@ -349,13 +354,12 @@ class FrameSinkVideoCapturerTest : public testing::Test {
   }
 
   bool IsRefreshRetryTimerRunning() {
-    return capturer_.refresh_frame_retry_timer_.IsRunning();
+    return capturer_.refresh_frame_retry_timer_->IsRunning();
   }
 
-  void FireRefreshRetryTimer() {
-    ASSERT_TRUE(IsRefreshRetryTimerRunning());
-    ASSERT_TRUE(retry_timer_task_runner_->HasPendingTask());
-    retry_timer_task_runner_->RunPendingTasks();
+  void AdvanceClockForRefreshTimer() {
+    task_runner_->FastForwardBy(capturer_.GetDelayBeforeNextRefreshAttempt());
+    PropagateMojoTasks();
   }
 
   bool HasCacheEntryForSource(int source_id) {
@@ -368,9 +372,9 @@ class FrameSinkVideoCapturerTest : public testing::Test {
   }
 
  protected:
+  scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
   base::TimeTicks start_time_;
-  base::SimpleTestTickClock clock_;
-  scoped_refptr<base::TestSimpleTaskRunner> retry_timer_task_runner_;
+  std::unique_ptr<base::TickClock> clock_;
   MockFrameSinkManager frame_sink_manager_;
   FakeCapturableFrameSink frame_sink_;
   FrameSinkVideoCapturerImpl capturer_;
@@ -434,28 +438,40 @@ TEST_F(FrameSinkVideoCapturerTest, ReportsTargetLost) {
   StopCapture();
 }
 
-// Tests that an initial black frame is sent, in the case where a target is not
-// resolved at the time Start() is called.
-TEST_F(FrameSinkVideoCapturerTest, SendsBlackFrameOnStartWithoutATarget) {
+// Tests that no initial frame is sent after Start() is called until after the
+// target has been resolved.
+TEST_F(FrameSinkVideoCapturerTest, PostponesCaptureWithoutATarget) {
   EXPECT_CALL(frame_sink_manager_, FindCapturableFrameSink(kFrameSinkId))
       .WillRepeatedly(Return(&frame_sink_));
 
   MockConsumer consumer;
-  EXPECT_CALL(
-      consumer,
-      OnFrameCapturedMock(IsLetterboxedFrame(YUVColor{0x00, 0x80, 0x80}), _, _))
-      .Times(1);
+  EXPECT_CALL(consumer, OnFrameCapturedMock(_, _, _)).Times(0);
   EXPECT_CALL(consumer, OnTargetLost(kFrameSinkId)).Times(0);
   EXPECT_CALL(consumer, OnStopped()).Times(1);
 
   StartCapture(&consumer);
-  // A copy request was not necessary.
+  // No copy requests should have been issued/executed.
   EXPECT_EQ(0, frame_sink_.num_copy_results());
-  // The initial black frame is the initial refresh frame. Since that was
-  // supposed to have been sent, the timer should not be running to retry
-  // later.
+  // The refresh timer is running, which represents the need for an initial
+  // frame to be sent.
+  EXPECT_TRUE(IsRefreshRetryTimerRunning());
+
+  // Simulate several refresh timer intervals elapsing and the timer firing.
+  // Nothing should happen because the capture target was never set.
+  for (int i = 0; i < 5; ++i) {
+    AdvanceClockForRefreshTimer();
+    ASSERT_EQ(0, frame_sink_.num_copy_results());
+    ASSERT_TRUE(IsRefreshRetryTimerRunning());
+  }
+
+  // Now, set the target. As it resolves, the capturer will immediately attempt
+  // a refresh capture, which will cancel the timer and trigger a copy request.
+  capturer_.ChangeTarget(kFrameSinkId);
+  EXPECT_EQ(1, frame_sink_.num_copy_results());
   EXPECT_FALSE(IsRefreshRetryTimerRunning());
+
   StopCapture();
+  EXPECT_FALSE(IsRefreshRetryTimerRunning());
 }
 
 // An end-to-end pipeline test where compositor updates trigger the capturer to
@@ -467,6 +483,7 @@ TEST_F(FrameSinkVideoCapturerTest, CapturesCompositedFrames) {
       .WillRepeatedly(Return(&frame_sink_));
 
   capturer_.ChangeTarget(kFrameSinkId);
+  EXPECT_FALSE(IsRefreshRetryTimerRunning());
 
   MockConsumer consumer;
   const int num_refresh_frames = 1;
@@ -478,11 +495,13 @@ TEST_F(FrameSinkVideoCapturerTest, CapturesCompositedFrames) {
   EXPECT_CALL(consumer, OnStopped()).Times(1);
   StartCapture(&consumer);
 
-  // To start, the capturer will make a copy request for the initial refresh
-  // frame. Simulate a copy result and expect to see the refresh frame delivered
-  // to the consumer.
+  // Since the target was already resolved at start, the capturer will have
+  // immediately executed a refresh capture and triggered a copy request.
   ASSERT_EQ(num_refresh_frames, frame_sink_.num_copy_results());
   EXPECT_FALSE(IsRefreshRetryTimerRunning());
+
+  // Simulate execution of the copy request and expect to see the initial
+  // refresh frame delivered to the consumer.
   frame_sink_.SendCopyOutputResult(0);
   ASSERT_EQ(num_refresh_frames, consumer.num_frames_received());
   EXPECT_THAT(consumer.TakeFrame(0),
@@ -499,23 +518,24 @@ TEST_F(FrameSinkVideoCapturerTest, CapturesCompositedFrames) {
     // compositing of the frame has begun.
     AdvanceClockToNextVsync();
     const base::TimeTicks expected_reference_time =
-        clock_.NowTicks() + kVsyncInterval;
+        task_runner_->NowTicks() + kVsyncInterval;
     NotifyBeginFrame(1, i);
 
     // Change the content of the frame sink and notify the capturer of the
     // damage.
     const YUVColor color = {i << 4, (i << 4) + 0x10, (i << 4) + 0x20};
     frame_sink_.SetCopyOutputColor(color);
-    clock_.Advance(kVsyncInterval / 4);
-    const base::TimeTicks expected_capture_begin_time = clock_.NowTicks();
+    task_runner_->FastForwardBy(kVsyncInterval / 4);
+    const base::TimeTicks expected_capture_begin_time =
+        task_runner_->NowTicks();
     NotifyFrameDamaged(1, i);
 
     // The frame sink should have received a CopyOutputRequest. Simulate a short
     // pause before the result is sent back to the capturer, and the capturer
     // should then deliver the frame.
     ASSERT_EQ(i + 1, frame_sink_.num_copy_results());
-    clock_.Advance(kVsyncInterval / 4);
-    const base::TimeTicks expected_capture_end_time = clock_.NowTicks();
+    task_runner_->FastForwardBy(kVsyncInterval / 4);
+    const base::TimeTicks expected_capture_end_time = task_runner_->NowTicks();
     frame_sink_.SendCopyOutputResult(i);
     ASSERT_EQ(i + 1, consumer.num_frames_received());
 
@@ -574,24 +594,32 @@ TEST_F(FrameSinkVideoCapturerTest, HaltsWhenPipelineIsFull) {
 
   NiceMock<MockConsumer> consumer;
   StartCapture(&consumer);
+  // With the start, an immediate refresh occurred.
+  const int num_refresh_frames = 1;
+  ASSERT_EQ(num_refresh_frames, frame_sink_.num_copy_results());
+  EXPECT_FALSE(IsRefreshRetryTimerRunning());
 
   // Saturate the pipeline with CopyOutputRequests that have not yet executed.
-  const int num_refresh_frames = 1;
   int num_frames = FrameSinkVideoCapturerImpl::kDesignLimitMaxFrames;
   for (int i = num_refresh_frames; i < num_frames; ++i) {
     AdvanceClockToNextVsync();
     NotifyBeginFrame(1, i);
     NotifyFrameDamaged(1, i);
+    // The oracle should not be rejecting captures caused by compositor updates.
+    ASSERT_FALSE(IsRefreshRetryTimerRunning());
   }
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
 
   // Notifying the capturer of new compositor updates should cause no new copy
-  // requests to be issued at this point.
+  // requests to be issued at this point. However, the refresh timer should be
+  // scheduled to account for the capture of changed content that could not take
+  // place.
   const int first_uncaptured_frame = num_frames;
   AdvanceClockToNextVsync();
   NotifyBeginFrame(1, first_uncaptured_frame);
   NotifyFrameDamaged(1, first_uncaptured_frame);
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
+  EXPECT_TRUE(IsRefreshRetryTimerRunning());
 
   // Complete the first copy request. When notifying the capturer of another
   // compositor update, no new copy requests should be issued because the first
@@ -603,10 +631,12 @@ TEST_F(FrameSinkVideoCapturerTest, HaltsWhenPipelineIsFull) {
   NotifyBeginFrame(1, second_uncaptured_frame);
   NotifyFrameDamaged(1, second_uncaptured_frame);
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
+  EXPECT_TRUE(IsRefreshRetryTimerRunning());
 
   // Notify the capturer that the first frame has been consumed. Then, with
   // another compositor update, the capturer should issue another new copy
-  // request.
+  // request. The refresh timer should no longer be running because the next
+  // capture will satisfy the need to send updated content to the consumer.
   EXPECT_TRUE(consumer.TakeFrame(0));
   consumer.SendDoneNotification(0);
   const int first_capture_resumed_frame = second_uncaptured_frame + 1;
@@ -615,14 +645,17 @@ TEST_F(FrameSinkVideoCapturerTest, HaltsWhenPipelineIsFull) {
   NotifyFrameDamaged(1, first_capture_resumed_frame);
   ++num_frames;
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
+  EXPECT_FALSE(IsRefreshRetryTimerRunning());
 
   // With yet another compositor update, no new copy requests should be issued
-  // because the pipeline became saturated again.
+  // because the pipeline became saturated again. Once again, the refresh timer
+  // should be started to account for the need to capture at some future point.
   const int third_uncaptured_frame = first_capture_resumed_frame + 1;
   AdvanceClockToNextVsync();
   NotifyBeginFrame(1, third_uncaptured_frame);
   NotifyFrameDamaged(1, third_uncaptured_frame);
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
+  EXPECT_TRUE(IsRefreshRetryTimerRunning());
 
   // Complete all pending copy requests. Another compositor update should not
   // cause any new copy requests to be issued because all frames are being
@@ -637,6 +670,7 @@ TEST_F(FrameSinkVideoCapturerTest, HaltsWhenPipelineIsFull) {
   NotifyBeginFrame(1, fourth_uncaptured_frame);
   NotifyFrameDamaged(1, fourth_uncaptured_frame);
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
+  EXPECT_TRUE(IsRefreshRetryTimerRunning());
 
   // Notify the capturer that all frames have been consumed. Finally, with
   // another compositor update, capture should resume.
@@ -653,6 +687,7 @@ TEST_F(FrameSinkVideoCapturerTest, HaltsWhenPipelineIsFull) {
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
   frame_sink_.SendCopyOutputResult(frame_sink_.num_copy_results() - 1);
   ASSERT_EQ(frame_sink_.num_copy_results(), consumer.num_frames_received());
+  EXPECT_FALSE(IsRefreshRetryTimerRunning());
 
   StopCapture();
 }
@@ -671,11 +706,11 @@ TEST_F(FrameSinkVideoCapturerTest, DeliversFramesInOrder) {
   NiceMock<MockConsumer> consumer;
   StartCapture(&consumer);
 
-  // Issue five CopyOutputRequests (1 refresh frame plus 4 compositor
-  // updates). Each composited frame has its content region set to a different
-  // color to check that the video frames are being delivered in-order.
-  const int num_refresh_frames = 1;
-  int num_frames = 5;
+  // Simulate five compositor updates. Each composited frame has its content
+  // region set to a different color to check that the video frames are being
+  // delivered in-order.
+  constexpr int num_refresh_frames = 1;
+  constexpr int num_frames = 5;
   ASSERT_EQ(num_refresh_frames, frame_sink_.num_copy_results());
   for (int i = num_refresh_frames; i < num_frames; ++i) {
     colors.push_back(YUVColor{static_cast<uint8_t>(i << 4),
@@ -727,12 +762,13 @@ TEST_F(FrameSinkVideoCapturerTest, CancelsInFlightCapturesOnStop) {
   EXPECT_CALL(consumer, OnTargetLost(_)).Times(0);
   EXPECT_CALL(consumer, OnStopped()).Times(1);
   StartCapture(&consumer);
-
-  // Issue three additional CopyOutputRequests. With the initial refresh frame,
-  // the total should be four.
-  int num_refresh_frames = 1;
+  // With the start, an immediate refresh should have occurred.
+  const int num_refresh_frames = 1;
   ASSERT_EQ(num_refresh_frames, frame_sink_.num_copy_results());
-  int num_copy_requests = 4;
+  EXPECT_FALSE(IsRefreshRetryTimerRunning());
+
+  // Simulate two compositor updates following the initial refresh.
+  int num_copy_requests = 3;
   for (int i = num_refresh_frames; i < num_copy_requests; ++i) {
     SCOPED_TRACE(testing::Message() << "frame #" << i);
     AdvanceClockToNextVsync();
@@ -763,6 +799,10 @@ TEST_F(FrameSinkVideoCapturerTest, CancelsInFlightCapturesOnStop) {
   EXPECT_CALL(consumer2, OnTargetLost(_)).Times(0);
   EXPECT_CALL(consumer2, OnStopped()).Times(1);
   StartCapture(&consumer2);
+  // With the start, a refresh was attempted, but since the attempt occurred so
+  // soon after the last frame capture, the oracle should have rejected it.
+  // Thus, the refresh timer should be running.
+  EXPECT_TRUE(IsRefreshRetryTimerRunning());
 
   // Complete the copy requests for the first consumer. Expect that they have no
   // effect on the second consumer.
@@ -770,22 +810,20 @@ TEST_F(FrameSinkVideoCapturerTest, CancelsInFlightCapturesOnStop) {
     frame_sink_.SendCopyOutputResult(i);
     ASSERT_EQ(0, consumer2.num_frames_received());
   }
-  num_completed_captures = 0;
 
-  // Note: Because the clock hasn't advanced while switching consumers, the
-  // capturer won't send a refresh frame. This is because the VideoCaptureOracle
-  // thinks the frame rate would be too fast. However, the refresh frame retry
-  // timer should be running. It will be canceled when the next composite-
-  // triggered capture occurs (in the loop below).
-  num_refresh_frames = 0;
-  EXPECT_TRUE(IsRefreshRetryTimerRunning());
+  // Reset the counter for |consumer2|.
+  num_completed_captures = 0;
 
   // From here, any new copy requests should be executed with video frames
   // delivered to the consumer containing |color2|.
-  for (int i = num_refresh_frames; i < num_captures_for_second_consumer; ++i) {
+  for (int i = 0; i < num_captures_for_second_consumer; ++i) {
     AdvanceClockToNextVsync();
-    NotifyBeginFrame(1, num_copy_requests);
-    NotifyFrameDamaged(1, num_copy_requests);
+    if (i == 0) {
+      // Expect that advancing the clock caused the refresh timer to fire.
+    } else {
+      NotifyBeginFrame(1, num_copy_requests);
+      NotifyFrameDamaged(1, num_copy_requests);
+    }
     ++num_copy_requests;
     ASSERT_EQ(num_copy_requests, frame_sink_.num_copy_results());
     ASSERT_FALSE(IsRefreshRetryTimerRunning());
@@ -817,10 +855,8 @@ TEST_F(FrameSinkVideoCapturerTest, EventuallySendsARefreshFrame) {
   EXPECT_CALL(consumer, OnStopped()).Times(1);
   StartCapture(&consumer);
 
-  // To start, the capturer will make a copy request for the initial refresh
-  // frame. Simulate a copy result and expect to see the refresh frame delivered
-  // to the consumer. The capturer should not have started the retry timer for
-  // this initial refresh frame.
+  // With the start, an immediate refresh occurred. Simulate a copy result and
+  // expect to see the refresh frame delivered to the consumer.
   ASSERT_EQ(1, frame_sink_.num_copy_results());
   EXPECT_FALSE(IsRefreshRetryTimerRunning());
   frame_sink_.SendCopyOutputResult(0);
@@ -834,28 +870,25 @@ TEST_F(FrameSinkVideoCapturerTest, EventuallySendsARefreshFrame) {
     NotifyBeginFrame(1, i);
     NotifyFrameDamaged(1, i);
     ASSERT_EQ(i + 1, frame_sink_.num_copy_results());
+    ASSERT_FALSE(IsRefreshRetryTimerRunning());
     frame_sink_.SendCopyOutputResult(i);
     ASSERT_EQ(i + 1, consumer.num_frames_received());
     consumer.SendDoneNotification(i);
   }
 
-  // Without advancing the clock, request a refresh frame. The oracle will
-  // reject the request, and the retry timer will be started.
+  // Request a refresh frame. Because the refresh request was made just after
+  // the last frame capture, the refresh retry timer should be started.
   capturer_.RequestRefreshFrame();
   ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
   EXPECT_TRUE(IsRefreshRetryTimerRunning());
 
-  // Simulate the elapse of time and the firing of the refresh retry timer. The
-  // oracle should allow this later retry request and deliver a refresh frame.
-  clock_.Advance(FrameSinkVideoCapturerImpl::kRefreshFrameRetryInterval);
-  FireRefreshRetryTimer();
-  if (frame_sink_.num_copy_results() == num_frames + 1) {
-    frame_sink_.SendCopyOutputResult(num_frames);
-  } else {
-    // No copy request was made, because the implementation successfully
-    // resurrected the buffer from the prior capture.
-  }
-  ASSERT_EQ(num_frames, consumer.num_frames_received());
+  // Simulate the elapse of time and the firing of the refresh retry timer.
+  // Since no compositor updates occurred in the meantime, this will execute a
+  // passive refresh, which resurrects the last buffer instead of spawning an
+  // additional copy request.
+  AdvanceClockForRefreshTimer();
+  ASSERT_EQ(num_frames, frame_sink_.num_copy_results());
+  ASSERT_EQ(num_frames + 1, consumer.num_frames_received());
   EXPECT_FALSE(IsRefreshRetryTimerRunning());
 
   StopCapture();
@@ -881,10 +914,10 @@ TEST_F(FrameSinkVideoCapturerTest, CachesAndPrunesDisplayTimes) {
   // Make a sequence of OnBeginFrame() calls for source_id=2. The cache entries
   // for both sources should remain.
   const base::TimeTicks end_time =
-      clock_.NowTicks() + GetDisplayTimeCacheKeepAliveInterval();
+      task_runner_->NowTicks() + GetDisplayTimeCacheKeepAliveInterval();
   int seq = 2;
-  while (clock_.NowTicks() < end_time) {
-    clock_.Advance(kVsyncInterval);
+  while (task_runner_->NowTicks() < end_time) {
+    task_runner_->FastForwardBy(kVsyncInterval);
     NotifyBeginFrame(2, seq++);
     ASSERT_TRUE(HasCacheEntryForSource(1));
     ASSERT_TRUE(HasCacheEntryForSource(2));

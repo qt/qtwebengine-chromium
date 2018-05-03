@@ -14,7 +14,7 @@
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerEventQueue.h"
 #include "platform/wtf/BitVector.h"
-#include "services/network/public/interfaces/fetch_api.mojom-shared.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
 
 namespace blink {
 
@@ -100,7 +100,7 @@ class CORE_EXPORT WorkerOrWorkletGlobalScope : public EventTargetWithInlineData,
   void Trace(blink::Visitor*) override;
   void TraceWrappers(const ScriptWrappableVisitor*) const override;
 
-  scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType) override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType) override;
 
  protected:
   void ApplyContentSecurityPolicyFromVector(

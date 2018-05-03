@@ -29,6 +29,9 @@ typedef HANDLE(__stdcall* FuncType_GdiAddFontMemResourceEx)(PVOID pbFont,
                                                             DWORD* pcFonts);
 typedef BOOL(__stdcall* FuncType_GdiRemoveFontMemResourceEx)(HANDLE handle);
 
+RetainPtr<CFX_DIBitmap> FX_WindowsDIB_LoadFromBuf(BITMAPINFO* pbmi,
+                                                  LPVOID pData,
+                                                  bool bAlpha);
 class CGdiplusExt {
  public:
   CGdiplusExt();
@@ -323,7 +326,7 @@ class CPSPrinterDriver : public IFX_RenderDeviceDriver {
                       uint32_t color) override;
 
   HDC m_hDC;
-  bool m_bCmykOutput;
+  const bool m_bCmykOutput;
   int m_Width;
   int m_Height;
   int m_nBitsPerPixel;
@@ -386,11 +389,11 @@ class CTextOnlyPrinterDriver : public IFX_RenderDeviceDriver {
                       uint32_t color) override;
 
   HDC m_hDC;
-  int m_Width;
-  int m_Height;
+  const int m_Width;
+  const int m_Height;
   int m_nBitsPerPixel;
-  int m_HorzSize;
-  int m_VertSize;
+  const int m_HorzSize;
+  const int m_VertSize;
   float m_OriginY;
   bool m_SetOrigin;
 };

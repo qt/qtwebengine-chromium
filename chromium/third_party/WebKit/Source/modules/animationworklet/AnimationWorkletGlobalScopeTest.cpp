@@ -61,9 +61,10 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
             document->Url(), document->UserAgent(),
             nullptr /* content_security_policy_parsed_headers */,
             document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-            clients, document->AddressSpace(),
+            document->IsSecureContext(), clients, document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
-            nullptr /* worker_settings */, kV8CacheOptionsDefault),
+            base::UnguessableToken::Create(), nullptr /* worker_settings */,
+            kV8CacheOptionsDefault),
         WTF::nullopt, WorkerInspectorProxy::PauseOnWorkerStart::kDontPause,
         ParentFrameTaskRunners::Create());
     return thread;
@@ -177,11 +178,11 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
         ToBoolean(isolate, animated_before.V8Value(), ASSERT_NO_EXCEPTION))
         << "animate function is invoked early";
 
-    // Passing a new input state with a new player id should cause the worklet
-    // to create and animate an animator.
+    // Passing a new input state with a new animation id should cause the
+    // worklet to create and animate an animator.
     CompositorMutatorInputState state;
     CompositorMutatorInputState::AnimationState test_animation_state;
-    test_animation_state.animation_player_id = 1;
+    test_animation_state.animation_id = 1;
     test_animation_state.name = "test";
     test_animation_state.current_time = 5000;
     state.animations = {test_animation_state};
@@ -229,11 +230,11 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
             });
           )JS"));
 
-    // Passing a new input state with a new player id should cause the worklet
-    // to create and animate an animator.
+    // Passing a new input state with a new animation id should cause the
+    // worklet to create and animate an animator.
     CompositorMutatorInputState state;
     CompositorMutatorInputState::AnimationState test_animation_state;
-    test_animation_state.animation_player_id = 1;
+    test_animation_state.animation_id = 1;
     test_animation_state.name = "test";
     test_animation_state.current_time = 5000;
     state.animations = {test_animation_state};

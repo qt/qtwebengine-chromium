@@ -45,8 +45,8 @@ void vp9_init_layer_context(VP9_COMP *const cpi) {
     svc->ext_lst_fb_idx[sl] = 0;
     svc->ext_gld_fb_idx[sl] = 1;
     svc->ext_alt_fb_idx[sl] = 2;
-    svc->downsample_filter_type[sl] = EIGHTTAP;
-    svc->downsample_filter_phase[sl] = 0;  // Set to 8 for averaging filter.
+    svc->downsample_filter_type[sl] = BILINEAR;
+    svc->downsample_filter_phase[sl] = 8;  // Set to 8 for averaging filter.
   }
 
   if (cpi->oxcf.error_resilient_mode == 0 && cpi->oxcf.pass == 2) {
@@ -154,6 +154,8 @@ void vp9_update_layer_context_change_config(VP9_COMP *const cpi,
   const RATE_CONTROL *const rc = &cpi->rc;
   int sl, tl, layer = 0, spatial_layer_target;
   float bitrate_alloc = 1.0;
+
+  cpi->svc.temporal_layering_mode = oxcf->temporal_layering_mode;
 
   if (svc->temporal_layering_mode != VP9E_TEMPORAL_LAYERING_MODE_NOLAYERING) {
     for (sl = 0; sl < oxcf->ss_number_layers; ++sl) {
@@ -547,6 +549,8 @@ static void set_flags_and_fb_idx_for_temporal_mode2(VP9_COMP *const cpi) {
     if (!spatial_id) {
       cpi->ref_frame_flags = VP9_LAST_FLAG;
     } else {
+      if (spatial_id == cpi->svc.number_spatial_layers - 1)
+        cpi->ext_refresh_alt_ref_frame = 0;
       cpi->ref_frame_flags = VP9_LAST_FLAG | VP9_GOLD_FLAG;
     }
   }

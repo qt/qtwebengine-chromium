@@ -25,7 +25,7 @@
 #include "core/intersection_observer/IntersectionObserverInit.h"
 #include "core/layout/LayoutView.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "platform/Timer.h"
 
 namespace blink {
@@ -273,10 +273,19 @@ void IntersectionObserver::unobserve(Element* target,
   if (!target || !target->IntersectionObserverData())
     return;
 
-  if (IntersectionObservation* observation =
-          target->IntersectionObserverData()->GetObservationFor(*this)) {
-    observation->Disconnect();
-    observations_.erase(observation);
+  IntersectionObservation* observation =
+      target->IntersectionObserverData()->GetObservationFor(*this);
+  if (!observation)
+    return;
+
+  observation->Disconnect();
+  observations_.erase(observation);
+
+  for (size_t i = 0; i < entries_.size(); ++i) {
+    if (entries_[i]->target() == target) {
+      entries_.EraseAt(i);
+      --i;
+    }
   }
 }
 

@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "base/barrier_closure.h"
 #include "base/bind.h"
 #include "base/i18n/number_formatting.h"
 #include "base/macros.h"
@@ -45,7 +46,7 @@
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "third_party/WebKit/common/quota/quota_types.mojom.h"
+#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/bytes_formatting.h"
 
@@ -92,7 +93,7 @@ void AddExceptionsGrantedByHostedApps(content::BrowserContext* context,
         !(*extension)->permissions_data()->HasAPIPermission(permission))
       continue;
 
-    extensions::URLPatternSet web_extent = (*extension)->web_extent();
+    const extensions::URLPatternSet& web_extent = (*extension)->web_extent();
     // Add patterns from web extent.
     for (extensions::URLPatternSet::const_iterator pattern = web_extent.begin();
          pattern != web_extent.end(); ++pattern) {
@@ -158,6 +159,9 @@ void SiteSettingsHandler::RegisterMessages() {
       "setOriginPermissions",
       base::Bind(&SiteSettingsHandler::HandleSetOriginPermissions,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "clearFlashPref", base::Bind(&SiteSettingsHandler::HandleClearFlashPref,
+                                   base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "resetCategoryPermissionForPattern",
       base::Bind(&SiteSettingsHandler::HandleResetCategoryPermissionForPattern,
@@ -248,12 +252,16 @@ void SiteSettingsHandler::OnGetUsageInfo(
   }
 }
 
-void SiteSettingsHandler::OnUsageInfoCleared(
-    blink::mojom::QuotaStatusCode code) {
+void SiteSettingsHandler::OnStorageCleared(base::OnceClosure callback,
+                                           blink::mojom::QuotaStatusCode code) {
   if (code == blink::mojom::QuotaStatusCode::kOk) {
-    CallJavascriptFunction("settings.WebsiteUsagePrivateApi.onUsageCleared",
-                           base::Value(clearing_origin_));
+    std::move(callback).Run();
   }
+}
+
+void SiteSettingsHandler::OnUsageCleared() {
+  CallJavascriptFunction("settings.WebsiteUsagePrivateApi.onUsageCleared",
+                         base::Value(clearing_origin_));
 }
 
 #if defined(OS_CHROMEOS)
@@ -355,19 +363,25 @@ void SiteSettingsHandler::HandleClearUsage(
   if (url.is_valid()) {
     clearing_origin_ = origin;
 
+    // Call OnUsageCleared when StorageInfoFetcher::ClearStorage and
+    // BrowsingDataLocalStorageHelper::DeleteOrigin are done.
+    base::RepeatingClosure barrier = base::BarrierClosure(
+        2, base::BindOnce(&SiteSettingsHandler::OnUsageCleared,
+                          base::Unretained(this)));
+
     // Start by clearing the storage data asynchronously.
     scoped_refptr<StorageInfoFetcher> storage_info_fetcher
         = new StorageInfoFetcher(profile_);
     storage_info_fetcher->ClearStorage(
         url.host(),
         static_cast<blink::mojom::StorageType>(static_cast<int>(storage_type)),
-        base::Bind(&SiteSettingsHandler::OnUsageInfoCleared,
-                   base::Unretained(this)));
+        base::BindRepeating(&SiteSettingsHandler::OnStorageCleared,
+                            base::Unretained(this), barrier));
 
     // Also clear the *local* storage data.
     scoped_refptr<BrowsingDataLocalStorageHelper> local_storage_helper =
         new BrowsingDataLocalStorageHelper(profile_);
-    local_storage_helper->DeleteOrigin(url);
+    local_storage_helper->DeleteOrigin(url, barrier);
   }
 }
 
@@ -619,6 +633,19 @@ void SiteSettingsHandler::HandleSetOriginPermissions(
       }
     }
   }
+}
+
+void SiteSettingsHandler::HandleClearFlashPref(const base::ListValue* args) {
+  CHECK_EQ(1U, args->GetSize());
+  std::string origin_string;
+  CHECK(args->GetString(0, &origin_string));
+
+  HostContentSettingsMap* map =
+      HostContentSettingsMapFactory::GetForProfile(profile_);
+  const GURL origin(origin_string);
+  map->SetWebsiteSettingDefaultScope(origin, origin,
+                                     CONTENT_SETTINGS_TYPE_PLUGINS_DATA,
+                                     std::string(), nullptr);
 }
 
 void SiteSettingsHandler::HandleResetCategoryPermissionForPattern(

@@ -27,6 +27,7 @@
 #include "core/css/CSSRule.h"
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/StyleSheet.h"
+#include "core/dom/TreeScope.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/text/TextEncoding.h"
@@ -38,6 +39,7 @@ class CSSImportRule;
 class CSSRule;
 class CSSRuleList;
 class CSSStyleSheet;
+class CSSStyleSheetInit;
 class Document;
 class ExceptionState;
 class MediaQuerySet;
@@ -49,6 +51,12 @@ class CORE_EXPORT CSSStyleSheet final : public StyleSheet {
 
  public:
   static const Document* SingleOwnerDocument(const CSSStyleSheet*);
+
+  static CSSStyleSheet* Create(Document&, const String&, ExceptionState&);
+  static CSSStyleSheet* Create(Document&,
+                               const String&,
+                               const CSSStyleSheetInit&,
+                               ExceptionState&);
 
   static CSSStyleSheet* Create(StyleSheetContents*,
                                CSSImportRule* owner_rule = nullptr);
@@ -119,6 +127,14 @@ class CORE_EXPORT CSSStyleSheet final : public StyleSheet {
   void SetAllowRuleAccessFromOrigin(
       scoped_refptr<const SecurityOrigin> allowed_origin);
 
+  void AddedConstructedToTreeScope(TreeScope* tree_scope) {
+    constructed_tree_scopes_.insert(tree_scope);
+  }
+
+  void RemovedConstructedFromTreeScope(TreeScope* tree_scope) {
+    constructed_tree_scopes_.erase(tree_scope);
+  }
+
   class RuleMutationScope {
     STACK_ALLOCATED();
 
@@ -145,6 +161,10 @@ class CORE_EXPORT CSSStyleSheet final : public StyleSheet {
   bool LoadCompleted() const { return load_completed_; }
   void StartLoadingDynamicSheet();
   void SetText(const String&);
+  void SetMedia(MediaList*);
+  void SetAlternateFromConstructor(bool);
+  bool IsAlternate() const;
+  bool CanBeActivated(const String& current_preferrable_name) const;
 
   virtual void Trace(blink::Visitor*);
 
@@ -164,10 +184,21 @@ class CORE_EXPORT CSSStyleSheet final : public StyleSheet {
 
   void SetLoadCompleted(bool);
 
+  FRIEND_TEST_ALL_PREFIXES(
+      CSSStyleSheetTest,
+      CSSStyleSheetConstructionWithEmptyCSSStyleSheetInitAndText);
+  FRIEND_TEST_ALL_PREFIXES(
+      CSSStyleSheetTest,
+      CSSStyleSheetConstructionWithoutEmptyCSSStyleSheetInitAndText);
+  bool AlternateFromConstructor() const { return alternate_from_constructor_; }
+
   Member<StyleSheetContents> contents_;
   bool is_inline_stylesheet_ = false;
   bool is_disabled_ = false;
   bool load_completed_ = false;
+  // This alternate variable is only used for constructed CSSStyleSheet.
+  // For other CSSStyleSheet, consult the alternate attribute.
+  bool alternate_from_constructor_ = false;
   String title_;
   scoped_refptr<MediaQuerySet> media_queries_;
   MediaQueryResultList viewport_dependent_media_query_results_;
@@ -177,6 +208,7 @@ class CORE_EXPORT CSSStyleSheet final : public StyleSheet {
 
   Member<Node> owner_node_;
   Member<CSSRule> owner_rule_;
+  HeapHashSet<Member<TreeScope>> constructed_tree_scopes_;
 
   TextPosition start_position_;
   Member<MediaList> media_cssom_wrapper_;

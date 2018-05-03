@@ -15,12 +15,10 @@
 #include <vector>
 
 #include "audio/audio_state.h"
+#include "audio/channel_proxy.h"
 #include "audio/conversion.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "modules/audio_coding/codecs/cng/audio_encoder_cng.h"
-#include "modules/bitrate_controller/include/bitrate_controller.h"
-#include "modules/congestion_controller/include/send_side_congestion_controller.h"
-#include "modules/pacing/paced_sender.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 #include "rtc_base/function_view.h"
@@ -28,7 +26,6 @@
 #include "rtc_base/task_queue.h"
 #include "rtc_base/timeutils.h"
 #include "system_wrappers/include/field_trial.h"
-#include "voice_engine/channel_proxy.h"
 
 namespace webrtc {
 namespace internal {
@@ -132,13 +129,12 @@ AudioSendStream::AudioSendStream(
       rtp_rtcp_module_(nullptr),
       suspended_rtp_state_(suspended_rtp_state),
       overall_call_lifetime_(overall_call_lifetime) {
-  RTC_LOG(LS_INFO) << "AudioSendStream: " << config.ToString();
+  RTC_LOG(LS_INFO) << "AudioSendStream: " << config.rtp.ssrc;
   RTC_DCHECK(worker_queue_);
   RTC_DCHECK(audio_state_);
   RTC_DCHECK(channel_proxy_);
   RTC_DCHECK(bitrate_allocator_);
   RTC_DCHECK(transport);
-  RTC_DCHECK(transport->send_side_cc());
   RTC_DCHECK(overall_call_lifetime_);
 
   channel_proxy_->SetRtcEventLog(event_log_);
@@ -152,14 +148,14 @@ AudioSendStream::AudioSendStream(
 
   pacer_thread_checker_.DetachFromThread();
   // Signal congestion controller this object is ready for OnPacket* callbacks.
-  transport_->send_side_cc()->RegisterPacketFeedbackObserver(this);
+  transport_->RegisterPacketFeedbackObserver(this);
 }
 
 AudioSendStream::~AudioSendStream() {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  RTC_LOG(LS_INFO) << "~AudioSendStream: " << config_.ToString();
+  RTC_LOG(LS_INFO) << "~AudioSendStream: " << config_.rtp.ssrc;
   RTC_DCHECK(!sending_);
-  transport_->send_side_cc()->DeRegisterPacketFeedbackObserver(this);
+  transport_->DeRegisterPacketFeedbackObserver(this);
   channel_proxy_->RegisterTransport(nullptr);
   channel_proxy_->ResetSenderCongestionControlObjects();
   channel_proxy_->SetRtcEventLog(nullptr);
@@ -198,7 +194,8 @@ void AudioSendStream::ConfigureStream(
     webrtc::internal::AudioSendStream* stream,
     const webrtc::AudioSendStream::Config& new_config,
     bool first_time) {
-  RTC_LOG(LS_INFO) << "AudioSendStream::Configuring: " << new_config.ToString();
+  RTC_LOG(LS_INFO) << "AudioSendStream::ConfigureStream: "
+                   << new_config.ToString();
   const auto& channel_proxy = stream->channel_proxy_;
   const auto& old_config = stream->config_;
 
@@ -256,9 +253,8 @@ void AudioSendStream::ConfigureStream(
       // Probing in application limited region is only used in combination with
       // send side congestion control, wich depends on feedback packets which
       // requires transport sequence numbers to be enabled.
-      stream->transport_->send_side_cc()->EnablePeriodicAlrProbing(true);
-      bandwidth_observer =
-          stream->transport_->send_side_cc()->GetBandwidthObserver();
+      stream->transport_->EnablePeriodicAlrProbing(true);
+      bandwidth_observer = stream->transport_->GetBandwidthObserver();
     }
 
     channel_proxy->RegisterSenderCongestionControlObjects(stream->transport_,
@@ -454,8 +450,7 @@ void AudioSendStream::OnPacketFeedbackVector(
 
 void AudioSendStream::SetTransportOverhead(int transport_overhead_per_packet) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  transport_->send_side_cc()->SetTransportOverhead(
-      transport_overhead_per_packet);
+  transport_->SetTransportOverhead(transport_overhead_per_packet);
   channel_proxy_->SetTransportOverhead(transport_overhead_per_packet);
 }
 
@@ -505,7 +500,7 @@ bool AudioSendStream::SetupSendCodec(AudioSendStream* stream,
                                                    spec.format);
 
   if (!encoder) {
-    RTC_LOG(LS_ERROR) << "Unable to create encoder for " << spec.format;
+    RTC_DLOG(LS_ERROR) << "Unable to create encoder for " << spec.format;
     return false;
   }
   // If a bitrate has been specified for the codec, use it over the
@@ -518,8 +513,8 @@ bool AudioSendStream::SetupSendCodec(AudioSendStream* stream,
   if (new_config.audio_network_adaptor_config) {
     if (encoder->EnableAudioNetworkAdaptor(
             *new_config.audio_network_adaptor_config, stream->event_log_)) {
-      RTC_LOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
-                       << new_config.rtp.ssrc;
+      RTC_DLOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
+                        << new_config.rtp.ssrc;
     } else {
       RTC_NOTREACHED();
     }
@@ -601,8 +596,8 @@ void AudioSendStream::ReconfigureANA(AudioSendStream* stream,
     CallEncoder(stream->channel_proxy_, [&](AudioEncoder* encoder) {
       if (encoder->EnableAudioNetworkAdaptor(
               *new_config.audio_network_adaptor_config, stream->event_log_)) {
-        RTC_LOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
-                         << new_config.rtp.ssrc;
+        RTC_DLOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
+                          << new_config.rtp.ssrc;
       } else {
         RTC_NOTREACHED();
       }
@@ -611,8 +606,8 @@ void AudioSendStream::ReconfigureANA(AudioSendStream* stream,
     CallEncoder(stream->channel_proxy_, [&](AudioEncoder* encoder) {
       encoder->DisableAudioNetworkAdaptor();
     });
-    RTC_LOG(LS_INFO) << "Audio network adaptor disabled on SSRC "
-                     << new_config.rtp.ssrc;
+    RTC_DLOG(LS_INFO) << "Audio network adaptor disabled on SSRC "
+                      << new_config.rtp.ssrc;
   }
 }
 
@@ -723,8 +718,8 @@ void AudioSendStream::RegisterCngPayloadType(int payload_type,
   if (rtp_rtcp_module_->RegisterSendPayload(codec) != 0) {
     rtp_rtcp_module_->DeRegisterSendPayload(codec.pltype);
     if (rtp_rtcp_module_->RegisterSendPayload(codec) != 0) {
-      RTC_LOG(LS_ERROR) << "RegisterCngPayloadType() failed to register CN to "
-                           "RTP/RTCP module";
+      RTC_DLOG(LS_ERROR) << "RegisterCngPayloadType() failed to register CN to "
+                            "RTP/RTCP module";
     }
   }
 }

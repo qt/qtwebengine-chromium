@@ -79,6 +79,19 @@ bool PortAllocatorSession::IsStopped() const {
   return false;
 }
 
+void PortAllocatorSession::GetCandidateStatsFromReadyPorts(
+    CandidateStatsList* candidate_stats_list) const {
+  auto ports = ReadyPorts();
+  for (auto* port : ports) {
+    auto candidates = port->Candidates();
+    for (const auto& candidate : candidates) {
+      CandidateStats candidate_stats(candidate);
+      port->GetStunStats(&candidate_stats.stun_stats);
+      candidate_stats_list->push_back(std::move(candidate_stats));
+    }
+  }
+}
+
 uint32_t PortAllocatorSession::generation() {
   return generation_;
 }
@@ -103,7 +116,8 @@ bool PortAllocator::SetConfiguration(
     const std::vector<RelayServerConfig>& turn_servers,
     int candidate_pool_size,
     bool prune_turn_ports,
-    webrtc::TurnCustomizer* turn_customizer) {
+    webrtc::TurnCustomizer* turn_customizer,
+    const rtc::Optional<int>& stun_candidate_keepalive_interval) {
   bool ice_servers_changed =
       (stun_servers != stun_servers_ || turn_servers != turn_servers_);
   stun_servers_ = stun_servers;
@@ -140,6 +154,16 @@ bool PortAllocator::SetConfiguration(
   while (candidate_pool_size_ < static_cast<int>(pooled_sessions_.size())) {
     pooled_sessions_.front().reset(nullptr);
     pooled_sessions_.pop_front();
+  }
+
+  // |stun_candidate_keepalive_interval_| will be used in STUN port allocation
+  // in future sessions. We also update the ready ports in the pooled sessions.
+  // Ports in sessions that are taken and owned by P2PTransportChannel will be
+  // updated there via IceConfig.
+  stun_candidate_keepalive_interval_ = stun_candidate_keepalive_interval;
+  for (const auto& session : pooled_sessions_) {
+    session->SetStunKeepaliveIntervalForReadyPorts(
+        stun_candidate_keepalive_interval_);
   }
 
   // If |candidate_pool_size_| is greater than the number of pooled sessions,
@@ -197,6 +221,13 @@ void PortAllocator::FreezeCandidatePool() {
 
 void PortAllocator::DiscardCandidatePool() {
   pooled_sessions_.clear();
+}
+
+void PortAllocator::GetCandidateStatsFromPooledSessions(
+    CandidateStatsList* candidate_stats_list) {
+  for (const auto& session : pooled_sessions()) {
+    session->GetCandidateStatsFromReadyPorts(candidate_stats_list);
+  }
 }
 
 }  // namespace cricket

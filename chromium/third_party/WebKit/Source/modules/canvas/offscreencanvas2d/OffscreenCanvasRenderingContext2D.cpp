@@ -29,7 +29,7 @@ OffscreenCanvasRenderingContext2D::~OffscreenCanvasRenderingContext2D() =
 
 OffscreenCanvasRenderingContext2D::OffscreenCanvasRenderingContext2D(
     OffscreenCanvas* canvas,
-    const CanvasContextCreationAttributes& attrs)
+    const CanvasContextCreationAttributesCore& attrs)
     : CanvasRenderingContext(canvas, attrs) {
   ExecutionContext* execution_context = canvas->GetTopExecutionContext();
   if (execution_context->IsDocument()) {
@@ -115,6 +115,8 @@ OffscreenCanvasRenderingContext2D::TransferToStaticBitmapImage() {
     return nullptr;
   scoped_refptr<StaticBitmapImage> image =
       GetCanvasResourceProvider()->Snapshot();
+  if (!image)
+    return nullptr;
 
   image->SetOriginClean(this->OriginClean());
   return image;

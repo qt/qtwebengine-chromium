@@ -10,18 +10,18 @@
 #include <string>
 #include <vector>
 
+#include "base/component_export.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "build/build_config.h"
 #include "services/network/public/cpp/data_element.h"
 #include "url/gurl.h"
 
 namespace network {
 
 // ResourceRequestBody represents body (i.e. upload data) of a HTTP request.
-class ResourceRequestBody
+class COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequestBody
     : public base::RefCountedThreadSafe<ResourceRequestBody> {
  public:
   ResourceRequestBody();
@@ -44,10 +44,6 @@ class ResourceRequestBody
                           const base::Time& expected_modification_time);
 
   void AppendBlob(const std::string& uuid);
-  void AppendFileSystemFileRange(const GURL& url,
-                                 uint64_t offset,
-                                 uint64_t length,
-                                 const base::Time& expected_modification_time);
   void AppendDataPipe(mojom::DataPipeGetterPtr data_pipe_getter);
 
   const std::vector<DataElement>* elements() const { return &elements_; }

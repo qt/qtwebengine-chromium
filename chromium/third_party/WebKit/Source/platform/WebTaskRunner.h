@@ -15,17 +15,10 @@
 #include "platform/wtf/Time.h"
 #include "public/platform/WebCommon.h"
 
-namespace base {
-class SingleThreadTaskRunner;
-}
-
 namespace blink {
 
-class WebTaskRunner;
-
-// TaskHandle is associated to a task posted by
-// WebTaskRunner::postCancellableTask or
-// WebTaskRunner::postCancellableDelayedTask and cancels the associated task on
+// TaskHandle is associated to a task posted by PostCancellableTask() or
+// PostCancellableDelayedTask() and cancels the associated task on
 // TaskHandle::cancel() call or on TaskHandle destruction.
 class BLINK_PLATFORM_EXPORT TaskHandle {
  public:
@@ -51,9 +44,11 @@ class BLINK_PLATFORM_EXPORT TaskHandle {
 
  private:
   friend BLINK_PLATFORM_EXPORT WARN_UNUSED_RESULT TaskHandle
-  PostCancellableTask(WebTaskRunner&, const base::Location&, base::OnceClosure);
+  PostCancellableTask(base::SingleThreadTaskRunner&,
+                      const base::Location&,
+                      base::OnceClosure);
   friend BLINK_PLATFORM_EXPORT WARN_UNUSED_RESULT TaskHandle
-  PostDelayedCancellableTask(WebTaskRunner&,
+  PostDelayedCancellableTask(base::SingleThreadTaskRunner&,
                              const base::Location&,
                              base::OnceClosure,
                              TimeDelta delay);
@@ -62,49 +57,24 @@ class BLINK_PLATFORM_EXPORT TaskHandle {
   scoped_refptr<Runner> runner_;
 };
 
-// The blink representation of a chromium SingleThreadTaskRunner.
-class BLINK_PLATFORM_EXPORT WebTaskRunner
-    : public base::SingleThreadTaskRunner {
- public:
-  virtual bool PostDelayedTask(const base::Location&,
-                               base::OnceClosure,
-                               base::TimeDelta) = 0;
-
-  // Returns a microsecond resolution platform dependant time source.
-  // This may represent either the real time, or a virtual time depending on
-  // whether or not the WebTaskRunner is associated with a virtual time domain
-  // or a real time domain.
-  virtual double MonotonicallyIncreasingVirtualTimeSeconds() const = 0;
-
-  // Helpers for posting bound functions as tasks.
-
-  // For same-thread posting. Must be called from the associated WebThread.
-  void PostTask(const base::Location&, base::OnceClosure);
-
- protected:
-  friend ThreadSafeRefCounted<WebTaskRunner>;
-  WebTaskRunner() = default;
-  virtual ~WebTaskRunner();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(WebTaskRunner);
-};
-
 // For cross-thread posting. Can be called from any thread.
-BLINK_PLATFORM_EXPORT void PostCrossThreadTask(WebTaskRunner&,
+BLINK_PLATFORM_EXPORT void PostCrossThreadTask(base::SingleThreadTaskRunner&,
                                                const base::Location&,
                                                CrossThreadClosure);
-BLINK_PLATFORM_EXPORT void PostDelayedCrossThreadTask(WebTaskRunner&,
-                                                      const base::Location&,
-                                                      CrossThreadClosure,
-                                                      TimeDelta delay);
+BLINK_PLATFORM_EXPORT void PostDelayedCrossThreadTask(
+    base::SingleThreadTaskRunner&,
+    const base::Location&,
+    CrossThreadClosure,
+    TimeDelta delay);
 
 // For same-thread cancellable task posting. Returns a TaskHandle object for
 // cancellation.
 BLINK_PLATFORM_EXPORT WARN_UNUSED_RESULT TaskHandle
-PostCancellableTask(WebTaskRunner&, const base::Location&, base::OnceClosure);
+PostCancellableTask(base::SingleThreadTaskRunner&,
+                    const base::Location&,
+                    base::OnceClosure);
 BLINK_PLATFORM_EXPORT WARN_UNUSED_RESULT TaskHandle
-PostDelayedCancellableTask(WebTaskRunner&,
+PostDelayedCancellableTask(base::SingleThreadTaskRunner&,
                            const base::Location&,
                            base::OnceClosure,
                            TimeDelta delay);

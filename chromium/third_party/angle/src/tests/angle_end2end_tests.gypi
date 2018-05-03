@@ -16,6 +16,7 @@
         'angle_end2end_tests_sources':
         [
             '<(angle_path)/src/tests/gl_tests/AtomicCounterBufferTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/AttributeLayoutTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BindGeneratesResourceTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BindUniformLocationTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BlendMinMaxTest.cpp',
@@ -72,10 +73,12 @@
             '<(angle_path)/src/tests/gl_tests/ProgramParameterTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ProgramPipelineTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ReadPixelsTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/RenderbufferMultisampleTest.cpp',
             '<(angle_path)/src/tests/gl_tests/RendererTest.cpp',
             '<(angle_path)/src/tests/gl_tests/RobustBufferAccessBehaviorTest.cpp',
             '<(angle_path)/src/tests/gl_tests/RobustClientMemoryTest.cpp',
             '<(angle_path)/src/tests/gl_tests/RobustResourceInitTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/SamplersTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ShaderStorageBufferTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SimpleOperationTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SixteenBppTextureTest.cpp',

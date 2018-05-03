@@ -44,9 +44,7 @@ class GPU_IPC_SERVICE_EXPORT GpuInit {
   bool InitializeAndStartSandbox(base::CommandLine* command_line,
                                  const GpuPreferences& gpu_preferences);
   void InitializeInProcess(base::CommandLine* command_line,
-                           const GpuPreferences& gpu_preferences,
-                           const GPUInfo* gpu_info = nullptr,
-                           const GpuFeatureInfo* gpu_feature_info = nullptr);
+                           const GpuPreferences& gpu_preferences);
 
   const GPUInfo& gpu_info() const { return gpu_info_; }
   const GpuFeatureInfo& gpu_feature_info() const { return gpu_feature_info_; }
@@ -64,7 +62,8 @@ class GPU_IPC_SERVICE_EXPORT GpuInit {
   GpuPreferences gpu_preferences_;
   bool init_successful_ = false;
 
-  bool ShouldEnableSwiftShader(base::CommandLine* command_line);
+  bool ShouldEnableSwiftShader(base::CommandLine* command_line,
+                               bool blacklist_needs_more_info);
   void AdjustInfoToSwiftShader();
   DISALLOW_COPY_AND_ASSIGN(GpuInit);
 };

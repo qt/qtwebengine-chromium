@@ -27,7 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import unittest
-import sys
 
 from webkitpy.common.checkout.baseline_optimizer import BaselineOptimizer
 from webkitpy.common.host_mock import MockHost
@@ -60,6 +59,10 @@ class BaselineOptimizerTest(unittest.TestCase):
                 'port_name': 'linux-trusty',
                 'specifiers': ['Trusty', 'Release']
             },
+            'Fake Test Mac10.13': {
+                'port_name': 'mac-mac10.13',
+                'specifiers': ['Mac10.13', 'Release']
+            },
             'Fake Test Mac10.12': {
                 'port_name': 'mac-mac10.12',
                 'specifiers': ['Mac10.12', 'Release']
@@ -77,7 +80,7 @@ class BaselineOptimizerTest(unittest.TestCase):
         # assertion fails, port configurations are likely changed, and the
         # tests need to be adjusted accordingly.
         self.assertEqual(sorted(self.host.port_factory.all_port_names()),
-                         ['linux-trusty', 'mac-mac10.10', 'mac-mac10.11', 'mac-mac10.12', 'win-win10'])
+                         ['linux-trusty', 'mac-mac10.10', 'mac-mac10.11', 'mac-mac10.12', 'mac-mac10.13', 'win-win10'])
 
     def _assert_optimization(self, results_by_directory, directory_to_new_results, baseline_dirname=''):
         layout_tests_dir = PathFinder(self.fs).layout_tests_dir()
@@ -304,6 +307,14 @@ class BaselineOptimizerTest(unittest.TestCase):
         self._assert_optimization(
             {'platform/linux': ALL_PASS_TESTHARNESS_RESULT},
             {'platform/linux': None})
+
+    def test_all_pass_testharness_at_linux_and_win(self):
+        # https://crbug.com/805008
+        self._assert_optimization(
+            {'platform/linux': ALL_PASS_TESTHARNESS_RESULT,
+             'platform/win': ALL_PASS_TESTHARNESS_RESULT},
+            {'platform/linux': None,
+             'platform/win': None})
 
     def test_all_pass_testharness_at_virtual_root(self):
         self._assert_optimization(

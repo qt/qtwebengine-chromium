@@ -6,6 +6,8 @@
 
 #include "compiler/translator/EmulatePrecision.h"
 
+#include "compiler/translator/FunctionLookup.h"
+
 #include <memory>
 
 namespace sh
@@ -13,6 +15,11 @@ namespace sh
 
 namespace
 {
+
+constexpr const ImmutableString kParamXName("x");
+constexpr const ImmutableString kParamYName("y");
+constexpr const ImmutableString kAngleFrmString("angle_frm");
+constexpr const ImmutableString kAngleFrlString("angle_frl");
 
 class RoundingHelperWriter : angle::NonCopyable
 {
@@ -470,9 +477,8 @@ bool ParentConstructorTakesCareOfRounding(TIntermNode *parent, TIntermTyped *nod
 
 }  // namespace anonymous
 
-EmulatePrecision::EmulatePrecision(TSymbolTable *symbolTable, int shaderVersion)
-    : TLValueTrackingTraverser(true, true, true, symbolTable, shaderVersion),
-      mDeclaringVariables(false)
+EmulatePrecision::EmulatePrecision(TSymbolTable *symbolTable)
+    : TLValueTrackingTraverser(true, true, true, symbolTable), mDeclaringVariables(false)
 {
 }
 
@@ -621,27 +627,22 @@ bool EmulatePrecision::visitAggregate(Visit visit, TIntermAggregate *node)
 {
     if (visit != PreVisit)
         return true;
-    switch (node->getOp())
+
+    // User-defined function return values are not rounded. The calculations that produced
+    // the value inside the function definition should have been rounded.
+    TOperator op = node->getOp();
+    if (op == EOpCallInternalRawFunction || op == EOpCallFunctionInAST ||
+        (op == EOpConstruct && node->getBasicType() == EbtStruct))
     {
-        case EOpCallInternalRawFunction:
-        case EOpCallFunctionInAST:
-            // User-defined function return values are not rounded. The calculations that produced
-            // the value inside the function definition should have been rounded.
-            break;
-        case EOpConstruct:
-            if (node->getBasicType() == EbtStruct)
-            {
-                break;
-            }
-        default:
-            TIntermNode *parent = getParentNode();
-            if (canRoundFloat(node->getType()) && ParentUsesResult(parent, node) &&
-                !ParentConstructorTakesCareOfRounding(parent, node))
-            {
-                TIntermNode *replacement = createRoundingFunctionCallNode(node);
-                queueReplacement(replacement, OriginalNode::BECOMES_CHILD);
-            }
-            break;
+        return true;
+    }
+
+    TIntermNode *parent = getParentNode();
+    if (canRoundFloat(node->getType()) && ParentUsesResult(parent, node) &&
+        !ParentConstructorTakesCareOfRounding(parent, node))
+    {
+        TIntermNode *replacement = createRoundingFunctionCallNode(node);
+        queueReplacement(replacement, OriginalNode::BECOMES_CHILD);
     }
     return true;
 }
@@ -705,33 +706,45 @@ bool EmulatePrecision::SupportedInLanguage(const ShShaderOutput outputLanguage)
     }
 }
 
-TFunction *EmulatePrecision::getInternalFunction(TString *functionName,
-                                                 const TType &returnType,
-                                                 TIntermSequence *arguments,
-                                                 bool knownToNotHaveSideEffects)
+const TFunction *EmulatePrecision::getInternalFunction(const ImmutableString &functionName,
+                                                       const TType &returnType,
+                                                       TIntermSequence *arguments,
+                                                       const TVector<TConstParameter> &parameters,
+                                                       bool knownToNotHaveSideEffects)
 {
-    TString mangledName = TFunction::GetMangledNameFromCall(*functionName, *arguments);
+    ImmutableString mangledName = TFunctionLookup::GetMangledName(functionName.data(), *arguments);
     if (mInternalFunctions.find(mangledName) == mInternalFunctions.end())
     {
-        mInternalFunctions[mangledName] =
-            new TFunction(mSymbolTable, functionName, new TType(returnType),
-                          SymbolType::AngleInternal, knownToNotHaveSideEffects);
+        TFunction *func = new TFunction(mSymbolTable, functionName, SymbolType::AngleInternal,
+                                        new TType(returnType), knownToNotHaveSideEffects);
+        ASSERT(parameters.size() == arguments->size());
+        for (size_t i = 0; i < parameters.size(); ++i)
+        {
+            func->addParameter(parameters[i]);
+        }
+        mInternalFunctions[mangledName] = func;
     }
     return mInternalFunctions[mangledName];
 }
 
 TIntermAggregate *EmulatePrecision::createRoundingFunctionCallNode(TIntermTyped *roundedChild)
 {
-    const char *roundFunctionName;
-    if (roundedChild->getPrecision() == EbpMedium)
-        roundFunctionName = "angle_frm";
-    else
-        roundFunctionName = "angle_frl";
-    TString *functionName      = NewPoolTString(roundFunctionName);
+    const ImmutableString *roundFunctionName = &kAngleFrmString;
+    if (roundedChild->getPrecision() == EbpLow)
+        roundFunctionName = &kAngleFrlString;
     TIntermSequence *arguments = new TIntermSequence();
     arguments->push_back(roundedChild);
+
+    TVector<TConstParameter> parameters;
+    TType *paramType = new TType(roundedChild->getType());
+    paramType->setPrecision(EbpHigh);
+    paramType->setQualifier(EvqIn);
+    parameters.push_back(TConstParameter(kParamXName, static_cast<const TType *>(paramType)));
+
     return TIntermAggregate::CreateRawFunctionCall(
-        *getInternalFunction(functionName, roundedChild->getType(), arguments, true), arguments);
+        *getInternalFunction(*roundFunctionName, roundedChild->getType(), arguments, parameters,
+                             true),
+        arguments);
 }
 
 TIntermAggregate *EmulatePrecision::createCompoundAssignmentFunctionCallNode(TIntermTyped *left,
@@ -743,12 +756,24 @@ TIntermAggregate *EmulatePrecision::createCompoundAssignmentFunctionCallNode(TIn
         strstr << "angle_compound_" << opNameStr << "_frm";
     else
         strstr << "angle_compound_" << opNameStr << "_frl";
-    TString *functionName      = NewPoolTString(strstr.str().c_str());
+    ImmutableString functionName = ImmutableString(strstr.str());
     TIntermSequence *arguments = new TIntermSequence();
     arguments->push_back(left);
     arguments->push_back(right);
+
+    TVector<TConstParameter> parameters;
+    TType *leftParamType = new TType(left->getType());
+    leftParamType->setPrecision(EbpHigh);
+    leftParamType->setQualifier(EvqOut);
+    parameters.push_back(TConstParameter(kParamXName, static_cast<const TType *>(leftParamType)));
+    TType *rightParamType = new TType(right->getType());
+    rightParamType->setPrecision(EbpHigh);
+    rightParamType->setQualifier(EvqIn);
+    parameters.push_back(TConstParameter(kParamYName, static_cast<const TType *>(rightParamType)));
+
     return TIntermAggregate::CreateRawFunctionCall(
-        *getInternalFunction(functionName, left->getType(), arguments, false), arguments);
+        *getInternalFunction(functionName, left->getType(), arguments, parameters, false),
+        arguments);
 }
 
 }  // namespace sh

@@ -159,8 +159,8 @@ class MODULES_EXPORT RTCPeerConnection final
                          MediaStreamTrack* selector = nullptr);
   ScriptPromise getStats(ScriptState*);
 
-  HeapVector<Member<RTCRtpSender>> getSenders();
-  HeapVector<Member<RTCRtpReceiver>> getReceivers();
+  const HeapVector<Member<RTCRtpSender>>& getSenders() const;
+  const HeapVector<Member<RTCRtpReceiver>>& getReceivers() const;
   RTCRtpSender* addTrack(MediaStreamTrack*, MediaStreamVector, ExceptionState&);
   void removeTrack(RTCRtpSender*, ExceptionState&);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(track);
@@ -258,7 +258,11 @@ class MODULES_EXPORT RTCPeerConnection final
   void ScheduleDispatchEvent(Event*);
   void ScheduleDispatchEvent(Event*, BoolFunction);
   void DispatchScheduledEvent();
+  void MaybeFireNegotiationNeeded();
   MediaStreamTrack* GetTrack(const WebMediaStreamTrack&) const;
+  RTCRtpSender* FindSenderForTrackAndStream(MediaStreamTrack*, MediaStream*);
+  HeapVector<Member<RTCRtpSender>>::iterator FindSender(
+      const WebRTCRtpSender& web_sender);
   HeapVector<Member<RTCRtpReceiver>>::iterator FindReceiver(
       const WebRTCRtpReceiver& web_receiver);
 
@@ -302,13 +306,11 @@ class MODULES_EXPORT RTCPeerConnection final
   ICEGatheringState ice_gathering_state_;
   ICEConnectionState ice_connection_state_;
 
-  MediaStreamVector local_streams_;
   // A map containing any track that is in use by the peer connection. This
-  // includes tracks of |local_streams_|, |remote_streams_|, |rtp_senders_| and
-  // |rtp_receivers_|.
+  // includes tracks of |rtp_senders_| and |rtp_receivers_|.
   HeapHashMap<WeakMember<MediaStreamComponent>, WeakMember<MediaStreamTrack>>
       tracks_;
-  HeapHashMap<uintptr_t, Member<RTCRtpSender>> rtp_senders_;
+  HeapVector<Member<RTCRtpSender>> rtp_senders_;
   HeapVector<Member<RTCRtpReceiver>> rtp_receivers_;
 
   std::unique_ptr<WebRTCPeerConnectionHandler> peer_handler_;
@@ -321,6 +323,7 @@ class MODULES_EXPORT RTCPeerConnection final
   std::unique_ptr<WebFrameScheduler::ActiveConnectionHandle>
       connection_handle_for_scheduler_;
 
+  bool negotiation_needed_;
   bool stopped_;
   bool closed_;
 

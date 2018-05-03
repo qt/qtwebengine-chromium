@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 
 #include "base/macros.h"
@@ -14,59 +15,68 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 
+namespace base {
+class SequencedTaskRunner;
+}
+
 namespace content {
 
 class DOMStorageContextImpl;
-class SessionStorageContextMojo;
+class DOMStorageContextWrapper;
 
-// This refcounted class determines the lifetime of a session
-// storage namespace and provides an interface to Clone() an
-// existing session storage namespace. It may be used on any thread.
-// See class comments for DOMStorageContextImpl for a larger overview.
-class CONTENT_EXPORT DOMStorageSession
-    : public base::RefCountedThreadSafe<DOMStorageSession> {
+// This class determines the lifetime of a session storage namespace and
+// provides an interface to Clone() an existing session storage namespace. It
+// may be used on any thread. See class comments for DOMStorageContextImpl for a
+// larger overview.
+class CONTENT_EXPORT DOMStorageSession {
  public:
-  // Constructs a |DOMStorageSession| and allocates new IDs for it.
-  explicit DOMStorageSession(
-      DOMStorageContextImpl* context,
-      base::WeakPtr<SessionStorageContextMojo> mojo_context);
+  // Constructs a |DOMStorageSession| and allocates a new ID for it.
+  static std::unique_ptr<DOMStorageSession> Create(
+      scoped_refptr<DOMStorageContextWrapper> context);
 
-  // Constructs a |DOMStorageSession| and assigns |persistent_namespace_id|
-  // to it. Allocates a new non-persistent ID.
-  DOMStorageSession(DOMStorageContextImpl* context,
-                    base::WeakPtr<SessionStorageContextMojo> mojo_context,
-                    const std::string& persistent_namespace_id);
+  // Constructs a |DOMStorageSession| and assigns |namespace_id|
+  // to it.
+  static std::unique_ptr<DOMStorageSession> CreateWithNamespace(
+      scoped_refptr<DOMStorageContextWrapper> context,
+      const std::string& namespace_id);
 
-  int64_t namespace_id() const { return namespace_id_; }
-  const std::string& persistent_namespace_id() const {
-    return persistent_namespace_id_;
-  }
-  void SetShouldPersist(bool should_persist);
-  bool should_persist() const;
-  bool IsFromContext(DOMStorageContextImpl* context);
-  DOMStorageSession* Clone();
+  // Constructs a |DOMStorageSession| with id |namespace_id| by cloning
+  // |namespace_id_to_clone|.
+  static std::unique_ptr<DOMStorageSession> CloneFrom(
+      scoped_refptr<DOMStorageContextWrapper> context,
+      std::string namepace_id,
+      const std::string& namepace_id_to_clone);
 
-  // Constructs a |DOMStorageSession| by cloning
-  // |namespace_id_to_clone|. Allocates new IDs for it.
-  static DOMStorageSession* CloneFrom(
-      DOMStorageContextImpl* context,
-      base::WeakPtr<SessionStorageContextMojo> mojo_context,
-      int64_t namepace_id_to_clone);
-
- private:
-  friend class base::RefCountedThreadSafe<DOMStorageSession>;
-
-  DOMStorageSession(DOMStorageContextImpl* context,
-                    base::WeakPtr<SessionStorageContextMojo> mojo_context,
-                    int64_t namespace_id,
-                    const std::string& persistent_namespace_id);
   ~DOMStorageSession();
 
+  const std::string& namespace_id() const { return namespace_id_; }
+  void SetShouldPersist(bool should_persist);
+  bool should_persist() const;
+  DOMStorageContextWrapper* context() const { return context_wrapper_.get(); }
+  bool IsFromContext(DOMStorageContextWrapper* context);
+
+  std::unique_ptr<DOMStorageSession> Clone();
+
+ private:
+  class SequenceHelper;
+
+  // Creates the non-mojo version.
+  DOMStorageSession(scoped_refptr<DOMStorageContextWrapper> context_wrapper,
+                    scoped_refptr<DOMStorageContextImpl> context_impl,
+                    std::string namespace_id);
+  // Creates a mojo version.
+  DOMStorageSession(scoped_refptr<DOMStorageContextWrapper> context,
+                    std::string namespace_id);
+
   scoped_refptr<DOMStorageContextImpl> context_;
-  base::WeakPtr<SessionStorageContextMojo> mojo_context_;
-  int64_t namespace_id_;
-  std::string persistent_namespace_id_;
+  scoped_refptr<DOMStorageContextWrapper> context_wrapper_;
+  scoped_refptr<base::SequencedTaskRunner> mojo_task_runner_;
+  std::string namespace_id_;
   bool should_persist_;
+
+  // Contructed on constructing thread of DOMStorageSession, used and destroyed
+  // on |mojo_task_runner_|.
+  std::unique_ptr<SequenceHelper> sequence_helper_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DOMStorageSession);
 };

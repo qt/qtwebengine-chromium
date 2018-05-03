@@ -39,6 +39,7 @@
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
+#include "content/common/page_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/content_browser_client.h"
@@ -337,10 +338,11 @@ void RenderFrameHostManager::CommitPendingFramePolicy() {
   }
 }
 
-void RenderFrameHostManager::OnDidSetActiveSandboxFlags() {
+void RenderFrameHostManager::OnDidSetFramePolicyHeaders() {
   for (const auto& pair : proxy_hosts_) {
-    pair.second->Send(new FrameMsg_DidSetActiveSandboxFlags(
-        pair.second->GetRoutingID(), frame_tree_node_->active_sandbox_flags()));
+    pair.second->Send(new FrameMsg_DidSetFramePolicyHeaders(
+        pair.second->GetRoutingID(), frame_tree_node_->active_sandbox_flags(),
+        frame_tree_node_->current_replication_state().feature_policy_header));
   }
 }
 
@@ -372,9 +374,9 @@ void RenderFrameHostManager::SwapOutOldFrame(
       CreateRenderFrameProxyHost(old_render_frame_host->GetSiteInstance(),
                                  old_render_frame_host->render_view_host());
 
-  // Reset any NavigationHandle in the RenderFrameHost. This will prevent any
-  // ongoing navigation from attempting to transfer.
-  old_render_frame_host->SetNavigationHandle(nullptr);
+  // Reset any NavigationRequest in the RenderFrameHost. A swapped out
+  // RenderFrameHost should not be trying to commit a navigation.
+  old_render_frame_host->ResetNavigationRequests();
 
   // Tell the old RenderFrameHost to swap out and be replaced by the proxy.
   old_render_frame_host->SwapOut(proxy, true);
@@ -505,10 +507,10 @@ RenderFrameHostImpl* RenderFrameHostManager::GetFrameHostForNavigation(
       // navigation was started from BeginNavigation. If the navigation was
       // started through the NavigationController, the NavigationController has
       // already updated its state properly, and doesn't need to be notified.
-      if (speculative_render_frame_host_->navigation_handle() &&
+      if (speculative_render_frame_host_->GetNavigationHandle() &&
           request.from_begin_navigation()) {
         frame_tree_node_->navigator()->DiscardPendingEntryIfNeeded(
-            speculative_render_frame_host_->navigation_handle()
+            speculative_render_frame_host_->GetNavigationHandle()
                 ->pending_nav_entry_id());
       }
       DiscardUnusedFrame(UnsetSpeculativeRenderFrameHost());
@@ -544,10 +546,10 @@ RenderFrameHostImpl* RenderFrameHostManager::GetFrameHostForNavigation(
       // has already updated its state properly, and doesn't need to be
       // notified.
       if (speculative_render_frame_host_ &&
-          speculative_render_frame_host_->navigation_handle() &&
+          speculative_render_frame_host_->GetNavigationHandle() &&
           request.from_begin_navigation()) {
         frame_tree_node_->navigator()->DiscardPendingEntryIfNeeded(
-            speculative_render_frame_host_->navigation_handle()
+            speculative_render_frame_host_->GetNavigationHandle()
                 ->pending_nav_entry_id());
       }
 
@@ -1439,13 +1441,22 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
                                                  const GURL& dest_url) {
   BrowserContext* browser_context =
       delegate_->GetControllerForRenderManager().GetBrowserContext();
-
-  // Don't compare effective URLs for subframe navigations, since we don't want
-  // to create OOPIFs based on that mechanism (e.g., for hosted apps).
-  // See https://crbug.com/718516.
-  // TODO(creis): This should eventually call out to embedder to help decide,
-  // if we can find a way to make decisions about popups based on their opener.
-  bool should_compare_effective_urls = frame_tree_node_->IsMainFrame();
+  // Don't compare effective URLs for all subframe navigations, since we don't
+  // want to create OOPIFs based on that mechanism (e.g., for hosted apps). For
+  // main frames, don't compare effective URLs when transitioning from app to
+  // non-app URLs if there exists another app WebContents that might script
+  // this one.  These navigations should stay in the app process to not break
+  // scripting when a hosted app opens a same-site popup. See
+  // https://crbug.com/718516 and https://crbug.com/828720.
+  bool src_has_effective_url = SiteInstanceImpl::HasEffectiveURL(
+      browser_context, candidate->GetSiteInstance()->original_url());
+  bool dest_has_effective_url =
+      SiteInstanceImpl::HasEffectiveURL(browser_context, dest_url);
+  bool should_compare_effective_urls = true;
+  if (!frame_tree_node_->IsMainFrame() ||
+      (src_has_effective_url && !dest_has_effective_url &&
+       candidate->GetSiteInstance()->GetRelatedActiveContentsCount() > 1u))
+    should_compare_effective_urls = false;
 
   // If the process type is incorrect, reject the candidate even if |dest_url|
   // is same-site.  (The URL may have been installed as an app since
@@ -1455,12 +1466,9 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
   // hosted app to non-hosted app, and vice versa, in the same process.
   // Otherwise, this would return false due to a process privilege level
   // mismatch.
-  bool src_or_dest_has_effective_url =
-      (SiteInstanceImpl::HasEffectiveURL(browser_context, dest_url) ||
-       SiteInstanceImpl::HasEffectiveURL(
-           browser_context, candidate->GetSiteInstance()->original_url()));
   bool should_check_for_wrong_process =
-      should_compare_effective_urls || !src_or_dest_has_effective_url;
+      should_compare_effective_urls ||
+      (!src_has_effective_url && !dest_has_effective_url);
   if (should_check_for_wrong_process &&
       candidate->GetSiteInstance()->HasWrongProcessForURL(dest_url))
     return false;
@@ -1792,7 +1800,7 @@ void RenderFrameHostManager::CreateOuterDelegateProxy(
 void RenderFrameHostManager::SetRWHViewForInnerContents(
     RenderWidgetHostView* child_rwhv) {
   DCHECK(ForInnerDelegate() && frame_tree_node_->IsMainFrame());
-  GetProxyToOuterDelegate()->SetChildRWHView(child_rwhv);
+  GetProxyToOuterDelegate()->SetChildRWHView(child_rwhv, nullptr);
 }
 
 bool RenderFrameHostManager::InitRenderView(
@@ -1957,8 +1965,12 @@ bool RenderFrameHostManager::ReinitializeRenderFrame(
     // its CrossProcessFrameConnector, so we need to restore it now that it
     // is re-initialized.
     RenderFrameProxyHost* proxy_to_parent = GetProxyToParent();
-    if (proxy_to_parent)
-      GetProxyToParent()->SetChildRWHView(render_frame_host->GetView());
+    if (proxy_to_parent) {
+      const gfx::Size* size = render_frame_host->frame_size()
+                                  ? &*render_frame_host->frame_size()
+                                  : nullptr;
+      GetProxyToParent()->SetChildRWHView(render_frame_host->GetView(), size);
+    }
   }
 
   DCHECK(render_frame_host->IsRenderFrameLive());
@@ -2035,26 +2047,6 @@ void RenderFrameHostManager::CommitPending() {
     old_background_color = old_render_frame_host->GetView()->background_color();
   }
 
-  // Show the new view (or a sad tab) if necessary.
-  bool new_rfh_has_view = !!render_frame_host_->GetView();
-  if (!delegate_->IsHidden() && new_rfh_has_view) {
-    // In most cases, we need to show the new view.
-    render_frame_host_->GetView()->Show();
-  }
-  // The process will no longer try to exit, so we can decrement the count.
-  render_frame_host_->GetProcess()->RemovePendingView();
-
-  if (!new_rfh_has_view) {
-    // If the view is gone, then this RenderViewHost died while it was hidden.
-    // We ignored the RenderProcessGone call at the time, so we should send it
-    // now to make sure the sad tab shows up, etc.
-    DCHECK(!render_frame_host_->IsRenderFrameLive());
-    DCHECK(!render_frame_host_->render_view_host()->IsRenderViewLive());
-    render_frame_host_->ResetLoadingState();
-    delegate_->RenderProcessGoneFromRenderManager(
-        render_frame_host_->render_view_host());
-  }
-
   // For top-level frames, also hide the old RenderViewHost's view.
   // TODO(creis): As long as show/hide are on RVH, we don't want to hide on
   // subframe navigations or we will interfere with the top-level frame.
@@ -2072,8 +2064,8 @@ void RenderFrameHostManager::CommitPending() {
     if (is_main_frame) {
       render_frame_host_->GetView()->Focus();
     } else {
-      // The main frame's view is already focused, but we need to set
-      // page-level focus in the subframe's renderer.  Before doing that, also
+      // The current tab has page-level focus, so we need to propagate
+      // page-level focus to the subframe's renderer. Before doing that, also
       // tell the new renderer what the focused frame is if that frame is not
       // in its process, so that Blink's page-level focus logic won't try to
       // reset frame focus to the main frame.  See https://crbug.com/802156.
@@ -2123,6 +2115,10 @@ void RenderFrameHostManager::CommitPending() {
         MSG_ROUTING_NONE);
   }
 
+  // Store the old_render_frame_host's current frame size so that it can be used
+  // to initialize the child RWHV.
+  base::Optional<gfx::Size> old_size = old_render_frame_host->frame_size();
+
   // Swap out the old frame now that the new one is visible.
   // This will swap it out and schedule it for deletion when the swap out ack
   // arrives (or immediately if the process isn't live).
@@ -2140,8 +2136,51 @@ void RenderFrameHostManager::CommitPending() {
   // Note: We do this after swapping out the old RFH because that may create
   // the proxy we're looking for.
   RenderFrameProxyHost* proxy_to_parent = GetProxyToParent();
-  if (proxy_to_parent)
-    proxy_to_parent->SetChildRWHView(render_frame_host_->GetView());
+  if (proxy_to_parent) {
+    proxy_to_parent->SetChildRWHView(render_frame_host_->GetView(),
+                                     old_size ? &*old_size : nullptr);
+  }
+
+  // Show the new view (or a sad tab) if necessary.
+  bool new_rfh_has_view = !!render_frame_host_->GetView();
+  if (!delegate_->IsHidden() && new_rfh_has_view) {
+    if (!is_main_frame &&
+        !render_frame_host_->render_view_host()->is_active()) {
+      // Ensure that page visibility in the subframe's process is set to shown.
+      // This is important if the subframe is using a RenderView which
+      // started out as active and later became swapped-out, which also updates
+      // page visibility to hidden.  Without updating page visibility the
+      // subframe would not be able to generate compositor frames.  See
+      // https://crbug.com/638375.
+      //
+      // TODO(alexmos,dcheng,lfg): This workaround should be cleaned up as part
+      // of the view/widget split.  We should decouple page visibility from
+      // widget visibility.
+      RenderFrameProxyHost* proxy =
+          frame_tree_node_->frame_tree()
+              ->root()
+              ->render_manager()
+              ->GetRenderFrameProxyHost(render_frame_host_->GetSiteInstance());
+      // The proxy should always exist since the RenderViewHost is not active.
+      proxy->Send(new PageMsg_WasShown(proxy->GetRoutingID()));
+    }
+
+    // In most cases, we need to show the new view.
+    render_frame_host_->GetView()->Show();
+  }
+  // The process will no longer try to exit, so we can decrement the count.
+  render_frame_host_->GetProcess()->RemovePendingView();
+
+  if (!new_rfh_has_view) {
+    // If the view is gone, then this RenderViewHost died while it was hidden.
+    // We ignored the RenderProcessGone call at the time, so we should send it
+    // now to make sure the sad tab shows up, etc.
+    DCHECK(!render_frame_host_->IsRenderFrameLive());
+    DCHECK(!render_frame_host_->render_view_host()->IsRenderViewLive());
+    render_frame_host_->ResetLoadingState();
+    delegate_->RenderProcessGoneFromRenderManager(
+        render_frame_host_->render_view_host());
+  }
 
   // After all is done, there must never be a proxy in the list which has the
   // same SiteInstance as the current RenderFrameHost.

@@ -38,8 +38,8 @@
 #include "extensions/common/features/feature.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/result_catcher.h"
-#include "ui/message_center/notification.h"
-#include "ui/message_center/notifier_id.h"
+#include "ui/message_center/public/cpp/notification.h"
+#include "ui/message_center/public/cpp/notifier_id.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -311,7 +311,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestGetPermissionLevel) {
     notification_function->set_has_callback(true);
 
     std::unique_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-        notification_function.get(), "[]", browser(), utils::NONE));
+        notification_function.get(), "[]", browser(),
+        extensions::api_test_utils::NONE));
 
     EXPECT_EQ(base::Value::Type::STRING, result->type());
     std::string permission_level;
@@ -334,7 +335,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestGetPermissionLevel) {
     GetNotifierStateTracker()->SetNotifierEnabled(notifier_id, false);
 
     std::unique_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-        notification_function.get(), "[]", browser(), utils::NONE));
+        notification_function.get(), "[]", browser(),
+        extensions::api_test_utils::NONE));
 
     EXPECT_EQ(base::Value::Type::STRING, result->type());
     std::string permission_level;

@@ -58,7 +58,7 @@
 #include "public/platform/WebURLRequest.h"
 #include "public/web/WebGlobalObjectReusePolicy.h"
 #include "public/web/WebTriggeringEventInfo.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 #include "v8/include/v8.h"
 
 namespace service_manager {
@@ -190,10 +190,12 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   // The frame ran content with certificate errors with the given URL.
   virtual void DidRunContentWithCertificateErrors() = 0;
 
-  // The frame loaded a resource with an otherwise-valid legacy Symantec
-  // certificate that is slated for distrust. Prints a console message (possibly
-  // overridden by the embedder) to warn about the certificate.
-  virtual void ReportLegacySymantecCert(const KURL&, Time) {}
+  // The frame loaded a resource with a legacy Symantec certificate that is
+  // slated for distrust (indicated by |did_fail| being false) or has already
+  // been distrusted (indicated by |did_fail| being true). Prints a console
+  // message (possibly overridden by the embedder) to warn about the
+  // certificate.
+  virtual void ReportLegacySymantecCert(const KURL&, bool did_fail) {}
 
   // Will be called when |PerformanceTiming| events are updated
   virtual void DidChangePerformanceTiming() {}
@@ -393,6 +395,8 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   virtual void DidChangeContents() {}
 
   virtual Frame* FindFrame(const AtomicString& name) const = 0;
+
+  virtual void FrameRectsChanged(const IntRect&) {}
 };
 
 }  // namespace blink

@@ -18,12 +18,13 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/public/common/content_switches.h"
 #include "ui/accessibility/platform/ax_system_caret_win.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/view_prop.h"
+#include "ui/base/win/direct_manipulation.h"
 #include "ui/base/win/internal_constants.h"
 #include "ui/base/win/window_event_target.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/gfx/geometry/rect.h"
-#include "ui/gfx/win/direct_manipulation.h"
 
 namespace content {
 
@@ -122,7 +123,9 @@ LegacyRenderWidgetHostHWND::~LegacyRenderWidgetHostHWND() {
 }
 
 bool LegacyRenderWidgetHostHWND::Init() {
-  RegisterTouchWindow(hwnd(), TWF_WANTPALM);
+  // Only register a touch window if we are using WM_TOUCH.
+  if (!features::IsUsingWMPointerForTouch())
+    RegisterTouchWindow(hwnd(), TWF_WANTPALM);
 
   HRESULT hr = ::CreateStdAccessibleObject(hwnd(), OBJID_WINDOW,
                                            IID_PPV_ARGS(&window_accessible_));
@@ -140,7 +143,7 @@ bool LegacyRenderWidgetHostHWND::Init() {
   // Direct Manipulation is enabled on Windows 10+. The CreateInstance function
   // returns NULL if Direct Manipulation is not available.
   direct_manipulation_helper_ =
-      gfx::win::DirectManipulationHelper::CreateInstance();
+      ui::win::DirectManipulationHelper::CreateInstance();
   if (direct_manipulation_helper_)
     direct_manipulation_helper_->Initialize(hwnd());
 

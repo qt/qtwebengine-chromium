@@ -28,7 +28,6 @@
 #include "core/css/cssom/InlineStylePropertyMap.h"
 #include "core/dom/AccessibleNode.h"
 #include "core/dom/Attr.h"
-#include "core/dom/ComputedAccessibleNode.h"
 #include "core/dom/DOMTokenList.h"
 #include "core/dom/DatasetDOMStringMap.h"
 #include "core/dom/ElementShadow.h"
@@ -133,6 +132,8 @@ class ElementRareData : public NodeRareData {
   CustomElementDefinition* GetCustomElementDefinition() const {
     return custom_element_definition_.Get();
   }
+  void SetIsValue(const AtomicString& is_value) { is_value_ = is_value; }
+  const AtomicString& IsValue() const { return is_value_; }
 
   AccessibleNode* GetAccessibleNode() const { return accessible_node_.Get(); }
   AccessibleNode* EnsureAccessibleNode(Element* owner_element) {
@@ -140,13 +141,6 @@ class ElementRareData : public NodeRareData {
       accessible_node_ = new AccessibleNode(owner_element);
     }
     return accessible_node_;
-  }
-
-  ComputedAccessibleNode* EnsureComputedAccessibleNode(Element* owner_element) {
-    if (!computed_accessible_node_) {
-      computed_accessible_node_ = ComputedAccessibleNode::Create(owner_element);
-    }
-    return computed_accessible_node_;
   }
 
   AttrNodeList& EnsureAttrNodeList();
@@ -201,11 +195,11 @@ class ElementRareData : public NodeRareData {
   // TODO(davaajav):remove this field when v0 custom elements are deprecated
   Member<V0CustomElementDefinition> v0_custom_element_definition_;
   Member<CustomElementDefinition> custom_element_definition_;
+  AtomicString is_value_;
 
   Member<PseudoElementData> pseudo_element_data_;
 
   TraceWrapperMember<AccessibleNode> accessible_node_;
-  TraceWrapperMember<ComputedAccessibleNode> computed_accessible_node_;
 
   explicit ElementRareData(NodeRenderingData*);
 };

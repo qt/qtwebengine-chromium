@@ -91,6 +91,7 @@ class VideoSendStream {
     std::map<uint32_t, StreamStats> substreams;
     webrtc::VideoContentType content_type =
         webrtc::VideoContentType::UNSPECIFIED;
+    uint32_t huge_frames_sent = 0;
   };
 
   struct Config {
@@ -130,6 +131,10 @@ class VideoSendStream {
       // expected to be the limiting factor, but a chip could be running at
       // 30fps (for example) exactly.
       bool full_overuse_time = false;
+
+      // Enables the new method to estimate the cpu load from encoding, used for
+      // cpu adaptation.
+      bool experiment_cpu_load_estimator = false;
 
       // Uninitialized VideoEncoder instance to be used for encoding. Will be
       // initialized from inside the VideoSendStream.
@@ -197,6 +202,18 @@ class VideoSendStream {
       std::string c_name;
     } rtp;
 
+    struct Rtcp {
+      Rtcp();
+      Rtcp(const Rtcp&);
+      ~Rtcp();
+      std::string ToString() const;
+
+      // Time interval between RTCP report for video
+      int64_t video_report_interval_ms = 1000;
+      // Time interval between RTCP report for audio
+      int64_t audio_report_interval_ms = 5000;
+    } rtcp;
+
     // Transport for outgoing packets.
     Transport* send_transport = nullptr;
 
@@ -235,6 +252,16 @@ class VideoSendStream {
     // method for those exceptional cases where we do use it.
     Config(const Config&);
   };
+
+  // Updates the sending state for all simulcast layers that the video send
+  // stream owns. This can mean updating the activity one or for multiple
+  // layers. The ordering of active layers is the order in which the
+  // rtp modules are stored in the VideoSendStream.
+  // Note: This starts stream activity if it is inactive and one of the layers
+  // is active. This stops stream activity if it is active and all layers are
+  // inactive.
+  virtual void UpdateActiveSimulcastLayers(
+      const std::vector<bool> active_layers) = 0;
 
   // Starts stream activity.
   // When a stream is active, it can receive, process and deliver packets.

@@ -33,6 +33,7 @@
 
 #include "WebCommon.h"
 #include "WebMediaStreamTrack.h"
+#include "WebVector.h"
 
 #include "WebPrivatePtr.h"
 #if INSIDE_BLINK
@@ -71,6 +72,20 @@ class WebMediaStreamSource {
     kReadyStateLive = 0,
     kReadyStateMuted = 1,
     kReadyStateEnded = 2
+  };
+
+  struct Capabilities {
+    // WebVector is used to store an optional range for the below numeric
+    // fields. All of them should have 0 or 2 values representing min/max.
+    WebVector<long> width;
+    WebVector<long> height;
+    WebVector<double> aspect_ratio;
+    WebVector<double> frame_rate;
+    WebVector<bool> echo_cancellation;
+
+    WebMediaStreamTrack::FacingMode facing_mode =
+        WebMediaStreamTrack::FacingMode::kNone;
+    WebString device_id;
   };
 
   WebMediaStreamSource() = default;
@@ -112,6 +127,8 @@ class WebMediaStreamSource {
   BLINK_PLATFORM_EXPORT void SetEchoCancellation(bool echo_cancellation);
 
   BLINK_PLATFORM_EXPORT WebMediaConstraints Constraints();
+
+  BLINK_PLATFORM_EXPORT void SetCapabilities(const Capabilities&);
 
   // Only used if if this is a WebAudio source.
   // The WebAudioDestinationConsumer is not owned, and has to be disposed of

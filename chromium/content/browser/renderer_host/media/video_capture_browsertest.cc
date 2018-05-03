@@ -10,12 +10,12 @@
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/video_capture_controller.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/content_browser_test.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/media_switches.h"
 #include "media/capture/video_capture_types.h"
-#include "services/video_capture/public/cpp/constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using testing::_;
@@ -114,8 +114,7 @@ class VideoCaptureBrowserTest : public ContentBrowserTest,
   VideoCaptureBrowserTest() {
     params_ = TestParams(GetParam());
     if (params_.use_mojo_service) {
-      scoped_feature_list_.InitAndEnableFeature(
-          video_capture::kMojoVideoCapture);
+      scoped_feature_list_.InitAndEnableFeature(features::kMojoVideoCapture);
     }
   }
 
@@ -185,7 +184,7 @@ class VideoCaptureBrowserTest : public ContentBrowserTest,
     const auto& descriptor = descriptors[params_.device_index_to_use];
     MediaStreamDevice media_stream_device(
         MEDIA_DEVICE_VIDEO_CAPTURE, descriptor.device_id,
-        descriptor.display_name, descriptor.facing);
+        descriptor.display_name(), descriptor.facing);
     session_id_ = video_capture_manager_->Open(media_stream_device);
     media::VideoCaptureParams capture_params;
     capture_params.requested_format = media::VideoCaptureFormat(

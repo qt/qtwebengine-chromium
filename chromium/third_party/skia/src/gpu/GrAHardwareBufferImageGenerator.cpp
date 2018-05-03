@@ -17,6 +17,7 @@
 #include "GrBackendSurface.h"
 #include "GrContext.h"
 #include "GrContextPriv.h"
+#include "GrProxyProvider.h"
 #include "GrResourceCache.h"
 #include "GrResourceProvider.h"
 #include "GrTexture.h"
@@ -146,14 +147,17 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::onGenerateTexture(
 #endif
 
 sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* context) {
-    if (!context->getGpu() || kOpenGL_GrBackend != context->contextPriv().getBackend()) {
+    if (context->abandoned() || kOpenGL_GrBackend != context->contextPriv().getBackend()) {
         // Check if GrContext is not abandoned and the backend is GL.
         return nullptr;
     }
 
+    auto proxyProvider = context->contextPriv().proxyProvider();
+
     // return a cached GrTexture if invoked with the same context
     if (fOriginalTexture && fOwningContextID == context->uniqueID()) {
-        return GrSurfaceProxy::MakeWrapped(sk_ref_sp(fOriginalTexture), kTopLeft_GrSurfaceOrigin);
+        return proxyProvider->createWrapped(sk_ref_sp(fOriginalTexture),
+                                            kTopLeft_GrSurfaceOrigin);
     }
 
     while (GL_NO_ERROR != glGetError()) {} //clear GL errors
@@ -225,7 +229,10 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* cont
         eglDestroyImageKHR(display, image);
         return nullptr;
     }
-    tex->setRelease(deleteImageTexture, new BufferCleanupHelper(image, display));
+    sk_sp<GrReleaseProcHelper> releaseHelper(
+            new GrReleaseProcHelper(deleteImageTexture, new BufferCleanupHelper(image, display)));
+
+    tex->setRelease(std::move(releaseHelper));
 
     // We fail this assert, if the context has changed. This will be fully handled after
     // skbug.com/6812 is ready.
@@ -241,7 +248,7 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* cont
     //TODO: GrResourceCache should delete GrTexture, when GrContext is deleted. Currently
     //TODO: SkMessageBus ignores messages for deleted contexts and GrTexture will leak.
     context->contextPriv().getResourceCache()->insertCrossContextGpuResource(fOriginalTexture);
-    return GrSurfaceProxy::MakeWrapped(std::move(tex), kTopLeft_GrSurfaceOrigin);
+    return proxyProvider->createWrapped(std::move(tex), kTopLeft_GrSurfaceOrigin);
 }
 
 bool GrAHardwareBufferImageGenerator::onIsValid(GrContext* context) const {

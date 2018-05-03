@@ -12,8 +12,10 @@
 
 #include <memory>
 
+#if defined(WEBRTC_WIN)
 // Must be included first before openssl headers.
 #include "rtc_base/win32.h"  // NOLINT
+#endif  // WEBRTC_WIN
 
 #include <openssl/bio.h>
 #include <openssl/bn.h>
@@ -205,11 +207,7 @@ OpenSSLKeyPair* OpenSSLKeyPair::GetReference() {
 }
 
 void OpenSSLKeyPair::AddReference() {
-#if defined(OPENSSL_IS_BORINGSSL)
   EVP_PKEY_up_ref(pkey_);
-#else
-  CRYPTO_add(&pkey_->references, 1, CRYPTO_LOCK_EVP_PKEY);
-#endif
 }
 
 std::string OpenSSLKeyPair::PrivateKeyToPEMString() const {
@@ -268,14 +266,14 @@ bool OpenSSLKeyPair::operator!=(const OpenSSLKeyPair& other) const {
 static void PrintCert(X509* x509) {
   BIO* temp_memory_bio = BIO_new(BIO_s_mem());
   if (!temp_memory_bio) {
-    RTC_LOG_F(LS_ERROR) << "Failed to allocate temporary memory bio";
+    RTC_DLOG_F(LS_ERROR) << "Failed to allocate temporary memory bio";
     return;
   }
   X509_print_ex(temp_memory_bio, x509, XN_FLAG_SEP_CPLUS_SPC, 0);
   BIO_write(temp_memory_bio, "\0", 1);
   char* buffer;
   BIO_get_mem_data(temp_memory_bio, &buffer);
-  RTC_LOG(LS_VERBOSE) << buffer;
+  RTC_DLOG(LS_VERBOSE) << buffer;
   BIO_free(temp_memory_bio);
 }
 #endif
@@ -327,7 +325,7 @@ OpenSSLCertificate* OpenSSLCertificate::FromPEMString(
 // and before CleanupSSL.
 bool OpenSSLCertificate::GetSignatureDigestAlgorithm(
     std::string* algorithm) const {
-  int nid = OBJ_obj2nid(x509_->sig_alg->algorithm);
+  int nid = X509_get_signature_nid(x509_);
   switch (nid) {
     case NID_md5WithRSA:
     case NID_md5WithRSAEncryption:
@@ -366,10 +364,6 @@ bool OpenSSLCertificate::GetSignatureDigestAlgorithm(
       return false;
   }
   return true;
-}
-
-std::unique_ptr<SSLCertChain> OpenSSLCertificate::GetChain() const {
-  return nullptr;
 }
 
 bool OpenSSLCertificate::ComputeDigest(const std::string& algorithm,
@@ -446,11 +440,7 @@ void OpenSSLCertificate::ToDER(Buffer* der_buffer) const {
 
 void OpenSSLCertificate::AddReference() const {
   RTC_DCHECK(x509_ != nullptr);
-#if defined(OPENSSL_IS_BORINGSSL)
   X509_up_ref(x509_);
-#else
-  CRYPTO_add(&x509_->references, 1, CRYPTO_LOCK_X509);
-#endif
 }
 
 bool OpenSSLCertificate::operator==(const OpenSSLCertificate& other) const {
@@ -594,6 +584,10 @@ SSLIdentity* OpenSSLIdentity::FromPEMChainStrings(
 
 const OpenSSLCertificate& OpenSSLIdentity::certificate() const {
   return *static_cast<const OpenSSLCertificate*>(&cert_chain_->Get(0));
+}
+
+const SSLCertChain& OpenSSLIdentity::cert_chain() const {
+  return *cert_chain_.get();
 }
 
 OpenSSLIdentity* OpenSSLIdentity::GetReference() const {

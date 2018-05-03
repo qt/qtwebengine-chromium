@@ -12,9 +12,8 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/resource_type.h"
-#include "content/public/common/service_worker_modes.h"
 #include "net/http/http_request_headers.h"
-#include "third_party/WebKit/common/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -24,9 +23,6 @@ class ServiceWorkerUtils {
   static bool IsMainResourceType(ResourceType type) {
     return IsResourceTypeFrame(type) || type == RESOURCE_TYPE_SHARED_WORKER;
   }
-
-  // A helper for creating a do-nothing status callback.
-  static void NoOpStatusCallback(ServiceWorkerStatusCode status) {}
 
   // Returns true if |scope| matches |url|.
   CONTENT_EXPORT static bool ScopeMatches(const GURL& scope, const GURL& url);
@@ -44,8 +40,6 @@ class ServiceWorkerUtils {
   static bool ContainsDisallowedCharacter(const GURL& scope,
                                           const GURL& script_url,
                                           std::string* error_message);
-
-  CONTENT_EXPORT static bool IsScriptStreamingEnabled();
 
   // Returns true if all members of |urls| have the same origin, and
   // OriginCanAccessServiceWorkers is true for this origin.

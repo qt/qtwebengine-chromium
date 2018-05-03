@@ -32,6 +32,13 @@ class CORE_EXPORT ComputedStylePropertyMap : public StylePropertyMapReadOnly {
     StylePropertyMapReadOnly::Trace(visitor);
   }
 
+  unsigned int size() override;
+
+  // ComputedStylePropertyMap needs to be sorted. This puts CSS properties
+  // first, then prefixed properties, then custom properties. Everything is
+  // sorted by code point within each category.
+  static bool ComparePropertyNames(const String&, const String&);
+
  protected:
   ComputedStylePropertyMap(Node* node, const String& pseudo_element = String())
       : StylePropertyMapReadOnly(),
@@ -41,6 +48,8 @@ class CORE_EXPORT ComputedStylePropertyMap : public StylePropertyMapReadOnly {
   const CSSValue* GetProperty(CSSPropertyID) override;
   const CSSValue* GetCustomProperty(AtomicString) override;
   void ForEachProperty(const IterationCallback&) override;
+
+  String SerializationForShorthand(const CSSProperty&) final;
 
  private:
   // TODO: Pseudo-element support requires reintroducing Element.pseudo(...).

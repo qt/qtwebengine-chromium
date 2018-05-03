@@ -28,7 +28,7 @@
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/request_priority.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -69,8 +69,7 @@ class CONTENT_EXPORT ResourceDispatcher {
   // CORS preflight requests.
   static int MakeRequestID();
 
-  explicit ResourceDispatcher(
-      scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner);
+  ResourceDispatcher();
   virtual ~ResourceDispatcher();
 
   // Call this method to load the resource synchronously (i.e., in one shot).
@@ -111,7 +110,8 @@ class CONTENT_EXPORT ResourceDispatcher {
       std::unique_ptr<RequestPeer> peer,
       scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints);
+      network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
+      base::OnceClosure* continue_navigation_function);
 
   // Removes a request from the |pending_requests_| list, returning true if the
   // request was found and removed.
@@ -136,11 +136,6 @@ class CONTENT_EXPORT ResourceDispatcher {
   // delegate have a longer lifetime than the ResourceDispatcher.
   void set_delegate(ResourceDispatcherDelegate* delegate) {
     delegate_ = delegate;
-  }
-
-  void SetThreadTaskRunner(
-      scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner) {
-    thread_task_runner_ = thread_task_runner;
   }
 
   base::WeakPtr<ResourceDispatcher> GetWeakPtr() {
@@ -232,8 +227,6 @@ class CONTENT_EXPORT ResourceDispatcher {
   PendingRequestMap pending_requests_;
 
   ResourceDispatcherDelegate* delegate_;
-
-  scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner_;
 
   base::WeakPtrFactory<ResourceDispatcher> weak_factory_;
 

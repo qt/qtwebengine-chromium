@@ -23,27 +23,25 @@ InspectorSession::InspectorSession(Client* client,
                                    int session_id,
                                    v8_inspector::V8Inspector* inspector,
                                    int context_group_id,
-                                   const String* saved_state)
+                                   const String& reattach_state)
     : client_(client),
       v8_session_(nullptr),
       session_id_(session_id),
       disposed_(false),
       instrumenting_agents_(instrumenting_agents),
       inspector_backend_dispatcher_(new protocol::UberDispatcher(this)) {
-  if (saved_state) {
+  String v8_state;
+  if (!reattach_state.IsNull()) {
     std::unique_ptr<protocol::Value> state =
-        protocol::StringUtil::parseJSON(*saved_state);
+        protocol::StringUtil::parseJSON(reattach_state);
     if (state)
       state_ = protocol::DictionaryValue::cast(std::move(state));
     if (!state_)
       state_ = protocol::DictionaryValue::create();
+    state_->getString(kV8StateKey, &v8_state);
   } else {
     state_ = protocol::DictionaryValue::create();
   }
-
-  String v8_state;
-  if (saved_state)
-    state_->getString(kV8StateKey, &v8_state);
   v8_session_ = inspector->connect(context_group_id, this,
                                    ToV8InspectorStringView(v8_state));
 }
@@ -132,7 +130,7 @@ void InspectorSession::SendProtocolResponse(int call_id,
     state_to_send = String();
   else
     last_sent_state_ = state_to_send;
-  client_->SendProtocolMessage(session_id_, call_id, message, state_to_send);
+  client_->SendProtocolResponse(session_id_, call_id, message, state_to_send);
 }
 
 class InspectorSession::Notification {
@@ -195,8 +193,8 @@ void InspectorSession::flushProtocolNotifications() {
   for (size_t i = 0; i < agents_.size(); i++)
     agents_[i]->FlushPendingProtocolNotifications();
   for (size_t i = 0; i < notification_queue_.size(); ++i) {
-    client_->SendProtocolMessage(session_id_, 0,
-                                 notification_queue_[i]->Serialize(), String());
+    client_->SendProtocolNotification(session_id_,
+                                      notification_queue_[i]->Serialize());
   }
   notification_queue_.clear();
 }

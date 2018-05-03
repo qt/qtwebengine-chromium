@@ -29,7 +29,6 @@
 #include "core/CoreExport.h"
 #include "core/editing/EditingBoundary.h"
 #include "core/editing/Forward.h"
-#include "core/editing/TextGranularity.h"
 #include "core/events/InputEvent.h"
 #include "platform/text/TextDirection.h"
 #include "platform/wtf/Forward.h"
@@ -50,16 +49,12 @@ enum class PositionMoveType {
   kGraphemeCluster,
 };
 
-enum class DeleteDirection {
-  kForward,
-  kBackward,
-};
-
 class Document;
 class Element;
 class HTMLElement;
 class HTMLSpanElement;
 class Node;
+class Pasteboard;
 
 // This file contains a set of helper functions used by the editing commands
 
@@ -80,7 +75,6 @@ CORE_EXPORT bool IsRootEditableElement(const Node&);
 CORE_EXPORT Element* RootEditableElement(const Node&);
 Element* RootEditableElementOf(const Position&);
 Element* RootEditableElementOf(const PositionInFlatTree&);
-Element* RootEditableElementOf(const VisiblePosition&);
 ContainerNode* RootEditableElementOrTreeScopeRootNodeOf(const Position&);
 // highestEditableRoot returns the highest editable node. If the
 // rootEditableElement of the speicified Position is <body>, this returns the
@@ -98,7 +92,6 @@ Node* HighestEnclosingNodeOfType(
     bool (*node_is_of_type)(const Node*),
     EditingBoundaryCrossingRule = kCannotCrossEditingBoundary,
     Node* stay_within = nullptr);
-Node* HighestNodeToRemoveInPruning(Node*, const Node* exclude_node = nullptr);
 
 Element* EnclosingBlock(
     const Node*,
@@ -109,9 +102,7 @@ CORE_EXPORT Element* EnclosingBlock(const PositionInFlatTree&,
                                     EditingBoundaryCrossingRule);
 Element* EnclosingBlockFlowElement(
     const Node&);  // Deprecated, use enclosingBlock instead.
-Element* EnclosingTableCell(const Position&);
 Element* AssociatedElementOf(const Position&);
-Node* EnclosingEmptyListItem(const VisiblePosition&);
 Element* EnclosingAnchorElement(const Position&);
 // Returns the lowest ancestor with the specified QualifiedName. If the
 // specified Position is editable, this function returns an editable
@@ -144,6 +135,8 @@ inline ContainerNode* ParentCrossingShadowBoundaries<EditingInFlatTreeStrategy>(
   return FlatTreeTraversal::Parent(node);
 }
 
+void WriteImageNodeToPasteboard(Pasteboard*, const Node&, const String&);
+
 // boolean functions on Node
 
 // FIXME: editingIgnoresContent, canHaveChildrenForEditing, and isAtomicNode
@@ -160,29 +153,22 @@ inline bool CanHaveChildrenForEditing(const Node* node) {
 
 bool IsAtomicNode(const Node*);
 CORE_EXPORT bool IsEnclosingBlock(const Node*);
-bool IsTabHTMLSpanElement(const Node*);
+CORE_EXPORT bool IsTabHTMLSpanElement(const Node*);
 bool IsTabHTMLSpanElementTextNode(const Node*);
 bool IsMailHTMLBlockquoteElement(const Node*);
 // Returns true if the specified node is visible <table>. We don't want to add
 // invalid nodes to <table> elements.
 bool IsDisplayInsideTable(const Node*);
-bool IsInline(const Node*);
 bool IsTableCell(const Node*);
 bool IsEmptyTableCell(const Node*);
-bool IsTableStructureNode(const Node*);
 bool IsHTMLListElement(const Node*);
 bool IsListItem(const Node*);
 bool IsPresentationalHTMLElement(const Node*);
-bool IsNodeRendered(const Node&);
 bool IsRenderedAsNonInlineTableImageOrHR(const Node*);
-// Returns true if specified nodes are elements, have identical tag names,
-// have identical attributes, and are editable.
-CORE_EXPORT bool AreIdenticalElements(const Node&, const Node&);
 bool IsNonTableCellHTMLBlockElement(const Node*);
 bool IsBlockFlowElement(const Node&);
 EUserSelect UsedValueOfUserSelect(const Node&);
 bool IsInPasswordField(const Position&);
-bool IsTextSecurityNode(const Node*);
 CORE_EXPORT TextDirection DirectionOfEnclosingBlockOf(const Position&);
 CORE_EXPORT TextDirection
 DirectionOfEnclosingBlockOf(const PositionInFlatTree&);
@@ -204,13 +190,6 @@ CORE_EXPORT PositionInFlatTree
 NextVisuallyDistinctCandidate(const PositionInFlatTree&);
 Position PreviousVisuallyDistinctCandidate(const Position&);
 PositionInFlatTree PreviousVisuallyDistinctCandidate(const PositionInFlatTree&);
-
-Position PositionBeforeContainingSpecialElement(
-    const Position&,
-    HTMLElement** containing_special_element = nullptr);
-Position PositionAfterContainingSpecialElement(
-    const Position&,
-    HTMLElement** containing_special_element = nullptr);
 
 // This is a |const Node&| versions of two deprecated functions above.
 inline Position FirstPositionInOrBeforeNode(const Node& node) {
@@ -274,32 +253,7 @@ bool IsNodeFullyContained(const EphemeralRange&, const Node&);
 CORE_EXPORT bool IsEditablePosition(const Position&);
 bool IsEditablePosition(const PositionInFlatTree&);
 bool IsRichlyEditablePosition(const Position&);
-bool LineBreakExistsAtPosition(const Position&);
 
-// miscellaneous functions on Position
-
-enum WhitespacePositionOption {
-  kNotConsiderNonCollapsibleWhitespace,
-  kConsiderNonCollapsibleWhitespace
-};
-
-// |leadingCollapsibleWhitespacePosition(position)| returns a previous position
-// of |position| if it is at collapsible whitespace, otherwise it returns null
-// position. When it is called with |NotConsiderNonCollapsibleWhitespace| and
-// a previous position in a element which has CSS property "white-space:pre",
-// or its variant, |leadingCollapsibleWhitespacePosition()| returns null
-// position.
-Position LeadingCollapsibleWhitespacePosition(
-    const Position&,
-    TextAffinity,
-    WhitespacePositionOption = kNotConsiderNonCollapsibleWhitespace);
-
-// TDOO(editing-dev): We should move |TrailingWhitespacePosition()| to
-// "DeleteSelection.cpp" since it is used only in "DeleteSelection.cpp".
-Position TrailingWhitespacePosition(
-    const Position&,
-    WhitespacePositionOption = kNotConsiderNonCollapsibleWhitespace);
-unsigned NumEnclosingMailBlockquotes(const Position&);
 PositionWithAffinity PositionRespectingEditingBoundary(
     const Position&,
     const LayoutPoint& local_point,
@@ -335,8 +289,6 @@ LastEditableVisiblePositionBeforePositionInRoot(const PositionInFlatTree&,
 CORE_EXPORT VisiblePosition VisiblePositionBeforeNode(const Node&);
 VisiblePosition VisiblePositionAfterNode(const Node&);
 
-bool LineBreakExistsAtVisiblePosition(const VisiblePosition&);
-
 int ComparePositions(const VisiblePosition&, const VisiblePosition&);
 
 CORE_EXPORT int IndexForVisiblePosition(const VisiblePosition&,
@@ -354,12 +306,6 @@ CORE_EXPORT VisiblePosition VisiblePositionForIndex(int index,
 // Functions returning HTMLElement
 
 HTMLElement* CreateDefaultParagraphElement(Document&);
-HTMLElement* CreateHTMLElement(Document&, const QualifiedName&);
-
-HTMLElement* EnclosingList(const Node*);
-HTMLElement* OutermostEnclosingList(const Node*,
-                                    const HTMLElement* root_list = nullptr);
-Node* EnclosingListChild(const Node*);
 
 // -------------------------------------------------------------------------
 // Element
@@ -370,18 +316,19 @@ Node* EnclosingListChild(const Node*);
 HTMLSpanElement* CreateTabSpanElement(Document&);
 HTMLSpanElement* CreateTabSpanElement(Document&, const String& tab_text);
 
-// Boolean functions on Element
+Element* FindEventTargetFrom(LocalFrame&, const VisibleSelection&);
 
-bool CanMergeLists(const Element& first_list, const Element& second_list);
+// Note: ImageElementFromImageDocument() is both used in ExecuteCopy() and
+// Editor::CanCopy()
+HTMLImageElement* ImageElementFromImageDocument(const Document*);
+
+// Boolean functions on Element
 
 CORE_EXPORT bool ElementCannotHaveEndTag(const Node&);
 
 // -------------------------------------------------------------------------
 // VisibleSelection
 // -------------------------------------------------------------------------
-
-// Functions returning VisibleSelection
-VisibleSelection SelectionForParagraphIteration(const VisibleSelection&);
 
 // Miscellaneous functions on Text
 inline bool IsWhitespace(UChar c) {
@@ -408,7 +355,6 @@ inline bool IsAmbiguousBoundaryCharacter(UChar character) {
 String StringWithRebalancedWhitespace(const String&,
                                       bool start_is_start_of_paragraph,
                                       bool should_emit_nbs_pbefore_end);
-const String& NonBreakingSpaceString();
 
 CORE_EXPORT String RepeatString(const String&, unsigned);
 
@@ -441,10 +387,6 @@ DispatchEventResult DispatchBeforeInputEditorCommand(Node*,
 DispatchEventResult DispatchBeforeInputDataTransfer(Node*,
                                                     InputEvent::InputType,
                                                     DataTransfer*);
-
-InputEvent::InputType DeletionInputTypeFromTextGranularity(DeleteDirection,
-                                                           TextGranularity);
-
 }  // namespace blink
 
 #endif

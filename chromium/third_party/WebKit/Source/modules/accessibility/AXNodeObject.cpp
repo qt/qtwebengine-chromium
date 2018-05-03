@@ -183,41 +183,6 @@ static bool IsListElement(Node* node) {
          IsHTMLDListElement(*node);
 }
 
-static bool IsPresentationalInTable(AXObject* parent,
-                                    HTMLElement* current_element) {
-  if (!current_element)
-    return false;
-
-  Node* parent_node = parent->GetNode();
-  if (!parent_node || !parent_node->IsHTMLElement())
-    return false;
-
-  // AXTable determines the role as checking isTableXXX.
-  // If Table has explicit role including presentation, AXTable doesn't assign
-  // implicit Role to a whole Table. That's why we should check it based on
-  // node.
-  // Normal Table Tree is that
-  // cell(its role)-> tr(tr role)-> tfoot, tbody, thead(ignored role) ->
-  //     table(table role).
-  // If table has presentation role, it will be like
-  // cell(group)-> tr(unknown) -> tfoot, tbody, thead(ignored) ->
-  //     table(presentation).
-  if (IsHTMLTableCellElement(*current_element) &&
-      IsHTMLTableRowElement(*parent_node))
-    return parent->HasInheritedPresentationalRole();
-
-  if (IsHTMLTableRowElement(*current_element) &&
-      IsHTMLTableSectionElement(ToHTMLElement(*parent_node))) {
-    // Because TableSections have ignored role, presentation should be checked
-    // with its parent node.
-    AXObject* table_object = parent->ParentObject();
-    Node* table_node = table_object ? table_object->GetNode() : nullptr;
-    return IsHTMLTableElement(table_node) &&
-           table_object->HasInheritedPresentationalRole();
-  }
-  return false;
-}
-
 static bool IsRequiredOwnedElement(AXObject* parent,
                                    AccessibilityRole current_role,
                                    HTMLElement* current_element) {
@@ -270,17 +235,9 @@ const AXObject* AXNodeObject::InheritsPresentationalRoleFrom() const {
   HTMLElement* element = nullptr;
   if (GetNode() && GetNode()->IsHTMLElement())
     element = ToHTMLElement(GetNode());
-  if (!parent->HasInheritedPresentationalRole()) {
-    if (!GetLayoutObject() || !GetLayoutObject()->IsBoxModelObject())
-      return nullptr;
+  if (!parent->HasInheritedPresentationalRole())
+    return nullptr;
 
-    LayoutBoxModelObject* css_box = ToLayoutBoxModelObject(GetLayoutObject());
-    if (!css_box->IsTableCell() && !css_box->IsTableRow())
-      return nullptr;
-
-    if (!IsPresentationalInTable(parent, element))
-      return nullptr;
-  }
   // ARIA spec says that when a parent object is presentational and this object
   // is a required owned element of that parent, then this object is also
   // presentational.
@@ -421,6 +378,9 @@ AccessibilityRole AXNodeObject::NativeAccessibilityRoleIgnoringAria() const {
 
   if (IsHTMLMeterElement(*GetNode()))
     return kMeterRole;
+
+  if (IsHTMLProgressElement(*GetNode()))
+    return kProgressIndicatorRole;
 
   if (IsHTMLOutputElement(*GetNode()))
     return kStatusRole;
@@ -694,6 +654,19 @@ AXObject* AXNodeObject::MenuButtonForMenu() const {
   return nullptr;
 }
 
+AXObject* AXNodeObject::MenuButtonForMenuIfExists() const {
+  Element* menu_item = MenuItemElementForMenu();
+
+  if (menu_item) {
+    // ARIA just has generic menu items. AppKit needs to know if this is a top
+    // level items like MenuBarButton or MenuBarItem
+    AXObject* menu_item_ax = AXObjectCache().Get(menu_item);
+    if (menu_item_ax && menu_item_ax->IsMenuButton())
+      return menu_item_ax;
+  }
+  return nullptr;
+}
+
 static Element* SiblingWithAriaRole(String role, Node* node) {
   Node* parent = node->parentNode();
   if (!parent)
@@ -876,6 +849,7 @@ bool AXNodeObject::IsMultiSelectable() const {
                                         multiselectable)) {
         return multiselectable;
       }
+      break;
     }
     default:
       break;
@@ -1579,6 +1553,7 @@ bool AXNodeObject::ValueForRange(float* out_value) const {
         *out_value = (min_value + max_value) / 2.0f;
         return true;
       }
+      FALLTHROUGH;
     }
     case kSplitterRole: {
       *out_value = 50.0f;

@@ -331,11 +331,12 @@ void InspectorLayerTreeAgent::BuildLayerIdToNodeIdMap(
     BuildLayerIdToNodeIdMap(child, layer_id_to_node_id_map);
   if (!root->GetLayoutObject().IsLayoutIFrame())
     return;
-  LocalFrameView* child_frame_view =
+  FrameView* child_frame_view =
       ToLayoutEmbeddedContent(root->GetLayoutObject()).ChildFrameView();
-  if (!child_frame_view)
+  if (!child_frame_view || !child_frame_view->IsLocalFrameView())
     return;
-  LayoutView* child_layout_view = child_frame_view->GetLayoutView();
+  LayoutView* child_layout_view =
+      ToLocalFrameView(child_frame_view)->GetLayoutView();
   if (!child_layout_view)
     return;
   PaintLayerCompositor* child_compositor = child_layout_view->Compositor();
@@ -432,6 +433,18 @@ Response InspectorLayerTreeAgent::makeSnapshot(const String& layer_id,
   IntSize size = ExpandedIntSize(layer->Size());
   IntRect interest_rect(IntPoint(0, 0), size);
   suppress_layer_paint_events_ = true;
+
+  // If we hit a devtool break point in the middle of document lifecycle, for
+  // example, https://crbug.com/788219, this will prevent crash when clicking
+  // the "layer" panel.
+  if (inspected_frames_->Root()->View()->GetFrame().GetDocument() &&
+      inspected_frames_->Root()
+          ->View()
+          ->GetFrame()
+          .GetDocument()
+          ->Lifecycle()
+          .LifecyclePostponed())
+    return Response::Error("Layer does not draw content");
 
   inspected_frames_->Root()->View()->UpdateAllLifecyclePhasesExceptPaint();
   for (auto frame = inspected_frames_->begin();

@@ -50,11 +50,14 @@ class SVGGeometryElement : public SVGGraphicsElement {
   Path ToClipPath() const;
 
   SVGAnimatedNumber* pathLength() const { return path_length_.Get(); }
-  LayoutObject* CreateLayoutObject(const ComputedStyle&) override;
+
   virtual float getTotalLength();
   virtual SVGPointTearOff* getPointAtLength(float distance);
+
+  float AuthorPathLength() const;
   float PathLengthScaleFactor() const;
-  virtual float ComputePathLength() const;
+  static float PathLengthScaleFactor(float computed_path_length,
+                                     float author_path_length);
 
   void Trace(blink::Visitor*) override;
 
@@ -63,8 +66,15 @@ class SVGGeometryElement : public SVGGraphicsElement {
                      Document&,
                      ConstructionType = kCreateSVGElement);
 
+  void SvgAttributeChanged(const QualifiedName&) override;
+
+  void GeometryAttributeChanged();
+  void GeometryPresentationAttributeChanged(const QualifiedName&);
+
  private:
   bool IsSVGGeometryElement() const final { return true; }
+  virtual float ComputePathLength() const;
+  LayoutObject* CreateLayoutObject(const ComputedStyle&) override;
 
   Member<SVGAnimatedNumber> path_length_;
 };

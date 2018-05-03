@@ -528,12 +528,12 @@ float HarfBuzzPositionToFloat(hb_position_t value) {
 bool IsSafeToBreakBefore(const hb_glyph_info_t* glyph_infos,
                          unsigned num_glyphs,
                          unsigned i) {
-  // At the end of the run.
-  if (i == num_glyphs - 1)
+  // Before the first glyph is safe to break.
+  if (!i)
     return true;
 
   // Not at a cluster boundary.
-  if (glyph_infos[i].cluster == glyph_infos[i + 1].cluster)
+  if (glyph_infos[i].cluster == glyph_infos[i - 1].cluster)
     return false;
 
   // The HB_GLYPH_FLAG_UNSAFE_TO_BREAK flag is set for all glyphs in a
@@ -700,7 +700,7 @@ void ShapeResult::InsertRun(std::unique_ptr<ShapeResult::RunInfo> run) {
 // synthesize a run without glyphs.
 void ShapeResult::InsertRunForIndex(unsigned start_character_index) {
   DCHECK(runs_.IsEmpty());
-  runs_.push_back(base::MakeUnique<RunInfo>(
+  runs_.push_back(std::make_unique<RunInfo>(
       primary_font_.get(), !Rtl() ? HB_DIRECTION_LTR : HB_DIRECTION_RTL,
       CanvasRotationInVertical::kRegular, HB_SCRIPT_UNKNOWN,
       start_character_index, 0, num_characters_));

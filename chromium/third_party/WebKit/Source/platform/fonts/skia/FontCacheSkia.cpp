@@ -60,7 +60,7 @@ AtomicString ToAtomicString(const SkString& str) {
   return AtomicString::FromUTF8(str.c_str(), str.size());
 }
 
-#if defined(OS_ANDROID) || defined(OS_LINUX)
+#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_FUCHSIA)
 // Android special locale for retrieving the color emoji font
 // based on the proposed changes in UTR #51 for introducing
 // an Emoji script code:
@@ -104,7 +104,7 @@ AtomicString FontCache::GetFamilyNameForCharacter(
   typeface->getFamilyName(&skia_family_name);
   return ToAtomicString(skia_family_name);
 }
-#endif
+#endif  // defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_FUCHSIA)
 
 void FontCache::PlatformInit() {}
 
@@ -285,7 +285,7 @@ std::unique_ptr<FontPlatformData> FontCache::CreateFontPlatformData(
   const auto& tf = paint_tf.ToSkTypeface();
   std::unique_ptr<FontPlatformData> font_platform_data =
       WTF::WrapUnique(new FontPlatformData(
-          paint_tf, name.data(), font_size,
+          paint_tf, name, font_size,
           (font_description.Weight() >
                FontSelectionValue(200) +
                    FontSelectionValue(tf->fontStyle().weight()) ||

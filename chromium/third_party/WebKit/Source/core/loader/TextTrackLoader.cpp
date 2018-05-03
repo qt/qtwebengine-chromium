@@ -66,14 +66,24 @@ void TextTrackLoader::CancelLoad() {
   ClearResource();
 }
 
+void TextTrackLoader::ResponseReceived(Resource*,
+                                       const ResourceResponse& response,
+                                       std::unique_ptr<WebDataConsumerHandle>) {
+  if (response.IsOpaqueResponseFromServiceWorker()) {
+    CorsPolicyPreventedLoad(GetDocument().GetSecurityOrigin(),
+                            response.OriginalURLViaServiceWorker());
+  }
+}
+
 bool TextTrackLoader::RedirectReceived(Resource* resource,
                                        const ResourceRequest& request,
                                        const ResourceResponse&) {
   DCHECK_EQ(GetResource(), resource);
   if (resource->GetResourceRequest().GetFetchRequestMode() ==
           network::mojom::FetchRequestMode::kCORS ||
-      GetDocument().GetSecurityOrigin()->CanRequestNoSuborigin(request.Url()))
+      GetDocument().GetSecurityOrigin()->CanRequest(request.Url())) {
     return true;
+  }
 
   CorsPolicyPreventedLoad(GetDocument().GetSecurityOrigin(), request.Url());
   if (!cue_load_timer_.IsActive())
@@ -140,7 +150,7 @@ bool TextTrackLoader::Load(const KURL& url,
   if (cross_origin != kCrossOriginAttributeNotSet) {
     cue_fetch_params.SetCrossOriginAccessControl(
         GetDocument().GetSecurityOrigin(), cross_origin);
-  } else if (!GetDocument().GetSecurityOrigin()->CanRequestNoSuborigin(url)) {
+  } else if (!GetDocument().GetSecurityOrigin()->CanRequest(url)) {
     // Text track elements without 'crossorigin' set on the parent are "No
     // CORS"; report error if not same-origin.
     CorsPolicyPreventedLoad(GetDocument().GetSecurityOrigin(), url);

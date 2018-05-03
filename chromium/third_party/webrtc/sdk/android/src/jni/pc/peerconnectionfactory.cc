@@ -26,6 +26,7 @@
 #include "rtc_base/stringutils.h"
 #include "rtc_base/thread.h"
 #include "sdk/android/generated_peerconnection_jni/jni/PeerConnectionFactory_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 #include "sdk/android/src/jni/pc/androidnetworkmonitor.h"
 #include "sdk/android/src/jni/pc/audio.h"
@@ -171,7 +172,8 @@ jlong CreatePeerConnectionFactoryForJava(
     const JavaParamRef<jobject>& joptions,
     const JavaParamRef<jobject>& jencoder_factory,
     const JavaParamRef<jobject>& jdecoder_factory,
-    rtc::scoped_refptr<AudioProcessing> audio_processor) {
+    rtc::scoped_refptr<AudioProcessing> audio_processor,
+    std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory) {
   // talk/ assumes pretty widely that the current Thread is ThreadManager'd, but
   // ThreadManager only WrapCurrentThread()s the thread where it is first
   // created.  Since the semantics around when auto-wrapping happens in
@@ -219,6 +221,7 @@ jlong CreatePeerConnectionFactoryForJava(
   cricket::WebRtcVideoDecoderFactory* legacy_video_decoder_factory = nullptr;
   std::unique_ptr<cricket::MediaEngineInterface> media_engine;
   if (jencoder_factory.is_null() && jdecoder_factory.is_null()) {
+#if defined(USE_BUILTIN_SW_CODECS)
     // This uses the legacy API, which automatically uses the internal SW
     // codecs in WebRTC.
     if (video_hw_acceleration_enabled) {
@@ -229,13 +232,16 @@ jlong CreatePeerConnectionFactoryForJava(
         adm, audio_encoder_factory, audio_decoder_factory,
         legacy_video_encoder_factory, legacy_video_decoder_factory, audio_mixer,
         audio_processor));
+#endif
   } else {
     // This uses the new API, does not automatically include software codecs.
     std::unique_ptr<VideoEncoderFactory> video_encoder_factory = nullptr;
     if (jencoder_factory.is_null()) {
+#if defined(USE_BUILTIN_SW_CODECS)
       legacy_video_encoder_factory = CreateLegacyVideoEncoderFactory();
       video_encoder_factory = std::unique_ptr<VideoEncoderFactory>(
           WrapLegacyVideoEncoderFactory(legacy_video_encoder_factory));
+#endif
     } else {
       video_encoder_factory = std::unique_ptr<VideoEncoderFactory>(
           CreateVideoEncoderFactory(jni, jencoder_factory));
@@ -243,9 +249,11 @@ jlong CreatePeerConnectionFactoryForJava(
 
     std::unique_ptr<VideoDecoderFactory> video_decoder_factory = nullptr;
     if (jdecoder_factory.is_null()) {
+#if defined(USE_BUILTIN_SW_CODECS)
       legacy_video_decoder_factory = CreateLegacyVideoDecoderFactory();
       video_decoder_factory = std::unique_ptr<VideoDecoderFactory>(
           WrapLegacyVideoDecoderFactory(legacy_video_decoder_factory));
+#endif
     } else {
       video_decoder_factory = std::unique_ptr<VideoDecoderFactory>(
           CreateVideoDecoderFactory(jni, jdecoder_factory));
@@ -262,7 +270,7 @@ jlong CreatePeerConnectionFactoryForJava(
       CreateModularPeerConnectionFactory(
           network_thread.get(), worker_thread.get(), signaling_thread.get(),
           std::move(media_engine), std::move(call_factory),
-          std::move(rtc_event_log_factory)));
+          std::move(rtc_event_log_factory), std::move(fec_controller_factory)));
   RTC_CHECK(factory) << "Failed to create the peer connection factory; "
                      << "WebRTC/libjingle init likely failed on this device";
   // TODO(honghaiz): Maybe put the options as the argument of
@@ -283,25 +291,18 @@ static jlong JNI_PeerConnectionFactory_CreatePeerConnectionFactory(
     const JavaParamRef<jclass>&,
     const JavaParamRef<jobject>& joptions,
     const JavaParamRef<jobject>& jencoder_factory,
-    const JavaParamRef<jobject>& jdecoder_factory) {
-  return CreatePeerConnectionFactoryForJava(jni, joptions, jencoder_factory,
-                                            jdecoder_factory,
-                                            CreateAudioProcessing());
-}
-
-static jlong
-JNI_PeerConnectionFactory_CreatePeerConnectionFactoryWithAudioProcessing(
-    JNIEnv* jni,
-    const JavaParamRef<jclass>&,
-    const JavaParamRef<jobject>& joptions,
-    const JavaParamRef<jobject>& jencoder_factory,
     const JavaParamRef<jobject>& jdecoder_factory,
-    jlong native_audio_processor) {
+    jlong native_audio_processor,
+    jlong native_fec_controller_factory) {
   rtc::scoped_refptr<AudioProcessing> audio_processor =
       reinterpret_cast<AudioProcessing*>(native_audio_processor);
-  RTC_DCHECK(audio_processor);
-  return CreatePeerConnectionFactoryForJava(jni, joptions, jencoder_factory,
-                                            jdecoder_factory, audio_processor);
+  std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory(
+      reinterpret_cast<FecControllerFactoryInterface*>(
+          native_fec_controller_factory));
+  return CreatePeerConnectionFactoryForJava(
+      jni, joptions, jencoder_factory, jdecoder_factory,
+      audio_processor ? audio_processor : CreateAudioProcessing(),
+      std::move(fec_controller_factory));
 }
 
 static void JNI_PeerConnectionFactory_FreeFactory(JNIEnv*,
@@ -482,12 +483,14 @@ static void JNI_PeerConnectionFactory_SetVideoHwAccelerationOptions(
     jlong native_factory,
     const JavaParamRef<jobject>& local_egl_context,
     const JavaParamRef<jobject>& remote_egl_context) {
+#if defined(USE_BUILTIN_SW_CODECS)
   OwnedFactoryAndThreads* owned_factory =
       reinterpret_cast<OwnedFactoryAndThreads*>(native_factory);
   SetEglContext(jni, owned_factory->legacy_encoder_factory(),
                 local_egl_context);
   SetEglContext(jni, owned_factory->legacy_decoder_factory(),
                 remote_egl_context);
+#endif
 }
 
 static jlong JNI_PeerConnectionFactory_GetNativePeerConnectionFactory(

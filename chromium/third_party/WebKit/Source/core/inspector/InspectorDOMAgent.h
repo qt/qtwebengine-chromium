@@ -80,6 +80,7 @@ class CORE_EXPORT InspectorDOMAgent final
 
   static protocol::Response ToResponse(ExceptionState&);
   static bool GetPseudoElementType(PseudoId, String*);
+  static protocol::DOM::ShadowRootType GetShadowRootType(ShadowRoot*);
   static ShadowRoot* UserAgentShadowRoot(Node*);
   static Color ParseColor(protocol::DOM::RGBA*);
 
@@ -204,6 +205,9 @@ class CORE_EXPORT InspectorDOMAgent final
       protocol::Maybe<bool> pierce,
       std::unique_ptr<protocol::DOM::Node>*) override;
 
+  protocol::Response getFrameOwner(const String& frame_id,
+                                   int* node_id) override;
+
   bool Enabled() const;
   void ReleaseDanglingNodes();
 
@@ -227,7 +231,7 @@ class CORE_EXPORT InspectorDOMAgent final
   void DidPerformElementShadowDistribution(Element*);
   void DidPerformSlotDistribution(HTMLSlotElement*);
   void FrameDocumentUpdated(LocalFrame*);
-  void FrameDisconnected(LocalFrame*, HTMLFrameOwnerElement*);
+  void FrameOwnerContentUpdated(LocalFrame*, HTMLFrameOwnerElement*);
   void PseudoElementCreated(PseudoElement*);
   void PseudoElementDestroyed(PseudoElement*);
 

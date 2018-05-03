@@ -31,6 +31,7 @@ class ImageSkiaRep;
 
 namespace ui {
 class EventHandler;
+class KeyboardHook;
 class XScopedEventSelector;
 }
 
@@ -163,6 +164,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   gfx::Point GetLocationOnScreenInPixels() const override;
   void SetCapture() override;
   void ReleaseCapture() override;
+  bool CaptureSystemKeyEventsImpl(
+      base::Optional<base::flat_set<int>> keys_codes) override;
+  void ReleaseSystemKeyEventCapture() override;
   void SetCursorNative(gfx::NativeCursor cursor) override;
   void MoveCursorToScreenLocationInPixels(
       const gfx::Point& location_in_pixels) override;
@@ -241,11 +245,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   // Dispatches a key event.
   void DispatchKeyEvent(ui::KeyEvent* event);
-
-  // Updates the location of |located_event| to be in |host|'s coordinate system
-  // so that it can be dispatched to |host|.
-  void ConvertEventToDifferentHost(ui::LocatedEvent* located_event,
-                                   DesktopWindowTreeHostX11* host);
 
   // Resets the window region for the current widget bounds if necessary.
   void ResetWindowRegion();
@@ -422,6 +421,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   bool had_pointer_;
   bool had_pointer_grab_;
   bool had_window_focus_;
+
+  // Captures system key events when keyboard lock is requested.
+  std::unique_ptr<ui::KeyboardHook> keyboard_hook_;
 
   base::CancelableCallback<void()> delayed_resize_task_;
 

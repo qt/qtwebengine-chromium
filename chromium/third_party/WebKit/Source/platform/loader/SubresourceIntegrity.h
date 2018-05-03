@@ -21,13 +21,15 @@ class PLATFORM_EXPORT SubresourceIntegrity final {
   STATIC_ONLY(SubresourceIntegrity);
 
  public:
-  class ReportInfo final {
+  class PLATFORM_EXPORT ReportInfo final {
    public:
     enum class UseCounterFeature {
       kSRIElementWithMatchingIntegrityAttribute,
       kSRIElementWithNonMatchingIntegrityAttribute,
       kSRIElementIntegrityAttributeButIneligible,
       kSRIElementWithUnparsableIntegrityAttribute,
+      kSRISignatureCheck,
+      kSRISignatureSuccess,
     };
 
     void AddUseCount(UseCounterFeature);

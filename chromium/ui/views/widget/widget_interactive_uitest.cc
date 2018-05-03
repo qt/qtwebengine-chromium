@@ -14,11 +14,13 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/win/windows_version.h"
 #include "build/build_config.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/test/ui_controls.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/event_processor.h"
@@ -362,6 +364,75 @@ TEST_F(WidgetTestInteractive, DesktopNativeWidgetAuraActivationAndFocusTest) {
   widget2->CloseNow();
   widget1->CloseNow();
 }
+
+class TouchEventHandler : public ui::EventHandler {
+ public:
+  TouchEventHandler(Widget* widget) : widget_(widget) {
+    widget_->GetNativeWindow()->GetHost()->window()->AddPreTargetHandler(this);
+  }
+
+  ~TouchEventHandler() override {
+    widget_->GetNativeWindow()->GetHost()->window()->RemovePreTargetHandler(
+        this);
+  }
+
+  void WaitForEvents() {
+    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
+    base::MessageLoopForUI::ScopedNestableTaskAllower allow_nested(loop);
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+  static void __stdcall AsyncActivateMouse(HWND hwnd,
+                                           UINT msg,
+                                           ULONG_PTR data,
+                                           LRESULT result) {
+    EXPECT_EQ(MA_NOACTIVATE, result);
+    std::move(reinterpret_cast<TouchEventHandler*>(data)->quit_closure_).Run();
+  }
+
+  void ActivateViaMouse() {
+    SendMessageCallback(
+        widget_->GetNativeWindow()->GetHost()->GetAcceleratedWidget(),
+        WM_MOUSEACTIVATE, 0, 0, AsyncActivateMouse,
+        reinterpret_cast<ULONG_PTR>(this));
+  }
+
+ private:
+  // ui::EventHandler:
+  void OnTouchEvent(ui::TouchEvent* event) override {
+    if (event->type() == ui::ET_TOUCH_PRESSED)
+      ActivateViaMouse();
+  }
+
+  Widget* widget_;
+  base::OnceClosure quit_closure_;
+  DISALLOW_COPY_AND_ASSIGN(TouchEventHandler);
+};
+
+// TODO(dtapuska): Disabled due to it being flaky crbug.com/817531
+TEST_F(WidgetTestInteractive, DISABLED_TouchNoActivateWindow) {
+  // ui_controls::SendTouchEvents which uses InjectTouchInput API only works
+  // on Windows 8 and up.
+  if (base::win::GetVersion() <= base::win::VERSION_WIN7)
+    return;
+
+  View* focusable_view = new View;
+  focusable_view->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+  Widget* widget = CreateWidget();
+  widget->GetContentsView()->AddChildView(focusable_view);
+  widget->Show();
+
+  {
+    TouchEventHandler touch_event_handler(widget);
+    ASSERT_TRUE(ui_controls::SendTouchEvents(ui_controls::PRESS, 1, 100, 100));
+    touch_event_handler.WaitForEvents();
+  }
+
+  widget->CloseNow();
+}
+
 #endif  // defined(OS_WIN)
 
 TEST_F(WidgetTestInteractive, CaptureAutoReset) {
@@ -639,6 +710,82 @@ TEST_F(WidgetTestInteractive, ViewFocusOnWidgetActivationChanges) {
 
   widget1->CloseNow();
   widget2->CloseNow();
+}
+
+// Test z-order of child widgets relative to their parent.
+TEST_F(WidgetTestInteractive, ChildStackedRelativeToParent) {
+  WidgetAutoclosePtr parent(CreateTopLevelPlatformWidget());
+  Widget* child = CreateChildPlatformWidget(parent->GetNativeView());
+
+  parent->SetBounds(gfx::Rect(160, 100, 320, 200));
+  child->SetBounds(gfx::Rect(50, 50, 30, 20));
+
+  // Child shown first. Initially not visible, but on top of parent when shown.
+  // Use ShowInactive whenever showing the child, otherwise the usual activation
+  // logic will just put it on top anyway. Here, we want to ensure it is on top
+  // of its parent regardless.
+  child->ShowInactive();
+  EXPECT_FALSE(child->IsVisible());
+
+  ShowSync(parent.get());
+  EXPECT_TRUE(child->IsVisible());
+  EXPECT_TRUE(IsWindowStackedAbove(child, parent.get()));
+  EXPECT_FALSE(IsWindowStackedAbove(parent.get(), child));  // Sanity check.
+
+  WidgetAutoclosePtr popover(CreateTopLevelPlatformWidget());
+  popover->SetBounds(gfx::Rect(150, 90, 340, 240));
+  ShowSync(popover.get());
+
+  // NOTE: for aura-mus-client stacking of top-levels is not maintained in the
+  // client, so z-order of top-levels can't be determined.
+  const bool check_toplevel_z_order = !IsMus();
+  if (check_toplevel_z_order)
+    EXPECT_TRUE(IsWindowStackedAbove(popover.get(), child));
+  EXPECT_TRUE(IsWindowStackedAbove(child, parent.get()));
+
+  // Showing the parent again should raise it and its child above the popover.
+  ShowSync(parent.get());
+  EXPECT_TRUE(IsWindowStackedAbove(child, parent.get()));
+  if (check_toplevel_z_order)
+    EXPECT_TRUE(IsWindowStackedAbove(parent.get(), popover.get()));
+
+  // Test grandchildren.
+  Widget* grandchild = CreateChildPlatformWidget(child->GetNativeView());
+  grandchild->SetBounds(gfx::Rect(5, 5, 15, 10));
+  grandchild->ShowInactive();
+  EXPECT_TRUE(IsWindowStackedAbove(grandchild, child));
+  EXPECT_TRUE(IsWindowStackedAbove(child, parent.get()));
+  if (check_toplevel_z_order)
+    EXPECT_TRUE(IsWindowStackedAbove(parent.get(), popover.get()));
+
+  ShowSync(popover.get());
+  if (check_toplevel_z_order)
+    EXPECT_TRUE(IsWindowStackedAbove(popover.get(), grandchild));
+  EXPECT_TRUE(IsWindowStackedAbove(grandchild, child));
+
+  ShowSync(parent.get());
+  EXPECT_TRUE(IsWindowStackedAbove(grandchild, child));
+  if (check_toplevel_z_order)
+    EXPECT_TRUE(IsWindowStackedAbove(child, popover.get()));
+
+  // Test hiding and reshowing.
+  parent->Hide();
+  EXPECT_FALSE(grandchild->IsVisible());
+  ShowSync(parent.get());
+
+  EXPECT_TRUE(IsWindowStackedAbove(grandchild, child));
+  EXPECT_TRUE(IsWindowStackedAbove(child, parent.get()));
+  if (check_toplevel_z_order)
+    EXPECT_TRUE(IsWindowStackedAbove(parent.get(), popover.get()));
+
+  grandchild->Hide();
+  EXPECT_FALSE(grandchild->IsVisible());
+  grandchild->ShowInactive();
+
+  EXPECT_TRUE(IsWindowStackedAbove(grandchild, child));
+  EXPECT_TRUE(IsWindowStackedAbove(child, parent.get()));
+  if (check_toplevel_z_order)
+    EXPECT_TRUE(IsWindowStackedAbove(parent.get(), popover.get()));
 }
 
 #if defined(OS_WIN)

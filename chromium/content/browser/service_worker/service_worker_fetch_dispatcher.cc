@@ -431,9 +431,10 @@ class ServiceWorkerFetchDispatcher::ResponseCallback
 class ServiceWorkerFetchDispatcher::URLLoaderAssets
     : public base::RefCounted<ServiceWorkerFetchDispatcher::URLLoaderAssets> {
  public:
-  URLLoaderAssets(network::mojom::URLLoaderFactoryPtr url_loader_factory,
-                  std::unique_ptr<network::mojom::URLLoader> url_loader,
-                  std::unique_ptr<DelegatingURLLoaderClient> url_loader_client)
+  URLLoaderAssets(
+      std::unique_ptr<network::mojom::URLLoaderFactory> url_loader_factory,
+      std::unique_ptr<network::mojom::URLLoader> url_loader,
+      std::unique_ptr<DelegatingURLLoaderClient> url_loader_client)
       : url_loader_factory_(std::move(url_loader_factory)),
         url_loader_(std::move(url_loader)),
         url_loader_client_(std::move(url_loader_client)) {}
@@ -447,21 +448,28 @@ class ServiceWorkerFetchDispatcher::URLLoaderAssets
   friend class base::RefCounted<URLLoaderAssets>;
   virtual ~URLLoaderAssets() {}
 
-  network::mojom::URLLoaderFactoryPtr url_loader_factory_;
+  std::unique_ptr<network::mojom::URLLoaderFactory> url_loader_factory_;
   std::unique_ptr<network::mojom::URLLoader> url_loader_;
   std::unique_ptr<DelegatingURLLoaderClient> url_loader_client_;
 
   DISALLOW_COPY_AND_ASSIGN(URLLoaderAssets);
 };
 
-// S13nServiceWorker
 ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
     std::unique_ptr<network::ResourceRequest> request,
+    const std::string& request_body_blob_uuid,
+    uint64_t request_body_blob_size,
+    blink::mojom::BlobPtr request_body_blob,
+    const std::string& client_id,
     scoped_refptr<ServiceWorkerVersion> version,
     const net::NetLogWithSource& net_log,
     base::OnceClosure prepare_callback,
     FetchCallback fetch_callback)
     : request_(std::move(request)),
+      request_body_blob_uuid_(request_body_blob_uuid),
+      request_body_blob_size_(request_body_blob_size),
+      request_body_blob_(std::move(request_body_blob)),
+      client_id_(client_id),
       version_(std::move(version)),
       resource_type_(static_cast<ResourceType>(request_->resource_type)),
       net_log_(net_log),
@@ -469,28 +477,12 @@ ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
       fetch_callback_(std::move(fetch_callback)),
       did_complete_(false),
       weak_factory_(this) {
-  net_log_.BeginEvent(net::NetLogEventType::SERVICE_WORKER_DISPATCH_FETCH_EVENT,
-                      net::NetLog::StringCallback(
-                          "event_type", ServiceWorkerMetrics::EventTypeToString(
-                                            GetEventType())));
-}
-
-// Non-S13nServiceWorker
-ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
-    std::unique_ptr<ServiceWorkerFetchRequest> legacy_request,
-    scoped_refptr<ServiceWorkerVersion> version,
-    ResourceType resource_type,
-    const net::NetLogWithSource& net_log,
-    base::OnceClosure prepare_callback,
-    FetchCallback fetch_callback)
-    : legacy_request_(std::move(legacy_request)),
-      version_(std::move(version)),
-      resource_type_(resource_type),
-      net_log_(net_log),
-      prepare_callback_(std::move(prepare_callback)),
-      fetch_callback_(std::move(fetch_callback)),
-      did_complete_(false),
-      weak_factory_(this) {
+#if DCHECK_IS_ON()
+  if (ServiceWorkerUtils::IsServicificationEnabled()) {
+    DCHECK((request_body_blob_uuid_.empty() && request_body_blob_size_ == 0 &&
+            !request_body_blob_ && client_id_.empty()));
+  }
+#endif  // DCHECK_IS_ON()
   net_log_.BeginEvent(net::NetLogEventType::SERVICE_WORKER_DISPATCH_FETCH_EVENT,
                       net::NetLog::StringCallback(
                           "event_type", ServiceWorkerMetrics::EventTypeToString(
@@ -579,8 +571,7 @@ void ServiceWorkerFetchDispatcher::DispatchFetchEvent() {
       base::BindOnce(&ServiceWorkerFetchDispatcher::DidFailToDispatch,
                      weak_factory_.GetWeakPtr(), std::move(response_callback)));
   int event_finish_id = version_->StartRequest(
-      ServiceWorkerMetrics::EventType::FETCH_WAITUNTIL,
-      base::BindOnce(&ServiceWorkerUtils::NoOpStatusCallback));
+      ServiceWorkerMetrics::EventType::FETCH_WAITUNTIL, base::DoNothing());
   response_callback_rawptr->set_fetch_event_id(fetch_event_id);
 
   // Report navigation preload to DevTools if needed.
@@ -593,28 +584,22 @@ void ServiceWorkerFetchDispatcher::DispatchFetchEvent() {
   }
 
   // Dispatch the fetch event.
+  auto params = mojom::DispatchFetchEventParams::New();
+  params->request = *request_;
+  params->request_body_blob_uuid = request_body_blob_uuid_;
+  params->request_body_blob_size = request_body_blob_size_;
+  params->request_body_blob = request_body_blob_.PassInterface();
+  params->client_id = client_id_;
+  params->preload_handle = std::move(preload_handle_);
   // |event_dispatcher| is owned by |version_|. So it is safe to pass the
   // unretained raw pointer of |version_| to OnFetchEventFinished callback.
   // Pass |url_loader_assets_| to the callback to keep the URL loader related
   // assets alive while the FetchEvent is ongoing in the service worker.
-  if (ServiceWorkerUtils::IsServicificationEnabled()) {
-    DCHECK(request_);
-    DCHECK(!legacy_request_);
-    version_->event_dispatcher()->DispatchFetchEvent(
-        *request_, std::move(preload_handle_), std::move(response_callback_ptr),
-        base::BindOnce(&ServiceWorkerFetchDispatcher::OnFetchEventFinished,
-                       base::Unretained(version_.get()), event_finish_id,
-                       url_loader_assets_));
-  } else {
-    DCHECK(!request_);
-    DCHECK(legacy_request_);
-    version_->event_dispatcher()->DispatchLegacyFetchEvent(
-        *legacy_request_, std::move(preload_handle_),
-        std::move(response_callback_ptr),
-        base::BindOnce(&ServiceWorkerFetchDispatcher::OnFetchEventFinished,
-                       base::Unretained(version_.get()), event_finish_id,
-                       url_loader_assets_));
-  }
+  version_->event_dispatcher()->DispatchFetchEvent(
+      std::move(params), std::move(response_callback_ptr),
+      base::BindOnce(&ServiceWorkerFetchDispatcher::OnFetchEventFinished,
+                     base::Unretained(version_.get()), event_finish_id,
+                     url_loader_assets_));
 }
 
 void ServiceWorkerFetchDispatcher::DidFailToDispatch(
@@ -660,6 +645,7 @@ void ServiceWorkerFetchDispatcher::Complete(
            std::move(body_as_blob), version_);
 }
 
+// Non-S13nServiceWorker
 bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreload(
     net::URLRequest* original_request,
     base::OnceClosure on_response) {
@@ -670,7 +656,7 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreload(
   if (!version_->navigation_preload_state().enabled)
     return false;
   // TODO(horo): Currently NavigationPreload doesn't support request body.
-  if (!legacy_request_->blob_uuid.empty())
+  if (request_body_blob_)
     return false;
 
   ResourceRequestInfoImpl* original_info =
@@ -686,11 +672,8 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreload(
 
   DCHECK(!url_loader_assets_);
 
-  network::mojom::URLLoaderFactoryPtr url_loader_factory;
-  URLLoaderFactoryImpl::Create(
-      ResourceRequesterInfo::CreateForNavigationPreload(requester_info),
-      mojo::MakeRequest(&url_loader_factory),
-      BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
+  auto url_loader_factory = std::make_unique<URLLoaderFactoryImpl>(
+      ResourceRequesterInfo::CreateForNavigationPreload(requester_info));
 
   network::ResourceRequest request;
   request.method = original_request->method();
@@ -709,7 +692,7 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreload(
   // for the service worker navigation preload request.
   request.resource_type = RESOURCE_TYPE_SUB_RESOURCE;
   request.priority = original_request->priority();
-  request.service_worker_mode = static_cast<int>(ServiceWorkerMode::NONE);
+  request.skip_service_worker = true;
   request.do_not_prompt_for_login = true;
   request.render_frame_id = original_info->GetRenderFrameID();
   request.is_main_frame = original_info->IsMainFrame();
@@ -774,8 +757,7 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreloadWithURLLoader(
   // Set to SUB_RESOURCE because we shouldn't trigger NavigationResourceThrottle
   // for the service worker navigation preload request.
   resource_request.resource_type = RESOURCE_TYPE_SUB_RESOURCE;
-  resource_request.service_worker_mode =
-      static_cast<int>(ServiceWorkerMode::NONE);
+  resource_request.skip_service_worker = true;
   resource_request.do_not_prompt_for_login = true;
   DCHECK(net::HttpUtil::IsValidHeaderValue(
       version_->navigation_preload_state().header));
@@ -822,17 +804,11 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreloadWithURLLoader(
   // Unlike the non-S13N code path, we don't own the URLLoaderFactory being used
   // (it's the generic network factory), so we don't need to pass it to
   // URLLoaderAssets to keep it alive.
-  network::mojom::URLLoaderFactoryPtr null_factory;
+  std::unique_ptr<network::mojom::URLLoaderFactory> null_factory;
   url_loader_assets_ = base::MakeRefCounted<URLLoaderAssets>(
       std::move(null_factory), std::move(url_loader),
       std::move(url_loader_client));
   return true;
-}
-
-ServiceWorkerFetchType ServiceWorkerFetchDispatcher::GetFetchType() const {
-  if (ServiceWorkerUtils::IsServicificationEnabled())
-    return ServiceWorkerFetchType::FETCH;
-  return legacy_request_->fetch_type;
 }
 
 ServiceWorkerMetrics::EventType ServiceWorkerFetchDispatcher::GetEventType()

@@ -291,6 +291,63 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Blink.UpdateTime">
+  <owner>vmpstr@chromium.org</owner>
+  <summary>
+    Metrics that measure various update times in Blink. This includes paint,
+    compositing, and layout update times. The metrics are recorded once per
+    second and at the destruction of the local frame root.
+  </summary>
+  <metric name="Compositing.Average">
+    <summary>
+      The average time taken by the compositing phase in microseconds in the
+      event period.
+    </summary>
+  </metric>
+  <metric name="Compositing.WorstCase">
+    <summary>
+      The longest single time taken by the compositing phase in microseconds in
+      the event period.
+    </summary>
+  </metric>
+  <metric name="Paint.Average">
+    <summary>
+      The average time taken by the paint phase in microseconds in the event
+      period.
+    </summary>
+  </metric>
+  <metric name="Paint.WorstCase">
+    <summary>
+      The longest single time taken by the paint phase in microseconds in the
+      event period.
+    </summary>
+  </metric>
+  <metric name="PrePaint.Average">
+    <summary>
+      The average time taken by the pre-paint phase in microseconds in the event
+      period.
+    </summary>
+  </metric>
+  <metric name="PrePaint.WorstCase">
+    <summary>
+      The longest single time taken by the pre-paint phase in microseconds in
+      the event period.
+    </summary>
+  </metric>
+  <metric name="StyleAndLayout.Average">
+    <summary>
+      The average time taken by the style and layout phases in microseconds in
+      the event period.
+    </summary>
+  </metric>
+  <metric name="StyleAndLayout.WorstCase">
+    <summary>
+      The longest single time taken by the style and layout phases in
+      microseconds in the event period.
+    </summary>
+  </metric>
+</event>
+
 <event name="Blink.UseCounter">
   <owner>loonybear@chromium.org</owner>
   <summary>
@@ -542,6 +599,118 @@ be describing additional metrics about the same event.
       Measures the numbers of garbarge collection after the document is
       detached. This is recorded when the number reached certain numbers like 5
       or 10.
+    </summary>
+  </metric>
+</event>
+
+<event name="Download.Started">
+  <owner>jming@chromium.org</owner>
+  <summary>
+    Metrics taken when a download begins. It has one Download.Ended and none to
+    multiple Download.Interrupted/Download.Resumed events associated with it.
+  </summary>
+  <metric name="DownloadId">
+    <summary>
+      The id of the download that is used to associate separate events.
+    </summary>
+  </metric>
+  <metric name="DownloadSource">
+    <summary>
+      The source of the download, expressed as an enum defined in DownloadEntry.
+    </summary>
+  </metric>
+  <metric name="FileType">
+    <summary>
+      The type of file that is downloaded, expressed as an enum defined in
+      DownloadContentType.
+    </summary>
+  </metric>
+</event>
+
+<event name="Download.Completed">
+  <owner>jming@chromium.org</owner>
+  <summary>
+    Metrics taken when a download completes. Its parent event is
+    Download.Started.
+  </summary>
+  <metric name="DownloadId">
+    <summary>
+      The id of the download that is used to associate separate events.
+    </summary>
+  </metric>
+  <metric name="ResultingFileSize">
+    <summary>
+      The size of the file that is downloaded, expressed in kilobytes with
+      exponentially growing buckets.
+    </summary>
+  </metric>
+  <metric name="TimeSinceStart">
+    <summary>
+      The difference in the time between when the download finished and when it
+      began, expressed in miliseconds.
+    </summary>
+  </metric>
+</event>
+
+<event name="Download.Interrupted">
+  <owner>jming@chromium.org</owner>
+  <summary>
+    Metrics taken when a download is interrupted. Its parent event is
+    Download.Started.
+  </summary>
+  <metric name="ChangeInFileSize">
+    <summary>
+      The difference in the size of the file that is downloaded compared to the
+      initial reported size, expressed in kilobytes with exponentially growing
+      buckets.
+    </summary>
+  </metric>
+  <metric name="DownloadId">
+    <summary>
+      The id of the download that is used to associate separate events.
+    </summary>
+  </metric>
+  <metric name="Reason">
+    <summary>
+      The reason the download was interrupted, expressed as an enum defined in
+      DownloadInterruptReason.
+    </summary>
+  </metric>
+  <metric name="ResultingFileSize">
+    <summary>
+      The size of the file that is downloaded, expressed in kilobytes with
+      exponentially growing buckets.
+    </summary>
+  </metric>
+  <metric name="TimeSinceStart">
+    <summary>
+      The difference in the time between when the download interrupted and when
+      it began, expressed in miliseconds.
+    </summary>
+  </metric>
+</event>
+
+<event name="Download.Resumed">
+  <owner>jming@chromium.org</owner>
+  <summary>
+    Metrics taken when a download is resumed. Its parent event is
+    Download.Started.
+  </summary>
+  <metric name="DownloadId">
+    <summary>
+      The id of the download that is used to associate separate events.
+    </summary>
+  </metric>
+  <metric name="Mode">
+    <summary>
+      The mode by which the download was resumed, expressed as an enum defined
+      in ResumeMode.
+    </summary>
+  </metric>
+  <metric name="TimeSinceStart">
+    <summary>
+      The difference in the time between when the download resumed and when it
+      began, expressed in miliseconds.
     </summary>
   </metric>
 </event>
@@ -840,6 +1009,8 @@ be describing additional metrics about the same event.
     and the new number of significant media playbacks that occured this visit.
   </summary>
   <metric name="Engagement.IsHigh"/>
+  <metric name="Engagement.IsHigh.Changes"/>
+  <metric name="Engagement.IsPreloaded"/>
   <metric name="Engagement.Score"/>
   <metric name="Playbacks.Delta"/>
   <metric name="Playbacks.SecondsSinceLast"/>
@@ -998,6 +1169,14 @@ be describing additional metrics about the same event.
     <summary>
       Enumeration of audio decoder names, zero if none or unknown (Cast, HLS,
       etc). See WatchTimeRecorder::AudioDecoderName enum for expected values.
+    </summary>
+  </metric>
+  <metric name="AutoplayInitiated">
+    <summary>
+      Boolean value indicating whether the initial playback was initiated via
+      autoplay. Multilpe chunk records of the same player should have the same
+      value. Autoplay is defined as a playback starting before there was a user
+      activation on the page or without a user initiated same-domain navigation.
     </summary>
   </metric>
   <metric name="HasAudio">
@@ -1244,6 +1423,11 @@ be describing additional metrics about the same event.
   <summary>
     Metrics associated with memory consumption, in MB.
   </summary>
+  <metric name="ArrayBuffer">
+    <summary>
+      Measure of memory consumed by Array Buffer.
+    </summary>
+  </metric>
   <metric name="BlinkGC">
     <summary>
       Measure of memory consumed by Oilpan.
@@ -1265,10 +1449,30 @@ be describing additional metrics about the same event.
       Measure of memory allocated by malloc.
     </summary>
   </metric>
+  <metric name="NumberOfDocuments">
+    <summary>
+      The number of documents that the associated renderer owns.
+    </summary>
+  </metric>
   <metric name="NumberOfExtensions">
     <summary>
       The number of extensions that are served from the associated renderer
       process.
+    </summary>
+  </metric>
+  <metric name="NumberOfFrames">
+    <summary>
+      The number of frames that the associated renderer owns.
+    </summary>
+  </metric>
+  <metric name="NumberOfLayoutObjects">
+    <summary>
+      The number of layout objects that the associated renderer owns.
+    </summary>
+  </metric>
+  <metric name="NumberOfNodes">
+    <summary>
+      The number of nodes that the associated renderer owns.
     </summary>
   </metric>
   <metric name="PartitionAlloc">
@@ -1290,7 +1494,7 @@ be describing additional metrics about the same event.
   <metric name="ProcessType">
     <summary>
       Type of process (e.g. browser, renderer, GPU --- see
-      services/resource_coordinator/public/interfaces/memory_instrumentation/memory_instrumentation.mojom)
+      services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom)
       of associated metrics.
     </summary>
   </metric>
@@ -1787,6 +1991,50 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Permission">
+  <owner>timloh@chromium.org</owner>
+  <summary>
+    Metrics for when a user's permission actions. Currently we only log when a
+    permission prompt is resolved. Grouped (microphone+camera) permission
+    prompts are reported separately.
+  </summary>
+  <metric name="Action">
+    <summary>
+      An enum of type PermissionAction. One of GRANTED, DENIED, DISMISSED or
+      IGNORED.
+    </summary>
+  </metric>
+  <metric name="Gesture">
+    <summary>
+      An enum of type PermissionRequestGestureType, whether the prompt was
+      initiated by a user gesture.
+    </summary>
+  </metric>
+  <metric name="PermissionType">
+    <summary>
+      An enum of type ContentSettingsType.
+    </summary>
+  </metric>
+  <metric name="PriorDismissals">
+    <summary>
+      The number of dismissed prompts for the given (origin, permission) pair,
+      capped at 10 dismissals.
+    </summary>
+  </metric>
+  <metric name="PriorIgnores">
+    <summary>
+      The number of ignored prompts for the given (origin, permission) pair,
+      capped at 10 ignores.
+    </summary>
+  </metric>
+  <metric name="Source">
+    <summary>
+      An enum of type PermissionSourceUI. The UI surface for this action.
+      Currently we only record when this is PROMPT.
+    </summary>
+  </metric>
+</event>
+
 <event name="Plugins.FlashInstance">
   <owner>tommycli@chromium.org</owner>
   <summary>
@@ -1821,6 +2069,15 @@ be describing additional metrics about the same event.
       load.
     </summary>
   </metric>
+  <metric name="origin_opt_out">
+    <summary>
+      Set to 1 when previews were enabled but no preview was attempted because
+      the origin provided a Cache-Control:no-transform header in the main frame
+      response. This is a directive from the origin to not perform any
+      transformation so in the context of the Previews feature, it is an opt-out
+      by the origin site (rather than the user).
+    </summary>
+  </metric>
   <metric name="server_lofi">
     <summary>
       Set to 1 when a user is shown a server lo-fi image in a page load.
@@ -1852,6 +2109,41 @@ be describing additional metrics about the same event.
   </summary>
 </event>
 
+<event name="Security.SiteEngagement">
+  <owner>cthomp@chromium.org</owner>
+  <owner>enamelites@google.com</owner>
+  <summary>
+    Site engagement score behavior for a page with a given Security Level.
+  </summary>
+  <metric name="FinalSecurityLevel">
+    <summary>
+      The final SecurityLevel of the page before it is closed or another
+      navigation occurs. Based on the enum security_state::SecurityLevel.
+    </summary>
+  </metric>
+  <metric name="InitialSecurityLevel">
+    <summary>
+      The initial SecurityLevel of the page when the navigation commits. Based
+      on the enum security_state::SecurityLevel.
+    </summary>
+  </metric>
+  <metric name="ScoreDelta">
+    <summary>
+      The change in Site Engagement score for the page before it is closed or
+      another navigation occurs compared to the score from when the navigation
+      committed. Score is between 0.0 and 100.0; delta is between -100.0 and
+      100.0. Rounded to the nearest integer.
+    </summary>
+  </metric>
+  <metric name="ScoreFinal">
+    <summary>
+      The final Site Engagement score for the page before it is closed or
+      another navigation occurs. Score is between 0.0 and 100.0; this metric is
+      rounded down to a multiple of 10 to limit granularity.
+    </summary>
+  </metric>
+</event>
+
 <event name="SiteIsolation.XSD.Browser.Blocked">
   <owner>creis@chromium.org</owner>
   <owner>chrome-site-isolation@google.com</owner>
@@ -1863,6 +2155,12 @@ be describing additional metrics about the same event.
     <summary>
       Classification of the Content-Type HTTP response header into one of the
       blockable document flavours: html, xml, json, plain.
+    </summary>
+  </metric>
+  <metric name="ContentLengthWasZero">
+    <summary>
+      ContentLengthWasZero=1 if Content-Length was available and equal to 0.
+      ContentLengthWasZero=0 otherwise.
     </summary>
   </metric>
   <metric name="ContentResourceType">
@@ -2039,10 +2337,23 @@ be describing additional metrics about the same event.
       brought to foreground again.
     </summary>
   </metric>
+  <metric name="MRUIndex">
+    <summary>
+      Index of the tab in most-recently-used order. A value of N means there are
+      N tabs more recently used than the one that is being foregrounded or
+      closed.
+    </summary>
+  </metric>
   <metric name="TimeFromBackgrounded">
     <summary>
       Duration in MS from when the tab is backgrounded to when it is brought to
       foreground or closed.
+    </summary>
+  </metric>
+  <metric name="TotalTabCount">
+    <summary>
+      Total number of tabs open across all non-incognito browser windows. Helps
+      contextualize the MRUIndex value.
     </summary>
   </metric>
 </event>
@@ -2104,10 +2415,22 @@ be describing additional metrics about the same event.
     Collects information about a browser or app window to associate with the
     TabManager.TabMetrics entries for tabs in that window.
   </summary>
+  <metric name="IsActive">
+    <summary>
+      Whether the window is the active (frontmost) window.
+    </summary>
+  </metric>
   <metric name="ShowState">
     <summary>
       Enumeration of the window show state, such as fullscreen or minimized.
       Values are enumerated in metrics::WindowMetricsEvent::ShowState.
+    </summary>
+  </metric>
+  <metric name="TabCount">
+    <summary>
+      Number of tabs in the tab strip. Rounded down to the nearest exponential
+      bucket (with a bucket spacing factor of 1.5). Will be 1 for windows with
+      only one top-level WebContents, such as app windows.
     </summary>
   </metric>
   <metric name="Type">
@@ -2342,6 +2665,14 @@ be describing additional metrics about the same event.
       |chromeos::power::ml::UserActivityEvent::Event::Type|.
     </summary>
   </metric>
+  <metric name="KeyEventsInLastHour">
+    <summary>
+      The number of key events reported as user activity in the last hour. This
+      is bucketized so that it is recorded precisely when it is in [0, 99],
+      rounded to nearest 100 when it is in [100, 999] and rounded to nearest
+      1000 when it is in [1000, 9999]. It is capped at 10000.
+    </summary>
+  </metric>
   <metric name="LastActivityDay">
     <summary>
       An enum representing the last activity day of the week, defined in
@@ -2358,6 +2689,14 @@ be describing additional metrics about the same event.
       Last user activity time as hours since midnight in the local time zone.
     </summary>
   </metric>
+  <metric name="MouseEventsInLastHour">
+    <summary>
+      The number of mouse events reported as user activity in the last hour.
+      This is bucketized so that it is recorded precisely when it is in [0, 99],
+      rounded to nearest 100 when it is in [100, 999] and rounded to nearest
+      1000 when it is in [1000, 9999]. It is capped at 10000.
+    </summary>
+  </metric>
   <metric name="OnBattery">
     <summary>
       Boolean value to represent whether the device is currently on battery
@@ -2367,6 +2706,11 @@ be describing additional metrics about the same event.
   <metric name="RecentTimeActive">
     <summary>
       Duration of activity in seconds up to last activity.
+    </summary>
+  </metric>
+  <metric name="RecentVideoPlayingTime">
+    <summary>
+      Recent video playing time in seconds.
     </summary>
   </metric>
   <metric name="ScreenDimDelay">
@@ -2381,6 +2725,11 @@ be describing additional metrics about the same event.
       of inactivity.
     </summary>
   </metric>
+  <metric name="SequenceId">
+    <summary>
+      The ID of this event in the current session.
+    </summary>
+  </metric>
   <metric name="TimeSinceLastKey">
     <summary>
       Time from last key event in seconds.
@@ -2388,7 +2737,25 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="TimeSinceLastMouse">
     <summary>
-      Time from last mouse or touch event in seconds.
+      Time from last mouse event in seconds.
+    </summary>
+  </metric>
+  <metric name="TimeSinceLastTouch">
+    <summary>
+      Time from last touch event in seconds.
+    </summary>
+  </metric>
+  <metric name="TimeSinceLastVideoEnded">
+    <summary>
+      Time from the end of the last video playing in seconds.
+    </summary>
+  </metric>
+  <metric name="TouchEventsInLastHour">
+    <summary>
+      The number of touch events reported as user activity in the last hour.
+      This is bucketized so that it is recorded precisely when it is in [0, 99],
+      rounded to nearest 100 when it is in [100, 999] and rounded to nearest
+      1000 when it is in [1000, 9999]. It is capped at 10000.
     </summary>
   </metric>
 </event>
@@ -2401,6 +2768,17 @@ be describing additional metrics about the same event.
   <metric name="ActivityId">
     <summary>
       The ID of the activity that happened while a page was open.
+    </summary>
+  </metric>
+  <metric name="ContentType">
+    <summary>
+      Enumeration for the MIME type of the page. Values are enumerated in
+      metrics::TabMetricsEvent::ContentType.
+    </summary>
+  </metric>
+  <metric name="HasFormEntry">
+    <summary>
+      Boolean value indicating whether the page has any user-input text.
     </summary>
   </metric>
   <metric name="IsActive">
@@ -2423,6 +2801,12 @@ be describing additional metrics about the same event.
     <summary>
       Boolean value representing whether the containing browser is the topmost
       one on the screen.
+    </summary>
+  </metric>
+  <metric name="SiteEngagementScore">
+    <summary>
+      Site engagement score in the range [0, 100], rounded down to a multiple of
+      10 to limit granularity.
     </summary>
   </metric>
 </event>
@@ -2571,6 +2955,14 @@ be describing additional metrics about the same event.
     Records properties of page use in XR, including VR browsing and WebXR
     presentation.
   </summary>
+  <metric name="Duration">
+    <summary>
+      The approximate amount of time the user spends on a page in XR in seconds.
+      Times are reported accurately when low, for example, under a minute, and
+      get rounded to minutes and then hours as they get larger. This is done by
+      SessionTracker::GetRoundedDurationInSeconds.
+    </summary>
+  </metric>
   <metric name="EnteredFullscreen">
     <summary>
       A boolean that is set to 1 if the user requested fullscreen while in XR on
@@ -2579,9 +2971,29 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="TimeOnPage">
     <summary>
-      The aproximate amount of time the user spends on a page in XR in seconds.
+      Deprecated.
+    </summary>
+  </metric>
+  <metric name="WasVoiceSearchNavigation">
+    <summary>
+      A boolean that is set to 1 if this page was specifically requested and
+      recognized by a voice search.
+    </summary>
+  </metric>
+</event>
+
+<event name="XR.WebXR.PresentationSession">
+  <owner>offenwanger@chromium.org</owner>
+  <summary>
+    Records data for a presentation session, where WebXR is running an exclusive
+    presentation to some device.
+  </summary>
+  <metric name="Duration">
+    <summary>
+      The approximate amount of time the user spends in presentation in seconds.
       Times are reported accurately when low, for example, under a minute, and
-      get rounded to minutes and then hours as they get larger.
+      get rounded to minutes and then hours as they get larger.  This is done by
+      SessionTracker::GetRoundedDurationInSeconds.
     </summary>
   </metric>
 </event>

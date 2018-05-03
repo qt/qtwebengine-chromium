@@ -9,8 +9,8 @@
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/child_process_host.h"
 #include "ipc/ipc_message.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -92,6 +92,7 @@ ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
 
 ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
     const GURL& pattern,
+    blink::mojom::ServiceWorkerUpdateViaCache update_via_cache,
     int64_t registration_id,
     DeleteFlag delete_flag,
     const ServiceWorkerVersionInfo& active_version,
@@ -101,6 +102,7 @@ ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
     bool navigation_preload_enabled,
     size_t navigation_preload_header_length)
     : pattern(pattern),
+      update_via_cache(update_via_cache),
       registration_id(registration_id),
       delete_flag(delete_flag),
       active_version(active_version),

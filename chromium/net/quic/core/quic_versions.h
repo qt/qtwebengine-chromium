@@ -5,12 +5,12 @@
 #ifndef NET_QUIC_CORE_QUIC_VERSIONS_H_
 #define NET_QUIC_CORE_QUIC_VERSIONS_H_
 
-#include <string>
 #include <vector>
 
 #include "net/quic/core/quic_tag.h"
 #include "net/quic/core/quic_types.h"
 #include "net/quic/platform/api/quic_export.h"
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
 
@@ -33,9 +33,11 @@ enum QuicTransportVersion {
                          // WINDOW_UPDATE every 20 sent packets which do not
                          // contain retransmittable frames.
   QUIC_VERSION_41 = 41,  // RST_STREAM, ACK and STREAM frames match IETF format.
-  QUIC_VERSION_42 = 42,  // Initial packet number is randomly chosen from
-                         // [1:2^31],
-  QUIC_VERSION_43 = 43,  // Use IETF packet header format.
+  QUIC_VERSION_42 = 42,  // Allows receiving overlapping stream data.
+  QUIC_VERSION_43 = 43,  // PRIORITY frames are sent by client and accepted by
+                         // server.
+  QUIC_VERSION_99 = 99,  // Dumping ground for IETF QUIC changes which are not
+                         // yet ready for production.
 
   // IMPORTANT: if you are adding to this list, follow the instructions at
   // http://sites/quic/adding-and-removing-versions
@@ -100,8 +102,8 @@ using QuicVersionLabelVector = std::vector<QuicVersionLabel>;
 // IMPORTANT: if you are adding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
 static const QuicTransportVersion kSupportedTransportVersions[] = {
-    QUIC_VERSION_43, QUIC_VERSION_42, QUIC_VERSION_41, QUIC_VERSION_39,
-    QUIC_VERSION_38, QUIC_VERSION_37, QUIC_VERSION_35};
+    QUIC_VERSION_99, QUIC_VERSION_43, QUIC_VERSION_42, QUIC_VERSION_41,
+    QUIC_VERSION_39, QUIC_VERSION_38, QUIC_VERSION_37, QUIC_VERSION_35};
 
 // This vector contains all crypto handshake protocols that are supported.
 static const HandshakeProtocol kSupportedHandshakeProtocols[] = {
@@ -172,9 +174,9 @@ CreateQuicVersionLabel(ParsedQuicVersion parsed_version);
 QUIC_EXPORT_PRIVATE QuicVersionLabel
 QuicVersionToQuicVersionLabel(QuicTransportVersion transport_version);
 
-// Helper function which translates from a QuicVersionLabel to a std::string.
-QUIC_EXPORT_PRIVATE std::string QuicVersionLabelToString(
-    QuicVersionLabel version_label);
+// Helper function which translates from a QuicVersionLabel to a string.
+QUIC_EXPORT_PRIVATE QuicString
+QuicVersionLabelToString(QuicVersionLabel version_label);
 
 // Returns appropriate QuicTransportVersion from a QuicVersionLabel.
 // Returns QUIC_VERSION_UNSUPPORTED if |version_label| cannot be understood.
@@ -188,18 +190,18 @@ QuicVersionLabelToHandshakeProtocol(QuicVersionLabel version_label);
 
 // Helper function which translates from a QuicTransportVersion to a string.
 // Returns strings corresponding to enum names (e.g. QUIC_VERSION_6).
-QUIC_EXPORT_PRIVATE std::string QuicVersionToString(
-    QuicTransportVersion transport_version);
+QUIC_EXPORT_PRIVATE QuicString
+QuicVersionToString(QuicTransportVersion transport_version);
 
-// Helper function which translates from a ParsedQuicVersion to a std::string.
-// Returns std::strings corresponding to the on-the-wire tag.
-QUIC_EXPORT_PRIVATE std::string ParsedQuicVersionToString(
-    ParsedQuicVersion version);
+// Helper function which translates from a ParsedQuicVersion to a string.
+// Returns strings corresponding to the on-the-wire tag.
+QUIC_EXPORT_PRIVATE QuicString
+ParsedQuicVersionToString(ParsedQuicVersion version);
 
 // Returns comma separated list of string representations of QuicVersion enum
 // values in the supplied |versions| vector.
-QUIC_EXPORT_PRIVATE std::string QuicTransportVersionVectorToString(
-    const QuicTransportVersionVector& versions);
+QUIC_EXPORT_PRIVATE QuicString
+QuicTransportVersionVectorToString(const QuicTransportVersionVector& versions);
 
 // Returns comma separated list of std::string representations of
 // ParsedQuicVersion values in the supplied |versions| vector.

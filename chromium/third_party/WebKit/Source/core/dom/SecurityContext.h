@@ -29,17 +29,16 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
-#include "common/net/ip_address_space.mojom-blink.h"
 #include "core/CoreExport.h"
 #include "core/dom/SandboxFlags.h"
 #include "platform/heap/Handle.h"
-#include "platform/weborigin/Suborigin.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/text/StringHash.h"
 #include "platform/wtf/text/WTFString.h"
+#include "public/mojom/net/ip_address_space.mojom-blink.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/platform/WebURLRequest.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
 
 #include <memory>
 
@@ -100,8 +99,6 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
   WebInsecureRequestPolicy GetInsecureRequestPolicy() const {
     return insecure_request_policy_;
   }
-
-  void EnforceSuborigin(const Suborigin&);
 
   FeaturePolicy* GetFeaturePolicy() const { return feature_policy_.get(); }
   void InitializeFeaturePolicy(const ParsedFeaturePolicy& parsed_header,

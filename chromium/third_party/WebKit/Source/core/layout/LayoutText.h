@@ -118,7 +118,7 @@ class CORE_EXPORT LayoutText : public LayoutObject {
              LocalOrAbsoluteOption = kAbsoluteQuads,
              MapCoordinatesFlags mode = 0) const;
 
-  PositionWithAffinity PositionForPoint(const LayoutPoint&) override;
+  PositionWithAffinity PositionForPoint(const LayoutPoint&) const override;
 
   bool Is8Bit() const { return text_.Is8Bit(); }
   const LChar* Characters8() const { return text_.Impl()->Characters8(); }
@@ -282,7 +282,7 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   void InvalidateDisplayItemClients(PaintInvalidationReason) const override;
 
   // Returns the NGOffsetMapping object when the current text is laid out with
-  // LayoutNG, and flag LayoutNGPaintFragments is set.
+  // LayoutNG.
   // Note that the text can be in legacy layout even when LayoutNG is enabled,
   // so we can't simply check the RuntimeEnabledFeature.
   const NGOffsetMapping* GetNGOffsetMapping() const;

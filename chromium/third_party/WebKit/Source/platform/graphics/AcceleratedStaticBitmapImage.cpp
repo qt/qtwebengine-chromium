@@ -26,7 +26,7 @@ namespace blink {
 scoped_refptr<AcceleratedStaticBitmapImage>
 AcceleratedStaticBitmapImage::CreateFromSkImage(
     sk_sp<SkImage> image,
-    base::WeakPtr<WebGraphicsContext3DProviderWrapper>&&
+    base::WeakPtr<WebGraphicsContext3DProviderWrapper>
         context_provider_wrapper) {
   CHECK(image && image->isTextureBacked());
   return base::AdoptRef(new AcceleratedStaticBitmapImage(
@@ -49,7 +49,8 @@ AcceleratedStaticBitmapImage::CreateFromWebGLContextImage(
 AcceleratedStaticBitmapImage::AcceleratedStaticBitmapImage(
     sk_sp<SkImage> image,
     base::WeakPtr<WebGraphicsContext3DProviderWrapper>&&
-        context_provider_wrapper) {
+        context_provider_wrapper)
+    : paint_image_content_id_(cc::PaintImage::GetNextContentId()) {
   CHECK(image && image->isTextureBacked());
   texture_holder_ = WTF::WrapUnique(new SkiaTextureHolder(
       std::move(image), std::move(context_provider_wrapper)));
@@ -62,7 +63,8 @@ AcceleratedStaticBitmapImage::AcceleratedStaticBitmapImage(
     unsigned texture_id,
     base::WeakPtr<WebGraphicsContext3DProviderWrapper>&&
         context_provider_wrapper,
-    IntSize mailbox_size) {
+    IntSize mailbox_size)
+    : paint_image_content_id_(cc::PaintImage::GetNextContentId()) {
   texture_holder_ = WTF::WrapUnique(new MailboxTextureHolder(
       mailbox, sync_token, texture_id, std::move(context_provider_wrapper),
       mailbox_size));
@@ -117,14 +119,14 @@ AcceleratedStaticBitmapImage::~AcceleratedStaticBitmapImage() {
   }
 }
 
-void AcceleratedStaticBitmapImage::RetainOriginalSkImageForCopyOnWrite() {
+void AcceleratedStaticBitmapImage::RetainOriginalSkImage() {
   DCHECK(texture_holder_->IsSkiaTextureHolder());
   original_skia_image_ = texture_holder_->GetSkImage();
   original_skia_image_context_provider_wrapper_ = ContextProviderWrapper();
   DCHECK(original_skia_image_);
   WebThread* thread = Platform::Current()->CurrentThread();
   original_skia_image_thread_id_ = thread->ThreadId();
-  original_skia_image_task_runner_ = thread->GetWebTaskRunner();
+  original_skia_image_task_runner_ = thread->GetTaskRunner();
 }
 
 IntSize AcceleratedStaticBitmapImage::Size() const {
@@ -153,8 +155,10 @@ bool AcceleratedStaticBitmapImage::CopyToTexture(
   CheckThread();
   if (!IsValid())
     return false;
-  // |destProvider| may not be the same context as the one used for |m_image|,
-  // so we use a mailbox to generate a texture id for |destProvider| to access.
+  // This method should only be used for cross-context copying, otherwise it's
+  // wasting overhead.
+  DCHECK(texture_holder_->IsCrossThread() ||
+         dest_gl != ContextProviderWrapper()->ContextProvider()->ContextGL());
 
   // TODO(junov) : could reduce overhead by using kOrderingBarrier when we know
   // that the source and destination context or on the same stream.
@@ -177,7 +181,7 @@ bool AcceleratedStaticBitmapImage::CopyToTexture(
 
   // We need to update the texture holder's sync token to ensure that when this
   // image is deleted, the texture resource will not be recycled by skia before
-  // the the above texture copy has completed.
+  // the above texture copy has completed.
   gpu::SyncToken sync_token;
   dest_gl->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
   texture_holder_->UpdateSyncToken(sync_token);
@@ -191,10 +195,22 @@ PaintImage AcceleratedStaticBitmapImage::PaintImageForCurrentFrame() {
   CheckThread();
   if (!IsValid())
     return PaintImage();
-  CreateImageFromMailboxIfNeeded();
+
+  sk_sp<SkImage> image;
+  if (original_skia_image_ &&
+      original_skia_image_thread_id_ ==
+          Platform::Current()->CurrentThread()->ThreadId()) {
+    // We need to avoid consuming the mailbox in the context where it
+    // originated.  This avoids swapping back and forth between TextureHolder
+    // types.
+    image = original_skia_image_;
+  } else {
+    CreateImageFromMailboxIfNeeded();
+    image = texture_holder_->GetSkImage();
+  }
 
   return CreatePaintImageBuilder()
-      .set_image(texture_holder_->GetSkImage())
+      .set_image(image, paint_image_content_id_)
       .set_completion_state(PaintImage::CompletionState::DONE)
       .TakePaintImage();
 }
@@ -251,7 +267,7 @@ void AcceleratedStaticBitmapImage::EnsureMailbox(MailboxSyncMode mode,
       // To ensure that the texture resource stays alive we only really need
       // to retain the source SkImage until the mailbox is consumed, but this
       // works too.
-      RetainOriginalSkImageForCopyOnWrite();
+      RetainOriginalSkImage();
     }
 
     texture_holder_ = WTF::WrapUnique(

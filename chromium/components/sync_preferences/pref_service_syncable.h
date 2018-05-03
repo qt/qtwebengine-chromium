@@ -38,10 +38,10 @@ class PrefServiceSyncable : public PrefService {
   PrefServiceSyncable(
       std::unique_ptr<PrefNotifierImpl> pref_notifier,
       std::unique_ptr<PrefValueStore> pref_value_store,
-      PersistentPrefStore* user_prefs,
-      user_prefs::PrefRegistrySyncable* pref_registry,
+      scoped_refptr<PersistentPrefStore> user_prefs,
+      scoped_refptr<user_prefs::PrefRegistrySyncable> pref_registry,
       const PrefModelAssociatorClient* pref_model_associato_client,
-      base::Callback<void(PersistentPrefStore::PrefReadError)>
+      base::RepeatingCallback<void(PersistentPrefStore::PrefReadError)>
           read_error_callback,
       bool async);
   ~PrefServiceSyncable() override;
@@ -51,7 +51,7 @@ class PrefServiceSyncable : public PrefService {
   // individual extension pref store (to cache the effective extension prefs for
   // incognito windows). |overlay_pref_names| is a list of preference names
   // whose changes will not be persisted by the returned incognito pref service.
-  PrefServiceSyncable* CreateIncognitoPrefService(
+  std::unique_ptr<PrefServiceSyncable> CreateIncognitoPrefService(
       PrefStore* incognito_extension_pref_store,
       const std::vector<const char*>& overlay_pref_names,
       std::unique_ptr<PrefValueStore::Delegate> delegate);

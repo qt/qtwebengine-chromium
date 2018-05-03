@@ -25,8 +25,10 @@
 #include "ui/events/platform/platform_event_source.h"
 
 #if defined(USE_OZONE)
+#include "ui/gfx/client_native_pixmap_factory.h"
 #include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
 #include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/ozone_switches.h"
 #endif
 
 namespace aura {
@@ -163,9 +165,6 @@ Env::Env(Mode mode)
       is_touch_down_(false),
       get_last_mouse_location_from_mus_(mode_ == Mode::MUS),
       input_state_lookup_(InputStateLookup::Create()),
-#if defined(USE_OZONE)
-      native_pixmap_factory_(ui::CreateClientNativePixmapFactoryOzone()),
-#endif
       context_factory_(nullptr),
       context_factory_private_(nullptr) {
   DCHECK(lazy_tls_ptr.Pointer()->Get() == NULL);
@@ -173,13 +172,13 @@ Env::Env(Mode mode)
 }
 
 void Env::Init() {
+#if defined(USE_OZONE)
+  ui::CreateClientNativePixmapFactoryOzone();
+  DCHECK(gfx::ClientNativePixmapFactory::GetInstance());
+#endif
   if (mode_ == Mode::MUS) {
     EnableMusOSExchangeDataProvider();
     EnableMusOverrideInputInjector();
-#if defined(USE_OZONE)
-    // Required by all Aura-using clients of services/ui
-    gfx::ClientNativePixmapFactory::SetInstance(native_pixmap_factory_.get());
-#endif
     return;
   }
 
@@ -193,8 +192,9 @@ void Env::Init() {
   // instead of checking flags here.
   params.single_process = command_line->HasSwitch("single-process") ||
                           command_line->HasSwitch("in-process-gpu");
+  params.using_mojo = command_line->HasSwitch(switches::kEnableDrmMojo);
+
   ui::OzonePlatform::InitializeForUI(params);
-  gfx::ClientNativePixmapFactory::SetInstance(native_pixmap_factory_.get());
 #endif
   if (!ui::PlatformEventSource::GetInstance())
     event_source_ = ui::PlatformEventSource::CreateDefault();

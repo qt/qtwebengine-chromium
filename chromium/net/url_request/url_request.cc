@@ -31,7 +31,6 @@
 #include "net/log/net_log.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source_type.h"
-#include "net/reporting/reporting_service.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/redirect_util.h"
@@ -45,7 +44,8 @@
 #include "url/origin.h"
 
 #if BUILDFLAG(ENABLE_REPORTING)
-#include "net/url_request/network_error_logging_delegate.h"
+#include "net/network_error_logging/network_error_logging_service.h"
+#include "net/reporting/reporting_service.h"
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
 using base::Time;
@@ -1164,20 +1164,15 @@ void URLRequest::OnCallToDelegateComplete() {
 
 #if BUILDFLAG(ENABLE_REPORTING)
 void URLRequest::MaybeGenerateNetworkErrorLoggingReport() {
-  NetworkErrorLoggingDelegate* delegate =
-      context()->network_error_logging_delegate();
-  if (!delegate)
+  NetworkErrorLoggingService* service =
+      context()->network_error_logging_service();
+  if (!service)
     return;
 
   // TODO(juliatuttle): Figure out whether we should be ignoring errors from
   // non-HTTPS origins.
 
-  // TODO(juliatuttle): Remove this and reconsider interface once there's a
-  // better story for reporting successes.
-  if (status().ToNetError() == OK)
-    return;
-
-  NetworkErrorLoggingDelegate::ErrorDetails details;
+  NetworkErrorLoggingService::RequestDetails details;
 
   details.uri = url();
   details.referrer = GURL(referrer());
@@ -1201,7 +1196,7 @@ void URLRequest::MaybeGenerateNetworkErrorLoggingReport() {
       context()->reporting_service() &&
       context()->reporting_service()->RequestIsUpload(*this);
 
-  delegate->OnNetworkError(details);
+  service->OnRequest(details);
 }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
@@ -1222,6 +1217,12 @@ void URLRequest::SetResponseHeadersCallback(ResponseHeadersCallback callback) {
   DCHECK(!job_.get());
   DCHECK(response_headers_callback_.is_null());
   response_headers_callback_ = std::move(callback);
+}
+
+void URLRequest::set_socket_tag(const SocketTag& socket_tag) {
+  DCHECK(!is_pending_);
+  DCHECK(url().SchemeIsHTTPOrHTTPS());
+  socket_tag_ = socket_tag;
 }
 
 void URLRequest::set_status(URLRequestStatus status) {

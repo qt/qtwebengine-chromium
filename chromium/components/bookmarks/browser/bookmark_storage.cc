@@ -82,6 +82,15 @@ void LoadCallback(const base::FilePath& path,
           codec.model_sync_transaction_version());
       UMA_HISTOGRAM_TIMES("Bookmarks.DecodeTime",
                           TimeTicks::Now() - start_time);
+      int64_t size = 0;
+      if (base::GetFileSize(path, &size)) {
+        int64_t size_kb = size / 1024;
+        // For 0 bookmarks, file size is 700 bytes (less than 1KB)
+        // Bookmarks file size is not expected to exceed 50000KB (50MB) for most
+        // of the users.
+        UMA_HISTOGRAM_CUSTOM_COUNTS("Bookmarks.FileSize", size_kb, 1, 50000,
+                                    25);
+      }
 
       load_index = true;
     }
@@ -111,9 +120,9 @@ void LoadCallback(const base::FilePath& path,
                         TimeTicks::Now() - start_time);
   }
 
-  task_runner->PostTask(FROM_HERE,
-                        base::Bind(&BookmarkStorage::OnLoadFinished, storage,
-                                   base::Passed(&details)));
+  task_runner->PostTask(
+      FROM_HERE, base::BindOnce(&BookmarkStorage::OnLoadFinished, storage,
+                                std::move(details)));
 }
 
 }  // namespace
@@ -169,8 +178,8 @@ void BookmarkStorage::LoadBookmarks(
     const scoped_refptr<base::SequencedTaskRunner>& task_runner) {
   sequenced_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&LoadCallback, writer_.path(), weak_factory_.GetWeakPtr(),
-                 base::Passed(&details), base::RetainedRef(task_runner)));
+      base::BindOnce(&LoadCallback, writer_.path(), weak_factory_.GetWeakPtr(),
+                     std::move(details), base::RetainedRef(task_runner)));
 }
 
 void BookmarkStorage::ScheduleSave() {

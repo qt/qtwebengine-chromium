@@ -17,6 +17,7 @@
 #include "rtc_base/logging.h"
 #include "sdk/android/generated_video_jni/jni/VideoDecoderWrapper_jni.h"
 #include "sdk/android/generated_video_jni/jni/VideoDecoder_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/encodedimage.h"
 #include "sdk/android/src/jni/videocodecstatus.h"
 #include "sdk/android/src/jni/videoframe.h"
@@ -37,17 +38,21 @@ inline rtc::Optional<Dst> cast_optional(const rtc::Optional<Src>& value) {
 
 VideoDecoderWrapper::VideoDecoderWrapper(JNIEnv* jni,
                                          const JavaRef<jobject>& decoder)
-    : decoder_(jni, decoder) {
-  initialized_ = false;
-  // QP parsing starts enabled and we disable it if the decoder provides frames.
-  qp_parsing_enabled_ = true;
+    : decoder_(jni, decoder),
+      implementation_name_(JavaToStdString(
+          jni,
+          Java_VideoDecoder_getImplementationName(jni, decoder))),
+      initialized_(false),
+      qp_parsing_enabled_(true)  // QP parsing starts enabled and we disable it
+                                 // if the decoder provides frames.
 
-  implementation_name_ = JavaToStdString(
-      jni, Java_VideoDecoder_getImplementationName(jni, decoder));
+{
+  decoder_thread_checker_.DetachFromThread();
 }
 
 int32_t VideoDecoderWrapper::InitDecode(const VideoCodec* codec_settings,
                                         int32_t number_of_cores) {
+  RTC_DCHECK_RUN_ON(&decoder_thread_checker_);
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
   codec_settings_ = *codec_settings;
   number_of_cores_ = number_of_cores;
@@ -62,9 +67,10 @@ int32_t VideoDecoderWrapper::InitDecodeInternal(JNIEnv* jni) {
       Java_VideoDecoderWrapper_createDecoderCallback(jni,
                                                      jlongFromPointer(this));
 
-  ScopedJavaLocalRef<jobject> ret =
-      Java_VideoDecoder_initDecode(jni, decoder_, settings, callback);
-  if (JavaToNativeVideoCodecStatus(jni, ret) == WEBRTC_VIDEO_CODEC_OK) {
+  int32_t status = JavaToNativeVideoCodecStatus(
+      jni, Java_VideoDecoder_initDecode(jni, decoder_, settings, callback));
+  RTC_LOG(LS_INFO) << "initDecode: " << status;
+  if (status == WEBRTC_VIDEO_CODEC_OK) {
     initialized_ = true;
   }
 
@@ -72,7 +78,7 @@ int32_t VideoDecoderWrapper::InitDecodeInternal(JNIEnv* jni) {
   // providing QP values.
   qp_parsing_enabled_ = true;
 
-  return HandleReturnCode(jni, ret);
+  return status;
 }
 
 int32_t VideoDecoderWrapper::Decode(
@@ -81,6 +87,7 @@ int32_t VideoDecoderWrapper::Decode(
     const RTPFragmentationHeader* fragmentation,
     const CodecSpecificInfo* codec_specific_info,
     int64_t render_time_ms) {
+  RTC_DCHECK_RUN_ON(&decoder_thread_checker_);
   if (!initialized_) {
     // Most likely initializing the codec failed.
     return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
@@ -99,7 +106,10 @@ int32_t VideoDecoderWrapper::Decode(
   frame_extra_info.timestamp_ntp = input_image.ntp_time_ms_;
   frame_extra_info.qp =
       qp_parsing_enabled_ ? ParseQP(input_image) : rtc::nullopt;
-  frame_extra_infos_.push_back(frame_extra_info);
+  {
+    rtc::CritScope cs(&frame_extra_infos_lock_);
+    frame_extra_infos_.push_back(frame_extra_info);
+  }
 
   JNIEnv* env = AttachCurrentThreadIfNeeded();
   ScopedJavaLocalRef<jobject> jinput_image =
@@ -107,21 +117,29 @@ int32_t VideoDecoderWrapper::Decode(
   ScopedJavaLocalRef<jobject> decode_info;
   ScopedJavaLocalRef<jobject> ret =
       Java_VideoDecoder_decode(env, decoder_, jinput_image, decode_info);
-  return HandleReturnCode(env, ret);
+  return HandleReturnCode(env, ret, "decode");
 }
 
 int32_t VideoDecoderWrapper::RegisterDecodeCompleteCallback(
     DecodedImageCallback* callback) {
+  RTC_DCHECK_RUNS_SERIALIZED(&callback_race_checker_);
   callback_ = callback;
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
 int32_t VideoDecoderWrapper::Release() {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
-  ScopedJavaLocalRef<jobject> ret = Java_VideoDecoder_release(jni, decoder_);
-  frame_extra_infos_.clear();
+  int32_t status = JavaToNativeVideoCodecStatus(
+      jni, Java_VideoDecoder_release(jni, decoder_));
+  RTC_LOG(LS_INFO) << "release: " << status;
+  {
+    rtc::CritScope cs(&frame_extra_infos_lock_);
+    frame_extra_infos_.clear();
+  }
   initialized_ = false;
-  return HandleReturnCode(jni, ret);
+  // It is allowed to reinitialize the codec on a different thread.
+  decoder_thread_checker_.DetachFromThread();
+  return status;
 }
 
 bool VideoDecoderWrapper::PrefersLateDecoding() const {
@@ -139,21 +157,26 @@ void VideoDecoderWrapper::OnDecodedFrame(
     const JavaRef<jobject>& j_frame,
     const JavaRef<jobject>& j_decode_time_ms,
     const JavaRef<jobject>& j_qp) {
+  RTC_DCHECK_RUNS_SERIALIZED(&callback_race_checker_);
   const uint64_t timestamp_ns = GetJavaVideoFrameTimestampNs(env, j_frame);
 
   FrameExtraInfo frame_extra_info;
-  do {
-    if (frame_extra_infos_.empty()) {
-      RTC_LOG(LS_WARNING) << "Java decoder produced an unexpected frame: "
-                          << timestamp_ns;
-      return;
-    }
+  {
+    rtc::CritScope cs(&frame_extra_infos_lock_);
 
-    frame_extra_info = frame_extra_infos_.front();
-    frame_extra_infos_.pop_front();
-    // If the decoder might drop frames so iterate through the queue until we
-    // find a matching timestamp.
-  } while (frame_extra_info.timestamp_ns != timestamp_ns);
+    do {
+      if (frame_extra_infos_.empty()) {
+        RTC_LOG(LS_WARNING)
+            << "Java decoder produced an unexpected frame: " << timestamp_ns;
+        return;
+      }
+
+      frame_extra_info = frame_extra_infos_.front();
+      frame_extra_infos_.pop_front();
+      // If the decoder might drop frames so iterate through the queue until we
+      // find a matching timestamp.
+    } while (frame_extra_info.timestamp_ns != timestamp_ns);
+  }
 
   VideoFrame frame =
       JavaToNativeFrame(env, j_frame, frame_extra_info.timestamp_rtp);
@@ -172,19 +195,29 @@ void VideoDecoderWrapper::OnDecodedFrame(
 }
 
 int32_t VideoDecoderWrapper::HandleReturnCode(JNIEnv* jni,
-                                              const JavaRef<jobject>& code) {
-  int32_t value = JavaToNativeVideoCodecStatus(jni, code);
-  if (value < 0) {  // Any errors are represented by negative values.
-    // Reset the codec.
-    if (Release() == WEBRTC_VIDEO_CODEC_OK) {
-      InitDecodeInternal(jni);
-    }
-
-    RTC_LOG(LS_WARNING) << "Falling back to software decoder.";
-    return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
-  } else {
+                                              const JavaRef<jobject>& j_value,
+                                              const char* method_name) {
+  int32_t value = JavaToNativeVideoCodecStatus(jni, j_value);
+  if (value >= 0) {  // OK or NO_OUTPUT
     return value;
   }
+
+  RTC_LOG(LS_WARNING) << method_name << ": " << value;
+  if (value == WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE ||
+      value == WEBRTC_VIDEO_CODEC_UNINITIALIZED) {  // Critical error.
+    RTC_LOG(LS_WARNING) << "Java decoder requested software fallback.";
+    return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
+  }
+
+  // Try resetting the codec.
+  if (Release() == WEBRTC_VIDEO_CODEC_OK &&
+      InitDecodeInternal(jni) == WEBRTC_VIDEO_CODEC_OK) {
+    RTC_LOG(LS_WARNING) << "Reset Java decoder.";
+    return WEBRTC_VIDEO_CODEC_ERROR;
+  }
+
+  RTC_LOG(LS_WARNING) << "Unable to reset Java decoder.";
+  return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
 }
 
 rtc::Optional<uint8_t> VideoDecoderWrapper::ParseQP(

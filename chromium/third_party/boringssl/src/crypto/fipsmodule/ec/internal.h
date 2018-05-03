@@ -92,8 +92,8 @@ OPENSSL_COMPILE_ASSERT(EC_MAX_SCALAR_WORDS <= BN_SMALL_MAX_WORDS,
                        bn_small_functions_applicable);
 
 // An EC_SCALAR is an integer fully reduced modulo the order. Only the first
-// |order->top| words are used. An |EC_SCALAR| is specific to an |EC_GROUP| and
-// must not be mixed between groups.
+// |order->width| words are used. An |EC_SCALAR| is specific to an |EC_GROUP|
+// and must not be mixed between groups.
 typedef union {
   // bytes is the representation of the scalar in little-endian order.
   uint8_t bytes[EC_MAX_SCALAR_BYTES];
@@ -207,6 +207,17 @@ int ec_point_mul_scalar(const EC_GROUP *group, EC_POINT *r,
 int ec_point_mul_scalar_public(const EC_GROUP *group, EC_POINT *r,
                                const EC_SCALAR *g_scalar, const EC_POINT *p,
                                const EC_SCALAR *p_scalar, BN_CTX *ctx);
+
+// ec_compute_wNAF writes the modified width-(w+1) Non-Adjacent Form (wNAF) of
+// |scalar| to |out| and returns one on success or zero on internal error. |out|
+// must have room for |bits| + 1 elements, each of which will be either zero or
+// odd with an absolute value less than  2^w  satisfying
+//     scalar = \sum_j out[j]*2^j
+// where at most one of any  w+1  consecutive digits is non-zero
+// with the exception that the most significant digit may be only
+// w-1 zeros away from that next non-zero digit.
+int ec_compute_wNAF(const EC_GROUP *group, int8_t *out, const EC_SCALAR *scalar,
+                    size_t bits, int w);
 
 int ec_wNAF_mul(const EC_GROUP *group, EC_POINT *r, const EC_SCALAR *g_scalar,
                 const EC_POINT *p, const EC_SCALAR *p_scalar, BN_CTX *ctx);

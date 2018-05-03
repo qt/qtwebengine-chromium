@@ -205,9 +205,6 @@ const char kDisableLogging[]                = "disable-logging";
 // Disables using CODECAPI_AVLowLatencyMode when creating DXVA decoders.
 const char kDisableLowLatencyDxva[]         = "disable-low-latency-dxva";
 
-// Dont use a Mojo-based LocalStorage implementation.
-const char kDisableMojoLocalStorage[] = "disable-mojo-local-storage";
-
 // Disables usage of the namespace sandbox.
 const char kDisableNamespaceSandbox[]       = "disable-namespace-sandbox";
 
@@ -423,10 +420,10 @@ const char kEnableSandboxLogging[]          = "enable-sandbox-logging";
 const char kEnableSkiaBenchmarking[]        = "enable-skia-benchmarking";
 
 // Enables slimming paint phase 1.75:
-// http://www.chromium.org/blink/slimming-paint
+// https://www.chromium.org/blink/slimming-paint
 const char kEnableSlimmingPaintV175[] = "enable-slimming-paint-v175";
 
-// Enables slimming paint phase 2: http://www.chromium.org/blink/slimming-paint
+// Enables slimming paint phase 2: https://www.chromium.org/blink/slimming-paint
 const char kEnableSlimmingPaintV2[]         = "enable-slimming-paint-v2";
 
 // On platforms that support it, enables smooth scroll animation.
@@ -543,22 +540,9 @@ const char kGpuStartupDialog[]              = "gpu-startup-dialog";
 const char kHistoryEntryRequiresUserGesture[] =
     "history-entry-requires-user-gesture";
 
-// These mappings only apply to the host resolver.
-const char kHostResolverRules[]             = "host-resolver-rules";
-
-// A set of public key hashes for which to ignore certificate-related errors.
-//
-// If the certificate chain presented by the server does not validate, and one
-// or more certificates have public key hashes that match a key from this list,
-// the error is ignored.
-//
-// The switch value must a be a comma-separated list of Base64-encoded SHA-256
-// SPKI Fingerprints (RFC 7469, Section 2.4).
-//
-// This switch has no effect unless --user-data-dir (as defined by the content
-// embedder) is also present.
-const char kIgnoreCertificateErrorsSPKIList[] =
-    "ignore-certificate-errors-spki-list";
+// Start the renderer with an initial virtual time override specified in
+// seconds since the epoch.
+const char kInitialVirtualTime[] = "initial-virtual-time";
 
 // Run the GPU process as a thread in the browser process.
 const char kInProcessGPU[]                  = "in-process-gpu";
@@ -593,11 +577,6 @@ const char kLoggingLevel[]                  = "log-level";
 // affect which events are logged).
 const char kLogFile[] = "log-file";
 
-// Enables saving net log events to a file. If a value is given, it used as the
-// path the the file, otherwise the file is named netlog.json and placed in the
-// user data directory.
-const char kLogNetLog[]                     = "log-net-log";
-
 // Resizes of the main frame are caused by changing between landscape and
 // portrait mode (i.e. Android) so the page should be rescaled to fit.
 const char kMainFrameResizesAreOrientationChanges[] =
@@ -619,10 +598,6 @@ const char kMHTMLSkipNostoreAll[]           = "skip-nostore-all";
 
 // Use a Mojo-based LocalStorage implementation.
 const char kMojoLocalStorage[]              = "mojo-local-storage";
-
-// Mutes audio sent to the audio device so it is not audible during
-// automated testing.
-const char kMuteAudio[]                     = "mute-audio";
 
 // Disables the sandbox for all process types that are normally sandboxed.
 const char kNoSandbox[]                     = "no-sandbox";
@@ -652,7 +627,7 @@ const char kOverridePluginPowerSaverForTesting[] =
 // Set the value to '2' to enable the simplified overscroll UI where a
 // navigation arrow slides in from the side of the screen in response to the
 // horizontal overscroll gesture.
-// Defaults to '1'.
+// Defaults to '2'.
 const char kOverscrollHistoryNavigation[] =
     "overscroll-history-navigation";
 
@@ -694,7 +669,7 @@ const char kPpapiStartupDialog[]            = "ppapi-startup-dialog";
 // consolidates same-site pages so that they share a single process.
 //
 // More details here:
-// - http://www.chromium.org/developers/design-documents/process-models
+// - https://www.chromium.org/developers/design-documents/process-models
 // - The class comment in site_instance.h, listing the supported process models.
 //
 // IMPORTANT: This isn't to be confused with --site-per-process (which is about
@@ -760,8 +735,8 @@ const char kRendererStartupDialog[]         = "renderer-startup-dialog";
 const char kReducedReferrerGranularity[] =
   "reduced-referrer-granularity";
 
-// Handles frame scrolls via the root RenderLayer instead of the FrameView.
-const char kRootLayerScrolls[]              = "root-layer-scrolls";
+// Enables native memory sampling profiler with a given rate (default 128 KiB).
+const char kSamplingHeapProfiler[]          = "sampling-heap-profiler";
 
 // Causes the process to run as a sandbox IPC subprocess.
 const char kSandboxIPCProcess[]             = "sandbox-ipc";
@@ -789,20 +764,16 @@ const char kSingleProcess[]                 = "single-process";
 //  * <iframe>s are rendered out-of-process whenever the src= is cross-site.
 //
 // More details here:
-// - http://www.chromium.org/developers/design-documents/site-isolation
-// - http://www.chromium.org/developers/design-documents/process-models
+// - https://www.chromium.org/developers/design-documents/site-isolation
+// - https://www.chromium.org/developers/design-documents/process-models
 // - The class comment in site_instance.h, listing the supported process models.
 //
 // IMPORTANT: this isn't to be confused with --process-per-site (which is about
 // process consolidation, not isolation). You probably want this one.
 const char kSitePerProcess[]                = "site-per-process";
 
-// Skip gpu info collection, blacklist loading, and blacklist auto-update
-// scheduling at browser startup time.
-// Therefore, all GPU features are available, and about:gpu page shows empty
-// content. The switch is intended only for layout tests.
-// TODO(gab): Get rid of this switch entirely.
-const char kSkipGpuDataLoading[]            = "skip-gpu-data-loading";
+// Disables enabling site isolation (i.e., --site-per-process) via field trial.
+const char kDisableSiteIsolationTrials[] = "disable-site-isolation-trials";
 
 // Skips reencoding bitmaps as PNGs when the encoded data is unavailable
 // during SKP capture.  This allows for obtaining an accurate sample of
@@ -932,6 +903,12 @@ const char kWebRtcMaxCpuConsumptionPercentage[] =
 const char kWebRtcStunProbeTrialParameter[] = "webrtc-stun-probe-trial";
 #endif
 
+// Enable capture and local storage of WebRTC event logs without visiting
+// chrome://webrtc-internals. This is useful for automated testing. It accepts
+// the path to which the local logs would be stored. Disabling is not possible
+// without restarting the browser and relaunching without this flag.
+const char kWebRtcLocalEventLogging[] = "webrtc-event-logging";
+
 #if defined(OS_ANDROID)
 // Disable Media Session API
 const char kDisableMediaSessionAPI[] = "disable-media-session-api";
@@ -959,10 +936,6 @@ const char kEnableLongpressDragSelection[]  = "enable-longpress-drag-selection";
 
 // The telephony region (ISO country code) to use in phone number detection.
 const char kNetworkCountryIso[] = "network-country-iso";
-
-// When blink should declare a load "done" for the purpose of the
-// progress bar.
-const char kProgressBarCompletion[] = "progress-bar-completion";
 
 // Enables remote debug over HTTP on the specified socket name.
 const char kRemoteDebuggingSocketName[]     = "remote-debugging-socket-name";

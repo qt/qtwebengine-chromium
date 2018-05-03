@@ -30,6 +30,7 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "core/dom/DocumentEncodingData.h"
 #include "core/html/parser/BackgroundHTMLInputStream.h"
 #include "core/html/parser/CompactHTMLToken.h"
@@ -45,7 +46,6 @@ namespace blink {
 
 class HTMLDocumentParser;
 class XSSAuditor;
-class WebTaskRunner;
 
 class BackgroundHTMLParser {
   USING_FAST_MALLOC(BackgroundHTMLParser);
@@ -73,7 +73,7 @@ class BackgroundHTMLParser {
   // calling stop().
   static base::WeakPtr<BackgroundHTMLParser> Create(
       std::unique_ptr<Configuration>,
-      scoped_refptr<WebTaskRunner>);
+      scoped_refptr<base::SingleThreadTaskRunner>);
   void Init(const KURL& document_url,
             std::unique_ptr<CachedDocumentParameters>,
             const MediaValuesCached::MediaValuesCachedData&);
@@ -103,7 +103,7 @@ class BackgroundHTMLParser {
 
  private:
   BackgroundHTMLParser(std::unique_ptr<Configuration>,
-                       scoped_refptr<WebTaskRunner>);
+                       scoped_refptr<base::SingleThreadTaskRunner>);
   ~BackgroundHTMLParser();
 
   void AppendDecodedBytes(const String&);
@@ -139,7 +139,7 @@ class BackgroundHTMLParser {
   std::unique_ptr<TokenPreloadScanner> preload_scanner_;
   std::unique_ptr<TextResourceDecoder> decoder_;
   DocumentEncodingData last_seen_encoding_data_;
-  scoped_refptr<WebTaskRunner> loading_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
   scoped_refptr<TokenizedChunkQueue> tokenized_chunk_queue_;
 
   // Index into |m_pendingTokens| of the last <meta> csp token found. Will be

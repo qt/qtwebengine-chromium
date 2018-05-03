@@ -5,6 +5,8 @@
 #include "platform/testing/TestingPlatformSupportWithWebRTC.h"
 
 #include <memory>
+#include "public/platform/WebMediaStreamTrack.h"
+#include "public/platform/WebRTCDTMFSenderHandler.h"
 #include "public/platform/WebRTCError.h"
 #include "public/platform/WebRTCRtpReceiver.h"
 #include "public/platform/WebRTCRtpSender.h"
@@ -12,6 +14,31 @@
 #include "public/platform/WebVector.h"
 
 namespace blink {
+
+namespace {
+
+class DummyWebRTCRtpSender : public WebRTCRtpSender {
+ private:
+  static uintptr_t last_id_;
+
+ public:
+  DummyWebRTCRtpSender() : id_(++last_id_) {}
+  ~DummyWebRTCRtpSender() override {}
+
+  uintptr_t Id() const override { return id_; }
+  WebMediaStreamTrack Track() const override { return WebMediaStreamTrack(); }
+  void ReplaceTrack(WebMediaStreamTrack, WebRTCVoidRequest) override {}
+  std::unique_ptr<WebRTCDTMFSenderHandler> GetDtmfSender() const override {
+    return nullptr;
+  }
+
+ private:
+  const uintptr_t id_;
+};
+
+uintptr_t DummyWebRTCRtpSender::last_id_ = 0;
+
+}  // namespace
 
 MockWebRTCPeerConnectionHandler::MockWebRTCPeerConnectionHandler() = default;
 
@@ -59,41 +86,24 @@ WebRTCErrorType MockWebRTCPeerConnectionHandler::SetConfiguration(
   return WebRTCErrorType::kNone;
 }
 
-bool MockWebRTCPeerConnectionHandler::AddStream(const WebMediaStream&,
-                                                const WebMediaConstraints&) {
-  return true;
-}
-
-void MockWebRTCPeerConnectionHandler::RemoveStream(const WebMediaStream&) {}
-
 void MockWebRTCPeerConnectionHandler::GetStats(const WebRTCStatsRequest&) {}
 
 void MockWebRTCPeerConnectionHandler::GetStats(
     std::unique_ptr<WebRTCStatsReportCallback>) {}
 
-WebVector<std::unique_ptr<WebRTCRtpSender>>
-MockWebRTCPeerConnectionHandler::GetSenders() {
-  return WebVector<std::unique_ptr<WebRTCRtpSender>>();
-}
-
 std::unique_ptr<WebRTCRtpSender> MockWebRTCPeerConnectionHandler::AddTrack(
     const WebMediaStreamTrack&,
     const WebVector<WebMediaStream>&) {
-  return nullptr;
+  return std::make_unique<DummyWebRTCRtpSender>();
 }
 
 bool MockWebRTCPeerConnectionHandler::RemoveTrack(WebRTCRtpSender*) {
-  return false;
+  return true;
 }
 
 WebRTCDataChannelHandler* MockWebRTCPeerConnectionHandler::CreateDataChannel(
     const WebString& label,
     const WebRTCDataChannelInit&) {
-  return nullptr;
-}
-
-WebRTCDTMFSenderHandler* MockWebRTCPeerConnectionHandler::CreateDTMFSender(
-    const WebMediaStreamTrack&) {
   return nullptr;
 }
 

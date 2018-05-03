@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <sys/ioctl.h>
 
+#include "base/bind_helpers.h"
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
@@ -112,9 +113,9 @@ char* AddressTrackerLinux::GetInterfaceName(int interface_index, char* buf) {
 
 AddressTrackerLinux::AddressTrackerLinux()
     : get_interface_name_(GetInterfaceName),
-      address_callback_(base::Bind(&base::DoNothing)),
-      link_callback_(base::Bind(&base::DoNothing)),
-      tunnel_callback_(base::Bind(&base::DoNothing)),
+      address_callback_(base::DoNothing()),
+      link_callback_(base::DoNothing()),
+      tunnel_callback_(base::DoNothing()),
       netlink_fd_(-1),
       watcher_(FROM_HERE),
       ignored_interfaces_(),
@@ -437,9 +438,14 @@ void AddressTrackerLinux::CloseSocket() {
 }
 
 bool AddressTrackerLinux::IsTunnelInterface(int interface_index) const {
-  // Linux kernel drivers/net/tun.c uses "tun" name prefix.
   char buf[IFNAMSIZ] = {0};
-  return strncmp(get_interface_name_(interface_index, buf), "tun", 3) == 0;
+  return IsTunnelInterfaceName(get_interface_name_(interface_index, buf));
+}
+
+// static
+bool AddressTrackerLinux::IsTunnelInterfaceName(const char* name) {
+  // Linux kernel drivers/net/tun.c uses "tun" name prefix.
+  return strncmp(name, "tun", 3) == 0;
 }
 
 void AddressTrackerLinux::UpdateCurrentConnectionType() {

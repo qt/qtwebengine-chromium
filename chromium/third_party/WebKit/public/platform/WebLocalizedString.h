@@ -96,6 +96,7 @@ struct WebLocalizedString {
     kMediaRemotingStopByPlaybackQualityText,
     kMediaRemotingStopNoText,
     kMediaRemotingStopText,
+    kMediaScrubbingMessageText,
     kMissingPluginText,
     kMultipleFileUploadText,
     kOtherColorLabel,
@@ -113,6 +114,7 @@ struct WebLocalizedString {
     kOverflowMenuPause,
     kOverflowMenuDownload,
     kOverflowMenuPictureInPicture,
+    kPictureInPictureInterstitialText,
     // kPlaceholderForDayOfMonthField is for day placeholder text, e.g.
     // "dd", for date field used in multiple fields "date", "datetime", and
     // "datetime-local" input UI instead of "--".

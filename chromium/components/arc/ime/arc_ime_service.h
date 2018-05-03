@@ -85,17 +85,19 @@ class ArcImeService : public KeyedService,
 
   // Overridden from ArcImeBridge::Delegate:
   void OnTextInputTypeChanged(ui::TextInputType type) override;
-  void OnCursorRectChanged(const gfx::Rect& rect) override;
+  void OnCursorRectChanged(const gfx::Rect& rect,
+                           bool is_screen_coordinates) override;
   void OnCancelComposition() override;
   void ShowImeIfNeeded() override;
   void OnCursorRectChangedWithSurroundingText(
       const gfx::Rect& rect,
       const gfx::Range& text_range,
       const base::string16& text_in_range,
-      const gfx::Range& selection_range) override;
+      const gfx::Range& selection_range,
+      bool is_screen_coordinates) override;
 
   // Overridden from keyboard::KeyboardControllerObserver.
-  void OnKeyboardAppearanceChanging(
+  void OnKeyboardAppearanceChanged(
       const keyboard::KeyboardStateDescriptor& state) override;
 
   // Overridden from ui::TextInputClient:
@@ -134,6 +136,11 @@ class ArcImeService : public KeyedService,
   }
   const std::string& GetClientSourceInfo() const override;
 
+  // Normally, the default device scale factor is used to convert from DPI to
+  // physical pixels. This method provides a way to override it for testing.
+  static void SetOverrideDefaultDeviceScaleFactorForTesting(
+      base::Optional<double> scale_factor);
+
  private:
   ui::InputMethod* GetInputMethod();
 
@@ -144,6 +151,10 @@ class ArcImeService : public KeyedService,
   void ReattachInputMethod(aura::Window* old_window, aura::Window* new_window);
 
   void InvalidateSurroundingTextAndSelectionRange();
+
+  // Converts |rect| passed from the client to the host's cooridnates and
+  // updates |cursor_rect_|. Returns whether or not the stored value changed.
+  bool UpdateCursorRect(const gfx::Rect& rect, bool is_screen_coordinates);
 
   std::unique_ptr<ArcImeBridge> ime_bridge_;
   std::unique_ptr<ArcWindowDelegate> arc_window_delegate_;

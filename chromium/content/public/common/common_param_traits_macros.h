@@ -61,10 +61,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(WindowOpenDisposition,
                           WindowOpenDisposition::MAX_VALUE)
 IPC_ENUM_TRAITS_MAX_VALUE(content::V8CacheOptions,
                           content::V8_CACHE_OPTIONS_LAST)
-#if defined(OS_ANDROID)
-IPC_ENUM_TRAITS_MAX_VALUE(content::ProgressBarCompletion,
-                          content::ProgressBarCompletion::LAST)
-#endif
 IPC_ENUM_TRAITS_MAX_VALUE(content::SavePreviousDocumentResources,
                           content::SavePreviousDocumentResources::LAST)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(ui::PointerType,
@@ -203,6 +199,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(force_enable_zoom)
   IPC_STRUCT_TRAITS_MEMBER(fullscreen_supported)
   IPC_STRUCT_TRAITS_MEMBER(double_tap_to_zoom_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(picture_in_picture_enabled)
   IPC_STRUCT_TRAITS_MEMBER(media_playback_gesture_whitelist_scope)
   IPC_STRUCT_TRAITS_MEMBER(default_video_poster_url)
   IPC_STRUCT_TRAITS_MEMBER(support_deprecated_target_density_dpi)
@@ -218,13 +215,12 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(ignore_main_frame_overflow_hidden_quirk)
   IPC_STRUCT_TRAITS_MEMBER(report_screen_size_in_physical_pixels_quirk)
   IPC_STRUCT_TRAITS_MEMBER(resue_global_for_unowned_main_frame)
-  IPC_STRUCT_TRAITS_MEMBER(progress_bar_completion)
   IPC_STRUCT_TRAITS_MEMBER(spellcheck_enabled_by_default)
   IPC_STRUCT_TRAITS_MEMBER(video_fullscreen_orientation_lock_enabled)
   IPC_STRUCT_TRAITS_MEMBER(video_rotate_to_fullscreen_enabled)
   IPC_STRUCT_TRAITS_MEMBER(video_fullscreen_detection_enabled)
   IPC_STRUCT_TRAITS_MEMBER(embedded_media_experience_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(page_popups_suppressed)
+  IPC_STRUCT_TRAITS_MEMBER(immersive_mode_enabled)
   IPC_STRUCT_TRAITS_MEMBER(css_hex_alpha_color_enabled)
   IPC_STRUCT_TRAITS_MEMBER(enable_media_download_in_product_help)
   IPC_STRUCT_TRAITS_MEMBER(scroll_top_left_interop_enabled)
@@ -255,18 +251,23 @@ IPC_STRUCT_TRAITS_BEGIN(blink::mojom::WindowFeatures)
   IPC_STRUCT_TRAITS_MEMBER(scrollbars_visible)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXEvent, ui::AX_EVENT_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXRole, ui::AX_ROLE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXBoolAttribute, ui::AX_BOOL_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXFloatAttribute, ui::AX_FLOAT_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntAttribute, ui::AX_INT_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntListAttribute,
-                          ui::AX_INT_LIST_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXStringListAttribute,
-                          ui::AX_STRING_LIST_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXStringAttribute, ui::AX_STRING_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXTextAffinity, ui::AX_TEXT_AFFINITY_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXEventFrom, ui::AX_EVENT_FROM_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::Event, ax::mojom::Event::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::Role, ax::mojom::Role::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::BoolAttribute,
+                          ax::mojom::BoolAttribute::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::FloatAttribute,
+                          ax::mojom::FloatAttribute::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::IntAttribute,
+                          ax::mojom::IntAttribute::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::IntListAttribute,
+                          ax::mojom::IntListAttribute::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::StringListAttribute,
+                          ax::mojom::StringListAttribute::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::StringAttribute,
+                          ax::mojom::StringAttribute::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::TextAffinity,
+                          ax::mojom::TextAffinity::kLast)
+IPC_ENUM_TRAITS_MAX_VALUE(ax::mojom::EventFrom, ax::mojom::EventFrom::kLast)
 
 IPC_STRUCT_TRAITS_BEGIN(ui::AXRelativeBounds)
   IPC_STRUCT_TRAITS_MEMBER(offset_container_id)

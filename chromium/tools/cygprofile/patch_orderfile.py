@@ -367,8 +367,8 @@ def GeneratePatchedOrderfile(unpatched_orderfile, native_lib_filename,
   (offset_to_symbol_infos, name_to_symbol_infos) = _GroupSymbolInfosFromBinary(
       native_lib_filename)
   obj_dir = cygprofile_utils.GetObjDir(native_lib_filename)
-  raw_symbol_map = cyglog_to_orderfile.GetSymbolToSectionsMapFromObjectFiles(
-      obj_dir)
+  raw_symbol_map = cyglog_to_orderfile.ObjectFileProcessor(
+      obj_dir).GetSymbolToSectionsMap()
   suffixed = _SectionsWithSuffixes(raw_symbol_map)
   symbol_to_sections_map = _CombineSectionListsByPrimaryName(raw_symbol_map)
   section_to_symbols_map = cygprofile_utils.InvertMapping(
@@ -385,9 +385,14 @@ def GeneratePatchedOrderfile(unpatched_orderfile, native_lib_filename,
     # See the comment in //base/android/library_loader/anchor_functions.cc.
     for prefix in _PREFIXES:
       f.write(prefix + 'dummy_function_to_anchor_text\n')
+    for prefix in _PREFIXES:
+      f.write(prefix + 'dummy_function_start_of_ordered_text\n')
 
     for section in expanded_sections:
       f.write(section + '\n')
+
+    for prefix in _PREFIXES:
+      f.write(prefix + 'dummy_function_end_of_ordered_text\n')
 
     # The following is needed otherwise Gold only applies a partial sort.
     f.write('.text\n')  # gets methods not in a section, such as assembly

@@ -32,6 +32,8 @@ class CORE_EXPORT InteractiveDetector
   USING_GARBAGE_COLLECTED_MIXIN(InteractiveDetector);
 
  public:
+  static const char kSupplementName[];
+
   // This class can be easily switched out to allow better testing of
   // InteractiveDetector.
   class CORE_EXPORT NetworkActivityChecker {
@@ -56,36 +58,36 @@ class CORE_EXPORT InteractiveDetector
   // Calls to CurrentTimeTicksInSeconds is expensive, so we try not to call it
   // unless we really have to. If we already have the event time available, we
   // pass it in as an argument.
-  void OnResourceLoadBegin(WTF::Optional<double> load_begin_time);
-  void OnResourceLoadEnd(WTF::Optional<double> load_finish_time);
+  void OnResourceLoadBegin(WTF::Optional<TimeTicks> load_begin_time);
+  void OnResourceLoadEnd(WTF::Optional<TimeTicks> load_finish_time);
 
-  void SetNavigationStartTime(double navigation_start_time);
+  void SetNavigationStartTime(TimeTicks navigation_start_time);
   void OnFirstMeaningfulPaintDetected(
-      double fmp_time,
+      TimeTicks fmp_time,
       FirstMeaningfulPaintDetector::HadUserInput user_input_before_fmp);
-  void OnDomContentLoadedEnd(double dcl_time);
-  void OnInvalidatingInputEvent(double timestamp_seconds);
-  void OnFirstInputDelay(double delay_seconds);
+  void OnDomContentLoadedEnd(TimeTicks dcl_time);
+  void OnInvalidatingInputEvent(TimeTicks invalidation_time);
+  void OnFirstInputDelay(TimeDelta delay_seconds);
 
   // Returns Interactive Time if already detected, or 0.0 otherwise.
-  double GetInteractiveTime() const;
+  TimeTicks GetInteractiveTime() const;
 
   // Returns the time when page interactive was detected. The detection time can
   // be useful to make decisions about metric invalidation in scenarios like tab
   // backgrounding.
-  double GetInteractiveDetectionTime() const;
+  TimeTicks GetInteractiveDetectionTime() const;
 
   // Returns the first time interactive detector received a significant input
   // that may cause observers to discard the interactive time value.
-  double GetFirstInvalidatingInputTime() const;
+  TimeTicks GetFirstInvalidatingInputTime() const;
 
   // The duration between the hardware timestamp and being queued on the main
   // thread for the first click, tap, key press, cancelable touchstart, or
   // pointer down followed by a pointer up.
-  double GetFirstInputDelay() const;
+  TimeDelta GetFirstInputDelay() const;
 
   // The timestamp of the event whose delay is reported by GetFirstInputDelay().
-  double GetFirstInputTimestamp() const;
+  TimeTicks GetFirstInputTimestamp() const;
 
   // Process an input event, updating first_input_delay and
   // first_input_timestamp if needed.
@@ -96,58 +98,51 @@ class CORE_EXPORT InteractiveDetector
  private:
   friend class InteractiveDetectorTest;
 
-  // Required length of main thread and network quiet window for determining
-  // Time to Interactive.
-  static constexpr double kTimeToInteractiveWindowSeconds = 5.0;
-  // Network is considered "quiet" if there are no more than 2 active network
-  // requests for this duration of time.
-  static constexpr int kNetworkQuietMaximumConnections = 2;
-
   explicit InteractiveDetector(Document&, NetworkActivityChecker*);
 
-  double interactive_time_ = 0.0;
-  double interactive_detection_time_ = 0.0;
+  TimeTicks interactive_time_;
+  TimeTicks interactive_detection_time_;
 
   // Page event times that Interactive Detector depends on.
-  // Value of 0.0 indicate the event has not been detected yet.
+  // Null TimeTicks values indicate the event has not been detected yet.
   struct {
-    double first_meaningful_paint = 0.0;
-    double dom_content_loaded_end = 0.0;
-    double nav_start = 0.0;
-    double first_invalidating_input = 0.0;
+    TimeTicks first_meaningful_paint;
+    TimeTicks dom_content_loaded_end;
+    TimeTicks nav_start;
+    TimeTicks first_invalidating_input;
+    TimeDelta first_input_delay;
+    TimeTicks first_input_timestamp;
     bool first_meaningful_paint_invalidated = false;
-    double first_input_delay = 0.0;
-    double first_input_timestamp = 0.0;
   } page_event_times_;
 
   // Stores sufficiently long quiet windows on main thread and network.
-  std::vector<PODInterval<double>> main_thread_quiet_windows_;
-  std::vector<PODInterval<double>> network_quiet_windows_;
+  std::vector<PODInterval<TimeTicks>> main_thread_quiet_windows_;
+  std::vector<PODInterval<TimeTicks>> network_quiet_windows_;
 
   // Start times of currently active main thread and network quiet windows.
   // Values of 0.0 implies main thread or network is not quiet at the moment.
-  double active_main_thread_quiet_window_start_ = 0.0;
-  double active_network_quiet_window_start_ = 0.0;
+  TimeTicks active_main_thread_quiet_window_start_;
+  TimeTicks active_network_quiet_window_start_;
 
   // Adds currently active quiet main thread and network quiet windows to the
   // vectors. Should be called before calling
   // FindInteractiveCandidate.
-  void AddCurrentlyActiveQuietIntervals(double current_time);
+  void AddCurrentlyActiveQuietIntervals(TimeTicks current_time);
   // Undoes AddCurrentlyActiveQuietIntervals.
   void RemoveCurrentlyActiveQuietIntervals();
 
   std::unique_ptr<NetworkActivityChecker> network_activity_checker_;
   int ActiveConnections();
-  void BeginNetworkQuietPeriod(double current_time);
-  void EndNetworkQuietPeriod(double current_time);
+  void BeginNetworkQuietPeriod(TimeTicks current_time);
+  void EndNetworkQuietPeriod(TimeTicks current_time);
   // Updates current network quietness tracking information. Opens and closes
   // network quiet windows as necessary.
   void UpdateNetworkQuietState(double request_count,
-                               WTF::Optional<double> current_time);
+                               WTF::Optional<TimeTicks> current_time);
 
   TaskRunnerTimer<InteractiveDetector> time_to_interactive_timer_;
-  double time_to_interactive_timer_fire_time_ = 0.0;
-  void StartOrPostponeCITimer(double timer_fire_time);
+  TimeTicks time_to_interactive_timer_fire_time_;
+  void StartOrPostponeCITimer(TimeTicks timer_fire_time);
   void TimeToInteractiveTimerFired(TimerBase*);
   void CheckTimeToInteractiveReached();
   void OnTimeToInteractiveDetected();
@@ -157,19 +152,18 @@ class CORE_EXPORT InteractiveDetector
   // long task before that quiet window, or lower_bound, whichever is bigger -
   // this is called the Interactive Candidate. Returns 0.0 if no such quiet
   // window is found.
-  double FindInteractiveCandidate(double lower_bound);
+  TimeTicks FindInteractiveCandidate(TimeTicks lower_bound);
 
   // LongTaskObserver implementation
-  void OnLongTaskDetected(double start_time, double end_time) override;
+  void OnLongTaskDetected(TimeTicks start_time, TimeTicks end_time) override;
 
   // The duration between the hardware timestamp and when we received the event
   // for the previous pointer down. Only non-zero if we've received a pointer
   // down event, and haven't yet reported the first input delay.
-  double pending_pointerdown_delay_;
-
+  base::TimeDelta pending_pointerdown_delay_;
   // The timestamp of a pending pointerdown event. Valid in the same cases as
   // pending_pointerdown_delay_.
-  double pending_pointerdown_timestamp_;
+  base::TimeTicks pending_pointerdown_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(InteractiveDetector);
 };

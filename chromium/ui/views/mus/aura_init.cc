@@ -12,7 +12,7 @@
 #include "base/path_service.h"
 #include "build/build_config.h"
 #include "services/catalog/public/cpp/resource_loader.h"
-#include "services/catalog/public/interfaces/constants.mojom.h"
+#include "services/catalog/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/aura/env.h"
 #include "ui/base/ime/input_method_initializer.h"
@@ -133,7 +133,7 @@ bool AuraInit::InitializeResources(service_manager::Connector* connector,
                                    const std::string& resource_file,
                                    const std::string& resource_file_200,
                                    bool register_path_provider) {
-  // Resources may have already been initialized (e.g. when 'chrome --mash' is
+  // Resources may have already been initialized (e.g. when chrome with mash is
   // used to launch the current app).
   if (ui::ResourceBundle::HasSharedInstance())
     return true;

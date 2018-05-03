@@ -56,30 +56,13 @@ extern const char kUpgrade[];
 // RFC6455.
 extern const char NET_EXPORT kWebSocketGuid[];
 
-// Colon-prefixed lowercase headers for SPDY3.
-
-// ":sec-websocket-protocol"
-extern const char kSecWebSocketProtocolSpdy3[];
-
-// ":sec-websocket-extensions"
-extern const char kSecWebSocketExtensionsSpdy3[];
-
 // Some parts of the code require lowercase versions of the header names in
-// order to do case-insensitive comparisons, or because of SPDY.
+// order to do case-insensitive comparisons, or because of HTTP/2.
 // "sec-websocket-protocol"
-extern const char* const kSecWebSocketProtocolLowercase;
+extern const char kSecWebSocketProtocolLowercase[];
 
 // "sec-websocket-extensions"
-extern const char* const kSecWebSocketExtensionsLowercase;
-
-// "sec-webSocket-key"
-extern const char kSecWebSocketKeyLowercase[];
-
-// "sec-websocket-version"
-extern const char kSecWebSocketVersionLowercase[];
-
-// "upgrade"
-extern const char kUpgradeLowercase[];
+extern const char kSecWebSocketExtensionsLowercase[];
 
 // "websocket", as used in the "Upgrade:" header. This is always lowercase
 // (except in obsolete versions of the protocol).

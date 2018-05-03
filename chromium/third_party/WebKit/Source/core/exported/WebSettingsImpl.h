@@ -94,6 +94,7 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
                             UScriptCode = USCRIPT_COMMON) override;
   void SetFixedFontFamily(const WebString&,
                           UScriptCode = USCRIPT_COMMON) override;
+  void SetForceMainWorldInitialization(bool) override;
   void SetForcePreloadNoneForMediaElements(bool) override;
   void SetForceZeroLayoutHeight(bool) override;
   void SetFullscreenSupported(bool) override;
@@ -110,16 +111,16 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetLoadsImagesAutomatically(bool) override;
   void SetLoadWithOverviewMode(bool) override;
   void SetShouldReuseGlobalForUnownedMainFrame(bool) override;
-  void SetProgressBarCompletion(ProgressBarCompletion) override;
   void SetSavePreviousDocumentResources(SavePreviousDocumentResources) override;
   void SetLocalStorageEnabled(bool) override;
   void SetMainFrameClipsContent(bool) override;
   void SetMainFrameResizesAreOrientationChanges(bool) override;
   void SetMaxTouchPoints(int) override;
+  void SetPictureInPictureEnabled(bool) override;
   void SetMediaPlaybackGestureWhitelistScope(const WebString&) override;
   void SetPresentationRequiresUserGesture(bool) override;
   void SetEmbeddedMediaExperienceEnabled(bool) override;
-  void SetPagePopupsSuppressed(bool) override;
+  void SetImmersiveModeEnabled(bool) override;
   void SetMinimumAccelerated2dCanvasSize(int) override;
   void SetMinimumFontSize(int) override;
   void SetMinimumLogicalFontSize(int) override;

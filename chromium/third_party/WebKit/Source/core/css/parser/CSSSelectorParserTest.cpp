@@ -425,6 +425,80 @@ TEST(CSSSelectorParserTest, InternalPseudo) {
   }
 }
 
+TEST(CSSSelectorParserTest, InvalidNestingPseudoMatches) {
+  // :matches() is currently not supported within these pseudo classes as they
+  // currently do not support complex selector arguments (:matches() does
+  // support this and the expansion of :matches() may provide complex selector
+  // arguments to these pseudo classes). Most of these test cases should
+  // eventually be removed once they support complex selector arguments.
+  const char* test_cases[] = {":-webkit-any(:matches(.a))",
+                              "::cue(:matches(.a))",
+                              ":cue(:matches(.a))",
+                              ":host(:matches(.a))",
+                              ":host-context(:matches(.a))",
+                              ":lang(:matches(.a))",
+                              ":not(:matches(.a))",
+                              ":nth-child(:matches(.a))",
+                              ":nth-last-child(:matches(.a))",
+                              ":nth-last-of-type(:matches(.a))",
+                              ":nth-of-type(:matches(.a))",
+                              "::slotted(:matches(.a))"};
+
+  CSSParserContext* context = CSSParserContext::Create(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
+  StyleSheetContents* sheet = StyleSheetContents::Create(context);
+
+  for (auto test_case : test_cases) {
+    SCOPED_TRACE(test_case);
+    CSSTokenizer tokenizer(test_case);
+    const auto tokens = tokenizer.TokenizeToEOF();
+    CSSParserTokenRange range(tokens);
+    CSSSelectorList list =
+        CSSSelectorParser::ParseSelector(range, context, sheet);
+    EXPECT_FALSE(list.IsValid());
+  }
+}
+
+TEST(CSSSelectorParserTest, InvalidPseudoMatchesArguments) {
+  // Pseudo-elements are not valid within :matches() as per the spec:
+  // https://drafts.csswg.org/selectors-4/#matches
+  const char* test_cases[] = {":matches(::-webkit-progress-bar)",
+                              ":matches(::-webkit-progress-value)",
+                              ":matches(::-webkit-slider-runnable-track)",
+                              ":matches(::-webkit-slider-thumb)",
+                              ":matches(::after)",
+                              ":matches(::backdrop)",
+                              ":matches(::before)",
+                              ":matches(::cue)",
+                              ":matches(::first-letter)",
+                              ":matches(::first-line)",
+                              ":matches(::grammar-error)",
+                              ":matches(::marker)",
+                              ":matches(::placeholder)",
+                              ":matches(::selection)",
+                              ":matches(::slotted)",
+                              ":matches(::spelling-error)",
+                              ":matches(:after)",
+                              ":matches(:before)",
+                              ":matches(:cue)",
+                              ":matches(:first-letter)",
+                              ":matches(:first-line)"};
+
+  CSSParserContext* context = CSSParserContext::Create(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
+  StyleSheetContents* sheet = StyleSheetContents::Create(context);
+
+  for (auto test_case : test_cases) {
+    SCOPED_TRACE(test_case);
+    CSSTokenizer tokenizer(test_case);
+    const auto tokens = tokenizer.TokenizeToEOF();
+    CSSParserTokenRange range(tokens);
+    CSSSelectorList list =
+        CSSSelectorParser::ParseSelector(range, context, sheet);
+    EXPECT_FALSE(list.IsValid());
+  }
+}
+
 namespace {
 
 const auto TagLocalName = [](const CSSSelector* selector) {

@@ -15,19 +15,21 @@ namespace sksg {
 
 TrimEffect::TrimEffect(sk_sp<GeometryNode> child)
     : fChild(std::move(child)) {
-    fChild->addInvalReceiver(this);
+    this->observeInval(fChild);
 }
 
 TrimEffect::~TrimEffect() {
-    fChild->removeInvalReceiver(this);
+    this->unobserveInval(fChild);
+}
+
+void TrimEffect::onClip(SkCanvas* canvas, bool antiAlias) const {
+    canvas->clipPath(fChild->asPath(), SkClipOp::kIntersect, antiAlias);
 }
 
 // TODO
 //   This is a quick hack to get something on the screen.  What we really want here is to apply
 //   the geometry transformation and cache the result on revalidation. Or an SkTrimPathEffect.
 void TrimEffect::onDraw(SkCanvas* canvas, const SkPaint& paint) const {
-    SkASSERT(!this->hasInval());
-
     SkASSERT(!paint.getPathEffect());
 
     const auto path = fChild->asPath();
@@ -37,14 +39,20 @@ void TrimEffect::onDraw(SkCanvas* canvas, const SkPaint& paint) const {
         pathLen += measure.getLength();
     } while (measure.nextContour());
 
-    const auto start  = SkScalarPin(fStart , 0, 1) * pathLen,
-               end    = SkScalarPin(fEnd   , 0, 1) * pathLen,
-               offset = SkScalarPin(fOffset, 0, 1) * pathLen,
-               len    = SkTMax<SkScalar>(end - start, 0);
+    const auto start  = pathLen * fStart,
+               end    = pathLen * fEnd,
+               offset = pathLen * fOffset,
+               len    = end - start;
 
-    const SkScalar dashes[4] = { 0, start, len, pathLen - end };
+    if (len <= 0) {
+        return;
+    }
+
+    const SkScalar dashes[] = { len, pathLen - len };
     SkPaint dashedPaint(paint);
-    dashedPaint.setPathEffect(SkDashPathEffect::Make(dashes, 4, -offset));
+    dashedPaint.setPathEffect(SkDashPathEffect::Make(dashes,
+                                                     SK_ARRAY_COUNT(dashes),
+                                                     -start - offset));
 
     canvas->drawPath(path, dashedPaint);
 }

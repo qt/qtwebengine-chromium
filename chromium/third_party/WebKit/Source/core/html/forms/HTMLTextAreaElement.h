@@ -89,8 +89,6 @@ class CORE_EXPORT HTMLTextAreaElement final : public TextControlElement {
   String GetPlaceholderValue() const final;
   void UpdatePlaceholderText() override;
   bool IsEmptyValue() const override { return value().IsEmpty(); }
-  bool SupportsAutocapitalize() const override { return true; }
-  const AtomicString& DefaultAutocapitalize() const override;
 
   bool IsOptionalFormControl() const override {
     return !IsRequiredFormControl();
@@ -133,7 +131,7 @@ class CORE_EXPORT HTMLTextAreaElement final : public TextControlElement {
 
   bool MatchesReadOnlyPseudoClass() const override;
   bool MatchesReadWritePseudoClass() const override;
-  void CopyNonAttributePropertiesFromElement(const Element&) final;
+  void CloneNonAttributePropertiesFrom(const Element&, CloneChildrenFlag) final;
 
   // If the String* argument is 0, apply value().
   bool ValueMissing(const String*) const;

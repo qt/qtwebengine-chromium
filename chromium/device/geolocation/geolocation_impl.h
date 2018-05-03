@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef DEVICE_GEOLOCATION_GEOLOCATION_IMPL_H_
+#define DEVICE_GEOLOCATION_GEOLOCATION_IMPL_H_
+
 #include <memory>
 
 #include "base/macros.h"
 #include "device/geolocation/geolocation_provider_impl.h"
-#include "device/geolocation/public/interfaces/geolocation.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
-
-#ifndef DEVICE_GEOLOCATION_GEOLOCATION_IMPL_H_
-#define DEVICE_GEOLOCATION_GEOLOCATION_IMPL_H_
+#include "services/device/public/mojom/geolocation.mojom.h"
 
 namespace device {
 

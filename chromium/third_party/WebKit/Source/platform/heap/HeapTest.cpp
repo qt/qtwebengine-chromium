@@ -213,22 +213,21 @@ struct PairWithWeakHandling : public StrongWeakPair {
     return first.IsHashTableDeletedValue();
   }
 
+  bool IsAlive() { return ThreadHeap::IsHeapObjectAlive(second); }
+
   // Since we don't allocate independent objects of this type, we don't need
   // a regular trace method. Instead, we use a traceInCollection method. If
   // the entry should be deleted from the collection we return true and don't
   // trace the strong pointer.
   template <typename VisitorDispatcher>
   bool TraceInCollection(VisitorDispatcher visitor,
-                         WTF::ShouldWeakPointersBeMarkedStrongly strongify) {
-    visitor->TraceInCollection(second, strongify);
+                         WTF::WeakHandlingFlag weakness) {
+    HashTraits<WeakMember<IntWrapper>>::TraceInCollection(visitor, second,
+                                                          weakness);
     if (!ThreadHeap::IsHeapObjectAlive(second))
       return true;
-    // FIXME: traceInCollection is also called from WeakProcessing to check if
-    // the entry is dead.
-    // The below if avoids calling trace in that case by only calling trace when
-    // |first| is not yet marked.
-    if (!ThreadHeap::IsHeapObjectAlive(first))
-      visitor->Trace(first);
+
+    visitor->Trace(first);
     return false;
   }
 
@@ -243,8 +242,7 @@ template <typename T>
 struct WeakHandlingHashTraits : WTF::SimpleClassHashTraits<T> {
   // We want to treat the object as a weak object in the sense that it can
   // disappear from hash sets and hash maps.
-  static const WTF::WeakHandlingFlag kWeakHandlingFlag =
-      WTF::kWeakHandlingInCollections;
+  static const WTF::WeakHandlingFlag kWeakHandlingFlag = WTF::kWeakHandling;
   // Normally whether or not an object needs tracing is inferred
   // automatically from the presence of the trace method, but we don't
   // necessarily have a trace method, and we may not need one because T
@@ -263,12 +261,13 @@ struct WeakHandlingHashTraits : WTF::SimpleClassHashTraits<T> {
   // dead objects were found: In this case any strong pointers were not yet
   // traced and the entry should be removed from the collection.
   template <typename VisitorDispatcher>
-  static bool TraceInCollection(
-      VisitorDispatcher visitor,
-      T& t,
-      WTF::ShouldWeakPointersBeMarkedStrongly strongify) {
-    return t.TraceInCollection(visitor, strongify);
+  static bool TraceInCollection(VisitorDispatcher visitor,
+                                T& t,
+                                WTF::WeakHandlingFlag weakness) {
+    return t.TraceInCollection(visitor, weakness);
   }
+
+  static bool IsAlive(T& t) { return t.IsAlive(); }
 };
 
 }  // namespace
@@ -351,7 +350,9 @@ namespace blink {
 class TestGCScope {
  public:
   explicit TestGCScope(BlinkGC::StackState state)
-      : state_(ThreadState::Current()), safe_point_scope_(state) {
+      : state_(ThreadState::Current()),
+        safe_point_scope_(state),
+        persistent_lock_(ProcessHeap::CrossThreadPersistentMutex()) {
     DCHECK(state_->CheckThread());
     state_->MarkPhasePrologue(state, BlinkGC::kGCWithSweep,
                               BlinkGC::kPreciseGC);
@@ -365,6 +366,7 @@ class TestGCScope {
  private:
   ThreadState* state_;
   SafePointScope safe_point_scope_;
+  RecursiveMutexLocker persistent_lock_;
 };
 
 class SimpleObject : public GarbageCollected<SimpleObject> {
@@ -479,10 +481,11 @@ class ThreadedTesterBase {
   static void Test(ThreadedTesterBase* tester) {
     Vector<std::unique_ptr<WebThread>, kNumberOfThreads> threads;
     for (int i = 0; i < kNumberOfThreads; i++) {
-      threads.push_back(
-          Platform::Current()->CreateThread("blink gc testing thread"));
+      threads.push_back(Platform::Current()->CreateThread(
+          WebThreadCreationParams(WebThreadType::kTestThread)
+              .SetThreadName("blink gc testing thread")));
       PostCrossThreadTask(
-          *threads.back()->GetWebTaskRunner(), FROM_HERE,
+          *threads.back()->GetTaskRunner(), FROM_HERE,
           CrossThreadBind(ThreadFunc, CrossThreadUnretained(tester)));
     }
     while (tester->threads_to_finish_) {
@@ -850,9 +853,9 @@ class Foo : public Bar {
 
   virtual void Trace(blink::Visitor* visitor) {
     if (points_to_foo_)
-      visitor->Mark(static_cast<Foo*>(bar_));
+      visitor->Trace(static_cast<Foo*>(bar_));
     else
-      visitor->Mark(bar_);
+      visitor->Trace(bar_);
   }
 
  private:
@@ -3992,7 +3995,8 @@ TEST(HeapTest, CheckAndMarkPointer) {
   {
     ThreadState::GCForbiddenScope gc_scope(ThreadState::Current());
     TestGCScope scope(BlinkGC::kHeapPointersOnStack);
-    Visitor visitor(ThreadState::Current(), Visitor::kGlobalMarking);
+    MarkingVisitor visitor(ThreadState::Current(),
+                           MarkingVisitor::kGlobalMarking);
     heap.FlushHeapDoesNotContainCache();
     for (size_t i = 0; i < object_addresses.size(); i++) {
       EXPECT_TRUE(heap.CheckAndMarkPointer(&visitor, object_addresses[i],
@@ -4016,7 +4020,8 @@ TEST(HeapTest, CheckAndMarkPointer) {
   {
     ThreadState::GCForbiddenScope gc_scope(ThreadState::Current());
     TestGCScope scope(BlinkGC::kHeapPointersOnStack);
-    Visitor visitor(ThreadState::Current(), Visitor::kGlobalMarking);
+    MarkingVisitor visitor(ThreadState::Current(),
+                           MarkingVisitor::kGlobalMarking);
     heap.FlushHeapDoesNotContainCache();
     for (size_t i = 0; i < object_addresses.size(); i++) {
       // We would like to assert that checkAndMarkPointer returned false
@@ -5121,13 +5126,24 @@ typedef HeapHashSet<WeakMember<IntWrapper>> WeakSet;
 
 // These special traits will remove a set from a map when the set is empty.
 struct EmptyClearingHashSetTraits : HashTraits<WeakSet> {
-  static const WTF::WeakHandlingFlag kWeakHandlingFlag =
-      WTF::kWeakHandlingInCollections;
+  static const WTF::WeakHandlingFlag kWeakHandlingFlag = WTF::kWeakHandling;
+
+  static bool IsAlive(WeakSet& set) {
+    bool live_entries_found = false;
+    WeakSet::iterator end = set.end();
+    for (WeakSet::iterator it = set.begin(); it != end; ++it) {
+      if (ThreadHeap::IsHeapObjectAlive(*it)) {
+        live_entries_found = true;
+        break;
+      }
+    }
+    return live_entries_found;
+  }
+
   template <typename VisitorDispatcher>
-  static bool TraceInCollection(
-      VisitorDispatcher visitor,
-      WeakSet& set,
-      WTF::ShouldWeakPointersBeMarkedStrongly strongify) {
+  static bool TraceInCollection(VisitorDispatcher visitor,
+                                WeakSet& set,
+                                WTF::WeakHandlingFlag weakenss) {
     bool live_entries_found = false;
     WeakSet::iterator end = set.end();
     for (WeakSet::iterator it = set.begin(); it != end; ++it) {
@@ -5467,8 +5483,10 @@ class ThreadedStrongificationTester {
 
     MutexLocker locker(MainThreadMutex());
     std::unique_ptr<WebThread> worker_thread =
-        Platform::Current()->CreateThread("Test Worker Thread");
-    PostCrossThreadTask(*worker_thread->GetWebTaskRunner(), FROM_HERE,
+        Platform::Current()->CreateThread(
+            WebThreadCreationParams(WebThreadType::kTestThread)
+                .SetThreadName("Test Worker Thread"));
+    PostCrossThreadTask(*worker_thread->GetTaskRunner(), FROM_HERE,
                         CrossThreadBind(WorkerThreadMain));
 
     // Wait for the worker thread initialization. The worker
@@ -5566,9 +5584,11 @@ class MemberSameThreadCheckTester {
 
     MutexLocker locker(MainThreadMutex());
     std::unique_ptr<WebThread> worker_thread =
-        Platform::Current()->CreateThread("Test Worker Thread");
+        Platform::Current()->CreateThread(
+            WebThreadCreationParams(WebThreadType::kTestThread)
+                .SetThreadName("Test Worker Thread"));
     PostCrossThreadTask(
-        *worker_thread->GetWebTaskRunner(), FROM_HERE,
+        *worker_thread->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(&MemberSameThreadCheckTester::WorkerThreadMain,
                         CrossThreadUnretained(this)));
 
@@ -5609,9 +5629,11 @@ class PersistentSameThreadCheckTester {
 
     MutexLocker locker(MainThreadMutex());
     std::unique_ptr<WebThread> worker_thread =
-        Platform::Current()->CreateThread("Test Worker Thread");
+        Platform::Current()->CreateThread(
+            WebThreadCreationParams(WebThreadType::kTestThread)
+                .SetThreadName("Test Worker Thread"));
     PostCrossThreadTask(
-        *worker_thread->GetWebTaskRunner(), FROM_HERE,
+        *worker_thread->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(&PersistentSameThreadCheckTester::WorkerThreadMain,
                         CrossThreadUnretained(this)));
 
@@ -5652,10 +5674,12 @@ class MarkingSameThreadCheckTester {
 
     MutexLocker locker(MainThreadMutex());
     std::unique_ptr<WebThread> worker_thread =
-        Platform::Current()->CreateThread("Test Worker Thread");
+        Platform::Current()->CreateThread(
+            WebThreadCreationParams(WebThreadType::kTestThread)
+                .SetThreadName("Test Worker Thread"));
     Persistent<MainThreadObject> main_thread_object = new MainThreadObject();
     PostCrossThreadTask(
-        *worker_thread->GetWebTaskRunner(), FROM_HERE,
+        *worker_thread->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(&MarkingSameThreadCheckTester::WorkerThreadMain,
                         CrossThreadUnretained(this),
                         WrapCrossThreadPersistent(main_thread_object.Get())));
@@ -5771,7 +5795,7 @@ class DestructorLockingObject
   }
 
   virtual ~DestructorLockingObject() {
-    MutexLocker lock(GetRecursiveMutex());
+    RecursiveMutexLocker lock(GetRecursiveMutex());
     ++destructor_calls_;
   }
 
@@ -6450,11 +6474,12 @@ TEST(HeapTest, CrossThreadWeakPersistent) {
   // Step 1: Initiate a worker thread, and wait for |object| to get allocated on
   // the worker thread.
   MutexLocker main_thread_mutex_locker(MainThreadMutex());
-  std::unique_ptr<WebThread> worker_thread =
-      Platform::Current()->CreateThread("Test Worker Thread");
+  std::unique_ptr<WebThread> worker_thread = Platform::Current()->CreateThread(
+      WebThreadCreationParams(WebThreadType::kTestThread)
+          .SetThreadName("Test Worker Thread"));
   DestructorLockingObject* object = nullptr;
   PostCrossThreadTask(
-      *worker_thread->GetWebTaskRunner(), FROM_HERE,
+      *worker_thread->GetTaskRunner(), FROM_HERE,
       CrossThreadBind(WorkerThreadMainForCrossThreadWeakPersistentTest,
                       CrossThreadUnretained(&object)));
   ParkMainThread();
@@ -6465,7 +6490,7 @@ TEST(HeapTest, CrossThreadWeakPersistent) {
       cross_thread_weak_persistent(object);
   object = nullptr;
   {
-    MutexLocker recursive_mutex_locker(GetRecursiveMutex());
+    RecursiveMutexLocker recursive_mutex_locker(GetRecursiveMutex());
     EXPECT_EQ(0, DestructorLockingObject::destructor_calls_);
   }
 
@@ -6478,7 +6503,7 @@ TEST(HeapTest, CrossThreadWeakPersistent) {
   // Step 5: Make sure the weak persistent is cleared.
   EXPECT_FALSE(cross_thread_weak_persistent.Get());
   {
-    MutexLocker recursive_mutex_locker(GetRecursiveMutex());
+    RecursiveMutexLocker recursive_mutex_locker(GetRecursiveMutex());
     EXPECT_EQ(1, DestructorLockingObject::destructor_calls_);
   }
 

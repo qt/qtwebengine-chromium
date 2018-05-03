@@ -25,7 +25,7 @@
             "className": "Console.ConsolePanel.ConsoleRevealer"
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "actionId": "console.show",
             "className": "Console.ConsoleView.ActionDelegate",
             "bindings": [
@@ -35,7 +35,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "category": "Console",
             "actionId": "console.clear",
             "title": "Clear console",
@@ -53,7 +53,7 @@
             ]
         },
         {
-            "type": "@UI.ActionDelegate",
+            "type": "action",
             "category": "Console",
             "actionId": "console.clear.history",
             "title": "Clear console history",
@@ -93,25 +93,6 @@
                 {
                     "value": false,
                     "title": "Show messages from all contexts"
-                }
-            ]
-        },
-        {
-            "type": "setting",
-            "category": "Console",
-            "title": "User messages only",
-            "settingName": "consoleAPIFilterEnabled",
-            "settingType": "boolean",
-            "storageType": "session",
-            "defaultValue": false,
-            "options": [
-                {
-                    "value": true,
-                    "title": "Only show messages from console API methods"
-                },
-                {
-                    "value": false,
-                    "title": "Show messages from all sources"
                 }
             ]
         },
@@ -182,7 +163,7 @@
         "components",
         "data_grid",
         "object_ui",
-        "console_model",
+        "sdk",
         "product_registry",
         "formatter"
     ],

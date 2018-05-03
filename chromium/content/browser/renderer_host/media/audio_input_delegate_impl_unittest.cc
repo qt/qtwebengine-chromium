@@ -21,7 +21,6 @@
 #include "build/build_config.h"
 #include "content/browser/media/capture/audio_mirroring_manager.h"
 #include "content/browser/media/media_internals.h"
-#include "content/browser/renderer_host/media/audio_sync_reader.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/media_observer.h"
@@ -147,9 +146,7 @@ class AudioInputDelegateTest : public testing::Test {
       : thread_bundle_(base::in_place),
         audio_manager_(std::make_unique<media::TestAudioThread>()),
         audio_system_(&audio_manager_),
-        media_stream_manager_(&audio_system_, audio_manager_.GetTaskRunner()),
-        audio_log_(MediaInternals::GetInstance()->CreateAudioLog(
-            media::AudioLogFactory::AUDIO_INPUT_CONTROLLER)) {
+        media_stream_manager_(&audio_system_, audio_manager_.GetTaskRunner()) {
     audio_manager_.SetMakeInputStreamCB(
         base::BindRepeating(&ExpectNoInputStreamCreation));
     audio_manager_.SetMakeOutputStreamCB(
@@ -181,7 +178,9 @@ class AudioInputDelegateTest : public testing::Test {
     return AudioInputDelegateImpl::Create(
         &audio_manager_, AudioMirroringManager::GetInstance(),
         &user_input_monitor_, kRenderProcessId, kRenderFrameId,
-        media_stream_manager_.audio_input_device_manager(), audio_log_.get(),
+        media_stream_manager_.audio_input_device_manager(),
+        MediaInternals::GetInstance()->CreateMojoAudioLog(
+            media::AudioLogFactory::AUDIO_INPUT_CONTROLLER, kStreamId),
         AudioInputDeviceManager::KeyboardMicRegistration(), shared_memory_count,
         kStreamId, session_id, enable_agc, ValidAudioParameters(),
         &event_handler_);
@@ -193,7 +192,6 @@ class AudioInputDelegateTest : public testing::Test {
   MediaStreamManager media_stream_manager_;
   NiceMock<MockUserInputMonitor> user_input_monitor_;
   StrictMock<MockEventHandler> event_handler_;
-  std::unique_ptr<media::AudioLog> audio_log_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AudioInputDelegateTest);

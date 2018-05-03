@@ -28,6 +28,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/threading/platform_thread.h"
+#include "base/time/default_clock.h"
 #include "base/time/time.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_config_test_utils.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_configurator.h"
@@ -41,18 +42,17 @@
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_server.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
 #include "components/data_reduction_proxy/proto/client_config.pb.h"
-#include "components/previews/core/previews_decider.h"
 #include "components/previews/core/previews_experiments.h"
+#include "components/previews/core/test_previews_decider.h"
 #include "components/variations/variations_associated_data.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_change_notifier.h"
+#include "net/base/proxy_server.h"
 #include "net/http/http_status_code.h"
 #include "net/log/test_net_log.h"
 #include "net/nqe/effective_connection_type.h"
-#include "net/nqe/external_estimate_provider.h"
 #include "net/nqe/network_quality_estimator_test_util.h"
-#include "net/proxy/proxy_server.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -85,29 +85,6 @@ std::string GetRetryMapKeyFromOrigin(const std::string& origin) {
   // The retry map has the scheme prefix for https but not for http.
   return origin;
 }
-
-class TestPreviewsDecider : public previews::PreviewsDecider {
- public:
-  TestPreviewsDecider(bool allow_previews) : allow_previews_(allow_previews) {}
-  ~TestPreviewsDecider() override {}
-
-  // previews::PreviewsDecider:
-  bool ShouldAllowPreviewAtECT(
-      const net::URLRequest& request,
-      previews::PreviewsType type,
-      net::EffectiveConnectionType effective_connection_type_threshold,
-      const std::vector<std::string>& host_blacklist_from_server)
-      const override {
-    return allow_previews_;
-  }
-  bool ShouldAllowPreview(const net::URLRequest& request,
-                          previews::PreviewsType type) const override {
-    return allow_previews_;
-  }
-
- private:
-  bool allow_previews_;
-};
 
 }  // namespace
 
@@ -458,7 +435,8 @@ TEST_F(DataReductionProxyConfigTest, WarmupURL) {
                                         event_creator());
 
     NetworkPropertiesManager network_properties_manager(
-        test_context_->pref_service(), test_context_->task_runner());
+        base::DefaultClock::GetInstance(), test_context_->pref_service(),
+        test_context_->task_runner());
     config.InitializeOnIOThread(test_context_->request_context_getter(),
                                 test_context_->request_context_getter(),
                                 &network_properties_manager);
@@ -947,10 +925,12 @@ TEST_F(DataReductionProxyConfigTest, IsDataReductionProxyWithMutableConfig) {
   }
 }
 
-TEST_F(DataReductionProxyConfigTest, ShouldEnableServerPreviews) {
+TEST_F(DataReductionProxyConfigTest,
+       ShouldAcceptServerPreviewAllPreviewsDisabled) {
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      features::kDataReductionProxyDecidesTransform);
+  scoped_feature_list.InitFromCommandLine(
+      "DataReductionProxyDecidesTransform" /* enable_features */,
+      "Previews" /* disable_features */);
 
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
@@ -958,12 +938,27 @@ TEST_F(DataReductionProxyConfigTest, ShouldEnableServerPreviews) {
       GURL(), net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
   request->SetLoadFlags(request->load_flags() |
                         net::LOAD_MAIN_FRAME_DEPRECATED);
-  std::unique_ptr<TestPreviewsDecider> previews_decider =
-      std::make_unique<TestPreviewsDecider>(true);
-  EXPECT_TRUE(test_config()->ShouldAcceptServerPreview(
+  std::unique_ptr<previews::TestPreviewsDecider> previews_decider =
+      std::make_unique<previews::TestPreviewsDecider>(true);
+  EXPECT_FALSE(test_config()->ShouldAcceptServerPreview(
       *request.get(), *previews_decider.get()));
+}
 
-  previews_decider = std::make_unique<TestPreviewsDecider>(false);
+TEST_F(DataReductionProxyConfigTest,
+       ShouldAcceptServerPreviewServerPreviewsDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitFromCommandLine(
+      "Previews" /* enable_features */,
+      "DataReductionProxyDecidesTransform" /* disable_features */);
+
+  net::TestURLRequestContext context;
+  net::TestDelegate delegate;
+  std::unique_ptr<net::URLRequest> request = context.CreateRequest(
+      GURL(), net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->SetLoadFlags(request->load_flags() |
+                        net::LOAD_MAIN_FRAME_DEPRECATED);
+  std::unique_ptr<previews::TestPreviewsDecider> previews_decider =
+      std::make_unique<previews::TestPreviewsDecider>(true);
   EXPECT_FALSE(test_config()->ShouldAcceptServerPreview(
       *request.get(), *previews_decider.get()));
 }
@@ -971,8 +966,9 @@ TEST_F(DataReductionProxyConfigTest, ShouldEnableServerPreviews) {
 TEST_F(DataReductionProxyConfigTest, ShouldAcceptServerPreview) {
   // Turn on proxy-decides-transform feature to satisfy DCHECK.
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      features::kDataReductionProxyDecidesTransform);
+  scoped_feature_list.InitFromCommandLine(
+      "Previews,DataReductionProxyDecidesTransform" /* enable_features */,
+      std::string() /* disable_features */);
   base::FieldTrialList field_trial_list(nullptr);
   base::FieldTrialList::CreateFieldTrial(
       "DataReductionProxyPreviewsBlackListTransition", "Enabled");
@@ -984,8 +980,8 @@ TEST_F(DataReductionProxyConfigTest, ShouldAcceptServerPreview) {
       GURL(), net::IDLE, &delegate_, TRAFFIC_ANNOTATION_FOR_TESTS);
   request->SetLoadFlags(request->load_flags() |
                         net::LOAD_MAIN_FRAME_DEPRECATED);
-  std::unique_ptr<TestPreviewsDecider> previews_decider =
-      std::make_unique<TestPreviewsDecider>(true);
+  std::unique_ptr<previews::TestPreviewsDecider> previews_decider =
+      std::make_unique<previews::TestPreviewsDecider>(true);
 
   // Verify true for no flags.
   EXPECT_TRUE(test_config()->ShouldAcceptServerPreview(
@@ -993,13 +989,13 @@ TEST_F(DataReductionProxyConfigTest, ShouldAcceptServerPreview) {
 
   // Verify PreviewsDecider check.
   base::CommandLine::ForCurrentProcess()->InitFromArgv(0, nullptr);
-  previews_decider = std::make_unique<TestPreviewsDecider>(false);
+  previews_decider = std::make_unique<previews::TestPreviewsDecider>(false);
   EXPECT_FALSE(test_config()->ShouldAcceptServerPreview(
       *request.get(), *previews_decider.get()));
   histogram_tester.ExpectBucketCount(
       "DataReductionProxy.Protocol.NotAcceptingTransform",
       1 /* NOT_ACCEPTING_TRANSFORM_BLACKLISTED */, 1);
-  previews_decider = std::make_unique<TestPreviewsDecider>(true);
+  previews_decider = std::make_unique<previews::TestPreviewsDecider>(true);
 }
 
 TEST_F(DataReductionProxyConfigTest, HandleWarmupFetcherResponse) {

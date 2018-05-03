@@ -21,6 +21,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/memory_usage_estimator.h"
 #include "build/build_config.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/search_engines/search_engines_switches.h"
@@ -70,19 +71,23 @@ const char kOutputEncodingType[] = "UTF-8";
 
 // Attempts to encode |terms| and |original_query| in |encoding| and escape
 // them.  |terms| may be escaped as path or query depending on |is_in_query|;
-// |original_query| is always escaped as query.  Returns whether the encoding
-// process succeeded.
+// |original_query| is always escaped as query. If |force_encode| is true
+// encoding ignores errors and function always returns true. Otherwise function
+// returns whether the encoding process succeeded.
 bool TryEncoding(const base::string16& terms,
                  const base::string16& original_query,
                  const char* encoding,
                  bool is_in_query,
+                 bool force_encode,
                  base::string16* escaped_terms,
                  base::string16* escaped_original_query) {
   DCHECK(escaped_terms);
   DCHECK(escaped_original_query);
+  base::OnStringConversionError::Type error_handling =
+      force_encode ? base::OnStringConversionError::SKIP
+                   : base::OnStringConversionError::FAIL;
   std::string encoded_terms;
-  if (!base::UTF16ToCodepage(terms, encoding,
-      base::OnStringConversionError::SKIP, &encoded_terms))
+  if (!base::UTF16ToCodepage(terms, encoding, error_handling, &encoded_terms))
     return false;
   *escaped_terms = base::UTF8ToUTF16(is_in_query ?
       net::EscapeQueryParamValue(encoded_terms, true) :
@@ -90,8 +95,8 @@ bool TryEncoding(const base::string16& terms,
   if (original_query.empty())
     return true;
   std::string encoded_original_query;
-  if (!base::UTF16ToCodepage(original_query, encoding,
-      base::OnStringConversionError::SKIP, &encoded_original_query))
+  if (!base::UTF16ToCodepage(original_query, encoding, error_handling,
+                             &encoded_original_query))
     return false;
   *escaped_original_query = base::UTF8ToUTF16(
       net::EscapeQueryParamValue(encoded_original_query, true));
@@ -196,6 +201,24 @@ TemplateURLRef::SearchTermsArgs::SearchTermsArgs(const SearchTermsArgs& other) =
 TemplateURLRef::SearchTermsArgs::~SearchTermsArgs() {
 }
 
+size_t TemplateURLRef::SearchTermsArgs::EstimateMemoryUsage() const {
+  size_t res = 0;
+
+  res += base::trace_event::EstimateMemoryUsage(search_terms);
+  res += base::trace_event::EstimateMemoryUsage(original_query);
+  res += base::trace_event::EstimateMemoryUsage(assisted_query_stats);
+  res += base::trace_event::EstimateMemoryUsage(current_page_url);
+  res += base::trace_event::EstimateMemoryUsage(session_token);
+  res += base::trace_event::EstimateMemoryUsage(prefetch_query);
+  res += base::trace_event::EstimateMemoryUsage(prefetch_query_type);
+  res += base::trace_event::EstimateMemoryUsage(suggest_query_params);
+  res += base::trace_event::EstimateMemoryUsage(image_thumbnail_content);
+  res += base::trace_event::EstimateMemoryUsage(image_url);
+  res += base::trace_event::EstimateMemoryUsage(contextual_search_params);
+
+  return res;
+}
+
 TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
     ContextualSearchParams()
     : version(-1),
@@ -214,6 +237,12 @@ TemplateURLRef::SearchTermsArgs::ContextualSearchParams::ContextualSearchParams(
 
 TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
     ~ContextualSearchParams() {
+}
+
+size_t
+TemplateURLRef::SearchTermsArgs::ContextualSearchParams::EstimateMemoryUsage()
+    const {
+  return base::trace_event::EstimateMemoryUsage(home_country);
 }
 
 // TemplateURLRef -------------------------------------------------------------
@@ -280,6 +309,32 @@ bool TemplateURLRef::UsesPOSTMethod(
     const SearchTermsData& search_terms_data) const {
   ParseIfNecessary(search_terms_data);
   return !post_params_.empty();
+}
+
+size_t TemplateURLRef::EstimateMemoryUsage() const {
+  size_t res = 0;
+
+  res += base::trace_event::EstimateMemoryUsage(parsed_url_);
+  res += base::trace_event::EstimateMemoryUsage(replacements_);
+  res += base::trace_event::EstimateMemoryUsage(host_);
+  res += base::trace_event::EstimateMemoryUsage(port_);
+  res += base::trace_event::EstimateMemoryUsage(path_);
+  res += base::trace_event::EstimateMemoryUsage(search_term_key_);
+  res += base::trace_event::EstimateMemoryUsage(search_term_value_prefix_);
+  res += base::trace_event::EstimateMemoryUsage(search_term_value_suffix_);
+  res += base::trace_event::EstimateMemoryUsage(post_params_);
+
+  return res;
+}
+
+size_t TemplateURLRef::PostParam::EstimateMemoryUsage() const {
+  size_t res = 0;
+
+  res += base::trace_event::EstimateMemoryUsage(name);
+  res += base::trace_event::EstimateMemoryUsage(value);
+  res += base::trace_event::EstimateMemoryUsage(content_type);
+
+  return res;
 }
 
 bool TemplateURLRef::EncodeFormData(const PostParams& post_params,
@@ -1153,6 +1208,10 @@ TemplateURL::AssociatedExtensionInfo::AssociatedExtensionInfo(
 TemplateURL::AssociatedExtensionInfo::~AssociatedExtensionInfo() {
 }
 
+size_t TemplateURL::AssociatedExtensionInfo::EstimateMemoryUsage() const {
+  return base::trace_event::EstimateMemoryUsage(extension_id);
+}
+
 TemplateURL::TemplateURL(const TemplateURLData& data, Type type)
     : data_(data),
       suggestions_url_ref_(this, TemplateURLRef::SUGGEST),
@@ -1370,11 +1429,11 @@ void TemplateURL::EncodeSearchTerms(
   std::vector<std::string> encodings(input_encodings());
   if (std::find(encodings.begin(), encodings.end(), "UTF-8") == encodings.end())
     encodings.push_back("UTF-8");
-  for (std::vector<std::string>::const_iterator i(encodings.begin());
-       i != encodings.end(); ++i) {
+  for (auto i = encodings.begin(); i != encodings.end(); ++i) {
     if (TryEncoding(search_terms_args.search_terms,
-                    search_terms_args.original_query, i->c_str(),
-                    is_in_query, encoded_terms, encoded_original_query)) {
+                    search_terms_args.original_query, i->c_str(), is_in_query,
+                    std::next(i) == encodings.end(), encoded_terms,
+                    encoded_original_query)) {
       *input_encoding = *i;
       return;
     }
@@ -1446,6 +1505,20 @@ void TemplateURL::InvalidateCachedValues() const {
   image_url_ref_.InvalidateCachedValues();
   new_tab_url_ref_.InvalidateCachedValues();
   contextual_search_url_ref_.InvalidateCachedValues();
+}
+
+size_t TemplateURL::EstimateMemoryUsage() const {
+  size_t res = 0;
+
+  res += base::trace_event::EstimateMemoryUsage(data_);
+  res += base::trace_event::EstimateMemoryUsage(url_refs_);
+  res += base::trace_event::EstimateMemoryUsage(suggestions_url_ref_);
+  res += base::trace_event::EstimateMemoryUsage(image_url_ref_);
+  res += base::trace_event::EstimateMemoryUsage(new_tab_url_ref_);
+  res += base::trace_event::EstimateMemoryUsage(contextual_search_url_ref_);
+  res += base::trace_event::EstimateMemoryUsage(extension_info_);
+
+  return res;
 }
 
 void TemplateURL::ResizeURLRefVector() {

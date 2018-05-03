@@ -18,8 +18,12 @@ bool HasEnabledPreviews(content::PreviewsState previews_state) {
 
 content::PreviewsState DetermineEnabledClientPreviewsState(
     const net::URLRequest& url_request,
-    previews::PreviewsDecider* previews_decider) {
+    const previews::PreviewsDecider* previews_decider) {
   content::PreviewsState previews_state = content::PREVIEWS_UNSPECIFIED;
+
+  if (!previews::params::ArePreviewsAllowed()) {
+    return previews_state;
+  }
 
   if (!url_request.url().SchemeIsHTTPOrHTTPS()) {
     return previews_state;
@@ -28,11 +32,8 @@ content::PreviewsState DetermineEnabledClientPreviewsState(
   // Check for client-side previews in precendence order.
   // Note: this for for the beginning of navigation so we should not
   // check for https here (since an http request may redirect to https).
-  if (previews_decider->ShouldAllowPreviewAtECT(
-          url_request, previews::PreviewsType::NOSCRIPT,
-          previews::params::GetECTThresholdForPreview(
-              previews::PreviewsType::NOSCRIPT),
-          std::vector<std::string>())) {
+  if (previews_decider->ShouldAllowPreview(url_request,
+                                           previews::PreviewsType::NOSCRIPT)) {
     previews_state |= content::NOSCRIPT_ON;
     return previews_state;
   }
@@ -51,7 +52,8 @@ content::PreviewsState DetermineEnabledClientPreviewsState(
 
 content::PreviewsState DetermineCommittedClientPreviewsState(
     const net::URLRequest& url_request,
-    content::PreviewsState previews_state) {
+    content::PreviewsState previews_state,
+    const previews::PreviewsDecider* previews_decider) {
   bool is_https = url_request.url().SchemeIs(url::kHttpsScheme);
 
   // If a server preview is set, retain only the bits determined for the server.
@@ -78,14 +80,17 @@ content::PreviewsState DetermineCommittedClientPreviewsState(
     return content::PREVIEWS_OFF;
   }
 
-  // Make priority decision among allow client preview types that can be decided
-  // at Commit time.
+  // Make priority decision among allowed client preview types that can be
+  // decided at Commit time.
   if (previews_state & content::NOSCRIPT_ON) {
-    if (is_https) {
+    // NoScript was chosen for the original URL but only continue with it
+    // if the committed URL has HTTPS scheme and is allowed by decider.
+    if (is_https && previews_decider &&
+        previews_decider->IsURLAllowedForPreview(
+            url_request, previews::PreviewsType::NOSCRIPT)) {
       return content::NOSCRIPT_ON;
-    } else {
-      previews_state &= ~(content::NOSCRIPT_ON);
     }
+    return content::PREVIEWS_OFF;
   }
   if (previews_state & content::CLIENT_LOFI_ON) {
     return content::CLIENT_LOFI_ON;

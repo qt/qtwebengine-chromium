@@ -74,6 +74,23 @@ bool HeadlessBrowserContextOptions::incognito_mode() const {
                                browser_options_->incognito_mode);
 }
 
+bool HeadlessBrowserContextOptions::site_per_process() const {
+  return ReturnOverriddenValue(site_per_process_,
+                               browser_options_->site_per_process);
+}
+
+bool HeadlessBrowserContextOptions::block_new_web_contents() const {
+  return ReturnOverriddenValue(block_new_web_contents_,
+                               browser_options_->block_new_web_contents);
+}
+
+base::Optional<base::Time> HeadlessBrowserContextOptions::initial_virtual_time()
+    const {
+  if (initial_virtual_time_)
+    return initial_virtual_time_;
+  return browser_options_->initial_virtual_time;
+}
+
 bool HeadlessBrowserContextOptions::allow_cookies() const {
   return ReturnOverriddenValue(allow_cookies_, browser_options_->allow_cookies);
 }
@@ -92,6 +109,12 @@ const ProtocolHandlerMap& HeadlessBrowserContextOptions::protocol_handlers()
 
 ProtocolHandlerMap HeadlessBrowserContextOptions::TakeProtocolHandlers() {
   return std::move(protocol_handlers_);
+}
+
+gfx::FontRenderParams::Hinting
+HeadlessBrowserContextOptions::font_render_hinting() const {
+  return ReturnOverriddenValue(font_render_hinting_,
+                               browser_options_->font_render_hinting);
 }
 
 }  // namespace headless

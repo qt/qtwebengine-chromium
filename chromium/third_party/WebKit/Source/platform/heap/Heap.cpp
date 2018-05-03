@@ -61,30 +61,6 @@ void ThreadHeap::FlushHeapDoesNotContainCache() {
   heap_does_not_contain_cache_->Flush();
 }
 
-void ProcessHeap::Init() {
-  total_allocated_space_ = 0;
-  total_allocated_object_size_ = 0;
-  total_marked_object_size_ = 0;
-
-  GCInfoTable::Init();
-  CallbackStackMemoryPool::Instance().Initialize();
-}
-
-void ProcessHeap::ResetHeapCounters() {
-  total_allocated_object_size_ = 0;
-  total_marked_object_size_ = 0;
-}
-
-CrossThreadPersistentRegion& ProcessHeap::GetCrossThreadPersistentRegion() {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(CrossThreadPersistentRegion,
-                                  persistent_region, ());
-  return persistent_region;
-}
-
-size_t ProcessHeap::total_allocated_space_ = 0;
-size_t ProcessHeap::total_allocated_object_size_ = 0;
-size_t ProcessHeap::total_marked_object_size_ = 0;
-
 ThreadHeapStats::ThreadHeapStats()
     : allocated_space_(0),
       allocated_object_size_(0),
@@ -162,6 +138,7 @@ ThreadHeap::ThreadHeap(ThreadState* thread_state)
       post_marking_callback_stack_(CallbackStack::Create()),
       weak_callback_stack_(CallbackStack::Create()),
       ephemeron_stack_(CallbackStack::Create()),
+      ephemeron_iteration_done_stack_(CallbackStack::Create()),
       vector_backing_arena_index_(BlinkGC::kVector1ArenaIndex),
       current_arena_ages_(0),
       should_flush_heap_does_not_contain_cache_(false) {
@@ -184,7 +161,8 @@ ThreadHeap::~ThreadHeap() {
     delete arenas_[i];
 }
 
-Address ThreadHeap::CheckAndMarkPointer(Visitor* visitor, Address address) {
+Address ThreadHeap::CheckAndMarkPointer(MarkingVisitor* visitor,
+                                        Address address) {
   DCHECK(thread_state_->IsInGC());
 
 #if !DCHECK_IS_ON()
@@ -216,7 +194,7 @@ Address ThreadHeap::CheckAndMarkPointer(Visitor* visitor, Address address) {
 // into the heap, provide a checkAndMarkPointer() version with an
 // extra notification argument.
 Address ThreadHeap::CheckAndMarkPointer(
-    Visitor* visitor,
+    MarkingVisitor* visitor,
     Address address,
     MarkedPointerCallbackForTesting callback) {
   DCHECK(thread_state_->IsInGC());
@@ -264,9 +242,13 @@ bool ThreadHeap::PopAndInvokePostMarkingCallback(Visitor* visitor) {
   return false;
 }
 
-void ThreadHeap::PushWeakCallback(void* closure, WeakCallback callback) {
-  DCHECK(thread_state_->IsInGC());
+void ThreadHeap::InvokeEphemeronIterationDoneCallbacks(Visitor* visitor) {
+  while (CallbackStack::Item* item = ephemeron_iteration_done_stack_->Pop()) {
+    item->Call(visitor);
+  }
+}
 
+void ThreadHeap::PushWeakCallback(void* closure, WeakCallback callback) {
   CallbackStack::Item* slot = weak_callback_stack_->AllocateEntry();
   *slot = CallbackStack::Item(closure, callback);
 }
@@ -287,9 +269,8 @@ void ThreadHeap::RegisterWeakTable(void* table,
   CallbackStack::Item* slot = ephemeron_stack_->AllocateEntry();
   *slot = CallbackStack::Item(table, iteration_callback);
 
-  // Register a post-marking callback to tell the tables that
-  // ephemeron iteration is complete.
-  PushPostMarkingCallback(table, iteration_done_callback);
+  slot = ephemeron_iteration_done_stack_->AllocateEntry();
+  *slot = CallbackStack::Item(table, iteration_done_callback);
 }
 
 #if DCHECK_IS_ON()
@@ -304,6 +285,7 @@ void ThreadHeap::CommitCallbackStacks() {
   post_marking_callback_stack_->Commit();
   weak_callback_stack_->Commit();
   ephemeron_stack_->Commit();
+  ephemeron_iteration_done_stack_->Commit();
 }
 
 HeapCompact* ThreadHeap::Compaction() {
@@ -331,6 +313,7 @@ void ThreadHeap::DecommitCallbackStacks() {
   post_marking_callback_stack_->Decommit();
   weak_callback_stack_->Decommit();
   ephemeron_stack_->Decommit();
+  ephemeron_iteration_done_stack_->Decommit();
 }
 
 void ThreadHeap::ProcessMarkingStack(Visitor* visitor) {
@@ -378,6 +361,7 @@ void ThreadHeap::PostMarkingProcessing(Visitor* visitor) {
   //    (specifically to clear the queued bits for weak hash tables), and
   // 2. the markNoTracing callbacks on collection backings to mark them
   //    if they are only reachable from their front objects.
+  InvokeEphemeronIterationDoneCallbacks(visitor);
   while (PopAndInvokePostMarkingCallback(visitor)) {
   }
 
@@ -505,8 +489,10 @@ size_t ThreadHeap::ObjectPayloadSizeForTesting() {
   size_t object_payload_size = 0;
   thread_state_->SetGCState(ThreadState::kGCRunning);
   thread_state_->Heap().MakeConsistentForGC();
+  thread_state_->Heap().PrepareForSweep();
   for (int i = 0; i < BlinkGC::kNumberOfArenas; ++i)
     object_payload_size += arenas_[i]->ObjectPayloadSizeForTesting();
+  MakeConsistentForMutator();
   thread_state_->SetGCState(ThreadState::kSweeping);
   thread_state_->SetGCState(ThreadState::kNoGCScheduled);
   return object_payload_size;
@@ -535,12 +521,10 @@ bool ThreadHeap::IsAddressInHeapDoesNotContainCache(Address address) {
 void ThreadHeap::VisitPersistentRoots(Visitor* visitor) {
   DCHECK(thread_state_->IsInGC());
   TRACE_EVENT0("blink_gc", "ThreadHeap::visitPersistentRoots");
-  ProcessHeap::GetCrossThreadPersistentRegion().TracePersistentNodes(visitor);
-
   thread_state_->VisitPersistents(visitor);
 }
 
-void ThreadHeap::VisitStackRoots(Visitor* visitor) {
+void ThreadHeap::VisitStackRoots(MarkingVisitor* visitor) {
   DCHECK(thread_state_->IsInGC());
   TRACE_EVENT0("blink_gc", "ThreadHeap::visitStackRoots");
   thread_state_->VisitStack(visitor);
@@ -672,8 +656,8 @@ void ThreadHeap::PromptlyFreed(size_t gc_info_index) {
 
 #if defined(ADDRESS_SANITIZER)
 void ThreadHeap::PoisonAllHeaps() {
-  CrossThreadPersistentRegion::LockScope persistent_lock(
-      ProcessHeap::GetCrossThreadPersistentRegion());
+  RecursiveMutexLocker persistent_lock(
+      ProcessHeap::CrossThreadPersistentMutex());
   // Poisoning all unmarked objects in the other arenas.
   for (int i = 1; i < BlinkGC::kNumberOfArenas; i++)
     arenas_[i]->PoisonArena();
@@ -685,8 +669,8 @@ void ThreadHeap::PoisonAllHeaps() {
 }
 
 void ThreadHeap::PoisonEagerArena() {
-  CrossThreadPersistentRegion::LockScope persistent_lock(
-      ProcessHeap::GetCrossThreadPersistentRegion());
+  RecursiveMutexLocker persistent_lock(
+      ProcessHeap::CrossThreadPersistentMutex());
   arenas_[BlinkGC::kEagerSweepArenaIndex]->PoisonArena();
   // CrossThreadPersistents in unmarked objects may be accessed from other
   // threads (e.g. in CrossThreadPersistentRegion::shouldTracePersistent) and

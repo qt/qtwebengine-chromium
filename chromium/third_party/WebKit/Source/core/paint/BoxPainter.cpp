@@ -56,7 +56,7 @@ void BoxPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info,
     // For the case where we are painting the background into the scrolling
     // contents layer of a composited scroller we need to include the entire
     // overflow rect.
-    paint_rect = layout_box_.LayoutOverflowRect();
+    paint_rect = layout_box_.PhysicalLayoutOverflowRect();
 
     scroll_recorder.emplace(paint_info.context, layout_box_, paint_info.phase,
                             layout_box_.ScrolledContentOffset());
@@ -144,6 +144,7 @@ void BoxPainter::PaintBoxDecorationBackgroundWithRect(
           BoundsForDrawingRecorder(paint_info, LayoutPoint())))
     recorder.SetKnownToBeOpaque();
 
+  bool needs_end_layer = false;
   if (!painting_overflow_contents) {
     // FIXME: Should eventually give the theme control over whether the box
     // shadow should paint, since controls could have custom shadows of their
@@ -155,8 +156,10 @@ void BoxPainter::PaintBoxDecorationBackgroundWithRect(
       FloatRoundedRect border = style.GetRoundedBorderFor(paint_rect);
       paint_info.context.ClipRoundedRect(border);
 
-      if (box_decoration_data.bleed_avoidance == kBackgroundBleedClipLayer)
+      if (box_decoration_data.bleed_avoidance == kBackgroundBleedClipLayer) {
         paint_info.context.BeginLayer();
+        needs_end_layer = true;
+      }
     }
   }
 
@@ -202,7 +205,7 @@ void BoxPainter::PaintBoxDecorationBackgroundWithRect(
     }
   }
 
-  if (box_decoration_data.bleed_avoidance == kBackgroundBleedClipLayer)
+  if (needs_end_layer)
     paint_info.context.EndLayer();
 }
 
@@ -225,8 +228,10 @@ void BoxPainter::PaintBackground(const PaintInfo& paint_info,
 
 void BoxPainter::PaintMask(const PaintInfo& paint_info,
                            const LayoutPoint& paint_offset) {
-  if (layout_box_.Style()->Visibility() != EVisibility::kVisible ||
-      paint_info.phase != PaintPhase::kMask)
+  DCHECK_EQ(PaintPhase::kMask, paint_info.phase);
+
+  if (!layout_box_.HasMask() ||
+      layout_box_.Style()->Visibility() != EVisibility::kVisible)
     return;
 
   if (DrawingRecorder::UseCachedDrawingIfPossible(
@@ -240,46 +245,9 @@ void BoxPainter::PaintMask(const PaintInfo& paint_info,
 
 void BoxPainter::PaintMaskImages(const PaintInfo& paint_info,
                                  const LayoutRect& paint_rect) {
-  // Figure out if we need to push a transparency layer to render our mask.
-  bool push_transparency_layer = false;
-  bool flatten_compositing_layers =
-      paint_info.GetGlobalPaintFlags() & kGlobalPaintFlattenCompositingLayers;
-  bool mask_blending_applied_by_compositor =
-      !flatten_compositing_layers && layout_box_.HasLayer() &&
-      layout_box_.Layer()->MaskBlendingAppliedByCompositor();
-
-  bool all_mask_images_loaded = true;
-
-  if (!mask_blending_applied_by_compositor &&
-      !RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    push_transparency_layer = true;
-    StyleImage* mask_box_image = layout_box_.Style()->MaskBoxImage().GetImage();
-    const FillLayer& mask_layers = layout_box_.Style()->MaskLayers();
-
-    // Don't render a masked element until all the mask images have loaded, to
-    // prevent a flash of unmasked content.
-    if (mask_box_image)
-      all_mask_images_loaded &= mask_box_image->IsLoaded();
-
-    all_mask_images_loaded &= mask_layers.ImagesAreLoaded();
-
-    paint_info.context.BeginLayer(1, SkBlendMode::kDstIn);
-  }
-
-  if (all_mask_images_loaded) {
-    BackgroundImageGeometry geometry(layout_box_);
-    BoxModelObjectPainter box_model_painter(layout_box_);
-    box_model_painter.PaintFillLayers(paint_info, Color::kTransparent,
-                                      layout_box_.Style()->MaskLayers(),
-                                      paint_rect, geometry);
-    NinePieceImagePainter::Paint(
-        paint_info.context, layout_box_, layout_box_.GetDocument(),
-        layout_box_.GeneratingNode(), paint_rect, layout_box_.StyleRef(),
-        layout_box_.StyleRef().MaskBoxImage());
-  }
-
-  if (push_transparency_layer)
-    paint_info.context.EndLayer();
+  BackgroundImageGeometry geometry(layout_box_);
+  BoxModelObjectPainter painter(layout_box_);
+  painter.PaintMaskImages(paint_info, paint_rect, layout_box_, geometry);
 }
 
 void BoxPainter::PaintClippingMask(const PaintInfo& paint_info,

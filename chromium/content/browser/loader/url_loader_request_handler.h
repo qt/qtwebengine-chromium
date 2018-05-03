@@ -6,25 +6,22 @@
 #define CONTENT_BROWSER_LOADER_URL_LOADER_REQUEST_HANDLER_H_
 
 #include <memory>
+
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "content/common/content_export.h"
+#include "content/common/single_request_url_loader_factory.h"
 #include "net/url_request/redirect_info.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace content {
 
 class ResourceContext;
 struct ResourceRequest;
 struct SubresourceLoaderParams;
-
-using StartLoaderCallback =
-    base::OnceCallback<void(network::mojom::URLLoaderRequest request,
-                            network::mojom::URLLoaderClientPtr client)>;
-
-using LoaderCallback = base::OnceCallback<void(StartLoaderCallback)>;
+class ThrottlingURLLoader;
 
 // An instance of this class is a per-request object and kept around during
 // the lifetime of a request (including multiple redirect legs) on IO thread.
@@ -33,8 +30,13 @@ class CONTENT_EXPORT URLLoaderRequestHandler {
   URLLoaderRequestHandler() = default;
   virtual ~URLLoaderRequestHandler() = default;
 
-  // Calls |callback| with a non-null StartLoaderCallback if this handler
-  // can handle the request, calls it with null callback otherwise.
+  using LoaderCallback =
+      base::OnceCallback<void(SingleRequestURLLoaderFactory::RequestHandler)>;
+
+  // Asks this handler to handle this resource load request.
+  // The handler must invoke |callback| eventually with either a non-null
+  // RequestHandler indicating its willingness to handle the request, or a null
+  // RequestHandler to indicate that someone else should handle the request.
   virtual void MaybeCreateLoader(
       const network::ResourceRequest& resource_request,
       ResourceContext* resource_context,
@@ -56,10 +58,17 @@ class CONTENT_EXPORT URLLoaderRequestHandler {
   // The URLLoader interface pointer is returned in the |loader| parameter.
   // The interface request for the URLLoaderClient is returned in the
   // |client_request| parameter.
+  // The |url_loader| points to the ThrottlingURLLoader that currently controls
+  // the request. It can be optionally consumed to get the current
+  // URLLoaderClient and URLLoader so that the implementation can rebind them to
+  // intercept the inflight loading if necessary.  Note that the |url_loader|
+  // will be reset after this method is called, which will also drop the
+  // URLLoader held by |url_loader_| if it is not unbound yet.
   virtual bool MaybeCreateLoaderForResponse(
       const network::ResourceResponseHead& response,
       network::mojom::URLLoaderPtr* loader,
-      network::mojom::URLLoaderClientRequest* client_request);
+      network::mojom::URLLoaderClientRequest* client_request,
+      ThrottlingURLLoader* url_loader);
 };
 
 }  // namespace content

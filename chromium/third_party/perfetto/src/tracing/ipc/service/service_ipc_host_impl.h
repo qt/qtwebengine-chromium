@@ -37,17 +37,26 @@ class ServiceIPCHostImpl : public ServiceIPCHost {
   ~ServiceIPCHostImpl() override;
 
   // ServiceIPCHost implementation.
-  bool Start(const char* producer_socket_name) override;
+  bool Start(const char* producer_socket_name,
+             const char* consumer_socket_name) override;
+  bool Start(base::ScopedFile producer_socket_fd,
+             base::ScopedFile consumer_socket_fd) override;
 
   Service* service_for_testing() const;
 
  private:
+  bool DoStart();
+  void Shutdown();
+
   base::TaskRunner* const task_runner_;
   std::unique_ptr<Service> svc_;  // The service business logic.
 
   // The IPC host that listens on the Producer socket. It owns the
   // PosixServiceProducerPort instance which deals with all producers' IPC(s).
   std::unique_ptr<ipc::Host> producer_ipc_port_;
+
+  // As above, but for the Consumer port.
+  std::unique_ptr<ipc::Host> consumer_ipc_port_;
 };
 
 }  // namespace perfetto

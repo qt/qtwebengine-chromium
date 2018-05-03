@@ -30,6 +30,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/gpu/content_gpu_client.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_driver_bug_list.h"
 #include "gpu/config/gpu_info_collector.h"
@@ -65,8 +66,8 @@
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/windows_version.h"
-#include "media/gpu/dxva_video_decode_accelerator_win.h"
-#include "media/gpu/media_foundation_video_encode_accelerator_win.h"
+#include "media/gpu/windows/dxva_video_decode_accelerator_win.h"
+#include "media/gpu/windows/media_foundation_video_encode_accelerator_win.h"
 #include "sandbox/win/src/sandbox.h"
 #endif
 
@@ -87,6 +88,7 @@
 
 #if defined(OS_MACOSX)
 #include "base/message_loop/message_pump_mac.h"
+#include "sandbox/mac/seatbelt.h"
 #include "services/service_manager/sandbox/mac/sandbox_mac.h"
 #endif
 
@@ -97,6 +99,14 @@
 #if BUILDFLAG(USE_VAAPI)
 #include "media/gpu/vaapi/vaapi_wrapper.h"
 #endif
+
+#if defined(OS_MACOSX)
+extern "C" {
+void _LSSetApplicationLaunchServicesServerConnectionStatus(
+    uint64_t flags,
+    bool (^connection_allowed)(CFDictionaryRef));
+};
+#endif  // defined(OS_MACOSX)
 
 namespace content {
 
@@ -168,7 +178,7 @@ class ContentSandboxHelper : public gpu::GpuSandboxHelper {
 #elif defined(OS_WIN)
     return StartSandboxWindows(sandbox_info_);
 #elif defined(OS_MACOSX)
-    return service_manager::SandboxMac::IsCurrentlyActive();
+    return sandbox::Seatbelt::IsSandboxed();
 #else
     return false;
 #endif
@@ -265,6 +275,9 @@ int GpuMain(const MainFunctionParams& parameters) {
     // https://crbug.com/312462#c51 and https://crbug.com/783298
     std::unique_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
     main_message_loop.reset(new base::MessageLoop(std::move(pump)));
+
+    // Tell LaunchServices to continue without a connection to the daemon.
+    _LSSetApplicationLaunchServicesServerConnectionStatus(0, nullptr);
 #else
     main_message_loop.reset(
         new base::MessageLoop(base::MessageLoop::TYPE_DEFAULT));
@@ -307,6 +320,11 @@ int GpuMain(const MainFunctionParams& parameters) {
 #endif
 
   GpuProcess gpu_process(io_thread_priority);
+
+  auto* client = GetContentClient()->gpu();
+  if (client)
+    client->PostIOThreadCreated(gpu_process.io_task_runner());
+
   GpuChildThread* child_thread = new GpuChildThread(
       std::move(gpu_init), std::move(deferred_messages.Get()));
   deferred_messages.Get().clear();

@@ -43,7 +43,7 @@ RendererMetricsHelper::RendererMetricsHelper(
     RendererSchedulerImpl* renderer_scheduler,
     base::TimeTicks now,
     bool renderer_backgrounded)
-    : MetricsHelper(ThreadType::kMainThread),
+    : MetricsHelper(WebThreadType::kMainThread),
       renderer_scheduler_(renderer_scheduler),
       main_thread_load_tracker(
           now,
@@ -119,6 +119,28 @@ void RendererMetricsHelper::OnRendererShutdown(base::TimeTicks now) {
   foreground_main_thread_load_tracker.RecordIdle(now);
   background_main_thread_load_tracker.RecordIdle(now);
   main_thread_load_tracker.RecordIdle(now);
+}
+
+void RendererMetricsHelper::ResetForTest(base::TimeTicks now) {
+  main_thread_load_tracker = ThreadLoadTracker(
+      now,
+      base::BindRepeating(&RendererMetricsHelper::RecordMainThreadTaskLoad,
+                          base::Unretained(this)),
+      kThreadLoadTrackerReportingInterval);
+
+  background_main_thread_load_tracker = ThreadLoadTracker(
+      now,
+      base::BindRepeating(
+          &RendererMetricsHelper::RecordBackgroundMainThreadTaskLoad,
+          base::Unretained(this)),
+      kThreadLoadTrackerReportingInterval);
+
+  foreground_main_thread_load_tracker = ThreadLoadTracker(
+      now,
+      base::BindRepeating(
+          &RendererMetricsHelper::RecordForegroundMainThreadTaskLoad,
+          base::Unretained(this)),
+      kThreadLoadTrackerReportingInterval);
 }
 
 namespace {

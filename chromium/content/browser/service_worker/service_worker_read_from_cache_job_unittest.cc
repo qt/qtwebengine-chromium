@@ -26,7 +26,7 @@
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -147,7 +147,7 @@ class ServiceWorkerReadFromCacheJobTest : public testing::Test {
     ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
     context()->storage()->StoreRegistration(
         registration_.get(), version_.get(),
-        base::Bind(&DidStoreRegistration, &status, run_loop.QuitClosure()));
+        base::BindOnce(&DidStoreRegistration, &status, run_loop.QuitClosure()));
     run_loop.Run();
     return status;
   }
@@ -157,7 +157,7 @@ class ServiceWorkerReadFromCacheJobTest : public testing::Test {
     ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
     context()->storage()->FindRegistrationForId(
         registration_->id(), registration_->pattern().GetOrigin(),
-        base::Bind(&DidFindRegistration, &status, run_loop.QuitClosure()));
+        base::BindOnce(&DidFindRegistration, &status, run_loop.QuitClosure()));
     run_loop.Run();
     return status;
   }

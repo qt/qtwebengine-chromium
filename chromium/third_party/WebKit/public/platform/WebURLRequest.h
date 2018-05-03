@@ -37,9 +37,9 @@
 #include "WebReferrerPolicy.h"
 #include "WebSecurityOrigin.h"
 #include "base/optional.h"
-#include "services/network/public/interfaces/cors.mojom-shared.h"
-#include "services/network/public/interfaces/fetch_api.mojom-shared.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-shared.h"
+#include "services/network/public/mojom/cors.mojom-shared.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 
 namespace blink {
 
@@ -140,14 +140,6 @@ class WebURLRequest {
     kPreviewsStateLast = kPreviewsOff
   };
 
-  // Indicates whether service workers will receive fetch events for this
-  // request. Same as ServiceWorkerMode in
-  // content/public/common/service_worker_modes.h.
-  enum class ServiceWorkerMode : uint8_t {
-    kAll,
-    kNone
-  };
-
   class ExtraData {
    public:
     virtual ~ExtraData() = default;
@@ -222,9 +214,9 @@ class WebURLRequest {
 
   BLINK_PLATFORM_EXPORT WebReferrerPolicy GetReferrerPolicy() const;
 
-  // Adds an HTTP origin header if it is empty and the HTTP method of the
+  // Sets an HTTP origin header if it is empty and the HTTP method of the
   // request requires it.
-  BLINK_PLATFORM_EXPORT void AddHTTPOriginIfNeeded(const WebSecurityOrigin&);
+  BLINK_PLATFORM_EXPORT void SetHTTPOriginIfNeeded(const WebSecurityOrigin&);
 
   // True if the request was user initiated.
   BLINK_PLATFORM_EXPORT bool HasUserGesture() const;
@@ -259,10 +251,9 @@ class WebURLRequest {
   BLINK_PLATFORM_EXPORT bool GetKeepalive() const;
   BLINK_PLATFORM_EXPORT void SetKeepalive(bool);
 
-  // The service worker mode indicating which service workers should get events
-  // for this request.
-  BLINK_PLATFORM_EXPORT ServiceWorkerMode GetServiceWorkerMode() const;
-  BLINK_PLATFORM_EXPORT void SetServiceWorkerMode(ServiceWorkerMode);
+  // True if the service workers should not get events for the request.
+  BLINK_PLATFORM_EXPORT bool GetSkipServiceWorker() const;
+  BLINK_PLATFORM_EXPORT void SetSkipServiceWorker(bool);
 
   // True if corresponding AppCache group should be resetted.
   BLINK_PLATFORM_EXPORT bool ShouldResetAppCache() const;
@@ -303,7 +294,7 @@ class WebURLRequest {
   // data pointer will cause the underlying resource request to be
   // dissociated from any existing non-null extra data pointer.
   BLINK_PLATFORM_EXPORT ExtraData* GetExtraData() const;
-  BLINK_PLATFORM_EXPORT void SetExtraData(ExtraData*);
+  BLINK_PLATFORM_EXPORT void SetExtraData(std::unique_ptr<ExtraData>);
 
   BLINK_PLATFORM_EXPORT Priority GetPriority() const;
   BLINK_PLATFORM_EXPORT void SetPriority(Priority);

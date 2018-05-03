@@ -33,11 +33,8 @@ class MockWebRTCPeerConnectionHandler : public WebRTCPeerConnectionHandler {
   WebRTCSessionDescription LocalDescription() override;
   WebRTCSessionDescription RemoteDescription() override;
   WebRTCErrorType SetConfiguration(const WebRTCConfiguration&) override;
-  bool AddStream(const WebMediaStream&, const WebMediaConstraints&) override;
-  void RemoveStream(const WebMediaStream&) override;
   void GetStats(const WebRTCStatsRequest&) override;
   void GetStats(std::unique_ptr<WebRTCStatsReportCallback>) override;
-  WebVector<std::unique_ptr<WebRTCRtpSender>> GetSenders() override;
   std::unique_ptr<WebRTCRtpSender> AddTrack(
       const WebMediaStreamTrack&,
       const WebVector<WebMediaStream>&) override;
@@ -45,8 +42,6 @@ class MockWebRTCPeerConnectionHandler : public WebRTCPeerConnectionHandler {
   WebRTCDataChannelHandler* CreateDataChannel(
       const WebString& label,
       const WebRTCDataChannelInit&) override;
-  WebRTCDTMFSenderHandler* CreateDTMFSender(
-      const WebMediaStreamTrack&) override;
   void Stop() override;
 };
 

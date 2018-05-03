@@ -80,6 +80,7 @@ class CORE_EXPORT FrameSelection final
   Document& GetDocument() const;
   LocalFrame* GetFrame() const { return frame_; }
   Element* RootEditableElementOrDocumentElement() const;
+  size_t CharacterIndexForPoint(const IntPoint&) const;
 
   // An implementation of |WebFrame::moveCaretSelection()|
   void MoveCaretSelection(const IntPoint&);
@@ -97,6 +98,7 @@ class CORE_EXPORT FrameSelection final
   void SetSelectionAndEndTyping(const SelectionInDOMTree&);
   void SelectAll(SetSelectionBy);
   void SelectAll();
+  void SelectSubString(const Element&, int offset, int count);
   void Clear();
   bool IsHidden() const;
 
@@ -125,8 +127,8 @@ class CORE_EXPORT FrameSelection final
   // extent is resolved to the same position as the current base, this
   // function will do nothing.
   void MoveRangeSelectionExtent(const IntPoint&);
-  void MoveRangeSelection(const VisiblePosition& base,
-                          const VisiblePosition& extent,
+  void MoveRangeSelection(const IntPoint& base_point,
+                          const IntPoint& extent_point,
                           TextGranularity);
 
   TextGranularity Granularity() const { return granularity_; }
@@ -200,7 +202,7 @@ class CORE_EXPORT FrameSelection final
 
   // This returns last layouted selection bounds of LayoutSelection rather than
   // SelectionEditor keeps.
-  LayoutRect UnclippedBounds() const;
+  LayoutRect AbsoluteUnclippedBounds() const;
 
   // TODO(tkent): This function has a bug that scrolling doesn't work well in
   // a case of RangeSelection. crbug.com/443061
@@ -223,7 +225,7 @@ class CORE_EXPORT FrameSelection final
   WTF::Optional<unsigned> LayoutSelectionEnd() const;
   void ClearLayoutSelection();
   std::pair<unsigned, unsigned> LayoutSelectionStartEndForNG(
-      const NGPhysicalTextFragment&);
+      const NGPhysicalTextFragment&) const;
 
   void Trace(blink::Visitor*);
 
@@ -252,6 +254,8 @@ class CORE_EXPORT FrameSelection final
   GranularityStrategy* GetGranularityStrategy();
 
   IntRect ComputeRectToScroll(RevealExtentOption);
+
+  void MoveRangeSelectionInternal(const SelectionInDOMTree&, TextGranularity);
 
   // Implementation of |SynchronousMutationObserver| member functions.
   void ContextDestroyed(Document*) final;

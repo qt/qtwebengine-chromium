@@ -5,6 +5,8 @@
 #include "gpu/ipc/client/gpu_memory_buffer_impl_io_surface.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "gpu/ipc/common/gpu_memory_buffer_support.h"
@@ -13,6 +15,10 @@
 
 namespace gpu {
 namespace {
+
+// The maximum number of times to dump before throttling (to avoid sending
+// thousands of crash dumps).
+const int kMaxCrashDumps = 10;
 
 uint32_t LockFlags(gfx::BufferUsage usage) {
   switch (usage) {
@@ -29,8 +35,6 @@ uint32_t LockFlags(gfx::BufferUsage usage) {
   NOTREACHED();
   return 0;
 }
-
-void NoOp() {}
 
 }  // namespace
 
@@ -55,10 +59,22 @@ GpuMemoryBufferImplIOSurface::CreateFromHandle(
     gfx::BufferFormat format,
     gfx::BufferUsage usage,
     const DestructionCallback& callback) {
+  if (!handle.mach_port) {
+    LOG(ERROR) << "Invalid IOSurface mach port returned to client.";
+    return nullptr;
+  }
+
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface(
       IOSurfaceLookupFromMachPort(handle.mach_port.get()));
-  if (!io_surface)
+  if (!io_surface) {
+    LOG(ERROR) << "Failed to open IOSurface via mach port returned to client.";
+    static int dump_counter = kMaxCrashDumps;
+    if (dump_counter) {
+      dump_counter -= 1;
+      base::debug::DumpWithoutCrashing();
+    }
     return nullptr;
+  }
 
   return base::WrapUnique(
       new GpuMemoryBufferImplIOSurface(handle.id, size, format, callback,
@@ -85,7 +101,7 @@ base::Closure GpuMemoryBufferImplIOSurface::AllocateForTesting(
   handle->type = gfx::IO_SURFACE_BUFFER;
   handle->id = kBufferId;
   handle->mach_port.reset(IOSurfaceCreateMachPort(io_surface));
-  return base::Bind(&NoOp);
+  return base::DoNothing();
 }
 
 bool GpuMemoryBufferImplIOSurface::Map() {

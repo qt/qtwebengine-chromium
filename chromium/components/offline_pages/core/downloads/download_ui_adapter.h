@@ -78,7 +78,6 @@ class DownloadUIAdapter : public OfflineContentProvider,
   int64_t GetOfflineIdByGuid(const std::string& guid) const;
 
   // OfflineContentProvider implmentation.
-  bool AreItemsAvailable() override;
   void OpenItem(const ContentId& id) override;
   void RemoveItem(const ContentId& id) override;
   void CancelDownload(const ContentId& id) override;
@@ -114,6 +113,9 @@ class DownloadUIAdapter : public OfflineContentProvider,
   void TemporaryHiddenStatusChanged(const ClientId& client_id);
 
   Delegate* delegate() { return delegate_.get(); }
+
+  // Test method, to verify the internal cache is not loaded too early.
+  bool IsCacheLoadedForTest() { return (state_ != State::NOT_LOADED); }
 
  private:
   enum class State { NOT_LOADED, LOADING_PAGES, LOADING_REQUESTS, LOADED };
@@ -167,7 +169,6 @@ class DownloadUIAdapter : public OfflineContentProvider,
   void OnOfflinePagesLoaded(const MultipleOfflinePageItemResult& pages);
   void OnRequestsLoaded(std::vector<std::unique_ptr<SavePageRequest>> requests);
 
-  void NotifyItemsLoaded(OfflineContentProvider::Observer* observer);
   void OnDeletePagesDone(DeletePageResult result);
 
   void AddItemHelper(std::unique_ptr<ItemInfo> item_info);
@@ -175,6 +176,11 @@ class DownloadUIAdapter : public OfflineContentProvider,
   // while it runs, so that functions such as |GetOfflineIdByGuid| will work
   // during the |ItemDeleted| callback.
   void DeleteItemHelper(const std::string& guid);
+
+  void ReplyWithAllItems(OfflineContentProvider::MultipleItemCallback callback);
+
+  void OpenItemByGuid(const std::string& guid);
+  void RemoveItemByGuid(const std::string& guid);
 
   // A valid offline content aggregator, supplied at construction.
   OfflineContentAggregator* aggregator_;
@@ -193,11 +199,18 @@ class DownloadUIAdapter : public OfflineContentProvider,
   // The cache of UI items. The key is OfflineItem.guid.
   OfflineItems items_;
 
+  // The callbacks for GetAllItems waiting for cache initialization.
+  std::vector<OfflineContentProvider::MultipleItemCallback>
+      postponed_callbacks_;
+
+  // The requests for operations with items waiting for cache initialization.
+  // std::vector<base::OnceCallback<const std::string&>> postponed_operations_;
+  std::vector<base::OnceClosure> postponed_operations_;
+
   std::unique_ptr<ItemInfo> deleting_item_;
 
   // The observers.
   base::ObserverList<OfflineContentProvider::Observer> observers_;
-  int observers_count_;
 
   base::WeakPtrFactory<DownloadUIAdapter> weak_ptr_factory_;
 

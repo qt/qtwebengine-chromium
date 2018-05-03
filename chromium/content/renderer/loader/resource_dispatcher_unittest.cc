@@ -23,7 +23,6 @@
 #include "content/common/appcache_interfaces.h"
 #include "content/common/weak_wrapper_shared_url_loader_factory.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/service_worker_modes.h"
 #include "content/public/renderer/fixed_received_data.h"
 #include "content/public/renderer/request_peer.h"
 #include "content/public/renderer/resource_dispatcher_delegate.h"
@@ -36,7 +35,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
@@ -57,8 +56,7 @@ static constexpr char kTestPageContents[] =
 class ResourceDispatcherTest : public testing::Test,
                                public network::mojom::URLLoaderFactory {
  public:
-  ResourceDispatcherTest()
-      : dispatcher_(new ResourceDispatcher(message_loop_.task_runner())) {}
+  ResourceDispatcherTest() : dispatcher_(new ResourceDispatcher()) {}
 
   ~ResourceDispatcherTest() override {
     dispatcher_.reset();
@@ -122,7 +120,8 @@ class ResourceDispatcherTest : public testing::Test,
         TRAFFIC_ANNOTATION_FOR_TESTS, false, std::move(peer),
         base::MakeRefCounted<WeakWrapperSharedURLLoaderFactory>(this),
         std::vector<std::unique_ptr<URLLoaderThrottle>>(),
-        network::mojom::URLLoaderClientEndpointsPtr());
+        network::mojom::URLLoaderClientEndpointsPtr(),
+        nullptr /* continue_navigation_function */);
     peer_context->request_id = request_id;
     return request_id;
   }

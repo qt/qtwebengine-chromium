@@ -8,6 +8,8 @@
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintController.h"
+#include "platform/testing/FakeDisplayItemClient.h"
+#include "platform/testing/PaintPropertyTestHelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -16,7 +18,37 @@ class GraphicsContext;
 
 class PaintControllerTestBase : public ::testing::Test {
  public:
-  PaintControllerTestBase() : paint_controller_(PaintController::Create()) {}
+  PaintControllerTestBase()
+      : root_paint_property_client_("root"),
+        root_paint_chunk_id_(root_paint_property_client_,
+                             DisplayItem::kUninitializedType),
+        paint_controller_(PaintController::Create()) {}
+
+  static void DrawNothing(GraphicsContext& context,
+                          const DisplayItemClient& client,
+                          DisplayItem::Type type) {
+    if (DrawingRecorder::UseCachedDrawingIfPossible(context, client, type))
+      return;
+    DrawingRecorder recorder(context, client, type);
+  }
+
+  template <typename Rect>
+  static void DrawRect(GraphicsContext& context,
+                       const DisplayItemClient& client,
+                       DisplayItem::Type type,
+                       const Rect& bounds) {
+    if (DrawingRecorder::UseCachedDrawingIfPossible(context, client, type))
+      return;
+    DrawingRecorder recorder(context, client, type);
+    context.DrawRect(RoundedIntRect(FloatRect(bounds)));
+  }
+
+  void InitRootChunk() {
+    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+      GetPaintController().UpdateCurrentPaintChunkProperties(
+          root_paint_chunk_id_, testing::DefaultPaintChunkProperties());
+    }
+  }
 
  protected:
   PaintController& GetPaintController() { return *paint_controller_; }
@@ -42,26 +74,9 @@ class PaintControllerTestBase : public ::testing::Test {
     return paint_controller_->GetSubsequenceMarkers(client);
   }
 
-  static void DrawNothing(GraphicsContext& context,
-                          const DisplayItemClient& client,
-                          DisplayItem::Type type) {
-    if (DrawingRecorder::UseCachedDrawingIfPossible(context, client, type))
-      return;
-    DrawingRecorder recorder(context, client, type);
-  }
-
-  template <typename Rect>
-  static void DrawRect(GraphicsContext& context,
-                       const DisplayItemClient& client,
-                       DisplayItem::Type type,
-                       const Rect& bounds) {
-    if (DrawingRecorder::UseCachedDrawingIfPossible(context, client, type))
-      return;
-    DrawingRecorder recorder(context, client, type);
-    context.DrawRect(RoundedIntRect(FloatRect(bounds)));
-  }
-
  private:
+  FakeDisplayItemClient root_paint_property_client_;
+  PaintChunk::Id root_paint_chunk_id_;
   std::unique_ptr<PaintController> paint_controller_;
 };
 

@@ -31,15 +31,16 @@ ParentFrameTaskRunners::ParentFrameTaskRunners(LocalFrame* frame)
                     TaskType::kNetworking, TaskType::kPostedMessage,
                     TaskType::kCanvasBlobSerialization, TaskType::kUnthrottled,
                     TaskType::kInternalTest}) {
-    auto task_runner =
-        frame ? frame->GetTaskRunner(type)
-              : Platform::Current()->MainThread()->GetWebTaskRunner();
+    auto task_runner = frame
+                           ? frame->GetTaskRunner(type)
+                           : Platform::Current()->MainThread()->GetTaskRunner();
     task_runners_.insert(type, std::move(task_runner));
   }
 }
 
-scoped_refptr<WebTaskRunner> ParentFrameTaskRunners::Get(TaskType type) {
-  MutexLocker lock(task_runners_mutex_);
+scoped_refptr<base::SingleThreadTaskRunner> ParentFrameTaskRunners::Get(
+    TaskType type) {
+  MutexLocker lock(mutex_);
   return task_runners_.at(type);
 }
 
@@ -48,9 +49,9 @@ void ParentFrameTaskRunners::Trace(blink::Visitor* visitor) {
 }
 
 void ParentFrameTaskRunners::ContextDestroyed(ExecutionContext*) {
-  MutexLocker lock(task_runners_mutex_);
+  MutexLocker lock(mutex_);
   for (auto& entry : task_runners_)
-    entry.value = Platform::Current()->CurrentThread()->GetWebTaskRunner();
+    entry.value = Platform::Current()->CurrentThread()->GetTaskRunner();
 }
 
 }  // namespace blink

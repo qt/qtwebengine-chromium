@@ -38,6 +38,7 @@
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/serialization/Transferables.h"
 #include "core/CoreExport.h"
+#include "core/imagebitmap/ImageBitmap.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/Optional.h"
@@ -53,17 +54,19 @@ class BlobDataHandle;
 class Transferables;
 class ExceptionState;
 class SharedBuffer;
-class StaticBitmapImage;
 class UnpackedSerializedScriptValue;
 class WebBlobInfo;
+class DOMSharedArrayBuffer;
 
 typedef HashMap<String, scoped_refptr<BlobDataHandle>> BlobDataHandleMap;
 typedef Vector<WebBlobInfo> WebBlobInfoArray;
+typedef HeapVector<Member<DOMSharedArrayBuffer>> SharedArrayBufferArray;
 
 class CORE_EXPORT SerializedScriptValue
     : public ThreadSafeRefCounted<SerializedScriptValue> {
  public:
   using ArrayBufferContentsArray = Vector<WTF::ArrayBufferContents, 1>;
+  using SharedArrayBufferContentsArray = Vector<WTF::ArrayBufferContents, 1>;
   using ImageBitmapContentsArray = Vector<scoped_refptr<StaticBitmapImage>, 1>;
   using TransferredWasmModulesArray =
       WTF::Vector<v8::WasmCompiledModule::TransferrableModule>;
@@ -224,7 +227,22 @@ class CORE_EXPORT SerializedScriptValue
   size_t DataLengthInBytes() const { return data_buffer_size_; }
 
   TransferredWasmModulesArray& WasmModules() { return wasm_modules_; }
+  SharedArrayBufferContentsArray& SharedArrayBuffersContents() {
+    return shared_array_buffers_contents_;
+  }
   BlobDataHandleMap& BlobDataHandles() { return blob_data_handles_; }
+  ArrayBufferContentsArray& GetArrayBufferContentsArray() {
+    return array_buffer_contents_array_;
+  }
+  void SetArrayBufferContentsArray(ArrayBufferContentsArray contents) {
+    array_buffer_contents_array_ = std::move(contents);
+  }
+  ImageBitmapContentsArray& GetImageBitmapContentsArray() {
+    return image_bitmap_contents_array_;
+  }
+  void SetImageBitmapContentsArray(ImageBitmapContentsArray contents) {
+    image_bitmap_contents_array_ = std::move(contents);
+  }
 
  private:
   friend class ScriptValueSerializer;
@@ -255,7 +273,7 @@ class CORE_EXPORT SerializedScriptValue
   void TransferOffscreenCanvas(v8::Isolate*,
                                const OffscreenCanvasArray&,
                                ExceptionState&);
-
+  void CloneSharedArrayBuffers(SharedArrayBufferArray&);
   DataBufferPtr data_buffer_;
   size_t data_buffer_size_ = 0;
 
@@ -267,6 +285,7 @@ class CORE_EXPORT SerializedScriptValue
   // These do not have one-use transferred contents, like the above.
   TransferredWasmModulesArray wasm_modules_;
   BlobDataHandleMap blob_data_handles_;
+  SharedArrayBufferContentsArray shared_array_buffers_contents_;
 
   bool has_registered_external_allocation_;
   bool transferables_need_external_allocation_registration_;

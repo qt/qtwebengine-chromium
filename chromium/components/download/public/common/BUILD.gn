@@ -1,0 +1,87 @@
+# Copyright 2018 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+if (is_android) {
+  import("//build/config/android/config.gni")
+  import("//build/config/android/rules.gni")  # For generate_jni().
+}
+
+config("components_download_implementation") {
+  defines = [ "COMPONENTS_DOWNLOAD_IMPLEMENTATION" ]
+}
+
+component("public") {
+  sources = [
+    "download_content.h",
+    "download_create_info.h",
+    "download_danger_type.h",
+    "download_interrupt_reason_values.h",
+    "download_interrupt_reasons.h",
+    "download_item.h",
+    "download_request_handle_interface.h",
+    "download_save_info.cc",
+    "download_save_info.h",
+    "download_source.h",
+    "download_stats.h",
+    "download_task_runner.h",
+    "download_ukm_helper.h",
+    "download_url_parameters.cc",
+    "download_url_parameters.h",
+    "rate_estimator.h",
+    "resume_mode.h",
+  ]
+
+  configs += [ ":components_download_implementation" ]
+
+  public_deps = [
+    ":interfaces",
+  ]
+
+  deps = [
+    "//base",
+    "//components/download/internal/common:internal",
+    "//crypto",
+    "//net",
+    "//services/metrics/public/cpp:metrics_cpp",
+    "//services/network/public/cpp",
+    "//storage/browser",
+    "//ui/base",
+  ]
+
+  allow_circular_includes_from =
+      [ "//components/download/internal/common:internal" ]
+}
+
+if (is_android) {
+  android_library("public_java") {
+    srcjar_deps = [ ":jni_enums" ]
+
+    deps = [
+      "//base:base_java",
+      "//third_party/android_tools:android_support_annotations_java",
+    ]
+  }
+
+  java_cpp_enum("jni_enums") {
+    sources = [
+      "download_item.h",
+    ]
+  }
+}
+
+mojom("interfaces") {
+  sources = [
+    "download_stream.mojom",
+  ]
+
+  public_deps = [
+    "//mojo/common:common_custom_types",
+  ]
+
+  export_class_attribute = "COMPONENTS_DOWNLOAD_EXPORT"
+  export_define = "COMPONENTS_DOWNLOAD_IMPLEMENTATION=1"
+  export_header = "components/download/public/common/download_export.h"
+}

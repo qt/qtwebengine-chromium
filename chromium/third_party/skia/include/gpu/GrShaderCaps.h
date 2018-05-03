@@ -56,8 +56,6 @@ public:
 
     bool fbFetchNeedsCustomOutput() const { return fFBFetchNeedsCustomOutput; }
 
-    bool bindlessTextureSupport() const { return fBindlessTextureSupport; }
-
     const char* versionDeclString() const { return fVersionDeclString; }
 
     const char* fbFetchColorName() const { return fFBFetchColorName; }
@@ -71,12 +69,6 @@ public:
     bool preferFlatInterpolation() const { return fPreferFlatInterpolation; }
 
     bool noperspectiveInterpolationSupport() const { return fNoPerspectiveInterpolationSupport; }
-
-    bool multisampleInterpolationSupport() const { return fMultisampleInterpolationSupport; }
-
-    bool sampleVariablesSupport() const { return fSampleVariablesSupport; }
-
-    bool sampleMaskOverrideCoverageSupport() const { return fSampleMaskOverrideCoverageSupport; }
 
     bool externalTextureSupport() const { return fExternalTextureSupport; }
 
@@ -123,6 +115,9 @@ public:
 
     // If false, SkSL uses a workaround so that sk_FragCoord doesn't actually query gl_FragCoord
     bool canUseFragCoord() const { return fCanUseFragCoord; }
+
+    // If true interpolated vertex shader outputs are inaccurate.
+    bool interpolantsAreInaccurate() const { return fInterpolantsAreInaccurate; }
 
     bool requiresLocalOutputColorForFBFetch() const { return fRequiresLocalOutputColorForFBFetch; }
 
@@ -189,16 +184,6 @@ public:
         return fNoPerspectiveInterpolationExtensionString;
     }
 
-    const char* multisampleInterpolationExtensionString() const {
-        SkASSERT(this->multisampleInterpolationSupport());
-        return fMultisampleInterpolationExtensionString;
-    }
-
-    const char* sampleVariablesExtensionString() const {
-        SkASSERT(this->sampleVariablesSupport());
-        return fSampleVariablesExtensionString;
-    }
-
     const char* imageLoadStoreExtensionString() const {
         SkASSERT(this->imageLoadStoreSupport());
         return fImageLoadStoreExtensionString;
@@ -254,15 +239,10 @@ private:
     bool fDropsTileOnZeroDivide : 1;
     bool fFBFetchSupport : 1;
     bool fFBFetchNeedsCustomOutput : 1;
-    bool fBindlessTextureSupport : 1;
     bool fUsesPrecisionModifiers : 1;
-    bool fCanUseAnyFunctionInShader : 1;
     bool fFlatInterpolationSupport : 1;
     bool fPreferFlatInterpolation : 1;
     bool fNoPerspectiveInterpolationSupport : 1;
-    bool fMultisampleInterpolationSupport : 1;
-    bool fSampleVariablesSupport : 1;
-    bool fSampleMaskOverrideCoverageSupport : 1;
     bool fExternalTextureSupport : 1;
     bool fTexelFetchSupport : 1;
     bool fVertexIDSupport : 1;
@@ -270,6 +250,7 @@ private:
     bool fHalfIs32Bits : 1;
 
     // Used for specific driver bug work arounds
+    bool fCanUseAnyFunctionInShader : 1;
     bool fCanUseMinAndAbsTogether : 1;
     bool fCanUseFractForNegativeValues : 1;
     bool fMustForceNegatedAtanParamToFloat : 1;
@@ -279,6 +260,7 @@ private:
     bool fMustObfuscateUniformColor : 1;
     bool fMustGuardDivisionEvenAfterExplicitZeroCheck : 1;
     bool fCanUseFragCoord : 1;
+    bool fInterpolantsAreInaccurate : 1;
 
     const char* fVersionDeclString;
 
@@ -290,8 +272,6 @@ private:
     const char* fExternalTextureExtensionString;
     const char* fTexelBufferExtensionString;
     const char* fNoPerspectiveInterpolationExtensionString;
-    const char* fMultisampleInterpolationExtensionString;
-    const char* fSampleVariablesExtensionString;
     const char* fImageLoadStoreExtensionString;
 
     const char* fFBFetchColorName;

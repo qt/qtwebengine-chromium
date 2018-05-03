@@ -12,7 +12,7 @@
 #include "base/test/scoped_task_environment.h"
 #include "base/time/time.h"
 #include "content/child/child_process.h"
-#include "content/renderer/media/mock_media_stream_registry.h"
+#include "content/renderer/media/stream/mock_media_stream_registry.h"
 #include "content/renderer/media_recorder/media_recorder_handler.h"
 #include "media/audio/simple_sources.h"
 #include "media/base/audio_bus.h"
@@ -21,6 +21,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebMediaRecorderHandlerClient.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/WebKit/public/web/WebHeap.h"
 
 using ::testing::_;
@@ -78,7 +79,8 @@ class MediaRecorderHandlerTest : public TestWithParam<MediaRecorderTestParams>,
   MediaRecorderHandlerTest()
       : scoped_task_environment_(
             base::test::ScopedTaskEnvironment::MainThreadType::UI),
-        media_recorder_handler_(new MediaRecorderHandler()),
+        media_recorder_handler_(new MediaRecorderHandler(
+            blink::scheduler::GetSingleThreadTaskRunnerForTesting())),
         audio_source_(kTestAudioChannels,
                       440 /* freq */,
                       kTestAudioSampleRate) {

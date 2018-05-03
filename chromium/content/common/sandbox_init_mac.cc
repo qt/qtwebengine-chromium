@@ -11,6 +11,7 @@
 #include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_info.h"
+#include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
 #include "gpu/ipc/common/gpu_preferences_util.h"
@@ -39,8 +40,7 @@ base::OnceClosure MaybeWrapWithGPUSandboxHook(
         // depending on gpu driver bug workarounds.
         gpu::GPUInfo gpu_info;
         auto* command_line = base::CommandLine::ForCurrentProcess();
-        // TODO(zmo): Collect basic GPUInfo instead.
-        gpu::GetGpuInfoFromCommandLine(*command_line, &gpu_info);
+        gpu::CollectBasicGraphicsInfo(command_line, &gpu_info);
         gpu::CacheGPUInfo(gpu_info);
         gpu::GpuPreferences gpu_preferences;
         if (command_line->HasSwitch(switches::kGpuPreferences)) {
@@ -53,7 +53,8 @@ base::OnceClosure MaybeWrapWithGPUSandboxHook(
         gpu::GpuFeatureInfo gpu_feature_info = gpu::ComputeGpuFeatureInfo(
             gpu_info, gpu_preferences.ignore_gpu_blacklist,
             gpu_preferences.disable_gpu_driver_bug_workarounds,
-            gpu_preferences.log_gpu_control_list_decisions, command_line);
+            gpu_preferences.log_gpu_control_list_decisions, command_line,
+            nullptr);
         gpu::CacheGpuFeatureInfo(gpu_feature_info);
         // Preload either the desktop GL or the osmesa so, depending on the
         // --use-gl flag.

@@ -45,7 +45,6 @@
 #include "core/frame/Settings.h"
 #include "core/frame/VisualViewport.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/html/VoidCallback.h"
 #include "core/html/imports/HTMLImportLoader.h"
 #include "core/html/imports/HTMLImportsController.h"
 #include "core/html/parser/TextResourceDecoder.h"
@@ -537,33 +536,35 @@ Response InspectorPageAgent::setLifecycleEventsEnabled(bool enabled) {
       continue;
 
     DocumentLoadTiming& timing = loader->GetTiming();
-    double commit_timestamp = timing.ResponseEnd();
-    if (commit_timestamp) {
-      LifecycleEvent(frame, loader, "commit", commit_timestamp);
+    TimeTicks commit_timestamp = timing.ResponseEnd();
+    if (!commit_timestamp.is_null()) {
+      LifecycleEvent(frame, loader, "commit",
+                     TimeTicksInSeconds(commit_timestamp));
     }
 
-    double domcontentloaded_timestamp =
+    TimeTicks domcontentloaded_timestamp =
         document->GetTiming().DomContentLoadedEventEnd();
-    if (domcontentloaded_timestamp) {
+    if (!domcontentloaded_timestamp.is_null()) {
       LifecycleEvent(frame, loader, "DOMContentLoaded",
-                     domcontentloaded_timestamp);
+                     TimeTicksInSeconds(domcontentloaded_timestamp));
     }
 
-    double load_timestamp = timing.LoadEventEnd();
-    if (load_timestamp) {
-      LifecycleEvent(frame, loader, "load", load_timestamp);
+    TimeTicks load_timestamp = timing.LoadEventEnd();
+    if (!load_timestamp.is_null()) {
+      LifecycleEvent(frame, loader, "load", TimeTicksInSeconds(load_timestamp));
     }
 
     IdlenessDetector* idleness_detector = frame->GetIdlenessDetector();
-    double network_almost_idle_timestamp =
+    TimeTicks network_almost_idle_timestamp =
         idleness_detector->GetNetworkAlmostIdleTime();
-    if (network_almost_idle_timestamp) {
+    if (!network_almost_idle_timestamp.is_null()) {
       LifecycleEvent(frame, loader, "networkAlmostIdle",
-                     network_almost_idle_timestamp);
+                     TimeTicksInSeconds(network_almost_idle_timestamp));
     }
-    double network_idle_timestamp = idleness_detector->GetNetworkIdleTime();
-    if (network_idle_timestamp) {
-      LifecycleEvent(frame, loader, "networkIdle", network_idle_timestamp);
+    TimeTicks network_idle_timestamp = idleness_detector->GetNetworkIdleTime();
+    if (!network_idle_timestamp.is_null()) {
+      LifecycleEvent(frame, loader, "networkIdle",
+                     TimeTicksInSeconds(network_idle_timestamp));
     }
   }
 
@@ -810,14 +811,16 @@ void InspectorPageAgent::WillCommitLoad(LocalFrame*, DocumentLoader* loader) {
 
 void InspectorPageAgent::FrameAttachedToParent(LocalFrame* frame) {
   Frame* parent_frame = frame->Tree().Parent();
-  if (!parent_frame->IsLocalFrame())
-    parent_frame = nullptr;
   std::unique_ptr<SourceLocation> location =
       SourceLocation::CaptureWithFullStackTrace();
   GetFrontend()->frameAttached(
       IdentifiersFactory::FrameId(frame),
-      IdentifiersFactory::FrameId(ToLocalFrame(parent_frame)),
+      IdentifiersFactory::FrameId(parent_frame),
       location ? location->BuildInspectorObject() : nullptr);
+  // Some network events referencing this frame will be reported from the
+  // browser, so make sure to deliver FrameAttached without buffering,
+  // so it gets to the front-end first.
+  GetFrontend()->flush();
 }
 
 void InspectorPageAgent::FrameDetachedFromParent(LocalFrame* frame) {
@@ -932,12 +935,9 @@ std::unique_ptr<protocol::Page::Frame> InspectorPageAgent::BuildObjectForFrame(
           .setMimeType(frame->Loader().GetDocumentLoader()->MimeType())
           .setSecurityOrigin(SecurityOrigin::Create(url)->ToRawString())
           .build();
-  // FIXME: This doesn't work for OOPI.
   Frame* parent_frame = frame->Tree().Parent();
-  if (parent_frame && parent_frame->IsLocalFrame()) {
-    frame_object->setParentId(
-        IdentifiersFactory::FrameId(ToLocalFrame(parent_frame)));
-  }
+  if (parent_frame)
+    frame_object->setParentId(IdentifiersFactory::FrameId(parent_frame));
   if (frame->DeprecatedLocalOwner()) {
     AtomicString name = frame->DeprecatedLocalOwner()->GetNameAttribute();
     if (name.IsEmpty())
@@ -1053,7 +1053,8 @@ Response InspectorPageAgent::getLayoutMetrics(
 
   main_frame->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
 
-  IntRect visible_contents = main_frame->View()->VisibleContentRect();
+  IntRect visible_contents =
+      main_frame->View()->LayoutViewportScrollableArea()->VisibleContentRect();
   *out_layout_viewport = protocol::Page::LayoutViewport::create()
                              .setPageX(visible_contents.X())
                              .setPageY(visible_contents.Y())
@@ -1066,8 +1067,12 @@ Response InspectorPageAgent::getLayoutMetrics(
   float page_zoom = main_frame->PageZoomFactor();
   FloatRect visible_rect = visual_viewport.VisibleRect();
   float scale = visual_viewport.Scale();
-  float scrollbar_width = frame_view->VerticalScrollbarWidth() / scale;
-  float scrollbar_height = frame_view->HorizontalScrollbarHeight() / scale;
+  float scrollbar_width =
+      frame_view->LayoutViewportScrollableArea()->VerticalScrollbarWidth() /
+      scale;
+  float scrollbar_height =
+      frame_view->LayoutViewportScrollableArea()->HorizontalScrollbarHeight() /
+      scale;
 
   IntSize content_size = frame_view->GetScrollableArea()->ContentsSize();
   *out_content_size = protocol::DOM::Rect::create()

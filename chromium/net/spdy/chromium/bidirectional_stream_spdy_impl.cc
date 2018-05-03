@@ -75,11 +75,13 @@ void BidirectionalStreamSpdyImpl::Start(
 
   request_info_ = request_info;
 
+  // TODO(https://crbug.com/656607): Add proper annotation here.
   int rv = stream_request_.StartRequest(
       SPDY_BIDIRECTIONAL_STREAM, spdy_session_, request_info_->url,
-      request_info_->priority, net_log,
+      request_info_->priority, request_info_->socket_tag, net_log,
       base::Bind(&BidirectionalStreamSpdyImpl::OnStreamInitialized,
-                 weak_factory_.GetWeakPtr()));
+                 weak_factory_.GetWeakPtr()),
+      NO_TRAFFIC_ANNOTATION_BUG_656607);
   if (rv != ERR_IO_PENDING)
     OnStreamInitialized(rv);
 }
@@ -289,8 +291,8 @@ int BidirectionalStreamSpdyImpl::SendRequestHeadersHelper() {
   http_request_info.method = request_info_->method;
   http_request_info.extra_headers = request_info_->extra_headers;
 
-  CreateSpdyHeadersFromHttpRequest(
-      http_request_info, http_request_info.extra_headers, true, &headers);
+  CreateSpdyHeadersFromHttpRequest(http_request_info,
+                                   http_request_info.extra_headers, &headers);
   written_end_of_stream_ = request_info_->end_stream_on_headers;
   return stream_->SendRequestHeaders(std::move(headers),
                                      request_info_->end_stream_on_headers

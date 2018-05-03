@@ -53,15 +53,15 @@ bool ConvertAnimationEffects(
 
   // TODO(crbug.com/781816): Allow using effects with no target.
   for (const auto& effect : keyframe_effects) {
-    if (!effect->Target()) {
+    if (!effect->target()) {
       error_string = "All effect targets must exist";
       return false;
     }
   }
 
-  Document& target_document = keyframe_effects.at(0)->Target()->GetDocument();
+  Document& target_document = keyframe_effects.at(0)->target()->GetDocument();
   for (const auto& effect : keyframe_effects) {
-    if (effect->Target()->GetDocument() != target_document) {
+    if (effect->target()->GetDocument() != target_document) {
       error_string = "All effects must target elements in the same document";
       return false;
     }
@@ -167,7 +167,7 @@ WorkletAnimation* WorkletAnimation::Create(
     return nullptr;
   }
 
-  Document& document = keyframe_effects.at(0)->Target()->GetDocument();
+  Document& document = keyframe_effects.at(0)->target()->GetDocument();
   WorkletAnimation* animation = new WorkletAnimation(
       animator_name, document, keyframe_effects, timeline, std::move(options));
 
@@ -198,24 +198,42 @@ String WorkletAnimation::playState() {
 
 void WorkletAnimation::play() {
   DCHECK(IsMainThread());
-  if (play_state_ != Animation::kPending) {
-    document_->GetWorkletAnimationController().AttachAnimation(*this);
-    play_state_ = Animation::kPending;
-  }
+  if (play_state_ == Animation::kPending)
+    return;
+  document_->GetWorkletAnimationController().AttachAnimation(*this);
+  play_state_ = Animation::kPending;
+
+  KeyframeEffectReadOnly* target_effect = effects_.at(0);
+  Element* target = target_effect->target();
+  if (!target)
+    return;
+  target->EnsureElementAnimations().GetWorkletAnimations().insert(this);
+  // TODO(majidvp): This should be removed once worklet animation correctly
+  // updates its effect timing. https://crbug.com/814851.
+  target->SetNeedsAnimationStyleRecalc();
 }
 
 void WorkletAnimation::cancel() {
   DCHECK(IsMainThread());
-  if (play_state_ != Animation::kIdle) {
-    document_->GetWorkletAnimationController().DetachAnimation(*this);
-    play_state_ = Animation::kIdle;
-  }
+  if (play_state_ == Animation::kIdle)
+    return;
+  document_->GetWorkletAnimationController().DetachAnimation(*this);
+  play_state_ = Animation::kIdle;
+
+  KeyframeEffectReadOnly* target_effect = effects_.at(0);
+  Element* target = target_effect->target();
+  if (!target)
+    return;
+  target->EnsureElementAnimations().GetWorkletAnimations().erase(this);
+  // TODO(majidvp): This should be removed once worklet animation correctly
+  // updates its effect timing. https://crbug.com/814851.
+  target->SetNeedsAnimationStyleRecalc();
 }
 
 bool WorkletAnimation::StartOnCompositor(String* failure_message) {
   DCHECK(IsMainThread());
   KeyframeEffectReadOnly* target_effect = effects_.at(0);
-  Element& target = *target_effect->Target();
+  Element& target = *target_effect->target();
 
   // CheckCanStartAnimationOnCompositor requires that the property-specific
   // keyframe groups have been created. To ensure this we manually snapshot the
@@ -249,31 +267,29 @@ bool WorkletAnimation::StartOnCompositor(String* failure_message) {
     return false;
   }
 
-  if (!compositor_player_) {
-    compositor_player_ = CompositorAnimationPlayer::CreateWorkletPlayer(
+  if (!compositor_animation_) {
+    compositor_animation_ = CompositorAnimation::CreateWorkletAnimation(
         animator_name_, ToCompositorScrollTimeline(timeline_));
-    compositor_player_->SetAnimationDelegate(this);
+    compositor_animation_->SetAnimationDelegate(this);
   }
 
   // Register ourselves on the compositor timeline. This will cause our cc-side
-  // animation player to be registered.
+  // animation animation to be registered.
   if (CompositorAnimationTimeline* compositor_timeline =
           document_->Timeline().CompositorTimeline())
-    compositor_timeline->PlayerAttached(*this);
+    compositor_timeline->AnimationAttached(*this);
 
-  // TODO(smcgruer): Creating a WorkletAnimation should be a hint to blink
-  // compositing that the animated element should be promoted. Otherwise this
-  // fails. http://crbug.com/776533
   CompositorAnimations::AttachCompositedLayers(target,
-                                               compositor_player_.get());
+                                               compositor_animation_.get());
 
   double start_time = std::numeric_limits<double>::quiet_NaN();
   double time_offset = 0;
   int group = 0;
 
   // TODO(smcgruer): We need to start all of the effects, not just the first.
-  effects_.at(0)->StartAnimationOnCompositor(
-      group, start_time, time_offset, playback_rate, compositor_player_.get());
+  effects_.at(0)->StartAnimationOnCompositor(group, start_time, time_offset,
+                                             playback_rate,
+                                             compositor_animation_.get());
   play_state_ = Animation::kRunning;
   return true;
 }
@@ -283,10 +299,10 @@ void WorkletAnimation::Dispose() {
 
   if (CompositorAnimationTimeline* compositor_timeline =
           document_->Timeline().CompositorTimeline())
-    compositor_timeline->PlayerDestroyed(*this);
-  if (compositor_player_) {
-    compositor_player_->SetAnimationDelegate(nullptr);
-    compositor_player_ = nullptr;
+    compositor_timeline->AnimationDestroyed(*this);
+  if (compositor_animation_) {
+    compositor_animation_->SetAnimationDelegate(nullptr);
+    compositor_animation_ = nullptr;
   }
 }
 

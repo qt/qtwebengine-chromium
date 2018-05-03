@@ -7,7 +7,6 @@
 
 #include "core/html/HTMLDivElement.h"
 #include "platform/Timer.h"
-#include "platform/WebTaskRunner.h"
 #include "public/platform/WebLocalizedString.h"
 
 namespace blink {
@@ -20,11 +19,11 @@ class HTMLVideoElement;
 // MediaRemotingInterstitial
 //     (-internal-media-remoting-interstitial)
 // +-HTMLImageElement
-// |    (-internal-media-remoting-background-image)
+// |    (-internal-media-interstitial-background-image)
 // \-HTMLDivElement
 // |    (-internal-media-remoting-cast-icon)
 // \-HTMLDivElement
-// |    (-internal-media-remoting-cast-text-message)
+// |    (-internal-media-interstitial-message)
 // |-HTMLDivElement
 //      (-internal-media-remoting-toast-message)
 class MediaRemotingInterstitial final : public HTMLDivElement {

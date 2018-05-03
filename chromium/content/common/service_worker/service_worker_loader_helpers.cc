@@ -12,8 +12,9 @@
 #include "content/public/common/content_features.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/http/http_util.h"
-#include "services/network/public/cpp/loader_util.h"
+#include "services/network/loader_util.h"
 #include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "ui/base/page_transition_types.h"
 
@@ -42,38 +43,6 @@ class BlobCompleteCaller : public blink::mojom::BlobReaderClient {
 }  // namespace
 
 // static
-std::unique_ptr<ServiceWorkerFetchRequest>
-ServiceWorkerLoaderHelpers::CreateFetchRequest(
-    const network::ResourceRequest& request) {
-  auto new_request = std::make_unique<ServiceWorkerFetchRequest>();
-  new_request->mode = request.fetch_request_mode;
-  new_request->is_main_resource_load = ServiceWorkerUtils::IsMainResourceType(
-      static_cast<ResourceType>(request.resource_type));
-  new_request->request_context_type =
-      static_cast<RequestContextType>(request.fetch_request_context_type);
-  new_request->frame_type = request.fetch_frame_type;
-  new_request->url = request.url;
-  new_request->method = request.method;
-  // |blob_uuid| and |blob_size| aren't used in MojoBlobs, so just clear them.
-  // The caller is responsible for setting the MojoBlob field |blob| if needed.
-  new_request->blob_uuid.clear();
-  new_request->blob_size = 0;
-  new_request->credentials_mode = request.fetch_credentials_mode;
-  new_request->cache_mode =
-      ServiceWorkerFetchRequest::GetCacheModeFromLoadFlags(request.load_flags);
-  new_request->redirect_mode = request.fetch_redirect_mode;
-  new_request->keepalive = request.keepalive;
-  new_request->is_reload = ui::PageTransitionCoreTypeIs(
-      static_cast<ui::PageTransition>(request.transition_type),
-      ui::PAGE_TRANSITION_RELOAD);
-  new_request->referrer = Referrer(
-      GURL(request.referrer), Referrer::NetReferrerPolicyToBlinkReferrerPolicy(
-                                  request.referrer_policy));
-  new_request->fetch_type = ServiceWorkerFetchType::FETCH;
-  return new_request;
-}
-
-// static
 void ServiceWorkerLoaderHelpers::SaveResponseHeaders(
     const int status_code,
     const std::string& status_text,
@@ -93,12 +62,25 @@ void ServiceWorkerLoaderHelpers::SaveResponseHeaders(
 
   out_head->headers = new net::HttpResponseHeaders(
       net::HttpUtil::AssembleRawHeaders(buf.c_str(), buf.size()));
+
+  // Populate |out_head|'s MIME type with the value from the HTTP response
+  // headers. If there is none, set a default value.
+  // TODO(crbug.com/771118): Make the MIME sniffer work for SW controlled page
+  // loads, so we don't need to set a simple default value.
   if (out_head->mime_type.empty()) {
     std::string mime_type;
     out_head->headers->GetMimeType(&mime_type);
     if (mime_type.empty())
       mime_type = "text/plain";
     out_head->mime_type = mime_type;
+  }
+
+  // Populate |out_head|'s charset with the value from the HTTP response
+  // headers.
+  if (out_head->charset.empty()) {
+    std::string charset;
+    if (out_head->headers->GetCharset(&charset))
+      out_head->charset = charset;
   }
 }
 
@@ -172,6 +154,48 @@ int ServiceWorkerLoaderHelpers::ReadBlobResponseBody(
   }
   *handle_out = std::move(data_pipe.consumer_handle);
   return net::OK;
+}
+
+// static
+scoped_refptr<network::ResourceRequestBody>
+ServiceWorkerLoaderHelpers::CloneResourceRequestBody(
+    const network::ResourceRequestBody* body) {
+  auto clone = base::MakeRefCounted<network::ResourceRequestBody>();
+
+  clone->set_identifier(body->identifier());
+  clone->set_contains_sensitive_info(body->contains_sensitive_info());
+  for (const network::DataElement& element : *body->elements()) {
+    switch (element.type()) {
+      case network::DataElement::TYPE_UNKNOWN:
+        NOTREACHED();
+        break;
+      case network::DataElement::TYPE_DATA_PIPE: {
+        network::mojom::DataPipeGetterPtrInfo clone_ptr_info;
+        element.data_pipe()->Clone(mojo::MakeRequest(&clone_ptr_info));
+        network::mojom::DataPipeGetterPtr clone_ptr(std::move(clone_ptr_info));
+        clone->AppendDataPipe(std::move(clone_ptr));
+        break;
+      }
+      case network::DataElement::TYPE_RAW_FILE:
+        clone->AppendRawFileRange(element.file().Duplicate(), element.path(),
+                                  element.offset(), element.length(),
+                                  element.expected_modification_time());
+        break;
+      case network::DataElement::TYPE_BLOB:
+        NOTREACHED() << "There should be no blob elements in NetworkService";
+        break;
+      case network::DataElement::TYPE_FILE:
+        clone->AppendFileRange(element.path(), element.offset(),
+                               element.length(),
+                               element.expected_modification_time());
+        break;
+      case network::DataElement::TYPE_BYTES:
+        clone->AppendBytes(element.bytes(), element.length());
+        break;
+    }
+  }
+
+  return clone;
 }
 
 }  // namespace content

@@ -3196,6 +3196,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   ASSERT_EQ(2u, answer->contents().size());
   EXPECT_FALSE(answer->contents()[0].rejected);
   EXPECT_TRUE(answer->contents()[1].rejected);
+
+  // The TransportInfo of the rejected m= section is expected to be added in the
+  // answer.
+  EXPECT_EQ(offer->transport_infos().size(), answer->transport_infos().size());
 }
 
 // Test the generated media sections has the same order of the
@@ -3374,6 +3378,47 @@ TEST_F(MediaSessionDescriptionFactoryTest, CreateAnswerWithLocalCodecParams) {
   EXPECT_EQ(audio_value2, value);
   EXPECT_TRUE(answer_vcd->codecs()[0].GetParam(video_param_name, &value));
   EXPECT_EQ(video_value2, value);
+}
+
+// Test that matching packetization-mode is part of the criteria for matching
+// H264 codecs (in addition to profile-level-id). Previously, this was not the
+// case, so the first H264 codec with the same profile-level-id would match and
+// the payload type in the answer would be incorrect.
+// This is a regression test for bugs.webrtc.org/8808
+TEST_F(MediaSessionDescriptionFactoryTest,
+       H264MatchCriteriaIncludesPacketizationMode) {
+  // Create two H264 codecs with the same profile level ID and different
+  // packetization modes.
+  VideoCodec h264_pm0(96, "H264");
+  h264_pm0.params[cricket::kH264FmtpProfileLevelId] = "42c01f";
+  h264_pm0.params[cricket::kH264FmtpPacketizationMode] = "0";
+  VideoCodec h264_pm1(97, "H264");
+  h264_pm1.params[cricket::kH264FmtpProfileLevelId] = "42c01f";
+  h264_pm1.params[cricket::kH264FmtpPacketizationMode] = "1";
+
+  // Offerer will send both codecs, answerer should choose the one with matching
+  // packetization mode (and not the first one it sees).
+  f1_.set_video_codecs({h264_pm0, h264_pm1});
+  f2_.set_video_codecs({h264_pm1});
+
+  MediaSessionOptions opts;
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
+
+  std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
+  ASSERT_TRUE(offer);
+
+  std::unique_ptr<SessionDescription> answer(
+      f2_.CreateAnswer(offer.get(), opts, nullptr));
+  ASSERT_TRUE(answer);
+
+  // Answer should have one negotiated codec with packetization-mode=1 using the
+  // offered payload type.
+  ASSERT_EQ(1u, answer->contents().size());
+  auto answer_vcd = answer->contents()[0].media_description()->as_video();
+  ASSERT_EQ(1u, answer_vcd->codecs().size());
+  auto answer_codec = answer_vcd->codecs()[0];
+  EXPECT_EQ(h264_pm1.id, answer_codec.id);
 }
 
 class MediaProtocolTest : public ::testing::TestWithParam<const char*> {

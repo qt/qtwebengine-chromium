@@ -9,6 +9,7 @@
 #include "core/layout/MinMaxSize.h"
 #include "core/layout/ng/geometry/ng_box_strut.h"
 #include "core/layout/ng/geometry/ng_logical_size.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/WritingMode.h"
 #include "platform/wtf/Optional.h"
@@ -104,7 +105,8 @@ CORE_EXPORT LayoutUnit ResolveUsedColumnInlineSize(int computed_count,
 CORE_EXPORT LayoutUnit ResolveUsedColumnInlineSize(LayoutUnit available_size,
                                                    const ComputedStyle&);
 
-CORE_EXPORT LayoutUnit ResolveUsedColumnGap(const ComputedStyle&);
+CORE_EXPORT LayoutUnit ResolveUsedColumnGap(LayoutUnit available_size,
+                                            const ComputedStyle&);
 
 // Compute physical margins.
 CORE_EXPORT NGPhysicalBoxStrut ComputePhysicalMargins(const NGConstraintSpace&,
@@ -143,6 +145,12 @@ CORE_EXPORT void ApplyAutoMargins(const ComputedStyle& child_style,
                                   LayoutUnit available_inline_size,
                                   LayoutUnit inline_size,
                                   NGBoxStrut* margins);
+
+// Calculate the adjustment needed for the line's left position, based on
+// text-align, direction and amount of unused space.
+CORE_EXPORT LayoutUnit LineOffsetForTextAlign(ETextAlign,
+                                              TextDirection,
+                                              LayoutUnit space_left);
 
 CORE_EXPORT LayoutUnit ConstrainByMinMax(LayoutUnit length,
                                          Optional<LayoutUnit> min,

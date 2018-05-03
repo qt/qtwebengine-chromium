@@ -649,6 +649,10 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
   if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) || IsValidId(id))
     return kReachedIdLimit;
 
+  // TODO(wolenetz): Change to DCHECK once less verification in release build is
+  // needed. See https://crbug.com/786975.
+  CHECK(!init_cb_.is_null());
+
   std::vector<std::string> parsed_codec_ids;
   media::SplitCodecsToVector(codecs, &parsed_codec_ids, false);
 
@@ -681,7 +685,14 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
                                    base::Unretained(this));
   }
 
-  pending_source_init_ids_.insert(id);
+  // TODO(wolenetz): Change these to DCHECKs or switch to returning
+  // kReachedIdLimit once less verification in release build is needed. See
+  // https://crbug.com/786975.
+  CHECK(pending_source_init_ids_.find(id) == pending_source_init_ids_.end());
+  auto insert_result = pending_source_init_ids_.insert(id);
+  CHECK(insert_result.first != pending_source_init_ids_.end());
+  CHECK(*insert_result.first == id);
+  CHECK(insert_result.second);  // Only true if insertion succeeded.
 
   std::string expected_sbs_codecs = codecs;
   if (codecs == "" && type == "audio/aac")
@@ -693,7 +704,11 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
       base::Bind(&ChunkDemuxer::OnSourceInitDone, base::Unretained(this), id),
       expected_sbs_codecs, encrypted_media_init_data_cb_, new_text_track_cb);
 
+  // TODO(wolenetz): Change to DCHECKs once less verification in release build
+  // is needed. See https://crbug.com/786975.
+  CHECK(!IsValidId(id));
   source_state_map_[id] = std::move(source_state);
+  CHECK(IsValidId(id));
   return kOk;
 }
 
@@ -1101,7 +1116,14 @@ void ChunkDemuxer::MarkEndOfStream(PipelineStatus status) {
 void ChunkDemuxer::UnmarkEndOfStream() {
   DVLOG(1) << "UnmarkEndOfStream()";
   base::AutoLock auto_lock(lock_);
-  DCHECK_EQ(state_, ENDED);
+  DCHECK(state_ == ENDED || state_ == SHUTDOWN || state_ == PARSE_ERROR)
+      << state_;
+
+  // At least ReportError_Locked()'s error reporting to Blink hops threads, so
+  // SourceBuffer may not be aware of media element error on another operation
+  // that might race to this point.
+  if (state_ == PARSE_ERROR || state_ == SHUTDOWN)
+    return;
 
   ChangeState_Locked(INITIALIZED);
 
@@ -1138,6 +1160,12 @@ void ChunkDemuxer::ChangeState_Locked(State new_state) {
   lock_.AssertAcquired();
   DVLOG(1) << "ChunkDemuxer::ChangeState_Locked() : "
            << state_ << " -> " << new_state;
+
+  // TODO(wolenetz): Change to DCHECK once less verification in release build is
+  // needed. See https://crbug.com/786975.
+  // Disallow changes from at or beyond PARSE_ERROR to below PARSE_ERROR.
+  CHECK(!(state_ >= PARSE_ERROR && new_state < PARSE_ERROR));
+
   state_ = new_state;
 }
 
@@ -1192,10 +1220,15 @@ void ChunkDemuxer::OnSourceInitDone(
 
   // TODO(wolenetz): Change these to DCHECKs once less verification in release
   // build is needed. See https://crbug.com/786975.
-  CHECK_EQ(state_, INITIALIZING);
-  CHECK(!init_cb_.is_null());
-  CHECK(pending_source_init_ids_.find(source_id) !=
-        pending_source_init_ids_.end());
+  bool is_initializing = state_ == INITIALIZING;
+  bool init_cb_is_set = !init_cb_.is_null();
+  bool id_is_pending = pending_source_init_ids_.find(source_id) !=
+                       pending_source_init_ids_.end();
+  CHECK(!pending_source_init_ids_.empty());
+  CHECK(IsValidId(source_id));
+  CHECK(id_is_pending);
+  CHECK(init_cb_is_set);
+  CHECK(is_initializing);
   if (audio_streams_.empty() && video_streams_.empty()) {
     ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
     return;

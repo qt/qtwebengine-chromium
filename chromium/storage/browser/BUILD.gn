@@ -6,6 +6,8 @@ import("//testing/test.gni")
 component("browser") {
   output_name = "storage_browser"
   sources = [
+    "blob/blob_builder_from_stream.cc",
+    "blob/blob_builder_from_stream.h",
     "blob/blob_data_builder.cc",
     "blob/blob_data_builder.h",
     "blob/blob_data_handle.cc",
@@ -30,12 +32,18 @@ component("browser") {
     "blob/blob_storage_registry.h",
     "blob/blob_transport_strategy.cc",
     "blob/blob_transport_strategy.h",
+    "blob/blob_url_loader.cc",
+    "blob/blob_url_loader.h",
+    "blob/blob_url_loader_factory.cc",
+    "blob/blob_url_loader_factory.h",
     "blob/blob_url_request_job.cc",
     "blob/blob_url_request_job.h",
     "blob/blob_url_request_job_factory.cc",
     "blob/blob_url_request_job_factory.h",
     "blob/blob_url_store_impl.cc",
     "blob/blob_url_store_impl.h",
+    "blob/blob_url_utils.cc",
+    "blob/blob_url_utils.h",
     "blob/mojo_blob_reader.cc",
     "blob/mojo_blob_reader.h",
     "blob/scoped_file.cc",
@@ -209,6 +217,7 @@ component("browser") {
     "//mojo/public/cpp/bindings",
     "//net",
     "//services/network/public/cpp",
+    "//services/network/public/mojom",
     "//sql",
     "//third_party/leveldatabase",
     "//third_party/sqlite",
@@ -236,6 +245,7 @@ source_set("unittests") {
   sources = [
     # This target is in the process of being populated. See
     # http://crbug.com/653751
+    "blob/blob_builder_from_stream_unittest.cc",
     "blob/blob_data_builder_unittest.cc",
     "blob/blob_flattener_unittest.cc",
     "blob/blob_impl_unittest.cc",

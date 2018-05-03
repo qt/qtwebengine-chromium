@@ -39,6 +39,8 @@ source_set("bookmarks") {
 
 source_set("bookmarks_utils") {
   sources = [
+    "bookmark_remover_helper.cc",
+    "bookmark_remover_helper.h",
     "bookmarks_utils.cc",
     "bookmarks_utils.h",
   ]
@@ -48,15 +50,5 @@ source_set("bookmarks_utils") {
     "//components/prefs",
     "//ios/chrome/browser",
     "//ios/chrome/browser/browser_state",
-  ]
-}
-
-source_set("features") {
-  sources = [
-    "bookmark_new_generation_features.cc",
-    "bookmark_new_generation_features.h",
-  ]
-  deps = [
-    "//base",
   ]
 }

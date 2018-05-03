@@ -35,12 +35,12 @@
 #include "cc/resources/ui_resource_manager.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/gl_helper.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/gpu/vulkan_in_process_context_provider.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/frame_sink_id_allocator.h"
-#include "components/viz/common/switches.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/display/display.h"
 #include "components/viz/service/display/display_scheduler.h"
@@ -97,17 +97,9 @@ class SingleThreadTaskGraphRunner : public cc::SingleThreadTaskGraphRunner {
 
 struct CompositorDependencies {
   CompositorDependencies() : frame_sink_id_allocator(kDefaultClientId) {
-    // TODO(crbug.com/676384): Remove flag along with surface sequences.
-    auto surface_lifetime_type =
-        base::CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableSurfaceReferences)
-            ? viz::SurfaceManager::LifetimeType::SEQUENCES
-            : viz::SurfaceManager::LifetimeType::REFERENCES;
-
     // TODO(danakj): Don't make a FrameSinkManagerImpl when display is in the
     // Gpu process, instead get the mojo pointer from the Gpu process.
-    frame_sink_manager_impl =
-        std::make_unique<viz::FrameSinkManagerImpl>(surface_lifetime_type);
+    frame_sink_manager_impl = std::make_unique<viz::FrameSinkManagerImpl>();
     surface_utils::ConnectWithLocalFrameSinkManager(
         &host_frame_sink_manager, frame_sink_manager_impl.get());
   }
@@ -486,10 +478,8 @@ CompositorImpl::CompositorImpl(CompositorClient* client,
       lock_manager_(base::ThreadTaskRunnerHandle::Get(), this),
       weak_factory_(this) {
   GetHostFrameSinkManager()->RegisterFrameSinkId(frame_sink_id_, this);
-#if DCHECK_IS_ON()
   GetHostFrameSinkManager()->SetFrameSinkDebugLabel(frame_sink_id_,
                                                     "CompositorImpl");
-#endif
   DCHECK(client);
 
   SetRootWindow(root_window);
@@ -556,7 +546,9 @@ void CompositorImpl::SetRootWindow(gfx::NativeWindow root_window) {
     resource_manager_.Init(host_->GetUIResourceManager());
   }
   host_->SetRootLayer(root_window_->GetLayer());
-  host_->SetPaintedDeviceScaleFactor(root_window_->GetDipScale());
+  // TODO(ccameron): Ensure a valid LocalSurfaceId here.
+  host_->SetViewportSizeAndScale(size_, root_window_->GetDipScale(),
+                                 viz::LocalSurfaceId());
 }
 
 void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
@@ -620,6 +612,7 @@ void CompositorImpl::CreateLayerTreeHost() {
   settings.initial_debug_state.show_fps_counter =
       command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
   settings.single_thread_proxy_scheduler = true;
+  settings.use_painted_device_scale_factor = true;
 
   animation_host_ = cc::AnimationHost::CreateMainInstance();
 
@@ -631,9 +624,9 @@ void CompositorImpl::CreateLayerTreeHost() {
   params.mutator_host = animation_host_.get();
   host_ = cc::LayerTreeHost::CreateSingleThreaded(this, &params);
   DCHECK(!host_->IsVisible());
-  host_->SetFrameSinkId(frame_sink_id_);
-  host_->SetViewportSize(size_);
-  host_->SetDeviceScaleFactor(1);
+  // TODO(ccameron): Ensure a valid LocalSurfaceId here.
+  host_->SetViewportSizeAndScale(size_, root_window_->GetDipScale(),
+                                 viz::LocalSurfaceId());
 
   if (needs_animate_)
     host_->SetNeedsAnimate();
@@ -672,8 +665,11 @@ void CompositorImpl::SetWindowBounds(const gfx::Size& size) {
     return;
 
   size_ = size;
-  if (host_)
-    host_->SetViewportSize(size);
+  if (host_) {
+    // TODO(ccameron): Ensure a valid LocalSurfaceId here.
+    host_->SetViewportSizeAndScale(size_, root_window_->GetDipScale(),
+                                   viz::LocalSurfaceId());
+  }
   if (display_)
     display_->Resize(size);
   root_window_->GetLayer()->SetBounds(size);
@@ -761,8 +757,7 @@ void CompositorImpl::CreateVulkanOutputSurface() {
   if (!vulkan_surface->Initialize(window_))
     return;
 
-  InitializeDisplay(std::move(vulkan_surface),
-                    std::move(vulkan_context_provider), nullptr);
+  InitializeDisplay(std::move(vulkan_surface), nullptr);
 }
 #endif
 
@@ -823,13 +818,12 @@ void CompositorImpl::OnGpuChannelEstablished(
   auto display_output_surface = std::make_unique<AndroidOutputSurface>(
       context_provider,
       base::Bind(&CompositorImpl::DidSwapBuffers, base::Unretained(this)));
-  InitializeDisplay(std::move(display_output_surface), nullptr,
+  InitializeDisplay(std::move(display_output_surface),
                     std::move(context_provider));
 }
 
 void CompositorImpl::InitializeDisplay(
     std::unique_ptr<viz::OutputSurface> display_output_surface,
-    scoped_refptr<viz::VulkanContextProvider> vulkan_context_provider,
     scoped_refptr<viz::ContextProvider> context_provider) {
   DCHECK(layer_tree_frame_sink_request_pending_);
 
@@ -863,18 +857,12 @@ void CompositorImpl::InitializeDisplay(
       frame_sink_id_, std::move(display_output_surface), std::move(scheduler),
       task_runner);
 
-  auto layer_tree_frame_sink =
-      vulkan_context_provider
-          ? std::make_unique<viz::DirectLayerTreeFrameSink>(
-                frame_sink_id_, GetHostFrameSinkManager(), manager,
-                display_.get(), nullptr /* display_client */,
-                vulkan_context_provider)
-          : std::make_unique<viz::DirectLayerTreeFrameSink>(
-                frame_sink_id_, GetHostFrameSinkManager(), manager,
-                display_.get(), nullptr /* display_client */, context_provider,
-                nullptr /* worker_context_provider */, task_runner,
-                gpu_memory_buffer_manager,
-                viz::ServerSharedBitmapManager::current());
+  auto layer_tree_frame_sink = std::make_unique<viz::DirectLayerTreeFrameSink>(
+      frame_sink_id_, GetHostFrameSinkManager(), manager, display_.get(),
+      nullptr /* display_client */, context_provider,
+      nullptr /* worker_context_provider */, task_runner,
+      gpu_memory_buffer_manager, viz::ServerSharedBitmapManager::current(),
+      features::IsVizHitTestingEnabled());
 
   display_->SetVisible(true);
   display_->Resize(size_);
@@ -983,7 +971,10 @@ void CompositorImpl::OnDisplayMetricsChanged(const display::Display& display,
       display.id() == display::Screen::GetScreen()
                           ->GetDisplayNearestWindow(root_window_)
                           .id()) {
-    host_->SetPaintedDeviceScaleFactor(root_window_->GetDipScale());
+    // TODO(ccameron): This is transiently incorrect -- |size_| must be
+    // recalculated here as well. Is the call in SetWindowBounds sufficient?
+    host_->SetViewportSizeAndScale(size_, root_window_->GetDipScale(),
+                                   viz::LocalSurfaceId());
   }
 }
 

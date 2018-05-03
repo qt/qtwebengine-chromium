@@ -1006,7 +1006,8 @@ error::Error DoBeginRasterCHROMIUM(GLuint texture_id,
                                    GLuint msaa_sample_count,
                                    GLboolean can_use_lcd_text,
                                    GLboolean use_distance_field_text,
-                                   GLint pixel_config);
+                                   GLint color_type,
+                                   GLuint color_space_transfer_cache_id);
 error::Error DoRasterCHROMIUM(GLsizeiptr size, const void* list);
 error::Error DoEndRasterCHROMIUM();
 error::Error DoCreateTransferCacheEntryINTERNAL(GLuint entry_type,
@@ -1026,3 +1027,9 @@ error::Error DoWindowRectanglesEXT(GLenum mode,
 error::Error DoCreateGpuFenceINTERNAL(GLuint gpu_fence_id);
 error::Error DoWaitGpuFenceCHROMIUM(GLuint gpu_fence_id);
 error::Error DoDestroyGpuFenceCHROMIUM(GLuint gpu_fence_id);
+error::Error DoUnpremultiplyAndDitherCopyCHROMIUM(GLuint src_texture,
+                                                  GLuint dst_texture,
+                                                  GLint x,
+                                                  GLint y,
+                                                  GLsizei width,
+                                                  GLsizei height);

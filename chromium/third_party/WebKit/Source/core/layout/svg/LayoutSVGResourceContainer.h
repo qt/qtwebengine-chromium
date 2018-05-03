@@ -25,6 +25,7 @@
 namespace blink {
 
 class SVGElementProxySet;
+class SVGResource;
 
 enum LayoutSVGResourceType {
   kMaskerResourceType,
@@ -42,8 +43,9 @@ class LayoutSVGResourceContainer : public LayoutSVGHiddenContainer {
   ~LayoutSVGResourceContainer() override;
 
   virtual void RemoveAllClientsFromCache(bool mark_for_invalidation = true) = 0;
-  virtual void RemoveClientFromCache(LayoutObject*,
-                                     bool mark_for_invalidation = true) = 0;
+
+  // Remove any cached data for the |client|, and return true if so.
+  virtual bool RemoveClientFromCache(LayoutObject& client) { return false; }
 
   void UpdateLayout() override;
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) final;
@@ -61,18 +63,19 @@ class LayoutSVGResourceContainer : public LayoutSVGHiddenContainer {
            resource_type == kRadialGradientResourceType;
   }
 
-  void IdChanged(const AtomicString& old_id, const AtomicString& new_id);
-  void DetachAllClients(const AtomicString& to_id);
+  // Detach all clients from this resource, and add them as watches to the tree
+  // scope's resource entry (the argument.)
+  void MakeClientsPending(SVGResource&);
+  bool HasClients() const { return !clients_.IsEmpty(); }
 
+  void InvalidateCacheAndMarkForLayout(LayoutInvalidationReasonForTracing,
+                                       SubtreeLayoutScope* = nullptr);
   void InvalidateCacheAndMarkForLayout(SubtreeLayoutScope* = nullptr);
 
   static void MarkForLayoutAndParentResourceInvalidation(
-      LayoutObject*,
+      LayoutObject&,
       bool needs_layout = true);
 
-  void ClearInvalidationMask() { invalidation_mask_ = 0; }
-
- protected:
   // When adding modes, make sure we don't overflow m_invalidationMask below.
   enum InvalidationMode {
     kLayoutAndBoundariesInvalidation = 1 << 0,
@@ -80,11 +83,15 @@ class LayoutSVGResourceContainer : public LayoutSVGHiddenContainer {
     kPaintInvalidation = 1 << 2,
     kParentOnlyInvalidation = 1 << 3
   };
+  static void MarkClientForInvalidation(LayoutObject&,
+                                        unsigned invalidation_mask);
 
+  void ClearInvalidationMask() { invalidation_mask_ = 0; }
+
+ protected:
   // Used from the invalidateClient/invalidateClients methods from classes,
   // inheriting from us.
   void MarkAllClientsForInvalidation(InvalidationMode);
-  void MarkClientForInvalidation(LayoutObject*, InvalidationMode);
 
   void NotifyContentChanged();
   SVGElementProxySet* ElementProxySet();
@@ -94,23 +101,16 @@ class LayoutSVGResourceContainer : public LayoutSVGHiddenContainer {
   bool is_in_layout_;
 
  private:
-  friend class SVGTreeScopeResources;
-  // The m_registered flag is updated by SVGTreeScopeResources, and indicates
-  // that this resource is the one that is resident in the id->resource map.
-  void SetRegistered(bool registered) { registered_ = registered; }
-  bool IsRegistered() const { return registered_; }
-
   friend class SVGResourcesCache;
-  void AddClient(LayoutObject*);
-  void RemoveClient(LayoutObject*);
+  void AddClient(LayoutObject&);
+  bool RemoveClient(LayoutObject&);
 
-  // Track global (markAllClientsForInvalidation) invals to avoid redundant
-  // crawls.
+  // Track global (markAllClientsForInvalidation) invalidations to avoid
+  // redundant crawls.
   unsigned invalidation_mask_ : 8;
 
-  unsigned registered_ : 1;
   unsigned is_invalidating_ : 1;
-  // 22 padding bits available
+  // 23 padding bits available
 
   HashSet<LayoutObject*> clients_;
 };

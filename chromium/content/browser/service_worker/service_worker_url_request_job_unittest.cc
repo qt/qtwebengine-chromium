@@ -39,7 +39,6 @@
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/request_context_type.h"
 #include "content/public/common/resource_type.h"
-#include "content/public/common/service_worker_modes.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -56,17 +55,17 @@
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "services/network/public/cpp/resource_request_body.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
 #include "storage/common/blob_storage/blob_handle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/service_worker/service_worker.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_installed_scripts_manager.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 namespace service_worker_url_request_job_unittest {
@@ -124,8 +123,7 @@ class MockProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
         std::string() /* integrity */, false /* keepalive */, resource_type_,
         REQUEST_CONTEXT_TYPE_HYPERLINK,
         network::mojom::RequestContextFrameType::kTopLevel,
-        scoped_refptr<network::ResourceRequestBody>(),
-        ServiceWorkerFetchType::FETCH, delegate_);
+        scoped_refptr<network::ResourceRequestBody>(), delegate_);
     if (simulate_navigation_preload_) {
       job_->set_simulate_navigation_preload_for_test();
     }
@@ -204,8 +202,7 @@ class ServiceWorkerURLRequestJobTest
 
   void SetUpWithHelper(std::unique_ptr<EmbeddedWorkerTestHelper> helper) {
     helper_ = std::move(helper);
-    helper_->context()->storage()->LazyInitializeForTest(
-        base::BindOnce(&base::DoNothing));
+    helper_->context()->storage()->LazyInitializeForTest(base::DoNothing());
     base::RunLoop().RunUntilIdle();
 
     // Prepare HTTP response info for the version.
@@ -226,11 +223,6 @@ class ServiceWorkerURLRequestJobTest
     version_ = new ServiceWorkerVersion(
         registration_.get(), GURL("https://example.com/service_worker.js"), 1L,
         helper_->context()->AsWeakPtr());
-    // If script streaming is not enabled, SetMainScriptHttpResponseInfo()
-    // should be called manually since |http_info| which is stored in disk cache
-    // won't be read during SWVersion::StartWorker() in tests.
-    if (!ServiceWorkerUtils::IsScriptStreamingEnabled())
-      version_->SetMainScriptHttpResponseInfo(*http_info);
     std::vector<ServiceWorkerDatabase::ResourceRecord> records;
     records.push_back(WriteToDiskCacheWithCustomResponseInfoSync(
         helper_->context()->storage(), version_->script_url(), 10,
@@ -527,9 +519,9 @@ class DelayHelper : public EmbeddedWorkerTestHelper {
     installed_scripts_info_ = std::move(installed_scripts_info);
   }
 
-  void OnLegacyFetchEvent(
+  void OnFetchEvent(
       int embedded_worker_id,
-      const ServiceWorkerFetchRequest& /* request */,
+      const network::ResourceRequest& /* request */,
       mojom::FetchEventPreloadHandlePtr preload_handle,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
       mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
@@ -706,9 +698,9 @@ class ProviderDeleteHelper : public EmbeddedWorkerTestHelper {
   ~ProviderDeleteHelper() override {}
 
  protected:
-  void OnLegacyFetchEvent(
+  void OnFetchEvent(
       int /* embedded_worker_id */,
-      const ServiceWorkerFetchRequest& /* request */,
+      const network::ResourceRequest& /* request */,
       mojom::FetchEventPreloadHandlePtr /* preload_handle */,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
       mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
@@ -796,9 +788,9 @@ class BlobResponder : public EmbeddedWorkerTestHelper {
   ~BlobResponder() override = default;
 
  protected:
-  void OnLegacyFetchEvent(
+  void OnFetchEvent(
       int /* embedded_worker_id */,
-      const ServiceWorkerFetchRequest& /* request */,
+      const network::ResourceRequest& /* request */,
       mojom::FetchEventPreloadHandlePtr /* preload_handle */,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
       mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
@@ -841,7 +833,7 @@ TEST_F(ServiceWorkerURLRequestJobTest, BlobResponse) {
     expected_response += kTestData;
   }
   std::unique_ptr<storage::BlobDataHandle> blob_handle =
-      blob_storage_context->context()->AddFinishedBlob(blob_data.get());
+      blob_storage_context->context()->AddFinishedBlob(std::move(blob_data));
   SetUpWithHelper(std::make_unique<BlobResponder>(blob_handle->uuid(),
                                                   expected_response.size()));
 
@@ -897,9 +889,9 @@ class StreamResponder : public EmbeddedWorkerTestHelper {
   ~StreamResponder() override {}
 
  protected:
-  void OnLegacyFetchEvent(
+  void OnFetchEvent(
       int /* embedded_worker_id */,
-      const ServiceWorkerFetchRequest& /* request */,
+      const network::ResourceRequest& /* request */,
       mojom::FetchEventPreloadHandlePtr /* preload_handle */,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
       mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
@@ -1287,9 +1279,9 @@ class FailFetchHelper : public EmbeddedWorkerTestHelper {
   ~FailFetchHelper() override {}
 
  protected:
-  void OnLegacyFetchEvent(
+  void OnFetchEvent(
       int embedded_worker_id,
-      const ServiceWorkerFetchRequest& /* request */,
+      const network::ResourceRequest& /* request */,
       mojom::FetchEventPreloadHandlePtr /* preload_handle */,
       mojom::ServiceWorkerFetchResponseCallbackPtr /* response_callback */,
       mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
@@ -1380,9 +1372,9 @@ class EarlyResponseHelper : public EmbeddedWorkerTestHelper {
   }
 
  protected:
-  void OnLegacyFetchEvent(
+  void OnFetchEvent(
       int /* embedded_worker_id */,
-      const ServiceWorkerFetchRequest& /* request */,
+      const network::ResourceRequest& /* request */,
       mojom::FetchEventPreloadHandlePtr /* preload_handle */,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
       mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback

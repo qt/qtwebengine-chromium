@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/buildflag_header.gni")
+import("//chrome/browser/vr/features.gni")
 import("//chrome/common/features.gni")
 import("//device/vr/features/features.gni")
 import("//testing/test.gni")
@@ -13,10 +15,15 @@ if (is_android) {
 
 assert(enable_vr)
 
+buildflag_header("vr_build_features") {
+  header = "vr_features.h"
+  flags = [ "USE_VR_ASSETS_COMPONENT=$use_vr_assets_component" ]
+}
+
 static_library("vr_common") {
   sources = [
-    "animation_player.cc",
-    "animation_player.h",
+    "animation.cc",
+    "animation.h",
     "assets_component_update_status.h",
     "assets_load_status.h",
     "assets_loader.cc",
@@ -24,17 +31,12 @@ static_library("vr_common") {
     "browser_ui_interface.h",
     "content_input_delegate.cc",
     "content_input_delegate.h",
-    "controller_mesh.h",
     "cpu_surface_provider.cc",
     "cpu_surface_provider.h",
     "databinding/binding.h",
     "databinding/binding_base.h",
     "databinding/vector_binding.h",
     "databinding/vector_element_binding.h",
-    "elements/audio_permission_prompt.cc",
-    "elements/audio_permission_prompt.h",
-    "elements/audio_permission_prompt_texture.cc",
-    "elements/audio_permission_prompt_texture.h",
     "elements/button.cc",
     "elements/button.h",
     "elements/content_element.cc",
@@ -68,6 +70,12 @@ static_library("vr_common") {
     "elements/linear_layout.h",
     "elements/omnibox_formatting.cc",
     "elements/omnibox_formatting.h",
+    "elements/omnibox_text_field.cc",
+    "elements/omnibox_text_field.h",
+    "elements/prompt.cc",
+    "elements/prompt.h",
+    "elements/prompt_texture.cc",
+    "elements/prompt_texture.h",
     "elements/rect.cc",
     "elements/rect.h",
     "elements/render_text_wrapper.cc",
@@ -122,10 +130,6 @@ static_library("vr_common") {
     "fps_meter.h",
     "ganesh_surface_provider.cc",
     "ganesh_surface_provider.h",
-    "gltf_asset.cc",
-    "gltf_asset.h",
-    "gltf_parser.cc",
-    "gltf_parser.h",
     "keyboard_delegate.h",
     "keyboard_ui_interface.h",
     "macros.h",
@@ -135,16 +139,18 @@ static_library("vr_common") {
     "model/assets.cc",
     "model/assets.h",
     "model/camera_model.h",
+    "model/capturing_state_model.h",
     "model/color_scheme.cc",
     "model/color_scheme.h",
+    "model/controller_model.cc",
     "model/controller_model.h",
     "model/modal_prompt_type.cc",
     "model/modal_prompt_type.h",
     "model/model.cc",
     "model/model.h",
+    "model/native_ui_model.h",
     "model/omnibox_suggestions.cc",
     "model/omnibox_suggestions.h",
-    "model/permissions_model.h",
     "model/reticle_model.h",
     "model/speech_recognition_model.h",
     "model/text_input_info.cc",
@@ -181,6 +187,8 @@ static_library("vr_common") {
     "speech_recognizer.h",
     "target_property.cc",
     "target_property.h",
+    "text_edit_action.cc",
+    "text_edit_action.h",
     "text_input_delegate.cc",
     "text_input_delegate.h",
     "toolbar_helper.cc",
@@ -201,23 +209,17 @@ static_library("vr_common") {
     "ui_scene_creator.cc",
     "ui_scene_creator.h",
     "ui_unsupported_mode.h",
+    "vr_features.h",
     "vr_gl_util.cc",
     "vr_gl_util.h",
-    "web_contents_event_forwarder.cc",
-    "web_contents_event_forwarder.h",
   ]
 
   public_deps = [
     "//ui/gl",
   ]
 
-  if (enable_gvr_services) {
-    sources += [ "controller_mesh.cc" ]
-
-    public_deps += [ "//chrome/browser/resources:vr_shell_resources" ]
-  }
-
   deps = [
+    ":vr_build_features",
     "//base",
     "//cc/animation",
     "//cc/paint",
@@ -232,8 +234,8 @@ static_library("vr_common") {
     "//components/vector_icons",
     "//content/public/browser",
     "//content/public/common",
-    "//device/vr:mojo_bindings",
-    "//device/vr:vr",
+    "//device/vr",
+    "//device/vr/public/mojom",
     "//net",
     "//skia",
     "//ui/base",
@@ -244,19 +246,22 @@ static_library("vr_common") {
 
 test("vr_common_unittests") {
   sources = [
-    "animation_player_unittest.cc",
+    "animation_unittest.cc",
     "databinding/binding_unittest.cc",
     "databinding/vector_binding_unittest.cc",
     "elements/button_unittest.cc",
+    "elements/content_element_unittest.cc",
     "elements/disc_button_unittest.cc",
     "elements/exit_prompt_unittest.cc",
     "elements/linear_layout_unittest.cc",
     "elements/omnibox_formatting_unittest.cc",
+    "elements/omnibox_text_field_unittest.cc",
     "elements/rect_unittest.cc",
     "elements/repositioner_unittest.cc",
     "elements/scaled_depth_adjuster_unittest.cc",
     "elements/shadow_unittest.cc",
     "elements/spinner_unittest.cc",
+    "elements/text_input_unittest.cc",
     "elements/text_unittest.cc",
     "elements/throbber_unittest.cc",
     "elements/transient_element_unittest.cc",
@@ -266,7 +271,7 @@ test("vr_common_unittests") {
     "elements/vector_icon_unittest.cc",
     "elements/viewport_aware_root_unittest.cc",
     "fps_meter_unittest.cc",
-    "gltf_parser_unittest.cc",
+    "model/text_input_info_unittest.cc",
     "pose_util_unittest.cc",
     "service/vr_device_manager_unittest.cc",
     "sliding_average_unittest.cc",
@@ -278,7 +283,6 @@ test("vr_common_unittests") {
     "test/run_all_unittests.cc",
     "test/ui_test.cc",
     "test/ui_test.h",
-    "text_input_unittest.cc",
     "ui_input_manager_unittest.cc",
     "ui_scene_unittest.cc",
     "ui_unittest.cc",
@@ -355,19 +359,17 @@ source_set("vr_test_support") {
     "test/mock_browser_ui_interface.h",
     "test/mock_content_input_delegate.cc",
     "test/mock_content_input_delegate.h",
+    "test/mock_keyboard_delegate.cc",
+    "test/mock_keyboard_delegate.h",
     "test/mock_render_text.cc",
     "test/mock_render_text.h",
+    "test/mock_text_input_delegate.cc",
+    "test/mock_text_input_delegate.h",
     "test/mock_ui_browser_interface.cc",
     "test/mock_ui_browser_interface.h",
     "test/vr_test_suite.cc",
     "test/vr_test_suite.h",
   ]
-
-  if (!enable_gvr_services) {
-    # For testing, we add back controller_mesh.cc on platforms where it isn't
-    # included by vr_common.
-    sources += [ "controller_mesh.cc" ]
-  }
 
   public_deps = [
     ":vr_common",
@@ -380,7 +382,7 @@ source_set("vr_test_support") {
     "//mojo/edk/system",
     "//skia",
     "//testing/gtest",
-    "//ui/accessibility:ax_gen",
+    "//ui/accessibility:ax_enums_mojo",
     "//ui/gfx:test_support",
 
     # TODO(mthiesse, crbug.com/769373): Remove dependency on device/vr:fakes.
@@ -391,7 +393,6 @@ source_set("vr_test_support") {
   ]
 
   data = [
-    "test/data/",
     "$root_out_dir/vr_test.pak",
   ]
 }
@@ -415,7 +416,6 @@ source_set("vr_gl_test_support") {
 repack("vr_test_pak") {
   sources = [
     "$root_gen_dir/chrome/generated_resources_en-US.pak",
-    "$root_gen_dir/chrome/vr_shell_resources.pak",
     "$root_gen_dir/components/components_resources.pak",
     "$root_gen_dir/components/strings/components_strings_en-US.pak",
   ]
@@ -424,7 +424,6 @@ repack("vr_test_pak") {
 
   deps = [
     "//chrome/app:generated_resources",
-    "//chrome/browser/resources:vr_shell_resources",
     "//components/resources:components_resources",
     "//components/strings",
   ]

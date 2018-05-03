@@ -200,9 +200,11 @@ IntRect ChromeClientImpl::PageRect() {
   return RootWindowRect();
 }
 
-void ChromeClientImpl::Focus() {
-  if (web_view_->Client())
-    web_view_->Client()->DidFocus();
+void ChromeClientImpl::Focus(LocalFrame* calling_frame) {
+  if (web_view_->Client()) {
+    web_view_->Client()->DidFocus(
+        calling_frame ? WebLocalFrameImpl::FromFrame(calling_frame) : nullptr);
+  }
 }
 
 bool ChromeClientImpl::CanTakeFocus(WebFocusType) {
@@ -548,7 +550,8 @@ ColorChooser* ChromeClientImpl::OpenColorChooser(
   NotifyPopupOpeningObservers();
   ColorChooserUIController* controller = nullptr;
 
-  if (frame->GetDocument()->GetSettings()->GetPagePopupsSuppressed())
+  // TODO(crbug.com/779126): add support for the chooser in immersive mode.
+  if (frame->GetDocument()->GetSettings()->GetImmersiveModeEnabled())
     return nullptr;
 
   if (RuntimeEnabledFeatures::PagePopupEnabled()) {
@@ -564,10 +567,11 @@ ColorChooser* ChromeClientImpl::OpenColorChooser(
 DateTimeChooser* ChromeClientImpl::OpenDateTimeChooser(
     DateTimeChooserClient* picker_client,
     const DateTimeChooserParameters& parameters) {
+  // TODO(crbug.com/779126): add support for the chooser in immersive mode.
   if (picker_client->OwnerElement()
           .GetDocument()
           .GetSettings()
-          ->GetPagePopupsSuppressed())
+          ->GetImmersiveModeEnabled())
     return nullptr;
 
   NotifyPopupOpeningObservers();
@@ -770,7 +774,8 @@ bool ChromeClientImpl::HasOpenedPopup() const {
 
 PopupMenu* ChromeClientImpl::OpenPopupMenu(LocalFrame& frame,
                                            HTMLSelectElement& select) {
-  if (frame.GetDocument()->GetSettings()->GetPagePopupsSuppressed())
+  // TODO(crbug.com/779126): add support for the menu in immersive mode.
+  if (frame.GetDocument()->GetSettings()->GetImmersiveModeEnabled())
     return nullptr;
 
   NotifyPopupOpeningObservers();
@@ -881,14 +886,6 @@ void ChromeClientImpl::SetEventListenerProperties(
   } else {
     client->HasTouchEventHandlers(true);
   }
-}
-
-void ChromeClientImpl::UpdateEventRectsForSubframeIfNecessary(
-    LocalFrame* frame) {
-  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
-  WebFrameWidgetBase* widget = web_frame->LocalRoot()->FrameWidget();
-  if (WebLayerTreeView* tree_view = widget->GetLayerTreeView())
-    tree_view->UpdateEventRectsForSubframeIfNecessary();
 }
 
 void ChromeClientImpl::BeginLifecycleUpdates() {
@@ -1058,6 +1055,13 @@ void ChromeClientImpl::TextFieldDataListChanged(HTMLInputElement& input) {
           AutofillClientFromFrame(input.GetDocument().GetFrame())) {
     fill_client->DataListOptionsChanged(WebInputElement(&input));
   }
+}
+
+void ChromeClientImpl::DidChangeSelectionInSelectControl(
+    HTMLFormControlElement& element) {
+  Document& doc = element.GetDocument();
+  if (auto* fill_client = AutofillClientFromFrame(doc.GetFrame()))
+    fill_client->SelectControlDidChange(WebFormControlElement(&element));
 }
 
 void ChromeClientImpl::AjaxSucceeded(LocalFrame* frame) {

@@ -326,19 +326,15 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   //
   // Here is the list of users:
   //  - Service Worker:
-  //    While there are service workers who live on this process, they wish
-  //    the renderer process alive. The ref count is incremented when this
+  //    While there are service workers who live in this process, they wish
+  //    the renderer process to be alive. The ref count is incremented when this
   //    process is allocated to the worker, and decremented when worker's
   //    shutdown sequence is completed.
   //  - Shared Worker:
-  //    The ref count is incremented in two cases:
-  //    - there was no external renderer connected to a shared worker in this
-  //      process, and now there is at least one
-  //    - a new worker is being created in this process.
-  //    The ref count is decremented in two cases:
-  //    - there was an external renderer connected to a shared worker in this
-  //      process, and now there is none
-  //    - a new worker finished being created in this process.
+  //    While there are shared workers who live in this process, they wish
+  //    the renderer process to be alive. The ref count is incremented when
+  //    a shared worker is created in the process, and decremented when
+  //    it is terminated (it self-destructs when it no longer has clients).
   //  - Keepalive request (if the KeepAliveRendererForKeepaliveRequests
   //    feature is enabled):
   //    When a fetch request with keepalive flag
@@ -491,6 +487,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the current maximum number of renderer process hosts kept by the
   // content module.
   static size_t GetMaxRendererProcessCount();
+
+  // TODO(siggi): Remove once https://crbug.com/806661 is resolved.
+  using AnalyzeHungRendererFunction = void (*)(const base::Process& renderer);
+  static void SetHungRendererAnalysisFunction(
+      AnalyzeHungRendererFunction analyze_hung_renderer);
 };
 
 }  // namespace content

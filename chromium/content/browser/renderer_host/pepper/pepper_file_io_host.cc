@@ -21,7 +21,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/quarantine.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_file_io.h"
@@ -84,22 +83,22 @@ bool FileOpenForWrite(int32_t open_flags) {
 void FileCloser(base::File auto_close) {
 }
 
-void DidCloseFile(const base::Closure& on_close_callback) {
+void DidCloseFile(base::OnceClosure on_close_callback) {
   if (!on_close_callback.is_null())
-    on_close_callback.Run();
+    std::move(on_close_callback).Run();
 }
 
 void DidOpenFile(base::WeakPtr<PepperFileIOHost> file_host,
                  scoped_refptr<base::SequencedTaskRunner> task_runner,
                  storage::FileSystemOperation::OpenFileCallback callback,
                  base::File file,
-                 const base::Closure& on_close_callback) {
+                 base::OnceClosure on_close_callback) {
   if (file_host) {
-    callback.Run(std::move(file), on_close_callback);
+    callback.Run(std::move(file), std::move(on_close_callback));
   } else {
     task_runner->PostTaskAndReply(
-        FROM_HERE, base::BindOnce(&FileCloser, base::Passed(&file)),
-        base::BindOnce(&DidCloseFile, on_close_callback));
+        FROM_HERE, base::BindOnce(&FileCloser, std::move(file)),
+        base::BindOnce(&DidCloseFile, std::move(on_close_callback)));
   }
 }
 
@@ -264,9 +263,9 @@ void PepperFileIOHost::GotUIThreadStuffForInternalFileSystems(
 void PepperFileIOHost::DidOpenInternalFile(
     ppapi::host::ReplyMessageContext reply_context,
     base::File file,
-    const base::Closure& on_close_callback) {
+    base::OnceClosure on_close_callback) {
   if (file.IsValid()) {
-    on_close_callback_ = on_close_callback;
+    on_close_callback_ = std::move(on_close_callback);
 
     if (FileOpenForWrite(open_flags_) && file_system_host_->ChecksQuota()) {
       check_quota_ = true;
@@ -395,8 +394,7 @@ void PepperFileIOHost::DidOpenQuotaFile(
 void PepperFileIOHost::DidCloseFile(base::File::Error /*error*/) {
   // Silently ignore if we fail to close the file.
   if (!on_close_callback_.is_null()) {
-    on_close_callback_.Run();
-    on_close_callback_.Reset();
+    std::move(on_close_callback_).Run();
   }
 }
 
@@ -457,7 +455,7 @@ void PepperFileIOHost::OnLocalFileOpened(
 
   base::PostTaskAndReplyWithResult(
       task_runner_.get(), FROM_HERE,
-      base::Bind(&QuarantineFile, path,
+      base::Bind(&download::QuarantineFile, path,
                  browser_ppapi_host_->GetDocumentURLForInstance(pp_instance()),
                  GURL(), std::string()),
       base::Bind(&PepperFileIOHost::OnLocalFileQuarantined, AsWeakPtr(),
@@ -471,10 +469,11 @@ void PepperFileIOHost::OnLocalFileOpened(
 void PepperFileIOHost::OnLocalFileQuarantined(
     ppapi::host::ReplyMessageContext reply_context,
     const base::FilePath& path,
-    QuarantineFileResult quarantine_result) {
-  base::File::Error file_error = (quarantine_result == QuarantineFileResult::OK
-                                      ? base::File::FILE_OK
-                                      : base::File::FILE_ERROR_SECURITY);
+    download::QuarantineFileResult quarantine_result) {
+  base::File::Error file_error =
+      (quarantine_result == download::QuarantineFileResult::OK
+           ? base::File::FILE_OK
+           : base::File::FILE_ERROR_SECURITY);
   if (file_error != base::File::FILE_OK && file_.IsValid())
     file_.Close(base::FileProxy::StatusCallback());
   SendFileOpenReply(reply_context, file_error);

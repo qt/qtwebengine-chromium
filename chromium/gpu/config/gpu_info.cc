@@ -73,14 +73,8 @@ GPUInfo::GPUInfo()
       software_rendering(false),
       direct_rendering(true),
       sandboxed(false),
-      process_crash_count(0),
       in_process_gpu(true),
       passthrough_cmd_decoder(false),
-      basic_info_state(kCollectInfoNone),
-      context_info_state(kCollectInfoNone),
-#if defined(OS_WIN)
-      dx_diagnostics_info_state(kCollectInfoNone),
-#endif
       jpeg_decode_accelerator_supported(false)
 #if defined(USE_X11)
       ,
@@ -95,7 +89,7 @@ GPUInfo::GPUInfo(const GPUInfo& other) = default;
 GPUInfo::~GPUInfo() = default;
 
 const GPUInfo::GPUDevice& GPUInfo::active_gpu() const {
-  if (gpu.active)
+  if (gpu.active || secondary_gpus.empty())
     return gpu;
   for (const GPUDevice& secondary_gpu : secondary_gpus) {
     if (secondary_gpu.active)
@@ -131,16 +125,12 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     bool software_rendering;
     bool direct_rendering;
     bool sandboxed;
-    int process_crash_count;
     bool in_process_gpu;
     bool passthrough_cmd_decoder;
     bool direct_composition;
     bool supports_overlays;
     bool can_support_threaded_texture_mailbox;
-    CollectInfoResult basic_info_state;
-    CollectInfoResult context_info_state;
 #if defined(OS_WIN)
-    CollectInfoResult dx_diagnostics_info_state;
     DxDiagNode dx_diagnostics;
 #endif
     VideoDecodeAcceleratorCapabilities video_decode_accelerator_capabilities;
@@ -192,18 +182,12 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddBool("softwareRendering", software_rendering);
   enumerator->AddBool("directRendering", direct_rendering);
   enumerator->AddBool("sandboxed", sandboxed);
-  enumerator->AddInt("processCrashCount", process_crash_count);
   enumerator->AddBool("inProcessGpu", in_process_gpu);
   enumerator->AddBool("passthroughCmdDecoder", passthrough_cmd_decoder);
   enumerator->AddBool("directComposition", direct_composition);
   enumerator->AddBool("supportsOverlays", supports_overlays);
   enumerator->AddBool("canSupportThreadedTextureMailbox",
                       can_support_threaded_texture_mailbox);
-  enumerator->AddInt("basicInfoState", basic_info_state);
-  enumerator->AddInt("contextInfoState", context_info_state);
-#if defined(OS_WIN)
-  enumerator->AddInt("DxDiagnosticsInfoState", dx_diagnostics_info_state);
-#endif
   // TODO(kbr): add dx_diagnostics on Windows.
   enumerator->AddInt("videoDecodeAcceleratorFlags",
                      video_decode_accelerator_capabilities.flags);

@@ -5,13 +5,24 @@
 source_set("download") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
+    "download_manager_consumer.h",
+    "download_manager_coordinator.h",
+    "download_manager_coordinator.mm",
+    "download_manager_mediator.h",
+    "download_manager_mediator.mm",
+    "download_manager_view_controller.h",
+    "download_manager_view_controller.mm",
     "legacy_download_manager_controller.h",
     "legacy_download_manager_controller.mm",
     "pass_kit_coordinator.h",
     "pass_kit_coordinator.mm",
   ]
   deps = [
+    "resources:download_done",
+    "resources:download_error",
+    "resources:download_file",
     "resources:download_manager_controller_xib",
+    "resources:download_progress",
     "resources:error_icon",
     "resources:file_icon_body",
     "resources:file_icon_fold",
@@ -28,6 +39,8 @@ source_set("download") {
     "//ios/chrome/browser/ui/alert_coordinator",
     "//ios/chrome/browser/ui/colors",
     "//ios/chrome/browser/ui/coordinators:chrome_coordinators",
+    "//ios/chrome/browser/ui/presenters",
+    "//ios/chrome/browser/ui/util",
     "//ios/chrome/browser/web:web_internal",
     "//ios/third_party/material_components_ios",
     "//ios/third_party/material_roboto_font_loader_ios",
@@ -44,6 +57,9 @@ source_set("unit_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
   sources = [
+    "download_manager_coordinator_unittest.mm",
+    "download_manager_mediator_unittest.mm",
+    "download_manager_view_controller_unittest.mm",
     "legacy_download_manager_controller_unittest.mm",
     "pass_kit_coordinator_unittest.mm",
   ]
@@ -74,6 +90,7 @@ source_set("eg_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
   sources = [
+    "download_manager_egtest.mm",
     "pass_kit_egtest.mm",
   ]
 
@@ -89,6 +106,7 @@ source_set("eg_tests") {
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/testing:ios_test_support",
     "//ios/third_party/earl_grey:earl_grey+link",
+    "//ios/web/public",
     "//ui/base",
   ]
   libs = [ "XCTest.framework" ]

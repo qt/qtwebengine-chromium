@@ -13,6 +13,7 @@
 namespace blink {
 
 class LayoutPoint;
+class LayoutSize;
 struct NGLogicalOffset;
 struct NGPhysicalSize;
 
@@ -44,11 +45,13 @@ struct CORE_EXPORT NGPhysicalOffset {
 
   // Conversions from/to existing code. New code prefers type safety for
   // logical/physical distinctions.
-  explicit NGPhysicalOffset(const LayoutPoint&);
+  explicit NGPhysicalOffset(const LayoutPoint& point);
+  explicit NGPhysicalOffset(const LayoutSize& size);
 
   // Conversions from/to existing code. New code prefers type safety for
   // logical/physical distinctions.
   LayoutPoint ToLayoutPoint() const;
+  LayoutSize ToLayoutSize() const;
 
   String ToString() const;
 };

@@ -31,7 +31,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_android.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
-#include "content/common/content_switches_internal.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -46,6 +45,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/menu_item.h"
+#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "content/public/common/user_agent.h"
 #include "jni/ContentViewCoreImpl_jni.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
@@ -483,14 +483,6 @@ void ContentViewCore::RequestDisallowInterceptTouchEvent() {
     Java_ContentViewCoreImpl_requestDisallowInterceptTouchEvent(env, obj);
 }
 
-void ContentViewCore::DidStopFlinging() {
-  JNIEnv* env = AttachCurrentThread();
-
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (!obj.is_null())
-    Java_ContentViewCoreImpl_onNativeFlingStopped(env, obj);
-}
-
 gfx::Size ContentViewCore::GetViewportSizePix() const {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
@@ -659,43 +651,6 @@ void ContentViewCore::ScrollBy(JNIEnv* env,
   SendGestureEvent(event);
 }
 
-void ContentViewCore::FlingStart(JNIEnv* env,
-                                 const JavaParamRef<jobject>& obj,
-                                 jlong time_ms,
-                                 jfloat x,
-                                 jfloat y,
-                                 jfloat vx,
-                                 jfloat vy,
-                                 jboolean target_viewport,
-                                 jboolean from_gamepad) {
-  WebGestureEvent event =
-      MakeGestureEvent(WebInputEvent::kGestureFlingStart, time_ms, x, y);
-  event.data.fling_start.velocity_x = vx / dpi_scale();
-  event.data.fling_start.velocity_y = vy / dpi_scale();
-  event.data.fling_start.target_viewport = target_viewport;
-
-  if (from_gamepad)
-    event.source_device = blink::kWebGestureDeviceSyntheticAutoscroll;
-
-  SendGestureEvent(event);
-}
-
-void ContentViewCore::FlingCancel(JNIEnv* env,
-                                  const JavaParamRef<jobject>& obj,
-                                  jlong time_ms,
-                                  jboolean from_gamepad) {
-  WebGestureEvent event =
-      MakeGestureEvent(WebInputEvent::kGestureFlingCancel, time_ms, 0, 0);
-  event.data.fling_cancel.prevent_boosting = true;
-
-  if (from_gamepad) {
-    event.data.fling_cancel.target_viewport = true;
-    event.source_device = blink::kWebGestureDeviceSyntheticAutoscroll;
-  }
-
-  SendGestureEvent(event);
-}
-
 void ContentViewCore::DoubleTap(JNIEnv* env,
                                 const JavaParamRef<jobject>& obj,
                                 jlong time_ms,
@@ -753,11 +708,6 @@ void ContentViewCore::OnTouchDown(
   Java_ContentViewCoreImpl_onTouchDown(env, obj, event);
 }
 
-void ContentViewCore::WasResized(JNIEnv* env,
-                                 const JavaParamRef<jobject>& obj) {
-  SendScreenRectsAndResizeWidget();
-}
-
 void ContentViewCore::SetTextTrackSettings(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj,
@@ -787,15 +737,6 @@ void ContentViewCore::SetTextTrackSettings(
   web_contents_->GetMainFrame()->SetTextTrackSettings(params);
 }
 
-bool ContentViewCore::IsFullscreenRequiredForOrientationLock() const {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return true;
-  return Java_ContentViewCoreImpl_isFullscreenRequiredForOrientationLock(env,
-                                                                         obj);
-}
-
 void ContentViewCore::SendOrientationChangeEventInternal() {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   if (rwhv)
@@ -804,28 +745,10 @@ void ContentViewCore::SendOrientationChangeEventInternal() {
   static_cast<WebContentsImpl*>(web_contents())->OnScreenOrientationChange();
 }
 
-jint ContentViewCore::GetCurrentRenderProcessId(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj) {
-  return GetRenderProcessIdFromRenderViewHost(
-      web_contents_->GetRenderViewHost());
-}
-
 jboolean ContentViewCore::UsingSynchronousCompositing(
     JNIEnv* env,
     const base::android::JavaParamRef<jobject>& obj) {
   return content::GetContentClient()->UsingSynchronousCompositing();
-}
-
-void ContentViewCore::SetBackgroundOpaque(JNIEnv* env,
-                                          const JavaParamRef<jobject>& jobj,
-                                          jboolean opaque) {
-  if (GetRenderWidgetHostViewAndroid()) {
-    if (opaque)
-      GetRenderWidgetHostViewAndroid()->SetBackgroundColorToDefault();
-    else
-      GetRenderWidgetHostViewAndroid()->SetBackgroundColor(SK_ColorTRANSPARENT);
-  }
 }
 
 void ContentViewCore::HidePopupsAndPreserveSelection() {

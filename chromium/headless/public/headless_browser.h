@@ -16,10 +16,13 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/optional.h"
+#include "base/time/time.h"
 #include "headless/public/headless_browser_context.h"
 #include "headless/public/headless_export.h"
 #include "headless/public/headless_web_contents.h"
 #include "net/base/host_port_pair.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/geometry/size.h"
 
 #if defined(OS_WIN)
@@ -174,8 +177,22 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
   // Run a browser context in an incognito mode. Enabled by default.
   bool incognito_mode = true;
 
+  // If true, then all pop-ups and calls to window.open will fail.
+  bool block_new_web_contents = false;
+
+  // If set the renderer will be constructed with virtual time enabled and
+  // base::Time::Now will be overridden to initially return this value.
+  base::Optional<base::Time> initial_virtual_time;
+
   // Whether cookies are allowed. Enabled by default.
   bool allow_cookies = true;
+
+  // Whether or not BeginFrames will be issued over DevTools protocol
+  // (experimental).
+  bool enable_begin_frame_control = false;
+
+  // Whether or not all sites should have a dedicated process.
+  bool site_per_process = false;
 
   // Set a callback that is invoked to override WebPreferences for RenderViews
   // created within the HeadlessBrowser. Called whenever the WebPreferences of a
@@ -205,6 +222,9 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
   // executable.
   bool enable_crash_reporter = false;
   base::FilePath crash_dumps_dir;
+
+  // Font render hinting value to override any default settings
+  gfx::FontRenderParams::Hinting font_render_hinting;
 
   // Reminder: when adding a new field here, do not forget to add it to
   // HeadlessBrowserContextOptions (where appropriate).
@@ -242,17 +262,23 @@ class HEADLESS_EXPORT HeadlessBrowser::Options::Builder {
   Builder& SetProductNameAndVersion(
       const std::string& product_name_and_version);
   Builder& SetAcceptLanguage(const std::string& accept_language);
+  Builder& SetEnableBeginFrameControl(bool enable_begin_frame_control);
   Builder& SetUserAgent(const std::string& user_agent);
   Builder& SetProxyConfig(std::unique_ptr<net::ProxyConfig> proxy_config);
   Builder& SetHostResolverRules(const std::string& host_resolver_rules);
   Builder& SetWindowSize(const gfx::Size& window_size);
   Builder& SetUserDataDir(const base::FilePath& user_data_dir);
   Builder& SetIncognitoMode(bool incognito_mode);
+  Builder& SetSitePerProcess(bool site_per_process);
+  Builder& SetBlockNewWebContents(bool block_new_web_contents);
+  Builder& SetInitialVirtualTime(base::Time initial_virtual_time);
   Builder& SetAllowCookies(bool allow_cookies);
   Builder& SetOverrideWebPreferencesCallback(
       const base::Callback<void(WebPreferences*)>& callback);
   Builder& SetCrashReporterEnabled(bool enabled);
   Builder& SetCrashDumpsDir(const base::FilePath& dir);
+  Builder& SetFontRenderHinting(
+      gfx::FontRenderParams::Hinting font_render_hinting);
 
   Options Build();
 

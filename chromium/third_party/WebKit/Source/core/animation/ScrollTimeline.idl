@@ -7,8 +7,9 @@
 [
     Constructor(optional ScrollTimelineOptions options),
     ConstructorCallWith=Document,
+    MeasureAs=ScrollTimelineConstructor,
     RaisesException=Constructor,
-    RuntimeEnabled=AnimationWorklet
+    OriginTrialEnabled=AnimationWorklet
 ] interface ScrollTimeline : AnimationTimeline {
     readonly attribute Element? scrollSource;
     readonly attribute ScrollDirection orientation;

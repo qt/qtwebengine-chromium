@@ -13,6 +13,7 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "components/crash/core/common/crash_key.h"
 #import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #import "ui/base/cocoa/window_size_constants.h"
 #include "ui/gfx/font_list.h"
@@ -635,11 +636,25 @@ NativeWidgetMacNSWindow* NativeWidgetMac::CreateNSWindow(
 
 // static
 void Widget::CloseAllSecondaryWidgets() {
-  // Create a copy of [NSApp windows] to increase every window's retain count.
-  // -[NSWindow dealloc] won't be invoked on any windows until this array goes
-  // out of scope.
-  base::scoped_nsobject<NSArray> starting_windows([[NSApp windows] copy]);
-  for (NSWindow* window in starting_windows.get()) {
+  NSArray* starting_windows = [NSApp windows];  // Creates an autoreleased copy.
+  for (NSWindow* window in starting_windows) {
+    // Ignore any windows that couldn't have been created by NativeWidgetMac or
+    // a subclass. GetNativeWidgetForNativeWindow() will later interrogate the
+    // NSWindow delegate, but we can't trust that delegate to be a valid object.
+    if (![window isKindOfClass:[NativeWidgetMacNSWindow class]])
+      continue;
+
+    // Record a crash key to detect when client code may destroy a
+    // WidgetObserver without removing it (possibly leaking the Widget).
+    // A crash can occur in generic Widget teardown paths when trying to notify.
+    // See http://crbug.com/808318.
+    static crash_reporter::CrashKeyString<256> window_info_key("windowInfo");
+    std::string value = base::SysNSStringToUTF8(
+        [NSString stringWithFormat:@"Closing %@ (%@)", [window title],
+                                   [window className]]);
+    crash_reporter::ScopedCrashKeyString scopedWindowKey(&window_info_key,
+                                                         value);
+
     Widget* widget = GetWidgetForNativeWindow(window);
     if (widget && widget->is_secondary_widget())
       [window close];

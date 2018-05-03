@@ -46,11 +46,13 @@ VideoFrameExternalResources::ResourceType ExternalResourceTypeForHardwarePlanes(
   switch (format) {
     case media::PIXEL_FORMAT_ARGB:
     case media::PIXEL_FORMAT_XRGB:
+    case media::PIXEL_FORMAT_RGB32:
     case media::PIXEL_FORMAT_UYVY:
       switch (target) {
         case GL_TEXTURE_EXTERNAL_OES:
           if (use_stream_video_draw_quad)
             return VideoFrameExternalResources::STREAM_TEXTURE_RESOURCE;
+          FALLTHROUGH;
         case GL_TEXTURE_2D:
           return (format == media::PIXEL_FORMAT_XRGB)
                      ? VideoFrameExternalResources::RGB_RESOURCE
@@ -64,7 +66,6 @@ VideoFrameExternalResources::ResourceType ExternalResourceTypeForHardwarePlanes(
       break;
     case media::PIXEL_FORMAT_I420:
       return VideoFrameExternalResources::YUV_RESOURCE;
-      break;
     case media::PIXEL_FORMAT_NV12:
       DCHECK(target == GL_TEXTURE_EXTERNAL_OES || target == GL_TEXTURE_2D ||
              target == GL_TEXTURE_RECTANGLE_ARB)
@@ -76,7 +77,6 @@ VideoFrameExternalResources::ResourceType ExternalResourceTypeForHardwarePlanes(
 
       *buffer_format = gfx::BufferFormat::YUV_420_BIPLANAR;
       return VideoFrameExternalResources::RGB_RESOURCE;
-      break;
     case media::PIXEL_FORMAT_YV12:
     case media::PIXEL_FORMAT_I422:
     case media::PIXEL_FORMAT_I444:
@@ -84,7 +84,6 @@ VideoFrameExternalResources::ResourceType ExternalResourceTypeForHardwarePlanes(
     case media::PIXEL_FORMAT_NV21:
     case media::PIXEL_FORMAT_YUY2:
     case media::PIXEL_FORMAT_RGB24:
-    case media::PIXEL_FORMAT_RGB32:
     case media::PIXEL_FORMAT_MJPEG:
     case media::PIXEL_FORMAT_MT21:
     case media::PIXEL_FORMAT_YUV420P9:
@@ -339,6 +338,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   bool texture_needs_rgb_conversion =
       !software_compositor &&
       output_resource_format == viz::ResourceFormat::RGBA_8888;
+
   size_t output_plane_count = media::VideoFrame::NumPlanes(input_frame_format);
 
   // TODO(skaslev): If we're in software compositing mode, we do the YUV -> RGB
@@ -349,6 +349,11 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     output_resource_format = viz::RGBA_8888;
     output_plane_count = 1;
     bits_per_channel = 8;
+
+    // The YUV to RGB conversion will be performed when we convert
+    // from single-channel textures to an RGBA texture via
+    // ConvertVideoFrameToRGBPixels below.
+    output_color_space = output_color_space.GetAsFullRangeRGB();
   }
 
   // Drop recycled resources that are the wrong format.
@@ -876,8 +881,12 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
                 << media::VideoPixelFormatToString(video_frame->format());
     return external_resources;
   }
-  if (external_resources.type == VideoFrameExternalResources::RGB_RESOURCE)
+  if (external_resources.type == VideoFrameExternalResources::RGB_RESOURCE ||
+      external_resources.type == VideoFrameExternalResources::RGBA_RESOURCE ||
+      external_resources.type ==
+          VideoFrameExternalResources::RGBA_PREMULTIPLIED_RESOURCE) {
     resource_color_space = resource_color_space.GetAsFullRangeRGB();
+  }
 
   const size_t num_textures = video_frame->NumTextures();
   for (size_t i = 0; i < num_textures; ++i) {

@@ -27,6 +27,7 @@
 #include "net/quic/core/quic_unacked_packet_map.h"
 #include "net/quic/platform/api/quic_containers.h"
 #include "net/quic/platform/api/quic_export.h"
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
 
@@ -122,6 +123,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // and the previously encrypted data needs to be encrypted with a new key.
   void RetransmitUnackedPackets(TransmissionType retransmission_type);
 
+  // Notify the sent packet manager of an external network measurement or
+  // prediction for either |bandwidth| or |rtt|; either can be empty.
+  void AdjustNetworkParameters(QuicBandwidth bandwidth, QuicTime::Delta rtt);
+
   // Retransmits the oldest pending packet there is still a tail loss probe
   // pending.  Invoked after OnRetransmissionTimeout.
   bool MaybeRetransmitTailLossProbe();
@@ -199,7 +204,7 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   QuicPacketCount GetSlowStartThresholdInTcpMss() const;
 
   // Returns debugging information about the state of the congestion controller.
-  std::string GetDebugState() const;
+  QuicString GetDebugState() const;
 
   // Returns the number of bytes that are considered in-flight, i.e. not lost or
   // acknowledged.
@@ -209,7 +214,20 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   void CancelRetransmissionsForStream(QuicStreamId stream_id);
 
   // Called when peer address changes and the connection migrates.
-  void OnConnectionMigration(PeerAddressChangeType type);
+  void OnConnectionMigration(AddressChangeType type);
+
+  // Called when an ack frame is initially parsed.
+  void OnAckFrameStart(QuicPacketNumber largest_acked,
+                       QuicTime::Delta ack_delay_time);
+
+  // Called when ack range [start, end) is received.
+  void OnAckRange(QuicPacketNumber start,
+                  QuicPacketNumber end,
+                  bool last_range,
+                  QuicTime ack_receive_time);
+
+  // Called to enable/disable letting session decide what to write.
+  void SetSessionDecideWhatToWrite(bool session_decides_what_to_write);
 
   void SetDebugDelegate(DebugDelegate* debug_delegate);
 
@@ -237,6 +255,18 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   bool handshake_confirmed() const { return handshake_confirmed_; }
 
+  bool session_decides_what_to_write() const;
+
+  size_t pending_timer_transmission_count() const {
+    return pending_timer_transmission_count_;
+  }
+
+  QuicTime::Delta delayed_ack_time() const { return delayed_ack_time_; }
+
+  void set_delayed_ack_time(QuicTime::Delta delayed_ack_time) {
+    delayed_ack_time_ = delayed_ack_time;
+  }
+
  private:
   friend class test::QuicConnectionPeer;
   friend class test::QuicSentPacketManagerPeer;
@@ -257,9 +287,6 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   typedef QuicLinkedHashMap<QuicPacketNumber, TransmissionType>
       PendingRetransmissionMap;
-
-  // Updates the least_packet_awaited_by_peer.
-  void UpdatePacketInformationReceivedByPeer(const QuicAckFrame& ack_frame);
 
   // Process the incoming ack looking for newly ack'd data packets.
   void HandleAckForSentPackets(const QuicAckFrame& ack_frame);
@@ -338,6 +365,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // number of times.
   void SetSendAlgorithm(SendAlgorithmInterface* send_algorithm);
 
+  // Sets the initial RTT of the connection.
+  void SetInitialRtt(QuicTime::Delta rtt);
+
   // Newly serialized retransmittable packets are added to this map, which
   // contains owning pointers to any contained frames.  If a packet is
   // retransmitted, this map will contain entries for both the old and the new
@@ -367,9 +397,6 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   GeneralLossAlgorithm general_loss_algorithm_;
   bool n_connection_simulation_;
 
-  // Least packet number which the peer is still waiting for.
-  QuicPacketNumber least_packet_awaited_by_peer_;
-
   // Tracks the first RTO packet.  If any packet before that packet gets acked,
   // it indicates the RTO was spurious and should be reversed(F-RTO).
   QuicPacketNumber first_rto_transmission_;
@@ -391,6 +418,14 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   bool use_new_rto_;
   // If true, use a more conservative handshake retransmission policy.
   bool conservative_handshake_retransmits_;
+  // The minimum TLP timeout.
+  QuicTime::Delta min_tlp_timeout_;
+  // The minimum RTO.
+  QuicTime::Delta min_rto_timeout_;
+  // Whether to use IETF style TLP that includes the max ack delay.
+  bool ietf_style_tlp_;
+  // IETF style TLP, but with a 2x multiplier instead of 1.5x.
+  bool ietf_style_2x_tlp_;
 
   // Vectors packets acked and lost as a result of the last congestion event.
   AckedPacketVector packets_acked_;
@@ -416,6 +451,13 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // The largest acked value that was sent in an ack, which has then been acked.
   QuicPacketNumber largest_packet_peer_knows_is_acked_;
+
+  // The maximum amount of time to wait before sending an acknowledgement.
+  // The recovery code assumes the delayed ack time is the same on both sides.
+  QuicTime::Delta delayed_ack_time_;
+
+  // Latest received ack frame.
+  QuicAckFrame last_ack_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSentPacketManager);
 };

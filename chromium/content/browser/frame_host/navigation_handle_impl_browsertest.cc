@@ -8,6 +8,7 @@
 #include "base/strings/stringprintf.h"
 #include "content/browser/frame_host/debug_urls.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
+#include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/web_contents.h"
@@ -143,6 +144,13 @@ class TestNavigationThrottle : public NavigationThrottle {
 // next navigation. New instances are needed to wait for further navigations.
 class TestNavigationThrottleInstaller : public WebContentsObserver {
  public:
+  enum Method {
+    WILL_START_REQUEST,
+    WILL_REDIRECT_REQUEST,
+    WILL_FAIL_REQUEST,
+    WILL_PROCESS_RESPONSE,
+  };
+
   TestNavigationThrottleInstaller(
       WebContents* web_contents,
       NavigationThrottle::ThrottleCheckResult will_start_result,
@@ -158,6 +166,38 @@ class TestNavigationThrottleInstaller : public WebContentsObserver {
         expected_start_url_(expected_start_url),
         weak_factory_(this) {}
   ~TestNavigationThrottleInstaller() override {}
+
+  // Installs a TestNavigationThrottle whose |method| method will return
+  // |result|. All other methods will return NavigationThrottle::PROCEED.
+  static std::unique_ptr<TestNavigationThrottleInstaller> CreateForMethod(
+      WebContents* web_contents,
+      Method method,
+      NavigationThrottle::ThrottleCheckResult result) {
+    NavigationThrottle::ThrottleCheckResult will_start_result =
+        NavigationThrottle::PROCEED;
+    auto will_redirect_result = will_start_result;
+    auto will_fail_result = will_start_result;
+    auto will_process_result = will_start_result;
+
+    switch (method) {
+      case WILL_START_REQUEST:
+        will_start_result = result;
+        break;
+      case WILL_REDIRECT_REQUEST:
+        will_redirect_result = result;
+        break;
+      case WILL_FAIL_REQUEST:
+        will_fail_result = result;
+        break;
+      case WILL_PROCESS_RESPONSE:
+        will_process_result = result;
+        break;
+    }
+
+    return std::make_unique<TestNavigationThrottleInstaller>(
+        web_contents, will_start_result, will_redirect_result, will_fail_result,
+        will_process_result);
+  }
 
   TestNavigationThrottle* navigation_throttle() { return navigation_throttle_; }
 
@@ -392,6 +432,37 @@ class NavigationHandleImplBrowserTest : public ContentBrowserTest {
     SetupCrossSiteRedirector(embedded_test_server());
     ASSERT_TRUE(embedded_test_server()->Start());
   }
+
+  // Installs a NavigationThrottle whose |method| method will return a
+  // ThrottleCheckResult with |action|, net::ERR_BLOCKED_BY_CLIENT and
+  // a custom error page. Navigates to |url|, checks that the navigation
+  // committed and that the custom error page is being shown.
+  void InstallThrottleAndTestNavigationCommittedWithErrorPage(
+      const GURL& url,
+      NavigationThrottle::ThrottleAction action,
+      TestNavigationThrottleInstaller::Method method) {
+    auto installer = TestNavigationThrottleInstaller::CreateForMethod(
+        shell()->web_contents(), method,
+        NavigationThrottle::ThrottleCheckResult(
+            action, net::ERR_BLOCKED_BY_CLIENT,
+            base::StringPrintf("<html><body>%s</body><html>",
+                               kBodyTextContent)));
+
+    NavigationHandleObserver observer(shell()->web_contents(), url);
+
+    EXPECT_FALSE(NavigateToURL(shell(), url));
+
+    EXPECT_TRUE(observer.has_committed());
+    EXPECT_TRUE(observer.is_error());
+
+    std::string result;
+    const std::string javascript =
+        "domAutomationController.send(document.body.textContent)";
+    content::RenderFrameHost* rfh = shell()->web_contents()->GetMainFrame();
+    ASSERT_TRUE(
+        content::ExecuteScriptAndExtractString(rfh, javascript, &result));
+    EXPECT_EQ(kBodyTextContent, result);
+  }
 };
 
 class NavigationHandleImplDownloadBrowserTest
@@ -534,10 +605,6 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, VerifyRedirect) {
 // the appropriate error code on the handle.
 IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
                        VerifyCertErrorFailure) {
-  if (!IsBrowserSideNavigationEnabled()) {
-    return;
-  }
-
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
   ASSERT_TRUE(https_server.Start());
@@ -769,10 +836,6 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
 
 // Ensure that a NavigationThrottle can respond CANCEL when a navigation fails.
 IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleCancelFailure) {
-  if (!IsBrowserSideNavigationEnabled()) {
-    return;
-  }
-
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
   ASSERT_TRUE(https_server.Start());
@@ -920,10 +983,6 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDefer) {
 // Ensure that a NavigationThrottle can defer and resume the navigation at
 // navigation start and navigation failure.
 IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDeferFailure) {
-  if (!IsBrowserSideNavigationEnabled()) {
-    return;
-  }
-
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
   ASSERT_TRUE(https_server.Start());
@@ -998,12 +1057,6 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     SCOPED_TRACE(::testing::Message() << test_case.will_start_result << ", "
                                       << test_case.will_redirect_result << ", "
                                       << test_case.deferred_block);
-
-    if (!IsBrowserSideNavigationEnabled() &&
-        test_case.will_redirect_result ==
-            NavigationThrottle::BLOCK_REQUEST_AND_COLLAPSE) {
-      continue;
-    }
 
     std::unique_ptr<TestNavigationThrottleInstaller>
         subframe_throttle_installer;
@@ -1305,21 +1358,18 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, observer.net_error_code());
   }
 
-  // Using BLOCK_REQUEST on redirect is available only with PlzNavigate.
-  if (IsBrowserSideNavigationEnabled()) {
-    // Set up a NavigationThrottle that will block the navigation in
-    // WillRedirectRequest.
-    TestNavigationThrottleInstaller installer(
-        shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::BLOCK_REQUEST, NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED);
-    NavigationHandleObserver observer(shell()->web_contents(), kRedirectingUrl);
+  // Set up a NavigationThrottle that will block the navigation in
+  // WillRedirectRequest.
+  TestNavigationThrottleInstaller installer(
+      shell()->web_contents(), NavigationThrottle::PROCEED,
+      NavigationThrottle::BLOCK_REQUEST, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
+  NavigationHandleObserver observer(shell()->web_contents(), kRedirectingUrl);
 
-    // Try to navigate to the url. The navigation should be canceled and the
-    // NavigationHandle should have the right error code.
-    EXPECT_FALSE(NavigateToURL(shell(), kRedirectingUrl));
-    EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, observer.net_error_code());
-  }
+  // Try to navigate to the url. The navigation should be canceled and the
+  // NavigationHandle should have the right error code.
+  EXPECT_FALSE(NavigateToURL(shell(), kRedirectingUrl));
+  EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, observer.net_error_code());
 }
 
 // Checks that there's no UAF if NavigationHandleImpl::WillStartRequest cancels
@@ -1528,13 +1578,6 @@ class NavigationLogger : public WebContentsObserver {
 // NavigationHandle is used for committing the error page.
 // See https://crbug.com/695421
 IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, BlockedOnRedirect) {
-  // Returning BLOCK_REQUEST is not supported yet without PlzNavigate. It will
-  // call a CHECK(false).
-  // TODO(arthursonzogni) Provide support for BLOCK_REQUEST without PlzNavigate
-  // once https://crbug.com/695421 is fixed.
-  if (!IsBrowserSideNavigationEnabled())
-    return;
-
   const GURL kUrl = embedded_test_server()->GetURL("/title1.html");
   const GURL kRedirectingUrl =
       embedded_test_server()->GetURL("/server-redirect?" + kUrl.spec());
@@ -1868,16 +1911,14 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
       // credentials should load correctly. It doesn't work correctly when
       // PlzNavigate is disabled. See https://crbug.com/756846.
       {GURL("http://user@a.com/frame_tree/page_with_one_frame.html"),
-       GURL("http://user@a.com/title1.html"),
-       !IsBrowserSideNavigationEnabled()},
+       GURL("http://user@a.com/title1.html"), false},
 
       // Same usernames and passwords in both frames.
       // Relative URLs on top-level pages that were loaded with embedded
       // credentials should load correctly. It doesn't work correctly when
       // PlzNavigate is disabled. See https://crbug.com/756846.
       {GURL("http://user:pass@a.com/frame_tree/page_with_one_frame.html"),
-       GURL("http://user:pass@a.com/title1.html"),
-       !IsBrowserSideNavigationEnabled()},
+       GURL("http://user:pass@a.com/title1.html"), false},
 
       // Different usernames.
       {GURL("http://user@a.com/frame_tree/page_with_one_frame.html"),
@@ -2016,36 +2057,213 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplDownloadBrowserTest,
   EXPECT_TRUE(observer.was_redirected());
 }
 
-IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
-                       ThrottleFailureWithErrorPageContent) {
-  if (!IsBrowserSideNavigationEnabled())
+// Set of tests that check the various NavigationThrottle events can be used
+// with custom error pages.
+class NavigationHandleImplThrottleResultWithErrorPageBrowserTest
+    : public NavigationHandleImplBrowserTest,
+      public ::testing::WithParamInterface<NavigationThrottle::ThrottleAction> {
+};
+
+IN_PROC_BROWSER_TEST_P(
+    NavigationHandleImplThrottleResultWithErrorPageBrowserTest,
+    WillStartRequest) {
+  NavigationThrottle::ThrottleAction action = GetParam();
+
+  if (action == NavigationThrottle::CANCEL_AND_IGNORE) {
+    // There is no support for CANCEL_AND_IGNORE and a custom error page.
     return;
+  }
+
+  if (action == NavigationThrottle::BLOCK_REQUEST_AND_COLLAPSE) {
+    // This can only be returned from sub frame navigations.
+    return;
+  }
+
+  if (action == NavigationThrottle::PROCEED ||
+      action == NavigationThrottle::DEFER) {
+    // Neither is relevant for what we want to test i.e. error pages.
+    return;
+  }
+
+  if (action == NavigationThrottle::BLOCK_RESPONSE) {
+    // BLOCK_RESPONSE can't be used with WillStartRequest.
+    return;
+  }
+
+  GURL url(embedded_test_server()->GetURL("/title1.html"));
+  InstallThrottleAndTestNavigationCommittedWithErrorPage(
+      url, action, TestNavigationThrottleInstaller::WILL_START_REQUEST);
+}
+
+IN_PROC_BROWSER_TEST_P(
+    NavigationHandleImplThrottleResultWithErrorPageBrowserTest,
+    WillRedirectRequest) {
+  NavigationThrottle::ThrottleAction action = GetParam();
+
+  if (action == NavigationThrottle::CANCEL_AND_IGNORE) {
+    // There is no support for CANCEL_AND_IGNORE and a custom error page.
+    return;
+  }
+
+  if (action == NavigationThrottle::PROCEED ||
+      action == NavigationThrottle::DEFER) {
+    // Neither is relevant for what we want to test i.e. error pages.
+    return;
+  }
+
+  if (action == NavigationThrottle::BLOCK_REQUEST_AND_COLLAPSE) {
+    // This can only be returned from sub frame navigations.
+    return;
+  }
+
+  if (action == NavigationThrottle::BLOCK_RESPONSE) {
+    // BLOCK_RESPONSE can't be used with WillRedirectRequest.
+    return;
+  }
+
+  GURL url(embedded_test_server()->GetURL("/cross-site/foo.com/title1.html"));
+  InstallThrottleAndTestNavigationCommittedWithErrorPage(
+      url, action, TestNavigationThrottleInstaller::WILL_REDIRECT_REQUEST);
+}
+
+IN_PROC_BROWSER_TEST_P(
+    NavigationHandleImplThrottleResultWithErrorPageBrowserTest,
+    WillFailRequest) {
+  NavigationThrottle::ThrottleAction action = GetParam();
+
+  if (action == NavigationThrottle::PROCEED ||
+      action == NavigationThrottle::DEFER) {
+    // Neither is relevant for what we want to test i.e. error pages.
+    return;
+  }
+
+  if (action == NavigationThrottle::BLOCK_REQUEST ||
+      action == NavigationThrottle::BLOCK_REQUEST_AND_COLLAPSE) {
+    // BLOCK_REQUEST, BLOCK_REQUEST_AND_COLLAPSE, can't be used with
+    // WillFailRequest.
+    return;
+  }
 
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
   ASSERT_TRUE(https_server.Start());
-  GURL url(https_server.GetURL("/title1.html"));
 
-  NavigationThrottle::ThrottleCheckResult cancel_result = {
-      NavigationThrottle::CANCEL, net::ERR_CERT_COMMON_NAME_INVALID,
-      base::StringPrintf("<html><body>%s</body><html>", kBodyTextContent)};
+  const GURL url = https_server.GetURL("/title1.html");
+  InstallThrottleAndTestNavigationCommittedWithErrorPage(
+      url, action, TestNavigationThrottleInstaller::WILL_FAIL_REQUEST);
+}
 
-  NavigationHandleObserver observer(shell()->web_contents(), url);
-  TestNavigationThrottleInstaller installer(
-      shell()->web_contents(), NavigationThrottle::PROCEED,
-      NavigationThrottle::PROCEED, cancel_result, NavigationThrottle::PROCEED);
+IN_PROC_BROWSER_TEST_P(
+    NavigationHandleImplThrottleResultWithErrorPageBrowserTest,
+    WillProcessResponse) {
+  NavigationThrottle::ThrottleAction action = GetParam();
 
-  EXPECT_FALSE(NavigateToURL(shell(), url));
+  if (action == NavigationThrottle::CANCEL_AND_IGNORE) {
+    // There is no support for CANCEL_AND_IGNORE and a custom error page.
+    return;
+  }
 
-  EXPECT_TRUE(observer.has_committed());
-  EXPECT_TRUE(observer.is_error());
+  if (action == NavigationThrottle::PROCEED ||
+      action == NavigationThrottle::DEFER) {
+    // Neither is relevant for what we want to test i.e. error pages.
+    return;
+  }
 
-  std::string result;
-  const std::string javascript =
-      "domAutomationController.send(document.body.textContent)";
-  content::RenderFrameHost* rfh = shell()->web_contents()->GetMainFrame();
-  ASSERT_TRUE(content::ExecuteScriptAndExtractString(rfh, javascript, &result));
-  EXPECT_EQ(kBodyTextContent, result);
+  if (action == NavigationThrottle::BLOCK_REQUEST ||
+      action == NavigationThrottle::BLOCK_REQUEST_AND_COLLAPSE) {
+    // BLOCK_REQUEST and BLOCK_REQUEST_AND_COLLAPSE can't be used with
+    // WillProcessResponse.
+    return;
+  }
+
+  GURL url(embedded_test_server()->GetURL("/title1.html"));
+  InstallThrottleAndTestNavigationCommittedWithErrorPage(
+      url, action, TestNavigationThrottleInstaller::WILL_PROCESS_RESPONSE);
+}
+
+INSTANTIATE_TEST_CASE_P(
+    /* no prefix */,
+    NavigationHandleImplThrottleResultWithErrorPageBrowserTest,
+    testing::Range(NavigationThrottle::ThrottleAction::FIRST,
+                   NavigationThrottle::ThrottleAction::LAST));
+
+// The set of tests...
+// * NavigationHandleImplDownloadBrowserTest.AllowedResourceDownloaded
+// * NavigationHandleImplDownloadBrowserTest.AllowedResourceNotDownloaded
+// * NavigationHandleImplDownloadBrowserTest.Disallowed
+//
+// ...covers every combinaison of possible states for:
+// * CommonNavigationParams::allow_download
+// * NavigationHandle::IsDownload()
+//
+// |allow_download| is false only when the URL is a view-source URL. In this
+// case, downloads are prohibited (i.e. |is_download| is false in
+// NavigationURLLoaderDelegate::OnResponseStarted()).
+IN_PROC_BROWSER_TEST_F(NavigationHandleImplDownloadBrowserTest,
+                       AllowedResourceDownloaded) {
+  GURL simple_url(embedded_test_server()->GetURL("/simple_page.html"));
+
+  TestNavigationManager manager(shell()->web_contents(), simple_url);
+  NavigationHandleObserver handle_observer(shell()->web_contents(), simple_url);
+
+  // Download is allowed.
+  shell()->LoadURL(simple_url);
+  EXPECT_TRUE(manager.WaitForRequestStart());
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetMainFrame()
+                            ->frame_tree_node();
+  EXPECT_TRUE(root->navigation_request()->common_params().allow_download);
+
+  // The response is not handled as a download.
+  manager.WaitForNavigationFinished();
+  EXPECT_FALSE(handle_observer.is_download());
+}
+
+// See NavigationHandleImplDownloadBrowserTest.AllowedResourceNotDownloaded
+IN_PROC_BROWSER_TEST_F(NavigationHandleImplDownloadBrowserTest,
+                       AllowedResourceNotDownloaded) {
+  GURL download_url(embedded_test_server()->GetURL("/download-test1.lib"));
+
+  TestNavigationManager manager(shell()->web_contents(), download_url);
+  NavigationHandleObserver handle_observer(shell()->web_contents(),
+                                           download_url);
+
+  // Download is allowed.
+  shell()->LoadURL(download_url);
+  EXPECT_TRUE(manager.WaitForRequestStart());
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetMainFrame()
+                            ->frame_tree_node();
+  EXPECT_TRUE(root->navigation_request()->common_params().allow_download);
+
+  // The response is handled as a download.
+  manager.WaitForNavigationFinished();
+  EXPECT_TRUE(handle_observer.is_download());
+}
+
+// See NavigationHandleImplDownloadBrowserTest.AllowedResourceNotDownloaded
+IN_PROC_BROWSER_TEST_F(NavigationHandleImplDownloadBrowserTest, Disallowed) {
+  GURL download_url(embedded_test_server()->GetURL("/download-test1.lib"));
+
+  // An URL is allowed to be a download iff it is not a view-source URL.
+  GURL view_source_url =
+      GURL(content::kViewSourceScheme + std::string(":") + download_url.spec());
+
+  NavigationHandleObserver handle_observer(shell()->web_contents(),
+                                           download_url);
+  TestNavigationManager manager(shell()->web_contents(), download_url);
+
+  // Download is not allowed.
+  shell()->LoadURL(view_source_url);
+  EXPECT_TRUE(manager.WaitForRequestStart());
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetMainFrame()
+                            ->frame_tree_node();
+  EXPECT_FALSE(root->navigation_request()->common_params().allow_download);
+
+  // The response is not handled as a download.
+  manager.WaitForNavigationFinished();
+  EXPECT_FALSE(handle_observer.is_download());
 }
 
 }  // namespace content

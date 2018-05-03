@@ -5,7 +5,6 @@
 #include "content/renderer/loader/request_extra_data.h"
 
 #include "content/common/service_worker/service_worker_types.h"
-#include "content/public/common/service_worker_modes.h"
 #include "services/network/public/cpp/resource_request.h"
 
 using blink::WebString;
@@ -22,7 +21,7 @@ RequestExtraData::RequestExtraData()
       service_worker_provider_id_(kInvalidServiceWorkerProviderId),
       originated_from_service_worker_(false),
       initiated_in_secure_context_(false),
-      is_prefetch_(false),
+      is_for_no_state_prefetch_(false),
       download_to_network_cache_only_(false),
       block_mixed_plugin_content_(false),
       navigation_initiated_by_renderer_(false) {}
@@ -44,13 +43,6 @@ void RequestExtraData::CopyToResourceRequest(
   request->originated_from_service_worker = originated_from_service_worker_;
 
   request->initiated_in_secure_context = initiated_in_secure_context_;
-
-  /*
-  TODO(jam): if have agreement that alternate solution of having a dummy sink
-             in the renderer so that notifications are still received, then undo
-             the cl https://codereview.chromium.org/2262183002.
-  request->download_to_network_cache_only = download_to_network_cache_only_;
-  */
 }
 
 }  // namespace content

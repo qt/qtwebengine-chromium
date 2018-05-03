@@ -527,7 +527,7 @@ void CSSSelector::UpdatePseudoType(const AtomicString& value,
       // but should be PseudoElement like double colon.
       if (match_ == kPseudoClass)
         match_ = kPseudoElement;
-    // fallthrough
+      FALLTHROUGH;
     case kPseudoBackdrop:
     case kPseudoCue:
     case kPseudoPlaceholder:
@@ -562,7 +562,7 @@ void CSSSelector::UpdatePseudoType(const AtomicString& value,
         pseudo_type_ = kPseudoUnknown;
         break;
       }
-    // fallthrough
+      FALLTHROUGH;
     case kPseudoActive:
     case kPseudoAny:
     case kPseudoAnyLink:
@@ -788,7 +788,7 @@ const CSSSelector* CSSSelector::SerializeCompound(
     if (simple_selector->SelectorList()) {
       builder.Append('(');
       const CSSSelector* first_sub_selector =
-          simple_selector->SelectorList()->First();
+          simple_selector->SelectorList()->FirstForCSSOM();
       for (const CSSSelector* sub_selector = first_sub_selector; sub_selector;
            sub_selector = CSSSelectorList::Next(*sub_selector)) {
         if (sub_selector != first_sub_selector)
@@ -836,6 +836,7 @@ String CSSSelector::SelectorText() const {
         break;
       case kSubSelector:
         NOTREACHED();
+        break;
       case kShadowPseudo:
       case kShadowSlot:
         result = builder.ToString() + result;
@@ -935,9 +936,7 @@ bool CSSSelector::IsCompound() const {
   return true;
 }
 
-unsigned CSSSelector::ComputeLinkMatchType() const {
-  unsigned link_match_type = kMatchAll;
-
+unsigned CSSSelector::ComputeLinkMatchType(unsigned link_match_type) const {
   // Determine if this selector will match a link in visited, unvisited or any
   // state, or never.
   // :visited never matches other elements than the innermost link element.
@@ -962,6 +961,14 @@ unsigned CSSSelector::ComputeLinkMatchType() const {
         break;
       case kPseudoVisited:
         link_match_type &= ~kMatchLink;
+        break;
+      case kPseudoSlotted:
+        DCHECK(current->SelectorList());
+        DCHECK(current->SelectorList()->First());
+        DCHECK(!CSSSelectorList::Next(*current->SelectorList()->First()));
+        link_match_type =
+            current->SelectorList()->First()->ComputeLinkMatchType(
+                link_match_type);
         break;
       default:
         // We don't support :link and :visited inside :-webkit-any.
@@ -1053,6 +1060,14 @@ bool CSSSelector::NeedsUpdatedDistribution() const {
                selector.GetPseudoType() == CSSSelector::kPseudoHostContext;
       },
       *this);
+}
+
+bool CSSSelector::HasPseudoMatches() const {
+  for (const CSSSelector* s = this; s; s = s->TagHistory()) {
+    if (s->GetPseudoType() == CSSSelector::kPseudoMatches)
+      return true;
+  }
+  return false;
 }
 
 CSSSelector::RareData::RareData(const AtomicString& value)

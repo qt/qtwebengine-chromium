@@ -28,6 +28,7 @@
 #include "base/gtest_prod_util.h"
 #include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
+#include "core/dom/CreateElementFlags.h"
 #include "core/html/forms/FileChooser.h"
 #include "core/html/forms/StepRange.h"
 #include "core/html/forms/TextControlElement.h"
@@ -54,7 +55,7 @@ class CORE_EXPORT HTMLInputElement
   USING_GARBAGE_COLLECTED_MIXIN(HTMLInputElement);
 
  public:
-  static HTMLInputElement* Create(Document&, bool created_by_parser);
+  static HTMLInputElement* Create(Document&, const CreateElementFlags);
   ~HTMLInputElement() override;
   void Trace(blink::Visitor*) override;
 
@@ -112,6 +113,7 @@ class CORE_EXPORT HTMLInputElement
   bool checked() const;
   void setChecked(bool, TextFieldEventBehavior = kDispatchNoEvent);
   void DispatchChangeEventIfNeeded();
+  void DispatchInputAndChangeEventIfNeeded();
 
   // 'indeterminate' is a state independent of the checked state that causes the
   // control to draw in a way that hides the actual state.
@@ -302,7 +304,7 @@ class CORE_EXPORT HTMLInputElement
   void ChildrenChanged(const ChildrenChange&) override;
 
  protected:
-  HTMLInputElement(Document&, bool created_by_parser);
+  HTMLInputElement(Document&, const CreateElementFlags);
 
   void DefaultEventHandler(Event*) override;
   void CreateShadowSubtree();
@@ -347,7 +349,7 @@ class CORE_EXPORT HTMLInputElement
   void FinishParsingChildren() final;
   void ParserDidSetAttributes() final;
 
-  void CopyNonAttributePropertiesFromElement(const Element&) final;
+  void CloneNonAttributePropertiesFrom(const Element&, CloneChildrenFlag) final;
 
   void AttachLayoutTree(AttachContext&) final;
 
@@ -379,8 +381,6 @@ class CORE_EXPORT HTMLInputElement
                             Element* old_focused_element,
                             WebFocusType,
                             InputDeviceCapabilities* source_capabilities) final;
-  bool SupportsAutocapitalize() const final;
-  const AtomicString& DefaultAutocapitalize() const final;
 
   bool IsOptionalFormControl() const final { return !IsRequiredFormControl(); }
   bool IsRequiredFormControl() const final;

@@ -41,7 +41,6 @@ class WebMediaConstraints;
 class WebMediaStream;
 class WebMediaStreamTrack;
 class WebRTCAnswerOptions;
-class WebRTCDTMFSenderHandler;
 class WebRTCDataChannelHandler;
 enum class WebRTCErrorType;
 class WebRTCOfferOptions;
@@ -86,8 +85,6 @@ class WebRTCPeerConnectionHandler {
                                scoped_refptr<WebRTCICECandidate>) {
     return false;
   }
-  virtual bool AddStream(const WebMediaStream&, const WebMediaConstraints&) = 0;
-  virtual void RemoveStream(const WebMediaStream&) = 0;
   virtual void GetStats(const WebRTCStatsRequest&) = 0;
   // Gets stats using the new stats collection API, see
   // third_party/webrtc/api/stats/.  These will replace the old stats collection
@@ -96,10 +93,6 @@ class WebRTCPeerConnectionHandler {
   virtual WebRTCDataChannelHandler* CreateDataChannel(
       const WebString& label,
       const WebRTCDataChannelInit&) = 0;
-  // Gets senders used by the peer connection. These are wrappers referencing
-  // webrtc-layer senders, multiple |WebRTCRtpSender| objects referencing the
-  // same webrtc-layer sender have the same |id|.
-  virtual WebVector<std::unique_ptr<WebRTCRtpSender>> GetSenders() = 0;
   // Adds the track to the peer connection, returning the resulting sender on
   // success and null on failure.
   virtual std::unique_ptr<WebRTCRtpSender> AddTrack(
@@ -108,8 +101,6 @@ class WebRTCPeerConnectionHandler {
   // Removes the sender, returning whether successful. On success, the sender's
   // track must have been set to null.
   virtual bool RemoveTrack(WebRTCRtpSender*) = 0;
-  virtual WebRTCDTMFSenderHandler* CreateDTMFSender(
-      const WebMediaStreamTrack&) = 0;
   virtual void Stop() = 0;
 };
 

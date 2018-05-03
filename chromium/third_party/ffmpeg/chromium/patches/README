@@ -37,6 +37,14 @@ Current patches:
   libavformat/mov.c
     Always use av_realloc() for |extradata|. https://crbug.com/721872
 
+    Early return in mov_read_sidx() for empty sidx boxes.
+    https://crbug.com/802335
+    TODO: push upstream
+
+    Early return in mov_seek_fragment() for empty indexes.
+    https://crbug.com/804070
+    TODO: push upstream
+
   libavformat/matroskadec.c
     Add CONFIG_LZO and CONFIG_SIPR_DECODER (and other CONFIG_*) checks to remove
     code that may be a security risk. Discuss with cevans@ before removing.
@@ -96,5 +104,17 @@ Current patches:
     mov_read_stts(): Fix stts memory allocation (use i + 1 instead of i).
     https://crbug.com/801821
 
+  libavcodec/h264_cabac.c
+    decode_cabac_residual_internal(): Limit the value of |j| to avoid integer
+    overflow. https://crbug.com/806580
+
+  libavcodec/mpegaudio_parser.c
+    mpegaudio_parse(): Drop trailing garbage on flush. Submitted upstream, so
+    should be present for M67 ffmpeg roll. http://crbug.com/794782
+
   libavformat/mov.c
     mov_read_trun(): Fix memset size on ctts_data. https://crbug.com/812567
+
+  libavformat/mov.c
+    mov_build_index(): Initialize the allocated new ctts_data when constructing
+    the normalized 1-1 version.  https://crbug.com/816787

@@ -67,6 +67,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       CSPDisposition should_check_main_world_csp,
       bool is_form_submission,
       const base::Optional<std::string>& suggested_filename,
+      std::unique_ptr<NavigationUIData> navigation_ui_data,
       const std::string& method = std::string(),
       scoped_refptr<network::ResourceRequestBody> resource_request_body =
           nullptr,
@@ -116,6 +117,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   const Referrer& GetReferrer() override;
   bool HasUserGesture() override;
   ui::PageTransition GetPageTransition() override;
+  const NavigationUIData* GetNavigationUIData() override;
   bool IsExternalProtocol() override;
   net::Error GetNetErrorCode() override;
   RenderFrameHostImpl* GetRenderFrameHost() override;
@@ -154,6 +156,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   const GURL& GetBaseURLForDataURL() override;
   const GlobalRequestID& GetGlobalRequestID() override;
   bool IsDownload() override;
+  bool IsFormSubmission() override;
   const base::Optional<std::string>& GetSuggestedFilename() override;
 
   // Resume and CancelDeferredNavigation must only be called by the
@@ -169,9 +172,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // Used in tests.
   State state_for_testing() const { return state_; }
   void SetOnDeferCallbackForTesting(const base::Closure& on_defer_callback);
-
-  // Whether or not the navigation has been initiated by a form submission.
-  bool is_form_submission() const { return is_form_submission_; }
 
   // The NavigatorDelegate to notify/query for various navigation events.
   // Normally this is the WebContents, except if this NavigationHandle was
@@ -300,7 +300,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // Called when the navigation is ready to be committed in
   // |render_frame_host|. This will update the |state_| and inform the
   // delegate.
-  void ReadyToCommitNavigation(RenderFrameHostImpl* render_frame_host);
+  void ReadyToCommitNavigation(RenderFrameHostImpl* render_frame_host,
+                               bool is_error);
 
   // Called when the navigation was committed in |render_frame_host|. This will
   // update the |state_|.
@@ -378,6 +379,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       CSPDisposition should_check_main_world_csp,
       bool is_form_submission,
       const base::Optional<std::string>& suggested_filename,
+      std::unique_ptr<NavigationUIData> navigation_ui_data,
       const std::string& method,
       scoped_refptr<network::ResourceRequestBody> resource_request_body,
       const Referrer& sanitized_referrer,

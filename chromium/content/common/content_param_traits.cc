@@ -7,11 +7,15 @@
 #include <stddef.h>
 
 #include "base/strings/string_number_conversions.h"
+#include "content/common/frame_message_structs.h"
 #include "ipc/ipc_mojo_message_helper.h"
 #include "ipc/ipc_mojo_param_traits.h"
 #include "net/base/ip_endpoint.h"
-#include "third_party/WebKit/common/message_port/message_port_channel.h"
+#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
+#include "third_party/WebKit/public/common/message_port/transferable_message.h"
+#include "third_party/WebKit/public/mojom/message_port/message_port.mojom.h"
 #include "ui/accessibility/ax_modes.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/events/blink/web_input_event_traits.h"
 
 namespace IPC {
@@ -132,6 +136,108 @@ bool ParamTraits<scoped_refptr<storage::BlobHandle>>::Read(
 void ParamTraits<scoped_refptr<storage::BlobHandle>>::Log(const param_type& p,
                                                           std::string* l) {
   l->append("<storage::BlobHandle>");
+}
+
+// static
+void ParamTraits<content::FrameMsg_ViewChanged_Params>::Write(
+    base::Pickle* m,
+    const param_type& p) {
+  DCHECK(base::FeatureList::IsEnabled(features::kMash) ||
+         (p.frame_sink_id.has_value() && p.frame_sink_id->is_valid()));
+  WriteParam(m, p.frame_sink_id);
+}
+
+bool ParamTraits<content::FrameMsg_ViewChanged_Params>::Read(
+    const base::Pickle* m,
+    base::PickleIterator* iter,
+    param_type* r) {
+  if (!ReadParam(m, iter, &(r->frame_sink_id)))
+    return false;
+  if (!base::FeatureList::IsEnabled(features::kMash) &&
+      (!r->frame_sink_id || !r->frame_sink_id->is_valid())) {
+    NOTREACHED();
+    return false;
+  }
+  return true;
+}
+
+// static
+void ParamTraits<content::FrameMsg_ViewChanged_Params>::Log(const param_type& p,
+                                                            std::string* l) {
+  l->append("(");
+  LogParam(p.frame_sink_id, l);
+  l->append(")");
+}
+
+template <>
+struct ParamTraits<blink::mojom::SerializedBlobPtr> {
+  using param_type = blink::mojom::SerializedBlobPtr;
+  static void Write(base::Pickle* m, const param_type& p) {
+    WriteParam(m, p->uuid);
+    WriteParam(m, p->content_type);
+    WriteParam(m, p->size);
+    WriteParam(m, p->blob.PassHandle().release());
+  }
+
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r) {
+    *r = blink::mojom::SerializedBlob::New();
+    mojo::MessagePipeHandle handle;
+    if (!ReadParam(m, iter, &(*r)->uuid) ||
+        !ReadParam(m, iter, &(*r)->content_type) ||
+        !ReadParam(m, iter, &(*r)->size) || !ReadParam(m, iter, &handle)) {
+      return false;
+    }
+    (*r)->blob = blink::mojom::BlobPtrInfo(
+        mojo::ScopedMessagePipeHandle(handle), blink::mojom::Blob::Version_);
+    return true;
+  }
+};
+
+void ParamTraits<scoped_refptr<base::RefCountedData<
+    blink::TransferableMessage>>>::Write(base::Pickle* m, const param_type& p) {
+  m->WriteData(reinterpret_cast<const char*>(p->data.encoded_message.data()),
+               p->data.encoded_message.length());
+  WriteParam(m, p->data.blobs);
+  WriteParam(m, p->data.stack_trace_id);
+  WriteParam(m, p->data.stack_trace_debugger_id_first);
+  WriteParam(m, p->data.stack_trace_debugger_id_second);
+  WriteParam(m, p->data.ports);
+  WriteParam(m, p->data.has_user_gesture);
+}
+
+bool ParamTraits<
+    scoped_refptr<base::RefCountedData<blink::TransferableMessage>>>::
+    Read(const base::Pickle* m, base::PickleIterator* iter, param_type* r) {
+  *r = new base::RefCountedData<blink::TransferableMessage>();
+
+  const char* data;
+  int length;
+  if (!iter->ReadData(&data, &length))
+    return false;
+  // This just makes encoded_message point into the IPC message buffer. Usually
+  // code receiving a TransferableMessage will synchronously process the message
+  // so this avoids an unnecessary copy. If a receiver needs to hold on to the
+  // message longer, it should make sure to call EnsureDataIsOwned on the
+  // returned message.
+  (*r)->data.encoded_message =
+      base::make_span(reinterpret_cast<const uint8_t*>(data), length);
+  if (!ReadParam(m, iter, &(*r)->data.blobs) ||
+      !ReadParam(m, iter, &(*r)->data.stack_trace_id) ||
+      !ReadParam(m, iter, &(*r)->data.stack_trace_debugger_id_first) ||
+      !ReadParam(m, iter, &(*r)->data.stack_trace_debugger_id_second) ||
+      !ReadParam(m, iter, &(*r)->data.ports) ||
+      !ReadParam(m, iter, &(*r)->data.has_user_gesture)) {
+    return false;
+  }
+  return true;
+}
+
+void ParamTraits<scoped_refptr<
+    base::RefCountedData<blink::TransferableMessage>>>::Log(const param_type& p,
+                                                            std::string* l) {
+  l->append("<blink::TransferableMessage>");
 }
 
 }  // namespace IPC

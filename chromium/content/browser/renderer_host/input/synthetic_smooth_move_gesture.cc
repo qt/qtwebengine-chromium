@@ -91,7 +91,6 @@ SyntheticGesture::Result SyntheticSmoothMoveGesture::ForwardInputEvents(
 void SyntheticSmoothMoveGesture::ForwardTouchInputEvents(
     const base::TimeTicks& timestamp,
     SyntheticGestureTarget* target) {
-  base::TimeTicks event_timestamp = timestamp;
   switch (state_) {
     case STARTED:
       if (MoveIsNoOp()) {
@@ -101,11 +100,11 @@ void SyntheticSmoothMoveGesture::ForwardTouchInputEvents(
       if (params_.add_slop)
         AddTouchSlopToFirstDistance(target);
       ComputeNextMoveSegment();
-      PressPoint(target, event_timestamp);
+      PressPoint(target, timestamp);
       state_ = MOVING;
       break;
     case MOVING: {
-      event_timestamp = ClampTimestamp(timestamp);
+      base::TimeTicks event_timestamp = ClampTimestamp(timestamp);
       gfx::Vector2dF delta = GetPositionDeltaAtTime(event_timestamp);
       MovePoint(target, delta, event_timestamp);
 
@@ -125,8 +124,8 @@ void SyntheticSmoothMoveGesture::ForwardTouchInputEvents(
     case STOPPING:
       if (timestamp - current_move_segment_stop_time_ >=
           target->PointerAssumedStoppedTime()) {
-        event_timestamp = current_move_segment_stop_time_ +
-                          target->PointerAssumedStoppedTime();
+        base::TimeTicks event_timestamp = current_move_segment_stop_time_ +
+                                          target->PointerAssumedStoppedTime();
         ReleasePoint(target, event_timestamp);
         state_ = DONE;
       }
@@ -134,9 +133,11 @@ void SyntheticSmoothMoveGesture::ForwardTouchInputEvents(
     case SETUP:
       NOTREACHED()
           << "State SETUP invalid for synthetic scroll using touch input.";
+      break;
     case DONE:
       NOTREACHED()
           << "State DONE invalid for synthetic scroll using touch input.";
+      break;
   }
 }
 
@@ -199,19 +200,21 @@ void SyntheticSmoothMoveGesture::ForwardMouseWheelInputEvents(
     case SETUP:
       NOTREACHED() << "State SETUP invalid for synthetic scroll using mouse "
                       "wheel input.";
+      break;
     case STOPPING:
       NOTREACHED() << "State STOPPING invalid for synthetic scroll using mouse "
                       "wheel input.";
+      break;
     case DONE:
       NOTREACHED()
           << "State DONE invalid for synthetic scroll using mouse wheel input.";
+      break;
   }
 }
 
 void SyntheticSmoothMoveGesture::ForwardMouseClickInputEvents(
     const base::TimeTicks& timestamp,
     SyntheticGestureTarget* target) {
-  base::TimeTicks event_timestamp = timestamp;
   switch (state_) {
     case STARTED:
       if (MoveIsNoOp()) {
@@ -219,7 +222,7 @@ void SyntheticSmoothMoveGesture::ForwardMouseClickInputEvents(
         break;
       }
       ComputeNextMoveSegment();
-      PressPoint(target, event_timestamp);
+      PressPoint(target, timestamp);
       state_ = MOVING;
       break;
     case MOVING: {
@@ -241,12 +244,15 @@ void SyntheticSmoothMoveGesture::ForwardMouseClickInputEvents(
     case STOPPING:
       NOTREACHED()
           << "State STOPPING invalid for synthetic drag using mouse input.";
+      break;
     case SETUP:
       NOTREACHED()
           << "State SETUP invalid for synthetic drag using mouse input.";
+      break;
     case DONE:
       NOTREACHED()
           << "State DONE invalid for synthetic drag using mouse input.";
+      break;
   }
 }
 

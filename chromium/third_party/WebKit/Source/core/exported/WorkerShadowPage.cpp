@@ -11,7 +11,7 @@
 #include "platform/loader/fetch/SubstituteData.h"
 #include "public/platform/Platform.h"
 #include "public/web/WebSettings.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 
@@ -90,11 +90,11 @@ WorkerShadowPage::CreateURLLoaderFactory() {
   return Platform::Current()->CreateDefaultURLLoaderFactory();
 }
 
-WebString WorkerShadowPage::GetDevToolsFrameToken() {
+base::UnguessableToken WorkerShadowPage::GetDevToolsFrameToken() {
   // TODO(dgozman): instrumentation token will have to be passed directly to
   // DevTools once we stop using a frame for workers. Currently, we rely on
   // the frame's instrumentation token to match the worker.
-  return client_->GetDevToolsFrameToken();
+  return client_->GetDevToolsWorkerToken();
 }
 
 bool WorkerShadowPage::WasInitialized() const {

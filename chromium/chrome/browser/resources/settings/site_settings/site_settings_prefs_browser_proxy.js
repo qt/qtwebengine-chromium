@@ -137,6 +137,13 @@ cr.define('settings', function() {
     setOriginPermissions(origin, contentTypes, blanketSetting) {}
 
     /**
+     * Clears the flag that's set when the user has changed the Flash permission
+     * for this particular origin.
+     * @param {string} origin The origin to clear the Flash preference for.
+     */
+    clearFlashPref(origin) {}
+
+    /**
      * Resets the category permission for a given origin (expressed as primary
      * and secondary patterns). Only use this if intending to remove an
      * exception - use setOriginPermissions() for origin-scoped settings.
@@ -307,6 +314,11 @@ cr.define('settings', function() {
     }
 
     /** @override */
+    clearFlashPref(origin) {
+      chrome.send('clearFlashPref', [origin]);
+    }
+
+    /** @override */
     resetCategoryPermissionForPattern(
         primaryPattern, secondaryPattern, contentType, incognito) {
       chrome.send(
@@ -362,12 +374,12 @@ cr.define('settings', function() {
 
     /** @override */
     setProtocolDefault(protocol, url) {
-      chrome.send('setDefault', [[protocol, url]]);
+      chrome.send('setDefault', [protocol, url]);
     }
 
     /** @override */
     removeProtocolHandler(protocol, url) {
-      chrome.send('removeHandler', [[protocol, url]]);
+      chrome.send('removeHandler', [protocol, url]);
     }
 
     /** @override */

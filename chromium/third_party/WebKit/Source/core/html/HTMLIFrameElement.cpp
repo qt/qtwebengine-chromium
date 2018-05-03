@@ -31,6 +31,7 @@
 #include "core/html_names.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutIFrame.h"
+#include "core/page/Page.h"
 #include "core/policy/IFramePolicy.h"
 #include "platform/runtime_enabled_features.h"
 
@@ -171,19 +172,19 @@ void HTMLIFrameElement::ParseAttribute(
     }
   } else if (RuntimeEnabledFeatures::EmbedderCSPEnforcementEnabled() &&
              name == cspAttr) {
-    if (!ContentSecurityPolicy::IsValidCSPAttr(value.GetString())) {
-      csp_ = g_null_atom;
+    if (!ContentSecurityPolicy::IsValidCSPAttr(
+            value.GetString(), GetDocument().RequiredCSP().GetString())) {
+      required_csp_ = g_null_atom;
       GetDocument().AddConsoleMessage(ConsoleMessage::Create(
           kOtherMessageSource, kErrorMessageLevel,
           "'csp' attribute is not a valid policy: " + value));
       return;
     }
-    if (csp_ != value) {
-      csp_ = value;
+    if (required_csp_ != value) {
+      required_csp_ = value;
       FrameOwnerPropertiesChanged();
     }
-  } else if (RuntimeEnabledFeatures::FeaturePolicyEnabled() &&
-             name == allowAttr) {
+  } else if (name == allowAttr) {
     if (allow_ != value) {
       allow_ = value;
       Vector<String> messages;
@@ -207,6 +208,24 @@ void HTMLIFrameElement::ParseAttribute(
       }
     }
   } else {
+    // Websites picked up a Chromium article that used this non-specified
+    // attribute which ended up changing shape after the specification process.
+    // This error message and use count will help developers to move to the
+    // proper solution.
+    // To avoid polluting the console, this is being recorded only once per
+    // page.
+    if (name == "gesture" && value == "media" && GetDocument().GetPage() &&
+        !GetDocument().GetPage()->GetUseCounter().HasRecordedMeasurement(
+            WebFeature::kHTMLIFrameElementGestureMedia)) {
+      UseCounter::Count(GetDocument(),
+                        WebFeature::kHTMLIFrameElementGestureMedia);
+      GetDocument().AddConsoleMessage(
+          ConsoleMessage::Create(kOtherMessageSource, kWarningMessageLevel,
+                                 "<iframe gesture=\"media\"> is not supported. "
+                                 "Use <iframe allow=\"autoplay\">, "
+                                 "https://goo.gl/ximf56"));
+    }
+
     if (name == srcAttr)
       LogUpdateAttributeIfIsolatedWorldAndInDocument("iframe", params);
     HTMLFrameElementBase::ParseAttribute(params);
@@ -227,7 +246,7 @@ ParsedFeaturePolicy HTMLIFrameElement::ConstructContainerPolicy(
   if (AllowFullscreen()) {
     bool has_fullscreen_policy = false;
     for (const auto& declaration : container_policy) {
-      if (declaration.feature == FeaturePolicyFeature::kFullscreen) {
+      if (declaration.feature == mojom::FeaturePolicyFeature::kFullscreen) {
         has_fullscreen_policy = true;
         if (messages) {
           messages->push_back(
@@ -238,7 +257,7 @@ ParsedFeaturePolicy HTMLIFrameElement::ConstructContainerPolicy(
     }
     if (!has_fullscreen_policy) {
       ParsedFeaturePolicyDeclaration whitelist;
-      whitelist.feature = FeaturePolicyFeature::kFullscreen;
+      whitelist.feature = mojom::FeaturePolicyFeature::kFullscreen;
       whitelist.matches_all_origins = true;
       container_policy.push_back(whitelist);
     }
@@ -248,7 +267,7 @@ ParsedFeaturePolicy HTMLIFrameElement::ConstructContainerPolicy(
   if (AllowPaymentRequest()) {
     bool has_payment_policy = false;
     for (const auto& declaration : container_policy) {
-      if (declaration.feature == FeaturePolicyFeature::kPayment) {
+      if (declaration.feature == mojom::FeaturePolicyFeature::kPayment) {
         has_payment_policy = true;
         if (messages) {
           messages->push_back(
@@ -259,7 +278,7 @@ ParsedFeaturePolicy HTMLIFrameElement::ConstructContainerPolicy(
     }
     if (!has_payment_policy) {
       ParsedFeaturePolicyDeclaration whitelist;
-      whitelist.feature = FeaturePolicyFeature::kPayment;
+      whitelist.feature = mojom::FeaturePolicyFeature::kPayment;
       whitelist.matches_all_origins = true;
       whitelist.origins = std::vector<url::Origin>(0UL);
       container_policy.push_back(whitelist);
@@ -286,8 +305,23 @@ Node::InsertionNotificationRequest HTMLIFrameElement::InsertedInto(
     ContainerNode* insertion_point) {
   InsertionNotificationRequest result =
       HTMLFrameElementBase::InsertedInto(insertion_point);
-  if (insertion_point->IsInDocumentTree() && GetDocument().IsHTMLDocument())
+
+  if (insertion_point->IsInDocumentTree() && GetDocument().IsHTMLDocument()) {
     ToHTMLDocument(GetDocument()).AddNamedItem(name_);
+
+    if (!ContentSecurityPolicy::IsValidCSPAttr(
+            required_csp_, GetDocument().RequiredCSP().GetString())) {
+      if (!required_csp_.IsEmpty()) {
+        GetDocument().AddConsoleMessage(ConsoleMessage::Create(
+            kOtherMessageSource, kErrorMessageLevel,
+            "'csp' attribute is not a valid policy: " + required_csp_));
+      }
+      if (required_csp_ != GetDocument().RequiredCSP()) {
+        required_csp_ = GetDocument().RequiredCSP();
+        FrameOwnerPropertiesChanged();
+      }
+    }
+  }
   LogAddElementIfIsolatedWorldAndInDocument("iframe", srcAttr);
   return result;
 }

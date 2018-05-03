@@ -19,7 +19,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_associated_interface.h"
 #include "content/public/browser/browser_message_filter.h"
-#include "third_party/WebKit/common/clipboard/clipboard.mojom.h"
+#include "third_party/WebKit/public/mojom/clipboard/clipboard.mojom.h"
 #include "ui/base/clipboard/clipboard.h"
 
 class GURL;
@@ -50,10 +50,6 @@ class CONTENT_EXPORT ClipboardHostImpl : public blink::mojom::ClipboardHost {
 
   explicit ClipboardHostImpl(
       scoped_refptr<ChromeBlobStorageContext> blob_storage_context);
-
-  void ReadAndEncodeImage(const SkBitmap& bitmap, ReadImageCallback callback);
-  void OnReadAndEncodeImageFinished(std::vector<uint8_t> png_data,
-                                    ReadImageCallback callback);
 
   // content::mojom::ClipboardHost
   void GetSequenceNumber(ui::ClipboardType clipboard_type,
@@ -90,7 +86,9 @@ class CONTENT_EXPORT ClipboardHostImpl : public blink::mojom::ClipboardHost {
                   const gfx::Size& size_in_pixels,
                   mojo::ScopedSharedBufferHandle shared_buffer_handle) override;
   void CommitWrite(ui::ClipboardType clipboard_type) override;
+#if defined(OS_MACOSX)
   void WriteStringToFindPboard(const base::string16& text) override;
+#endif
 
   ui::Clipboard* clipboard_;  // Not owned
   scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;

@@ -25,6 +25,8 @@
 
 #if !defined(OS_MACOSX)
 #include "ui/gl/gl_fence_egl.h"
+#else
+#include "base/mac/mac_util.h"
 #endif
 
 namespace gpu {
@@ -250,23 +252,28 @@ void FeatureInfo::InitializeBasicState(const base::CommandLine* command_line) {
 }
 
 void FeatureInfo::Initialize(ContextType context_type,
+                             bool is_passthrough_cmd_decoder,
                              const DisallowedFeatures& disallowed_features) {
   disallowed_features_ = disallowed_features;
   context_type_ = context_type;
+  is_passthrough_cmd_decoder_ = is_passthrough_cmd_decoder;
   InitializeFeatures();
 }
 
 void FeatureInfo::InitializeForTesting(
     const DisallowedFeatures& disallowed_features) {
-  Initialize(CONTEXT_TYPE_OPENGLES2, disallowed_features);
+  Initialize(CONTEXT_TYPE_OPENGLES2, false /* is_passthrough_cmd_decoder */,
+             disallowed_features);
 }
 
 void FeatureInfo::InitializeForTesting() {
-  Initialize(CONTEXT_TYPE_OPENGLES2, DisallowedFeatures());
+  Initialize(CONTEXT_TYPE_OPENGLES2, false /* is_passthrough_cmd_decoder */,
+             DisallowedFeatures());
 }
 
 void FeatureInfo::InitializeForTesting(ContextType context_type) {
-  Initialize(context_type, DisallowedFeatures());
+  Initialize(context_type, false /* is_passthrough_cmd_decoder */,
+             DisallowedFeatures());
 }
 
 bool IsGL_REDSupportedOnFBOs() {
@@ -1072,6 +1079,26 @@ void FeatureInfo::InitializeFeatures() {
     feature_flags_.chromium_image_ycbcr_422 = true;
   }
 
+#if defined(OS_MACOSX)
+  // Mac can create GLImages out of XR30 IOSurfaces only after High Sierra.
+  feature_flags_.chromium_image_xr30 = base::mac::IsAtLeastOS10_13();
+#elif !defined(OS_WIN)
+  // TODO(mcasas): connect in Windows, https://crbug.com/803451
+  // XB30 support was introduced in GLES 3.0/ OpenGL 3.3, before that it was
+  // signalled via a specific extension.
+  feature_flags_.chromium_image_xb30 =
+      gl_version_info_->IsAtLeastGL(3, 3) ||
+      gl_version_info_->IsAtLeastGLES(3, 0) ||
+      gl::HasExtension(extensions, "GL_EXT_texture_type_2_10_10_10_REV");
+#endif
+  if (feature_flags_.chromium_image_xr30 ||
+      feature_flags_.chromium_image_xb30) {
+    validators_.texture_internal_format.AddValue(GL_RGB10_A2_EXT);
+    validators_.render_buffer_format.AddValue(GL_RGB10_A2_EXT);
+    validators_.texture_internal_format_storage.AddValue(GL_RGB10_A2_EXT);
+    validators_.pixel_type.AddValue(GL_UNSIGNED_INT_2_10_10_10_REV);
+  }
+
   // TODO(gman): Add support for these extensions.
   //     GL_OES_depth32
 
@@ -1108,11 +1135,10 @@ void FeatureInfo::InitializeFeatures() {
         !have_arb_occlusion_query2;
   }
 
-  if (!workarounds_.disable_angle_instanced_arrays &&
-      (gl::HasExtension(extensions, "GL_ANGLE_instanced_arrays") ||
-       (gl::HasExtension(extensions, "GL_ARB_instanced_arrays") &&
-        gl::HasExtension(extensions, "GL_ARB_draw_instanced")) ||
-       gl_version_info_->is_es3 || gl_version_info_->is_desktop_core_profile)) {
+  if (gl::HasExtension(extensions, "GL_ANGLE_instanced_arrays") ||
+      (gl::HasExtension(extensions, "GL_ARB_instanced_arrays") &&
+       gl::HasExtension(extensions, "GL_ARB_draw_instanced")) ||
+      gl_version_info_->is_es3 || gl_version_info_->is_desktop_core_profile) {
     AddExtensionString("GL_ANGLE_instanced_arrays");
     feature_flags_.angle_instanced_arrays = true;
     validators_.vertex_attribute.AddValue(GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE);
@@ -1438,6 +1464,11 @@ void FeatureInfo::InitializeFeatures() {
   feature_flags_.angle_robust_resource_initialization =
       gl::HasExtension(extensions, "GL_ANGLE_robust_resource_initialization");
   feature_flags_.nv_fence = gl::HasExtension(extensions, "GL_NV_fence");
+
+  // UnpremultiplyAndDitherCopyCHROMIUM is only implemented on the full decoder.
+  feature_flags_.unpremultiply_and_dither_copy = !is_passthrough_cmd_decoder_;
+  if (feature_flags_.unpremultiply_and_dither_copy)
+    AddExtensionString("GL_CHROMIUM_unpremultiply_and_dither_copy");
 }
 
 void FeatureInfo::InitializeFloatAndHalfFloatFeatures(

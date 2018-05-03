@@ -58,11 +58,14 @@ RtpVideoCodecTypes ConvertToRtpVideoCodecType(VideoCodecType type) {
     case kVideoCodecRED:
     case kVideoCodecULPFEC:
       return kRtpVideoNone;
-    case kVideoCodecStereo:
-      return kRtpVideoStereo;
-    default:
+    case kVideoCodecI420:
+    case kVideoCodecFlexfec:
+    case kVideoCodecGeneric:
+    case kVideoCodecMultiplex:
+    case kVideoCodecUnknown:
       return kRtpVideoGeneric;
   }
+  return kRtpVideoGeneric;
 }
 
 RtpUtility::Payload CreatePayloadType(const VideoCodec& video_codec) {

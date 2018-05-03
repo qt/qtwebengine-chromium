@@ -7,8 +7,8 @@
 
 #include <memory>
 #include "base/macros.h"
+#include "base/unguessable_token.h"
 #include "bindings/core/v8/V8CacheOptions.h"
-#include "common/net/ip_address_space.mojom-blink.h"
 #include "core/CoreExport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerClients.h"
@@ -20,7 +20,8 @@
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Optional.h"
 #include "platform/wtf/PtrUtil.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom-blink.h"
+#include "public/mojom/net/ip_address_space.mojom-blink.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
 
 namespace blink {
 
@@ -38,9 +39,11 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
       const Vector<CSPHeaderAndType>* content_security_policy_parsed_headers,
       ReferrerPolicy referrer_policy,
       const SecurityOrigin*,
+      bool starter_secure_context,
       WorkerClients*,
       mojom::IPAddressSpace,
       const Vector<String>* origin_trial_tokens,
+      const base::UnguessableToken& parent_devtools_token,
       std::unique_ptr<WorkerSettings>,
       V8CacheOptions,
       service_manager::mojom::blink::InterfaceProviderPtrInfo = {});
@@ -76,6 +79,15 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   // script loader uses Document's SecurityOrigin for security checks.
   scoped_refptr<const SecurityOrigin> starter_origin;
 
+  // Indicates if the Document creating a Worker/Worklet is a secure context.
+  //
+  // Worklets are defined to have a unique, opaque origin, so are not secure:
+  // https://drafts.css-houdini.org/worklets/#script-settings-for-worklets
+  // Origin trials are only enabled in secure contexts, and the trial tokens are
+  // inherited from the document, so also consider the context of the document.
+  // The value should be supplied as the result of Document.IsSecureContext().
+  bool starter_secure_context;
+
   // This object is created and initialized on the thread creating
   // a new worker context, but ownership of it and this
   // GlobalScopeCreationParams structure is passed along to the new worker
@@ -88,6 +100,8 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   CrossThreadPersistent<WorkerClients> worker_clients;
 
   mojom::IPAddressSpace address_space;
+
+  base::UnguessableToken parent_devtools_token;
 
   std::unique_ptr<WorkerSettings> worker_settings;
 

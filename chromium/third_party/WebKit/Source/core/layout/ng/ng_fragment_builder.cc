@@ -21,6 +21,24 @@
 
 namespace blink {
 
+namespace {
+
+NGPhysicalFragment::NGBoxType BoxTypeFromLayoutObject(
+    const LayoutObject* layout_object) {
+  DCHECK(layout_object);
+  if (layout_object->IsFloating())
+    return NGPhysicalFragment::NGBoxType::kFloating;
+  if (layout_object->IsOutOfFlowPositioned())
+    return NGPhysicalFragment::NGBoxType::kOutOfFlowPositioned;
+  if (layout_object->IsAtomicInlineLevel())
+    return NGPhysicalFragment::NGBoxType::kAtomicInline;
+  if (layout_object->IsInline())
+    return NGPhysicalFragment::NGBoxType::kInlineBox;
+  return NGPhysicalFragment::NGBoxType::kNormalBox;
+}
+
+}  // namespace
+
 NGFragmentBuilder::NGFragmentBuilder(NGLayoutInputNode node,
                                      scoped_refptr<const ComputedStyle> style,
                                      WritingMode writing_mode,
@@ -48,6 +66,11 @@ NGFragmentBuilder::~NGFragmentBuilder() = default;
 NGFragmentBuilder& NGFragmentBuilder::SetIntrinsicBlockSize(
     LayoutUnit intrinsic_block_size) {
   intrinsic_block_size_ = intrinsic_block_size;
+  return *this;
+}
+
+NGFragmentBuilder& NGFragmentBuilder::SetPadding(const NGBoxStrut& padding) {
+  padding_ = padding;
   return *this;
 }
 
@@ -196,18 +219,13 @@ void NGFragmentBuilder::AddOutOfFlowLegacyCandidate(
 }
 
 NGPhysicalFragment::NGBoxType NGFragmentBuilder::BoxType() const {
-  if (box_type_ != NGPhysicalFragment::NGBoxType::kNormalBox)
+  if (box_type_ != NGPhysicalFragment::NGBoxType::kNormalBox) {
+    DCHECK_EQ(box_type_, BoxTypeFromLayoutObject(layout_object_));
     return box_type_;
+  }
+
   // When implicit, compute from LayoutObject.
-  if (!layout_object_ || layout_object_->Style() != &Style())
-    return NGPhysicalFragment::NGBoxType::kAnonymousBox;
-  if (layout_object_->IsFloating())
-    return NGPhysicalFragment::NGBoxType::kFloating;
-  if (layout_object_->IsOutOfFlowPositioned())
-    return NGPhysicalFragment::NGBoxType::kOutOfFlowPositioned;
-  if (layout_object_->IsAtomicInlineLevel())
-    return NGPhysicalFragment::NGBoxType::kInlineBlock;
-  return NGPhysicalFragment::NGBoxType::kNormalBox;
+  return BoxTypeFromLayoutObject(layout_object_);
 }
 
 NGFragmentBuilder& NGFragmentBuilder::SetBoxType(
@@ -268,6 +286,8 @@ scoped_refptr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment() {
   scoped_refptr<NGPhysicalBoxFragment> fragment =
       base::AdoptRef(new NGPhysicalBoxFragment(
           layout_object_, Style(), physical_size, children_,
+          padding_.ConvertToPhysical(GetWritingMode(), Direction())
+              .SnapToDevicePixels(),
           contents_visual_rect, baselines_, BoxType(), is_old_layout_root_,
           border_edges_.ToPhysical(GetWritingMode()), std::move(break_token)));
 
@@ -275,10 +295,11 @@ scoped_refptr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment() {
 
   return base::AdoptRef(new NGLayoutResult(
       std::move(fragment), oof_positioned_descendants_, positioned_floats,
-      unpositioned_floats_, std::move(exclusion_space_), bfc_offset_,
-      end_margin_strut_, intrinsic_block_size_, minimal_space_shortage_,
-      initial_break_before_, previous_break_after_, has_forced_break_,
-      is_pushed_by_floats_, NGLayoutResult::kSuccess));
+      unpositioned_floats_, unpositioned_list_marker_,
+      std::move(exclusion_space_), bfc_offset_, end_margin_strut_,
+      intrinsic_block_size_, minimal_space_shortage_, initial_break_before_,
+      previous_break_after_, has_forced_break_, is_pushed_by_floats_,
+      NGLayoutResult::kSuccess));
 }
 
 scoped_refptr<NGLayoutResult> NGFragmentBuilder::Abort(
@@ -287,9 +308,9 @@ scoped_refptr<NGLayoutResult> NGFragmentBuilder::Abort(
   Vector<NGPositionedFloat> positioned_floats;
   return base::AdoptRef(new NGLayoutResult(
       nullptr, oof_positioned_descendants, positioned_floats,
-      unpositioned_floats_, nullptr, bfc_offset_, end_margin_strut_,
-      LayoutUnit(), LayoutUnit(), EBreakBetween::kAuto, EBreakBetween::kAuto,
-      false, false, status));
+      unpositioned_floats_, NGBlockNode(nullptr), nullptr, bfc_offset_,
+      end_margin_strut_, LayoutUnit(), LayoutUnit(), EBreakBetween::kAuto,
+      EBreakBetween::kAuto, false, false, status));
 }
 
 // Finds FragmentPairs that define inline containing blocks.
@@ -354,7 +375,7 @@ void NGFragmentBuilder::ComputeInlineContainerFragments(
                 std::max(descendant.offset_to_container_box.top +
                              descendant.fragment->Size().height -
                              value.start_fragment_union_rect.offset.top,
-                         value.start_fragment_union_rect.size.width);
+                         value.start_fragment_union_rect.size.height);
           }
           if (value.end_linebox_fragment == linebox) {
             value.end_fragment_union_rect.size.width =

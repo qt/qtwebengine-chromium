@@ -38,7 +38,7 @@
 
 namespace blink {
 
-class CSSParserToken;
+class CSSParserTokenRange;
 
 struct MediaQueryExpValue {
   DISALLOW_NEW();
@@ -82,7 +82,7 @@ class CORE_EXPORT MediaQueryExp {
  public:
   // Returns an invalid MediaQueryExp if the arguments are invalid.
   static MediaQueryExp Create(const String& media_feature,
-                              const Vector<CSSParserToken, 4>&);
+                              CSSParserTokenRange&);
   static MediaQueryExp Invalid() {
     return MediaQueryExp(String(), MediaQueryExpValue());
   }

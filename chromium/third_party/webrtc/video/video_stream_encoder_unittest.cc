@@ -67,10 +67,8 @@ class TestBuffer : public webrtc::I420Buffer {
 class CpuOveruseDetectorProxy : public OveruseFrameDetector {
  public:
   CpuOveruseDetectorProxy(const CpuOveruseOptions& options,
-                          AdaptationObserverInterface* overuse_observer,
                           CpuOveruseMetricsObserver* metrics_observer)
       : OveruseFrameDetector(options,
-                             overuse_observer,
                              metrics_observer),
         last_target_framerate_fps_(-1) {}
   virtual ~CpuOveruseDetectorProxy() {}
@@ -102,8 +100,7 @@ class VideoStreamEncoderUnderTest : public VideoStreamEncoder {
             nullptr /* pre_encode_callback */,
             std::unique_ptr<OveruseFrameDetector>(
                 overuse_detector_proxy_ = new CpuOveruseDetectorProxy(
-                    GetCpuOveruseOptions(settings.full_overuse_time),
-                    this,
+                    CpuOveruseOptions(),
                     stats_proxy))) {}
 
   void PostTaskAndWait(bool down, AdaptReason reason) {
@@ -505,8 +502,8 @@ class VideoStreamEncoderTest : public ::testing::Test {
     VideoEncoder::ScalingSettings GetScalingSettings() const override {
       rtc::CritScope lock(&local_crit_sect_);
       if (quality_scaling_)
-        return VideoEncoder::ScalingSettings(true, 1, 2, kMinPixelsPerFrame);
-      return VideoEncoder::ScalingSettings(false);
+        return VideoEncoder::ScalingSettings(1, 2, kMinPixelsPerFrame);
+      return VideoEncoder::ScalingSettings::kOff;
     }
 
     void ContinueEncode() { continue_encode_event_.Set(); }

@@ -9,10 +9,12 @@
 #include <string>
 #include <vector>
 
+#include "base/component_export.h"
 #include "base/macros.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
+#include "net/cookies/cookie_change_dispatcher.h"
 #include "net/cookies/cookie_store.h"
-#include "services/network/public/interfaces/cookie_manager.mojom.h"
+#include "services/network/public/mojom/cookie_manager.mojom.h"
 
 class GURL;
 
@@ -23,7 +25,8 @@ namespace network {
 // This is an IO thread object; all methods on this object must be called on
 // the IO thread.  Note that this does not restrict the locations from which
 // mojo messages may be sent to the object.
-class CookieManager : public network::mojom::CookieManager {
+class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
+    : public network::mojom::CookieManager {
  public:
   // Construct a CookieService that can serve mojo requests for the underlying
   // cookie store.  |*cookie_store| must outlive this object.
@@ -49,46 +52,47 @@ class CookieManager : public network::mojom::CookieManager {
                           SetCanonicalCookieCallback callback) override;
   void DeleteCookies(network::mojom::CookieDeletionFilterPtr filter,
                      DeleteCookiesCallback callback) override;
-  void RequestNotification(const GURL& url,
-                           const std::string& name,
-                           network::mojom::CookieChangeNotificationPtr
-                               notification_pointer) override;
-  void RequestGlobalNotifications(network::mojom::CookieChangeNotificationPtr
-                                      notification_pointer) override;
+  void AddCookieChangeListener(
+      const GURL& url,
+      const std::string& name,
+      network::mojom::CookieChangeListenerPtr listener) override;
+  void AddGlobalChangeListener(
+      network::mojom::CookieChangeListenerPtr listener) override;
   void CloneInterface(
       network::mojom::CookieManagerRequest new_interface) override;
 
-  uint32_t GetClientsBoundForTesting() const { return bindings_.size(); }
-  uint32_t GetNotificationsBoundForTesting() const {
-    return notifications_registered_.size();
+  size_t GetClientsBoundForTesting() const { return bindings_.size(); }
+  size_t GetListenersRegisteredForTesting() const {
+    return listener_registrations_.size();
   }
 
+  void FlushCookieStore(FlushCookieStoreCallback callback) override;
+
  private:
-  struct NotificationRegistration {
-    NotificationRegistration();
-    ~NotificationRegistration();
+  // State associated with a CookieChangeListener.
+  struct ListenerRegistration {
+    ListenerRegistration();
+    ~ListenerRegistration();
+
+    // Translates a CookieStore change callback to a CookieChangeListener call.
+    void DispatchCookieStoreChange(const net::CanonicalCookie& cookie,
+                                   net::CookieChangeCause cause);
 
     // Owns the callback registration in the store.
-    std::unique_ptr<net::CookieStore::CookieChangedSubscription> subscription;
+    std::unique_ptr<net::CookieChangeSubscription> subscription;
 
-    // Pointer on which to send notifications.
-    network::mojom::CookieChangeNotificationPtr notification_pointer;
+    // The observer receiving change notifications.
+    network::mojom::CookieChangeListenerPtr listener;
 
-    DISALLOW_COPY_AND_ASSIGN(NotificationRegistration);
+    DISALLOW_COPY_AND_ASSIGN(ListenerRegistration);
   };
 
-  // Used to hook callbacks
-  void CookieChanged(NotificationRegistration* registration,
-                     const net::CanonicalCookie& cookie,
-                     net::CookieStore::ChangeCause cause);
-
-  // Handles connection errors on notification pipes.
-  void NotificationPipeBroken(NotificationRegistration* registration);
+  // Handles connection errors on change listener pipes.
+  void RemoveChangeListener(ListenerRegistration* registration);
 
   net::CookieStore* const cookie_store_;
   mojo::BindingSet<network::mojom::CookieManager> bindings_;
-  std::vector<std::unique_ptr<NotificationRegistration>>
-      notifications_registered_;
+  std::vector<std::unique_ptr<ListenerRegistration>> listener_registrations_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieManager);
 };

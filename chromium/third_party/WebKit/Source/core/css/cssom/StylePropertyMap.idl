@@ -4,14 +4,12 @@
 
 // https://drafts.css-houdini.org/css-typed-om/#the-stylepropertymap
 
-callback UpdateFunction = CSSStyleValue (CSSStyleValue oldValue);
-
 [
-    Exposed=(Window,PaintWorklet),
-    RuntimeEnabled=CSSTypedOM
+    RuntimeEnabled=CSSTypedOM,
+    Exposed=(Window)
 ] interface StylePropertyMap : StylePropertyMapReadOnly {
+    [RaisesException, CallWith=ExecutionContext] void set(DOMString property, (CSSStyleValue or DOMString)... values);
     [RaisesException, CallWith=ExecutionContext] void append(DOMString property, (CSSStyleValue or DOMString)... values);
     [RaisesException, ImplementedAs=remove] void delete(DOMString property);
-    [RaisesException, CallWith=ExecutionContext] void set(DOMString property, (CSSStyleValue or DOMString)... values);
-    [RaisesException] void update(DOMString property, UpdateFunction updateFunction);
+    void clear();
 };

@@ -49,7 +49,9 @@ BrowserDevToolsAgentHost::~BrowserDevToolsAgentHost() {
 }
 
 void BrowserDevToolsAgentHost::AttachSession(DevToolsSession* session) {
-  session->AddHandler(base::WrapUnique(new protocol::TargetHandler()));
+  session->SetBrowserOnly(true);
+  session->AddHandler(
+      base::WrapUnique(new protocol::TargetHandler(true /* browser_only */)));
   if (only_discovery_)
     return;
 
@@ -92,13 +94,10 @@ bool BrowserDevToolsAgentHost::Close() {
 void BrowserDevToolsAgentHost::Reload() {
 }
 
-bool BrowserDevToolsAgentHost::DispatchProtocolMessage(
+void BrowserDevToolsAgentHost::DispatchProtocolMessage(
     DevToolsSession* session,
     const std::string& message) {
-  int call_id;
-  std::string method;
-  session->Dispatch(message, &call_id, &method);
-  return true;
+  session->DispatchProtocolMessage(message);
 }
 
 }  // content

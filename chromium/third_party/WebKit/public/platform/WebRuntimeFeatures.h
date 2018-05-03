@@ -82,7 +82,6 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableDecodeToYUV(bool);
   BLINK_PLATFORM_EXPORT static void EnableExperimentalCanvasFeatures(bool);
   BLINK_PLATFORM_EXPORT static void EnableFastMobileScrolling(bool);
-  BLINK_PLATFORM_EXPORT static void EnableFeaturePolicy(bool);
   BLINK_PLATFORM_EXPORT static void EnableFileSystem(bool);
   BLINK_PLATFORM_EXPORT static void EnableForceTallerSelectPopup(bool);
   BLINK_PLATFORM_EXPORT static void EnableGamepadExtensions(bool);
@@ -131,7 +130,6 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableScrollAnchoring(bool);
   BLINK_PLATFORM_EXPORT static void EnableScrollAnchorSerialization(bool);
   BLINK_PLATFORM_EXPORT static void EnableServiceWorkerNavigationPreload(bool);
-  BLINK_PLATFORM_EXPORT static void EnableServiceWorkerScriptStreaming(bool);
   BLINK_PLATFORM_EXPORT static void EnableServiceWorkerScriptFullCodeCache(
       bool);
   BLINK_PLATFORM_EXPORT static void EnableSharedArrayBuffer(bool);
@@ -187,6 +185,9 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableStopNonTimersInBackground(bool);
   BLINK_PLATFORM_EXPORT static void EnablePWAFullCodeCache(bool);
   BLINK_PLATFORM_EXPORT static void EnableDoubleTapToJumpOnVideo(bool);
+  BLINK_PLATFORM_EXPORT static void EnableCodeCacheAfterExecute(bool);
+  BLINK_PLATFORM_EXPORT static void EnableUnifiedTouchAdjustment(bool);
+  BLINK_PLATFORM_EXPORT static void EnableMojoBlobURLs(bool);
 
  private:
   WebRuntimeFeatures();

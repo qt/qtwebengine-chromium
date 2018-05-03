@@ -33,16 +33,22 @@
 
 #include <memory>
 #include "base/gtest_prod_util.h"
+#include "base/thread_annotations.h"
 #include "platform/FileMetadata.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/ThreadSafeRefCounted.h"
 #include "platform/wtf/ThreadingPrimitives.h"
 #include "platform/wtf/text/WTFString.h"
-#include "third_party/WebKit/common/blob/blob.mojom-blink.h"
-#include "third_party/WebKit/common/blob/blob_registry.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/blob/blob.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/blob/data_element.mojom-blink.h"
 
 namespace blink {
+namespace mojom {
+namespace blink {
+class BlobRegistry;
+}
+}  // namespace mojom
 
 class BlobBytesProvider;
 class BlobDataHandle;
@@ -214,7 +220,7 @@ class PLATFORM_EXPORT BlobDataHandle
   // Blob interface from multiple threads store a InterfacePtrInfo combined with
   // a mutex, and make sure any access to the mojo interface is done protected
   // by the mutex.
-  mojom::blink::BlobPtrInfo blob_info_;
+  mojom::blink::BlobPtrInfo blob_info_ GUARDED_BY(blob_info_mutex_);
   Mutex blob_info_mutex_;
 };
 

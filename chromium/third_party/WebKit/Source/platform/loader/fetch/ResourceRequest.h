@@ -41,10 +41,10 @@
 #include "platform/wtf/RefCounted.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "services/network/public/interfaces/cors.mojom-blink.h"
-#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-shared.h"
-#include "third_party/WebKit/common/net/ip_address_space.mojom-blink.h"
+#include "services/network/public/mojom/cors.mojom-blink.h"
+#include "services/network/public/mojom/fetch_api.mojom-blink.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
+#include "third_party/WebKit/public/mojom/net/ip_address_space.mojom-blink.h"
 
 namespace blink {
 
@@ -83,11 +83,6 @@ class PLATFORM_EXPORT ResourceRequest final {
  public:
   enum class RedirectStatus : uint8_t { kFollowedRedirect, kNoRedirect };
 
-  class ExtraData : public RefCounted<ExtraData> {
-   public:
-    virtual ~ExtraData() = default;
-  };
-
   ResourceRequest();
   explicit ResourceRequest(const String& url_string);
   explicit ResourceRequest(const KURL&);
@@ -105,7 +100,7 @@ class PLATFORM_EXPORT ResourceRequest final {
       const KURL& new_site_for_cookies,
       const String& new_referrer,
       ReferrerPolicy new_referrer_policy,
-      WebURLRequest::ServiceWorkerMode new_sw_mode) const;
+      bool skip_service_worker) const;
 
   // Gets a copy of the data suitable for passing to another thread.
   std::unique_ptr<CrossThreadResourceRequestData> CopyData() const;
@@ -157,13 +152,10 @@ class PLATFORM_EXPORT ResourceRequest final {
   const AtomicString& HttpOrigin() const {
     return HttpHeaderField(HTTPNames::Origin);
   }
-  // Note that these will also set and clear, respectively, the
-  // Suborigin header, if appropriate.
   void SetHTTPOrigin(const SecurityOrigin*);
   void ClearHTTPOrigin();
-
-  void AddHTTPOriginIfNeeded(const SecurityOrigin*);
-  void AddHTTPOriginIfNeeded(const String&);
+  void SetHTTPOriginIfNeeded(const SecurityOrigin*);
+  void SetHTTPOriginToMatchReferrerIfNeeded();
 
   void SetHTTPUserAgent(const AtomicString& http_user_agent) {
     SetHTTPHeaderField(HTTPNames::User_Agent, http_user_agent);
@@ -239,14 +231,10 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool GetKeepalive() const { return keepalive_; }
   void SetKeepalive(bool keepalive) { keepalive_ = keepalive; }
 
-  // The service worker mode indicating which service workers should get events
-  // for this request.
-  WebURLRequest::ServiceWorkerMode GetServiceWorkerMode() const {
-    return service_worker_mode_;
-  }
-  void SetServiceWorkerMode(
-      WebURLRequest::ServiceWorkerMode service_worker_mode) {
-    service_worker_mode_ = service_worker_mode;
+  // True if service workers should not get events for the request.
+  bool GetSkipServiceWorker() const { return skip_service_worker_; }
+  void SetSkipServiceWorker(bool skip_service_worker) {
+    skip_service_worker_ = skip_service_worker;
   }
 
   // True if corresponding AppCache group should be resetted.
@@ -256,9 +244,16 @@ class PLATFORM_EXPORT ResourceRequest final {
   }
 
   // Extra data associated with this request.
-  ExtraData* GetExtraData() const { return extra_data_.get(); }
-  void SetExtraData(scoped_refptr<ExtraData> extra_data) {
-    extra_data_ = std::move(extra_data);
+  WebURLRequest::ExtraData* GetExtraData() const {
+    return sharable_extra_data_ ? sharable_extra_data_->data.get() : nullptr;
+  }
+  void SetExtraData(std::unique_ptr<WebURLRequest::ExtraData> extra_data) {
+    if (extra_data) {
+      sharable_extra_data_ =
+          base::MakeRefCounted<SharableExtraData>(std::move(extra_data));
+    } else {
+      sharable_extra_data_ = nullptr;
+    }
   }
 
   WebURLRequest::RequestContext GetRequestContext() const {
@@ -361,7 +356,13 @@ class PLATFORM_EXPORT ResourceRequest final {
   }
   bool IsSameDocumentNavigation() const { return is_same_document_navigation_; }
 
+  void SetIsAdResource() { is_ad_resource_ = true; };
+  bool IsAdResource() const { return is_ad_resource_; }
+
  private:
+  using SharableExtraData =
+      base::RefCountedData<std::unique_ptr<WebURLRequest::ExtraData>>;
+
   const CacheControlHeader& GetCacheControlHeader() const;
 
   bool NeedsHTTPOrigin() const;
@@ -370,7 +371,14 @@ class PLATFORM_EXPORT ResourceRequest final {
   double timeout_interval_;  // 0 is a magic value for platform default on
                              // platforms that have one.
   KURL site_for_cookies_;
+
+  // The SecurityOrigin specified by the ResourceLoaderOptions in case e.g.
+  // when the fetching was initiated in an isolated world. Set by
+  // ResourceFetcher but only when needed.
+  //
+  // TODO(crbug.com/811669): Merge with some of the other origin variables.
   scoped_refptr<const SecurityOrigin> requestor_origin_;
+
   AtomicString http_method_;
   HTTPHeaderMap http_header_fields_;
   scoped_refptr<EncodedFormData> http_body_;
@@ -383,14 +391,14 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool keepalive_ : 1;
   bool should_reset_app_cache_ : 1;
   mojom::FetchCacheMode cache_mode_;
-  WebURLRequest::ServiceWorkerMode service_worker_mode_;
+  bool skip_service_worker_ : 1;
   ResourceLoadPriority priority_;
   int intra_priority_value_;
   int requestor_id_;
   int plugin_child_id_;
   int app_cache_host_id_;
   WebURLRequest::PreviewsState previews_state_;
-  scoped_refptr<ExtraData> extra_data_;
+  scoped_refptr<SharableExtraData> sharable_extra_data_;
   WebURLRequest::RequestContext request_context_;
   network::mojom::RequestContextFrameType frame_type_;
   network::mojom::FetchRequestMode fetch_request_mode_;
@@ -413,6 +421,8 @@ class PLATFORM_EXPORT ResourceRequest final {
   static double default_timeout_interval_;
 
   double navigation_start_ = 0;
+
+  bool is_ad_resource_ = false;
 };
 
 // This class is needed to copy a ResourceRequest across threads, because it
@@ -443,7 +453,7 @@ struct CrossThreadResourceRequestData {
   bool report_upload_progress_;
   bool has_user_gesture_;
   bool download_to_file_;
-  WebURLRequest::ServiceWorkerMode service_worker_mode_;
+  bool skip_service_worker_;
   bool use_stream_on_response_;
   bool keepalive_;
   bool should_reset_app_cache_;
@@ -468,6 +478,7 @@ struct CrossThreadResourceRequestData {
   InputToLoadPerfMetricReportPolicy input_perf_metric_report_policy_;
   ResourceRequest::RedirectStatus redirect_status_;
   base::Optional<String> suggested_filename_;
+  bool is_ad_resource_;
 };
 
 }  // namespace blink

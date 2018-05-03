@@ -60,6 +60,7 @@
 #include "core/input/ContextMenuAllowedScope.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
+#include "core/loader/DocumentLoader.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
@@ -80,7 +81,7 @@
 #include "public/web/WebPlugin.h"
 #include "public/web/WebRange.h"
 #include "public/web/WebWidgetClient.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 
@@ -167,12 +168,17 @@ void WebFrameWidgetImpl::Close() {
 }
 
 WebSize WebFrameWidgetImpl::Size() {
-  return size_;
+  return size_ ? *size_ : WebSize();
 }
 
 void WebFrameWidgetImpl::Resize(const WebSize& new_size) {
-  if (size_ == new_size)
+  if (size_ && *size_ == new_size)
     return;
+
+  if (did_suspend_parsing_) {
+    did_suspend_parsing_ = false;
+    local_root_->GetFrame()->Loader().GetDocumentLoader()->ResumeParser();
+  }
 
   LocalFrameView* view = local_root_->GetFrameView();
   if (!view)
@@ -182,7 +188,7 @@ void WebFrameWidgetImpl::Resize(const WebSize& new_size) {
 
   UpdateMainFrameLayoutSize();
 
-  view->Resize(size_);
+  view->Resize(*size_);
 
   // FIXME: In WebViewImpl this layout was a precursor to setting the minimum
   // scale limit.  It is not clear if this is necessary for frame-level widget
@@ -209,7 +215,7 @@ void WebFrameWidgetImpl::SendResizeEventAndRepaint() {
   if (IsAcceleratedCompositingActive()) {
     UpdateLayerTreeViewport();
   } else {
-    WebRect damaged_rect(0, 0, size_.width, size_.height);
+    WebRect damaged_rect(0, 0, size_->width, size_->height);
     client_->DidInvalidateRect(damaged_rect);
   }
 }
@@ -239,7 +245,7 @@ void WebFrameWidgetImpl::UpdateMainFrameLayoutSize() {
   if (!view)
     return;
 
-  WebSize layout_size = size_;
+  WebSize layout_size = *size_;
 
   view->SetLayoutSize(layout_size);
 }
@@ -293,6 +299,11 @@ void WebFrameWidgetImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
   UpdateLayerTreeBackgroundColor();
 }
 
+void WebFrameWidgetImpl::UpdateAllLifecyclePhasesAndCompositeForTesting() {
+  if (layer_tree_view_)
+    layer_tree_view_->SynchronouslyCompositeNoRasterForTesting();
+}
+
 void WebFrameWidgetImpl::Paint(WebCanvas* canvas, const WebRect& rect) {
   // Out-of-process iframes require compositing.
   NOTREACHED();
@@ -314,14 +325,6 @@ void WebFrameWidgetImpl::UpdateLayerTreeBackgroundColor() {
 
   WebColor color = BackgroundColor();
   layer_tree_view_->SetBackgroundColor(color);
-}
-
-void WebFrameWidgetImpl::UpdateLayerTreeDeviceScaleFactor() {
-  DCHECK(GetPage());
-  DCHECK(layer_tree_view_);
-
-  float device_scale_factor = GetPage()->DeviceScaleFactorDeprecated();
-  layer_tree_view_->SetDeviceScaleFactor(device_scale_factor);
 }
 
 void WebFrameWidgetImpl::SetBackgroundColorOverride(WebColor color) {
@@ -373,7 +376,7 @@ void WebFrameWidgetImpl::CompositeAndReadbackAsync(
 void WebFrameWidgetImpl::ThemeChanged() {
   LocalFrameView* view = local_root_->GetFrameView();
 
-  WebRect damaged_rect(0, 0, size_.width, size_.height);
+  WebRect damaged_rect(0, 0, size_->width, size_->height);
   view->InvalidateRect(damaged_rect);
 }
 
@@ -401,11 +404,6 @@ WebInputEventResult WebFrameWidgetImpl::DispatchBufferedTouchEvents() {
 }
 
 WebInputEventResult WebFrameWidgetImpl::HandleInputEvent(
-    const WebCoalescedInputEvent& coalesced_event) {
-  return HandleInputEventIncludingTouch(coalesced_event);
-}
-
-WebInputEventResult WebFrameWidgetImpl::HandleInputEventInternal(
     const WebCoalescedInputEvent& coalesced_event) {
   const WebInputEvent& input_event = coalesced_event.Event();
   TRACE_EVENT1("input", "WebFrameWidgetImpl::handleInputEvent", "type",
@@ -533,6 +531,16 @@ void WebFrameWidgetImpl::ScheduleAnimation() {
   client_->ScheduleAnimation();
 }
 
+void WebFrameWidgetImpl::IntrinsicSizingInfoChanged(
+    const IntrinsicSizingInfo& sizing_info) {
+  WebIntrinsicSizingInfo web_sizing_info;
+  web_sizing_info.size = sizing_info.size;
+  web_sizing_info.aspect_ratio = sizing_info.aspect_ratio;
+  web_sizing_info.has_width = sizing_info.has_width;
+  web_sizing_info.has_height = sizing_info.has_height;
+  client_->IntrinsicSizingInfoChanged(web_sizing_info);
+}
+
 CompositorMutatorImpl& WebFrameWidgetImpl::Mutator() {
   return *CompositorMutator();
 }
@@ -563,9 +571,10 @@ void WebFrameWidgetImpl::MouseCaptureLost() {
 }
 
 void WebFrameWidgetImpl::SetFocus(bool enable) {
+  if (enable)
+    GetPage()->GetFocusController().SetActive(true);
   GetPage()->GetFocusController().SetFocused(enable);
   if (enable) {
-    GetPage()->GetFocusController().SetActive(true);
     LocalFrame* focused_frame = GetPage()->GetFocusController().FocusedFrame();
     if (focused_frame) {
       Element* element = focused_frame->GetDocument()->FocusedElement();
@@ -651,37 +660,6 @@ void WebFrameWidgetImpl::WillCloseLayerTreeView() {
   layer_tree_view_ = nullptr;
   animation_host_ = nullptr;
   layer_tree_view_closed_ = true;
-}
-
-// TODO(ekaramad):This method is almost duplicated in WebViewImpl as well. This
-// code needs to be refactored  (http://crbug.com/629721).
-bool WebFrameWidgetImpl::GetCompositionCharacterBounds(
-    WebVector<WebRect>& bounds) {
-  WebInputMethodController* controller = GetActiveWebInputMethodController();
-  if (!controller)
-    return false;
-
-  WebRange range = controller->CompositionRange();
-  if (range.IsEmpty())
-    return false;
-
-  LocalFrame* frame = FocusedLocalFrameInWidget();
-
-  WebLocalFrameImpl* web_local_frame = WebLocalFrameImpl::FromFrame(frame);
-  size_t character_count = range.length();
-  size_t offset = range.StartOffset();
-  WebVector<WebRect> result(character_count);
-  WebRect webrect;
-  for (size_t i = 0; i < character_count; ++i) {
-    if (!web_local_frame->FirstRectForCharacterRange(offset + i, 1, webrect)) {
-      DLOG(ERROR) << "Could not retrieve character rectangle at " << i;
-      return false;
-    }
-    result[i] = webrect;
-  }
-
-  bounds.Swap(result);
-  return true;
 }
 
 void WebFrameWidgetImpl::SetRemoteViewportIntersection(
@@ -854,8 +832,10 @@ WebInputEventResult WebFrameWidgetImpl::HandleGestureEvent(
       // same popup.
       view_impl->SetLastHiddenPagePopup(view_impl->GetPagePopup());
       View()->HidePopups();
+      FALLTHROUGH;
     case WebInputEvent::kGestureTapCancel:
       View()->SetLastHiddenPagePopup(nullptr);
+      break;
     case WebInputEvent::kGestureShowPress:
     case WebInputEvent::kGestureDoubleTap:
       break;
@@ -1057,7 +1037,6 @@ void WebFrameWidgetImpl::SetIsAcceleratedCompositingActive(bool active) {
     layer_tree_view_->SetRootLayer(*root_layer_);
 
     layer_tree_view_->SetVisible(GetPage()->IsPageVisible());
-    UpdateLayerTreeDeviceScaleFactor();
     UpdateLayerTreeBackgroundColor();
     UpdateLayerTreeViewport();
     is_accelerated_compositing_active_ = true;
@@ -1142,6 +1121,16 @@ LocalFrame* WebFrameWidgetImpl::FocusedLocalFrameAvailableForIme() const {
   if (!ime_accept_events_)
     return nullptr;
   return FocusedLocalFrameInWidget();
+}
+
+void WebFrameWidgetImpl::DidCreateLocalRootView() {
+  // If this WebWidget still hasn't received its size from the embedder, block
+  // the parser. This is necessary, because the parser can cause layout to
+  // happen, which needs to be done with the correct size.
+  if (!size_) {
+    did_suspend_parsing_ = true;
+    local_root_->GetFrame()->Loader().GetDocumentLoader()->BlockParser();
+  }
 }
 
 }  // namespace blink

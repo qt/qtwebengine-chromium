@@ -72,7 +72,6 @@ class ValidateLimitationsTraverser : public TLValueTrackingTraverser
   public:
     ValidateLimitationsTraverser(sh::GLenum shaderType,
                                  TSymbolTable *symbolTable,
-                                 int shaderVersion,
                                  TDiagnostics *diagnostics);
 
     void visitSymbol(TIntermSymbol *node) override;
@@ -81,6 +80,7 @@ class ValidateLimitationsTraverser : public TLValueTrackingTraverser
 
   private:
     void error(TSourceLoc loc, const char *reason, const char *token);
+    void error(TSourceLoc loc, const char *reason, const ImmutableString &token);
 
     bool isLoopIndex(TIntermSymbol *symbol);
     bool validateLoopType(TIntermLoop *node);
@@ -104,9 +104,8 @@ class ValidateLimitationsTraverser : public TLValueTrackingTraverser
 
 ValidateLimitationsTraverser::ValidateLimitationsTraverser(sh::GLenum shaderType,
                                                            TSymbolTable *symbolTable,
-                                                           int shaderVersion,
                                                            TDiagnostics *diagnostics)
-    : TLValueTrackingTraverser(true, false, false, symbolTable, shaderVersion),
+    : TLValueTrackingTraverser(true, false, false, symbolTable),
       mShaderType(shaderType),
       mDiagnostics(diagnostics)
 {
@@ -119,7 +118,7 @@ void ValidateLimitationsTraverser::visitSymbol(TIntermSymbol *node)
     {
         error(node->getLine(),
               "Loop index cannot be statically assigned to within the body of the loop",
-              node->getName().c_str());
+              node->getName());
     }
 }
 
@@ -161,6 +160,13 @@ bool ValidateLimitationsTraverser::visitLoop(Visit, TIntermLoop *node)
 void ValidateLimitationsTraverser::error(TSourceLoc loc, const char *reason, const char *token)
 {
     mDiagnostics->error(loc, reason, token);
+}
+
+void ValidateLimitationsTraverser::error(TSourceLoc loc,
+                                         const char *reason,
+                                         const ImmutableString &token)
+{
+    error(loc, reason, token.data());
 }
 
 bool ValidateLimitationsTraverser::isLoopIndex(TIntermSymbol *symbol)
@@ -248,7 +254,7 @@ int ValidateLimitationsTraverser::validateForLoopInit(TIntermLoop *node)
     if (!isConstExpr(declInit->getRight()))
     {
         error(declInit->getLine(), "Loop index cannot be initialized with non-constant expression",
-              symbol->getName().c_str());
+              symbol->getName());
         return -1;
     }
 
@@ -282,7 +288,7 @@ bool ValidateLimitationsTraverser::validateForLoopCond(TIntermLoop *node, int in
     }
     if (symbol->uniqueId().get() != indexSymbolId)
     {
-        error(symbol->getLine(), "Expected loop index", symbol->getName().c_str());
+        error(symbol->getLine(), "Expected loop index", symbol->getName());
         return false;
     }
     // Relational operator is one of: > >= < <= == or !=.
@@ -304,7 +310,7 @@ bool ValidateLimitationsTraverser::validateForLoopCond(TIntermLoop *node, int in
     if (!isConstExpr(binOp->getRight()))
     {
         error(binOp->getLine(), "Loop index cannot be compared with non-constant expression",
-              symbol->getName().c_str());
+              symbol->getName());
         return false;
     }
 
@@ -353,7 +359,7 @@ bool ValidateLimitationsTraverser::validateForLoopExpr(TIntermLoop *node, int in
     }
     if (symbol->uniqueId().get() != indexSymbolId)
     {
-        error(symbol->getLine(), "Expected loop index", symbol->getName().c_str());
+        error(symbol->getLine(), "Expected loop index", symbol->getName());
         return false;
     }
 
@@ -381,7 +387,7 @@ bool ValidateLimitationsTraverser::validateForLoopExpr(TIntermLoop *node, int in
         if (!isConstExpr(binOp->getRight()))
         {
             error(binOp->getLine(), "Loop index cannot be modified by non-constant expression",
-                  symbol->getName().c_str());
+                  symbol->getName());
             return false;
         }
     }
@@ -427,10 +433,9 @@ bool ValidateLimitationsTraverser::validateIndexing(TIntermBinary *node)
 bool ValidateLimitations(TIntermNode *root,
                          GLenum shaderType,
                          TSymbolTable *symbolTable,
-                         int shaderVersion,
                          TDiagnostics *diagnostics)
 {
-    ValidateLimitationsTraverser validate(shaderType, symbolTable, shaderVersion, diagnostics);
+    ValidateLimitationsTraverser validate(shaderType, symbolTable, diagnostics);
     root->traverse(&validate);
     return diagnostics->numErrors() == 0;
 }

@@ -181,7 +181,8 @@ void CPDF_TextPage::ParseTextPage() {
     int indexSize = pdfium::CollectionSize<int>(m_CharIndex);
     const PAGECHAR_INFO& charinfo = m_CharList[i];
     if (charinfo.m_Flag == FPDFTEXT_CHAR_GENERATED ||
-        (charinfo.m_Unicode != 0 && !IsControlChar(charinfo))) {
+        (charinfo.m_Unicode != 0 && !IsControlChar(charinfo)) ||
+        (charinfo.m_Unicode == 0 && charinfo.m_CharCode != 0)) {
       if (indexSize % 2) {
         m_CharIndex.push_back(1);
       } else {
@@ -595,18 +596,22 @@ void CPDF_TextPage::ProcessFormObject(CPDF_FormObject* pFormObj,
   }
 }
 
-int CPDF_TextPage::GetCharWidth(uint32_t charCode, CPDF_Font* pFont) const {
+uint32_t CPDF_TextPage::GetCharWidth(uint32_t charCode,
+                                     CPDF_Font* pFont) const {
   if (charCode == CPDF_Font::kInvalidCharCode)
     return 0;
 
-  if (int w = pFont->GetCharWidthF(charCode))
+  uint32_t w = pFont->GetCharWidthF(charCode);
+  if (w > 0)
     return w;
 
   ByteString str;
   pFont->AppendChar(&str, charCode);
-  if (int w = pFont->GetStringWidth(str.c_str(), 1))
+  w = pFont->GetStringWidth(str.c_str(), 1);
+  if (w > 0)
     return w;
 
+  ASSERT(pFont->GetCharBBox(charCode).Width() >= 0);
   return pFont->GetCharBBox(charCode).Width();
 }
 
@@ -1044,7 +1049,6 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
       spacing -= matrix.TransformDistance(fabs(charSpace));
     spacing -= baseSpace;
     if (spacing && i > 0) {
-      int last_width = 0;
       float fontsize_h = pTextObj->m_TextState.GetFontSizeH();
       uint32_t space_charcode = pFont->CharCodeFromUnicode(' ');
       float threshold = 0;
@@ -1055,10 +1059,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
       else
         threshold /= 2;
       if (threshold == 0) {
-        threshold = fontsize_h;
-        int this_width = abs(GetCharWidth(item.m_CharCode, pFont));
-        threshold =
-            this_width > last_width ? (float)this_width : (float)last_width;
+        threshold = static_cast<float>(GetCharWidth(item.m_CharCode, pFont));
         threshold = NormalizeThreshold(threshold);
         threshold = fontsize_h * threshold / 1000;
       }
@@ -1209,7 +1210,7 @@ bool CPDF_TextPage::IsHyphen(wchar_t curChar) const {
 
   if ((iter + 1) != curText.rend()) {
     iter++;
-    if (FXSYS_iswalpha(*iter) && FXSYS_iswalpha(*iter))
+    if (FXSYS_iswalpha(*iter) && FXSYS_iswalnum(curChar))
       return true;
   }
 
@@ -1275,10 +1276,11 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
   }
 
   float last_pos = PrevItem.m_Origin.x;
-  int nLastWidth = GetCharWidth(PrevItem.m_CharCode, m_pPreTextObj->GetFont());
+  uint32_t nLastWidth =
+      GetCharWidth(PrevItem.m_CharCode, m_pPreTextObj->GetFont());
   float last_width = nLastWidth * m_pPreTextObj->GetFontSize() / 1000;
   last_width = fabs(last_width);
-  int nThisWidth = GetCharWidth(item.m_CharCode, pObj->GetFont());
+  uint32_t nThisWidth = GetCharWidth(item.m_CharCode, pObj->GetFont());
   float this_width = nThisWidth * pObj->GetFontSize() / 1000;
   this_width = fabs(this_width);
   float threshold = last_width > this_width ? last_width / 4 : this_width / 4;

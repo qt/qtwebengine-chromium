@@ -4,6 +4,7 @@
 
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//pdf/features.gni")
 import("//testing/test.gni")
 import("//third_party/pdfium/pdfium.gni")
@@ -17,7 +18,7 @@ buildflag_header("features") {
 if (enable_pdf) {
   pdf_engine = 0  # 0 PDFium
 
-  static_library("pdf") {
+  jumbo_static_library("pdf") {
     deps = [
       "//base",
       "//gin",
@@ -26,6 +27,11 @@ if (enable_pdf) {
       "//ppapi/cpp/private:internal_module",
       "//ui/base",
       "//ui/gfx/range",
+    ]
+
+    public = [
+      "pdf.h",
+      "pdf_ppapi.h",
     ]
 
     sources = [
@@ -44,6 +50,8 @@ if (enable_pdf) {
       "pdf.h",
       "pdf_engine.cc",
       "pdf_engine.h",
+      "pdf_ppapi.cc",
+      "pdf_ppapi.h",
       "preview_mode_client.cc",
       "preview_mode_client.h",
       "range_set.cc",
@@ -54,6 +62,9 @@ if (enable_pdf) {
       "url_loader_wrapper_impl.cc",
       "url_loader_wrapper_impl.h",
     ]
+
+    include_dirs = []
+    defines = []
 
     if (pdf_engine == 0) {
       deps += [
@@ -77,11 +88,13 @@ if (enable_pdf) {
         "pdfium/pdfium_range.cc",
         "pdfium/pdfium_range.h",
       ]
-    }
 
-    defines = [ "PDFIUM_PRINT_TEXT_WITH_GDI" ]
-    if (pdf_enable_xfa) {
-      defines += [ "PDF_ENABLE_XFA" ]
+      include_dirs += [ "//third_party/pdfium" ]
+
+      defines += [ "PDFIUM_PRINT_TEXT_WITH_GDI" ]
+      if (pdf_enable_xfa) {
+        defines += [ "PDF_ENABLE_XFA" ]
+      }
     }
   }
 

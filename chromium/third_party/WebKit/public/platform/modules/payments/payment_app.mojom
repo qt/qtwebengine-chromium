@@ -8,7 +8,7 @@ import "components/payments/mojom/payment_request_data.mojom";
 import "mojo/common/time.mojom";
 import "third_party/WebKit/public/platform/modules/manifest/manifest.mojom";
 import "third_party/WebKit/public/platform/modules/payments/payment_request.mojom";
-import "url/mojo/url.mojom";
+import "url/mojom/url.mojom";
 
 enum PaymentHandlerStatus {
   SUCCESS,
@@ -38,7 +38,11 @@ struct PaymentInstrument {
 // and PaymentManager.idl in render side. This interface is implemented
 // by payment_manager.cc and runs in browser side.
 interface PaymentManager {
-  Init(string service_worker_script_url, string service_worker_scope);
+  // |context_url| is the url of the web page creating this interface.
+  // |service_worker_scope| is passed as string since it is from
+  // ServiceWorkerRegistration and the interface is used for
+  // ServiceWorkerRegistration.idl
+  Init(url.mojom.Url context_url, string service_worker_scope);
   DeletePaymentInstrument(string instrument_key)
       => (PaymentHandlerStatus status);
   GetPaymentInstrument(string instrument_key)

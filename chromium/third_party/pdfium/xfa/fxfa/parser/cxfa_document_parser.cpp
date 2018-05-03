@@ -15,6 +15,7 @@ CXFA_DocumentParser::CXFA_DocumentParser(CXFA_FFNotify* pNotify)
     : m_pNotify(pNotify) {}
 
 CXFA_DocumentParser::~CXFA_DocumentParser() {
+  m_pDocument->ReleaseXMLNodesIfNeeded();
 }
 
 int32_t CXFA_DocumentParser::StartParse(
@@ -25,7 +26,7 @@ int32_t CXFA_DocumentParser::StartParse(
 
   int32_t nRetStatus = m_nodeParser.StartParse(pStream, ePacketID);
   if (nRetStatus == XFA_PARSESTATUS_Ready) {
-    m_pDocument = pdfium::MakeUnique<CXFA_Document>(this);
+    m_pDocument = pdfium::MakeUnique<CXFA_Document>(GetNotify());
     m_nodeParser.SetFactory(m_pDocument.get());
   }
   return nRetStatus;
@@ -38,10 +39,6 @@ int32_t CXFA_DocumentParser::DoParse() {
     m_pDocument->SetRoot(m_nodeParser.GetRootNode());
   }
   return nRetStatus;
-}
-
-CFX_XMLDoc* CXFA_DocumentParser::GetXMLDoc() const {
-  return m_nodeParser.GetXMLDoc();
 }
 
 CXFA_FFNotify* CXFA_DocumentParser::GetNotify() const {

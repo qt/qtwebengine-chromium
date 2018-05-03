@@ -14,28 +14,9 @@
 #pragma warning(disable : 4302 4311)
 #endif
 
-#if defined(__clang__)
-#pragma clang diagnostic push
-// TODO(thakis): Remove once we use a gperf that no longer produces "register".
-#pragma clang diagnostic ignored "-Wdeprecated-register"
-#endif
-
 namespace blink {
 
 namespace {
-
-static const char descriptorNamesStringPool[]  = {
-{% for descriptor in descriptors %}
-  "{{descriptor.name}}\0"
-{% endfor %}
-};
-
-static const unsigned short descriptorStringOffsets[] = {
-  0, // Invalid. Should not be reached.
-{% for offset in descriptor_offsets %}
-  {{offset}},
-{% endfor %}
-};
 
 %}
 
@@ -60,10 +41,6 @@ struct Property;
 {% endif %}
 {% endfor %}
 %%
-
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
 
 const Property* FindDescriptor(const char* str, unsigned int len) {
   return AtRuleDescriptorHash::findDescriptorImpl(str, len);
@@ -97,15 +74,6 @@ static AtRuleDescriptorID AsAtRuleDescriptorID(
 
 }  // namespace
 
-const char* GetDescriptorName(AtRuleDescriptorID descriptor_id) {
-  DCHECK_NE(AtRuleDescriptorID::Invalid, descriptor_id);
-  DCHECK_LT(static_cast<unsigned short>(descriptor_id), numAtRuleDescriptors);
-  unsigned short id = static_cast<unsigned short>(descriptor_id);
-  unsigned short offset = descriptorStringOffsets[id];
-  return &descriptorNamesStringPool[offset];
-}
-
-
 AtRuleDescriptorID AsAtRuleDescriptorID(StringView string) {
   unsigned length = string.length();
   return string.Is8Bit()
@@ -132,6 +100,7 @@ AtRuleDescriptorID CSSPropertyIDAsAtRuleDescriptor(CSSPropertyID id) {
     return AtRuleDescriptorID::{{descriptor.upper_camel_name}};
 {% endfor %}
   default:
+    NOTREACHED();
     return AtRuleDescriptorID::Invalid;
   }
 }

@@ -44,10 +44,7 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/RemoteFrame.h"
 #include "core/frame/Settings.h"
-#include "core/html/HTMLAreaElement.h"
-#include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLPlugInElement.h"
-#include "core/html/HTMLShadowElement.h"
 #include "core/html/HTMLSlotElement.h"
 #include "core/html/forms/HTMLFormElement.h"
 #include "core/html/forms/TextControlElement.h"
@@ -69,11 +66,6 @@ namespace blink {
 using namespace HTMLNames;
 
 namespace {
-
-inline bool IsShadowInsertionPointFocusScopeOwner(Element& element) {
-  return IsActiveShadowInsertionPoint(element) &&
-         ToHTMLShadowElement(element).OlderShadowRoot();
-}
 
 // This class defines the navigation order.
 class FocusNavigation : public GarbageCollected<FocusNavigation> {
@@ -129,11 +121,8 @@ class FocusNavigation : public GarbageCollected<FocusNavigation> {
 
  private:
   Element* TreeOwner(ContainerNode* node) {
-    if (ShadowRoot* shadow_root = ToShadowRootOrNull(node)) {
-      return shadow_root->IsYoungest()
-                 ? &shadow_root->host()
-                 : shadow_root->ShadowInsertionPointOfYoungerShadowRoot();
-    }
+    if (ShadowRoot* shadow_root = ToShadowRootOrNull(node))
+      return &shadow_root->host();
     // FIXME: Figure out the right thing for OOPI here.
     if (Frame* frame = node->GetDocument().GetFrame())
       return frame->DeprecatedLocalOwner();
@@ -208,9 +197,6 @@ class ScopedFocusNavigation {
       FocusController::OwnerMap&);
   static ScopedFocusNavigation OwnedByShadowHost(const Element&,
                                                  FocusController::OwnerMap&);
-  static ScopedFocusNavigation OwnedByShadowInsertionPoint(
-      HTMLShadowElement&,
-      FocusController::OwnerMap&);
   static ScopedFocusNavigation OwnedByHTMLSlotElement(
       const HTMLSlotElement&,
       FocusController::OwnerMap&);
@@ -309,10 +295,6 @@ ScopedFocusNavigation ScopedFocusNavigation::OwnedByNonFocusableFocusScopeOwner(
     FocusController::OwnerMap& owner_map) {
   if (IsShadowHost(element))
     return ScopedFocusNavigation::OwnedByShadowHost(element, owner_map);
-  if (IsShadowInsertionPointFocusScopeOwner(element)) {
-    return ScopedFocusNavigation::OwnedByShadowInsertionPoint(
-        ToHTMLShadowElement(element), owner_map);
-  }
   return ScopedFocusNavigation::OwnedByHTMLSlotElement(
       ToHTMLSlotElement(element), owner_map);
 }
@@ -321,8 +303,7 @@ ScopedFocusNavigation ScopedFocusNavigation::OwnedByShadowHost(
     const Element& element,
     FocusController::OwnerMap& owner_map) {
   DCHECK(IsShadowHost(element));
-  return ScopedFocusNavigation(element.Shadow()->YoungestShadowRoot(), nullptr,
-                               owner_map);
+  return ScopedFocusNavigation(*element.GetShadowRoot(), nullptr, owner_map);
 }
 
 ScopedFocusNavigation ScopedFocusNavigation::OwnedByIFrame(
@@ -333,14 +314,6 @@ ScopedFocusNavigation ScopedFocusNavigation::OwnedByIFrame(
   ToLocalFrame(frame.ContentFrame())->GetDocument()->UpdateDistribution();
   return ScopedFocusNavigation(
       *ToLocalFrame(frame.ContentFrame())->GetDocument(), nullptr, owner_map);
-}
-
-ScopedFocusNavigation ScopedFocusNavigation::OwnedByShadowInsertionPoint(
-    HTMLShadowElement& shadow_insertion_point,
-    FocusController::OwnerMap& owner_map) {
-  DCHECK(IsShadowInsertionPointFocusScopeOwner(shadow_insertion_point));
-  return ScopedFocusNavigation(*shadow_insertion_point.OlderShadowRoot(),
-                               nullptr, owner_map);
 }
 
 ScopedFocusNavigation ScopedFocusNavigation::OwnedByHTMLSlotElement(
@@ -459,7 +432,6 @@ inline bool IsKeyboardFocusableShadowHost(const Element& element) {
 
 inline bool IsNonFocusableFocusScopeOwner(Element& element) {
   return IsNonKeyboardFocusableShadowHost(element) ||
-         IsShadowInsertionPointFocusScopeOwner(element) ||
          IsHTMLSlotElement(element);
 }
 
@@ -469,10 +441,7 @@ inline bool IsShadowHostDelegatesFocus(const Element& element) {
 }
 
 inline int AdjustedTabIndex(Element& element) {
-  return (IsNonKeyboardFocusableShadowHost(element) ||
-          IsShadowInsertionPointFocusScopeOwner(element))
-             ? 0
-             : element.tabIndex();
+  return IsNonKeyboardFocusableShadowHost(element) ? 0 : element.tabIndex();
 }
 
 inline bool ShouldVisit(Element& element) {
@@ -1289,7 +1258,7 @@ static void UpdateFocusCandidateIfNeeded(WebFocusType type,
   // Ignore iframes that don't have a src attribute
   if (FrameOwnerElement(candidate) &&
       (!FrameOwnerElement(candidate)->ContentFrame() ||
-       candidate.rect.IsEmpty()))
+       candidate.rect_in_root_frame.IsEmpty()))
     return;
 
   // Ignore off screen child nodes of containers that do not scroll
@@ -1309,10 +1278,11 @@ static void UpdateFocusCandidateIfNeeded(WebFocusType type,
     return;
   }
 
-  LayoutRect intersection_rect = Intersection(candidate.rect, closest.rect);
+  LayoutRect intersection_rect =
+      Intersection(candidate.rect_in_root_frame, closest.rect_in_root_frame);
   if (!intersection_rect.IsEmpty() &&
       !AreElementsOnSameLine(closest, candidate) &&
-      intersection_rect == candidate.rect) {
+      intersection_rect == candidate.rect_in_root_frame) {
     // If 2 nodes are intersecting, do hit test to find which node in on top.
     LayoutUnit x = intersection_rect.X() + intersection_rect.Width() / 2;
     LayoutUnit y = intersection_rect.Y() + intersection_rect.Height() / 2;
@@ -1346,7 +1316,11 @@ void FocusController::FindFocusCandidateInContainer(
     Node& container,
     const LayoutRect& starting_rect,
     WebFocusType type,
-    FocusCandidate& closest) {
+    FocusCandidate& closest,
+    const SkipList& already_checked) {
+  if (already_checked.Contains(&container))
+    return;
+
   Element* focused_element =
       (FocusedFrame() && FocusedFrame()->GetDocument())
           ? FocusedFrame()->GetDocument()->FocusedElement()
@@ -1354,7 +1328,7 @@ void FocusController::FindFocusCandidateInContainer(
 
   Element* element = ElementTraversal::FirstWithin(container);
   FocusCandidate current;
-  current.rect = starting_rect;
+  current.rect_in_root_frame = starting_rect;
   current.focusable_node = focused_element;
   current.visible_node = focused_element;
 
@@ -1369,6 +1343,9 @@ void FocusController::FindFocusCandidateInContainer(
     if (!element->IsKeyboardFocusable() && !IsNavigableContainer(element, type))
       continue;
 
+    if (already_checked.Contains(element))
+      continue;
+
     FocusCandidate candidate = FocusCandidate(element, type);
     if (candidate.IsNull())
       continue;
@@ -1379,130 +1356,103 @@ void FocusController::FindFocusCandidateInContainer(
 }
 
 bool FocusController::AdvanceFocusDirectionallyInContainer(
-    Node* container,
+    Node* start_container,
     const LayoutRect& starting_rect,
-    WebFocusType type) {
-  if (!container)
+    WebFocusType type,
+    Node* pruned_sub_tree_root) {
+  if (!start_container)
     return false;
 
-  LayoutRect new_starting_rect = starting_rect;
+  HeapVector<Member<Node>> stack;
+  stack.push_back(start_container);
 
-  if (starting_rect.IsEmpty())
-    new_starting_rect =
-        VirtualRectForDirection(type, NodeRectInAbsoluteCoordinates(container));
+  SkipList already_checked;
+  if (pruned_sub_tree_root)
+    already_checked.insert(pruned_sub_tree_root);
 
-  // Find the closest node within current container in the direction of the
-  // navigation.
-  FocusCandidate focus_candidate;
-  FindFocusCandidateInContainer(*container, new_starting_rect, type,
-                                focus_candidate);
+  while (!stack.IsEmpty()) {
+    Node* container = stack.back();
 
-  if (focus_candidate.IsNull()) {
-    // Nothing to focus, scroll if possible.
-    // NOTE: If no scrolling is performed (i.e. scrollInDirection returns
-    // false), the spatial navigation algorithm will skip this container.
-    return ScrollInDirection(container, type);
-  }
+    FocusCandidate candidate;
+    FindFocusCandidateInContainer(*container, starting_rect, type, candidate,
+                                  already_checked);
 
-  if (IsNavigableContainer(focus_candidate.visible_node, type)) {
-    HTMLFrameOwnerElement* frame_element = FrameOwnerElement(focus_candidate);
-    if (frame_element && frame_element->ContentFrame()->IsLocalFrame()) {
-      if (focus_candidate.is_offscreen_after_scrolling) {
-        ScrollInDirection(&focus_candidate.visible_node->GetDocument(), type);
+    if (candidate.IsNull()) {
+      // Nothing to focus in this container, scroll if possible.
+      // NOTE: If no scrolling is performed (i.e. ScrollInDirection returns
+      // false), the spatial navigation algorithm will skip this container.
+      if (ScrollInDirection(container, type))
         return true;
-      }
-      // Navigate into a new frame.
-      LayoutRect rect;
-      Element* focused_element =
-          ToLocalFrame(FocusedOrMainFrame())->GetDocument()->FocusedElement();
-      if (focused_element && !HasOffscreenRect(focused_element)) {
-        rect = NodeRectInAbsoluteCoordinates(focused_element,
-                                             true /* ignore border */);
-      }
+
+      stack.pop_back();
+      continue;
+    }
+
+    if (!IsNavigableContainer(candidate.visible_node, type)) {
+      // We found a new focus node, navigate to it.
+      Element* element = ToElement(candidate.focusable_node);
+      DCHECK(element);
+      element->focus(
+          FocusParams(SelectionBehaviorOnFocus::kReset, type, nullptr));
+      return true;
+    }
+
+    // We now dig into a navigable container.
+
+    HTMLFrameOwnerElement* frame_element = FrameOwnerElement(candidate);
+    if (frame_element && frame_element->ContentFrame()->IsLocalFrame()) {
+      // Navigate into a discovered frame.
       ToLocalFrame(frame_element->ContentFrame())
           ->GetDocument()
           ->UpdateStyleAndLayoutIgnorePendingStylesheets();
-      if (!AdvanceFocusDirectionallyInContainer(
-              ToLocalFrame(frame_element->ContentFrame())->GetDocument(), rect,
-              type)) {
-        // The new frame had nothing interesting, need to find another
-        // candidate.
-        return AdvanceFocusDirectionallyInContainer(
-            container,
-            NodeRectInAbsoluteCoordinates(focus_candidate.visible_node, true),
-            type);
-      }
-      return true;
+
+      // Mark this |already_checked| so we can skip this subtree in case
+      // FindFocusCandidateInContainer() returns it again.
+      already_checked.insert(candidate.visible_node);
+
+      stack.push_back(
+          ToLocalFrame(frame_element->ContentFrame())->GetDocument());
+      continue;
     }
 
-    if (focus_candidate.is_offscreen_after_scrolling) {
-      ScrollInDirection(focus_candidate.visible_node, type);
-      return true;
-    }
-    // Navigate into a new scrollable container.
-    LayoutRect starting_rect;
-    Element* focused_element =
-        ToLocalFrame(FocusedOrMainFrame())->GetDocument()->FocusedElement();
-    if (focused_element && !HasOffscreenRect(focused_element))
-      starting_rect = NodeRectInAbsoluteCoordinates(focused_element, true);
-    return AdvanceFocusDirectionallyInContainer(focus_candidate.visible_node,
-                                                starting_rect, type);
+    // Search sub-container.
+    stack.push_back(candidate.visible_node);
   }
 
-  if (focus_candidate.is_offscreen_after_scrolling) {
-    Node* container = focus_candidate.enclosing_scrollable_box;
-    ScrollInDirection(container, type);
-    return true;
-  }
-
-  // We found a new focus node, navigate to it.
-  Element* element = ToElement(focus_candidate.focusable_node);
-  DCHECK(element);
-  element->focus(FocusParams(SelectionBehaviorOnFocus::kReset, type, nullptr));
-  return true;
+  return ScrollInDirection(start_container, type);
 }
 
 bool FocusController::AdvanceFocusDirectionally(WebFocusType type) {
   // FIXME: Directional focus changes don't yet work with RemoteFrames.
   if (!FocusedOrMainFrame()->IsLocalFrame())
     return false;
-  LocalFrame* cur_frame = ToLocalFrame(FocusedOrMainFrame());
-  DCHECK(cur_frame);
+  const LocalFrame* current_frame = ToLocalFrame(FocusedOrMainFrame());
+  DCHECK(current_frame);
 
-  Document* focused_document = cur_frame->GetDocument();
+  Document* focused_document = current_frame->GetDocument();
   if (!focused_document)
     return false;
 
   Element* focused_element = focused_document->FocusedElement();
   Node* container = focused_document;
-
   if (container->IsDocumentNode())
     ToDocument(container)->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  // Figure out the starting rect.
-  LayoutRect starting_rect;
-  if (focused_element) {
-    if (!HasOffscreenRect(focused_element)) {
-      starting_rect = NodeRectInAbsoluteCoordinates(focused_element,
-                                                    true /* ignore border */);
-    } else if (auto* area = ToHTMLAreaElementOrNull(*focused_element)) {
-      if (area->ImageElement()) {
-        focused_element = area->ImageElement();
-        starting_rect = VirtualRectForAreaElementAndDirection(*area, type);
-      }
-    }
+  if (focused_element)
     container = ScrollableAreaOrDocumentOf(focused_element);
-  }
 
+  const LayoutRect starting_rect = FindSearchStartPoint(current_frame, type);
+  Node* pruned_sub_tree_root = nullptr;
   bool consumed = false;
+
   while (!consumed && container) {
-    consumed =
-        AdvanceFocusDirectionallyInContainer(container, starting_rect, type);
+    consumed = AdvanceFocusDirectionallyInContainer(container, starting_rect,
+                                                    type, pruned_sub_tree_root);
     if (consumed)
       break;
 
+    // Nothing found in |container| so search the parent container.
+    pruned_sub_tree_root = container;
     container = ScrollableAreaOrDocumentOf(container);
-
     if (container && container->IsDocumentNode())
       ToDocument(container)->UpdateStyleAndLayoutIgnorePendingStylesheets();
   }

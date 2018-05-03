@@ -10,7 +10,7 @@
 #include "public/platform/WebCallbacks.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerError.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom-shared.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom-shared.h"
 
 namespace blink {
 
@@ -52,11 +52,7 @@ class WebServiceWorkerRegistration {
   virtual void ProxyStopped() {}
 
   virtual WebURL Scope() const { return WebURL(); }
-  // TODO(crbug.com/675540): Make this pure virtual once
-  // implemented in derived classes.
-  virtual mojom::ServiceWorkerUpdateViaCache UpdateViaCache() const {
-    return mojom::ServiceWorkerUpdateViaCache::kImports;
-  }
+  virtual mojom::ServiceWorkerUpdateViaCache UpdateViaCache() const = 0;
   virtual int64_t RegistrationId() const = 0;
   virtual void Update(std::unique_ptr<WebServiceWorkerUpdateCallbacks>) {}
   virtual void Unregister(

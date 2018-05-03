@@ -36,6 +36,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/scoped_overscroll_mode.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -200,7 +201,8 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
     screenshot_manager_ = new ScreenshotTracker(controller);
     controller->SetScreenshotManager(base::WrapUnique(screenshot_manager_));
 
-    frame_watcher_.Observe(shell()->web_contents());
+    frame_observer_ = std::make_unique<RenderFrameSubmissionObserver>(
+        shell()->web_contents());
   }
 
   void SetUpCommandLine(base::CommandLine* cmd) override {
@@ -342,8 +344,10 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
   void WaitAFrame() {
     while (!GetRenderWidgetHost()->ScheduleComposite())
       GiveItSomeTime();
-    frame_watcher_.WaitFrames(1);
+    frame_observer_->WaitForAnyFrameSubmission();
   }
+
+  void StopObserveringFrames() { frame_observer_.reset(); }
 
  protected:
   ScreenshotTracker* screenshot_manager() { return screenshot_manager_; }
@@ -356,10 +360,17 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
     GetRenderWidgetHost()->GetProcess()->AddFilter(filter_.get());
   }
 
+  // ContentBrowserTest:
+  void PostRunTestOnMainThread() override {
+    // Delete this before the WebContents is destroyed.
+    StopObserveringFrames();
+    ContentBrowserTest::PostRunTestOnMainThread();
+  }
+
  private:
   ScreenshotTracker* screenshot_manager_;
   scoped_refptr<InputEventMessageFilterWaitsForAcks> filter_;
-  FrameWatcher frame_watcher_;
+  std::unique_ptr<RenderFrameSubmissionObserver> frame_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewAuraTest);
 };
@@ -422,8 +433,9 @@ class SpuriousMouseMoveEventObserver
 // these should all be marked as synthesized and get dropped while the
 // overscroll gesture is in progress.
 // See crbug.com/731914
+// Disabled due to flakiness: https://crbug.com/807107.
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
-                       OverscrollNotInterruptedBySpuriousMouseEvents) {
+                       DISABLED_OverscrollNotInterruptedBySpuriousMouseEvents) {
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
@@ -454,7 +466,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   blink::WebGestureEvent gesture_scroll_begin(
       blink::WebGestureEvent::kGestureScrollBegin,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::kTimeStampForTesting);
+      blink::WebInputEvent::GetStaticTimeStampForTests());
   gesture_scroll_begin.source_device = blink::kWebGestureDeviceTouchscreen;
   gesture_scroll_begin.data.scroll_begin.delta_hint_units =
       blink::WebGestureEvent::ScrollUnits::kPrecisePixels;
@@ -465,13 +477,13 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   blink::WebGestureEvent gesture_scroll_update(
       blink::WebGestureEvent::kGestureScrollUpdate,
       blink::WebInputEvent::kNoModifiers,
-      blink::WebInputEvent::kTimeStampForTesting);
+      blink::WebInputEvent::GetStaticTimeStampForTests());
   gesture_scroll_update.source_device = blink::kWebGestureDeviceTouchscreen;
   gesture_scroll_update.data.scroll_update.delta_units =
       blink::WebGestureEvent::ScrollUnits::kPrecisePixels;
   gesture_scroll_update.data.scroll_update.delta_y = 0.f;
-  float start_threshold =
-      GetOverscrollConfig(OverscrollConfig::THRESHOLD_START_TOUCHSCREEN);
+  float start_threshold = OverscrollConfig::GetThreshold(
+      OverscrollConfig::Threshold::kStartTouchscreen);
   gesture_scroll_update.data.scroll_update.delta_x = start_threshold + 1;
   GetRenderWidgetHost()->ForwardGestureEvent(gesture_scroll_update);
 
@@ -600,6 +612,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 #define MAYBE_OverscrollScreenshot OverscrollScreenshot
 #endif
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
+  ScopedOverscrollMode scoped_mode(OverscrollConfig::Mode::kParallaxUi);
+
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
@@ -689,6 +703,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
 // RenderViewHost to be swapped out.
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
                        MAYBE_ScreenshotForSwappedOutRenderViews) {
+  ScopedOverscrollMode scoped_mode(OverscrollConfig::Mode::kParallaxUi);
+
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
   // Create a new server with a different site.
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
@@ -712,6 +728,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
       {GURL(), 0}};
 
   screenshot_manager()->Reset();
+
+  // We are about to destroy the WebContents we are observing, so stop
+  // observation.
+  StopObserveringFrames();
+
   for (int i = 0; !navigations[i].url.is_empty(); ++i) {
     // Navigate via the user initiating a navigation from the UI.
     NavigationController::LoadURLParams params(navigations[i].url);
@@ -754,6 +775,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 // Tests that navigations resulting from reloads, history.replaceState,
 // and history.pushState do not capture screenshots.
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ReplaceStateReloadPushState) {
+  ScopedOverscrollMode scoped_mode(OverscrollConfig::Mode::kParallaxUi);
+
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
@@ -916,7 +939,9 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, HideContentOnParenHide) {
 
 // Ensure that SnapToPhysicalPixelBoundary() is called on WebContentsView parent
 // change. This is a regression test for http://crbug.com/388908.
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, WebContentsViewReparent) {
+// Disabled due to flakiness: https://crbug.com/807107.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
+                       DISABLED_WebContentsViewReparent) {
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("/overscroll_navigation.html"));
 
   std::unique_ptr<aura::Window> window(new aura::Window(nullptr));

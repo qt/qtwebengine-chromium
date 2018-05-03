@@ -21,7 +21,11 @@ class CORE_EXPORT LayoutWorkletGlobalScopeProxy
   USING_GARBAGE_COLLECTED_MIXIN(LayoutWorkletGlobalScopeProxy);
 
  public:
-  LayoutWorkletGlobalScopeProxy(LocalFrame*, size_t global_scope_number);
+  static LayoutWorkletGlobalScopeProxy* From(WorkletGlobalScopeProxy*);
+
+  LayoutWorkletGlobalScopeProxy(LocalFrame*,
+                                PendingLayoutRegistry*,
+                                size_t global_scope_number);
   ~LayoutWorkletGlobalScopeProxy() override = default;
 
   // Implements WorkletGlobalScopeProxy.
@@ -29,10 +33,14 @@ class CORE_EXPORT LayoutWorkletGlobalScopeProxy
       const KURL& module_url_record,
       WorkletModuleResponsesMap*,
       network::mojom::FetchCredentialsMode,
-      scoped_refptr<WebTaskRunner> outside_settings_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
       WorkletPendingTasks*) override;
   void WorkletObjectDestroyed() override;
   void TerminateWorkletGlobalScope() override;
+
+  CSSLayoutDefinition* FindDefinition(const AtomicString& name);
+
+  LayoutWorkletGlobalScope* global_scope() const { return global_scope_.Get(); }
 
   void Trace(blink::Visitor*) override;
 

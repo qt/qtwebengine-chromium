@@ -4,7 +4,6 @@
 
 #include "content/common/service_worker/service_worker_types.h"
 
-#include "content/public/common/service_worker_modes.h"
 #include "net/base/load_flags.h"
 #include "storage/common/blob_storage/blob_handle.h"
 
@@ -48,7 +47,6 @@ ServiceWorkerFetchRequest::~ServiceWorkerFetchRequest() {}
 size_t ServiceWorkerFetchRequest::EstimatedStructSize() {
   size_t size = sizeof(ServiceWorkerFetchRequest);
   size += url.spec().size();
-  size += blob_uuid.size();
   size += client_id.size();
 
   for (const auto& key_and_value : headers) {

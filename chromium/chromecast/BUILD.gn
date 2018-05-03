@@ -250,13 +250,12 @@ cast_test_group("cast_tests") {
     if (target_os == "linux" && !is_cast_desktop_build) {
       # DesktopCaptureDeviceTest.*: No capture device on Eureka
       # Disable PepperGamepadHostTest.WaitForReply (pepper not supported on Eureka)
-      # Disable GpuDataManagerImplPrivateTest.SetGLStrings and
-      # RenderWidgetHostTest.Background because we disable the blacklist to enable WebGL (b/16142554)
+      # Disable RenderWidgetHostTest.Background because we disable the
+      # blacklist to enable WebGL (b/16142554)
       gtest_excludes += [
         "DOMStorageDatabaseTest.TestCanOpenAndReadWebCoreDatabase",
         "DesktopCaptureDeviceTest.Capture",
         "GamepadProviderTest.PollingAccess",
-        "GpuDataManagerImplPrivateTest.SetGLStrings",
         "PepperGamepadHostTest.WaitForReply",
         "RenderWidgetHostTest.Background",
       ]
@@ -454,7 +453,7 @@ if (is_fuchsia) {
     exe_target = ":cast_shell"
 
     if (chromecast_branding != "public") {
-      data_deps = [
+      deps = [
         "//chromecast/internal:fuchsia_internal_data_deps",
       ]
     }
@@ -551,9 +550,11 @@ group("chromecast_locales_pak") {
   }
 }
 
-buildflag_header("chromecast_features") {
-  header = "chromecast_features.h"
+buildflag_header("chromecast_buildflags") {
+  header = "chromecast_buildflags.h"
+  enable_application_media_capabilities = chromecast_branding != "public"
   flags = [
+    "ENABLE_APPLICATION_MEDIA_CAPABILITIES=$enable_application_media_capabilities",
     "ENABLE_ASSISTANT=$enable_assistant",
     "ENABLE_VOLUME_TABLES_ACCESS=$enable_volume_tables_access",
     "IS_ANDROID_THINGS=$is_android_things",
@@ -563,6 +564,7 @@ buildflag_header("chromecast_features") {
     "SUPPORTS_MULTIZONE=$supports_multizone",
     "ENABLE_HEADLESS_MUSIC_MODE=$enable_headless_music_mode",
     "ENABLE_CHROMECAST_EXTENSIONS=$enable_chromecast_extensions",
+    "ENABLE_CAST_FRAGMENT=$enable_cast_fragment",
   ]
 }
 

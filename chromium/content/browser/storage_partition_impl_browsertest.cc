@@ -10,18 +10,18 @@
 #include "build/build_config.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_features.h"
 #include "content/public/test/content_browser_test.h"
-#include "content/public/test/test_url_loader_client.h"
 #include "content/shell/browser/shell.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "net/http/http_response_headers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_response_info.h"
-#include "services/network/public/interfaces/network_service.mojom.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/network_service.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/network/test/test_url_loader_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -38,7 +38,7 @@ class StoragePartititionImplBrowsertest
  public:
   StoragePartititionImplBrowsertest() {
     if (GetParam() == NetworkServiceState::kEnabled)
-      feature_list_.InitAndEnableFeature(features::kNetworkService);
+      feature_list_.InitAndEnableFeature(network::features::kNetworkService);
   }
   ~StoragePartititionImplBrowsertest() override {}
 
@@ -59,7 +59,7 @@ IN_PROC_BROWSER_TEST_P(StoragePartititionImplBrowsertest, NetworkContext) {
       ->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory), 0);
 
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   request.url = embedded_test_server()->GetURL("/set-header?foo: bar");
   request.method = "GET";
   network::mojom::URLLoaderPtr loader;

@@ -77,7 +77,7 @@ SpdyProxyClientSocket::GetAuthController() const {
   return auth_;
 }
 
-int SpdyProxyClientSocket::RestartWithAuth(const CompletionCallback& callback) {
+int SpdyProxyClientSocket::RestartWithAuth(CompletionOnceCallback callback) {
   // A SPDY Stream can only handle a single request, so the underlying
   // stream may not be reused and a new SpdyProxyClientSocket must be
   // created (possibly on top of the same SPDY Session).
@@ -119,7 +119,7 @@ int SpdyProxyClientSocket::Connect(const CompletionCallback& callback) {
 
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING)
-    read_callback_ = callback;
+    read_callback_ = std::move(callback);
   return rv;
 }
 
@@ -195,7 +195,8 @@ void SpdyProxyClientSocket::ApplySocketTag(const SocketTag& tag) {
   CHECK(false);
 }
 
-int SpdyProxyClientSocket::Read(IOBuffer* buf, int buf_len,
+int SpdyProxyClientSocket::Read(IOBuffer* buf,
+                                int buf_len,
                                 const CompletionCallback& callback) {
   DCHECK(read_callback_.is_null());
   DCHECK(!user_buffer_.get());
@@ -273,18 +274,16 @@ void SpdyProxyClientSocket::LogBlockedTunnelResponse() const {
       /* is_https_proxy = */ true);
 }
 
-void SpdyProxyClientSocket::RunCallback(const CompletionCallback& callback,
+void SpdyProxyClientSocket::RunCallback(CompletionOnceCallback callback,
                                         int result) const {
-  callback.Run(result);
+  std::move(callback).Run(result);
 }
 
 void SpdyProxyClientSocket::OnIOComplete(int result) {
   DCHECK_NE(STATE_DISCONNECTED, next_state_);
   int rv = DoLoop(result);
   if (rv != ERR_IO_PENDING) {
-    CompletionCallback c = read_callback_;
-    read_callback_.Reset();
-    c.Run(rv);
+    base::ResetAndReturn(&read_callback_).Run(rv);
   }
 }
 
@@ -369,8 +368,7 @@ int SpdyProxyClientSocket::DoSendRequest() {
                  base::Unretained(&request_.extra_headers), &request_line));
 
   SpdyHeaderBlock headers;
-  CreateSpdyHeadersFromHttpRequest(request_, request_.extra_headers, true,
-                                   &headers);
+  CreateSpdyHeadersFromHttpRequest(request_, request_.extra_headers, &headers);
 
   return spdy_stream_->SendRequestHeaders(std::move(headers),
                                           MORE_DATA_TO_SEND);
@@ -475,11 +473,9 @@ void SpdyProxyClientSocket::OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) {
 
   if (!read_callback_.is_null()) {
     int rv = PopulateUserReadBuffer(user_buffer_->data(), user_buffer_len_);
-    CompletionCallback c = read_callback_;
-    read_callback_.Reset();
     user_buffer_ = NULL;
     user_buffer_len_ = 0;
-    c.Run(rv);
+    base::ResetAndReturn(&read_callback_).Run(rv);
   }
 }
 
@@ -492,9 +488,9 @@ void SpdyProxyClientSocket::OnDataSent()  {
   // Proxy write callbacks result in deep callback chains. Post to allow the
   // stream's write callback chain to unwind (see crbug.com/355511).
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&SpdyProxyClientSocket::RunCallback,
-                            write_callback_weak_factory_.GetWeakPtr(),
-                            base::ResetAndReturn(&write_callback_), rv));
+      FROM_HERE, base::BindOnce(&SpdyProxyClientSocket::RunCallback,
+                                write_callback_weak_factory_.GetWeakPtr(),
+                                base::ResetAndReturn(&write_callback_), rv));
 }
 
 void SpdyProxyClientSocket::OnTrailers(const SpdyHeaderBlock& trailers) {
@@ -515,7 +511,7 @@ void SpdyProxyClientSocket::OnClose(int status)  {
     next_state_ = STATE_DISCONNECTED;
 
   base::WeakPtr<SpdyProxyClientSocket> weak_ptr = weak_factory_.GetWeakPtr();
-  CompletionCallback write_callback = write_callback_;
+  CompletionOnceCallback write_callback = std::move(write_callback_);
   write_callback_.Reset();
   write_buffer_len_ = 0;
 
@@ -523,16 +519,14 @@ void SpdyProxyClientSocket::OnClose(int status)  {
   // we invoke the connect callback.
   if (connecting) {
     DCHECK(!read_callback_.is_null());
-    CompletionCallback read_callback = read_callback_;
-    read_callback_.Reset();
-    read_callback.Run(status);
+    base::ResetAndReturn(&read_callback_).Run(status);
   } else if (!read_callback_.is_null()) {
     // If we have a read_callback_, the we need to make sure we call it back.
     OnDataReceived(std::unique_ptr<SpdyBuffer>());
   }
   // This may have been deleted by read_callback_, so check first.
   if (weak_ptr.get() && !write_callback.is_null())
-    write_callback.Run(ERR_CONNECTION_CLOSED);
+    std::move(write_callback).Run(ERR_CONNECTION_CLOSED);
 }
 
 NetLogSource SpdyProxyClientSocket::source_dependency() const {

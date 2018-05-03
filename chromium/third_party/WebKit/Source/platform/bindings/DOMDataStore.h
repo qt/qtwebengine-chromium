@@ -36,6 +36,7 @@
 #include "platform/bindings/DOMWrapperMap.h"
 #include "platform/bindings/DOMWrapperWorld.h"
 #include "platform/bindings/ScriptWrappable.h"
+#include "platform/bindings/ScriptWrappableMarkingVisitor.h"
 #include "platform/bindings/WrapperTypeInfo.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Noncopyable.h"
@@ -115,7 +116,8 @@ class DOMDataStore {
     return Current(isolate).Set(isolate, object, wrapper_type_info, wrapper);
   }
 
-  static bool ContainsWrapper(ScriptWrappable* object, v8::Isolate* isolate) {
+  static bool ContainsWrapper(const ScriptWrappable* object,
+                              v8::Isolate* isolate) {
     return Current(isolate).ContainsWrapper(object);
   }
 
@@ -133,7 +135,17 @@ class DOMDataStore {
     DCHECK(!wrapper.IsEmpty());
     if (is_main_world_)
       return object->SetWrapper(isolate, wrapper_type_info, wrapper);
-    return wrapper_map_->Set(object, wrapper_type_info, wrapper);
+    bool updated = wrapper_map_->Set(object, wrapper_type_info, wrapper);
+    if (updated) {
+      ScriptWrappableMarkingVisitor::WriteBarrier(
+          isolate, &wrapper_map_.value(), object);
+    }
+    return updated;
+  }
+
+  void TraceWrappers(const ScriptWrappable* script_wrappable,
+                     const ScriptWrappableVisitor* visitor) {
+    visitor->TraceWrappers(&wrapper_map_.value(), script_wrappable);
   }
 
   void MarkWrapper(ScriptWrappable* script_wrappable) {
@@ -153,7 +165,7 @@ class DOMDataStore {
     return wrapper_map_->SetReturnValueFrom(return_value, object);
   }
 
-  bool ContainsWrapper(ScriptWrappable* object) {
+  bool ContainsWrapper(const ScriptWrappable* object) {
     if (is_main_world_)
       return object->ContainsWrapper();
     return wrapper_map_->ContainsKey(object);

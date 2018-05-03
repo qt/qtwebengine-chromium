@@ -15,10 +15,6 @@ group("p2p") {
   ]
 }
 
-config("rtc_p2p_inherited_config") {
-  defines = [ "FEATURE_ENABLE_VOICEMAIL" ]
-}
-
 rtc_static_library("rtc_p2p") {
   visibility = [ "*" ]
   sources = [
@@ -70,6 +66,7 @@ rtc_static_library("rtc_p2p") {
     "base/transportdescription.h",
     "base/transportdescriptionfactory.cc",
     "base/transportdescriptionfactory.h",
+    "base/transportfactoryinterface.h",
     "base/transportinfo.h",
     "base/turnport.cc",
     "base/turnport.h",
@@ -79,8 +76,6 @@ rtc_static_library("rtc_p2p") {
     "client/basicportallocator.cc",
     "client/basicportallocator.h",
     "client/relayportfactoryinterface.h",
-    "client/socketmonitor.cc",
-    "client/socketmonitor.h",
     "client/turnportfactory.cc",
     "client/turnportfactory.h",
   ]
@@ -91,13 +86,12 @@ rtc_static_library("rtc_p2p") {
     "../api:libjingle_peerconnection_api",
     "../api:optional",
     "../api:ortc_api",
+    "../logging:ice_log",
     "../rtc_base:checks",
     "../rtc_base:rtc_base",
     "../rtc_base:stringutils",
     "../system_wrappers:field_trial_api",
   ]
-
-  public_configs = [ ":rtc_p2p_inherited_config" ]
 
   if (build_with_chromium) {
     if (is_nacl) {
@@ -143,7 +137,6 @@ if (rtc_include_tests) {
       "../rtc_base:rtc_base_approved",
       "../rtc_base:rtc_base_tests_utils",
       "../test:test_support",
-      "//testing/gmock",
     ]
   }
 
@@ -182,7 +175,6 @@ if (rtc_include_tests) {
       "../rtc_base:rtc_base_tests_utils",
       "../rtc_base:stringutils",
       "../test:test_support",
-      "//testing/gmock",
       "//testing/gtest",
     ]
     if (!build_with_chromium && is_clang) {
@@ -223,7 +215,6 @@ if (rtc_include_tests) {
       "../rtc_base:checks",
       "../rtc_base:rtc_base",
       "../rtc_base:rtc_base_tests_utils",
-      "//testing/gmock",
       "//testing/gtest",
     ]
     defines = [ "GTEST_RELATIVE_PATH" ]

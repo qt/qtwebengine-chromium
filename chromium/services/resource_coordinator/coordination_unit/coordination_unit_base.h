@@ -14,8 +14,8 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/resource_coordinator/observers/coordination_unit_graph_observer.h"
 #include "services/resource_coordinator/public/cpp/coordination_unit_types.h"
-#include "services/resource_coordinator/public/interfaces/coordination_unit.mojom.h"
-#include "services/resource_coordinator/public/interfaces/coordination_unit_provider.mojom.h"
+#include "services/resource_coordinator/public/mojom/coordination_unit.mojom.h"
+#include "services/resource_coordinator/public/mojom/coordination_unit_provider.mojom.h"
 #include "services/service_manager/public/cpp/service_context_ref.h"
 
 namespace resource_coordinator {
@@ -41,6 +41,8 @@ class CoordinationUnitBase {
   void RemoveObserver(CoordinationUnitGraphObserver* observer);
   bool GetProperty(const mojom::PropertyType property_type,
                    int64_t* result) const;
+  int64_t GetPropertyOrDefault(const mojom::PropertyType property_type,
+                               int64_t default_value) const;
 
   const CoordinationUnitID& id() const { return id_; }
   const base::ObserverList<CoordinationUnitGraphObserver>& observers() const {

@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "core/editing/PositionWithAffinity.h"
 #include "core/layout/HitTestLocation.h"
 #include "core/layout/ng/inline/ng_inline_node_data.h"
 #include "core/layout/ng/ng_constraint_space.h"
@@ -143,7 +144,11 @@ LayoutNGMixin<Base>::CachedLayoutResultForTesting() {
 template <typename Base>
 void LayoutNGMixin<Base>::SetPaintFragment(
     scoped_refptr<const NGPhysicalFragment> fragment) {
-  paint_fragment_ = std::make_unique<NGPaintFragment>(std::move(fragment));
+  paint_fragment_ = NGPaintFragment::Create(std::move(fragment));
+
+  // When paint fragment is replaced, the subtree needs paint invalidation to
+  // re-compute paint properties in NGPaintFragment.
+  Base::SetShouldDoFullPaintInvalidation(PaintInvalidationReason::kSubtree);
 }
 
 static Vector<NGPaintFragment*> GetNGPaintFragmentsInternal(
@@ -171,8 +176,7 @@ Vector<NGPaintFragment*> LayoutNGMixin<Base>::GetPaintFragments(
 template <typename Base>
 void LayoutNGMixin<Base>::Paint(const PaintInfo& paint_info,
                                 const LayoutPoint& paint_offset) const {
-  if (RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled() &&
-      PaintFragment())
+  if (PaintFragment())
     NGBlockFlowPainter(*this).Paint(paint_info, paint_offset);
   else
     LayoutBlockFlow::Paint(paint_info, paint_offset);
@@ -184,8 +188,7 @@ bool LayoutNGMixin<Base>::NodeAtPoint(
     const HitTestLocation& location_in_container,
     const LayoutPoint& accumulated_offset,
     HitTestAction action) {
-  if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled() ||
-      !PaintFragment()) {
+  if (!PaintFragment()) {
     return LayoutBlockFlow::NodeAtPoint(result, location_in_container,
                                         accumulated_offset, action);
   }
@@ -203,7 +206,31 @@ bool LayoutNGMixin<Base>::NodeAtPoint(
   }
 
   return NGBlockFlowPainter(*this).NodeAtPoint(result, location_in_container,
+                                               accumulated_offset,
                                                accumulated_offset, action);
+}
+
+template <typename Base>
+PositionWithAffinity LayoutNGMixin<Base>::PositionForPoint(
+    const LayoutPoint& point) const {
+  if (Base::IsAtomicInlineLevel()) {
+    const PositionWithAffinity atomic_inline_position =
+        Base::PositionForPointIfOutsideAtomicInlineLevel(point);
+    if (atomic_inline_position.IsNotNull())
+      return atomic_inline_position;
+  }
+
+  if (!Base::ChildrenInline())
+    return LayoutBlock::PositionForPoint(point);
+
+  if (!CurrentFragment())
+    return Base::CreatePositionWithAffinity(0);
+
+  const PositionWithAffinity ng_position =
+      CurrentFragment()->PositionForPoint(NGPhysicalOffset(point));
+  if (ng_position.IsNotNull())
+    return ng_position;
+  return Base::CreatePositionWithAffinity(0);
 }
 
 template class LayoutNGMixin<LayoutTableCell>;

@@ -22,7 +22,6 @@
 #include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/task_scheduler/post_task.h"
-#include "base/threading/sequenced_worker_pool.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/values.h"
 #include "base/version.h"
@@ -256,8 +255,6 @@ VariationsService::VariationsService(
       weak_ptr_factory_(this) {
   DCHECK(client_.get());
   DCHECK(resource_request_allowed_notifier_.get());
-
-  resource_request_allowed_notifier_->Init(this);
 }
 
 VariationsService::~VariationsService() {
@@ -265,6 +262,8 @@ VariationsService::~VariationsService() {
 
 void VariationsService::PerformPreMainMessageLoopStartup() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  InitResourceRequestedAllowedNotifier();
 
   if (!IsFetchingEnabled())
     return;
@@ -377,7 +376,6 @@ void VariationsService::RegisterPrefs(PrefRegistrySimple* registry) {
   SafeSeedManager::RegisterPrefs(registry);
   VariationsSeedStore::RegisterPrefs(registry);
 
-  registry->RegisterTimePref(prefs::kVariationsLastFetchTime, base::Time());
   // This preference will only be written by the policy service, which will fill
   // it according to a value stored in the User Policy.
   registry->RegisterStringPref(prefs::kVariationsRestrictParameter,
@@ -418,7 +416,7 @@ void VariationsService::EnableForTesting() {
 }
 
 void VariationsService::DoActualFetch() {
-  DoFetchFromURL(variations_server_url_);
+  DoFetchFromURL(variations_server_url_, false);
 }
 
 bool VariationsService::StoreSeed(const std::string& seed_data,
@@ -453,7 +451,15 @@ VariationsService::CreateLowEntropyProvider() {
   return state_manager_->CreateLowEntropyProvider();
 }
 
-bool VariationsService::DoFetchFromURL(const GURL& url) {
+void VariationsService::InitResourceRequestedAllowedNotifier() {
+  // ResourceRequestAllowedNotifier does not install an observer if there is no
+  // NetworkChangeNotifier, which results in never being notified of changes to
+  // network status.
+  DCHECK(net::NetworkChangeNotifier::HasNetworkChangeNotifier());
+  resource_request_allowed_notifier_->Init(this);
+}
+
+bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(IsFetchingEnabled());
 
@@ -501,9 +507,8 @@ bool VariationsService::DoFetchFromURL(const GURL& url) {
     // Tell the server that delta-compressed seeds are supported.
     enable_deltas = true;
     // Get the seed only if its serial number doesn't match what we have.
-    // If the fetch is being done over HTTP, encrypt the If-None-Match header.
-    if (!url.SchemeIs(url::kHttpsScheme) &&
-        base::FeatureList::IsEnabled(kHttpRetryFeature)) {
+    // If the fetch is an HTTP retry, encrypt the If-None-Match header.
+    if (is_http_retry) {
       if (!EncryptString(serial_number, &serial_number)) {
         pending_seed_request_.reset();
         return false;
@@ -616,7 +621,7 @@ void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
     if (was_https && !insecure_variations_server_url_.is_empty()) {
       // When re-trying via HTTP, return immediately. OnURLFetchComplete() will
       // be called with the result of that retry.
-      if (DoFetchFromURL(insecure_variations_server_url_))
+      if (DoFetchFromURL(insecure_variations_server_url_, true))
         return;
     }
     // It's common for the very first fetch attempt to fail (e.g. the network
@@ -739,7 +744,7 @@ void VariationsService::PerformSimulationWithVersion(
 }
 
 void VariationsService::RecordSuccessfulFetch() {
-  field_trial_creator_.RecordLastFetchTime();
+  field_trial_creator_.seed_store()->RecordLastFetchTime();
   safe_seed_manager_.RecordSuccessfulFetch(field_trial_creator_.seed_store());
 }
 
@@ -760,14 +765,13 @@ bool VariationsService::SetupFieldTrials(
     const char* kEnableFeatures,
     const char* kDisableFeatures,
     const std::set<std::string>& unforceable_field_trials,
+    const std::vector<std::string>& variation_ids,
     std::unique_ptr<base::FeatureList> feature_list,
-    std::vector<std::string>* variation_ids,
     variations::PlatformFieldTrials* platform_field_trials) {
   return field_trial_creator_.SetupFieldTrials(
       kEnableGpuBenchmarking, kEnableFeatures, kDisableFeatures,
-      unforceable_field_trials, CreateLowEntropyProvider(),
-      std::move(feature_list), variation_ids, platform_field_trials,
-      &safe_seed_manager_);
+      unforceable_field_trials, variation_ids, CreateLowEntropyProvider(),
+      std::move(feature_list), platform_field_trials, &safe_seed_manager_);
 }
 
 std::string VariationsService::GetStoredPermanentCountry() {

@@ -301,7 +301,7 @@ CSSPrimitiveValue* ConsumeLength(CSSParserTokenRange& range,
       case CSSPrimitiveValue::UnitType::kQuirkyEms:
         if (css_parser_mode != kUASheetMode)
           return nullptr;
-      /* fallthrough intentional */
+        FALLTHROUGH;
       case CSSPrimitiveValue::UnitType::kEms:
       case CSSPrimitiveValue::UnitType::kRems:
       case CSSPrimitiveValue::UnitType::kChs:
@@ -543,17 +543,16 @@ CSSURIValue* ConsumeUrl(CSSParserTokenRange& range,
 
 static int ClampRGBComponent(const CSSPrimitiveValue& value) {
   double result = value.GetDoubleValue();
-  // TODO(timloh): Multiply by 2.55 and round instead of floor.
   if (value.IsPercentage())
-    result *= 2.56;
-  return clampTo<int>(result, 0, 255);
+    result *= 2.55;
+  return clampTo<int>(roundf(result), 0, 255);
 }
 
 static bool ParseRGBParameters(CSSParserTokenRange& range, RGBA32& result) {
   DCHECK(range.Peek().FunctionId() == CSSValueRgb ||
          range.Peek().FunctionId() == CSSValueRgba);
   CSSParserTokenRange args = ConsumeFunction(range);
-  CSSPrimitiveValue* color_parameter = ConsumeInteger(args);
+  CSSPrimitiveValue* color_parameter = ConsumeNumber(args, kValueRangeAll);
   if (!color_parameter)
     color_parameter = ConsumePercent(args, kValueRangeAll);
   if (!color_parameter)
@@ -572,7 +571,7 @@ static bool ParseRGBParameters(CSSParserTokenRange& range, RGBA32& result) {
       return false;
     }
     color_parameter = is_percent ? ConsumePercent(args, kValueRangeAll)
-                                 : ConsumeInteger(args);
+                                 : ConsumeNumber(args, kValueRangeAll);
     if (!color_parameter)
       return false;
     color_array[i] = ClampRGBComponent(*color_parameter);
@@ -901,7 +900,10 @@ bool ConsumePosition(CSSParserTokenRange& range,
       PositionFromTwoValues(value1, value2, result_x, result_y);
       return true;
     }
-    context.Count(*threeValuePosition);
+    if (*threeValuePosition == WebFeature::kThreeValuedPositionBackground)
+      context.Count(*threeValuePosition);
+    else
+      context.CountDeprecation(*threeValuePosition);
   }
 
   CSSValue* values[5];
@@ -999,12 +1001,9 @@ static bool ConsumeDeprecatedGradientColorStop(CSSParserTokenRange& range,
     position = (id == CSSValueFrom) ? 0 : 1;
   } else {
     DCHECK(id == CSSValueColorStop);
-    const CSSParserToken& arg = args.ConsumeIncludingWhitespace();
-    if (arg.GetType() == kPercentageToken)
-      position = arg.NumericValue() / 100.0;
-    else if (arg.GetType() == kNumberToken)
-      position = arg.NumericValue();
-    else
+    if (CSSPrimitiveValue* percent_value = ConsumePercent(args, kValueRangeAll))
+      position = percent_value->GetDoubleValue() / 100.0;
+    else if (!ConsumeNumberRaw(args, position))
       return false;
 
     if (!ConsumeCommaIncludingWhitespace(args))
@@ -1377,14 +1376,14 @@ static CSSValue* ConsumeCrossFade(CSSParserTokenRange& args,
     return nullptr;
 
   CSSPrimitiveValue* percentage = nullptr;
-  const CSSParserToken& percentage_arg = args.ConsumeIncludingWhitespace();
-  if (percentage_arg.GetType() == kPercentageToken)
+  if (CSSPrimitiveValue* percent_value = ConsumePercent(args, kValueRangeAll))
     percentage = CSSPrimitiveValue::Create(
-        clampTo<double>(percentage_arg.NumericValue() / 100, 0, 1),
+        clampTo<double>(percent_value->GetDoubleValue() / 100.0, 0, 1),
         CSSPrimitiveValue::UnitType::kNumber);
-  else if (percentage_arg.GetType() == kNumberToken)
+  else if (CSSPrimitiveValue* number_value =
+               ConsumeNumber(args, kValueRangeAll))
     percentage = CSSPrimitiveValue::Create(
-        clampTo<double>(percentage_arg.NumericValue(), 0, 1),
+        clampTo<double>(number_value->GetDoubleValue(), 0, 1),
         CSSPrimitiveValue::UnitType::kNumber);
 
   if (!percentage)
@@ -1483,6 +1482,16 @@ static CSSValue* ConsumeGeneratedImage(CSSParserTokenRange& range,
   }
   if (!result || !args.AtEnd())
     return nullptr;
+
+  WebFeature feature;
+  if (id == CSSValueWebkitCrossFade)
+    feature = WebFeature::kWebkitCrossFade;
+  else if (id == CSSValuePaint)
+    feature = WebFeature::kCSSPaintFunction;
+  else
+    feature = WebFeature::kCSSGradient;
+  context->Count(feature);
+
   range = range_copy;
   return result;
 }
@@ -1691,11 +1700,15 @@ const CSSValue* ParseLonghand(CSSPropertyID unresolved_property,
   CSSPropertyID property_id = resolveCSSPropertyID(unresolved_property);
   DCHECK(!CSSProperty::Get(property_id).IsShorthand());
   if (CSSParserFastPaths::IsKeywordPropertyID(property_id)) {
-    if (!CSSParserFastPaths::IsValidKeywordPropertyAndValue(
-            property_id, range.Peek().Id(), context.Mode()))
+    if (CSSParserFastPaths::IsValidKeywordPropertyAndValue(
+            property_id, range.Peek().Id(), context.Mode())) {
+      CountKeywordOnlyPropertyUsage(property_id, context, range.Peek().Id());
+      return ConsumeIdent(range);
+    }
+
+    // Some properties need to fallback onto the regular parser.
+    if (!CSSParserFastPaths::IsPartialKeywordPropertyID(property_id))
       return nullptr;
-    CountKeywordOnlyPropertyUsage(property_id, context, range.Peek().Id());
-    return ConsumeIdent(range);
   }
 
   const CSSValue* result =

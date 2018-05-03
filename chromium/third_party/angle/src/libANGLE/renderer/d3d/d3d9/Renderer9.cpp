@@ -1181,7 +1181,7 @@ gl::Error Renderer9::getNullColorbuffer(const gl::Context *context,
 
     auto *implFactory = context->getImplementation();
 
-    gl::Renderbuffer *nullRenderbuffer = new gl::Renderbuffer(implFactory->createRenderbuffer(), 0);
+    gl::Renderbuffer *nullRenderbuffer = new gl::Renderbuffer(implFactory, 0);
     gl::Error error = nullRenderbuffer->setStorage(context, GL_NONE, size.width, size.height);
     if (error.isError())
     {
@@ -2555,6 +2555,7 @@ gl::Error Renderer9::copyTexture(const gl::Context *context,
                                  GLint sourceLevel,
                                  const gl::Rectangle &sourceRect,
                                  GLenum destFormat,
+                                 GLenum destType,
                                  const gl::Offset &destOffset,
                                  TextureStorage *storage,
                                  GLenum destTarget,
@@ -3006,7 +3007,7 @@ TextureStorage *Renderer9::createTextureStorage2DMultisample(GLenum internalform
     // 2D multisampled textures are not supported by the D3D9 backend.
     UNREACHABLE();
 
-    return NULL;
+    return nullptr;
 }
 
 bool Renderer9::getLUID(LUID *adapterLuid) const

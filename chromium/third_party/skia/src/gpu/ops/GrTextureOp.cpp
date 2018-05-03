@@ -116,6 +116,7 @@ public:
 
         private:
             void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
+                using Interpolation = GrGLSLVaryingHandler::Interpolation;
                 const auto& textureGP = args.fGP.cast<TextureGeometryProcessor>();
                 fColorSpaceXformHelper.emitCode(
                         args.fUniformHandler, textureGP.fColorSpaceXform.get());
@@ -127,26 +128,19 @@ public:
                                      args.fUniformHandler,
                                      textureGP.fTextureCoords.asShaderVar(),
                                      args.fFPCoordTransformHandler);
-                if (args.fShaderCaps->preferFlatInterpolation()) {
-                    args.fVaryingHandler->addFlatPassThroughAttribute(&textureGP.fColors,
-                                                                      args.fOutputColor);
-                } else {
-                    args.fVaryingHandler->addPassThroughAttribute(&textureGP.fColors,
-                                                                  args.fOutputColor);
-                }
+                args.fVaryingHandler->addPassThroughAttribute(&textureGP.fColors,
+                                                              args.fOutputColor,
+                                                              Interpolation::kCanBeFlat);
                 args.fFragBuilder->codeAppend("float2 texCoord;");
                 args.fVaryingHandler->addPassThroughAttribute(&textureGP.fTextureCoords,
                                                               "texCoord");
                 if (textureGP.numTextureSamplers() > 1) {
+                    // If this changes to float, reconsider Interpolation::kMustBeFlat.
+                    SkASSERT(kInt_GrVertexAttribType == textureGP.fTextureIdx.fType);
                     SkASSERT(args.fShaderCaps->integerSupport());
                     args.fFragBuilder->codeAppend("int texIdx;");
-                    if (args.fShaderCaps->flatInterpolationSupport()) {
-                        args.fVaryingHandler->addFlatPassThroughAttribute(&textureGP.fTextureIdx,
-                                                                          "texIdx");
-                    } else {
-                        args.fVaryingHandler->addPassThroughAttribute(&textureGP.fTextureIdx,
-                                                                      "texIdx");
-                    }
+                    args.fVaryingHandler->addPassThroughAttribute(&textureGP.fTextureIdx, "texIdx",
+                                                                  Interpolation::kMustBeFlat);
                     args.fFragBuilder->codeAppend("switch (texIdx) {");
                     for (int i = 0; i < textureGP.numTextureSamplers(); ++i) {
                         args.fFragBuilder->codeAppendf("case %d: %s = ", i, args.fOutputColor);
@@ -168,22 +162,52 @@ public:
                 }
                 args.fFragBuilder->codeAppend(";");
                 if (textureGP.usesCoverageEdgeAA()) {
-                    GrGLSLVarying aaDistVarying(kFloat4_GrSLType,
-                                                GrGLSLVarying::Scope::kVertToFrag);
-                    args.fVaryingHandler->addVarying("aaDists", &aaDistVarying);
-                    args.fVertBuilder->codeAppendf(
-                            R"(%s = float4(dot(aaEdge0.xy, %s.xy) + aaEdge0.z,
-                                           dot(aaEdge1.xy, %s.xy) + aaEdge1.z,
-                                           dot(aaEdge2.xy, %s.xy) + aaEdge2.z,
-                                           dot(aaEdge3.xy, %s.xy) + aaEdge3.z);)",
-                            aaDistVarying.vsOut(), textureGP.fPositions.fName,
-                            textureGP.fPositions.fName, textureGP.fPositions.fName,
-                            textureGP.fPositions.fName);
-
+                    const char* aaDistName = nullptr;
+                    // When interpolation is innacurate we perform the evaluation of the edge
+                    // equations in the fragment shader rather than interpolating values computed
+                    // in the vertex shader.
+                    if (!args.fShaderCaps->interpolantsAreInaccurate()) {
+                        GrGLSLVarying aaDistVarying(kFloat4_GrSLType,
+                                                    GrGLSLVarying::Scope::kVertToFrag);
+                        args.fVaryingHandler->addVarying("aaDists", &aaDistVarying);
+                        args.fVertBuilder->codeAppendf(
+                                R"(%s = float4(dot(aaEdge0.xy, %s.xy) + aaEdge0.z,
+                                               dot(aaEdge1.xy, %s.xy) + aaEdge1.z,
+                                               dot(aaEdge2.xy, %s.xy) + aaEdge2.z,
+                                               dot(aaEdge3.xy, %s.xy) + aaEdge3.z);)",
+                                aaDistVarying.vsOut(), textureGP.fPositions.fName,
+                                textureGP.fPositions.fName, textureGP.fPositions.fName,
+                                textureGP.fPositions.fName);
+                        aaDistName = aaDistVarying.fsIn();
+                    } else {
+                        GrGLSLVarying aaEdgeVarying[4]{
+                                {kFloat3_GrSLType, GrGLSLVarying::Scope::kVertToFrag},
+                                {kFloat3_GrSLType, GrGLSLVarying::Scope::kVertToFrag},
+                                {kFloat3_GrSLType, GrGLSLVarying::Scope::kVertToFrag},
+                                {kFloat3_GrSLType, GrGLSLVarying::Scope::kVertToFrag}
+                        };
+                        for (int i = 0; i < 4; ++i) {
+                            SkString name;
+                            name.printf("aaEdge%d", i);
+                            args.fVaryingHandler->addVarying(name.c_str(), &aaEdgeVarying[i],
+                                                             Interpolation::kCanBeFlat);
+                            args.fVertBuilder->codeAppendf(
+                                    "%s = aaEdge%d;", aaEdgeVarying[i].vsOut(), i);
+                        }
+                        args.fFragBuilder->codeAppendf(
+                                R"(float4 aaDists = float4(dot(%s.xy, sk_FragCoord.xy) + %s.z,
+                                                           dot(%s.xy, sk_FragCoord.xy) + %s.z,
+                                                           dot(%s.xy, sk_FragCoord.xy) + %s.z,
+                                                           dot(%s.xy, sk_FragCoord.xy) + %s.z);)",
+                        aaEdgeVarying[0].fsIn(), aaEdgeVarying[0].fsIn(),
+                        aaEdgeVarying[1].fsIn(), aaEdgeVarying[1].fsIn(),
+                        aaEdgeVarying[2].fsIn(), aaEdgeVarying[2].fsIn(),
+                        aaEdgeVarying[3].fsIn(), aaEdgeVarying[3].fsIn());
+                        aaDistName = "aaDists";
+                    }
                     args.fFragBuilder->codeAppendf(
                             "float mindist = min(min(%s.x, %s.y), min(%s.z, %s.w));",
-                            aaDistVarying.fsIn(), aaDistVarying.fsIn(), aaDistVarying.fsIn(),
-                            aaDistVarying.fsIn());
+                            aaDistName, aaDistName, aaDistName, aaDistName);
                     args.fFragBuilder->codeAppendf("%s = float4(clamp(mindist, 0, 1));",
                                                    args.fOutputCoverage);
                 } else {

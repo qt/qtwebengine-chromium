@@ -10,7 +10,7 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/render_thread_impl.h"
-#include "services/device/public/interfaces/sensor.mojom.h"
+#include "services/device/public/mojom/sensor.mojom.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 
 namespace {
@@ -146,8 +146,8 @@ void DeviceOrientationEventPump::SendStartMessageImpl() {
     render_frame->GetRemoteInterfaces()->GetInterface(
         mojo::MakeRequest(&sensor_provider_));
     sensor_provider_.set_connection_error_handler(
-        base::Bind(&DeviceSensorEventPump::HandleSensorProviderError,
-                   base::Unretained(this)));
+        base::BindOnce(&DeviceSensorEventPump::HandleSensorProviderError,
+                       base::Unretained(this)));
   }
 
   if (absolute_) {

@@ -31,6 +31,7 @@
 #ifndef FrameFetchContext_h
 #define FrameFetchContext_h
 
+#include "base/single_thread_task_runner.h"
 #include "core/CoreExport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/loader/BaseFetchContext.h"
@@ -54,7 +55,6 @@ class ResourceError;
 class ResourceResponse;
 class Settings;
 struct WebEnabledClientHints;
-class WebTaskRunner;
 
 class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
  public:
@@ -114,7 +114,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
                                 int64_t encoded_data_length,
                                 int64_t decoded_body_length,
                                 bool blocked_cross_site_document) override;
-  void DispatchDidFail(unsigned long identifier,
+  void DispatchDidFail(const KURL&,
+                       unsigned long identifier,
                        const ResourceError&,
                        int64_t encoded_data_length,
                        bool is_internal_request) override;
@@ -142,7 +143,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
                                const ClientHintsPreferences&,
                                const FetchParameters::ResourceWidth&,
                                ResourceRequest&) override;
-  void SetFirstPartyCookieAndRequestorOrigin(ResourceRequest&) override;
 
   // Exposed for testing.
   void ModifyRequestForCSP(ResourceRequest&);
@@ -154,7 +154,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   std::unique_ptr<WebURLLoader> CreateURLLoader(
       const ResourceRequest&,
-      scoped_refptr<WebTaskRunner>) override;
+      scoped_refptr<base::SingleThreadTaskRunner>,
+      const ResourceLoaderOptions&) override;
 
   ResourceLoadScheduler::ThrottlingPolicy InitialLoadThrottlingPolicy()
       const override {
@@ -173,6 +174,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
       ResourceLoadPriority) const override;
 
  private:
+  friend class FrameFetchContextTest;
+
   struct FrozenState;
 
   static ResourceFetcher* CreateFetcher(DocumentLoader*, Document*);
@@ -190,7 +193,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   // FetchContext overrides:
   WebFrameScheduler* GetFrameScheduler() const override;
-  scoped_refptr<WebTaskRunner> GetLoadingTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner() override;
 
   // BaseFetchContext overrides:
   KURL GetSiteForCookies() const override;
@@ -235,6 +238,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   // the |ContentSettingsClient| with the list of client hints and the
   // persistence duration.
   void ParseAndPersistClientHints(const ResourceResponse&);
+  void SetFirstPartyCookieAndRequestorOrigin(ResourceRequest&);
 
   Member<DocumentLoader> document_loader_;
   Member<Document> document_;

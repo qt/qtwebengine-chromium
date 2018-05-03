@@ -581,6 +581,16 @@ class CFX_RTemplate {
 using CFX_Rect = CFX_RTemplate<int32_t>;
 using CFX_RectF = CFX_RTemplate<float>;
 
+#ifndef NDEBUG
+template <class BaseType>
+std::ostream& operator<<(std::ostream& os,
+                         const CFX_RTemplate<BaseType>& rect) {
+  os << "rect[w " << rect.Width() << " x h " << rect.Height() << " (left "
+     << rect.left << ", top " << rect.top << ")]";
+  return os;
+}
+#endif  // NDEBUG
+
 // The matrix is of the form:
 // | a  b  0 |
 // | c  d  0 |
@@ -637,6 +647,8 @@ class CFX_Matrix {
 
   void Scale(float sx, float sy, bool bPrepended = false);
   void Rotate(float fRadian, bool bPrepended = false);
+
+  // Rotates counterclockwise around the (x, y) point.
   void RotateAt(float fRadian, float x, float y, bool bPrepended = false);
 
   void Shear(float fAlphaRadian, float fBetaRadian, bool bPrepended = false);

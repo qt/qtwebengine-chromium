@@ -103,10 +103,6 @@ namespace blink {
 
 namespace {
 
-// Print up to |kMaxCertificateWarningMessages| console messages per frame
-// about certificates that will be distrusted in future.
-const uint32_t kMaxCertificateWarningMessages = 10;
-
 // Convenience helper for frame tree helpers in FrameClient to reduce the amount
 // of null-checking boilerplate code. Since the frame tree is maintained in the
 // web/ layer, the frame tree helpers often have to deal with null WebFrames:
@@ -145,7 +141,7 @@ bool IsBackForwardNavigationInProgress(LocalFrame* local_frame) {
 }  // namespace
 
 LocalFrameClientImpl::LocalFrameClientImpl(WebLocalFrameImpl* frame)
-    : web_frame_(frame), num_certificate_warning_messages_(0) {}
+    : web_frame_(frame) {}
 
 LocalFrameClientImpl* LocalFrameClientImpl::Create(WebLocalFrameImpl* frame) {
   return new LocalFrameClientImpl(frame);
@@ -452,10 +448,6 @@ void LocalFrameClientImpl::DispatchDidCommitLoad(
     dev_tools->DidCommitLoadForLocalFrame(web_frame_->GetFrame());
 
   virtual_time_pauser_.PauseVirtualTime(false);
-
-  // Reset certificate warning state that prevents log spam.
-  num_certificate_warning_messages_ = 0;
-  certificate_warning_hosts_.clear();
 }
 
 void LocalFrameClientImpl::DispatchDidFailProvisionalLoad(
@@ -587,6 +579,9 @@ NavigationPolicy LocalFrameClientImpl::DecidePolicyForNavigation(
   // |origin_document| when it is defined. |source_location| represents the
   // line of code that has initiated the navigation. It is used to let web
   // developpers locate the root cause of blocked navigations.
+  // TODO(crbug.com/804504): This is likely wrong -- this is often invoked
+  // asynchronously as a result of ScheduledURLNavigation::Fire(), so JS
+  // stack is not available here.
   std::unique_ptr<SourceLocation> source_location =
       origin_document
           ? SourceLocation::Capture(origin_document)
@@ -596,6 +591,11 @@ NavigationPolicy LocalFrameClientImpl::DecidePolicyForNavigation(
     navigation_info.source_location.line_number = source_location->LineNumber();
     navigation_info.source_location.column_number =
         source_location->ColumnNumber();
+  }
+
+  if (WebDevToolsAgentImpl* devtools = DevToolsAgent()) {
+    navigation_info.devtools_initiator_info =
+        devtools->NavigationInitiatorInfo(web_frame_->GetFrame());
   }
 
   WebNavigationPolicy web_policy =
@@ -708,53 +708,9 @@ void LocalFrameClientImpl::DidRunContentWithCertificateErrors() {
 }
 
 void LocalFrameClientImpl::ReportLegacySymantecCert(const KURL& url,
-                                                    Time cert_validity_start) {
-  // To prevent log spam, only log the message once per hostname.
-  if (certificate_warning_hosts_.Contains(url.Host()))
-    return;
-
-  // After |kMaxCertificateWarningMessages| warnings, stop printing messages to
-  // the console. At exactly |kMaxCertificateWarningMessages| warnings, print a
-  // message that additional resources on the page use legacy certificates
-  // without specifying which exact resources. Before
-  // |kMaxCertificateWarningMessages| messages, print the exact resource URL in
-  // the message to help the developer pinpoint the problematic resources.
-
-  if (num_certificate_warning_messages_ > kMaxCertificateWarningMessages)
-    return;
-
-  WebString console_message;
-
-  if (num_certificate_warning_messages_ == kMaxCertificateWarningMessages) {
-    console_message =
-        WebString(String("Additional resources on this page were loaded with "
-                         "SSL certificates that will be "
-                         "distrusted in the future. "
-                         "Once distrusted, users will be prevented from "
-                         "loading these resources. See "
-                         "https://g.co/chrome/symantecpkicerts for "
-                         "more information."));
-  } else if (!web_frame_->Client()->OverrideLegacySymantecCertConsoleMessage(
-                 url, cert_validity_start, &console_message)) {
-    console_message = WebString(
-        String::Format("The SSL certificate used to load resources from %s"
-                       " will be "
-                       "distrusted in the future. "
-                       "Once distrusted, users will be prevented from "
-                       "loading these resources. See "
-                       "https://g.co/chrome/symantecpkicerts for "
-                       "more information.",
-                       SecurityOrigin::Create(url)->ToString().Utf8().data()));
-  }
-  num_certificate_warning_messages_++;
-  certificate_warning_hosts_.insert(url.Host());
-  // To avoid spamming the console, use Verbose message level for subframe
-  // resources and only use the warning level for main-frame resources.
-  web_frame_->GetFrame()->GetDocument()->AddConsoleMessage(
-      ConsoleMessage::Create(
-          kSecurityMessageSource,
-          web_frame_->Parent() ? kVerboseMessageLevel : kWarningMessageLevel,
-          console_message));
+                                                    bool did_fail) {
+  if (web_frame_->Client())
+    web_frame_->Client()->ReportLegacySymantecCert(url, did_fail);
 }
 
 void LocalFrameClientImpl::DidChangePerformanceTiming() {
@@ -967,7 +923,7 @@ void LocalFrameClientImpl::DidChangeFrameOwnerProperties(
           frame_element->ScrollingMode(), frame_element->MarginWidth(),
           frame_element->MarginHeight(), frame_element->AllowFullscreen(),
           frame_element->AllowPaymentRequest(), frame_element->IsDisplayNone(),
-          frame_element->Csp()));
+          frame_element->RequiredCsp()));
 }
 
 void LocalFrameClientImpl::DispatchWillStartUsingPeerConnectionHandler(
@@ -1121,7 +1077,7 @@ void LocalFrameClientImpl::DidBlockFramebust(const KURL& url) {
   web_frame_->Client()->DidBlockFramebust(url);
 }
 
-String LocalFrameClientImpl::GetDevToolsFrameToken() const {
+base::UnguessableToken LocalFrameClientImpl::GetDevToolsFrameToken() const {
   return web_frame_->Client()->GetDevToolsFrameToken();
 }
 
@@ -1163,6 +1119,11 @@ void LocalFrameClientImpl::DidChangeContents() {
 Frame* LocalFrameClientImpl::FindFrame(const AtomicString& name) const {
   DCHECK(web_frame_->Client());
   return ToCoreFrame(web_frame_->Client()->FindFrame(name));
+}
+
+void LocalFrameClientImpl::FrameRectsChanged(const IntRect& frame_rect) {
+  DCHECK(web_frame_->Client());
+  web_frame_->Client()->FrameRectsChanged(frame_rect);
 }
 
 }  // namespace blink

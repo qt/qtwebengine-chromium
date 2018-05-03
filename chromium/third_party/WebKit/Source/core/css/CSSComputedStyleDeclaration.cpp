@@ -39,6 +39,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/PseudoElement.h"
+#include "core/frame/UseCounter.h"
 #include "core/layout/LayoutObject.h"
 #include "core/style/ComputedStyle.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -97,9 +98,9 @@ const CSSPropertyID kComputedPropertyArray[] = {
     CSSPropertyOverflowX, CSSPropertyOverflowY, CSSPropertyPaddingBottom,
     CSSPropertyPaddingLeft, CSSPropertyPaddingRight, CSSPropertyPaddingTop,
     CSSPropertyPointerEvents, CSSPropertyPosition, CSSPropertyResize,
-    CSSPropertyRight, CSSPropertyScrollBehavior, CSSPropertySpeak,
-    CSSPropertyTableLayout, CSSPropertyTabSize, CSSPropertyTextAlign,
-    CSSPropertyTextAlignLast, CSSPropertyTextDecoration,
+    CSSPropertyRight, CSSPropertyScrollBehavior, CSSPropertyScrollCustomization,
+    CSSPropertySpeak, CSSPropertyTableLayout, CSSPropertyTabSize,
+    CSSPropertyTextAlign, CSSPropertyTextAlignLast, CSSPropertyTextDecoration,
     CSSPropertyTextDecorationLine, CSSPropertyTextDecorationStyle,
     CSSPropertyTextDecorationColor, CSSPropertyTextDecorationSkipInk,
     CSSPropertyTextJustify, CSSPropertyTextUnderlinePosition,
@@ -131,8 +132,8 @@ const CSSPropertyID kComputedPropertyArray[] = {
     CSSPropertyGridAutoRows, CSSPropertyGridColumnEnd,
     CSSPropertyGridColumnStart, CSSPropertyGridTemplateAreas,
     CSSPropertyGridTemplateColumns, CSSPropertyGridTemplateRows,
-    CSSPropertyGridRowEnd, CSSPropertyGridRowStart, CSSPropertyGridColumnGap,
-    CSSPropertyGridRowGap, CSSPropertyWebkitHighlight, CSSPropertyHyphens,
+    CSSPropertyGridRowEnd, CSSPropertyGridRowStart, CSSPropertyRowGap,
+    CSSPropertyWebkitHighlight, CSSPropertyHyphens,
     CSSPropertyWebkitHyphenateCharacter, CSSPropertyWebkitLineBreak,
     CSSPropertyWebkitLineClamp, CSSPropertyWebkitLocale,
     CSSPropertyWebkitMarginBeforeCollapse, CSSPropertyWebkitMarginAfterCollapse,
@@ -389,10 +390,10 @@ String CSSComputedStyleDeclaration::item(unsigned i) const {
 
 bool CSSComputedStyleDeclaration::CssPropertyMatches(
     CSSPropertyID property_id,
-    const CSSValue* property_value) const {
+    const CSSValue& property_value) const {
   if (property_id == CSSPropertyFontSize &&
-      (property_value->IsPrimitiveValue() ||
-       property_value->IsIdentifierValue()) &&
+      (property_value.IsPrimitiveValue() ||
+       property_value.IsIdentifierValue()) &&
       node_) {
     node_->GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
     const ComputedStyle* style =
@@ -400,13 +401,13 @@ bool CSSComputedStyleDeclaration::CssPropertyMatches(
     if (style && style->GetFontDescription().KeywordSize()) {
       CSSValueID size_value = CssIdentifierForFontSizeKeyword(
           style->GetFontDescription().KeywordSize());
-      if (property_value->IsIdentifierValue() &&
-          ToCSSIdentifierValue(property_value)->GetValueID() == size_value)
+      if (property_value.IsIdentifierValue() &&
+          ToCSSIdentifierValue(property_value).GetValueID() == size_value)
         return true;
     }
   }
   const CSSValue* value = GetPropertyCSSValue(CSSProperty::Get(property_id));
-  return DataEquivalent(value, property_value);
+  return DataEquivalent(value, &property_value);
 }
 
 MutableCSSPropertyValueSet* CSSComputedStyleDeclaration::CopyProperties()
@@ -484,6 +485,10 @@ String CSSComputedStyleDeclaration::removeProperty(
 
 const CSSValue* CSSComputedStyleDeclaration::GetPropertyCSSValueInternal(
     CSSPropertyID property_id) {
+  if (property_id == CSSPropertyWebkitAppearance && node_) {
+    UseCounter::Count(node_->GetDocument(),
+                      WebFeature::kGetComputedStyleWebkitAppearance);
+  }
   return GetPropertyCSSValue(CSSProperty::Get(property_id));
 }
 

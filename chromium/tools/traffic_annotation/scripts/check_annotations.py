@@ -17,7 +17,7 @@ import sys
 # If this test starts failing, please set TEST_IS_ENABLED to "False" and file a
 # bug to get this reenabled, and cc the people listed in
 # //tools/traffic_annotation/OWNERS.
-TEST_IS_ENABLED = sys.platform != 'win32'
+TEST_IS_ENABLED = True
 
 
 class NetworkTrafficAnnotationChecker():
@@ -57,7 +57,9 @@ class NetworkTrafficAnnotationChecker():
 
   def _FindPossibleBuildPath(self):
     """Returns the first folder in //out that looks like a build dir."""
-    out = os.path.abspath(os.path.join(self.this_dir, '..', '..', 'out'))
+    # Assuming this file is in 'tools/traffic_annotation/scripts', three
+    # directories deeper is 'src' and hopefully there is an 'out' in it.
+    out = os.path.abspath(os.path.join(self.this_dir, '..', '..', '..', 'out'))
     if os.path.exists(out):
       for folder in os.listdir(out):
         candidate = os.path.join(out, folder)
@@ -114,21 +116,14 @@ class NetworkTrafficAnnotationChecker():
     args = [self.auditor_path, "--test-only", "--limit=%i" % limit,
             "--build-path=" + self.build_path, "--error-resilient"] + file_paths
 
-    if sys.platform.startswith("win"):
-      args.insert(0, sys.executable)
-
     command = subprocess.Popen(args, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
     stdout_text, stderr_text = command.communicate()
 
-    if stderr_text:
-      print("Could not run network traffic annotation presubmit check. "
-            "Returned error from traffic_annotation_auditor is: %s"
-            % stderr_text)
-      print("Exit code is: %i" % command.returncode)
-      return 1
     if stdout_text:
       print(stdout_text)
+    if stderr_text:
+      print("\n[Runtime Messages]:\n%s" % stderr_text)
     return command.returncode
 
 
@@ -136,11 +131,15 @@ class NetworkTrafficAnnotationChecker():
     """Gets the list of modified files from git. Returns None if any error
     happens."""
 
-    # List of files is extracted the same way as the following test recipe:
-    # https://cs.chromium.org/chromium/tools/depot_tools/recipes/recipe_modules/
-    # tryserver/api.py?l=66
+    # List of files is extracted almost the same way as the following test
+    # recipe: https://cs.chromium.org/chromium/tools/depot_tools/recipes/
+    # recipe_modules/tryserver/api.py
+    # '--no-renames' switch is added so that if a file is renamed, both old and
+    # new name would be given. Old name is needed to discard its data in
+    # annotations.xml and new name is needed for updating the XML and checking
+    # its content for possible changes.
     args = ["git.bat"] if sys.platform == "win32" else ["git"]
-    args += ["diff", "--cached", "--name-only"]
+    args += ["diff", "--cached", "--name-only", "--no-renames"]
 
     original_path = os.getcwd()
 

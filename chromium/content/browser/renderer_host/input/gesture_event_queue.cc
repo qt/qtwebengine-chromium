@@ -122,8 +122,6 @@ bool GestureEventQueue::ShouldForwardForBounceReduction(
 
   switch (gesture_event.event.GetType()) {
     case WebInputEvent::kGestureScrollUpdate:
-      if (fling_in_progress_)
-        return false;
       if (!scrolling_in_progress_) {
         debounce_deferring_timer_.Start(
             FROM_HERE,
@@ -186,6 +184,7 @@ void GestureEventQueue::QueueAndForwardIfNecessary(
     case WebInputEvent::kGestureScrollBegin:
       if (OnScrollBegin(gesture_event))
         return;
+      break;
     default:
       break;
   }

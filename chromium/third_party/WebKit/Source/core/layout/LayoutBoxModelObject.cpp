@@ -112,7 +112,7 @@ BackgroundPaintLocation LayoutBoxModelObject::GetBackgroundPaintLocation(
 
   // TODO(flackr): When we correctly clip the scrolling contents layer we can
   // paint locally equivalent backgrounds into it. https://crbug.com/645957
-  if (!Style()->HasAutoClip())
+  if (HasClip())
     return kBackgroundPaintInGraphicsLayer;
 
   // TODO(flackr): Remove this when box shadows are still painted correctly when
@@ -470,12 +470,14 @@ void LayoutBoxModelObject::CreateLayerAfterStyleChange() {
       std::make_unique<PaintLayer>(*this));
   SetHasLayer(true);
   Layer()->InsertOnlyThisLayerAfterStyleChange();
+  SetNeedsPaintPropertyUpdate();
 }
 
 void LayoutBoxModelObject::DestroyLayer() {
   DCHECK(HasLayer() && Layer());
   SetHasLayer(false);
   GetMutableForPainting().FirstFragment().SetLayer(nullptr);
+  SetNeedsPaintPropertyUpdate();
 }
 
 bool LayoutBoxModelObject::HasSelfPaintingLayer() const {
@@ -1119,10 +1121,11 @@ LayoutPoint LayoutBoxModelObject::AdjustedPositionRelativeTo(
     if (offset_parent_object->IsLayoutInline()) {
       const LayoutInline* inline_parent = ToLayoutInline(offset_parent_object);
 
-      if (IsBox() && Style()->GetPosition() == EPosition::kAbsolute &&
-          inline_parent->IsInFlowPositioned()) {
-        // Offset for absolute elements with inline parent is a special
-        // case in the CSS spec
+      if (IsBox() && IsOutOfFlowPositioned() &&
+          inline_parent->CanContainOutOfFlowPositionedElement(
+              Style()->GetPosition())) {
+        // Offset for out of flow positioned elements with inline containers is
+        // a special case in the CSS spec
         reference_point +=
             inline_parent->OffsetForInFlowPositionedInline(*ToLayoutBox(this));
       }
@@ -1312,25 +1315,11 @@ const LayoutObject* LayoutBoxModelObject::PushMappingToContainer(
     // There can't be a transform between container and ancestor_to_stop_at,
     // because transforms create containers, so it should be safe to just
     // subtract the delta between the container and ancestor_to_stop_at.
-    // But if ancestor_to_stop_at is a table section with a transform, we
-    // must apply the transform to the offset because the table section is
-    // not the container (it is not a LayoutBlock).
     LayoutSize ancestor_offset =
         ancestor_to_stop_at->OffsetFromAncestorContainer(container);
-    if (ancestor_to_stop_at->IsTableSection() &&
-        ancestor_to_stop_at->StyleRef().HasTransform() &&
-        ancestor_to_stop_at->ShouldUseTransformFromContainer(container)) {
-      TransformationMatrix t;
-      ancestor_to_stop_at->GetTransformFromContainer(container, ancestor_offset,
-                                                     t);
-      adjustment_for_skipped_ancestor = t.Inverse();
-      adjustment_for_skipped_ancestor_is_translate2D =
-          adjustment_for_skipped_ancestor.IsIdentityOr2DTranslation();
-    } else {
-      adjustment_for_skipped_ancestor.Translate(
-          -ancestor_offset.Width().ToFloat(),
-          -ancestor_offset.Height().ToFloat());
-    }
+    adjustment_for_skipped_ancestor.Translate(
+        -ancestor_offset.Width().ToFloat(),
+        -ancestor_offset.Height().ToFloat());
   }
 
   LayoutSize container_offset = OffsetFromContainer(container);

@@ -15,9 +15,9 @@
 #include "api/optional.h"
 #include "api/video/i420_buffer.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
-#include "modules/video_coding/codecs/test/video_codec_test.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/codecs/vp8/temporal_layers.h"
+#include "modules/video_coding/utility/vp8_header_parser.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/timeutils.h"
 #include "test/field_trial.h"
@@ -487,7 +487,7 @@ TEST_F(TestVp8Impl, ScalingDisabledIfAutomaticResizeOff) {
             encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
 
   VideoEncoder::ScalingSettings settings = encoder_->GetScalingSettings();
-  EXPECT_FALSE(settings.enabled);
+  EXPECT_FALSE(settings.thresholds.has_value());
 }
 
 TEST_F(TestVp8Impl, ScalingEnabledIfAutomaticResizeOn) {
@@ -497,7 +497,7 @@ TEST_F(TestVp8Impl, ScalingEnabledIfAutomaticResizeOn) {
             encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
 
   VideoEncoder::ScalingSettings settings = encoder_->GetScalingSettings();
-  EXPECT_TRUE(settings.enabled);
+  EXPECT_TRUE(settings.thresholds.has_value());
   EXPECT_EQ(kDefaultMinPixelsPerFrame, settings.min_pixels_per_frame);
 }
 

@@ -42,6 +42,7 @@
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/HashSet.h"
+#include "platform/wtf/Optional.h"
 #include "public/platform/WebCoalescedInputEvent.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebSize.h"
@@ -81,6 +82,7 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) final;
   void BeginFrame(double last_frame_time_monotonic) override;
   void UpdateLifecycle(LifecycleUpdate requested_update) override;
+  void UpdateAllLifecyclePhasesAndCompositeForTesting() override;
   void Paint(WebCanvas*, const WebRect&) override;
   void LayoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
   void CompositeAndReadbackAsync(
@@ -102,7 +104,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
   bool IsAcceleratedCompositingActive() const override;
   void WillCloseLayerTreeView() override;
-  bool GetCompositionCharacterBounds(WebVector<WebRect>& bounds) override;
   void SetRemoteViewportIntersection(const WebRect&) override;
   void SetIsInert(bool) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,
@@ -129,6 +130,8 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   // WebFrameWidgetBase overrides:
   bool ForSubframe() const override { return true; }
   void ScheduleAnimation() override;
+  void IntrinsicSizingInfoChanged(const IntrinsicSizingInfo&) override;
+  void DidCreateLocalRootView() override;
 
   WebWidgetClient* Client() const override { return client_; }
   void SetRootGraphicsLayer(GraphicsLayer*) override;
@@ -158,9 +161,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
 
   explicit WebFrameWidgetImpl(WebWidgetClient*, WebLocalFrame*);
 
-  WebInputEventResult HandleInputEventInternal(
-      const WebCoalescedInputEvent&) override;
-
   // Perform a hit test for a point relative to the root frame of the page.
   HitTestResult HitTestResultForRootFramePos(
       const LayoutPoint& pos_in_root_frame);
@@ -170,7 +170,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   void SetIsAcceleratedCompositingActive(bool);
   void UpdateLayerTreeViewport();
   void UpdateLayerTreeBackgroundColor();
-  void UpdateLayerTreeDeviceScaleFactor();
   void UpdateBaseBackgroundColor();
 
   // PageWidgetEventHandler functions
@@ -196,7 +195,7 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   // points to the root of that subtree.
   Member<WebLocalFrameImpl> local_root_;
 
-  WebSize size_;
+  WTF::Optional<WebSize> size_;
 
   // If set, the (plugin) node which has mouse capture.
   Member<Node> mouse_capture_node_;
@@ -215,6 +214,8 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   bool layer_tree_view_closed_;
 
   bool suppress_next_keypress_event_;
+
+  bool did_suspend_parsing_ = false;
 
   bool background_color_override_enabled_;
   WebColor background_color_override_;

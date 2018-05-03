@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "SkColorSpace_Base.h"
 #include "SkCommonFlagsConfig.h"
 #include "SkImageInfo.h"
 
@@ -43,18 +42,7 @@ static const struct {
     { "glesmsaa4",             "gpu", "api=gles,samples=4" },
     { "glnvpr4",               "gpu", "api=gl,nvpr=true,samples=4" },
     { "glnvpr8" ,              "gpu", "api=gl,nvpr=true,samples=8" },
-    { "glnvprdit4",            "gpu", "api=gl,nvpr=true,samples=4,dit=true" },
-    { "glnvprdit8" ,           "gpu", "api=gl,nvpr=true,samples=8,dit=true" },
     { "glesnvpr4",             "gpu", "api=gles,nvpr=true,samples=4" },
-    { "glesnvprdit4",          "gpu", "api=gles,nvpr=true,samples=4,dit=true" },
-    { "glinst",                "gpu", "api=gl,inst=true" },
-    { "glinst4",               "gpu", "api=gl,inst=true,samples=4" },
-    { "glinstdit4",            "gpu", "api=gl,inst=true,samples=4,dit=true" },
-    { "glinst8" ,              "gpu", "api=gl,inst=true,samples=8" },
-    { "glinstdit8" ,           "gpu", "api=gl,inst=true,samples=8,dit=true" },
-    { "glesinst",              "gpu", "api=gles,inst=true" },
-    { "glesinst4",             "gpu", "api=gles,inst=true,samples=4" },
-    { "glesinstdit4",          "gpu", "api=gles,inst=true,samples=4,dit=true" },
     { "gl4444",                "gpu", "api=gl,color=4444" },
     { "gl565",                 "gpu", "api=gl,color=565" },
     { "glf16",                 "gpu", "api=gl,color=f16" },
@@ -67,6 +55,7 @@ static const struct {
     { "glwide",                "gpu", "api=gl,color=f16_wide" },
     { "glnarrow",              "gpu", "api=gl,color=f16_narrow" },
     { "glnostencils",          "gpu", "api=gl,stencils=false" },
+    { "gles4444",              "gpu", "api=gles,color=4444" },
     { "glessrgb",              "gpu", "api=gles,color=srgb" },
     { "gleswide",              "gpu", "api=gles,color=f16_wide" },
     { "glesnarrow",            "gpu", "api=gles,color=f16_narrow" },
@@ -399,7 +388,7 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString& tag,
     bool seenUseDIText =false;
     bool useDIText = false;
     bool seenSamples = false;
-    int samples = 0;
+    int samples = 1;
     bool seenColor = false;
     SkColorType colorType = kRGBA_8888_SkColorType;
     SkAlphaType alphaType = kPremul_SkAlphaType;

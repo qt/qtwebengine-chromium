@@ -11,7 +11,7 @@
         "options": [
             {
                 "domain": "Browser",
-                "include": ["getVersion", "getHistograms", "getHistogram"]
+                "include": ["getVersion", "getHistograms", "getHistogram", "getCommandLine"]
             },
             {
                 "domain": "DOM",
@@ -36,7 +36,7 @@
             },
             {
                 "domain": "Memory",
-                "include": ["setPressureNotificationsSuppressed", "simulatePressureNotification"]
+                "include": ["getBrowserSamplingProfile", "setPressureNotificationsSuppressed", "simulatePressureNotification"]
             },
             {
                 "domain": "Network",

@@ -70,6 +70,10 @@ class PLATFORM_EXPORT ResourceFetcher
   virtual ~ResourceFetcher();
   virtual void Trace(blink::Visitor*);
 
+  // Triggers a fetch based on the given FetchParameters (if there isn't a
+  // suitable Resource already cached) and registers the given ResourceClient
+  // with the Resource. Guaranteed to return a non-null Resource of the subtype
+  // specified by ResourceFactory::GetType().
   Resource* RequestResource(FetchParameters&,
                             const ResourceFactory&,
                             ResourceClient*,
@@ -177,7 +181,12 @@ class PLATFORM_EXPORT ResourceFetcher
   ResourceFetcher(FetchContext*);
 
   void InitializeRevalidation(ResourceRequest&, Resource*);
-  Resource* CreateResourceForLoading(FetchParameters&,
+  // When |security_origin| of the ResourceLoaderOptions is not a nullptr, it'll
+  // be used instead of the associated FetchContext's SecurityOrigin.
+  scoped_refptr<const SecurityOrigin> GetSourceOrigin(
+      const ResourceLoaderOptions&) const;
+  void AddToMemoryCacheIfNeeded(const FetchParameters&, Resource*);
+  Resource* CreateResourceForLoading(const FetchParameters&,
                                      const ResourceFactory&);
   void StorePerformanceTimingInitiatorInformation(Resource*);
   ResourceLoadPriority ComputeLoadPriority(
@@ -189,16 +198,13 @@ class PLATFORM_EXPORT ResourceFetcher
           FetchParameters::SpeculativePreloadType::kNotSpeculative,
       bool is_link_preload = false);
 
-  enum PrepareRequestResult { kAbort, kContinue, kBlock };
-
-  Resource* RequestResource(FetchParameters&,
-                            const ResourceFactory&,
-                            const SubstituteData&);
-  PrepareRequestResult PrepareRequest(FetchParameters&,
-                                      const ResourceFactory&,
-                                      const SubstituteData&,
-                                      unsigned long identifier,
-                                      ResourceRequestBlockedReason&);
+  Resource* RequestResourceInternal(FetchParameters&,
+                                    const ResourceFactory&,
+                                    const SubstituteData&);
+  ResourceRequestBlockedReason PrepareRequest(FetchParameters&,
+                                              const ResourceFactory&,
+                                              const SubstituteData&,
+                                              unsigned long identifier);
 
   Resource* ResourceForStaticData(const FetchParameters&,
                                   const ResourceFactory&,

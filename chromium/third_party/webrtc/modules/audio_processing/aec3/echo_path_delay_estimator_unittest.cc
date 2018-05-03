@@ -14,9 +14,9 @@
 #include <sstream>
 #include <string>
 
+#include "api/audio/echo_canceller3_config.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
-#include "modules/audio_processing/include/audio_processing.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
 #include "rtc_base/random.h"
@@ -84,8 +84,12 @@ TEST(EchoPathDelayEstimator, DelayEstimation) {
 
         render_delay_buffer->PrepareCaptureProcessing();
 
-        estimated_delay_samples = estimator.EstimateDelay(
+        auto estimate = estimator.EstimateDelay(
             render_delay_buffer->GetDownsampledRenderBuffer(), capture);
+
+        if (estimate) {
+          estimated_delay_samples = estimate;
+        }
       }
 
       if (estimated_delay_samples) {

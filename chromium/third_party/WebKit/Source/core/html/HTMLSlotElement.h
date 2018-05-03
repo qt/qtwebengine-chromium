@@ -47,26 +47,31 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
   static HTMLSlotElement* CreateUserAgentCustomAssignSlot(Document&);
 
   const HeapVector<Member<Node>>& AssignedNodes() const;
-  const HeapVector<Member<Node>>& GetDistributedNodes();
   const HeapVector<Member<Node>> AssignedNodesForBinding(
       const AssignedNodesOptions&);
   const HeapVector<Member<Element>> AssignedElements();
   const HeapVector<Member<Element>> AssignedElementsForBinding(
       const AssignedNodesOptions&);
 
+  const HeapVector<Member<Node>> FlattenedAssignedNodes();
+
   Node* FirstAssignedNode() const {
-    return assigned_nodes_.IsEmpty() ? nullptr : assigned_nodes_.front().Get();
+    auto& nodes = AssignedNodes();
+    return nodes.IsEmpty() ? nullptr : nodes.front().Get();
   }
   Node* LastAssignedNode() const {
-    return assigned_nodes_.IsEmpty() ? nullptr : assigned_nodes_.back().Get();
+    auto& nodes = AssignedNodes();
+    return nodes.IsEmpty() ? nullptr : nodes.back().Get();
   }
 
   Node* FirstDistributedNode() const {
+    DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
     DCHECK(SupportsAssignment());
     return distributed_nodes_.IsEmpty() ? nullptr
                                         : distributed_nodes_.front().Get();
   }
   Node* LastDistributedNode() const {
+    DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
     DCHECK(SupportsAssignment());
     return distributed_nodes_.IsEmpty() ? nullptr
                                         : distributed_nodes_.back().Get();
@@ -80,7 +85,7 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
 
   void AppendAssignedNode(Node&);
 
-  void ResolveDistributedNodes();
+  void RecalcDistributedNodes();
   void AppendDistributedNode(Node&);
   void AppendDistributedNodesFrom(const HTMLSlotElement& other);
 
@@ -150,10 +155,15 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
 
   void SetNeedsDistributionRecalcWillBeSetNeedsAssignmentRecalc();
 
+  const HeapVector<Member<Node>>& GetDistributedNodes();
+
   HeapVector<Member<Node>> assigned_nodes_;
+
+  // For Non-IncrmentalShadowDOM. IncremntalShadowDOM never use these members.
   HeapVector<Member<Node>> distributed_nodes_;
   HeapVector<Member<Node>> old_distributed_nodes_;
   HeapHashMap<Member<const Node>, size_t> distributed_indices_;
+
   bool slotchange_event_enqueued_ = false;
 
   // TODO(hayato): Move this to more appropriate directory (e.g. platform/wtf)
@@ -195,6 +205,36 @@ class CORE_EXPORT HTMLSlotElement final : public HTMLElement {
 
   friend class HTMLSlotElementTest;
 };
+
+inline const HTMLSlotElement* ToHTMLSlotElementIfSupportsAssignmentOrNull(
+    const Node& node) {
+  if (auto* slot = ToHTMLSlotElementOrNull(node)) {
+    if (slot->SupportsAssignment())
+      return slot;
+  }
+  return nullptr;
+}
+
+inline HTMLSlotElement* ToHTMLSlotElementIfSupportsAssignmentOrNull(
+    Node& node) {
+  return const_cast<HTMLSlotElement*>(
+      ToHTMLSlotElementIfSupportsAssignmentOrNull(
+          static_cast<const Node&>(node)));
+}
+
+inline const HTMLSlotElement* ToHTMLSlotElementIfSupportsAssignmentOrNull(
+    const Node* node) {
+  if (!node)
+    return nullptr;
+  return ToHTMLSlotElementIfSupportsAssignmentOrNull(*node);
+}
+
+inline HTMLSlotElement* ToHTMLSlotElementIfSupportsAssignmentOrNull(
+    Node* node) {
+  return const_cast<HTMLSlotElement*>(
+      ToHTMLSlotElementIfSupportsAssignmentOrNull(
+          static_cast<const Node*>(node)));
+}
 
 }  // namespace blink
 

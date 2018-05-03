@@ -29,8 +29,10 @@
 #include "extensions/renderer/extension_frame_helper.h"
 #include "extensions/renderer/extension_js_runner.h"
 #include "extensions/renderer/get_script_context.h"
+#include "extensions/renderer/i18n_hooks_delegate.h"
 #include "extensions/renderer/ipc_message_sender.h"
 #include "extensions/renderer/module_system.h"
+#include "extensions/renderer/runtime_hooks_delegate.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/storage_area.h"
 #include "extensions/renderer/web_request_hooks.h"
@@ -325,27 +327,6 @@ v8::Local<v8::Object> CreateFullBinding(
   return root_binding;
 }
 
-// A setter for allowing scripts to override the binding on an object. This
-// records a new set value as a private property of the object, so that the
-// accessor can check for it and return it if present.
-// This would be unnecessary if there were a SetLazyDataProperty on v8::Object
-// (rather than just v8::Template).
-void BindingSetter(v8::Local<v8::Name> property,
-                   v8::Local<v8::Value> value,
-                   const v8::PropertyCallbackInfo<void>& info) {
-  v8::Isolate* isolate = info.GetIsolate();
-  v8::HandleScope handle_scope(isolate);
-  v8::Local<v8::Object> object = info.Holder();
-  v8::Local<v8::Context> context = object->CreationContext();
-
-  v8::Local<v8::String> api_name = info.Data().As<v8::String>();
-
-  v8::Maybe<bool> success = object->SetPrivate(
-      context, v8::Private::ForApi(isolate, api_name), value);
-  DCHECK(success.IsJust());
-  DCHECK(success.FromJust());
-}
-
 }  // namespace
 
 NativeExtensionBindingsSystem::NativeExtensionBindingsSystem(
@@ -377,6 +358,10 @@ NativeExtensionBindingsSystem::NativeExtensionBindingsSystem(
       ->SetDelegate(std::make_unique<WebRequestHooks>());
   api_system_.GetHooksForAPI("declarativeContent")
       ->SetDelegate(std::make_unique<DeclarativeContentHooksDelegate>());
+  api_system_.GetHooksForAPI("i18n")->SetDelegate(
+      std::make_unique<I18nHooksDelegate>());
+  api_system_.GetHooksForAPI("runtime")->SetDelegate(
+      std::make_unique<RuntimeHooksDelegate>(&messaging_service_));
 }
 
 NativeExtensionBindingsSystem::~NativeExtensionBindingsSystem() {}
@@ -440,8 +425,8 @@ void NativeExtensionBindingsSystem::UpdateBindingsForContext(
                        v8_context](base::StringPiece accessor_name) {
     v8::Local<v8::String> api_name =
         gin::StringToSymbol(isolate, accessor_name);
-    v8::Maybe<bool> success = chrome->SetAccessor(
-        v8_context, api_name, &BindingAccessor, &BindingSetter, api_name);
+    v8::Maybe<bool> success = chrome->SetLazyDataProperty(
+        v8_context, api_name, &BindingAccessor, api_name);
     return success.IsJust() && success.FromJust();
   };
 
@@ -455,7 +440,7 @@ void NativeExtensionBindingsSystem::UpdateBindingsForContext(
     case Feature::SERVICE_WORKER_CONTEXT:
       DCHECK(ExtensionsClient::Get()
                  ->ExtensionAPIEnabledInExtensionServiceWorkers());
-    // Intentional fallthrough.
+      FALLTHROUGH;
     case Feature::BLESSED_EXTENSION_CONTEXT:
     case Feature::LOCK_SCREEN_EXTENSION_CONTEXT:
     case Feature::UNBLESSED_EXTENSION_CONTEXT:
@@ -586,31 +571,11 @@ void NativeExtensionBindingsSystem::BindingAccessor(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   v8::Isolate* isolate = info.GetIsolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Local<v8::Object> object = info.Holder();
-  v8::Local<v8::Context> context = object->CreationContext();
+  v8::Local<v8::Context> context = info.Holder()->CreationContext();
 
   // We use info.Data() to store a real name here instead of using the provided
   // one to handle any weirdness from the caller (non-existent strings, etc).
   v8::Local<v8::String> api_name = info.Data().As<v8::String>();
-
-  v8::Local<v8::Private> key = v8::Private::ForApi(isolate, api_name);
-  v8::Maybe<bool> has_private = object->HasPrivate(context, key);
-  if (!has_private.IsJust()) {
-    NOTREACHED();
-    return;
-  }
-
-  if (has_private.FromJust()) {
-    v8::Local<v8::Value> overridden_value;
-    if (!object->GetPrivate(context, v8::Private::ForApi(isolate, api_name))
-             .ToLocal(&overridden_value)) {
-      NOTREACHED();
-      return;
-    }
-    info.GetReturnValue().Set(overridden_value);
-    return;
-  }
-
   v8::Local<v8::Object> binding = GetAPIHelper(context, api_name);
   if (!binding.IsEmpty())
     info.GetReturnValue().Set(binding);

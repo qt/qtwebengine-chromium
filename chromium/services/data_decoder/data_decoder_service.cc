@@ -11,7 +11,7 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/data_decoder/image_decoder_impl.h"
 #include "services/data_decoder/json_parser_impl.h"
-#include "services/data_decoder/public/interfaces/image_decoder.mojom.h"
+#include "services/data_decoder/public/mojom/image_decoder.mojom.h"
 #include "services/data_decoder/xml_parser.h"
 #include "services/service_manager/public/cpp/service_context.h"
 
@@ -36,7 +36,7 @@ void OnJsonParserRequest(service_manager::ServiceContextRefFactory* ref_factory,
 
 void OnXmlParserRequest(service_manager::ServiceContextRefFactory* ref_factory,
                         mojom::XmlParserRequest request) {
-  mojo::MakeStrongBinding(base::MakeUnique<XmlParser>(ref_factory->CreateRef()),
+  mojo::MakeStrongBinding(std::make_unique<XmlParser>(ref_factory->CreateRef()),
                           std::move(request));
 }
 
@@ -52,8 +52,9 @@ std::unique_ptr<service_manager::Service> DataDecoderService::Create() {
 }
 
 void DataDecoderService::OnStart() {
-  ref_factory_.reset(new service_manager::ServiceContextRefFactory(base::Bind(
-      &DataDecoderService::MaybeRequestQuitDelayed, base::Unretained(this))));
+  ref_factory_.reset(new service_manager::ServiceContextRefFactory(
+      base::BindRepeating(&DataDecoderService::MaybeRequestQuitDelayed,
+                          weak_factory_.GetWeakPtr())));
   registry_.AddInterface(
       base::Bind(&OnImageDecoderRequest, ref_factory_.get()));
   registry_.AddInterface(base::Bind(&OnJsonParserRequest, ref_factory_.get()));
@@ -78,7 +79,7 @@ void DataDecoderService::MaybeRequestQuitDelayed() {
 void DataDecoderService::MaybeRequestQuit() {
   DCHECK(ref_factory_);
   if (ref_factory_->HasNoRefs())
-    context()->RequestQuit();
+    context()->CreateQuitClosure().Run();
 }
 
 }  // namespace data_decoder

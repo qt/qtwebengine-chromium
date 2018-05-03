@@ -33,7 +33,7 @@
               style$="[[computeSiteIcon(item.origin)]]"></div>
           <div class="middle">[[item.origin]]</div>
 
-          <button is="paper-icon-button-light" on-tap="showMenu_"
+          <button is="paper-icon-button-light" on-click="showMenu_"
               class="icon-more-vert" title="$i18n{moreActions}">
           </button>
         </div>
@@ -41,7 +41,8 @@
     </template>
 
     <dialog is="cr-action-menu">
-      <button id="removeButton" class="dropdown-item" on-tap="onRemoveTap_">
+      <button id="removeButton" slot="item" class="dropdown-item"
+          on-click="onRemoveTap_">
         $i18n{handlerRemove}
       </button>
     </dialog>

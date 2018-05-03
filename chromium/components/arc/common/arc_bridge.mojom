@@ -32,7 +32,9 @@ import "power.mojom";
 import "print.mojom";
 import "process.mojom";
 import "rotation_lock.mojom";
+import "screen_capture.mojom";
 import "storage_manager.mojom";
+import "timer.mojom";
 import "tracing.mojom";
 import "tts.mojom";
 import "usb_host.mojom";
@@ -42,9 +44,9 @@ import "voice_interaction_framework.mojom";
 import "volume_mounter.mojom";
 import "wallpaper.mojom";
 
-// Next MinVersion: 35
+// Next MinVersion: 37
 // Deprecated method IDs: 101, 105
-// Next method ID: 140
+// Next method ID: 142
 interface ArcBridgeHost {
   // Keep the entries alphabetical. In order to do so without breaking
   // compatibility with the ARC instance, explicitly assign each interface a
@@ -142,8 +144,14 @@ interface ArcBridgeHost {
   // Notifies Chrome that the RotationLockInstance interface is ready.
   [MinVersion=32] OnRotationLockInstanceReady@137(RotationLockInstance instance_ptr);
 
+  // Notifies Chrome that the ScreenCaptureInstance interface is ready.
+  [MinVersion=35] OnScreenCaptureInstanceReady@140(ScreenCaptureInstance instance_ptr);
+
   // Notifies Chrome that the StorageManagerInstance interface is ready.
   [MinVersion=12] OnStorageManagerInstanceReady@118(StorageManagerInstance instance_ptr);
+
+  // Notifies Chrome that the TimerInstance interface is ready.
+  [MinVersion=36] OnTimerInstanceReady@141(TimerInstance instance_ptr);
 
   // Notifies Chrome that the TracingInstance interface is ready.
   [MinVersion=22] OnTracingInstanceReady@128(TracingInstance instance_ptr);

@@ -20,6 +20,7 @@
 #include "cc/trees/swap_promise.h"
 #include "cc/trees/swap_promise_monitor.h"
 #include "content/common/content_export.h"
+#include "content/common/render_frame_metadata.mojom.h"
 #include "content/renderer/gpu/compositor_dependencies.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
@@ -48,7 +49,6 @@ class LatencyInfo;
 }
 
 namespace content {
-
 class RenderWidgetCompositorDelegate;
 struct ScreenInfo;
 
@@ -71,7 +71,6 @@ class CONTENT_EXPORT RenderWidgetCompositor
   static cc::LayerTreeSettings GenerateLayerTreeSettings(
       const base::CommandLine& cmd,
       CompositorDependencies* compositor_deps,
-      float device_scale_factor,
       bool is_for_subframe,
       const ScreenInfo& screen_info,
       bool is_threaded);
@@ -80,7 +79,6 @@ class CONTENT_EXPORT RenderWidgetCompositor
       cc::LayerTreeHostSingleThreadClient* single_thread_client,
       cc::MutatorHost* mutator_host,
       CompositorDependencies* deps,
-      float device_scale_factor,
       const ScreenInfo& screen_info);
 
   void Initialize(std::unique_ptr<cc::LayerTreeHost> layer_tree_host,
@@ -120,12 +118,12 @@ class CONTENT_EXPORT RenderWidgetCompositor
       const base::Callback<void(std::unique_ptr<base::Value>)>& callback);
   bool SendMessageToMicroBenchmark(int id, std::unique_ptr<base::Value> value);
   void SetFrameSinkId(const viz::FrameSinkId& frame_sink_id);
-  void SetPaintedDeviceScaleFactor(float device_scale);
   void SetRasterColorSpace(const gfx::ColorSpace& color_space);
   void SetIsForOopif(bool is_for_oopif);
   void SetContentSourceId(uint32_t source_id);
-  void SetViewportSize(const gfx::Size& device_viewport_size,
-                       const viz::LocalSurfaceId& local_surface_id);
+  void SetViewportSizeAndScale(const gfx::Size& device_viewport_size,
+                               float device_scale_factor,
+                               const viz::LocalSurfaceId& local_surface_id);
   void SetURLForUkm(const GURL& url);
 
   // WebLayerTreeView implementation.
@@ -136,7 +134,6 @@ class CONTENT_EXPORT RenderWidgetCompositor
   blink::WebSize GetViewportSize() const override;
   virtual blink::WebFloatPoint adjustEventPointForPinchZoom(
       const blink::WebFloatPoint& point) const;
-  void SetDeviceScaleFactor(float device_scale) override;
   void SetBackgroundColor(blink::WebColor color) override;
   void SetVisible(bool visible) override;
   void SetPageScaleFactorAndLimits(float page_scale_factor,
@@ -154,19 +151,18 @@ class CONTENT_EXPORT RenderWidgetCompositor
       blink::WebLayoutAndPaintAsyncCallback* callback) override;
   void CompositeAndReadbackAsync(
       blink::WebCompositeAndReadbackAsyncCallback* callback) override;
+  void SynchronouslyCompositeNoRasterForTesting() override;
   void SetDeferCommits(bool defer_commits) override;
   void RegisterViewportLayers(
       const blink::WebLayerTreeView::ViewportLayers& viewport_layers) override;
   void ClearViewportLayers() override;
   void RegisterSelection(const blink::WebSelection& selection) override;
   void ClearSelection() override;
-  void SetMutatorClient(
-      std::unique_ptr<blink::WebCompositorMutatorClient>) override;
+  void SetMutatorClient(std::unique_ptr<cc::LayerTreeMutator>) override;
   void ForceRecalculateRasterScales() override;
   void SetEventListenerProperties(
       blink::WebEventListenerClass eventClass,
       blink::WebEventListenerProperties properties) override;
-  void UpdateEventRectsForSubframeIfNecessary() override;
   blink::WebEventListenerProperties EventListenerProperties(
       blink::WebEventListenerClass eventClass) const override;
   void SetHaveScrollEventHandlers(bool) override;
@@ -224,6 +220,12 @@ class CONTENT_EXPORT RenderWidgetCompositor
     return layer_tree_host_->GetSettings();
   }
 
+  // Creates a cc::RenderFrameMetadataObserver, which is sent to the compositor
+  // thread for binding.
+  void CreateRenderFrameObserver(
+      mojom::RenderFrameMetadataObserverRequest request,
+      mojom::RenderFrameMetadataObserverClientPtrInfo client_info);
+
  protected:
   friend class RenderViewImplScaleFactorTest;
 
@@ -235,10 +237,10 @@ class CONTENT_EXPORT RenderWidgetCompositor
  private:
   void SetLayerTreeFrameSink(
       std::unique_ptr<cc::LayerTreeFrameSink> layer_tree_frame_sink);
-  void LayoutAndUpdateLayers();
   void InvokeLayoutAndPaintCallback();
   bool CompositeIsSynchronous() const;
-  void SynchronouslyComposite();
+  void SynchronouslyComposite(bool raster,
+                              std::unique_ptr<cc::SwapPromise> swap_promise);
 
   RenderWidgetCompositorDelegate* const delegate_;
   CompositorDependencies* const compositor_deps_;
@@ -250,6 +252,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
 
   bool layer_tree_frame_sink_request_failed_while_invisible_ = false;
 
+  bool in_synchronous_compositor_update_ = false;
   blink::WebLayoutAndPaintAsyncCallback* layout_and_paint_async_callback_;
 
   viz::FrameSinkId frame_sink_id_;

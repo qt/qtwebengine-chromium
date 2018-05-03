@@ -7,7 +7,7 @@
 
 #include "base/single_thread_task_runner.h"
 #include "media/capture/video/video_frame_receiver.h"
-#include "services/video_capture/public/interfaces/receiver.mojom.h"
+#include "services/video_capture/public/mojom/receiver.mojom.h"
 
 namespace video_capture {
 
@@ -46,8 +46,6 @@ class ReceiverMojoToMediaAdapter : public media::VideoFrameReceiver {
  public:
   ReceiverMojoToMediaAdapter(mojom::ReceiverPtr receiver);
   ~ReceiverMojoToMediaAdapter() override;
-
-  void ResetConnectionErrorHandler();
 
   // media::VideoFrameReceiver implementation.
   void OnNewBufferHandle(

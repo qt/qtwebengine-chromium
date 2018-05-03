@@ -14,7 +14,7 @@
 #include "services/metrics/public/cpp/metrics_export.h"
 #include "services/metrics/public/cpp/ukm_entry_builder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
-#include "services/metrics/public/interfaces/ukm_interface.mojom.h"
+#include "services/metrics/public/mojom/ukm_interface.mojom.h"
 #include "url/gurl.h"
 
 class DocumentWritePageLoadMetricsObserver;
@@ -40,6 +40,7 @@ class BasePredictor;
 namespace blink {
 class AutoplayUmaHelper;
 class Document;
+class UkmTimeAggregator;
 }
 
 namespace cc {
@@ -50,8 +51,11 @@ namespace content {
 class CrossSiteDocumentResourceHandler;
 class WebContentsImpl;
 class PluginServiceImpl;
-class DownloadUkmHelper;
 }  // namespace content
+
+namespace download {
+class DownloadUkmHelper;
+}
 
 namespace password_manager {
 class PasswordManagerMetricsRecorder;
@@ -90,8 +94,9 @@ class UkmEntryBuilder;
 class TestRecordingHelper;
 
 namespace internal {
-class UkmEntryBuilderBase;
 class SourceUrlRecorderWebContentsObserver;
+class SourceUrlRecorderWebStateObserver;
+class UkmEntryBuilderBase;
 }
 
 // This feature controls whether UkmService should be created.
@@ -131,12 +136,14 @@ class METRICS_EXPORT UkmRecorder {
   friend autofill::FormStructure;
   friend blink::AutoplayUmaHelper;
   friend blink::Document;
+  friend blink::UkmTimeAggregator;
   friend cc::UkmManager;
   friend content::CrossSiteDocumentResourceHandler;
-  friend content::DownloadUkmHelper;
   friend content::PluginServiceImpl;
   friend content::WebContentsImpl;
+  friend download::DownloadUkmHelper;
   friend internal::SourceUrlRecorderWebContentsObserver;
+  friend internal::SourceUrlRecorderWebStateObserver;
   friend internal::UkmEntryBuilderBase;
   friend media::MediaMetricsProvider;
   friend media::VideoDecodePerfHistory;

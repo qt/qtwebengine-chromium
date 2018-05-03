@@ -24,7 +24,6 @@
 #include "content/common/inter_process_time_ticks_converter.h"
 #include "content/common/navigation_params.h"
 #include "content/common/throttling_url_loader.h"
-#include "content/public/common/content_features.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/renderer/fixed_received_data.h"
 #include "content/public/renderer/request_peer.h"
@@ -39,6 +38,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
@@ -110,11 +110,8 @@ int ResourceDispatcher::MakeRequestID() {
   return sequence.GetNext();  // We start at zero.
 }
 
-ResourceDispatcher::ResourceDispatcher(
-    scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner)
-    : delegate_(nullptr),
-      thread_task_runner_(thread_task_runner),
-      weak_factory_(this) {}
+ResourceDispatcher::ResourceDispatcher()
+    : delegate_(nullptr), weak_factory_(this) {}
 
 ResourceDispatcher::~ResourceDispatcher() {
 }
@@ -122,10 +119,8 @@ ResourceDispatcher::~ResourceDispatcher() {
 ResourceDispatcher::PendingRequestInfo*
 ResourceDispatcher::GetPendingRequestInfo(int request_id) {
   PendingRequestMap::iterator it = pending_requests_.find(request_id);
-  if (it == pending_requests_.end()) {
-    // This might happen for kill()ed requests on the webkit end.
+  if (it == pending_requests_.end())
     return nullptr;
-  }
   return it->second.get();
 }
 
@@ -300,7 +295,7 @@ void ResourceDispatcher::Cancel(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   PendingRequestMap::iterator it = pending_requests_.find(request_id);
   if (it == pending_requests_.end()) {
-    DVLOG(1) << "unknown request";
+    DLOG(ERROR) << "unknown request";
     return;
   }
 
@@ -330,7 +325,11 @@ void ResourceDispatcher::DidChangePriority(int request_id,
                                            net::RequestPriority new_priority,
                                            int intra_priority_value) {
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
-  DCHECK(request_info);
+  if (!request_info) {
+    DLOG(ERROR) << "unknown request";
+    return;
+  }
+
   request_info->url_loader->SetPriority(new_priority, intra_priority_value);
 }
 
@@ -415,7 +414,8 @@ int ResourceDispatcher::StartAsync(
     std::unique_ptr<RequestPeer> peer,
     scoped_refptr<SharedURLLoaderFactory> url_loader_factory,
     std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints) {
+    network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
+    base::OnceClosure* continue_navigation_function) {
   CheckSchemeForReferrerPolicy(*request);
 
   // Compute a unique request_id for this renderer process.
@@ -430,10 +430,10 @@ int ResourceDispatcher::StartAsync(
         std::make_unique<URLLoaderClientImpl>(request_id, this,
                                               loading_task_runner);
 
-    loading_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&ResourceDispatcher::ContinueForNavigation,
-                                  weak_factory_.GetWeakPtr(), request_id,
-                                  std::move(url_loader_client_endpoints)));
+    DCHECK(continue_navigation_function);
+    *continue_navigation_function = base::BindOnce(
+        &ResourceDispatcher::ContinueForNavigation, weak_factory_.GetWeakPtr(),
+        request_id, std::move(url_loader_client_endpoints));
 
     return request_id;
   }
@@ -444,7 +444,7 @@ int ResourceDispatcher::StartAsync(
   uint32_t options = network::mojom::kURLLoadOptionNone;
   // TODO(jam): use this flag for ResourceDispatcherHost code path once
   // MojoLoading is the only IPC code path.
-  if (base::FeatureList::IsEnabled(features::kNetworkService) &&
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService) &&
       request->fetch_request_context_type != REQUEST_CONTEXT_TYPE_FETCH) {
     // MIME sniffing should be disabled for a request initiated by fetch().
     options |= network::mojom::kURLLoadOptionSniffMimeType;

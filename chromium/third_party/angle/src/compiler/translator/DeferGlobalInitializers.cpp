@@ -22,6 +22,7 @@
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/ReplaceVariable.h"
+#include "compiler/translator/StaticType.h"
 #include "compiler/translator/SymbolTable.h"
 
 namespace sh
@@ -29,6 +30,8 @@ namespace sh
 
 namespace
 {
+
+constexpr const ImmutableString kInitGlobalsString("initGlobals");
 
 void GetDeferredInitializers(TIntermDeclaration *declaration,
                              bool initializeUninitializedGlobals,
@@ -103,8 +106,8 @@ void InsertInitCallToMain(TIntermBlock *root,
     initGlobalsBlock->getSequence()->swap(*deferredInitializers);
 
     TFunction *initGlobalsFunction =
-        new TFunction(symbolTable, NewPoolTString("initGlobals"), new TType(EbtVoid),
-                      SymbolType::AngleInternal, false);
+        new TFunction(symbolTable, kInitGlobalsString, SymbolType::AngleInternal,
+                      StaticType::GetBasic<EbtVoid>(), false);
 
     TIntermFunctionPrototype *initGlobalsFunctionPrototype =
         CreateInternalFunctionPrototypeNode(*initGlobalsFunction);
@@ -153,10 +156,10 @@ void DeferGlobalInitializers(TIntermBlock *root,
     // Replace constant variables with non-constant global variables.
     for (const TVariable *var : variablesToReplace)
     {
-        TType replacementType(var->getType());
-        replacementType.setQualifier(EvqGlobal);
+        TType *replacementType = new TType(var->getType());
+        replacementType->setQualifier(EvqGlobal);
         TVariable *replacement =
-            new TVariable(symbolTable, &var->name(), replacementType, var->symbolType());
+            new TVariable(symbolTable, var->name(), replacementType, var->symbolType());
         ReplaceVariable(root, var, replacement);
     }
 }

@@ -28,7 +28,7 @@
 #include "net/http/http_transaction_test_util.h"
 #include "net/http/transport_security_state.h"
 #include "net/log/net_log_with_source.h"
-#include "net/proxy/proxy_service.h"
+#include "net/proxy_resolution/proxy_service.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
@@ -39,6 +39,7 @@
 #include "net/test/test_data_directory.h"
 #include "net/tools/quic/quic_http_response_cache.h"
 #include "net/tools/quic/quic_simple_server.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -102,13 +103,15 @@ class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
         host_resolver_(std::move(host_resolver_impl_)),
         cert_transparency_verifier_(new MultiLogCTVerifier()),
         ssl_config_service_(new SSLConfigServiceDefaults),
-        proxy_service_(ProxyService::CreateDirect()),
+        proxy_resolution_service_(ProxyResolutionService::CreateDirect()),
         auth_handler_factory_(
             HttpAuthHandlerFactory::CreateDefault(&host_resolver_)),
         strike_register_no_startup_period_(false) {
     request_.method = "GET";
     request_.url = GURL("https://test.example.com/");
     request_.load_flags = 0;
+    request_.traffic_annotation =
+        net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
     session_params_.enable_quic = true;
     if (GetParam().use_stateless_rejects) {
@@ -122,7 +125,7 @@ class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
     session_context_.cert_transparency_verifier =
         cert_transparency_verifier_.get();
     session_context_.ct_policy_enforcer = &ct_policy_enforcer_;
-    session_context_.proxy_service = proxy_service_.get();
+    session_context_.proxy_resolution_service = proxy_resolution_service_.get();
     session_context_.ssl_config_service = ssl_config_service_.get();
     session_context_.http_auth_handler_factory = auth_handler_factory_.get();
     session_context_.http_server_properties = &http_server_properties_;
@@ -236,7 +239,7 @@ class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
   std::unique_ptr<CTVerifier> cert_transparency_verifier_;
   CTPolicyEnforcer ct_policy_enforcer_;
   scoped_refptr<SSLConfigServiceDefaults> ssl_config_service_;
-  std::unique_ptr<ProxyService> proxy_service_;
+  std::unique_ptr<ProxyResolutionService> proxy_resolution_service_;
   std::unique_ptr<HttpAuthHandlerFactory> auth_handler_factory_;
   HttpServerPropertiesImpl http_server_properties_;
   HttpNetworkSession::Params session_params_;

@@ -11,8 +11,9 @@ import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//ppapi/features/features.gni")
 import("//services/service_manager/public/service_manifest.gni")
-import("//tools/grit/repack.gni")
 import("//tools/grit/grit_rule.gni")
+import("//tools/grit/repack.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 if (is_android) {
   import("//build/config/android/config.gni")
 } else if (is_mac) {
@@ -89,8 +90,6 @@ static_library("content_shell_lib") {
     "browser/layout_test/layout_test_permission_manager.h",
     "browser/layout_test/layout_test_push_messaging_service.cc",
     "browser/layout_test/layout_test_push_messaging_service.h",
-    "browser/layout_test/layout_test_resource_dispatcher_host_delegate.cc",
-    "browser/layout_test/layout_test_resource_dispatcher_host_delegate.h",
     "browser/layout_test/layout_test_url_request_context_getter.cc",
     "browser/layout_test/layout_test_url_request_context_getter.h",
     "browser/layout_test/mojo_layout_test_helper.cc",
@@ -144,8 +143,6 @@ static_library("content_shell_lib") {
     "browser/shell_plugin_service_filter.h",
     "browser/shell_quota_permission_context.cc",
     "browser/shell_quota_permission_context.h",
-    "browser/shell_resource_dispatcher_host_delegate.cc",
-    "browser/shell_resource_dispatcher_host_delegate.h",
     "browser/shell_speech_recognition_manager_delegate.cc",
     "browser/shell_speech_recognition_manager_delegate.h",
     "browser/shell_url_request_context_getter.cc",
@@ -189,6 +186,8 @@ static_library("content_shell_lib") {
     "renderer/layout_test/test_media_stream_renderer_factory.h",
     "renderer/layout_test/test_media_stream_video_renderer.cc",
     "renderer/layout_test/test_media_stream_video_renderer.h",
+    "renderer/layout_test/test_websocket_handshake_throttle.cc",
+    "renderer/layout_test/test_websocket_handshake_throttle.h",
     "renderer/shell_content_renderer_client.cc",
     "renderer/shell_content_renderer_client.h",
     "renderer/shell_render_view_observer.cc",
@@ -214,10 +213,10 @@ static_library("content_shell_lib") {
     "//content/public/child",
     "//content/public/common",
     "//content/public/gpu",
-    "//content/public/network",
     "//content/public/renderer",
     "//content/public/utility",
     "//ipc",
+    "//services/network:network_service",
   ]
   deps = [
     ":content_shell_packaged_services_manifest_overlay",
@@ -232,6 +231,7 @@ static_library("content_shell_lib") {
     "//components/crash/content/app:test_support",
     "//components/crash/content/browser",
     "//components/crash/core/common:crash_key",
+    "//components/download/public/common:public",
     "//components/keyed_service/content",
     "//components/network_session_configurator/browser",
     "//components/plugins/renderer",
@@ -252,7 +252,6 @@ static_library("content_shell_lib") {
     "//device/bluetooth:fake_bluetooth",
     "//device/bluetooth:mocks",
     "//device/geolocation/public/cpp:test_support",
-    "//device/geolocation/public/interfaces",
     "//device/sensors/public/cpp:full",
     "//gin",
     "//gpu",
@@ -264,9 +263,11 @@ static_library("content_shell_lib") {
     "//net:test_support",
     "//ppapi/features",
     "//sandbox",
+    "//services/device/public/mojom",
+    "//services/network/public/cpp",
     "//services/service_manager/public/cpp",
     "//services/test/echo:lib",
-    "//services/test/echo/public/interfaces",
+    "//services/test/echo/public/mojom",
     "//skia",
     "//storage/browser",
     "//testing/gmock",
@@ -566,10 +567,6 @@ if (is_android) {
       "//tools/v8_context_snapshot:v8_context_snapshot",
     ]
 
-    data = [
-      "$root_out_dir/v8_context_snapshot.bin",
-    ]
-
     if (is_win) {
       deps += [ "//sandbox" ]
 
@@ -589,13 +586,13 @@ if (is_android) {
           [ "//third_party/crashpad/crashpad/handler:crashpad_handler" ]
     }
 
-    if (is_linux) {
-      data_deps += [ "//third_party/content_shell_fonts" ]
-    }
-
     if (is_linux && !is_component_build) {
       # Set rpath to find our own libfreetype even in a non-component build.
       configs += [ "//build/config/gcc:rpath_for_built_shared_libraries" ]
+    }
+
+    if (use_aura) {
+      data_deps += [ "//services/ui" ]
     }
   }
 
@@ -645,13 +642,11 @@ if (is_mac) {
   bundle_data("content_shell_framework_resources") {
     sources = [
       "$root_out_dir/content_shell.pak",
-      "$root_out_dir/v8_context_snapshot.bin",
       "resources/missingImage.png",
     ]
 
     public_deps = [
       ":pak",
-      "//tools/v8_context_snapshot:v8_context_snapshot",
     ]
 
     if (icu_use_data_file) {
@@ -662,11 +657,14 @@ if (is_mac) {
     }
 
     if (v8_use_external_startup_data) {
-      sources += [
-        "$root_out_dir/natives_blob.bin",
-        "$root_out_dir/snapshot_blob.bin",
-      ]
+      sources += [ "$root_out_dir/natives_blob.bin" ]
       public_deps += [ "//v8" ]
+      if (use_v8_context_snapshot) {
+        sources += [ "$root_out_dir/v8_context_snapshot.bin" ]
+        public_deps += [ "//tools/v8_context_snapshot" ]
+      } else {
+        sources += [ "$root_out_dir/snapshot_blob.bin" ]
+      }
     }
 
     outputs = [
@@ -825,7 +823,7 @@ mojom("mojo_bindings") {
   public_deps = [
     "//mojo/common:common_custom_types",
     "//ui/gfx/geometry/mojo",
-    "//url/mojo:url_mojom_gurl",
+    "//url/mojom:url_mojom_gurl",
   ]
 }
 

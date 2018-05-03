@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fxcrt/fx_fallthrough.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
@@ -104,7 +105,7 @@ bool CPDFXFA_Context::LoadXFADoc() {
     return false;
   }
   m_pXFADoc->StopLoad();
-  m_pXFADoc->GetXFADoc()->InitScriptContext(GetJSERuntime());
+  m_pXFADoc->GetXFADoc()->InitScriptContext(GetCJSRuntime());
 
   if (m_pXFADoc->GetFormType() == FormType::kXFAFull)
     m_FormType = FormType::kXFAFull;
@@ -135,9 +136,11 @@ int CPDFXFA_Context::GetPageCount() const {
     case FormType::kXFAForeground:
       if (m_pPDFDoc)
         return m_pPDFDoc->GetPageCount();
+      FX_FALLTHROUGH;
     case FormType::kXFAFull:
       if (m_pXFADoc)
         return m_pXFADocView->CountPageViews();
+      break;
   }
   return 0;
 }
@@ -198,14 +201,12 @@ void CPDFXFA_Context::ClearChangeMark() {
     m_pFormFillEnv->ClearChangeMark();
 }
 
-v8::Isolate* CPDFXFA_Context::GetJSERuntime() const {
+CJS_Runtime* CPDFXFA_Context::GetCJSRuntime() const {
   if (!m_pFormFillEnv)
     return nullptr;
 
   // XFA requires V8, if we have V8 then we have a CJS_Runtime and not the stub.
-  CJS_Runtime* runtime =
-      static_cast<CJS_Runtime*>(m_pFormFillEnv->GetJSRuntime());
-  return runtime->GetIsolate();
+  return static_cast<CJS_Runtime*>(m_pFormFillEnv->GetIJSRuntime());
 }
 
 WideString CPDFXFA_Context::GetAppTitle() const {

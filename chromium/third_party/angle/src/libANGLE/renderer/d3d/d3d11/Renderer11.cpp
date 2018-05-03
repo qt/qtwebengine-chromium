@@ -483,10 +483,10 @@ Renderer11::Renderer11(egl::Display *display)
 
     ZeroMemory(&mAdapterDescription, sizeof(mAdapterDescription));
 
+    const auto &attributes = mDisplay->getAttributeMap();
+
     if (mDisplay->getPlatform() == EGL_PLATFORM_ANGLE_ANGLE)
     {
-        const auto &attributes = mDisplay->getAttributeMap();
-
         EGLint requestedMajorVersion = static_cast<EGLint>(
             attributes.get(EGL_PLATFORM_ANGLE_MAX_VERSION_MAJOR_ANGLE, EGL_DONT_CARE));
         EGLint requestedMinorVersion = static_cast<EGLint>(
@@ -549,10 +549,6 @@ Renderer11::Renderer11(egl::Display *display)
                 UNREACHABLE();
         }
 
-        const EGLenum presentPath = static_cast<EGLenum>(attributes.get(
-            EGL_EXPERIMENTAL_PRESENT_PATH_ANGLE, EGL_EXPERIMENTAL_PRESENT_PATH_COPY_ANGLE));
-        mPresentPathFastEnabled = (presentPath == EGL_EXPERIMENTAL_PRESENT_PATH_FAST_ANGLE);
-
         mCreateDebugDevice = ShouldUseDebugLayers(attributes);
     }
     else if (mDisplay->getPlatform() == EGL_PLATFORM_DEVICE_EXT)
@@ -563,8 +559,11 @@ Renderer11::Renderer11(egl::Display *display)
         // Also set EGL_PLATFORM_ANGLE_ANGLE variables, in case they're used elsewhere in ANGLE
         // mAvailableFeatureLevels defaults to empty
         mRequestedDriverType    = D3D_DRIVER_TYPE_UNKNOWN;
-        mPresentPathFastEnabled = false;
     }
+
+    const EGLenum presentPath = static_cast<EGLenum>(attributes.get(
+        EGL_EXPERIMENTAL_PRESENT_PATH_ANGLE, EGL_EXPERIMENTAL_PRESENT_PATH_COPY_ANGLE));
+    mPresentPathFastEnabled = (presentPath == EGL_EXPERIMENTAL_PRESENT_PATH_FAST_ANGLE);
 
 // The D3D11 renderer must choose the D3D9 debug annotator because the D3D11 interface
 // method ID3DUserDefinedAnnotation::GetStatus on desktop builds doesn't work with the Graphics
@@ -1344,8 +1343,10 @@ egl::Error Renderer11::getD3DTextureInfo(const egl::Config *configuration,
     {
         case DXGI_FORMAT_R8G8B8A8_UNORM:
         case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS:
         case DXGI_FORMAT_B8G8R8A8_UNORM:
         case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS:
         case DXGI_FORMAT_R16G16B16A16_FLOAT:
         case DXGI_FORMAT_R32G32B32A32_FLOAT:
             break;
@@ -2376,9 +2377,6 @@ gl::Error Renderer11::copyImageInternal(const gl::Context *context,
     ANGLE_TRY(colorAttachment->getRenderTarget(context, &sourceRenderTarget));
     ASSERT(sourceRenderTarget);
 
-    const d3d11::SharedSRV &source = sourceRenderTarget->getBlitShaderResourceView();
-    ASSERT(source.valid());
-
     const d3d11::RenderTargetView &dest =
         GetAs<RenderTarget11>(destRenderTarget)->getRenderTargetView();
     ASSERT(dest.valid());
@@ -2399,9 +2397,39 @@ gl::Error Renderer11::copyImageInternal(const gl::Context *context,
     // Use nearest filtering because source and destination are the same size for the direct copy.
     // Convert to the unsized format before calling copyTexture.
     GLenum sourceFormat = colorAttachment->getFormat().info->format;
+    if (sourceRenderTarget->getTexture().is2D() && sourceRenderTarget->isMultisampled())
+    {
+        TextureHelper11 tex;
+        ANGLE_TRY_RESULT(
+            resolveMultisampledTexture(context, sourceRenderTarget, colorAttachment->getDepthSize(),
+                                       colorAttachment->getStencilSize()),
+            tex);
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc;
+        viewDesc.Format                    = sourceRenderTarget->getFormatSet().srvFormat;
+        viewDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+        viewDesc.Texture2D.MipLevels       = 1;
+        viewDesc.Texture2D.MostDetailedMip = 0;
+
+        d3d11::SharedSRV readSRV;
+        ANGLE_TRY(allocateResource(viewDesc, tex.get(), &readSRV));
+        ASSERT(readSRV.valid());
+
+        ANGLE_TRY(mBlit->copyTexture(context, readSRV, sourceArea, sourceSize, sourceFormat, dest,
+                                     destArea, destSize, nullptr, gl::GetUnsizedFormat(destFormat),
+                                     GL_NONE, GL_NEAREST, false, false, false));
+
+        return gl::NoError();
+    }
+
+    ASSERT(!sourceRenderTarget->isMultisampled());
+
+    const d3d11::SharedSRV &source = sourceRenderTarget->getBlitShaderResourceView();
+    ASSERT(source.valid());
+
     ANGLE_TRY(mBlit->copyTexture(context, source, sourceArea, sourceSize, sourceFormat, dest,
                                  destArea, destSize, nullptr, gl::GetUnsizedFormat(destFormat),
-                                 GL_NEAREST, false, false, false));
+                                 GL_NONE, GL_NEAREST, false, false, false));
 
     return gl::NoError();
 }
@@ -2507,6 +2535,7 @@ gl::Error Renderer11::copyTexture(const gl::Context *context,
                                   GLint sourceLevel,
                                   const gl::Rectangle &sourceRect,
                                   GLenum destFormat,
+                                  GLenum destType,
                                   const gl::Offset &destOffset,
                                   TextureStorage *storage,
                                   GLenum destTarget,
@@ -2529,7 +2558,8 @@ gl::Error Renderer11::copyTexture(const gl::Context *context,
     // Check for fast path where a CopySubresourceRegion can be used.
     if (unpackPremultiplyAlpha == unpackUnmultiplyAlpha && !unpackFlipY &&
         source->getFormat(GL_TEXTURE_2D, sourceLevel).info->format == destFormat &&
-        sourceStorage11->getFormatSet().texFormat == destStorage11->getFormatSet().texFormat)
+        sourceStorage11->getFormatSet().internalFormat ==
+            destStorage11->getFormatSet().internalFormat)
     {
         const TextureHelper11 *sourceResource = nullptr;
         ANGLE_TRY(sourceStorage11->getResource(context, &sourceResource));
@@ -2587,8 +2617,9 @@ gl::Error Renderer11::copyTexture(const gl::Context *context,
         // copy
         GLenum sourceFormat = source->getFormat(GL_TEXTURE_2D, sourceLevel).info->format;
         ANGLE_TRY(mBlit->copyTexture(context, *sourceSRV, sourceArea, sourceSize, sourceFormat,
-                                     destRTV, destArea, destSize, nullptr, destFormat, GL_NEAREST,
-                                     false, unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
+                                     destRTV, destArea, destSize, nullptr, destFormat, destType,
+                                     GL_NEAREST, false, unpackPremultiplyAlpha,
+                                     unpackUnmultiplyAlpha));
     }
 
     destStorage11->markLevelDirty(destLevel);
@@ -3604,9 +3635,10 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Context *context,
             // We don't currently support masking off any other channel than alpha
             bool maskOffAlpha = colorMaskingNeeded && colorMask.alpha;
             ASSERT(readSRV.valid());
-            ANGLE_TRY(mBlit->copyTexture(
-                context, readSRV, readArea, readSize, srcFormatInfo.format, drawRTV, drawArea,
-                drawSize, scissor, destFormatInfo.format, filter, maskOffAlpha, false, false));
+            ANGLE_TRY(mBlit->copyTexture(context, readSRV, readArea, readSize, srcFormatInfo.format,
+                                         drawRTV, drawArea, drawSize, scissor,
+                                         destFormatInfo.format, GL_NONE, filter, maskOffAlpha,
+                                         false, false));
         }
     }
 
@@ -3967,8 +3999,10 @@ gl::Error Renderer11::clearRenderTarget(RenderTargetD3D *renderTarget,
 {
     RenderTarget11 *rt11 = GetAs<RenderTarget11>(renderTarget);
 
-    if (rt11->getDepthStencilView().valid())
+    if (rt11->getFormatSet().dsvFormat != DXGI_FORMAT_UNKNOWN)
     {
+        ASSERT(rt11->getDepthStencilView().valid());
+
         const auto &format    = rt11->getFormatSet();
         const UINT clearFlags = (format.format().depthBits > 0 ? D3D11_CLEAR_DEPTH : 0) |
                                 (format.format().stencilBits ? D3D11_CLEAR_STENCIL : 0);

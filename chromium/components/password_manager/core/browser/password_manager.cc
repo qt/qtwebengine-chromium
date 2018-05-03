@@ -71,11 +71,19 @@ bool URLsEqualUpToHttpHttpsSubstitution(const GURL& a, const GURL& b) {
   return false;
 }
 
+// Since empty or unspecified form's action is automatically set to the page
+// origin, this function checks if a form's action is empty by comparing it to
+// its origin.
+bool HasNonEmptyAction(const autofill::PasswordForm& form) {
+  return form.action != form.origin;
+}
+
 // Checks if the observed form looks like the submitted one to handle "Invalid
 // password entered" case so we don't offer a password save when we shouldn't.
 bool IsPasswordFormReappeared(const autofill::PasswordForm& observed_form,
                               const autofill::PasswordForm& submitted_form) {
-  if (observed_form.action.is_valid() &&
+  if (observed_form.action.is_valid() && HasNonEmptyAction(observed_form) &&
+      HasNonEmptyAction(submitted_form) &&
       URLsEqualUpToHttpHttpsSubstitution(submitted_form.action,
                                          observed_form.action)) {
     return true;
@@ -492,7 +500,7 @@ void PasswordManager::OnPasswordFormSubmittedNoChecks(
     const autofill::PasswordForm& password_form) {
   if (password_manager_util::IsLoggingActive(client_)) {
     BrowserSavePasswordProgressLogger logger(client_->GetLogManager());
-    logger.LogMessage(Logger::STRING_ON_IN_PAGE_NAVIGATION);
+    logger.LogMessage(Logger::STRING_ON_SAME_DOCUMENT_NAVIGATION);
   }
 
   ProvisionallySavePassword(password_form, driver);
@@ -540,7 +548,6 @@ void PasswordManager::ShowManualFallbackForSaving(
     client_->ShowManualFallbackForSaving(std::move(provisional_save_manager_),
                                          has_generated_password, is_update);
   } else {
-    provisional_save_manager_.reset();
     HideManualFallbackForSaving();
   }
 }
@@ -821,7 +828,7 @@ void PasswordManager::OnPasswordFormsRendered(
   }
 }
 
-void PasswordManager::OnInPageNavigation(
+void PasswordManager::OnSameDocumentNavigation(
     password_manager::PasswordManagerDriver* driver,
     const PasswordForm& password_form) {
   OnPasswordFormSubmittedNoChecks(driver, password_form);
@@ -848,8 +855,7 @@ void PasswordManager::OnLoginSuccessful() {
 
   DCHECK(provisional_save_manager_->submitted_form());
   if (!client_->GetStoreResultFilter()->ShouldSave(
-          *provisional_save_manager_->submitted_form(),
-          client_->GetMainFrameURL())) {
+          *provisional_save_manager_->submitted_form())) {
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
     // When |username_value| is empty, it's not clear whether the submitted
     // credentials are really sync credentials. Don't save sync password hash
@@ -861,15 +867,15 @@ void PasswordManager::OnLoginSuccessful() {
         bool is_sync_password_change =
             !provisional_save_manager_->submitted_form()
                  ->new_password_element.empty();
-        metrics_util::LogSyncPasswordHashChange(
-            is_sync_password_change
-                ? metrics_util::SyncPasswordHashChange::CHANGED_IN_CONTENT_AREA
-                : metrics_util::SyncPasswordHashChange::SAVED_IN_CONTENT_AREA);
-        store->SaveSyncPasswordHash(
-            is_sync_password_change
-                ? provisional_save_manager_->submitted_form()
-                      ->new_password_value
-                : provisional_save_manager_->submitted_form()->password_value);
+        if (is_sync_password_change) {
+          store->SaveSyncPasswordHash(
+              provisional_save_manager_->submitted_form()->new_password_value,
+              metrics_util::SyncPasswordHashChange::CHANGED_IN_CONTENT_AREA);
+        } else {
+          store->SaveSyncPasswordHash(
+              provisional_save_manager_->submitted_form()->password_value,
+              metrics_util::SyncPasswordHashChange::SAVED_IN_CONTENT_AREA);
+        }
       }
     }
 #endif

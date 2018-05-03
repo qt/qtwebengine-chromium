@@ -16,9 +16,10 @@
 #include "components/viz/common/gpu/context_lost_observer.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
-#include "components/viz/common/gpu/vulkan_context_provider.h"
+#include "components/viz/common/quads/shared_bitmap.h"
 #include "components/viz/common/resources/returned_resource.h"
 #include "gpu/command_buffer/common/texture_in_use_response.h"
+#include "mojo/public/cpp/system/buffer.h"
 #include "ui/gfx/color_space.h"
 
 namespace gpu {
@@ -75,11 +76,9 @@ class CC_EXPORT LayerTreeFrameSink : public viz::ContextLostObserver {
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       viz::SharedBitmapManager* shared_bitmap_manager);
 
-  // Constructor for Vulkan-based resources.
-  explicit LayerTreeFrameSink(
-      scoped_refptr<viz::VulkanContextProvider> vulkan_context_provider);
-
   ~LayerTreeFrameSink() override;
+
+  base::WeakPtr<LayerTreeFrameSink> GetWeakPtr();
 
   // Called by the compositor on the compositor thread. This is a place where
   // thread-specific data for the output surface can be initialized, since from
@@ -108,9 +107,6 @@ class CC_EXPORT LayerTreeFrameSink : public viz::ContextLostObserver {
   viz::RasterContextProvider* worker_context_provider() const {
     return worker_context_provider_.get();
   }
-  viz::VulkanContextProvider* vulkan_context_provider() const {
-    return vulkan_context_provider_.get();
-  }
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager() const {
     return gpu_memory_buffer_manager_;
   }
@@ -136,6 +132,14 @@ class CC_EXPORT LayerTreeFrameSink : public viz::ContextLostObserver {
   // the client did not lead to a CompositorFrame submission.
   virtual void DidNotProduceFrame(const viz::BeginFrameAck& ack) = 0;
 
+  // Associates a SharedBitmapId with a shared buffer handle.
+  virtual void DidAllocateSharedBitmap(mojo::ScopedSharedBufferHandle buffer,
+                                       const viz::SharedBitmapId& id) = 0;
+
+  // Disassociates a SharedBitmapId previously passed to
+  // DidAllocateSharedBitmap.
+  virtual void DidDeleteSharedBitmap(const viz::SharedBitmapId& id) = 0;
+
  protected:
   class ContextLostForwarder;
 
@@ -147,7 +151,6 @@ class CC_EXPORT LayerTreeFrameSink : public viz::ContextLostObserver {
   struct LayerTreeFrameSink::Capabilities capabilities_;
   scoped_refptr<viz::ContextProvider> context_provider_;
   scoped_refptr<viz::RasterContextProvider> worker_context_provider_;
-  scoped_refptr<viz::VulkanContextProvider> vulkan_context_provider_;
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
   viz::SharedBitmapManager* shared_bitmap_manager_;

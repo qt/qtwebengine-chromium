@@ -15,7 +15,6 @@
 #include "base/time/time.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/public/common/content_features.h"
 #include "content/renderer/service_worker/embedded_worker_instance_client_impl.h"
 #include "content/renderer/service_worker/service_worker_dispatcher.h"
 #include "content/renderer/service_worker/service_worker_timeout_timer.h"
@@ -23,10 +22,11 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "ipc/ipc_test_sink.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/message_port/message_port_channel.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/common/message_port/message_port_channel.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/WebDataConsumerHandle.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
@@ -117,17 +117,15 @@ class MockWebServiceWorkerContextProxy
   }
   void DispatchExtendableMessageEvent(
       int event_id,
-      const blink::WebString& message,
+      blink::TransferableMessage message,
       const blink::WebSecurityOrigin& source_origin,
-      blink::WebVector<blink::MessagePortChannel>,
       const blink::WebServiceWorkerClientInfo&) override {
     NOTREACHED();
   }
   void DispatchExtendableMessageEvent(
       int event_id,
-      const blink::WebString& message,
+      blink::TransferableMessage message,
       const blink::WebSecurityOrigin& source_origin,
-      blink::WebVector<blink::MessagePortChannel>,
       std::unique_ptr<blink::WebServiceWorker::Handle>) override {
     NOTREACHED();
   }
@@ -218,15 +216,14 @@ class ServiceWorkerContextClientTest : public testing::Test {
 
   void TearDown() override {
     ServiceWorkerContextClient::ResetThreadSpecificInstanceForTesting();
-    ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
-        sender_, main_task_runner())
+    ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(sender_)
         ->AllowReinstantiationForTesting();
     // Unregister this thread from worker threads.
     WorkerThreadRegistry::Instance()->WillStopCurrentWorkerThread();
   }
 
   void EnableServicification() {
-    feature_list_.InitWithFeatures({features::kNetworkService}, {});
+    feature_list_.InitWithFeatures({network::features::kNetworkService}, {});
     ASSERT_TRUE(ServiceWorkerUtils::IsServicificationEnabled());
   }
 
@@ -243,12 +240,7 @@ class ServiceWorkerContextClientTest : public testing::Test {
     info->registration->host_ptr_info = host_ptr.PassInterface();
     info->registration->request =
         mojo::MakeRequestAssociatedWithDedicatedPipe(out_ptr);
-
-    info->registration->installing =
-        blink::mojom::ServiceWorkerObjectInfo::New();
     info->registration->registration_id = 100;  // dummy
-    info->registration->waiting = blink::mojom::ServiceWorkerObjectInfo::New();
-    info->registration->active = blink::mojom::ServiceWorkerObjectInfo::New();
     return info;
   }
 
@@ -282,11 +274,6 @@ class ServiceWorkerContextClientTest : public testing::Test {
   }
 
  private:
-  scoped_refptr<base::SingleThreadTaskRunner> main_task_runner() {
-    // Use this thread as the main thread.
-    return task_runner_;
-  }
-
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner() {
     // Use this thread as the IO thread.
     return task_runner_;
@@ -328,8 +315,10 @@ TEST_F(ServiceWorkerContextClientTest, DispatchFetchEvent) {
   request->url = expected_url;
   mojom::ServiceWorkerFetchResponseCallbackPtr fetch_callback_ptr;
   fetch_callback_request = mojo::MakeRequest(&fetch_callback_ptr);
+  auto params = mojom::DispatchFetchEventParams::New();
+  params->request = *request;
   pipes.event_dispatcher->DispatchFetchEvent(
-      *request, nullptr /* preload_handle */, std::move(fetch_callback_ptr),
+      std::move(params), std::move(fetch_callback_ptr),
       base::BindOnce(
           [](blink::mojom::ServiceWorkerEventStatus, base::Time) {}));
   task_runner()->RunUntilIdle();
@@ -364,8 +353,10 @@ TEST_F(ServiceWorkerContextClientTest,
       mojo::MakeRequest(&fetch_callback_ptr);
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = expected_url;
+  auto params = mojom::DispatchFetchEventParams::New();
+  params->request = *request;
   context_client->DispatchOrQueueFetchEvent(
-      *request, nullptr /* preload_handle */, std::move(fetch_callback_ptr),
+      std::move(params), std::move(fetch_callback_ptr),
       base::BindOnce(
           [](blink::mojom::ServiceWorkerEventStatus, base::Time) {}));
   task_runner()->RunUntilIdle();
@@ -411,8 +402,10 @@ TEST_F(ServiceWorkerContextClientTest,
     fetch_callback_request = mojo::MakeRequest(&fetch_callback_ptr);
     auto request = std::make_unique<network::ResourceRequest>();
     request->url = expected_url;
+    auto params = mojom::DispatchFetchEventParams::New();
+    params->request = *request;
     pipes.controller->DispatchFetchEvent(
-        *request, std::move(fetch_callback_ptr),
+        std::move(params), std::move(fetch_callback_ptr),
         base::BindOnce(
             [](blink::mojom::ServiceWorkerEventStatus, base::Time) {}));
     task_runner()->RunUntilIdle();
@@ -459,8 +452,10 @@ TEST_F(ServiceWorkerContextClientTest,
     fetch_callback_request_1 = mojo::MakeRequest(&fetch_callback_ptr);
     auto request = std::make_unique<network::ResourceRequest>();
     request->url = expected_url_1;
+    auto params = mojom::DispatchFetchEventParams::New();
+    params->request = *request;
     pipes.controller->DispatchFetchEvent(
-        *request, std::move(fetch_callback_ptr),
+        std::move(params), std::move(fetch_callback_ptr),
         base::BindOnce(
             [](blink::mojom::ServiceWorkerEventStatus, base::Time) {}));
     task_runner()->RunUntilIdle();
@@ -474,8 +469,10 @@ TEST_F(ServiceWorkerContextClientTest,
     fetch_callback_request_2 = mojo::MakeRequest(&fetch_callback_ptr);
     auto request = std::make_unique<network::ResourceRequest>();
     request->url = expected_url_2;
+    auto params = mojom::DispatchFetchEventParams::New();
+    params->request = *request;
     pipes.event_dispatcher->DispatchFetchEvent(
-        *request, nullptr /* preload_handle */, std::move(fetch_callback_ptr),
+        std::move(params), std::move(fetch_callback_ptr),
         base::BindOnce(
             [](blink::mojom::ServiceWorkerEventStatus, base::Time) {}));
     task_runner()->RunUntilIdle();

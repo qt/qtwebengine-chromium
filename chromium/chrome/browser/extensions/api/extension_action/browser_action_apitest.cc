@@ -12,7 +12,6 @@
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/browser_action_test_util.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
@@ -26,6 +25,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/browser_action_test_util.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -1020,7 +1020,7 @@ IN_PROC_BROWSER_TEST_F(NavigatingExtensionPopupBrowserTest, DownloadViaPost) {
   downloads_observer.WaitForFinished();
   EXPECT_EQ(0u, downloads_observer.NumDangerousDownloadsSeen());
   EXPECT_EQ(1u, downloads_observer.NumDownloadsSeenInState(
-                    content::DownloadItem::COMPLETE));
+                    download::DownloadItem::COMPLETE));
   EXPECT_TRUE(base::PathExists(downloads_directory->GetPath().AppendASCII(
       "download-test3-attachment.gif")));
 

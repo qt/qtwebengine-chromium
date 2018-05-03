@@ -16,18 +16,21 @@ Merge::Merge(std::vector<sk_sp<GeometryNode>>&& geos, Mode mode)
     : fGeos(std::move(geos))
     , fMode(mode) {
     for (const auto& geo : fGeos) {
-        geo->addInvalReceiver(this);
+        this->observeInval(geo);
     }
 }
 
 Merge::~Merge() {
     for (const auto& geo : fGeos) {
-        geo->removeInvalReceiver(this);
+        this->unobserveInval(geo);
     }
 }
 
+void Merge::onClip(SkCanvas* canvas, bool antiAlias) const {
+    canvas->clipPath(fMerged, SkClipOp::kIntersect, antiAlias);
+}
+
 void Merge::onDraw(SkCanvas* canvas, const SkPaint& paint) const {
-    SkASSERT(!this->hasInval());
     canvas->drawPath(fMerged, paint);
 }
 

@@ -11,8 +11,11 @@
 #include "base/json/json_writer.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
+#include "components/viz/common/features.h"
+#include "components/viz/common/switches.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
@@ -494,14 +497,14 @@ class HeadlessWebContentsPDFTest : public HeadlessAsyncDevTooledBrowserTest {
 
       gfx::Rect rect(kPaperWidth * kDpi, kPaperHeight * kDpi);
       printing::PdfRenderSettings settings(
-          rect, gfx::Point(0, 0), kDpi, true,
+          rect, gfx::Point(0, 0), gfx::Size(kDpi, kDpi), true,
           printing::PdfRenderSettings::Mode::NORMAL);
       std::vector<uint8_t> page_bitmap_data(kColorChannels *
                                             settings.area.size().GetArea());
       EXPECT_TRUE(chrome_pdf::RenderPDFPageToBitmap(
           pdf_data.data(), pdf_data.size(), i, page_bitmap_data.data(),
           settings.area.size().width(), settings.area.size().height(),
-          settings.dpi, settings.autorotate));
+          settings.dpi.width(), settings.dpi.height(), settings.autorotate));
       EXPECT_EQ(0x56, page_bitmap_data[0]);  // B
       EXPECT_EQ(0x34, page_bitmap_data[1]);  // G
       EXPECT_EQ(0x12, page_bitmap_data[2]);  // R
@@ -1083,8 +1086,15 @@ class HeadlessWebContentsBeginFrameControlTest
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     HeadlessBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(cc::switches::kRunAllCompositorStagesBeforeDraw);
+    // See bit.ly/headless-rendering for why we use these flags.
+    command_line->AppendSwitch(switches::kRunAllCompositorStagesBeforeDraw);
     command_line->AppendSwitch(switches::kDisableNewContentRenderingTimeout);
+    command_line->AppendSwitch(cc::switches::kDisableCheckerImaging);
+    command_line->AppendSwitch(cc::switches::kDisableThreadedAnimation);
+    command_line->AppendSwitch(switches::kDisableThreadedScrolling);
+
+    scoped_feature_list_.InitAndEnableFeature(
+        features::kEnableSurfaceSynchronization);
   }
 
   void OnCreateTargetResult(
@@ -1140,28 +1150,24 @@ class HeadlessWebContentsBeginFrameControlTest
         "HeadlessWebContentsBeginFrameControlTest::OnNeedsBeginFramesChanged",
         "needs_begin_frames", params.GetNeedsBeginFrames());
     needs_begin_frames_ = params.GetNeedsBeginFrames();
-    if (needs_begin_frames_ && !frame_in_flight_ && page_ready_)
+    // With full-pipeline mode and surface sync, the needs_begin_frame signal
+    // should become and then always stay true.
+    EXPECT_TRUE(needs_begin_frames_);
+    EXPECT_FALSE(frame_in_flight_);
+    if (page_ready_)
       OnNeedsBeginFrame();
   }
 
-  void OnMainFrameReadyForScreenshots(
-      const headless_experimental::MainFrameReadyForScreenshotsParams& params)
-      override {
-    TRACE_EVENT0("headless",
-                 "HeadlessWebContentsBeginFrameControlTest::"
-                 "OnMainFrameReadyForScreenshots");
-    main_frame_ready_ = true;
-  }
-
   void BeginFrame(bool screenshot) {
-    if (!needs_begin_frames_ && !screenshot)
-      return;
+    // With full-pipeline mode and surface sync, the needs_begin_frame signal
+    // should always be true.
+    EXPECT_TRUE(needs_begin_frames_);
 
     frame_in_flight_ = true;
+    num_begin_frames_++;
 
     auto builder = headless_experimental::BeginFrameParams::Builder();
     if (screenshot) {
-      DCHECK(main_frame_ready_);
       builder.SetScreenshot(
           headless_experimental::ScreenshotParams::Builder().Build());
     }
@@ -1206,13 +1212,15 @@ class HeadlessWebContentsBeginFrameControlTest
             base::Unretained(this)));
   }
 
+  base::test::ScopedFeatureList scoped_feature_list_;
+
   HeadlessBrowserContext* browser_context_ = nullptr;  // Not owned.
   HeadlessWebContentsImpl* web_contents_ = nullptr;    // Not owned.
 
   bool page_ready_ = false;
   bool needs_begin_frames_ = false;
   bool frame_in_flight_ = false;
-  bool main_frame_ready_ = false;
+  int num_begin_frames_ = 0;
   std::unique_ptr<HeadlessDevToolsClient> browser_devtools_client_;
   std::unique_ptr<HeadlessDevToolsClient> devtools_client_;
 };
@@ -1228,15 +1236,21 @@ class HeadlessWebContentsBeginFrameControlBasicTest
     return "/blue_page.html";
   }
 
-  void OnNeedsBeginFrame() override { BeginFrame(false); }
+  void OnNeedsBeginFrame() override {
+    // Try to capture a screenshot in first frame. This should fail because the
+    // surface doesn't exist yet.
+    BeginFrame(true);
+  }
 
   void OnFrameFinished(std::unique_ptr<headless_experimental::BeginFrameResult>
                            result) override {
-    if (!sent_screenshot_request_) {
-      // Once the main frame is ready, capture a screenshot.
-      sent_screenshot_request_ = main_frame_ready_;
-      BeginFrame(sent_screenshot_request_);
-    } else {
+    if (num_begin_frames_ == 1) {
+      // First BeginFrame should have caused damage.
+      EXPECT_TRUE(result->GetHasDamage());
+      // But the screenshot should have failed (see above).
+      EXPECT_FALSE(result->HasScreenshotData());
+    } else if (num_begin_frames_ == 2) {
+      // Expect a valid screenshot in second BeginFrame.
       EXPECT_TRUE(result->GetHasDamage());
       EXPECT_TRUE(result->HasScreenshotData());
       if (result->HasScreenshotData()) {
@@ -1251,14 +1265,22 @@ class HeadlessWebContentsBeginFrameControlBasicTest
         SkColor actual_color = result_bitmap.getColor(100, 100);
         EXPECT_EQ(expected_color, actual_color);
       }
+    } else {
+      DCHECK_EQ(3, num_begin_frames_);
+      // Can't guarantee that the last BeginFrame didn't have damage, but it
+      // should not have a screenshot.
+      EXPECT_FALSE(result->HasScreenshotData());
+    }
 
+    if (num_begin_frames_ < 3) {
+      // Capture a screenshot in second but not third BeginFrame.
+      BeginFrame(num_begin_frames_ == 1);
+    } else {
       // Post completion to avoid deleting the WebContents on the same callstack
       // as frame finished callback.
       PostFinishAsynchronousTest();
     }
   }
-
-  bool sent_screenshot_request_ = false;
 };
 
 HEADLESS_ASYNC_DEVTOOLED_TEST_F(HeadlessWebContentsBeginFrameControlBasicTest);
@@ -1274,48 +1296,9 @@ class HeadlessWebContentsBeginFrameControlViewportTest
     return "/blue_box.html";
   }
 
-  void OnNeedsBeginFrame() override { BeginFrame(false); }
-
-  void OnFrameFinished(std::unique_ptr<headless_experimental::BeginFrameResult>
-                           result) override {
-    if (!sent_screenshot_request_) {
-      // Once the main frame is ready, set the view size and position and then
-      // capture a screenshot.
-      if (main_frame_ready_) {
-        SetUpViewport();
-        return;
-      }
-
-      BeginFrame(false);
-    } else {
-      EXPECT_TRUE(result->GetHasDamage());
-      EXPECT_TRUE(result->HasScreenshotData());
-      if (result->HasScreenshotData()) {
-        std::string base64 = result->GetScreenshotData();
-        EXPECT_LT(0u, base64.length());
-        SkBitmap result_bitmap;
-        EXPECT_TRUE(DecodePNG(base64, &result_bitmap));
-
-        EXPECT_EQ(200, result_bitmap.width());
-        EXPECT_EQ(200, result_bitmap.height());
-        SkColor expected_color = SkColorSetRGB(0x00, 0x00, 0xff);
-
-        SkColor actual_color = result_bitmap.getColor(100, 100);
-        EXPECT_EQ(expected_color, actual_color);
-        actual_color = result_bitmap.getColor(0, 0);
-        EXPECT_EQ(expected_color, actual_color);
-        actual_color = result_bitmap.getColor(0, 199);
-        EXPECT_EQ(expected_color, actual_color);
-        actual_color = result_bitmap.getColor(199, 0);
-        EXPECT_EQ(expected_color, actual_color);
-        actual_color = result_bitmap.getColor(199, 199);
-        EXPECT_EQ(expected_color, actual_color);
-      }
-
-      // Post completion to avoid deleting the WebContents on the same callstack
-      // as frame finished callback.
-      PostFinishAsynchronousTest();
-    }
+  void OnNeedsBeginFrame() override {
+    // Send a first BeginFrame to initialize the surface.
+    BeginFrame(false);
   }
 
   void SetUpViewport() {
@@ -1332,7 +1315,7 @@ class HeadlessWebContentsBeginFrameControlViewportTest
                                  .SetY(200)
                                  .SetWidth(100)
                                  .SetHeight(100)
-                                 .SetScale(2)
+                                 .SetScale(3)
                                  .Build())
                 .Build(),
             base::Bind(&HeadlessWebContentsBeginFrameControlViewportTest::
@@ -1343,12 +1326,61 @@ class HeadlessWebContentsBeginFrameControlViewportTest
   void SetDeviceMetricsOverrideDone(
       std::unique_ptr<emulation::SetDeviceMetricsOverrideResult> result) {
     EXPECT_TRUE(result);
-    // Take a screenshot.
-    sent_screenshot_request_ = true;
-    BeginFrame(true);
+    // TODO(crbug.com/817364): Due to recent changes in CopyOutputRequests, it
+    // is not possible to take a screenshot directly after resize as it would be
+    // taken from the old surface. Thus, we have to send an intermediate
+    // BeginFrame here, which will replace the surface first. Replace this with
+    // a screenshotting BeginFrame and remove the need for the third BeginFrame
+    // once above problem is resolved.
+    BeginFrame(false);
   }
 
-  bool sent_screenshot_request_ = false;
+  void OnFrameFinished(std::unique_ptr<headless_experimental::BeginFrameResult>
+                           result) override {
+    if (num_begin_frames_ == 1) {
+      EXPECT_TRUE(result->GetHasDamage());
+      EXPECT_FALSE(result->HasScreenshotData());
+      SetUpViewport();
+      return;
+    } else if (num_begin_frames_ == 2) {
+      EXPECT_TRUE(result->GetHasDamage());
+      EXPECT_FALSE(result->HasScreenshotData());
+      // Capture screenshot in third BeginFrame.
+      BeginFrame(true);
+      return;
+    }
+
+    DCHECK_EQ(3, num_begin_frames_);
+    // Second BeginFrame should have a screenshot of the configured viewport and
+    // of the correct size.
+    EXPECT_TRUE(result->GetHasDamage());
+    EXPECT_TRUE(result->HasScreenshotData());
+    if (result->HasScreenshotData()) {
+      std::string base64 = result->GetScreenshotData();
+      EXPECT_LT(0u, base64.length());
+      SkBitmap result_bitmap;
+      EXPECT_TRUE(DecodePNG(base64, &result_bitmap));
+
+      EXPECT_EQ(300, result_bitmap.width());
+      EXPECT_EQ(300, result_bitmap.height());
+      SkColor expected_color = SkColorSetRGB(0x00, 0x00, 0xff);
+
+      SkColor actual_color = result_bitmap.getColor(100, 100);
+      EXPECT_EQ(expected_color, actual_color);
+      actual_color = result_bitmap.getColor(0, 0);
+      EXPECT_EQ(expected_color, actual_color);
+      actual_color = result_bitmap.getColor(0, 299);
+      EXPECT_EQ(expected_color, actual_color);
+      actual_color = result_bitmap.getColor(299, 0);
+      EXPECT_EQ(expected_color, actual_color);
+      actual_color = result_bitmap.getColor(299, 299);
+      EXPECT_EQ(expected_color, actual_color);
+    }
+
+    // Post completion to avoid deleting the WebContents on the same callstack
+    // as frame finished callback.
+    PostFinishAsynchronousTest();
+  }
 };
 
 HEADLESS_ASYNC_DEVTOOLED_TEST_F(
@@ -1425,5 +1457,93 @@ class CookiesDisabled : public HeadlessAsyncDevTooledBrowserTest,
 };
 
 HEADLESS_ASYNC_DEVTOOLED_TEST_F(CookiesDisabled);
+
+namespace {
+const char* kPageWhichOpensAWindow = R"(
+<html>
+<body>
+<script>
+window.open('/page2.html');
+</script>
+</body>
+</html>
+)";
+
+const char* kPage2 = R"(
+<html>
+<body>
+Page 2.
+</body>
+</html>
+)";
+}  // namespace
+
+class WebContentsOpenTest : public page::Observer,
+                            public HeadlessAsyncDevTooledBrowserTest {
+ public:
+  void RunDevTooledTest() override {
+    http_handler_->SetHeadlessBrowserContext(browser_context_);
+    devtools_client_->GetPage()->AddObserver(this);
+
+    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
+    devtools_client_->GetPage()->Enable(run_loop.QuitClosure());
+    run_loop.Run();
+
+    devtools_client_->GetPage()->Navigate("http://foo.com/index.html");
+  }
+
+  ProtocolHandlerMap GetProtocolHandlers() override {
+    ProtocolHandlerMap protocol_handlers;
+    std::unique_ptr<TestInMemoryProtocolHandler> http_handler(
+        new TestInMemoryProtocolHandler(browser()->BrowserIOThread(), nullptr));
+    http_handler_ = http_handler.get();
+    http_handler_->InsertResponse("http://foo.com/index.html",
+                                  {kPageWhichOpensAWindow, "text/html"});
+    http_handler_->InsertResponse("http://foo.com/page2.html",
+                                  {kPage2, "text/html"});
+    protocol_handlers[url::kHttpScheme] = std::move(http_handler);
+    return protocol_handlers;
+  }
+
+  const TestInMemoryProtocolHandler* http_handler() const {
+    return http_handler_;
+  }
+
+ private:
+  TestInMemoryProtocolHandler* http_handler_;  // NOT OWNED
+};
+
+class DontBlockWebContentsOpenTest : public WebContentsOpenTest {
+ public:
+  void CustomizeHeadlessBrowserContext(
+      HeadlessBrowserContext::Builder& builder) override {
+    builder.SetBlockNewWebContents(false);
+  }
+
+  void OnLoadEventFired(const page::LoadEventFiredParams&) override {
+    EXPECT_THAT(
+        http_handler()->urls_requested(),
+        ElementsAre("http://foo.com/index.html", "http://foo.com/page2.html"));
+    FinishAsynchronousTest();
+  }
+};
+
+HEADLESS_ASYNC_DEVTOOLED_TEST_F(DontBlockWebContentsOpenTest);
+
+class BlockWebContentsOpenTest : public WebContentsOpenTest {
+ public:
+  void CustomizeHeadlessBrowserContext(
+      HeadlessBrowserContext::Builder& builder) override {
+    builder.SetBlockNewWebContents(true);
+  }
+
+  void OnLoadEventFired(const page::LoadEventFiredParams&) override {
+    EXPECT_THAT(http_handler()->urls_requested(),
+                ElementsAre("http://foo.com/index.html"));
+    FinishAsynchronousTest();
+  }
+};
+
+HEADLESS_ASYNC_DEVTOOLED_TEST_F(BlockWebContentsOpenTest);
 
 }  // namespace headless

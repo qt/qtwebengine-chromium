@@ -9,6 +9,7 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "ui/gfx/swap_result.h"
 #include "ui/gl/gl_export.h"
 #include "ui/gl/gl_surface.h"
 
@@ -26,8 +27,24 @@ class GPUTimer;
 // implementations.
 class GL_EXPORT GLSurfacePresentationHelper {
  public:
-  GLSurfacePresentationHelper(gfx::VSyncProvider* vsync_provider,
-                              bool hw_clock);
+  class GL_EXPORT ScopedSwapBuffers {
+   public:
+    ScopedSwapBuffers(GLSurfacePresentationHelper* helper,
+                      const GLSurface::PresentationCallback& callback);
+    ~ScopedSwapBuffers();
+
+    void set_result(gfx::SwapResult result) { result_ = result; }
+    gfx::SwapResult result() const { return result_; }
+
+   private:
+    GLSurfacePresentationHelper* const helper_;
+    gfx::SwapResult result_ = gfx::SwapResult::SWAP_ACK;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedSwapBuffers);
+  };
+
+  explicit GLSurfacePresentationHelper(gfx::VSyncProvider* vsync_provider);
+
   // For using fixed VSync provider.
   GLSurfacePresentationHelper(const base::TimeTicks timebase,
                               const base::TimeDelta interval);
@@ -35,7 +52,7 @@ class GL_EXPORT GLSurfacePresentationHelper {
 
   void OnMakeCurrent(GLContext* context, GLSurface* surface);
   void PreSwapBuffers(const GLSurface::PresentationCallback& callback);
-  void PostSwapBuffers();
+  void PostSwapBuffers(gfx::SwapResult result);
 
  private:
   struct Frame {
@@ -58,7 +75,6 @@ class GL_EXPORT GLSurfacePresentationHelper {
                            const base::TimeDelta interval);
 
   gfx::VSyncProvider* const vsync_provider_;
-  const bool hw_clock_;
   scoped_refptr<GLContext> gl_context_;
   GLSurface* surface_ = nullptr;
   scoped_refptr<GPUTimingClient> gpu_timing_client_;

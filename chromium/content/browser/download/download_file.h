@@ -12,9 +12,9 @@
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
+#include "components/download/public/common/download_interrupt_reasons.h"
+#include "components/download/public/common/download_item.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/download_interrupt_reasons.h"
-#include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 
@@ -31,14 +31,14 @@ class CONTENT_EXPORT DownloadFile {
   // Callback used with Initialize.  On a successful initialize, |reason| will
   // be DOWNLOAD_INTERRUPT_REASON_NONE; on a failed initialize, it will be
   // set to the reason for the failure.
-  typedef base::Callback<void(DownloadInterruptReason reason)>
+  typedef base::Callback<void(download::DownloadInterruptReason reason)>
       InitializeCallback;
 
   // Callback used with Rename*().  On a successful rename |reason| will be
   // DOWNLOAD_INTERRUPT_REASON_NONE and |path| the path the rename
   // was done to.  On a failed rename, |reason| will contain the
   // error.
-  typedef base::Callback<void(DownloadInterruptReason reason,
+  typedef base::Callback<void(download::DownloadInterruptReason reason,
                               const base::FilePath& path)>
       RenameCompletionCallback;
 
@@ -51,10 +51,11 @@ class CONTENT_EXPORT DownloadFile {
   // Upon completion, |initialize_callback| will be called on the UI
   // thread as per the comment above, passing DOWNLOAD_INTERRUPT_REASON_NONE
   // on success, or a network download interrupt reason on failure.
-  virtual void Initialize(const InitializeCallback& initialize_callback,
-                          const CancelRequestCallback& cancel_request_callback,
-                          const DownloadItem::ReceivedSlices& received_slices,
-                          bool is_parallelizable) = 0;
+  virtual void Initialize(
+      const InitializeCallback& initialize_callback,
+      const CancelRequestCallback& cancel_request_callback,
+      const download::DownloadItem::ReceivedSlices& received_slices,
+      bool is_parallelizable) = 0;
 
   // Add an input stream to write into a slice of the file, used for
   // parallel download.
@@ -64,8 +65,9 @@ class CONTENT_EXPORT DownloadFile {
       int64_t length) = 0;
 
   // Called when the response for the stream starting at |offset| is completed,
-  virtual void OnResponseCompleted(int64_t offset,
-                                   DownloadInterruptReason status) = 0;
+  virtual void OnResponseCompleted(
+      int64_t offset,
+      download::DownloadInterruptReason status) = 0;
 
   // Rename the download file to |full_path|.  If that file exists
   // |full_path| will be uniquified by suffixing " (<number>)" to the

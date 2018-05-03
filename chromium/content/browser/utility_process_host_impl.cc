@@ -297,31 +297,24 @@ bool UtilityProcessHostImpl::StartProcess() {
 
     // Browser command-line switches to propagate to the utility process.
     static const char* const kSwitchNames[] = {
+      network::switches::kHostResolverRules,
+      network::switches::kIgnoreCertificateErrorsSPKIList,
+      network::switches::kLogNetLog,
       network::switches::kNoReferrers,
-      switches::kHostResolverRules,
       switches::kIgnoreCertificateErrors,
-      switches::kIgnoreCertificateErrorsSPKIList,
-      switches::kLogNetLog,
       switches::kNoSandbox,
       switches::kOverrideUseSoftwareGLForTests,
       switches::kProxyServer,
 #if defined(OS_MACOSX)
       switches::kEnableSandboxLogging,
 #endif
-#if defined(USE_AURA)
-      switches::kMus,
-      switches::kMusHostingViz,
-#endif
       switches::kUseFakeDeviceForMediaStream,
       switches::kUseFileForFakeVideoCapture,
       switches::kUseMockCertVerifierForTesting,
-#if defined(OS_WIN)
-      switches::kForceMediaFoundationVideoCapture,
-#endif  // defined(OS_WIN)
       switches::kUtilityStartupDialog,
       switches::kUseGL,
 #if defined(OS_ANDROID)
-      switches::kMadviseRandomExecutableCode,
+      switches::kOrderfileMemoryOptimization,
 #endif
     };
     cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,

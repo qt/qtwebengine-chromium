@@ -12,6 +12,7 @@
 #include "SkSize.h"
 
 class GrCaps;
+class GrCCPathParser;
 class GrDrawOp;
 class GrOnFlushResourceProvider;
 class GrRenderTargetContext;
@@ -25,31 +26,38 @@ struct SkIPoint16;
  */
 class GrCCAtlas {
 public:
-    static constexpr int kMinSize = 1024;
+    using CoverageCountBatchID = int;
 
-    GrCCAtlas(const GrCaps&, int minWidth, int minHeight);
+    GrCCAtlas(const GrCaps&, int minSize);
     ~GrCCAtlas();
 
     bool addRect(int devWidth, int devHeight, SkIPoint16* loc);
     const SkISize& drawBounds() { return fDrawBounds; }
 
-    sk_sp<GrRenderTargetContext> SK_WARN_UNUSED_RESULT
-    finalize(GrOnFlushResourceProvider*, std::unique_ptr<GrDrawOp> atlasOp);
+    void setCoverageCountBatchID(CoverageCountBatchID batchID) {
+        SkASSERT(!fCoverageCountBatchID);
+        SkASSERT(!fTextureProxy);
+        fCoverageCountBatchID = batchID;
+    }
+
+    sk_sp<GrRenderTargetContext> SK_WARN_UNUSED_RESULT finalize(GrOnFlushResourceProvider*,
+                                                                sk_sp<const GrCCPathParser>);
 
     GrTextureProxy* textureProxy() const { return fTextureProxy.get(); }
 
 private:
     class Node;
+    class DrawCoverageCountOp;
 
     bool internalPlaceRect(int w, int h, SkIPoint16* loc);
 
     const int fMaxAtlasSize;
 
-    int fWidth;
-    int fHeight;
-    SkISize fDrawBounds;
+    int fWidth, fHeight;
     std::unique_ptr<Node> fTopNode;
+    SkISize fDrawBounds = {0, 0};
 
+    CoverageCountBatchID fCoverageCountBatchID SkDEBUGCODE(= 0);
     sk_sp<GrTextureProxy> fTextureProxy;
 };
 

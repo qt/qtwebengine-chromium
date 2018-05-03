@@ -56,6 +56,7 @@
 /** @const */ var ACCELERATOR_APP_LAUNCH_NETWORK_CONFIG =
     'app_launch_network_config';
 /** @const */ var ACCELERATOR_BOOTSTRAPPING_SLAVE = "bootstrapping_slave";
+/** @const */ var ACCELERATOR_DEMO_MODE = "demo_mode";
 
 /* Signin UI state constants. Used to control header bar UI. */
 /** @const */ var SIGNIN_UI_STATE = {
@@ -91,7 +92,8 @@
   USER_ADDING: 'user-adding',
   APP_LAUNCH_SPLASH: 'app-launch-splash',
   ARC_KIOSK_SPLASH: 'arc-kiosk-splash',
-  DESKTOP_USER_MANAGER: 'login-add-user'
+  DESKTOP_USER_MANAGER: 'login-add-user',
+  GAIA_SIGNIN: 'gaia-signin'
 };
 
 /* Possible lock screen enabled app activity state. */
@@ -186,6 +188,15 @@ cr.define('cr.ui.login', function() {
     SCREEN_OOBE_RESET,
   ];
 
+  /**
+   * Group of screens (screen IDs) where demo mode setup invocation is
+   * available.
+   * @type Array<string>
+   * @const
+   */
+  var DEMO_MODE_SETUP_AVAILABLE_SCREEN_GROUP = [
+    SCREEN_GAIA_SIGNIN,
+  ];
 
   /**
    * OOBE screens group index.
@@ -297,10 +308,17 @@ cr.define('cr.ui.login', function() {
           loadTimeData.getString('showViewsLock') == 'on' &&
           (this.displayType_ == DISPLAY_TYPE.LOCK ||
            this.displayType_ == DISPLAY_TYPE.USER_ADDING);
-      var showingViewsLogin = loadTimeData.valueExists('showViewsLogin') &&
+      return showingViewsLock || this.showingViewsLogin;
+    },
+
+    /**
+     * Returns true if we are showing views based login screen.
+     * @return {boolean}
+     */
+    get showingViewsLogin() {
+      return loadTimeData.valueExists('showViewsLogin') &&
           loadTimeData.getString('showViewsLogin') == 'on' &&
-          (this.displayType_ == DISPLAY_TYPE.LOGIN);
-      return showingViewsLock || showingViewsLogin;
+          (this.displayType_ == DISPLAY_TYPE.GAIA_SIGNIN);
     },
 
     /**
@@ -423,6 +441,11 @@ cr.define('cr.ui.login', function() {
           chrome.send('networkConfigRequest');
       } else if (name == ACCELERATOR_BOOTSTRAPPING_SLAVE) {
         chrome.send('setOobeBootstrappingSlave');
+      } else if (name == ACCELERATOR_DEMO_MODE) {
+        if (DEMO_MODE_SETUP_AVAILABLE_SCREEN_GROUP.indexOf(currentStepId) !=
+            -1) {
+          chrome.send('setupDemoMode');
+        }
       }
     },
 
@@ -547,10 +570,6 @@ cr.define('cr.ui.login', function() {
         newStep.setAttribute(
             'aria-label',
             loadTimeData.getString('signinScreenTitle'));
-      } else if (nextStepId == SCREEN_OOBE_NETWORK) {
-        newStep.setAttribute(
-            'aria-label',
-            loadTimeData.getString('networkScreenAccessibleTitle'));
       }
 
       // Default control to be focused (if specified).
@@ -640,6 +659,10 @@ cr.define('cr.ui.login', function() {
         return;
 
       var screenId = screen.id;
+      if (screenId == SCREEN_ACCOUNT_PICKER && this.showingViewsLogin) {
+        chrome.send('updateGaiaDialogVisibility', [false]);
+        return;
+      }
 
       // Make sure the screen is decorated.
       this.preloadScreen(screen);
@@ -735,6 +758,12 @@ cr.define('cr.ui.login', function() {
       // This requires |screen| to have 'box-sizing: border-box'.
       screen.style.width = width + 'px';
       screen.style.height = height + 'px';
+
+      if (this.showingViewsLogin) {
+        chrome.send('updateGaiaDialogSize', [width, height]);
+        $('scroll-container').classList.toggle('disable-scroll', true);
+        $('scroll-container').scrollTop = $('inner-container').offsetTop;
+      }
     },
 
     /**

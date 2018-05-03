@@ -73,9 +73,10 @@ class RenderWidgetFullscreenPepper : public RenderWidget,
 
   // RenderWidget overrides.
   GURL GetURLForGraphicsContext3D() override;
-  void OnDeviceScaleFactorChanged() override;
 
  private:
+  void UpdateLayerBounds();
+
   // URL that is responsible for this widget, passed to ggl::CreateViewContext.
   GURL active_url_;
 

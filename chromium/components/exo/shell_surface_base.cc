@@ -904,7 +904,8 @@ void ShellSurfaceBase::OnWindowBoundsChanged(aura::Window* window,
     UpdateSurfaceBounds();
 
     // The shadow size may be updated to match the widget. Change it back
-    // to the shadow content size.
+    // to the shadow content size. Note that this relies on wm::ShadowController
+    // being notified of the change before |this|.
     UpdateShadow();
 
     Configure();
@@ -1255,9 +1256,9 @@ void ShellSurfaceBase::UpdateShadow() {
   aura::Window* window = widget_->GetNativeWindow();
 
   if (!shadow_bounds_) {
-    wm::SetShadowElevation(window, wm::ShadowElevation::NONE);
+    wm::SetShadowElevation(window, wm::kShadowElevationNone);
   } else {
-    wm::SetShadowElevation(window, wm::ShadowElevation::DEFAULT);
+    wm::SetShadowElevation(window, wm::kShadowElevationDefault);
 
     wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
     // Maximized/Fullscreen window does not create a shadow.
@@ -1268,7 +1269,7 @@ void ShellSurfaceBase::UpdateShadow() {
     // Surfaces that can't be activated are usually menus and tooltips. Use a
     // small style shadow for them.
     if (!activatable_)
-      shadow->SetElevation(wm::ShadowElevation::SMALL);
+      shadow->SetElevation(wm::kShadowElevationMenuOrTooltip);
     // We don't have rounded corners unless frame is enabled.
     if (!frame_enabled_)
       shadow->SetRoundedCornerRadius(0);

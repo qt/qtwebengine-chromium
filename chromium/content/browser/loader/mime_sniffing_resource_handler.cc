@@ -8,25 +8,28 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/feature_list.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "components/download/public/common/download_item.h"
+#include "components/download/public/common/download_stats.h"
+#include "components/download/public/common/download_url_parameters.h"
 #include "content/browser/download/download_resource_handler.h"
-#include "content/browser/download/download_stats.h"
 #include "content/browser/loader/intercepting_resource_handler.h"
 #include "content/browser/loader/resource_controller.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/loader/stream_resource_handler.h"
+#include "content/browser/web_package/web_package_request_handler.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/download_item.h"
-#include "content/public/browser/download_save_info.h"
-#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
+#include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/webplugininfo.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_sniffer.h"
@@ -35,9 +38,9 @@
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "ppapi/features/features.h"
-#include "services/network/public/cpp/loader_util.h"
+#include "services/network/loader_util.h"
 #include "services/network/public/cpp/resource_response.h"
-#include "third_party/WebKit/common/mime_util/mime_util.h"
+#include "third_party/WebKit/public/common/mime_util/mime_util.h"
 #include "url/origin.h"
 
 namespace content {
@@ -114,6 +117,7 @@ MimeSniffingResourceHandler::MimeSniffingResourceHandler(
       must_download_is_set_(false),
       read_buffer_size_(0),
       bytes_read_(0),
+      need_to_replay_extra_eof_packet_(false),
       parent_read_buffer_(nullptr),
       parent_read_buffer_size_(nullptr),
       intercepting_handler_(intercepting_handler),
@@ -226,9 +230,12 @@ void MimeSniffingResourceHandler::OnReadCompleted(
   const std::string& type_hint = response_->head.mime_type;
 
   std::string new_type;
-  bool made_final_decision =
-      net::SniffMimeType(read_buffer_->data(), bytes_read_, request()->url(),
-                         type_hint, &new_type);
+  bool made_final_decision = net::SniffMimeType(
+      read_buffer_->data(), bytes_read_, request()->url(), type_hint,
+      GetContentClient()->browser()->ForceSniffingFileUrlsForHtml()
+          ? net::ForceSniffFileUrlsForHtml::kEnabled
+          : net::ForceSniffFileUrlsForHtml::kDisabled,
+      &new_type);
 
   // SniffMimeType() returns false if there is not enough data to determine
   // the mime type. However, even if it returns false, it returns a new type
@@ -239,6 +246,12 @@ void MimeSniffingResourceHandler::OnReadCompleted(
     controller->Resume();
     return;
   }
+
+  // After getting a 0-sized, eof-indicating packet when buffering, the packet
+  // (i.e. the OnReadCompleted(0) call) needs to be replayed against the
+  // downstream handler (unless replaying the buffered data will act as one if
+  // |bytes_read_ == 0| - the first part of the condition below).
+  need_to_replay_extra_eof_packet_ = (bytes_read_ != 0) && (bytes_read == 0);
 
   HoldController(std::move(controller));
   AdvanceState();
@@ -303,6 +316,12 @@ void MimeSniffingResourceHandler::AdvanceState() {
       case STATE_REPLAYING_RESPONSE_RECEIVED:
         ReplayReadCompleted();
         break;
+      case STATE_REPLAYING_EOF_WILL_READ:
+        ReplayWillReadEof();
+        break;
+      case STATE_REPLAYING_EOF_READ_COMPLETED:
+        ReplayReadCompletedEof();
+        break;
       case STATE_STARTING:
       case STATE_STREAMING:
         Resume();
@@ -364,7 +383,10 @@ void MimeSniffingResourceHandler::ReplayResponseReceived() {
 void MimeSniffingResourceHandler::ReplayReadCompleted() {
   DCHECK_EQ(STATE_REPLAYING_RESPONSE_RECEIVED, state_);
 
-  state_ = STATE_STREAMING;
+  if (need_to_replay_extra_eof_packet_)
+    state_ = STATE_REPLAYING_EOF_WILL_READ;
+  else
+    state_ = STATE_STREAMING;
 
   if (!read_buffer_.get()) {
     ResumeInternal();
@@ -379,6 +401,27 @@ void MimeSniffingResourceHandler::ReplayReadCompleted() {
 
   next_handler_->OnReadCompleted(bytes_read,
                                  std::make_unique<Controller>(this));
+}
+
+void MimeSniffingResourceHandler::ReplayWillReadEof() {
+  DCHECK_EQ(STATE_REPLAYING_EOF_WILL_READ, state_);
+
+  state_ = STATE_REPLAYING_EOF_READ_COMPLETED;
+  DCHECK(!read_buffer_);
+  DCHECK_EQ(0, read_buffer_size_);
+  DCHECK_EQ(0, bytes_read_);
+  next_handler_->OnWillRead(&read_buffer_, &read_buffer_size_,
+                            std::make_unique<Controller>(this));
+}
+
+void MimeSniffingResourceHandler::ReplayReadCompletedEof() {
+  DCHECK_EQ(STATE_REPLAYING_EOF_READ_COMPLETED, state_);
+
+  state_ = STATE_STREAMING;
+  read_buffer_ = nullptr;
+  read_buffer_size_ = 0;
+  bytes_read_ = 0;
+  next_handler_->OnReadCompleted(0, std::make_unique<Controller>(this));
 }
 
 bool MimeSniffingResourceHandler::MaybeStartInterception() {
@@ -414,6 +457,10 @@ bool MimeSniffingResourceHandler::MaybeStartInterception() {
   if (!must_download) {
     if (blink::IsSupportedMimeType(mime_type))
       return true;
+    if (base::FeatureList::IsEnabled(features::kSignedHTTPExchange) &&
+        WebPackageRequestHandler::IsSupportedMimeType(mime_type)) {
+      return true;
+    }
 
     bool handled_by_plugin;
     if (!CheckForPluginHandler(&handled_by_plugin))
@@ -466,12 +513,9 @@ bool MimeSniffingResourceHandler::CheckForPluginHandler(
   }
 
   // Attempt to intercept the request as a stream.
-  base::FilePath plugin_path;
-  if (has_plugin)
-    plugin_path = plugin.path;
   std::string payload;
-  std::unique_ptr<ResourceHandler> handler(host_->MaybeInterceptAsStream(
-      plugin_path, request(), response_.get(), &payload));
+  std::unique_ptr<ResourceHandler> handler(
+      host_->MaybeInterceptAsStream(request(), response_.get(), &payload));
   if (handler) {
     if (!CheckResponseIsNotProvisional())
       return false;
@@ -536,7 +580,8 @@ bool MimeSniffingResourceHandler::MustDownload() {
   } else if (request()->url().SchemeIsHTTPOrHTTPS() &&
              // The MHTML mime type should be same as the one we check in
              // Blink's DocumentLoader.
-             response_->head.mime_type == "multipart/related") {
+             (response_->head.mime_type == "multipart/related" ||
+              response_->head.mime_type == "message/rfc822")) {
     // It is OK to load the saved offline copy, in MHTML format.
     const ResourceRequestInfo* info =
         ResourceRequestInfo::ForRequest(request());
@@ -547,8 +592,10 @@ bool MimeSniffingResourceHandler::MustDownload() {
     must_download_ = false;
   }
 
-  if (GetRequestInfo()->suggested_filename().has_value() && !must_download_)
-    RecordDownloadCount(CROSS_ORIGIN_DOWNLOAD_WITHOUT_CONTENT_DISPOSITION);
+  if (GetRequestInfo()->suggested_filename().has_value() && !must_download_) {
+    download::RecordDownloadCount(
+        download::CROSS_ORIGIN_DOWNLOAD_WITHOUT_CONTENT_DISPOSITION);
+  }
 
   return must_download_;
 }

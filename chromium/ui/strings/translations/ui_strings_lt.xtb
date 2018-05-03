@@ -8,6 +8,7 @@
 <translation id="1243314992276662751">Įkelti</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">REKOMENDUOJAMOS PROGRAMOS</translation>
+<translation id="1368832886055348810">Iš kairės į dešinę</translation>
 <translation id="1398853756734560583">Išskleisti</translation>
 <translation id="1413622004203049571">Išjungti pranešimus nuo <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 minutė ir }one{# minutė ir }few{# minutės ir }many{# minutės ir }other{# minučių ir }}</translation>
@@ -21,6 +22,7 @@
 <translation id="1812519734428420144">Įvertinimas žvaigždutėmis <ph name="RATING_SCORE" /></translation>
 <translation id="1830179671306812954">{HOURS,plural, =1{1 valanda ir }one{# valanda ir }few{# valandos ir }many{# valandos ir }other{# valandų ir }}</translation>
 <translation id="1842960171412779397">pasirinkti</translation>
+<translation id="1859234291848436338">Rašymo nurodymas</translation>
 <translation id="1860796786778352021">Uždaryti pranešimus</translation>
 <translation id="1871244248791675517">Ins</translation>
 <translation id="1884435127456172652"><ph name="NUMBER" /> %</translation>
@@ -30,6 +32,7 @@
 <translation id="2168039046890040389">Puslapį į viršų</translation>
 <translation id="2190355936436201913">(tuščias)</translation>
 <translation id="219905428774326614">Paleidimo priemonė, visos programos</translation>
+<translation id="2267918077332197517">Blokuoti visus šios svetainės pranešimus</translation>
 <translation id="2289052229480071835">Palieskite jutiklines sritis ekrane.</translation>
 <translation id="2295140143284145483">Apklausa</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
@@ -50,7 +53,9 @@
 <translation id="3183922693828471536">Slinkti iki čia</translation>
 <translation id="3234408098842461169">Rodyklė „Žemyn“</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{1 diena}one{# diena}few{# dienos}many{# dienos}other{# dienų}}</translation>
+<translation id="335581015389089642">Kalba</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{Liko 1 diena}one{Liko # diena}few{Liko # dienos}many{Liko # dienos}other{Liko # dienų}}</translation>
+<translation id="3618849550573277856">Ieškoti „<ph name="LOOKUP_STRING" />“</translation>
 <translation id="364720409959344976">Pasirinkite norimą įkelti aplanką</translation>
 <translation id="3660179305079774227">Rodyklė „Aukštyn“</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> GB/s</translation>
@@ -63,8 +68,8 @@
 <translation id="4202807286478387388">peršokti</translation>
 <translation id="4250229828105606438">Ekrano kopija</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{Prieš 1 mėnesį}one{Prieš # mėnesį}few{Prieš # mėnesius}many{Prieš # mėnesio}other{Prieš # mėnesių}}</translation>
+<translation id="4289300219472526559">Pradėti kalbėti</translation>
 <translation id="4316910396681052118">VISOS PROGRAMOS</translation>
-<translation id="4320177379694898372">Nėra interneto ryšio</translation>
 <translation id="4588090240171750605">Slinkti į dešinę</translation>
 <translation id="4724120544754982507">Pranešimų centras, neskaitytų pranešimų: <ph name="UNREAD_NOTIFICATION_COUNT" /></translation>
 <translation id="4730374152663651037">DAŽNAI NAUDOJAMOS PROGRAMOS</translation>
@@ -102,7 +107,9 @@
 <translation id="6351032674660237738">PROGRAMŲ PASIŪLYMAI</translation>
 <translation id="6364916375976753737">Slinkti į kairę</translation>
 <translation id="6394627529324717982">Kablelis</translation>
+<translation id="6397363302884558537">Baigti kalbėti</translation>
 <translation id="6404817160109697034">{SECONDS,plural, =1{Prieš 1 sek.}one{Prieš # sek.}few{Prieš # sek.}many{Prieš # sek.}other{Prieš # sek.}}</translation>
+<translation id="6430678249303439055">Blokuoti visus šios programos pranešimus</translation>
 <translation id="6483402905448010557">{SECONDS,plural, =1{Prieš 1 sekundę}one{Prieš # sekundę}few{Prieš # sekundes}many{Prieš # sekundės}other{Prieš # sekundžių}}</translation>
 <translation id="654149438358937226">Blokuoti visus pranešimus</translation>
 <translation id="6567071839949112727">spustelėti aukštesnio lygmens elementą</translation>
@@ -119,6 +126,7 @@
 <translation id="6917971086528278418">{YEARS,plural, =1{Liko 1 metai}one{Liko # metai}few{Liko # metai}many{Liko # metų}other{Liko # metų}}</translation>
 <translation id="6945221475159498467">Pasirinkti</translation>
 <translation id="6965382102122355670">Gerai</translation>
+<translation id="6974053822202609517">Iš dešinės į kairę</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">TIKRIAUSIAI SPUSTELĖJAMOS PROGRAMOS</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -142,7 +150,6 @@
 <translation id="8328145009876646418">Kairysis kraštas</translation>
 <translation id="8331626408530291785">Slinkti į viršų</translation>
 <translation id="8352146631962686268">{YEARS,plural, =1{1 metai}one{# metai}few{# metai}many{# metų}other{# metų}}</translation>
-<translation id="8371695176452482769">Kalbėti dabar</translation>
 <translation id="838869780401515933">tikrinti</translation>
 <translation id="8393700583063109961">Siųsti pranešimą</translation>
 <translation id="8394908167088220973">Leisti / pristabdyti mediją</translation>
@@ -153,6 +160,7 @@
 <translation id="8725488761726303204">Dar <ph name="NUMBER" /></translation>
 <translation id="8730621377337864115">Atlikta</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 val.}one{# val.}few{# val.}many{# val.}other{# val.}}</translation>
+<translation id="8798099450830957504">Numatytasis</translation>
 <translation id="8806053966018712535">Aplankas „<ph name="FOLDER_NAME" />“</translation>
 <translation id="883911313571074303">Komentuoti vaizdą</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KB</translation>

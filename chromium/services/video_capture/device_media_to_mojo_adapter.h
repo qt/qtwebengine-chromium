@@ -10,11 +10,9 @@
 #include "media/capture/video/video_capture_device_client.h"
 #include "media/capture/video_capture_types.h"
 #include "services/service_manager/public/cpp/service_context_ref.h"
-#include "services/video_capture/public/interfaces/device.mojom.h"
+#include "services/video_capture/public/mojom/device.mojom.h"
 
 namespace video_capture {
-
-class ReceiverMojoToMediaAdapter;
 
 // Implementation of mojom::Device backed by a given instance of
 // media::VideoCaptureDevice.
@@ -52,8 +50,8 @@ class DeviceMediaToMojoAdapter : public mojom::Device {
   const std::unique_ptr<media::VideoCaptureDevice> device_;
   media::VideoCaptureJpegDecoderFactoryCB jpeg_decoder_factory_callback_;
   bool device_started_;
-  ReceiverMojoToMediaAdapter* receiver_adapter_ptr_ = nullptr;
   base::ThreadChecker thread_checker_;
+  base::WeakPtrFactory<DeviceMediaToMojoAdapter> weak_factory_;
 };
 
 }  // namespace video_capture

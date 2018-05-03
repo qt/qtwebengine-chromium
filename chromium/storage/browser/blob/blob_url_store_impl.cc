@@ -6,6 +6,8 @@
 
 #include "storage/browser/blob/blob_impl.h"
 #include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_loader_factory.h"
+#include "storage/browser/blob/blob_url_utils.h"
 
 namespace storage {
 
@@ -25,7 +27,8 @@ BlobURLStoreImpl::~BlobURLStoreImpl() {
 void BlobURLStoreImpl::Register(blink::mojom::BlobPtr blob,
                                 const GURL& url,
                                 RegisterCallback callback) {
-  if (!url.SchemeIsBlob() || !delegate_->CanCommitURL(url)) {
+  if (!url.SchemeIsBlob() || !delegate_->CanCommitURL(url) ||
+      BlobUrlUtils::UrlHasFragment(url)) {
     mojo::ReportBadMessage("Invalid Blob URL passed to BlobURLStore::Register");
     std::move(callback).Run();
     return;
@@ -38,6 +41,11 @@ void BlobURLStoreImpl::Register(blink::mojom::BlobPtr blob,
 }
 
 void BlobURLStoreImpl::Revoke(const GURL& url) {
+  if (!url.SchemeIsBlob() || !delegate_->CanCommitURL(url) ||
+      BlobUrlUtils::UrlHasFragment(url)) {
+    mojo::ReportBadMessage("Invalid Blob URL passed to BlobURLStore::Revoke");
+    return;
+  }
   if (context_)
     context_->RevokePublicBlobURL(url);
   urls_.erase(url);
@@ -54,6 +62,14 @@ void BlobURLStoreImpl::Resolve(const GURL& url, ResolveCallback callback) {
   if (blob_handle)
     BlobImpl::Create(std::move(blob_handle), MakeRequest(&blob));
   std::move(callback).Run(std::move(blob));
+}
+
+void BlobURLStoreImpl::ResolveAsURLLoaderFactory(
+    const GURL& url,
+    network::mojom::URLLoaderFactoryRequest request) {
+  BlobURLLoaderFactory::Create(
+      context_ ? context_->GetBlobDataFromPublicURL(url) : nullptr, url,
+      std::move(request));
 }
 
 void BlobURLStoreImpl::RegisterWithUUID(blink::mojom::BlobPtr blob,

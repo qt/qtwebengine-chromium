@@ -270,6 +270,20 @@ AXObject* AXObjectCacheImpl::Get(AbstractInlineTextBox* inline_text_box) {
   return objects_.at(ax_id);
 }
 
+AXID AXObjectCacheImpl::GetAXID(Node* node) {
+  AXObject* ax_object = GetOrCreate(node);
+  if (!ax_object)
+    return 0;
+  return ax_object->AXObjectID();
+}
+
+Element* AXObjectCacheImpl::GetElementFromAXID(AXID axid) {
+  AXObject* ax_object = ObjectFromAXID(axid);
+  if (!ax_object || !ax_object->GetElement())
+    return nullptr;
+  return ax_object->GetElement();
+}
+
 AXObject* AXObjectCacheImpl::Get(AccessibleNode* accessible_node) {
   if (!accessible_node)
     return nullptr;
@@ -292,7 +306,13 @@ static bool NodeHasRole(Node* node, const String& role) {
 }
 
 static bool NodeHasGridRole(Node* node) {
-  return NodeHasRole(node, "grid") || NodeHasRole(node, "treegrid");
+  return NodeHasRole(node, "grid") || NodeHasRole(node, "treegrid") ||
+         NodeHasRole(node, "table");
+}
+
+static bool NodeHasCellRole(Node* node) {
+  return NodeHasRole(node, "cell") || NodeHasRole(node, "gridcell") ||
+         NodeHasRole(node, "columnheader") || NodeHasRole(node, "rowheader");
 }
 
 AXObject* AXObjectCacheImpl::CreateFromRenderer(LayoutObject* layout_object) {
@@ -312,8 +332,7 @@ AXObject* AXObjectCacheImpl::CreateFromRenderer(LayoutObject* layout_object) {
     return AXARIAGrid::Create(layout_object, *this);
   if (NodeHasRole(node, "row"))
     return AXARIAGridRow::Create(layout_object, *this);
-  if (NodeHasRole(node, "gridcell") || NodeHasRole(node, "columnheader") ||
-      NodeHasRole(node, "rowheader"))
+  if (NodeHasCellRole(node))
     return AXARIAGridCell::Create(layout_object, *this);
 
   // media controls
@@ -396,6 +415,10 @@ AXObject* AXObjectCacheImpl::GetOrCreate(AccessibleNode* accessible_node) {
 
   new_obj->Init();
   return new_obj;
+}
+
+AXObject* AXObjectCacheImpl::GetOrCreate(const Node* node) {
+  return GetOrCreate(const_cast<Node*>(node));
 }
 
 AXObject* AXObjectCacheImpl::GetOrCreate(Node* node) {

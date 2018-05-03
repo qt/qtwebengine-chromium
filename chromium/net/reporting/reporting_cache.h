@@ -59,6 +59,14 @@ class NET_EXPORT ReportingCache {
   virtual void GetReports(
       std::vector<const ReportingReport*>* reports_out) const = 0;
 
+  // Gets all reports in the cache that aren't pending. The returned pointers
+  // are valid as long as either no calls to |RemoveReports| have happened or
+  // the reports' |pending| flag has been set to true using |SetReportsPending|.
+  //
+  // (Clears any existing data in |*reports_out|.)
+  virtual void GetNonpendingReports(
+      std::vector<const ReportingReport*>* reports_out) const = 0;
+
   // Marks a set of reports as pending. |reports| must not already be marked as
   // pending.
   virtual void SetReportsPending(
@@ -112,9 +120,10 @@ class NET_EXPORT ReportingCache {
   // have been made to |SetClient| or |RemoveEndpoint| in between.
   //
   // If no origin match is found, the cache will return clients from the most
-  // specific superdomain which contains any clients with includeSubdomains set.
-  // For example, given the origin https://foo.bar.baz.com/, the cache would
-  // prioritize returning each potential match below over the ones below it:
+  // specific superdomain which contains any clients with include-subdomains
+  // set.  For example, given the origin https://foo.bar.baz.com/, the cache
+  // would prioritize returning each potential match below over the ones below
+  // it:
   //
   // 1. https://foo.bar.baz.com/ (exact origin match)
   // 2. https://foo.bar.baz.com:444/ (technically, a superdomain)

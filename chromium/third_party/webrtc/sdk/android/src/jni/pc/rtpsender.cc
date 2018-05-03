@@ -11,6 +11,7 @@
 #include "sdk/android/src/jni/pc/rtpsender.h"
 
 #include "sdk/android/generated_peerconnection_jni/jni/RtpSender_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 #include "sdk/android/src/jni/pc/rtpparameters.h"
 
@@ -63,7 +64,8 @@ jboolean JNI_RtpSender_SetParameters(
   }
   RtpParameters parameters = JavaToNativeRtpParameters(jni, j_parameters);
   return reinterpret_cast<RtpSenderInterface*>(j_rtp_sender_pointer)
-      ->SetParameters(parameters);
+      ->SetParameters(parameters)
+      .ok();
 }
 
 ScopedJavaLocalRef<jobject> JNI_RtpSender_GetParameters(

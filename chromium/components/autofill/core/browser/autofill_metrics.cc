@@ -143,6 +143,7 @@ int GetFieldTypeGroupMetric(ServerFieldType field_type,
           break;
         case ADDRESS_HOME_STREET_ADDRESS:
           group = GROUP_STREET_ADDRESS;
+          break;
         case ADDRESS_HOME_CITY:
           group = GROUP_ADDRESS_CITY;
           break;
@@ -271,8 +272,7 @@ const char* GetQualityMetricTypeSuffix(
   switch (metric_type) {
     default:
       NOTREACHED();
-    // Fall through...
-
+      FALLTHROUGH;
     case AutofillMetrics::TYPE_SUBMISSION:
       return "";
     case AutofillMetrics::TYPE_NO_SUBMISSION:
@@ -630,6 +630,14 @@ void AutofillMetrics::LogSubmittedServerCardExpirationStatusMetric(
   UMA_HISTOGRAM_ENUMERATION(
       "Autofill.SubmittedServerCardExpirationStatus", metric,
       NUM_SUBMITTED_SERVER_CARD_EXPIRATION_STATUS_METRICS);
+}
+
+// static
+void AutofillMetrics::LogSubmittedCardStateMetric(
+    SubmittedCardStateMetric metric) {
+  DCHECK_LT(metric, NUM_SUBMITTED_CARD_STATE_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Autofill.SubmittedCardState", metric,
+                            NUM_SUBMITTED_CARD_STATE_METRICS);
 }
 
 // static
@@ -1526,8 +1534,6 @@ void AutofillMetrics::FormEventLogger::Log(FormEvent event) const {
   }
 
   // Logging again in a different histogram for segmentation purposes.
-  // TODO(waltercacau): Re-evaluate if we still need such fine grained
-  // segmentation. http://crbug.com/454018
   if (server_record_type_count_ == 0 && local_record_type_count_ == 0)
     name += ".WithNoData";
   else if (server_record_type_count_ > 0 && local_record_type_count_ == 0)

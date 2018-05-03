@@ -209,17 +209,18 @@ void LayerTreeImpl::UpdateScrollbarGeometries() {
     gfx::ScrollOffset current_offset =
         scroll_tree.current_scroll_offset(scrolling_element_id);
     gfx::SizeF scrolling_size(scroll_node->bounds);
-    gfx::SizeF bounds_size(scroll_tree.container_bounds(scroll_node->id));
+    gfx::Size bounds_size(scroll_tree.container_bounds(scroll_node->id));
 
     bool is_viewport_scrollbar = scroll_node->scrolls_inner_viewport ||
                                  scroll_node->scrolls_outer_viewport;
     if (is_viewport_scrollbar) {
-      if (scroll_node->scrolls_inner_viewport) {
+      gfx::SizeF viewport_bounds(bounds_size);
+      if (scroll_node->scrolls_inner_viewport && OuterViewportScrollLayer()) {
         // Add offset and bounds contribution of outer viewport.
         current_offset += OuterViewportScrollLayer()->CurrentScrollOffset();
         gfx::SizeF outer_viewport_bounds(scroll_tree.container_bounds(
             OuterViewportScrollLayer()->scroll_tree_index()));
-        bounds_size.SetToMin(outer_viewport_bounds);
+        viewport_bounds.SetToMin(outer_viewport_bounds);
 
         // The scrolling size is only determined by the outer viewport.
         scroll_node = scroll_tree.FindNodeFromElementId(
@@ -230,9 +231,10 @@ void LayerTreeImpl::UpdateScrollbarGeometries() {
         current_offset += InnerViewportScrollLayer()->CurrentScrollOffset();
         gfx::SizeF inner_viewport_bounds(scroll_tree.container_bounds(
             InnerViewportScrollLayer()->scroll_tree_index()));
-        bounds_size.SetToMin(inner_viewport_bounds);
+        viewport_bounds.SetToMin(inner_viewport_bounds);
       }
-      bounds_size.Scale(1 / current_page_scale_factor());
+      viewport_bounds.Scale(1 / current_page_scale_factor());
+      bounds_size = ToCeiledSize(viewport_bounds);
     }
 
     for (auto* scrollbar : ScrollbarsFor(scrolling_element_id)) {
@@ -462,7 +464,7 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
                                             max_page_scale_factor());
   target_tree->SetDeviceScaleFactor(device_scale_factor());
   target_tree->set_painted_device_scale_factor(painted_device_scale_factor());
-  target_tree->SetRasterColorSpace(raster_color_space_);
+  target_tree->SetRasterColorSpace(raster_color_space_id_, raster_color_space_);
   target_tree->elastic_overscroll()->PushPendingToActive();
 
   target_tree->set_content_source_id(content_source_id());
@@ -930,9 +932,11 @@ void LayerTreeImpl::SetDeviceScaleFactor(float device_scale_factor) {
 }
 
 void LayerTreeImpl::SetRasterColorSpace(
+    int raster_color_space_id,
     const gfx::ColorSpace& raster_color_space) {
   if (raster_color_space == raster_color_space_)
     return;
+  raster_color_space_id_ = raster_color_space_id;
   raster_color_space_ = raster_color_space;
 }
 
@@ -1348,6 +1352,10 @@ viz::ContextProvider* LayerTreeImpl::context_provider() const {
   return host_impl_->layer_tree_frame_sink()->context_provider();
 }
 
+viz::SharedBitmapManager* LayerTreeImpl::shared_bitmap_manager() const {
+  return host_impl_->layer_tree_frame_sink()->shared_bitmap_manager();
+}
+
 LayerTreeResourceProvider* LayerTreeImpl::resource_provider() const {
   return host_impl_->resource_provider();
 }
@@ -1585,13 +1593,11 @@ void LayerTreeImpl::AppendSwapPromises(
   new_swap_promises.clear();
 }
 
-void LayerTreeImpl::FinishSwapPromises(
-    viz::CompositorFrameMetadata* compositor_frame_metadata,
-    RenderFrameMetadata* render_frame_metadata) {
+void LayerTreeImpl::FinishSwapPromises(viz::CompositorFrameMetadata* metadata) {
   for (const auto& swap_promise : swap_promise_list_)
-    swap_promise->WillSwap(compositor_frame_metadata, render_frame_metadata);
+    swap_promise->WillSwap(metadata);
   for (const auto& swap_promise : pinned_swap_promise_list_)
-    swap_promise->WillSwap(compositor_frame_metadata, render_frame_metadata);
+    swap_promise->WillSwap(metadata);
 }
 
 void LayerTreeImpl::ClearSwapPromises() {
@@ -2023,10 +2029,8 @@ void LayerTreeImpl::RegisterSelection(const LayerSelection& selection) {
   selection_ = selection;
 }
 
-bool LayerTreeImpl::GetAndResetHandleVisibilityChanged() {
-  bool curr_handle_visibility_changed = handle_visibility_changed_;
+void LayerTreeImpl::ResetHandleVisibilityChanged() {
   handle_visibility_changed_ = false;
-  return curr_handle_visibility_changed;
 }
 
 static gfx::SelectionBound ComputeViewportSelectionBound(

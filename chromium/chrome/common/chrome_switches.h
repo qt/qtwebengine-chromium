@@ -9,7 +9,7 @@
 #define CHROME_COMMON_CHROME_SWITCHES_H_
 
 #include "build/build_config.h"
-#include "chrome/common/features.h"
+#include "chrome/common/buildflags.h"
 #include "ppapi/features/features.h"
 #include "printing/features/features.h"
 #include "ui/base/ui_features.h"
@@ -17,10 +17,6 @@
 // Don't add more switch files here. This is linked into some places like the
 // installer where dependencies should be limited. Instead, have files
 // directly include your switch file.
-
-namespace base {
-class CommandLine;
-}
 
 namespace switches {
 
@@ -134,6 +130,7 @@ extern const char kForceEnableMetricsReporting[];
 extern const char kForceFirstRun[];
 extern const char kForceFirstRunDialog[];
 extern const char kForceLocalNtp[];
+extern const char kForceStackedTabStripLayout[];
 extern const char kHomePage[];
 extern const char kIgnoreUrlFetcherCertRequests[];
 extern const char kIncognito[];
@@ -155,9 +152,12 @@ extern const char kMemlogModeGpu[];
 extern const char kMemlogModeManual[];
 extern const char kMemlogModeMinimal[];
 extern const char kMemlogModeRendererSampling[];
+extern const char kMemlogSampling[];
+extern const char kMemlogSamplingRate[];
 extern const char kMemlogStackMode[];
 extern const char kMemlogStackModeMixed[];
 extern const char kMemlogStackModeNative[];
+extern const char kMemlogStackModeNativeWithThreadNames[];
 extern const char kMemlogStackModePseudo[];
 extern const char kMonitoringDestinationID[];
 extern const char kNetLogCaptureMode[];
@@ -250,7 +250,6 @@ extern const char kWebApkServerUrl[];
 extern const char kCroshCommand[];
 extern const char kDisableLoggingRedirect[];
 extern const char kDisableLoginScreenApps[];
-extern const char kMash[];
 extern const char kMashServiceName[];
 #endif  // defined(OS_CHROMEOS)
 
@@ -270,14 +269,12 @@ extern const char kDisableFullscreenTabDetaching[];
 extern const char kDisableHostedAppShimCreation[];
 extern const char kDisableHostedAppsInWindows[];
 extern const char kDisableMacViewsNativeAppWindows[];
-extern const char kDisableTranslateNewUX[];
 extern const char kEnableAppInfoDialogMac[];
 extern const char kEnableAppWindowCycling[];
 extern const char kEnableFullscreenTabDetaching[];
 extern const char kEnableFullscreenToolbarReveal[];
 extern const char kEnableHostedAppsInWindows[];
 extern const char kEnableMacViewsNativeAppWindows[];
-extern const char kEnableTranslateNewUX[];
 extern const char kEnableUserMetrics[];
 extern const char kHostedAppQuitNotification[];
 extern const char kMetricsClientID[];
@@ -291,6 +288,7 @@ extern const char kEnableCloudPrintXps[];
 extern const char kEnableProfileShortcutManager[];
 extern const char kHideIcons[];
 extern const char kNoNetworkProfileWarning[];
+extern const char kNotificationLaunchId[];
 extern const char kPrefetchArgumentBrowserBackground[];
 extern const char kPrefetchArgumentWatcher[];
 extern const char kShowIcons[];
@@ -324,13 +322,6 @@ extern const char kEnableNewAppMenuIcon[];
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 extern const char kUseSystemDefaultPrinter[];
-#endif
-
-bool ExtensionsDisabled(const base::CommandLine& command_line);
-bool ExtensionsDisabled();
-
-#if defined(OS_CHROMEOS)
-bool PowerOverlayEnabled();
 #endif
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in

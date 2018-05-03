@@ -5,8 +5,8 @@
 #include "content/browser/download/download_job.h"
 
 #include "base/bind_helpers.h"
+#include "components/download/public/common/download_task_runner.h"
 #include "content/browser/download/download_item_impl.h"
-#include "content/browser/download/download_task_runner.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 
@@ -14,7 +14,7 @@ namespace content {
 
 DownloadJob::DownloadJob(
     DownloadItemImpl* download_item,
-    std::unique_ptr<DownloadRequestHandleInterface> request_handle)
+    std::unique_ptr<download::DownloadRequestHandleInterface> request_handle)
     : download_item_(download_item),
       request_handle_(std::move(request_handle)),
       is_paused_(false),
@@ -32,7 +32,7 @@ void DownloadJob::Pause() {
 
   DownloadFile* download_file = download_item_->download_file_.get();
   if (download_file) {
-    GetDownloadTaskRunner()->PostTask(
+    download::GetDownloadTaskRunner()->PostTask(
         FROM_HERE,
         base::BindOnce(&DownloadFile::Pause,
                        // Safe because we control download file lifetime.
@@ -49,7 +49,7 @@ void DownloadJob::Resume(bool resume_request) {
 
   DownloadFile* download_file = download_item_->download_file_.get();
   if (download_file) {
-    GetDownloadTaskRunner()->PostTask(
+    download::GetDownloadTaskRunner()->PostTask(
         FROM_HERE,
         base::BindOnce(&DownloadFile::Resume,
                        // Safe because we control download file lifetime.
@@ -60,14 +60,11 @@ void DownloadJob::Resume(bool resume_request) {
     request_handle_->ResumeRequest();
 }
 
-WebContents* DownloadJob::GetWebContents() const {
-  return request_handle_ ? request_handle_->GetWebContents() : nullptr;
-}
-
-void DownloadJob::Start(DownloadFile* download_file_,
-                        const DownloadFile::InitializeCallback& callback,
-                        const DownloadItem::ReceivedSlices& received_slices) {
-  GetDownloadTaskRunner()->PostTask(
+void DownloadJob::Start(
+    DownloadFile* download_file_,
+    const DownloadFile::InitializeCallback& callback,
+    const download::DownloadItem::ReceivedSlices& received_slices) {
+  download::GetDownloadTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&DownloadFile::Initialize,
                      // Safe because we control download file lifetime.
@@ -81,7 +78,7 @@ void DownloadJob::Start(DownloadFile* download_file_,
 
 void DownloadJob::OnDownloadFileInitialized(
     const DownloadFile::InitializeCallback& callback,
-    DownloadInterruptReason result) {
+    download::DownloadInterruptReason result) {
   callback.Run(result);
 }
 
@@ -91,13 +88,15 @@ bool DownloadJob::AddInputStream(
     int64_t length) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DownloadFile* download_file = download_item_->download_file_.get();
-  if (!download_file)
+  if (!download_file) {
+    CancelRequestWithOffset(offset);
     return false;
+  }
 
   // download_file_ is owned by download_item_ on the UI thread and is always
   // deleted on the download task runner after download_file_ is nulled out.
   // So it's safe to use base::Unretained here.
-  GetDownloadTaskRunner()->PostTask(
+  download::GetDownloadTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&DownloadFile::AddInputStream,
                                 base::Unretained(download_file),
                                 std::move(stream), offset, length));
@@ -105,7 +104,6 @@ bool DownloadJob::AddInputStream(
 }
 
 void DownloadJob::CancelRequestWithOffset(int64_t offset) {
-  NOTREACHED();
 }
 
 bool DownloadJob::IsParallelizable() const {

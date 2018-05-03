@@ -7,7 +7,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 
 #include "base/macros.h"
 #include "net/base/int128.h"
@@ -16,6 +15,7 @@
 #include "net/quic/core/quic_types.h"
 #include "net/quic/platform/api/quic_export.h"
 #include "net/quic/platform/api/quic_socket_address.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_string_piece.h"
 
 namespace net {
@@ -51,12 +51,12 @@ class QUIC_EXPORT_PRIVATE QuicUtils {
   // Returns TransmissionType as a char*
   static const char* TransmissionTypeToString(TransmissionType type);
 
-  // Returns PeerAddressChangeType as a std::string.
-  static std::string PeerAddressChangeTypeToString(PeerAddressChangeType type);
+  // Returns AddressChangeType as a std::string.
+  static QuicString AddressChangeTypeToString(AddressChangeType type);
 
   // Determines and returns change type of address change from |old_address| to
   // |new_address|.
-  static PeerAddressChangeType DetermineAddressChangeType(
+  static AddressChangeType DetermineAddressChangeType(
       const QuicSocketAddress& old_address,
       const QuicSocketAddress& new_address);
 
@@ -68,6 +68,15 @@ class QUIC_EXPORT_PRIVATE QuicUtils {
                            size_t iov_offset,
                            size_t buffer_length,
                            char* buffer);
+
+  // Returns true if a packet is ackable. A packet is unackable if it can never
+  // be acked. Occurs when a packet is never sent, after it is acknowledged
+  // once, or if it's a crypto packet we never expect to receive an ack for.
+  static bool IsAckable(SentPacketState state);
+
+  // Returns packet state corresponding to |retransmission_type|.
+  static SentPacketState RetransmissionTypeToPacketState(
+      TransmissionType retransmission_type);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicUtils);

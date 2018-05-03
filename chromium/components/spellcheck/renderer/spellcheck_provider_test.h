@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/strings/string16.h"
+#include "components/spellcheck/renderer/empty_local_interface_provider.h"
 #include "components/spellcheck/renderer/spellcheck_provider.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -18,10 +19,6 @@
 
 namespace base {
 class MessageLoop;
-}
-
-namespace IPC {
-class Message;
 }
 
 // A fake completion object for verification.
@@ -42,18 +39,15 @@ class FakeTextCheckingCompletion : public blink::WebTextCheckingCompletion {
 class TestingSpellCheckProvider : public SpellCheckProvider,
                                   public spellcheck::mojom::SpellCheckHost {
  public:
-  TestingSpellCheckProvider();
+  explicit TestingSpellCheckProvider(service_manager::LocalInterfaceProvider*);
   // Takes ownership of |spellcheck|.
-  explicit TestingSpellCheckProvider(SpellCheck* spellcheck);
+  TestingSpellCheckProvider(SpellCheck* spellcheck,
+                            service_manager::LocalInterfaceProvider*);
 
   ~TestingSpellCheckProvider() override;
 
   void RequestTextChecking(const base::string16& text,
                            blink::WebTextCheckingCompletion* completion);
-
-  bool Send(IPC::Message* message) override;
-  void OnCallSpellingService(const base::string16& text);
-  void ResetResult();
 
   void SetLastResults(
       const base::string16 last_request,
@@ -61,16 +55,44 @@ class TestingSpellCheckProvider : public SpellCheckProvider,
   bool SatisfyRequestFromCache(const base::string16& text,
                                blink::WebTextCheckingCompletion* completion);
 
+#if !BUILDFLAG(USE_BROWSER_SPELLCHECKER)
+  void ResetResult();
+
+  // Variables logging CallSpellingService() mojo calls.
   base::string16 text_;
-  std::vector<std::unique_ptr<IPC::Message>> messages_;
-  size_t spelling_service_call_count_;
+  size_t spelling_service_call_count_ = 0;
+#endif
+
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
+  // Variables logging RequestTextCheck() mojo calls.
+  using RequestTextCheckParams =
+      std::pair<base::string16, RequestTextCheckCallback>;
+  std::vector<RequestTextCheckParams> text_check_requests_;
+#endif
 
  private:
-  // spellcheck::mojom::SpellCheckerHost:
+  // spellcheck::mojom::SpellCheckHost:
   void RequestDictionary() override;
   void NotifyChecked(const base::string16& word, bool misspelled) override;
+
+#if !BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   void CallSpellingService(const base::string16& text,
                            CallSpellingServiceCallback callback) override;
+  void OnCallSpellingService(const base::string16& text);
+#endif
+
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
+  void RequestTextCheck(const base::string16&,
+                        int,
+                        RequestTextCheckCallback) override;
+  void ToggleSpellCheck(bool, bool) override;
+  using SpellCheckProvider::CheckSpelling;
+  void CheckSpelling(const base::string16&,
+                     int,
+                     CheckSpellingCallback) override;
+  void FillSuggestionList(const base::string16&,
+                          FillSuggestionListCallback) override;
+#endif
 
   // Message loop (if needed) to deliver the SpellCheckHost request flow.
   std::unique_ptr<base::MessageLoop> loop_;
@@ -86,6 +108,7 @@ class SpellCheckProviderTest : public testing::Test {
   ~SpellCheckProviderTest() override;
 
  protected:
+  spellcheck::EmptyLocalInterfaceProvider embedder_provider_;
   TestingSpellCheckProvider provider_;
 };
 

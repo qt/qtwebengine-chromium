@@ -19,7 +19,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/reporting.mojom-blink.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
+#include "third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 
 using blink::WebFeature;
 
@@ -171,24 +171,6 @@ String DeprecatedWillBeDisabledByFeaturePolicyInCrossOriginIframe(
       "embedding document using Feature Policy, e.g. "
       "<iframe allow=\"%s\" ...>. See https://goo.gl/EuHzyv for more details.",
       function, milestoneString(milestone), allow_string);
-}
-
-String DeprecatedWebAudioDezippering(const char* audio_param_name) {
-  return String::Format(
-      "%s.value setter smoothing is deprecated and will be removed in %s. "
-      "Please use setTargetAtTime() instead if smoothing is needed. "
-      "See https://www.chromestatus.com/features/5287995770929152 for more "
-      "details.",
-      audio_param_name, milestoneString(M64));
-}
-
-String DeprecatedWebAudioValueSetterBehavior() {
-  return String::Format(
-      "AudioParam value setter will become equivalent to "
-      "AudioParam.setValueAtTime() in %s  "
-      "See https://webaudio.github.io/web-audio-api/#dom-audioparam-value for "
-      "more details.",
-      milestoneString(M65));
 }
 
 DeprecationInfo GetDeprecationInfo(WebFeature feature) {
@@ -481,20 +463,20 @@ DeprecationInfo GetDeprecationInfo(WebFeature feature) {
               M64, "5725727580225536")};
 
     case WebFeature::kDeprecatedTimingFunctionStepMiddle:
-      return {"DeprecatedTimingFunctionStepMiddle", M62,
-              replacedWillBeRemoved(
-                  "The step timing function with step position 'middle'",
-                  "the frames timing function", M62, "5189363944128512")};
+      return {
+          "DeprecatedTimingFunctionStepMiddle", M62,
+          willBeRemoved("The step timing function with step position 'middle'",
+                        M62, "5189363944128512")};
 
     case WebFeature::kHTMLImportsHasStyleSheets:
       return {
-          "HTMLImportsHasStyleSheets", M65,
+          "HTMLImportsHasStyleSheets", M67,
           String::Format("Styling master document from stylesheets defined in "
                          "HTML Imports "
                          "is deprecated, and is planned to be removed in %s. "
                          "Please refer to "
                          "https://goo.gl/EGXzpw for possible migration paths.",
-                         milestoneString(M65))};
+                         milestoneString(M67))};
 
     case WebFeature::
         kEncryptedMediaDisallowedByFeaturePolicyInCrossOriginIframe:
@@ -555,37 +537,6 @@ DeprecationInfo GetDeprecationInfo(WebFeature feature) {
                                     "HTMLMediaElement.srcObject", M68,
                                     "5618491470118912")};
 
-    case WebFeature::kWebAudioDezipperGainNodeGain:
-      return {"WebAudioDezipperGainNodeGain", Unknown,
-              DeprecatedWebAudioDezippering("GainNode.gain")};
-    case WebFeature::kWebAudioDezipperStereoPannerNodePan:
-      return {"WebAudioDezipperStereoPannerNodePan", Unknown,
-              DeprecatedWebAudioDezippering("StereoPannerNode.pan")};
-    case WebFeature::kWebAudioDezipperDelayNodeDelayTime:
-      return {"WebAudioDezipperDelayNodeDelayTime", Unknown,
-              DeprecatedWebAudioDezippering("DelayNode.delayTime")};
-    case WebFeature::kWebAudioDezipperOscillatorNodeFrequency:
-      return {"WebAudioDezipperOscillatorNodeFrequency", Unknown,
-              DeprecatedWebAudioDezippering("OscillatorNode.frequency")};
-    case WebFeature::kWebAudioDezipperOscillatorNodeDetune:
-      return {"WebAudioDezipperOscillatorNodeDetune", Unknown,
-              DeprecatedWebAudioDezippering("OscillatorNode.detune")};
-    case WebFeature::kWebAudioDezipperBiquadFilterNodeFrequency:
-      return {"WebAudioDezipperBiquadFilterNodeFrequency", Unknown,
-              DeprecatedWebAudioDezippering("BiquadFilterNode.frequency")};
-    case WebFeature::kWebAudioDezipperBiquadFilterNodeDetune:
-      return {"WebAudioDezipperBiquadFilterNodeDetune", Unknown,
-              DeprecatedWebAudioDezippering("BiquadFilterNode.detune")};
-    case WebFeature::kWebAudioDezipperBiquadFilterNodeQ:
-      return {"WebAudioDezipperBiquadFilterNodeQ", Unknown,
-              DeprecatedWebAudioDezippering("BiquadFilterNode.Q")};
-    case WebFeature::kWebAudioDezipperBiquadFilterNodeGain:
-      return {"WebAudioDezipperBiquadFilterNodeGain", Unknown,
-              DeprecatedWebAudioDezippering("BiquadFilterNode.gain")};
-    case WebFeature::kWebAudioValueSetterIsSetValue:
-      return {"WebAudioValueSetterIsSetValue", Unknown,
-              DeprecatedWebAudioValueSetterBehavior()};
-
     case WebFeature::kChromeLoadTimesRequestTime:
     case WebFeature::kChromeLoadTimesStartLoadTime:
     case WebFeature::kChromeLoadTimesCommitLoadTime:
@@ -607,6 +558,40 @@ DeprecationInfo GetDeprecationInfo(WebFeature feature) {
     case WebFeature::kChromeLoadTimesWasAlternateProtocolAvailable:
       return {"ChromeLoadTimesWasAlternateProtocolAvailable", Unknown,
               chromeLoadTimesNextHopProtocol};
+
+    case WebFeature::kDataUriHasOctothorpe:
+      return {"DataUriHasOctothorpe", M67,
+              replacedWillBeRemoved(
+                  "Using unescaped '#' characters in a data URI body", "'%23'",
+                  M67, "5656049583390720")};
+
+    case WebFeature::kThreeValuedPositionBasicShape:
+    case WebFeature::kThreeValuedPositionGradient:
+    case WebFeature::kThreeValuedPositionObjectPosition:
+    case WebFeature::kThreeValuedPositionPerspectiveOrigin:
+      return {
+          "ThreeValuedPosition", M68,
+          replacedWillBeRemoved("Expressing a position using 3 parts",
+                                "<position> syntax", M68, "5116559680864256")};
+
+    case WebFeature::kImageInputTypeFormDataWithNonEmptyValue:
+      return {"ImageInputTypeFormDataWithNonEmptyValue", M68,
+              willBeRemoved("Extra form data if value attribute "
+                            "is present with non-empty "
+                            "value for <input type='image'>",
+                            M68, "5672688152477696")};
+
+    case WebFeature::kV8Document_CreateTouch_Method:
+      return {"V8Document_CreateTouch_Method", M68,
+              replacedWillBeRemoved("document.createTouch",
+                                    "TouchEvent constructor", M68,
+                                    "5668612064935936")};
+
+    case WebFeature::kV8Document_CreateTouchList_Method:
+      return {"V8Document_CreateTouchList_Method", M68,
+              replacedWillBeRemoved("document.createTouchList",
+                                    "TouchEvent constructor", M68,
+                                    "5668612064935936")};
 
     // Features that aren't deprecated don't have a deprecation message.
     default:
@@ -720,12 +705,9 @@ void Deprecation::CountDeprecationCrossOriginIframe(const Document& document,
   CountDeprecationCrossOriginIframe(frame, feature);
 }
 
-void Deprecation::CountDeprecationFeaturePolicy(const Document& document,
-                                                FeaturePolicyFeature feature) {
-  // If feature policy is not enabled, don't do anything.
-  if (!RuntimeEnabledFeatures::FeaturePolicyEnabled())
-    return;
-
+void Deprecation::CountDeprecationFeaturePolicy(
+    const Document& document,
+    mojom::FeaturePolicyFeature feature) {
   LocalFrame* frame = document.GetFrame();
   if (!frame)
     return;
@@ -741,30 +723,30 @@ void Deprecation::CountDeprecationFeaturePolicy(const Document& document,
   // (until the general syntax is shipped) and this is also a good enough
   // approximation for deprecation messages.
   switch (feature) {
-    case FeaturePolicyFeature::kEncryptedMedia:
+    case mojom::FeaturePolicyFeature::kEncryptedMedia:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
               kEncryptedMediaDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case FeaturePolicyFeature::kGeolocation:
+    case mojom::FeaturePolicyFeature::kGeolocation:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::kGeolocationDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case FeaturePolicyFeature::kMicrophone:
+    case mojom::FeaturePolicyFeature::kMicrophone:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
               kGetUserMediaMicDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case FeaturePolicyFeature::kCamera:
+    case mojom::FeaturePolicyFeature::kCamera:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
               kGetUserMediaCameraDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case FeaturePolicyFeature::kMidiFeature:
+    case mojom::FeaturePolicyFeature::kMidiFeature:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::

@@ -10,6 +10,11 @@
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
+#include "components/safe_browsing/features.h"
+#include "content/public/browser/browser_thread.h"
+#include "net/base/url_util.h"
+#include "url/gurl.h"
+#include "url/url_canon.h"
 
 namespace {
 
@@ -133,6 +138,23 @@ void RecordExtendedReportingPrefChanged(
     }
   }
 }
+
+// A helper function to return a GURL containing just the scheme, host, port,
+// and path from a URL. Equivalent to clearing any username, password, query,
+// and ref. Return empty URL if |url| is not valid.
+GURL GetSimplifiedURL(const GURL& url) {
+  if (!url.is_valid() || !url.IsStandard())
+    return GURL();
+
+  url::Replacements<char> replacements;
+  replacements.ClearUsername();
+  replacements.ClearPassword();
+  replacements.ClearQuery();
+  replacements.ClearRef();
+
+  return url.ReplaceComponents(replacements);
+}
+
 }  // namespace
 
 namespace prefs {
@@ -154,6 +176,16 @@ const char kSafeBrowsingScoutReportingEnabled[] =
     "safebrowsing.scout_reporting_enabled";
 const char kSafeBrowsingUnhandledSyncPasswordReuses[] =
     "safebrowsing.unhandled_sync_password_reuses";
+const char kSafeBrowsingWhitelistDomains[] =
+    "safebrowsing.safe_browsing_whitelist_domains";
+const char kPasswordProtectionChangePasswordURL[] =
+    "safebrowsing.password_protection_change_password_url";
+const char kPasswordProtectionLoginURLs[] =
+    "safebrowsing.password_protection_login_urls";
+const char kPasswordProtectionWarningTrigger[] =
+    "safebrowsing.password_protection_warning_trigger";
+const char kPasswordProtectionRiskTrigger[] =
+    "safebrowsing.password_protection_risk_trigger";
 }  // namespace prefs
 
 namespace safe_browsing {
@@ -276,6 +308,10 @@ bool IsExtendedReportingEnabled(const PrefService& prefs) {
   return prefs.GetBoolean(GetExtendedReportingPrefName(prefs));
 }
 
+bool IsExtendedReportingPolicyManaged(const PrefService& prefs) {
+  return prefs.IsManagedPreference(GetExtendedReportingPrefName(prefs));
+}
+
 bool IsScout(const PrefService& prefs) {
   return GetExtendedReportingPrefName(prefs) ==
          prefs::kSafeBrowsingScoutReportingEnabled;
@@ -343,6 +379,13 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(prefs::kSafeBrowsingIncidentsSent);
   registry->RegisterDictionaryPref(
       prefs::kSafeBrowsingUnhandledSyncPasswordReuses);
+  registry->RegisterListPref(prefs::kSafeBrowsingWhitelistDomains);
+  registry->RegisterStringPref(prefs::kPasswordProtectionChangePasswordURL, "");
+  registry->RegisterListPref(prefs::kPasswordProtectionLoginURLs);
+  registry->RegisterIntegerPref(prefs::kPasswordProtectionWarningTrigger,
+                                PASSWORD_PROTECTION_OFF);
+  registry->RegisterIntegerPref(prefs::kPasswordProtectionRiskTrigger,
+                                PASSWORD_PROTECTION_OFF);
 }
 
 void SetExtendedReportingPrefAndMetric(
@@ -456,6 +499,123 @@ base::ListValue GetSafeBrowsingPreferencesList(PrefService* prefs) {
         base::Value(enabled ? "Enabled" : "Disabled"));
   }
   return preferences_list;
+}
+
+void GetSafeBrowsingWhitelistDomainsPref(
+    const PrefService& prefs,
+    std::vector<std::string>* out_canonicalized_domain_list) {
+  if (base::FeatureList::IsEnabled(kEnterprisePasswordProtectionV1)) {
+    const base::ListValue* pref_value =
+        prefs.GetList(prefs::kSafeBrowsingWhitelistDomains);
+    CanonicalizeDomainList(*pref_value, out_canonicalized_domain_list);
+  }
+}
+
+void CanonicalizeDomainList(
+    const base::ListValue& raw_domain_list,
+    std::vector<std::string>* out_canonicalized_domain_list) {
+  out_canonicalized_domain_list->clear();
+  for (auto it = raw_domain_list.GetList().begin();
+       it != raw_domain_list.GetList().end(); it++) {
+    // Verify if it is valid domain string.
+    url::CanonHostInfo host_info;
+    std::string canonical_host =
+        net::CanonicalizeHost(it->GetString(), &host_info);
+    if (!canonical_host.empty())
+      out_canonicalized_domain_list->push_back(canonical_host);
+  }
+}
+
+bool IsURLWhitelistedByPolicy(const GURL& url,
+                              StringListPrefMember* pref_member) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  if (!pref_member ||
+      !base::FeatureList::IsEnabled(kEnterprisePasswordProtectionV1)) {
+    return false;
+  }
+  std::vector<std::string> sb_whitelist_domains = pref_member->GetValue();
+  return std::find_if(sb_whitelist_domains.begin(), sb_whitelist_domains.end(),
+                      [&url](const std::string& domain) {
+                        return url.DomainIs(domain);
+                      }) != sb_whitelist_domains.end();
+}
+
+bool IsURLWhitelistedByPolicy(const GURL& url, const PrefService& pref) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!base::FeatureList::IsEnabled(kEnterprisePasswordProtectionV1))
+    return false;
+
+  if (!pref.HasPrefPath(prefs::kSafeBrowsingWhitelistDomains))
+    return false;
+  const base::ListValue* whitelist =
+      pref.GetList(prefs::kSafeBrowsingWhitelistDomains);
+  for (const base::Value& value : whitelist->GetList()) {
+    if (url.DomainIs(value.GetString()))
+      return true;
+  }
+  return false;
+}
+
+void GetPasswordProtectionLoginURLsPref(const PrefService& prefs,
+                                        std::vector<GURL>* out_login_url_list) {
+  const base::ListValue* pref_value =
+      prefs.GetList(prefs::kPasswordProtectionLoginURLs);
+  out_login_url_list->clear();
+  for (const base::Value& value : pref_value->GetList()) {
+    GURL login_url(value.GetString());
+    // Skip invalid or none-http/https login URLs.
+    if (login_url.is_valid() && login_url.SchemeIsHTTPOrHTTPS())
+      out_login_url_list->push_back(login_url);
+  }
+}
+
+bool MatchesPasswordProtectionLoginURL(const GURL& url,
+                                       const PrefService& prefs) {
+  if (!base::FeatureList::IsEnabled(kEnterprisePasswordProtectionV1) ||
+      !url.is_valid()) {
+    return false;
+  }
+
+  std::vector<GURL> login_urls;
+  GetPasswordProtectionLoginURLsPref(prefs, &login_urls);
+  if (login_urls.empty())
+    return false;
+
+  GURL simple_url = GetSimplifiedURL(url);
+  for (const GURL& login_url : login_urls) {
+    if (GetSimplifiedURL(login_url) == simple_url) {
+      return true;
+    }
+  }
+  return false;
+}
+
+GURL GetPasswordProtectionChangePasswordURLPref(const PrefService& prefs) {
+  if (!prefs.HasPrefPath(prefs::kPasswordProtectionChangePasswordURL))
+    return GURL();
+  GURL change_password_url_from_pref(
+      prefs.GetString(prefs::kPasswordProtectionChangePasswordURL));
+  // Skip invalid or non-http/https URL.
+  if (change_password_url_from_pref.is_valid() &&
+      change_password_url_from_pref.SchemeIsHTTPOrHTTPS()) {
+    return change_password_url_from_pref;
+  }
+
+  return GURL();
+}
+
+bool MatchesPasswordProtectionChangePasswordURL(const GURL& url,
+                                                const PrefService& prefs) {
+  if (!base::FeatureList::IsEnabled(kEnterprisePasswordProtectionV1) ||
+      !url.is_valid()) {
+    return false;
+  }
+
+  GURL change_password_url = GetPasswordProtectionChangePasswordURLPref(prefs);
+  if (change_password_url.is_empty())
+    return false;
+
+  return GetSimplifiedURL(change_password_url) == GetSimplifiedURL(url);
 }
 
 }  // namespace safe_browsing

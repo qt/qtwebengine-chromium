@@ -165,13 +165,6 @@ constexpr size_t kHeaderGCInfoIndexMask = (static_cast<size_t>((1 << 14) - 1))
 constexpr size_t kHeaderSizeMask = (static_cast<size_t>((1 << 14) - 1)) << 3;
 constexpr size_t kHeaderMarkBitMask = 1;
 constexpr size_t kHeaderFreedBitMask = 2;
-// TODO(haraken): Remove the dead bit. It is used only by a header of
-// a promptly freed object.
-constexpr size_t kHeaderDeadBitMask = 4;
-// On free-list entries we reuse the dead bit to distinguish a normal free-list
-// entry from one that has been promptly freed.
-constexpr size_t kHeaderPromptlyFreedBitMask =
-    kHeaderFreedBitMask | kHeaderDeadBitMask;
 constexpr size_t kLargeObjectSizeInHeader = 0;
 constexpr size_t kGcInfoIndexForFreeListHeader = 0;
 constexpr size_t kNonLargeObjectPageSizeMax = 1 << kBlinkPageSizeLog2;
@@ -192,15 +185,6 @@ class PLATFORM_EXPORT HeapObjectHeader {
 
   NO_SANITIZE_ADDRESS bool IsFree() const {
     return encoded_ & kHeaderFreedBitMask;
-  }
-
-  NO_SANITIZE_ADDRESS bool IsPromptlyFreed() const {
-    return (encoded_ & kHeaderPromptlyFreedBitMask) ==
-           kHeaderPromptlyFreedBitMask;
-  }
-
-  NO_SANITIZE_ADDRESS void MarkPromptlyFreed() {
-    encoded_ |= kHeaderPromptlyFreedBitMask;
   }
 
   size_t size() const;
@@ -404,9 +388,9 @@ class BasePage {
   //
   // This is used during conservative stack scanning to conservatively mark all
   // objects that could be referenced from the stack.
-  virtual void CheckAndMarkPointer(Visitor*, Address) = 0;
+  virtual void CheckAndMarkPointer(MarkingVisitor*, Address) = 0;
 #if DCHECK_IS_ON()
-  virtual void CheckAndMarkPointer(Visitor*,
+  virtual void CheckAndMarkPointer(MarkingVisitor*,
                                    Address,
                                    MarkedPointerCallbackForTesting) = 0;
 #endif
@@ -548,9 +532,9 @@ class PLATFORM_EXPORT NormalPage final : public BasePage {
 #if defined(ADDRESS_SANITIZER)
   void PoisonUnmarkedObjects() override;
 #endif
-  void CheckAndMarkPointer(Visitor*, Address) override;
+  void CheckAndMarkPointer(MarkingVisitor*, Address) override;
 #if DCHECK_IS_ON()
-  void CheckAndMarkPointer(Visitor*,
+  void CheckAndMarkPointer(MarkingVisitor*,
                            Address,
                            MarkedPointerCallbackForTesting) override;
 #endif
@@ -644,9 +628,9 @@ class LargeObjectPage final : public BasePage {
 #if defined(ADDRESS_SANITIZER)
   void PoisonUnmarkedObjects() override;
 #endif
-  void CheckAndMarkPointer(Visitor*, Address) override;
+  void CheckAndMarkPointer(MarkingVisitor*, Address) override;
 #if DCHECK_IS_ON()
-  void CheckAndMarkPointer(Visitor*,
+  void CheckAndMarkPointer(MarkingVisitor*,
                            Address,
                            MarkedPointerCallbackForTesting) override;
 #endif
@@ -795,7 +779,7 @@ class PLATFORM_EXPORT BaseArena {
 #endif
   virtual void TakeFreelistSnapshot(const String& dump_base_name) {}
   virtual void ClearFreeLists() {}
-  void MakeConsistentForGC();
+  virtual void MakeConsistentForGC();
   void MakeConsistentForMutator();
 #if DCHECK_IS_ON()
   virtual bool IsConsistentForGC() = 0;
@@ -865,11 +849,11 @@ class PLATFORM_EXPORT NormalPageArena final : public BaseArena {
 
   void FreePage(NormalPage*);
 
-  bool Coalesce();
   void PromptlyFreeObject(HeapObjectHeader*);
+  void PromptlyFreeObjectInFreeList(HeapObjectHeader*, size_t);
   bool ExpandObject(HeapObjectHeader*, size_t);
   bool ShrinkObject(HeapObjectHeader*, size_t);
-  void DecreasePromptlyFreedSize(size_t size) { promptly_freed_size_ -= size; }
+  size_t promptly_freed_size() const { return promptly_freed_size_; }
 
   bool IsObjectAllocatedAtAllocationPoint(HeapObjectHeader* header) {
     return header->PayloadEnd() == current_allocation_point_;
@@ -893,6 +877,8 @@ class PLATFORM_EXPORT NormalPageArena final : public BaseArena {
            (address < (CurrentAllocationPoint() + RemainingAllocationSize()));
   }
 
+  void MakeConsistentForGC() override;
+
  private:
   void AllocatePage();
 
@@ -915,7 +901,9 @@ class PLATFORM_EXPORT NormalPageArena final : public BaseArena {
   size_t remaining_allocation_size_;
   size_t last_remaining_allocation_size_;
 
-  // The size of promptly freed objects in the heap.
+  // The size of promptly freed objects in the heap. This counter is set to
+  // zero before sweeping when clearing the free list and after coalescing.
+  // It will increase for promptly freed objects on already swept pages.
   size_t promptly_freed_size_;
 
   bool is_lazy_sweeping_;
@@ -981,7 +969,7 @@ NO_SANITIZE_ADDRESS inline bool HeapObjectHeader::IsValidOrZapped() const {
 
 NO_SANITIZE_ADDRESS inline void HeapObjectHeader::CheckHeader() const {
 #if defined(ARCH_CPU_64_BITS)
-  DCHECK(IsValid());
+  CHECK(IsValid());
 #endif
 }
 
@@ -1034,14 +1022,14 @@ inline uint32_t GetRandomMagic() {
 #pragma warning(disable : 4319)
 #endif
 
-  const uintptr_t random1 = ~(RotateLeft16(reinterpret_cast<uintptr_t>(
+  static const uintptr_t random1 = ~(RotateLeft16(reinterpret_cast<uintptr_t>(
       base::trace_event::MemoryAllocatorDump::kNameSize)));
 
 #if defined(OS_WIN)
-  const uintptr_t random2 =
+  static const uintptr_t random2 =
       ~(RotateLeft16(reinterpret_cast<uintptr_t>(::ReadFile)));
 #elif defined(OS_POSIX)
-  const uintptr_t random2 =
+  static const uintptr_t random2 =
       ~(RotateLeft16(reinterpret_cast<uintptr_t>(::read)));
 #else
 #error OS not supported
@@ -1050,14 +1038,15 @@ inline uint32_t GetRandomMagic() {
 #if defined(ARCH_CPU_64_BITS)
   static_assert(sizeof(uintptr_t) == sizeof(uint64_t),
                 "uintptr_t is not uint64_t");
-  const uint32_t random = static_cast<uint32_t>(
+  static const uint32_t random = static_cast<uint32_t>(
       (random1 & 0x0FFFFULL) | ((random2 >> 32) & 0x0FFFF0000ULL));
 #elif defined(ARCH_CPU_32_BITS)
   // Although we don't use heap metadata canaries on 32-bit due to memory
   // pressure, keep this code around just in case we do, someday.
   static_assert(sizeof(uintptr_t) == sizeof(uint32_t),
                 "uintptr_t is not uint32_t");
-  const uint32_t random = (random1 & 0x0FFFFUL) | (random2 & 0xFFFF0000UL);
+  static const uint32_t random =
+      (random1 & 0x0FFFFUL) | (random2 & 0xFFFF0000UL);
 #else
 #error architecture not supported
 #endif

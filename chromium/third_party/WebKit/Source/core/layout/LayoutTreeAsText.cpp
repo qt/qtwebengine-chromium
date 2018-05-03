@@ -47,7 +47,7 @@
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/ng/inline/ng_inline_fragment_traversal.h"
 #include "core/layout/ng/inline/ng_text_fragment.h"
-#include "core/layout/ng/layout_ng_list_item.h"
+#include "core/layout/ng/list/layout_ng_list_item.h"
 #include "core/layout/svg/LayoutSVGImage.h"
 #include "core/layout/svg/LayoutSVGInline.h"
 #include "core/layout/svg/LayoutSVGInlineText.h"
@@ -465,6 +465,32 @@ static void WriteTextFragment(TextStream& ts,
   ts << "\n";
 }
 
+static void WritePaintProperties(TextStream& ts,
+                                 const LayoutObject& o,
+                                 int indent) {
+  bool has_fragments = o.FirstFragment().NextFragment();
+  if (has_fragments) {
+    WriteIndent(ts, indent);
+    ts << "fragments:\n";
+  }
+  int fragment_index = 0;
+  for (const auto *fragment = &o.FirstFragment(); fragment;
+       fragment = fragment->NextFragment(), ++fragment_index) {
+    WriteIndent(ts, indent);
+    if (has_fragments)
+      ts << " " << fragment_index << ":";
+    ts << " paint_offset=(" << fragment->PaintOffset().ToString()
+       << ") visual_rect=(" << fragment->VisualRect().ToString() << ")";
+    if (fragment->HasLocalBorderBoxProperties()) {
+      // To know where they point into the paint property tree, you can dump
+      // the tree using ShowAllPropertyTrees(frame_view).
+      ts << " state=(" << fragment->LocalBorderBoxProperties().ToString()
+         << ")";
+    }
+    ts << "\n";
+  }
+}
+
 void Write(TextStream& ts,
            const LayoutObject& o,
            int indent,
@@ -507,6 +533,10 @@ void Write(TextStream& ts,
   LayoutTreeAsText::WriteLayoutObject(ts, o, behavior);
   ts << "\n";
 
+  if (behavior & kLayoutAsTextShowPaintProperties) {
+    WritePaintProperties(ts, o, indent + 1);
+  }
+
   if ((behavior & kLayoutAsTextShowLineTrees) && o.IsLayoutBlockFlow()) {
     LayoutTreeAsText::WriteLineBoxTree(ts, ToLayoutBlockFlow(o), indent + 1);
   }
@@ -537,9 +567,9 @@ void Write(TextStream& ts,
   }
 
   if (o.IsLayoutEmbeddedContent()) {
-    LocalFrameView* frame_view = ToLayoutEmbeddedContent(o).ChildFrameView();
-    if (frame_view) {
-      if (auto* layout_view = frame_view->GetLayoutView()) {
+    FrameView* frame_view = ToLayoutEmbeddedContent(o).ChildFrameView();
+    if (frame_view && frame_view->IsLocalFrameView()) {
+      if (auto* layout_view = ToLocalFrameView(frame_view)->GetLayoutView()) {
         layout_view->GetDocument().UpdateStyleAndLayout();
         if (auto* layer = layout_view->Layer()) {
           LayoutTreeAsText::WriteLayers(
@@ -846,15 +876,17 @@ static String ExternalRepresentation(LayoutBox* layout_object,
 String ExternalRepresentation(LocalFrame* frame,
                               LayoutAsTextBehavior behavior,
                               const PaintLayer* marked_layer) {
-  if (!(behavior & kLayoutAsTextDontUpdateLayout))
-    frame->View()->UpdateLifecycleToPrePaintClean();
+  if (!(behavior & kLayoutAsTextDontUpdateLayout)) {
+    bool success = frame->View()->UpdateLifecycleToPrePaintClean();
+    DCHECK(success);
+  };
 
   LayoutObject* layout_object = frame->ContentLayoutObject();
   if (!layout_object || !layout_object->IsBox())
     return String();
   LayoutBox* layout_box = ToLayoutBox(layout_object);
 
-  PrintContext print_context(frame);
+  PrintContext print_context(frame, /*use_printing_layout=*/true);
   bool is_text_printing_mode = !!(behavior & kLayoutAsTextPrintingMode);
   if (is_text_printing_mode) {
     print_context.BeginPrintMode(layout_box->ClientWidth(),

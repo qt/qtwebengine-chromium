@@ -28,7 +28,7 @@
 #include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_impl.h"
 #include "storage/browser/blob/blob_storage_context.h"
-#include "third_party/WebKit/common/blob/blob.mojom.h"
+#include "third_party/WebKit/public/mojom/blob/blob.mojom.h"
 
 namespace content {
 
@@ -159,8 +159,8 @@ BackgroundFetchDataManager::BackgroundFetchDataManager(
       FROM_HERE, BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
       // Normally weak pointers must be obtained on the IO thread, but it's ok
       // here as the factory cannot be destroyed before the constructor ends.
-      base::Bind(&BackgroundFetchDataManager::Cleanup,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&BackgroundFetchDataManager::Cleanup,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void BackgroundFetchDataManager::Cleanup() {
@@ -366,14 +366,15 @@ void BackgroundFetchDataManager::GetSettledFetchesForRegistration(
         DCHECK(!request->GetFilePath().empty());
         DCHECK(blob_storage_context_);
 
-        storage::BlobDataBuilder blob_builder(base::GenerateGUID());
-        blob_builder.AppendFile(request->GetFilePath(), 0 /* offset */,
-                                request->GetFileSize(),
-                                base::Time() /* expected_modification_time */);
+        auto blob_builder =
+            std::make_unique<storage::BlobDataBuilder>(base::GenerateGUID());
+        blob_builder->AppendFile(request->GetFilePath(), 0 /* offset */,
+                                 request->GetFileSize(),
+                                 base::Time() /* expected_modification_time */);
 
         auto blob_data_handle =
             GetBlobStorageContext(blob_storage_context_.get())
-                ->AddFinishedBlob(&blob_builder);
+                ->AddFinishedBlob(std::move(blob_builder));
 
         // TODO(peter): Appropriately handle !blob_data_handle
         if (blob_data_handle) {

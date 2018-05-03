@@ -5,17 +5,15 @@
 #include "services/resource_coordinator/memory_instrumentation/coordinator_impl.h"
 
 #include "base/bind.h"
-#include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/test/trace_event_analyzer.h"
 #include "base/trace_event/memory_dump_request_args.h"
-#include "base/trace_event/trace_buffer.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "services/resource_coordinator/memory_instrumentation/process_map.h"
-#include "services/resource_coordinator/public/interfaces/memory_instrumentation/memory_instrumentation.mojom.h"
+#include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -53,44 +51,11 @@ using base::trace_event::MemoryDumpManager;
 using base::trace_event::MemoryDumpRequestArgs;
 using base::trace_event::MemoryDumpType;
 using base::trace_event::ProcessMemoryDump;
-using base::trace_event::TraceConfig;
 using base::trace_event::TraceLog;
-using base::trace_event::TraceResultBuffer;
 using memory_instrumentation::mojom::GlobalMemoryDump;
 using memory_instrumentation::mojom::GlobalMemoryDumpPtr;
 
 namespace memory_instrumentation {
-
-namespace {
-
-std::unique_ptr<trace_analyzer::TraceAnalyzer> GetDeserializedTrace() {
-  // Flush the trace into JSON.
-  TraceResultBuffer buffer;
-  TraceResultBuffer::SimpleOutput trace_output;
-  buffer.SetOutputCallback(trace_output.GetCallback());
-  base::RunLoop run_loop;
-  buffer.Start();
-  auto on_trace_data_collected =
-      [](base::Closure quit_closure, TraceResultBuffer* buffer,
-         const scoped_refptr<base::RefCountedString>& json,
-         bool has_more_events) {
-        buffer->AddFragment(json->data());
-        if (!has_more_events)
-          quit_closure.Run();
-      };
-
-  TraceLog::GetInstance()->Flush(Bind(on_trace_data_collected,
-                                      run_loop.QuitClosure(),
-                                      base::Unretained(&buffer)));
-  run_loop.Run();
-  buffer.Finish();
-
-  // Analyze the JSON.
-  return base::WrapUnique(
-      trace_analyzer::TraceAnalyzer::Create(trace_output.json_output));
-}
-
-}  // namespace
 
 class FakeCoordinatorImpl : public CoordinatorImpl {
  public:
@@ -155,8 +120,9 @@ class CoordinatorImplTest : public testing::Test {
   }
 
   void GetVmRegionsForHeapProfiler(
+      const std::vector<base::ProcessId>& pids,
       GetVmRegionsForHeapProfilerCallback callback) {
-    coordinator_->GetVmRegionsForHeapProfiler(callback);
+    coordinator_->GetVmRegionsForHeapProfiler(pids, callback);
   }
 
   void ReduceCoordinatorClientProcessTimeout() {
@@ -261,15 +227,19 @@ class MockGlobalMemoryDumpAndAppendToTraceCallback {
 class MockGetVmRegionsForHeapProfilerCallback {
  public:
   MockGetVmRegionsForHeapProfilerCallback() = default;
-  MOCK_METHOD2(OnCall, void(bool, GlobalMemoryDump*));
+  MOCK_METHOD1(
+      OnCall,
+      void(const std::unordered_map<base::ProcessId,
+                                    std::vector<mojom::VmRegionPtr>>&));
 
-  void Run(bool success, GlobalMemoryDumpPtr ptr) {
-    OnCall(success, ptr.get());
+  void Run(std::unordered_map<base::ProcessId, std::vector<mojom::VmRegionPtr>>
+               results) {
+    OnCall(results);
   }
 
   GetVmRegionsForHeapProfilerCallback Get() {
-    return base::Bind(&MockGetVmRegionsForHeapProfilerCallback::Run,
-                      base::Unretained(this));
+    return base::BindRepeating(&MockGetVmRegionsForHeapProfilerCallback::Run,
+                               base::Unretained(this));
   }
 };
 
@@ -730,40 +700,40 @@ TEST_F(CoordinatorImplTest, VmRegionsForHeapProfiler) {
 #endif  // defined(OS_LINUX)
 
   MockGetVmRegionsForHeapProfilerCallback callback;
-  EXPECT_CALL(callback, OnCall(true, NotNull()))
-      .WillOnce(Invoke([&run_loop](bool success,
-                                   GlobalMemoryDump* global_dump) {
-        ASSERT_EQ(2U, global_dump->process_dumps.size());
-        mojom::ProcessMemoryDumpPtr browser_dump = nullptr;
-        mojom::ProcessMemoryDumpPtr renderer_dump = nullptr;
-        for (mojom::ProcessMemoryDumpPtr& dump : global_dump->process_dumps) {
-          if (dump->process_type == mojom::ProcessType::BROWSER) {
-            browser_dump = std::move(dump);
-            ASSERT_EQ(kBrowserPid, browser_dump->pid);
-          } else if (dump->process_type == mojom::ProcessType::RENDERER) {
-            renderer_dump = std::move(dump);
-            ASSERT_EQ(kRendererPid, renderer_dump->pid);
-          }
-        }
-        const std::vector<mojom::VmRegionPtr>& browser_mmaps =
-            browser_dump->os_dump->memory_maps_for_heap_profiler;
-        ASSERT_EQ(3u, browser_mmaps.size());
-        for (int i = 0; i < 3; i++) {
-          EXPECT_EQ(GetFakeAddrForVmRegion(browser_dump->pid, i),
-                    browser_mmaps[i]->start_address);
-        }
+  EXPECT_CALL(callback, OnCall(_))
+      .WillOnce(Invoke(
+          [&run_loop](
+              const std::unordered_map<
+                  base::ProcessId, std::vector<mojom::VmRegionPtr>>& results) {
+            ASSERT_EQ(2U, results.size());
 
-        const std::vector<mojom::VmRegionPtr>& renderer_mmaps =
-            renderer_dump->os_dump->memory_maps_for_heap_profiler;
-        ASSERT_EQ(3u, renderer_mmaps.size());
-        for (int i = 0; i < 3; i++) {
-          EXPECT_EQ(GetFakeAddrForVmRegion(renderer_dump->pid, i),
-                    renderer_mmaps[i]->start_address);
-        }
-        run_loop.Quit();
-      }));
+            auto browser_it = results.find(kBrowserPid);
+            ASSERT_TRUE(browser_it != results.end());
+            auto renderer_it = results.find(kRendererPid);
+            ASSERT_TRUE(renderer_it != results.end());
 
-  GetVmRegionsForHeapProfiler(callback.Get());
+            const std::vector<mojom::VmRegionPtr>& browser_mmaps =
+                browser_it->second;
+            ASSERT_EQ(3u, browser_mmaps.size());
+            for (int i = 0; i < 3; i++) {
+              EXPECT_EQ(GetFakeAddrForVmRegion(kBrowserPid, i),
+                        browser_mmaps[i]->start_address);
+            }
+
+            const std::vector<mojom::VmRegionPtr>& renderer_mmaps =
+                renderer_it->second;
+            ASSERT_EQ(3u, renderer_mmaps.size());
+            for (int i = 0; i < 3; i++) {
+              EXPECT_EQ(GetFakeAddrForVmRegion(kRendererPid, i),
+                        renderer_mmaps[i]->start_address);
+            }
+            run_loop.Quit();
+          }));
+
+  std::vector<base::ProcessId> pids;
+  pids.push_back(kBrowserPid);
+  pids.push_back(kRendererPid);
+  GetVmRegionsForHeapProfiler(pids, callback.Get());
   run_loop.Run();
 }
 
@@ -794,17 +764,13 @@ TEST_F(CoordinatorImplTest, DumpsArentAddedToTraceUnlessRequested) {
                                  IsEmpty()))))
       .WillOnce(RunClosure(run_loop.QuitClosure()));
 
-  TraceLog::GetInstance()->SetEnabled(
-      TraceConfig(MemoryDumpManager::kTraceCategory, ""),
-      TraceLog::RECORDING_MODE);
+  trace_analyzer::Start(MemoryDumpManager::kTraceCategory);
   RequestGlobalMemoryDump(MemoryDumpType::EXPLICITLY_TRIGGERED,
                           MemoryDumpLevelOfDetail::DETAILED, {},
                           callback.Get());
   run_loop.Run();
-  TraceLog::GetInstance()->SetDisabled();
+  auto analyzer = trace_analyzer::Stop();
 
-  std::unique_ptr<trace_analyzer::TraceAnalyzer> analyzer =
-      GetDeserializedTrace();
   trace_analyzer::TraceEventVector events;
   analyzer->FindEvents(
       trace_analyzer::Query::EventPhaseIs(TRACE_EVENT_PHASE_MEMORY_DUMP),
@@ -834,15 +800,11 @@ TEST_F(CoordinatorImplTest, DumpsAreAddedToTraceWhenRequested) {
   EXPECT_CALL(callback, OnCall(true, Ne(0ul)))
       .WillOnce(RunClosure(run_loop.QuitClosure()));
 
-  TraceLog::GetInstance()->SetEnabled(
-      TraceConfig(MemoryDumpManager::kTraceCategory, ""),
-      TraceLog::RECORDING_MODE);
+  trace_analyzer::Start(MemoryDumpManager::kTraceCategory);
   RequestGlobalMemoryDumpAndAppendToTrace(callback.Get());
   run_loop.Run();
-  TraceLog::GetInstance()->SetDisabled();
+  auto analyzer = trace_analyzer::Stop();
 
-  std::unique_ptr<trace_analyzer::TraceAnalyzer> analyzer =
-      GetDeserializedTrace();
   trace_analyzer::TraceEventVector events;
   analyzer->FindEvents(
       trace_analyzer::Query::EventPhaseIs(TRACE_EVENT_PHASE_MEMORY_DUMP),

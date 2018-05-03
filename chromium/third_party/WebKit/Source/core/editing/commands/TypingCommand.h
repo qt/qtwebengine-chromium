@@ -89,7 +89,6 @@ class CORE_EXPORT TypingCommand final : public CompositeEditCommand {
   static void UpdateSelectionIfDifferentFromCurrentSelection(TypingCommand*,
                                                              LocalFrame*);
 
-  void InsertText(const String& text, bool select_inserted_text, EditingState*);
   void InsertTextRunWithoutNewlines(const String& text,
                                     EditingState*);
   void InsertLineBreak(EditingState*);
@@ -143,6 +142,10 @@ class CORE_EXPORT TypingCommand final : public CompositeEditCommand {
   bool IsOpenForMoreTyping() const { return open_for_more_typing_; }
   void CloseTyping() { open_for_more_typing_ = false; }
 
+  void InsertTextInternal(const String& text,
+                          bool select_inserted_text,
+                          EditingState*);
+
   void DoApply(EditingState*) override;
   InputEvent::InputType GetInputType() const override;
   bool IsTypingCommand() const override;
@@ -164,12 +167,7 @@ class CORE_EXPORT TypingCommand final : public CompositeEditCommand {
       bool kill_ring,
       EditingState*);
 
-  void DeleteSelectionIfRange(const VisibleSelection&,
-                              EditingState*,
-                              bool smart_delete = false,
-                              bool merge_blocks_after_delete = true,
-                              bool expand_for_special_elements = true,
-                              bool sanitize_markup = true);
+  void DeleteSelectionIfRange(const VisibleSelection&, EditingState*);
 
   void ForwardDeleteKeyPressedInternal(
       const VisibleSelection& selection_to_delete,
@@ -180,11 +178,11 @@ class CORE_EXPORT TypingCommand final : public CompositeEditCommand {
   ETypingCommand command_type_;
   String text_to_insert_;
   bool open_for_more_typing_;
-  bool select_inserted_text_;
+  const bool select_inserted_text_;
   bool smart_delete_;
-  TextGranularity granularity_;
+  const TextGranularity granularity_;
   TextCompositionType composition_type_;
-  bool kill_ring_;
+  const bool kill_ring_;
   bool preserves_typing_style_;
 
   // Undoing a series of backward deletes will restore a selection around all of

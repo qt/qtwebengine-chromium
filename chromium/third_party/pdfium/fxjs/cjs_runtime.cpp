@@ -57,14 +57,16 @@ void IJS_Runtime::Destroy() {
 }
 
 // static
-IJS_Runtime* IJS_Runtime::Create(CPDFSDK_FormFillEnvironment* pFormFillEnv) {
-  return new CJS_Runtime(pFormFillEnv);
+std::unique_ptr<IJS_Runtime> IJS_Runtime::Create(
+    CPDFSDK_FormFillEnvironment* pFormFillEnv) {
+  return pdfium::MakeUnique<CJS_Runtime>(pFormFillEnv);
 }
 
 // static
-CJS_Runtime* CJS_Runtime::CurrentRuntimeFromIsolate(v8::Isolate* pIsolate) {
+CJS_Runtime* CJS_Runtime::RuntimeFromIsolateCurrentContext(
+    v8::Isolate* pIsolate) {
   return static_cast<CJS_Runtime*>(
-      CFXJS_Engine::CurrentEngineFromIsolate(pIsolate));
+      CFXJS_Engine::EngineFromIsolateCurrentContext(pIsolate));
 }
 
 CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
@@ -178,7 +180,7 @@ CJS_EventContext* CJS_Runtime::GetCurrentEventContext() const {
 void CJS_Runtime::SetFormFillEnvToDocument() {
   v8::Isolate::Scope isolate_scope(GetIsolate());
   v8::HandleScope handle_scope(GetIsolate());
-  v8::Local<v8::Context> context = NewLocalContext();
+  v8::Local<v8::Context> context = GetV8Context();
   v8::Context::Scope context_scope(context);
 
   v8::Local<v8::Object> pThis = GetThisObj();
@@ -193,11 +195,7 @@ void CJS_Runtime::SetFormFillEnvToDocument() {
   if (!pJSDocument)
     return;
 
-  Document* pDocument = static_cast<Document*>(pJSDocument->GetEmbedObject());
-  if (!pDocument)
-    return;
-
-  pDocument->SetFormFillEnv(m_pFormFillEnv.Get());
+  pJSDocument->SetFormFillEnv(m_pFormFillEnv.Get());
 }
 
 CPDFSDK_FormFillEnvironment* CJS_Runtime::GetFormFillEnv() const {
@@ -229,11 +227,11 @@ WideString ChangeObjName(const WideString& str) {
   return sRet;
 }
 
-bool CJS_Runtime::GetValueByName(const ByteStringView& utf8Name,
-                                 CFXJSE_Value* pValue) {
+bool CJS_Runtime::GetValueByNameFromGlobalObject(const ByteStringView& utf8Name,
+                                                 CFXJSE_Value* pValue) {
   v8::Isolate::Scope isolate_scope(GetIsolate());
   v8::HandleScope handle_scope(GetIsolate());
-  v8::Local<v8::Context> context = NewLocalContext();
+  v8::Local<v8::Context> context = GetV8Context();
   v8::Context::Scope context_scope(context);
   v8::Local<v8::Value> propvalue = context->Global()->Get(
       v8::String::NewFromUtf8(GetIsolate(), utf8Name.unterminated_c_str(),
@@ -246,18 +244,18 @@ bool CJS_Runtime::GetValueByName(const ByteStringView& utf8Name,
   return true;
 }
 
-bool CJS_Runtime::SetValueByName(const ByteStringView& utf8Name,
-                                 CFXJSE_Value* pValue) {
+bool CJS_Runtime::SetValueByNameInGlobalObject(const ByteStringView& utf8Name,
+                                               CFXJSE_Value* pValue) {
   if (utf8Name.IsEmpty() || !pValue)
     return false;
 
   v8::Isolate* pIsolate = GetIsolate();
   v8::Isolate::Scope isolate_scope(pIsolate);
   v8::HandleScope handle_scope(pIsolate);
-  v8::Local<v8::Context> context = NewLocalContext();
+  v8::Local<v8::Context> context = GetV8Context();
   v8::Context::Scope context_scope(context);
   v8::Local<v8::Value> propvalue =
-      v8::Local<v8::Value>::New(GetIsolate(), pValue->DirectGetValue());
+      v8::Local<v8::Value>::New(pIsolate, pValue->DirectGetValue());
   context->Global()->Set(
       v8::String::NewFromUtf8(pIsolate, utf8Name.unterminated_c_str(),
                               v8::String::kNormalString, utf8Name.GetLength()),

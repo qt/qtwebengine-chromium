@@ -94,16 +94,6 @@
 #define SK_SUPPORT_UNITTEST
 #endif
 
-/* If cross process SkPictureImageFilters are not explicitly enabled then
-   they are always disabled.
- */
-#ifndef SK_ALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
-    #ifndef SK_DISALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
-        #define SK_DISALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
-    #endif
-#endif
-
-
 /* If your system embeds skia and has complex event logging, define this
    symbol to name a file that maps the following macros to your system's
    equivalents:
@@ -148,14 +138,7 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_B32_SHIFT    0
 #endif
 
-#if defined(SK_BUILD_FOR_WIN32)
-
-#define SK_BUILD_FOR_WIN
-
-// Skia uses this deprecated bzero function to fill zeros into a string.
-#define bzero(str, len) memset(str, 0, len)
-
-#elif defined(SK_BUILD_FOR_MAC)
+#if defined(SK_BUILD_FOR_MAC)
 
 #define SK_CPU_LENDIAN
 #undef  SK_CPU_BENDIAN
@@ -216,17 +199,6 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_DISABLE_RENDER_TARGET_SORTING
 #endif
 
-// This is disabled until crbug.com/802408 and crbug.com/801783 can be sorted
-// out.
-#ifndef SK_DISABLE_TEXTURE_OP_AA
-#define SK_DISABLE_TEXTURE_OP_AA
-#endif
-
-#ifndef SK_SUPPORT_LEGACY_DELTA_AA
-#define SK_SUPPORT_LEGACY_DELTA_AA
-#endif
-
-
 #ifndef SK_SUPPORT_LEGACY_TILED_BITMAPS
 #define SK_SUPPORT_LEGACY_TILED_BITMAPS
 #endif
@@ -236,9 +208,13 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_SUPPORT_LEGACY_SVG_ARC_TO
 #endif
 
-#ifndef SK_SUPPORT_LEGACY_DASH_CULL_PATH
-#define SK_SUPPORT_LEGACY_DASH_CULL_PATH
+// Remove after M66 branch to use new read/writePixels implementations
+#ifndef SK_LEGACY_GPU_PIXEL_OPS
+#define SK_LEGACY_GPU_PIXEL_OPS
 #endif
+
+// Max. verb count for paths rendered by the edge-AA tessellating path renderer.
+#define GR_AA_TESSELLATOR_MAX_VERB_COUNT 10
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

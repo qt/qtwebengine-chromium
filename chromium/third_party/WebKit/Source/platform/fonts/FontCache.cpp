@@ -61,10 +61,6 @@
 
 namespace blink {
 
-#if !defined(OS_WIN) && !defined(OS_LINUX)
-FontCache::FontCache() : purge_prevent_count_(0), font_manager_(nullptr) {}
-#endif  // !defined(OS_WIN) && !defined(OS_LINUX)
-
 SkFontMgr* FontCache::static_font_manager_ = nullptr;
 
 #if defined(OS_WIN)
@@ -77,6 +73,11 @@ bool FontCache::use_skia_font_fallback_ = false;
 FontCache* FontCache::GetFontCache() {
   return &FontGlobalContext::GetFontCache();
 }
+
+#if !defined(OS_WIN)
+FontCache::FontCache()
+    : purge_prevent_count_(0), font_manager_(sk_ref_sp(static_font_manager_)) {}
+#endif  // !defined(OS_WIN) && !defined(OS_LINUX)
 
 #if !defined(OS_MACOSX)
 FontPlatformData* FontCache::SystemFontPlatformData(
@@ -366,17 +367,33 @@ void FontCache::Invalidate() {
 }
 
 void FontCache::CrashWithFontInfo(const FontDescription* font_description) {
-  FontCache* font_cache = FontCache::GetFontCache();
+  FontCache* font_cache = nullptr;
   SkFontMgr* font_mgr = nullptr;
   int num_families = std::numeric_limits<int>::min();
-  if (font_cache) {
-    font_mgr = font_cache->font_manager_.get();
-    if (font_mgr)
-      num_families = font_mgr->countFamilies();
+  bool is_test_font_mgr = false;
+  if (FontGlobalContext::Get(kDoNotCreate)) {
+    font_cache = FontCache::GetFontCache();
+    if (font_cache) {
+#if defined(OS_WIN)
+      is_test_font_mgr = font_cache->is_test_font_mgr_;
+#endif
+      font_mgr = font_cache->font_manager_.get();
+      if (font_mgr)
+        num_families = font_mgr->countFamilies();
+    }
   }
+
+  // In production, these 3 font managers must match.
+  // They don't match in unit tests or in single process mode.
+  SkFontMgr* static_font_mgr = static_font_manager_;
+  SkFontMgr* skia_default_font_mgr = SkFontMgr::RefDefault().get();
+  base::debug::Alias(&font_mgr);
+  base::debug::Alias(&static_font_mgr);
+  base::debug::Alias(&skia_default_font_mgr);
 
   FontDescription font_description_copy = *font_description;
   base::debug::Alias(&font_description_copy);
+  base::debug::Alias(&is_test_font_mgr);
   base::debug::Alias(&num_families);
 
   CHECK(false);

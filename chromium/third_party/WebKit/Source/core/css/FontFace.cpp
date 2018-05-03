@@ -40,6 +40,7 @@
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSFontStyleRangeValue.h"
 #include "core/css/CSSIdentifierValue.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/FontFaceDescriptors.h"
@@ -49,7 +50,6 @@
 #include "core/css/StyleEngine.h"
 #include "core/css/StyleRule.h"
 #include "core/css/parser/AtRuleDescriptorParser.h"
-#include "core/css/parser/AtRuleDescriptorValueSet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
@@ -63,7 +63,6 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/Histogram.h"
 #include "platform/SharedBuffer.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/font_family_names.h"
 #include "platform/runtime_enabled_features.h"
@@ -148,7 +147,7 @@ FontFace* FontFace::Create(ExecutionContext* context,
         kSyntaxError, "The source provided ('" + source +
                           "') could not be parsed as a value list."));
 
-  font_face->InitCSSFontFace(context, src);
+  font_face->InitCSSFontFace(context, *src);
   return font_face;
 }
 
@@ -175,7 +174,7 @@ FontFace* FontFace::Create(ExecutionContext* context,
 
 FontFace* FontFace::Create(Document* document,
                            const StyleRuleFontFace* font_face_rule) {
-  const AtRuleDescriptorValueSet& properties = font_face_rule->Properties();
+  const CSSPropertyValueSet& properties = font_face_rule->Properties();
 
   // Obtain the font-family property and the src property. Both must be defined.
   const CSSValue* family =
@@ -205,7 +204,7 @@ FontFace* FontFace::Create(Document* document,
                                       AtRuleDescriptorID::FontDisplay) &&
       font_face->GetFontSelectionCapabilities().IsValid() &&
       !font_face->family().IsEmpty()) {
-    font_face->InitCSSFontFace(document, src);
+    font_face->InitCSSFontFace(document, *src);
     return font_face;
   }
   return nullptr;
@@ -328,10 +327,10 @@ void FontFace::SetPropertyFromString(const ExecutionContext* context,
     SetError(DOMException::Create(kSyntaxError, message));
 }
 
-bool FontFace::SetPropertyFromStyle(const AtRuleDescriptorValueSet& properties,
-                                    AtRuleDescriptorID descriptor_id) {
-  return SetPropertyValue(properties.GetPropertyCSSValue(descriptor_id),
-                          descriptor_id);
+bool FontFace::SetPropertyFromStyle(const CSSPropertyValueSet& properties,
+                                    AtRuleDescriptorID property_id) {
+  return SetPropertyValue(properties.GetPropertyCSSValue(property_id),
+                          property_id);
 }
 
 bool FontFace::SetPropertyValue(const CSSValue* value,
@@ -703,22 +702,21 @@ bool ContextAllowsDownload(ExecutionContext* context) {
   return true;
 }
 
-void FontFace::InitCSSFontFace(ExecutionContext* context, const CSSValue* src) {
+void FontFace::InitCSSFontFace(ExecutionContext* context, const CSSValue& src) {
   css_font_face_ = CreateCSSFontFace(this, unicode_range_.Get());
   if (error_)
     return;
 
   // Each item in the src property's list is a single CSSFontFaceSource. Put
   // them all into a CSSFontFace.
-  DCHECK(src);
-  DCHECK(src->IsValueList());
-  const CSSValueList* src_list = ToCSSValueList(src);
-  int src_length = src_list->length();
+  DCHECK(src.IsValueList());
+  const CSSValueList& src_list = ToCSSValueList(src);
+  int src_length = src_list.length();
 
   for (int i = 0; i < src_length; i++) {
     // An item in the list either specifies a string (local font name) or a URL
     // (remote font to download).
-    const CSSFontFaceSrcValue& item = ToCSSFontFaceSrcValue(src_list->Item(i));
+    const CSSFontFaceSrcValue& item = ToCSSFontFaceSrcValue(src_list.Item(i));
 
     if (!item.IsLocal()) {
       if (ContextAllowsDownload(context) && item.IsSupportedFormat()) {
@@ -734,8 +732,8 @@ void FontFace::InitCSSFontFace(ExecutionContext* context, const CSSValue* src) {
         RemoteFontFaceSource* source =
             new RemoteFontFaceSource(css_font_face_, font_selector,
                                      CSSValueToFontDisplay(display_.Get()));
-        if (item.Fetch(context, source))
-          css_font_face_->AddSource(source);
+        item.Fetch(context, source);
+        css_font_face_->AddSource(source);
       }
     } else {
       css_font_face_->AddSource(new LocalFontFaceSource(item.GetResource()));

@@ -66,6 +66,7 @@ rtc_static_library("video_quality_analysis") {
   ]
   deps = [
     "../common_video",
+    "../test:perf_test",
     "//third_party/libyuv",
   ]
 }
@@ -79,6 +80,7 @@ rtc_executable("frame_analyzer") {
   deps = [
     ":command_line_parser",
     ":video_quality_analysis",
+    "../test:perf_test",
     "//build/win:default_exe_manifest",
   ]
 }
@@ -222,13 +224,13 @@ if (!build_with_chromium) {
         "../call:call_interfaces",
         "../call:video_stream_api",
         "../logging:rtc_event_log_api",
-        "../logging:rtc_event_log_impl",
+        "../logging:rtc_event_log_impl_base",
         "../logging:rtc_event_log_parser",
+        "../logging:rtc_stream_config",
         "../modules:module_api",
         "../modules/audio_coding:ana_debug_dump_proto",
         "../modules/audio_coding:audio_network_adaptor",
         "../modules/audio_coding:neteq_tools",
-        "../modules/congestion_controller:estimators",
         "../modules/rtp_rtcp:rtp_rtcp_format",
         "../rtc_base:checks",
         "../rtc_base:rtc_base_approved",
@@ -237,6 +239,8 @@ if (!build_with_chromium) {
         # TODO(kwiberg): Remove this dependency.
         "../api/audio_codecs:audio_codecs_api",
         "../modules/congestion_controller",
+        "../modules/congestion_controller:delay_based_bwe",
+        "../modules/congestion_controller:estimators",
         "../modules/pacing",
         "../modules/rtp_rtcp",
         "../system_wrappers:system_wrappers_default",
@@ -265,6 +269,7 @@ if (rtc_include_tests) {
         "../logging:rtc_event_log_parser",
         "../rtc_base:protobuf_utils",
         "../rtc_base:rtc_base_approved",
+        "../system_wrappers:field_trial_default",
         "../test:field_trial",
         "../test:test_support",
       ]
@@ -285,6 +290,7 @@ if (rtc_include_tests) {
     deps = [
       "../modules:module_api",
       "../modules/audio_processing",
+      "../modules/audio_processing/vad",
       "../rtc_base:rtc_base_approved",
       "../system_wrappers:metrics_default",
       "../test:test_support",

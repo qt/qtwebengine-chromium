@@ -36,7 +36,7 @@ cast_source_set("backend") {
 
   deps = [
     "//base",
-    "//chromecast:chromecast_features",
+    "//chromecast:chromecast_buildflags",
     "//chromecast/base/metrics:metrics",
     "//chromecast/media:libcast_media",
     "//chromecast/media/cma/base",
@@ -49,7 +49,7 @@ cast_source_set("cast_media_android_dummy") {
   ]
   deps = [
     "//base",
-    "//chromecast:chromecast_features",
+    "//chromecast:chromecast_buildflags",
     "//chromecast/public",
     "//chromecast/public/media",
   ]
@@ -82,8 +82,8 @@ cast_source_set("dummy") {
   ]
 }
 
-buildflag_header("audio_features") {
-  header = "audio_features.h"
+buildflag_header("audio_buildflags") {
+  header = "audio_buildflags.h"
 
   flags = [
     "ALSA_MONOTONIC_RAW_TSTAMPS=$use_alsa_monotonic_raw_tstamps",
@@ -105,17 +105,35 @@ cast_source_set("null") {
   ]
 }
 
-cast_source_set("audio") {
+cast_source_set("public") {
+  sources = [
+    "mixer_output_stream.h",
+    "system_volume_control.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chromecast/public/media",
+  ]
+}
+
+cast_source_set("for_mixer_audio") {
   sources = [
     "audio_decoder_for_mixer.cc",
     "audio_decoder_for_mixer.h",
+    "audio_fader.cc",
+    "audio_fader.h",
+    "buffering_mixer_source.cc",
+    "buffering_mixer_source.h",
     "cast_audio_json.cc",
     "cast_audio_json.h",
     "filter_group.cc",
     "filter_group.h",
     "media_codec_support_cast_audio.cc",
-    "media_pipeline_backend_audio.cc",
-    "media_pipeline_backend_audio.h",
+    "media_pipeline_backend_for_mixer.cc",
+    "media_pipeline_backend_for_mixer.h",
+    "mixer_input.cc",
+    "mixer_input.h",
     "post_processing_pipeline.h",
     "post_processing_pipeline_impl.cc",
     "post_processing_pipeline_impl.h",
@@ -125,19 +143,15 @@ cast_source_set("audio") {
     "post_processor_factory.h",
     "stream_mixer.cc",
     "stream_mixer.h",
-    "stream_mixer_input.cc",
-    "stream_mixer_input.h",
-    "stream_mixer_input_impl.cc",
-    "stream_mixer_input_impl.h",
-    "system_volume_control.h",
     "volume_control.cc",
     "volume_map.cc",
     "volume_map.h",
   ]
 
   deps = [
-    ":audio_features",
+    ":audio_buildflags",
     ":null",
+    ":public",
     "//base",
     "//chromecast/base",
     "//chromecast/media/base",
@@ -148,29 +162,40 @@ cast_source_set("audio") {
     "//media",
     "//media:shared_memory_support",
   ]
+
+  if (use_alsa) {
+    deps += [ "alsa:cma_backend_support" ]
+  } else if (is_fuchsia) {
+    deps += [ "fuchsia:cma_backend_support" ]
+  } else {
+    sources += [ "mixer_output_stream_dummy.cc" ]
+  }
 }
 
 test("cast_audio_backend_unittests") {
   testonly = true
   sources = [
     "filter_group_unittest.cc",
+    "mock_mixer_source.cc",
+    "mock_mixer_source.h",
+
+    # "stream_mixer_unittest.cc",
   ]
 
   deps = [
-    ":audio",
+    ":for_mixer_audio",
+    ":public",
     "//base",
     "//base/test:run_all_unittests",
     "//chromecast/media/cma/backend/post_processors:unittests",
     "//chromecast/public",
     "//chromecast/public/media",
+    "//media",
     "//media:shared_memory_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
 
-  if (use_alsa) {
-    deps += [ "alsa:unit_tests" ]
-  }
   if (is_fuchsia) {
     deps += [ "fuchsia:unit_tests" ]
   }

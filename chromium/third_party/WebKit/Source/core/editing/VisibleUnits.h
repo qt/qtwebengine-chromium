@@ -98,6 +98,10 @@ CORE_EXPORT PositionInFlatTree CanonicalPositionOf(const PositionInFlatTree&);
 CORE_EXPORT IntRect AbsoluteCaretBoundsOf(const VisiblePosition&);
 CORE_EXPORT IntRect AbsoluteCaretBoundsOf(const VisiblePositionInFlatTree&);
 
+IntRect AbsoluteCaretRectOfPosition(
+    const PositionWithAffinity&,
+    LayoutUnit* extra_width_to_end_of_line = nullptr);
+
 CORE_EXPORT IntRect AbsoluteSelectionBoundsOf(const VisiblePosition&);
 CORE_EXPORT IntRect AbsoluteSelectionBoundsOf(const VisiblePositionInFlatTree&);
 
@@ -144,8 +148,8 @@ EndOfWordPosition(const VisiblePositionInFlatTree&,
                   EWordSide = kNextWordIfOnBoundary);
 CORE_EXPORT VisiblePositionInFlatTree
 EndOfWord(const VisiblePositionInFlatTree&, EWordSide = kNextWordIfOnBoundary);
-VisiblePosition PreviousWordPosition(const VisiblePosition&);
-VisiblePosition NextWordPosition(const VisiblePosition&);
+CORE_EXPORT VisiblePosition PreviousWordPosition(const VisiblePosition&);
+CORE_EXPORT VisiblePosition NextWordPosition(const VisiblePosition&);
 
 // sentences
 CORE_EXPORT VisiblePosition StartOfSentence(const VisiblePosition&);
@@ -276,6 +280,9 @@ CORE_EXPORT PositionInFlatTree SkipWhitespace(const PositionInFlatTree&);
 CORE_EXPORT IntRect ComputeTextRect(const EphemeralRange&);
 IntRect ComputeTextRect(const EphemeralRangeInFlatTree&);
 FloatRect ComputeTextFloatRect(const EphemeralRange&);
+
+// |FirstRectForRange| requires up-to-date layout.
+IntRect FirstRectForRange(const EphemeralRange&);
 
 // Export below functions only for |VisibleUnit| family.
 enum BoundarySearchContextAvailability {

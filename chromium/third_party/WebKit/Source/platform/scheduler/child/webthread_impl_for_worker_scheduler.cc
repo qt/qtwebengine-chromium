@@ -12,7 +12,6 @@
 #include "base/time/default_tick_clock.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/scheduler/child/web_scheduler_impl.h"
-#include "platform/scheduler/child/web_task_runner_impl.h"
 #include "platform/scheduler/child/worker_scheduler_impl.h"
 
 namespace blink {
@@ -67,10 +66,8 @@ void WebThreadImplForWorkerScheduler::InitOnThread(
   idle_task_runner_ = worker_scheduler_->IdleTaskRunner();
   web_scheduler_.reset(new WebSchedulerImpl(
       worker_scheduler_.get(), worker_scheduler_->IdleTaskRunner(),
-      worker_scheduler_->DefaultTaskQueue(),
       worker_scheduler_->DefaultTaskQueue()));
   base::MessageLoop::current()->AddDestructionObserver(this);
-  web_task_runner_ = WebTaskRunnerImpl::Create(task_queue_, base::nullopt);
   completion->Signal();
 }
 
@@ -82,7 +79,6 @@ void WebThreadImplForWorkerScheduler::ShutdownOnThread(
   idle_task_runner_ = nullptr;
   web_scheduler_ = nullptr;
   worker_scheduler_ = nullptr;
-  web_task_runner_ = nullptr;
 
   if (completion)
     completion->Signal();
@@ -105,19 +101,14 @@ blink::WebScheduler* WebThreadImplForWorkerScheduler::Scheduler() const {
   return web_scheduler_.get();
 }
 
-scoped_refptr<base::SingleThreadTaskRunner>
-WebThreadImplForWorkerScheduler::GetSingleThreadTaskRunner() const {
-  return web_task_runner_.Get();
-}
-
 SingleThreadIdleTaskRunner* WebThreadImplForWorkerScheduler::GetIdleTaskRunner()
     const {
   return idle_task_runner_.get();
 }
 
-blink::WebTaskRunner* WebThreadImplForWorkerScheduler::GetWebTaskRunner()
-    const {
-  return web_task_runner_.Get();
+scoped_refptr<base::SingleThreadTaskRunner>
+WebThreadImplForWorkerScheduler::GetTaskRunner() const {
+  return task_queue_;
 }
 
 void WebThreadImplForWorkerScheduler::AddTaskObserverInternal(

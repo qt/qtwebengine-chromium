@@ -87,14 +87,25 @@ std::unique_ptr<SkCodec> SkWebpCodec::MakeFromStream(std::unique_ptr<SkStream> s
         }
     }
 
-    WebPChunkIterator chunkIterator;
-    SkAutoTCallVProc<WebPChunkIterator, WebPDemuxReleaseChunkIterator> autoCI(&chunkIterator);
     sk_sp<SkColorSpace> colorSpace = nullptr;
-    if (WebPDemuxGetChunk(demux, "ICCP", 1, &chunkIterator)) {
-        colorSpace = SkColorSpace::MakeICC(chunkIterator.chunk.bytes, chunkIterator.chunk.size);
+    {
+        WebPChunkIterator chunkIterator;
+        SkAutoTCallVProc<WebPChunkIterator, WebPDemuxReleaseChunkIterator> autoCI(&chunkIterator);
+        if (WebPDemuxGetChunk(demux, "ICCP", 1, &chunkIterator)) {
+            colorSpace = SkColorSpace::MakeICC(chunkIterator.chunk.bytes, chunkIterator.chunk.size);
+        }
+        if (!colorSpace || colorSpace->type() != SkColorSpace::kRGB_Type) {
+            colorSpace = SkColorSpace::MakeSRGB();
+        }
     }
-    if (!colorSpace || colorSpace->type() != SkColorSpace::kRGB_Type) {
-        colorSpace = SkColorSpace::MakeSRGB();
+
+    SkEncodedOrigin origin = kDefault_SkEncodedOrigin;
+    {
+        WebPChunkIterator chunkIterator;
+        SkAutoTCallVProc<WebPChunkIterator, WebPDemuxReleaseChunkIterator> autoCI(&chunkIterator);
+        if (WebPDemuxGetChunk(demux, "EXIF", 1, &chunkIterator)) {
+            is_orientation_marker(chunkIterator.chunk.bytes, chunkIterator.chunk.size, &origin);
+        }
     }
 
     // Get the first frame and its "features" to determine the color and alpha types.
@@ -156,10 +167,12 @@ std::unique_ptr<SkCodec> SkWebpCodec::MakeFromStream(std::unique_ptr<SkStream> s
             return nullptr;
     }
 
+
     *result = kSuccess;
     SkEncodedInfo info = SkEncodedInfo::Make(color, alpha, 8);
     return std::unique_ptr<SkCodec>(new SkWebpCodec(width, height, info, std::move(colorSpace),
-                                           std::move(stream), demux.release(), std::move(data)));
+                                           std::move(stream), demux.release(), std::move(data),
+                                           origin));
 }
 
 SkISize SkWebpCodec::onGetScaledDimensions(float desiredScale) const {
@@ -327,7 +340,6 @@ static void pick_memory_stages(SkColorType ct, SkRasterPipeline::StockStage* loa
         case kARGB_4444_SkColorType:
         case kGray_8_SkColorType:
         case kRGB_888x_SkColorType:
-        case kRGBA_1010102_SkColorType:
         case kRGB_101010x_SkColorType:
             SkASSERT(false);
             break;
@@ -342,6 +354,10 @@ static void pick_memory_stages(SkColorType ct, SkRasterPipeline::StockStage* loa
         case kBGRA_8888_SkColorType:
             if (load) *load = SkRasterPipeline::load_bgra;
             if (store) *store = SkRasterPipeline::store_bgra;
+            break;
+        case kRGBA_1010102_SkColorType:
+            if (load) *load = SkRasterPipeline::load_1010102;
+            if (store) *store = SkRasterPipeline::store_1010102;
             break;
         case kRGBA_F16_SkColorType:
             if (load) *load = SkRasterPipeline::load_f16;
@@ -601,7 +617,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
     const bool needsSrgbToLinear = dstInfo.gammaCloseToSRGB() &&
             options.fPremulBehavior == SkTransferFunctionBehavior::kRespect;
 
-    const size_t dstBpp = SkColorTypeBytesPerPixel(dstInfo.colorType());
+    const size_t dstBpp = dstInfo.bytesPerPixel();
     dst = SkTAddOffset<void>(dst, dstBpp * dstX + rowBytes * dstY);
     const size_t srcRowBytes = config.output.u.RGBA.stride;
 
@@ -649,9 +665,9 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
 
 SkWebpCodec::SkWebpCodec(int width, int height, const SkEncodedInfo& info,
                          sk_sp<SkColorSpace> colorSpace, std::unique_ptr<SkStream> stream,
-                         WebPDemuxer* demux, sk_sp<SkData> data)
+                         WebPDemuxer* demux, sk_sp<SkData> data, SkEncodedOrigin origin)
     : INHERITED(width, height, info, SkColorSpaceXform::kBGRA_8888_ColorFormat, std::move(stream),
-                std::move(colorSpace))
+                std::move(colorSpace), origin)
     , fDemux(demux)
     , fData(std::move(data))
     , fFailed(false)

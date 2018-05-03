@@ -54,14 +54,14 @@ DocumentFragment* HTMLTemplateElement::content() const {
   return content_.Get();
 }
 
-Node* HTMLTemplateElement::cloneNode(bool deep, ExceptionState&) {
-  if (!deep)
-    return CloneElementWithoutChildren();
-
-  Node* clone = CloneElementWithChildren();
-  if (content_)
-    content()->CloneChildNodes(ToHTMLTemplateElement(clone)->content());
-  return clone;
+// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element:concept-node-clone-ext
+void HTMLTemplateElement::CloneNonAttributePropertiesFrom(
+    const Element& source,
+    CloneChildrenFlag flag) {
+  if (flag == CloneChildrenFlag::kSkip)
+    return;
+  if (ToHTMLTemplateElement(source).content_)
+    content()->CloneChildNodesFrom(*ToHTMLTemplateElement(source).content());
 }
 
 void HTMLTemplateElement::DidMoveToNewDocument(Document& old_document) {

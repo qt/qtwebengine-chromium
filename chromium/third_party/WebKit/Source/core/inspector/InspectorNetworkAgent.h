@@ -31,7 +31,6 @@
 #ifndef InspectorNetworkAgent_h
 #define InspectorNetworkAgent_h
 
-#include "bindings/core/v8/ScriptString.h"
 #include "core/CoreExport.h"
 #include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorBaseAgent.h"
@@ -170,10 +169,6 @@ class CORE_EXPORT InspectorNetworkAgent final
   void FrameScheduledClientNavigation(LocalFrame*);
   void FrameClearedScheduledClientNavigation(LocalFrame*);
 
-  std::unique_ptr<protocol::Network::Initiator> BuildInitiatorObject(
-      Document*,
-      const FetchInitiatorInfo&);
-
   void DidCreateWebSocket(Document*,
                           unsigned long identifier,
                           const KURL& request_url,
@@ -236,8 +231,8 @@ class CORE_EXPORT InspectorNetworkAgent final
       const String& origin,
       std::unique_ptr<protocol::Array<String>>* certificate) override;
 
-  protocol::Response getRequestPostData(const String& request_id,
-                                        String* post_data) override;
+  void getRequestPostData(const String& request_id,
+                          std::unique_ptr<GetRequestPostDataCallback>) override;
 
   // Called from other agents.
   protocol::Response GetResponseBody(const String& request_id,
@@ -247,6 +242,7 @@ class CORE_EXPORT InspectorNetworkAgent final
                             const KURL&,
                             String* content,
                             bool* base64_encoded);
+  String NavigationInitiatorInfo(LocalFrame*);
 
  private:
   void Enable(int total_buffer_size,
@@ -273,12 +269,18 @@ class CORE_EXPORT InspectorNetworkAgent final
                            std::unique_ptr<GetResponseBodyCallback>);
   void ClearPendingRequestData();
 
+  static std::unique_ptr<protocol::Network::Initiator> BuildInitiatorObject(
+      Document*,
+      const FetchInitiatorInfo&);
+  static bool IsNavigation(DocumentLoader*, unsigned long identifier);
+
   // This is null while inspecting workers.
   Member<InspectedFrames> inspected_frames_;
   // This is null while inspecting frames.
   Member<WorkerGlobalScope> worker_global_scope_;
   v8_inspector::V8InspectorSession* v8_session_;
   Member<NetworkResourcesData> resources_data_;
+  String conditions_token_;
 
   typedef HashMap<ThreadableLoaderClient*, unsigned long>
       ThreadableLoaderClientRequestIdMap;

@@ -32,7 +32,7 @@
             share-allow-enable="[[shareAllowEnable_]]"
             share-default="[[shareDefault_]]"
             error="{{error_}}"
-            on-close="close">
+            on-close="onClose_">
         </network-config>
       </div>
 
@@ -40,17 +40,17 @@
         <template is="dom-if" if="[[error_]]" restamp>
           <div class="flex error">[[getError_(error_)]]</div>
         </template>
-        <paper-button class="cancel-button" on-tap="onCancelTap_">
+        <paper-button class="cancel-button" on-click="onCancelTap_">
           $i18n{cancel}
         </paper-button>
-        <template is="dom-if" if="[[isConfigured_(networkProperties_, guid)]]">
-          <paper-button class="action-button" on-tap="onSaveOrConnectTap_"
+        <template is="dom-if" if="[[!showConnect]]">
+          <paper-button class="action-button" on-click="onSaveTap_"
               disabled="[[!enableSave_]]">
             $i18n{save}
           </paper-button>
         </template>
-        <template is="dom-if" if="[[!isConfigured_(networkProperties_, guid)]]">
-          <paper-button class="action-button" on-tap="onSaveOrConnectTap_"
+        <template is="dom-if" if="[[showConnect]]">
+          <paper-button class="action-button" on-click="onConnectTap_"
               disabled="[[!enableConnect_]]">
             $i18n{networkButtonConnect}
           </paper-button>

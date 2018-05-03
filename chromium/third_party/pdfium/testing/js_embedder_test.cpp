@@ -7,8 +7,8 @@
 #include "third_party/base/ptr_util.h"
 
 JSEmbedderTest::JSEmbedderTest()
-    : m_pArrayBufferAllocator(pdfium::MakeUnique<FXJS_ArrayBufferAllocator>()) {
-}
+    : m_pArrayBufferAllocator(
+          pdfium::MakeUnique<CFX_V8ArrayBufferAllocator>()) {}
 
 JSEmbedderTest::~JSEmbedderTest() {}
 
@@ -40,5 +40,5 @@ v8::Isolate* JSEmbedderTest::isolate() {
 }
 
 v8::Local<v8::Context> JSEmbedderTest::GetV8Context() {
-  return m_Engine->GetPersistentContext();
+  return m_Engine->GetV8Context();
 }

@@ -207,9 +207,7 @@ ScriptPromise ImageBitmapFactories::createImageBitmap(
                                           options);
 }
 
-const char* ImageBitmapFactories::SupplementName() {
-  return "ImageBitmapFactories";
-}
+const char ImageBitmapFactories::kSupplementName[] = "ImageBitmapFactories";
 
 ImageBitmapFactories& ImageBitmapFactories::From(EventTarget& event_target) {
   if (LocalDOMWindow* window = event_target.ToLocalDOMWindow())
@@ -222,11 +220,11 @@ ImageBitmapFactories& ImageBitmapFactories::From(EventTarget& event_target) {
 
 template <class GlobalObject>
 ImageBitmapFactories& ImageBitmapFactories::FromInternal(GlobalObject& object) {
-  ImageBitmapFactories* supplement = static_cast<ImageBitmapFactories*>(
-      Supplement<GlobalObject>::From(object, SupplementName()));
+  ImageBitmapFactories* supplement =
+      Supplement<GlobalObject>::template From<ImageBitmapFactories>(object);
   if (!supplement) {
     supplement = new ImageBitmapFactories;
-    Supplement<GlobalObject>::ProvideTo(object, SupplementName(), supplement);
+    Supplement<GlobalObject>::ProvideTo(object, supplement);
   }
   return *supplement;
 }
@@ -302,8 +300,8 @@ void ImageBitmapFactories::ImageBitmapLoader::DidFail(FileError::ErrorCode) {
 
 void ImageBitmapFactories::ImageBitmapLoader::ScheduleAsyncImageBitmapDecoding(
     DOMArrayBuffer* array_buffer) {
-  scoped_refptr<WebTaskRunner> task_runner =
-      Platform::Current()->CurrentThread()->GetWebTaskRunner();
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      Platform::Current()->CurrentThread()->GetTaskRunner();
   BackgroundTaskRunner::PostOnBackgroundThread(
       FROM_HERE,
       CrossThreadBind(
@@ -314,7 +312,7 @@ void ImageBitmapFactories::ImageBitmapLoader::ScheduleAsyncImageBitmapDecoding(
 }
 
 void ImageBitmapFactories::ImageBitmapLoader::DecodeImageOnDecoderThread(
-    scoped_refptr<WebTaskRunner> task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     DOMArrayBuffer* array_buffer,
     const String& premultiply_alpha_option,
     const String& color_space_conversion_option) {

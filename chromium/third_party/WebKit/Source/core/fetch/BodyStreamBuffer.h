@@ -9,6 +9,7 @@
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/CoreExport.h"
+#include "core/dom/AbortSignal.h"
 #include "core/dom/DOMException.h"
 #include "core/fetch/BytesConsumer.h"
 #include "core/fetch/FetchDataLoader.h"
@@ -23,13 +24,16 @@ class ScriptState;
 
 class CORE_EXPORT BodyStreamBuffer final : public UnderlyingSourceBase,
                                            public BytesConsumer::Client {
-  WTF_MAKE_NONCOPYABLE(BodyStreamBuffer);
   USING_GARBAGE_COLLECTED_MIXIN(BodyStreamBuffer);
 
  public:
   // |consumer| must not have a client.
   // This function must be called with entering an appropriate V8 context.
-  BodyStreamBuffer(ScriptState*, BytesConsumer* /* consumer */);
+  // |signal| should be non-null when this BodyStreamBuffer is associated with a
+  // Response that was created by fetch().
+  BodyStreamBuffer(ScriptState*,
+                   BytesConsumer* /* consumer */,
+                   AbortSignal* /* signal */);
   // |ReadableStreamOperations::isReadableStream(stream)| must hold.
   // This function must be called with entering an appropriate V8 context.
   BodyStreamBuffer(ScriptState*, ScriptValue stream);
@@ -61,9 +65,12 @@ class CORE_EXPORT BodyStreamBuffer final : public UnderlyingSourceBase,
   void CloseAndLockAndDisturb();
   ScriptState* GetScriptState() { return script_state_.get(); }
 
+  bool IsAborted();
+
   void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(loader_);
+    visitor->Trace(signal_);
     UnderlyingSourceBase::Trace(visitor);
   }
 
@@ -71,6 +78,7 @@ class CORE_EXPORT BodyStreamBuffer final : public UnderlyingSourceBase,
   class LoaderClient;
 
   BytesConsumer* ReleaseHandle();
+  void Abort();
   void Close();
   void GetError();
   void CancelConsumer();
@@ -82,9 +90,13 @@ class CORE_EXPORT BodyStreamBuffer final : public UnderlyingSourceBase,
   Member<BytesConsumer> consumer_;
   // We need this member to keep it alive while loading.
   Member<FetchDataLoader> loader_;
+  // We need this to ensure that we detect that abort has been signalled
+  // correctly.
+  Member<AbortSignal> signal_;
   bool stream_needs_more_ = false;
   bool made_from_readable_stream_;
   bool in_process_data_ = false;
+  DISALLOW_COPY_AND_ASSIGN(BodyStreamBuffer);
 };
 
 }  // namespace blink

@@ -8,18 +8,18 @@
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "bindings/core/v8/WindowProxy.h"
 #include "bindings/core/v8/WorkerOrWorkletScriptController.h"
-#include "common/origin_trials/trial_token.h"
-#include "common/origin_trials/trial_token_validator.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/LocalFrame.h"
-#include "core/workers/WorkerGlobalScope.h"
+#include "core/workers/WorkletGlobalScope.h"
 #include "platform/Histogram.h"
 #include "platform/bindings/OriginTrialFeatures.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/StringBuilder.h"
+#include "public/common/origin_trials/trial_token.h"
+#include "public/common/origin_trials/trial_token_validator.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebTrialTokenValidator.h"
@@ -92,27 +92,23 @@ OriginTrialContext::OriginTrialContext(
       trial_token_validator_(std::move(validator)) {}
 
 // static
-const char* OriginTrialContext::SupplementName() {
-  return "OriginTrialContext";
-}
+const char OriginTrialContext::kSupplementName[] = "OriginTrialContext";
 
 // static
 const OriginTrialContext* OriginTrialContext::From(
     const ExecutionContext* context) {
-  return static_cast<const OriginTrialContext*>(
-      Supplement<ExecutionContext>::From(context, SupplementName()));
+  return Supplement<ExecutionContext>::From<OriginTrialContext>(context);
 }
 
 // static
 OriginTrialContext* OriginTrialContext::FromOrCreate(
     ExecutionContext* context) {
-  OriginTrialContext* origin_trials = const_cast<OriginTrialContext*>(
-      From(static_cast<const ExecutionContext*>(context)));
+  OriginTrialContext* origin_trials =
+      Supplement<ExecutionContext>::From<OriginTrialContext>(context);
   if (!origin_trials) {
     origin_trials = new OriginTrialContext(
         *context, Platform::Current()->CreateTrialTokenValidator());
-    Supplement<ExecutionContext>::ProvideTo(*context, SupplementName(),
-                                            origin_trials);
+    Supplement<ExecutionContext>::ProvideTo(*context, origin_trials);
   }
   return origin_trials;
 }
@@ -229,7 +225,20 @@ bool OriginTrialContext::EnableTrialFromToken(const String& token) {
   DCHECK(!token.IsEmpty());
 
   // Origin trials are only enabled for secure origins
-  if (!GetSupplementable()->IsSecureContext()) {
+  //  - For worklets, they are currently spec'd to not be secure, given their
+  //    scope has unique origin:
+  //    https://drafts.css-houdini.org/worklets/#script-settings-for-worklets
+  //  - For the purpose of origin trials, we consider worklets as running in the
+  //    same context as the originating document. Thus, the special logic here
+  //    to validate the token against the document context.
+  bool is_secure = false;
+  ExecutionContext* context = GetSupplementable();
+  if (context->IsWorkletGlobalScope()) {
+    is_secure = ToWorkletGlobalScope(context)->DocumentSecureContext();
+  } else {
+    is_secure = context->IsSecureContext();
+  }
+  if (!is_secure) {
     TokenValidationResultHistogram().Count(
         static_cast<int>(OriginTrialTokenStatus::kInsecure));
     return false;
@@ -241,7 +250,14 @@ bool OriginTrialContext::EnableTrialFromToken(const String& token) {
     return false;
   }
 
-  WebSecurityOrigin origin(GetSupplementable()->GetSecurityOrigin());
+  WebSecurityOrigin origin;
+  if (context->IsWorkletGlobalScope()) {
+    origin = WebSecurityOrigin(
+        ToWorkletGlobalScope(context)->DocumentSecurityOrigin());
+  } else {
+    origin = WebSecurityOrigin(context->GetSecurityOrigin());
+  }
+
   WebString trial_name;
   bool valid = false;
   OriginTrialTokenStatus token_result =

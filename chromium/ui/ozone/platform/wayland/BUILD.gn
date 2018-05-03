@@ -32,6 +32,8 @@ source_set("wayland") {
     "wayland_pointer.h",
     "wayland_surface_factory.cc",
     "wayland_surface_factory.h",
+    "wayland_touch.cc",
+    "wayland_touch.h",
     "wayland_window.cc",
     "wayland_window.h",
     "xdg_surface_wrapper.cc",
@@ -61,6 +63,7 @@ source_set("wayland") {
     "//ui/display/manager",
     "//ui/events",
     "//ui/events:dom_keycode_converter",
+    "//ui/events/ozone:events_ozone",
     "//ui/events/ozone:events_ozone_layout",
     "//ui/events/platform",
     "//ui/gfx",
@@ -90,6 +93,7 @@ source_set("wayland_unittests") {
     "wayland_surface_factory_unittest.cc",
     "wayland_test.cc",
     "wayland_test.h",
+    "wayland_touch_unittest.cc",
     "wayland_window_unittest.cc",
   ]
 
@@ -107,10 +111,6 @@ source_set("wayland_unittests") {
 
   import("//ui/base/ui_features.gni")
   if (use_xkbcommon) {
-    sources += [
-      "mock_wayland_xkb_keyboard_layout_engine.cc",
-      "mock_wayland_xkb_keyboard_layout_engine.h",
-    ]
     deps += [ "//ui/events/keycodes:xkb" ]
   }
 

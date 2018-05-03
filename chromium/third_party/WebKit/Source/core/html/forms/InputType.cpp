@@ -38,7 +38,6 @@
 #include "core/dom/events/ScopedEventQueue.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/fileapi/FileList.h"
-#include "core/html/HTMLShadowElement.h"
 #include "core/html/forms/ButtonInputType.h"
 #include "core/html/forms/CheckboxInputType.h"
 #include "core/html/forms/ColorChooser.h"
@@ -640,15 +639,6 @@ bool InputType::HasLegalLinkAttribute(const QualifiedName&) const {
 
 const QualifiedName& InputType::SubResourceAttributeName() const {
   return QualifiedName::Null();
-}
-
-bool InputType::SupportsAutocapitalize() const {
-  return false;
-}
-
-const AtomicString& InputType::DefaultAutocapitalize() const {
-  DEFINE_STATIC_LOCAL(const AtomicString, none, ("none"));
-  return none;
 }
 
 void InputType::CopyNonAttributeProperties(const HTMLInputElement&) {}

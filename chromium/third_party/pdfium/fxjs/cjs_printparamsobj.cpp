@@ -17,18 +17,10 @@ int CJS_PrintParamsObj::GetObjDefnID() {
 void CJS_PrintParamsObj::DefineJSObjects(CFXJS_Engine* pEngine) {
   ObjDefnID =
       pEngine->DefineObj("PrintParamsObj", FXJSOBJTYPE_DYNAMIC,
-                         JSConstructor<CJS_PrintParamsObj, PrintParamsObj>,
-                         JSDestructor<CJS_PrintParamsObj>);
+                         JSConstructor<CJS_PrintParamsObj>, JSDestructor);
 }
 
-PrintParamsObj::PrintParamsObj(CJS_Object* pJSObject)
-    : CJS_EmbedObj(pJSObject) {
-  bUI = true;
-  nStart = 0;
-  nEnd = 0;
-  bSilent = false;
-  bShrinkToFit = false;
-  bPrintAsImage = false;
-  bReverse = false;
-  bAnnotations = true;
-}
+CJS_PrintParamsObj::CJS_PrintParamsObj(v8::Local<v8::Object> pObject)
+    : CJS_Object(pObject) {}
+
+CJS_PrintParamsObj::~CJS_PrintParamsObj() = default;

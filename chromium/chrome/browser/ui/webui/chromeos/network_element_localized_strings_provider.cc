@@ -32,6 +32,7 @@ struct {
     {"networkListItemConnecting", IDS_STATUSBAR_NETWORK_DEVICE_CONNECTING},
     {"networkListItemConnectingTo", IDS_NETWORK_LIST_CONNECTING_TO},
     {"networkListItemInitializing", IDS_NETWORK_LIST_INITIALIZING},
+    {"networkListItemScanning", IDS_SETTINGS_INTERNET_MOBILE_SEARCH},
     {"networkListItemNotConnected", IDS_NETWORK_LIST_NOT_CONNECTED},
     {"networkListItemNoNetwork", IDS_NETWORK_LIST_NO_NETWORK},
     {"vpnNameTemplate", IDS_NETWORK_LIST_THIRD_PARTY_VPN_NAME_TEMPLATE},
@@ -294,6 +295,9 @@ void AddErrorLocalizedStrings(content::WebUIDataSource* html_source) {
       {"Error.PolicyControlled", IDS_NETWORK_ERROR_POLICY_CONTROLLED},
       {"networkErrorNoUserCertificate", IDS_NETWORK_ERROR_NO_USER_CERT},
       {"networkErrorUnknown", IDS_NETWORK_ERROR_UNKNOWN},
+      // TODO(stevenjb): Move this id to settings_strings.grdp:
+      {"networkErrorNotHardwareBacked",
+       IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_REQUIRE_HARDWARE_BACKED},
   };
   for (const auto& entry : localized_strings)
     html_source->AddLocalizedString(entry.name, entry.id);

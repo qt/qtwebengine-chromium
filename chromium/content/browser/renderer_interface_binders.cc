@@ -13,24 +13,25 @@
 #include "content/browser/notifications/platform_notification_context_impl.h"
 #include "content/browser/payments/payment_manager.h"
 #include "content/browser/permissions/permission_service_context.h"
+#include "content/browser/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/websockets/websocket_manager.h"
-#include "content/network/restricted_cookie_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/vibration_manager.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/vibration_manager.mojom.h"
+#include "services/network/restricted_cookie_manager.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "services/shape_detection/public/interfaces/barcodedetection.mojom.h"
-#include "services/shape_detection/public/interfaces/constants.mojom.h"
-#include "services/shape_detection/public/interfaces/facedetection_provider.mojom.h"
-#include "services/shape_detection/public/interfaces/textdetection.mojom.h"
+#include "services/shape_detection/public/mojom/barcodedetection.mojom.h"
+#include "services/shape_detection/public/mojom/constants.mojom.h"
+#include "services/shape_detection/public/mojom/facedetection_provider.mojom.h"
+#include "services/shape_detection/public/mojom/textdetection.mojom.h"
 #include "third_party/WebKit/public/platform/modules/notifications/notification_service.mojom.h"
 #include "url/origin.h"
 
@@ -127,8 +128,8 @@ void RendererInterfaceBinders::InitializeParameterizedBinderRegistry() {
   parameterized_binder_registry_.AddInterface(
       base::Bind([](blink::mojom::WebSocketRequest request,
                     RenderProcessHost* host, const url::Origin& origin) {
-        WebSocketManager::CreateWebSocket(host->GetID(), MSG_ROUTING_NONE,
-                                          std::move(request));
+        WebSocketManager::CreateWebSocketWithOrigin(
+            host->GetID(), origin, std::move(request), MSG_ROUTING_NONE);
       }));
   parameterized_binder_registry_.AddInterface(
       base::Bind([](payments::mojom::PaymentManagerRequest request,
@@ -164,6 +165,8 @@ void RendererInterfaceBinders::InitializeParameterizedBinderRegistry() {
       base::BindRepeating(&BackgroundFetchServiceImpl::Create));
   parameterized_binder_registry_.AddInterface(
       base::BindRepeating(GetRestrictedCookieManagerForWorker));
+  parameterized_binder_registry_.AddInterface(
+      base::BindRepeating(&QuotaDispatcherHost::CreateForWorker));
 }
 
 RendererInterfaceBinders& GetRendererInterfaceBinders() {

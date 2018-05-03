@@ -234,10 +234,14 @@ class WebWorkerFetchContextForTest : public WebWorkerFetchContext {
  public:
   WebWorkerFetchContextForTest(KURL site_for_cookies)
       : site_for_cookies_(site_for_cookies.Copy()) {}
-  void InitializeOnWorkerThread(
-      scoped_refptr<base::SingleThreadTaskRunner>) override {}
+  void InitializeOnWorkerThread() override {}
 
   std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() override {
+    return std::make_unique<WebURLLoaderFactoryWithMock>(
+        Platform::Current()->GetURLLoaderMockFactory());
+  }
+  std::unique_ptr<WebURLLoaderFactory> WrapURLLoaderFactory(
+      mojo::ScopedMessagePipeHandle) override {
     return std::make_unique<WebURLLoaderFactoryWithMock>(
         Platform::Current()->GetURLLoaderMockFactory());
   }
@@ -424,7 +428,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
   std::unique_ptr<DummyPageHolder> dummy_page_holder_;
   // Accessed cross-thread when worker thread posts tasks to the parent.
   CrossThreadPersistent<ParentFrameTaskRunners> parent_frame_task_runners_;
-  scoped_refptr<WebTaskRunner> worker_loading_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> worker_loading_task_runner_;
   Checkpoint checkpoint_;
   // |m_loader| must be touched only from the worker thread only.
   CrossThreadPersistent<ThreadableLoader> loader_;

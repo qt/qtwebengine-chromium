@@ -63,20 +63,19 @@ using namespace sh;
 %union {
     struct {
         union {
-            TString *string;
+            const char *string;  // pool allocated.
             float f;
             int i;
             unsigned int u;
             bool b;
         };
-        TSymbol* symbol;
+        const TSymbol* symbol;
     } lex;
     struct {
         TOperator op;
         union {
             TIntermNode *intermNode;
             TIntermNodePair nodePair;
-            TIntermFunctionCallOrMethod callOrMethodPair;
             TIntermTyped *intermTypedNode;
             TIntermAggregate *intermAggregate;
             TIntermBlock *intermBlock;
@@ -93,6 +92,7 @@ using namespace sh;
             TLayoutQualifier layoutQualifier;
             TQualifier qualifier;
             TFunction *function;
+            TFunctionLookup *functionLookup;
             TParameter param;
             TDeclarator *declarator;
             TDeclaratorList *declaratorList;
@@ -236,10 +236,12 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
 %type <interm.declarator> struct_declarator
 %type <interm.declaratorList> struct_declarator_list
 %type <interm.fieldList> struct_declaration struct_declaration_list
-%type <interm.function> function_header function_declarator function_identifier
-%type <interm.function> function_header_with_parameters function_call_header
-%type <interm> function_call_header_with_parameters function_call_header_no_parameters function_call_generic function_prototype
-%type <interm> function_call_or_method
+%type <interm.function> function_header function_declarator
+%type <interm.function> function_header_with_parameters
+%type <interm.functionLookup> function_identifier function_call_header
+%type <interm.functionLookup> function_call_header_with_parameters function_call_header_no_parameters
+%type <interm.functionLookup> function_call_generic function_call_or_method
+%type <interm> function_prototype
 
 %type <lex> enter_struct
 
@@ -253,10 +255,7 @@ identifier
 variable_identifier
     : IDENTIFIER {
         // The symbol table search was done in the lexical phase
-        $$ = context->parseVariableIdentifier(@1, $1.string, $1.symbol);
-
-        // don't delete $1.string, it's used by error recovery, and the pool
-        // pop will reclaim the memory
+        $$ = context->parseVariableIdentifier(@1, ImmutableString($1.string), $1.symbol);
     }
     ;
 
@@ -287,10 +286,10 @@ primary_expression
     | YUVCSCSTANDARDEXTCONSTANT {
         if (!context->checkCanUseExtension(@1, TExtension::EXT_YUV_target))
         {
-           context->error(@1, "unsupported value", $1.string->c_str());
+           context->error(@1, "unsupported value", ImmutableString($1.string));
         }
         TConstantUnion *unionArray = new TConstantUnion[1];
-        unionArray->setYuvCscStandardEXTConst(getYuvCscStandardEXT($1.string->c_str()));
+        unionArray->setYuvCscStandardEXTConst(getYuvCscStandardEXT(ImmutableString($1.string)));
         $$ = context->addScalarLiteral(unionArray, @1);
     }
     | LEFT_PAREN expression RIGHT_PAREN {
@@ -309,7 +308,7 @@ postfix_expression
         $$ = $1;
     }
     | postfix_expression DOT FIELD_SELECTION {
-        $$ = context->addFieldSelectionExpression($1, @2, *$3.string, @3);
+        $$ = context->addFieldSelectionExpression($1, @2, ImmutableString($3.string), @3);
     }
     | postfix_expression INC_OP {
         $$ = context->addUnaryMathLValue(EOpPostIncrement, $1, @2);
@@ -328,19 +327,18 @@ integer_expression
 
 function_call
     : function_call_or_method {
-        $$ = context->addFunctionCallOrMethod($1.function, $1.callOrMethodPair.arguments, $1.callOrMethodPair.thisNode, @1);
+        $$ = context->addFunctionCallOrMethod($1, @1);
     }
     ;
 
 function_call_or_method
     : function_call_generic {
         $$ = $1;
-        $$.callOrMethodPair.thisNode = nullptr;
     }
     | postfix_expression DOT function_call_generic {
         ES3_OR_NEWER("", @3, "methods");
         $$ = $3;
-        $$.callOrMethodPair.thisNode = $1;
+        $$->setThisNode($1);
     }
     ;
 
@@ -355,24 +353,21 @@ function_call_generic
 
 function_call_header_no_parameters
     : function_call_header VOID_TYPE {
-        $$.function = $1;
-        $$.callOrMethodPair.arguments = context->createEmptyArgumentsList();
+        $$ = $1;
     }
     | function_call_header {
-        $$.function = $1;
-        $$.callOrMethodPair.arguments = context->createEmptyArgumentsList();
+        $$ = $1;
     }
     ;
 
 function_call_header_with_parameters
     : function_call_header assignment_expression {
-        $$.callOrMethodPair.arguments = context->createEmptyArgumentsList();
-        $$.function = $1;
-        $$.callOrMethodPair.arguments->push_back($2);
+        $$ = $1;
+        $$->addArgument($2);
     }
     | function_call_header_with_parameters COMMA assignment_expression {
-        $$.function = $1.function;
-        $$.callOrMethodPair.arguments->push_back($3);
+        $$ = $1;
+        $$->addArgument($3);
     }
     ;
 
@@ -389,10 +384,10 @@ function_identifier
         $$ = context->addConstructorFunc($1);
     }
     | IDENTIFIER {
-        $$ = context->addNonConstructorFunc($1.string, @1);
+        $$ = context->addNonConstructorFunc(ImmutableString($1.string), $1.symbol);
     }
     | FIELD_SELECTION {
-        $$ = context->addNonConstructorFunc($1.string, @1);
+        $$ = context->addNonConstructorFunc(ImmutableString($1.string), $1.symbol);
     }
     ;
 
@@ -594,7 +589,7 @@ constant_expression
 
 enter_struct
     : IDENTIFIER LEFT_BRACE {
-        context->enterStructDeclaration(@1, *$1.string);
+        context->enterStructDeclaration(@1, ImmutableString($1.string));
         $$ = $1;
     }
     ;
@@ -611,16 +606,16 @@ declaration
         $$ = nullptr;
     }
     | type_qualifier enter_struct struct_declaration_list RIGHT_BRACE SEMICOLON {
-        ES3_OR_NEWER($2.string->c_str(), @1, "interface blocks");
-        $$ = context->addInterfaceBlock(*$1, @2, *$2.string, $3, NULL, @$, NULL, @$);
+        ES3_OR_NEWER(ImmutableString($2.string), @1, "interface blocks");
+        $$ = context->addInterfaceBlock(*$1, @2, ImmutableString($2.string), $3, ImmutableString(""), @$, NULL, @$);
     }
     | type_qualifier enter_struct struct_declaration_list RIGHT_BRACE IDENTIFIER SEMICOLON {
-        ES3_OR_NEWER($2.string->c_str(), @1, "interface blocks");
-        $$ = context->addInterfaceBlock(*$1, @2, *$2.string, $3, $5.string, @5, NULL, @$);
+        ES3_OR_NEWER(ImmutableString($2.string), @1, "interface blocks");
+        $$ = context->addInterfaceBlock(*$1, @2, ImmutableString($2.string), $3, ImmutableString($5.string), @5, NULL, @$);
     }
     | type_qualifier enter_struct struct_declaration_list RIGHT_BRACE IDENTIFIER LEFT_BRACKET constant_expression RIGHT_BRACKET SEMICOLON {
-        ES3_OR_NEWER($2.string->c_str(), @1, "interface blocks");
-        $$ = context->addInterfaceBlock(*$1, @2, *$2.string, $3, $5.string, @5, $7, @6);
+        ES3_OR_NEWER(ImmutableString($2.string), @1, "interface blocks");
+        $$ = context->addInterfaceBlock(*$1, @2, ImmutableString($2.string), $3, ImmutableString($5.string), @5, $7, @6);
     }
     | type_qualifier SEMICOLON {
         context->parseGlobalLayoutQualifier(*$1);
@@ -628,7 +623,7 @@ declaration
     }
     | type_qualifier IDENTIFIER SEMICOLON // e.g. to qualify an existing variable as invariant
     {
-        $$ = context->parseInvariantDeclaration(*$1, @2, $2.string, $2.symbol);
+        $$ = context->parseInvariantDeclaration(*$1, @2, ImmutableString($2.string), $2.symbol);
     }
     ;
 
@@ -676,7 +671,7 @@ function_header_with_parameters
 
 function_header
     : fully_specified_type IDENTIFIER LEFT_PAREN {
-        $$ = context->parseFunctionHeader($1, $2.string, @2);
+        $$ = context->parseFunctionHeader($1, ImmutableString($2.string), @2);
 
         context->symbolTable.push();
         context->enterFunctionDeclaration();
@@ -686,10 +681,10 @@ function_header
 parameter_declarator
     // Type + name
     : type_specifier identifier {
-        $$ = context->parseParameterDeclarator($1, $2.string, @2);
+        $$ = context->parseParameterDeclarator($1, ImmutableString($2.string), @2);
     }
     | type_specifier identifier array_specifier {
-        $$ = context->parseParameterArrayDeclarator($2.string, @2, *($3), @3, &$1);
+        $$ = context->parseParameterArrayDeclarator(ImmutableString($2.string), @2, *($3), @3, &$1);
     }
     ;
 
@@ -725,44 +720,44 @@ init_declarator_list
     }
     | init_declarator_list COMMA identifier {
         $$ = $1;
-        context->parseDeclarator($$.type, @3, *$3.string, $$.intermDeclaration);
+        context->parseDeclarator($$.type, @3, ImmutableString($3.string), $$.intermDeclaration);
     }
     | init_declarator_list COMMA identifier array_specifier {
         $$ = $1;
-        context->parseArrayDeclarator($$.type, @3, *$3.string, @4, *($4), $$.intermDeclaration);
+        context->parseArrayDeclarator($$.type, @3, ImmutableString($3.string), @4, *($4), $$.intermDeclaration);
     }
     | init_declarator_list COMMA identifier array_specifier EQUAL initializer {
         ES3_OR_NEWER("=", @5, "first-class arrays (array initializer)");
         $$ = $1;
-        context->parseArrayInitDeclarator($$.type, @3, *$3.string, @4, *($4), @5, $6, $$.intermDeclaration);
+        context->parseArrayInitDeclarator($$.type, @3, ImmutableString($3.string), @4, *($4), @5, $6, $$.intermDeclaration);
     }
     | init_declarator_list COMMA identifier EQUAL initializer {
         $$ = $1;
-        context->parseInitDeclarator($$.type, @3, *$3.string, @4, $5, $$.intermDeclaration);
+        context->parseInitDeclarator($$.type, @3, ImmutableString($3.string), @4, $5, $$.intermDeclaration);
     }
     ;
 
 single_declaration
     : fully_specified_type {
         $$.type = $1;
-        $$.intermDeclaration = context->parseSingleDeclaration($$.type, @1, "");
+        $$.intermDeclaration = context->parseSingleDeclaration($$.type, @1, ImmutableString(""));
     }
     | fully_specified_type identifier {
         $$.type = $1;
-        $$.intermDeclaration = context->parseSingleDeclaration($$.type, @2, *$2.string);
+        $$.intermDeclaration = context->parseSingleDeclaration($$.type, @2, ImmutableString($2.string));
     }
     | fully_specified_type identifier array_specifier {
         $$.type = $1;
-        $$.intermDeclaration = context->parseSingleArrayDeclaration($$.type, @2, *$2.string, @3, *($3));
+        $$.intermDeclaration = context->parseSingleArrayDeclaration($$.type, @2, ImmutableString($2.string), @3, *($3));
     }
     | fully_specified_type identifier array_specifier EQUAL initializer {
         ES3_OR_NEWER("[]", @3, "first-class arrays (array initializer)");
         $$.type = $1;
-        $$.intermDeclaration = context->parseSingleArrayInitDeclaration($$.type, @2, *$2.string, @3, *($3), @4, $5);
+        $$.intermDeclaration = context->parseSingleArrayInitDeclaration($$.type, @2, ImmutableString($2.string), @3, *($3), @4, $5);
     }
     | fully_specified_type identifier EQUAL initializer {
         $$.type = $1;
-        $$.intermDeclaration = context->parseSingleInitDeclaration($$.type, @2, *$2.string, @3, $4);
+        $$.intermDeclaration = context->parseSingleInitDeclaration($$.type, @2, ImmutableString($2.string), @3, $4);
     }
     ;
 
@@ -916,16 +911,16 @@ layout_qualifier_id_list
 
 layout_qualifier_id
     : IDENTIFIER {
-        $$ = context->parseLayoutQualifier(*$1.string, @1);
+        $$ = context->parseLayoutQualifier(ImmutableString($1.string), @1);
     }
     | IDENTIFIER EQUAL INTCONSTANT {
-        $$ = context->parseLayoutQualifier(*$1.string, @1, $3.i, @3);
+        $$ = context->parseLayoutQualifier(ImmutableString($1.string), @1, $3.i, @3);
     }
     | IDENTIFIER EQUAL UINTCONSTANT {
-        $$ = context->parseLayoutQualifier(*$1.string, @1, $3.i, @3);
+        $$ = context->parseLayoutQualifier(ImmutableString($1.string), @1, $3.i, @3);
     }
     | SHARED {
-        $$ = context->parseLayoutQualifier("shared", @1);
+        $$ = context->parseLayoutQualifier(ImmutableString("shared"), @1);
     }
     ;
 
@@ -1196,17 +1191,17 @@ type_specifier_nonarray
     }
     | TYPE_NAME {
         // This is for user defined type names. The lexical phase looked up the type.
-        TStructure *structure = static_cast<TStructure*>($1.symbol);
+        const TStructure *structure = static_cast<const TStructure*>($1.symbol);
         $$.initializeStruct(structure, false, @1);
     }
     ;
 
 struct_specifier
-    : STRUCT identifier LEFT_BRACE { context->enterStructDeclaration(@2, *$2.string); } struct_declaration_list RIGHT_BRACE {
-        $$ = context->addStructure(@1, @2, $2.string, $5);
+    : STRUCT identifier LEFT_BRACE { context->enterStructDeclaration(@2, ImmutableString($2.string)); } struct_declaration_list RIGHT_BRACE {
+        $$ = context->addStructure(@1, @2, ImmutableString($2.string), $5);
     }
-    | STRUCT LEFT_BRACE { context->enterStructDeclaration(@2, *$2.string); } struct_declaration_list RIGHT_BRACE {
-        $$ = context->addStructure(@1, @$, nullptr, $4);
+    | STRUCT LEFT_BRACE { context->enterStructDeclaration(@2, ImmutableString("")); } struct_declaration_list RIGHT_BRACE {
+        $$ = context->addStructure(@1, @$, ImmutableString(""), $4);
     }
     ;
 
@@ -1241,10 +1236,10 @@ struct_declarator_list
 
 struct_declarator
     : identifier {
-        $$ = context->parseStructDeclarator($1.string, @1);
+        $$ = context->parseStructDeclarator(ImmutableString($1.string), @1);
     }
     | identifier array_specifier {
-        $$ = context->parseStructArrayDeclarator($1.string, @1, $2);
+        $$ = context->parseStructArrayDeclarator(ImmutableString($1.string), @1, $2);
     }
     ;
 
@@ -1363,7 +1358,7 @@ condition
         context->checkIsScalarBool($1->getLine(), $1);
     }
     | fully_specified_type identifier EQUAL initializer {
-        $$ = context->addConditionInitializer($1, *$2.string, $4, @2);
+        $$ = context->addConditionInitializer($1, ImmutableString($2.string), $4, @2);
     }
     ;
 
@@ -1456,7 +1451,7 @@ external_declaration
 
 function_definition
     : function_prototype {
-        context->parseFunctionDefinitionHeader(@1, &($1.function), &($1.intermFunctionPrototype));
+        context->parseFunctionDefinitionHeader(@1, $1.function, &($1.intermFunctionPrototype));
     }
     compound_statement_no_new_scope {
         $$ = context->addFunctionDefinition($1.intermFunctionPrototype, $3, @1);

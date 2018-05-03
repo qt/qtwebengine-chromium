@@ -49,6 +49,7 @@
 #include "core/fpdfdoc/cpdf_occontext.h"
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/cfx_fixedbufgrow.h"
+#include "core/fxcrt/fx_fallthrough.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
@@ -1305,7 +1306,7 @@ bool CPDF_RenderStatus::ProcessPath(CPDF_PathObject* pPathObj,
                                     const CFX_Matrix* pObj2Device) {
   int FillType = pPathObj->m_FillType;
   bool bStroke = pPathObj->m_bStroke;
-  ProcessPathPattern(pPathObj, pObj2Device, FillType, bStroke);
+  ProcessPathPattern(pPathObj, pObj2Device, &FillType, &bStroke);
   if (FillType == 0 && !bStroke)
     return true;
 
@@ -1765,6 +1766,7 @@ bool CPDF_RenderStatus::ProcessText(CPDF_TextObject* textobj,
         // Already handled above, but the compiler is not smart enough to
         // realize it. Fall through.
         NOTREACHED();
+        return true;
       case TextRenderingMode::MODE_CLIP:
         return true;
     }
@@ -2414,20 +2416,23 @@ void CPDF_RenderStatus::DrawPathWithPattern(CPDF_PathObject* pPathObj,
 
 void CPDF_RenderStatus::ProcessPathPattern(CPDF_PathObject* pPathObj,
                                            const CFX_Matrix* pObj2Device,
-                                           int& filltype,
-                                           bool& bStroke) {
-  if (filltype) {
+                                           int* filltype,
+                                           bool* bStroke) {
+  ASSERT(filltype);
+  ASSERT(bStroke);
+
+  if (*filltype) {
     const CPDF_Color& FillColor = *pPathObj->m_ColorState.GetFillColor();
     if (FillColor.IsPattern()) {
       DrawPathWithPattern(pPathObj, pObj2Device, &FillColor, false);
-      filltype = 0;
+      *filltype = 0;
     }
   }
-  if (bStroke) {
+  if (*bStroke) {
     const CPDF_Color& StrokeColor = *pPathObj->m_ColorState.GetStrokeColor();
     if (StrokeColor.IsPattern()) {
       DrawPathWithPattern(pPathObj, pObj2Device, &StrokeColor, true);
-      bStroke = false;
+      *bStroke = false;
     }
   }
 }

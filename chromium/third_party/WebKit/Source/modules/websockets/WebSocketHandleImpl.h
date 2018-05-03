@@ -46,11 +46,10 @@ class WebSocketHandleImpl : public WebSocketHandle,
   void Initialize(mojom::blink::WebSocketPtr) override;
   void Connect(const KURL&,
                const Vector<String>& protocols,
-               const SecurityOrigin*,
                const KURL& site_for_cookies,
                const String& user_agent_override,
                WebSocketHandleClient*,
-               WebTaskRunner*) override;
+               base::SingleThreadTaskRunner*) override;
   void Send(bool fin, MessageType, const char* data, size_t) override;
   void FlowControl(int64_t quota) override;
   void Close(unsigned short code, const String& reason) override;

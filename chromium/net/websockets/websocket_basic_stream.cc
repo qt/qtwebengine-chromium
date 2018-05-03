@@ -8,9 +8,7 @@
 #include <stdint.h>
 #include <algorithm>
 #include <limits>
-#include <string>
 #include <utility>
-#include <vector>
 
 #include "base/bind.h"
 #include "base/logging.h"
@@ -19,13 +17,42 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/websockets/websocket_basic_stream_adapters.h"
 #include "net/websockets/websocket_errors.h"
 #include "net/websockets/websocket_frame.h"
-#include "net/websockets/websocket_frame_parser.h"
 
 namespace net {
 
 namespace {
+
+// Please refer to the comment in class header if the usage changes.
+constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+    net::DefineNetworkTrafficAnnotation("websocket_basic_stream", R"(
+      semantics {
+        sender: "WebSocket Basic Stream"
+        description:
+          "Implementation of WebSocket API from web content (a page the user "
+          "visits)."
+        trigger: "Website calls the WebSocket API."
+        data:
+          "Any data provided by web content, masked and framed in accordance "
+          "with RFC6455."
+        destination: OTHER
+        destination_other:
+          "The address that the website has chosen to communicate to."
+      }
+      policy {
+        cookies_allowed: YES
+        cookies_store: "user"
+        setting: "These requests cannot be disabled."
+        policy_exception_justification:
+          "Not implemented. WebSocket is a core web platform API."
+      }
+      comments:
+        "The browser will never add cookies to a WebSocket message. But the "
+        "handshake that was performed when the WebSocket connection was "
+        "established may have contained cookies."
+      )");
 
 // This uses type uint64_t to match the definition of
 // WebSocketFrameHeader::payload_length in websocket_frame.h.
@@ -68,7 +95,7 @@ int CalculateSerializedSizeAndTurnOnMaskBit(
 }  // namespace
 
 WebSocketBasicStream::WebSocketBasicStream(
-    std::unique_ptr<ClientSocketHandle> connection,
+    std::unique_ptr<Adapter> connection,
     const scoped_refptr<GrowableIOBuffer>& http_read_buffer,
     const std::string& sub_protocol,
     const std::string& extensions)
@@ -117,13 +144,10 @@ int WebSocketBasicStream::ReadFrames(
     // call any callbacks after Disconnect(), which we call from the
     // destructor. The caller of ReadFrames() is required to keep |frames|
     // valid.
-    int result = connection_->socket()->Read(
-        read_buffer_.get(),
-        read_buffer_->size(),
+    int result = connection_->Read(
+        read_buffer_.get(), read_buffer_->size(),
         base::Bind(&WebSocketBasicStream::OnReadComplete,
-                   base::Unretained(this),
-                   base::Unretained(frames),
-                   callback));
+                   base::Unretained(this), base::Unretained(frames), callback));
     if (result == ERR_IO_PENDING)
       return result;
     result = HandleReadResult(result, frames);
@@ -176,7 +200,9 @@ int WebSocketBasicStream::WriteFrames(
   return WriteEverything(drainable_buffer, callback);
 }
 
-void WebSocketBasicStream::Close() { connection_->socket()->Disconnect(); }
+void WebSocketBasicStream::Close() {
+  connection_->Disconnect();
+}
 
 std::string WebSocketBasicStream::GetSubProtocol() const {
   return sub_protocol_;
@@ -192,8 +218,10 @@ WebSocketBasicStream::CreateWebSocketBasicStreamForTesting(
     const std::string& sub_protocol,
     const std::string& extensions,
     WebSocketMaskingKeyGeneratorFunction key_generator_function) {
-  std::unique_ptr<WebSocketBasicStream> stream(new WebSocketBasicStream(
-      std::move(connection), http_read_buffer, sub_protocol, extensions));
+  auto stream = std::make_unique<WebSocketBasicStream>(
+      std::make_unique<WebSocketClientSocketHandleAdapter>(
+          std::move(connection)),
+      http_read_buffer, sub_protocol, extensions);
   stream->generate_websocket_masking_key_ = key_generator_function;
   return stream;
 }
@@ -204,13 +232,11 @@ int WebSocketBasicStream::WriteEverything(
   while (buffer->BytesRemaining() > 0) {
     // The use of base::Unretained() here is safe because on destruction we
     // disconnect the socket, preventing any further callbacks.
-    int result = connection_->socket()->Write(
-        buffer.get(),
-        buffer->BytesRemaining(),
-        base::Bind(&WebSocketBasicStream::OnWriteComplete,
-                   base::Unretained(this),
-                   buffer,
-                   callback));
+    int result =
+        connection_->Write(buffer.get(), buffer->BytesRemaining(),
+                           base::Bind(&WebSocketBasicStream::OnWriteComplete,
+                                      base::Unretained(this), buffer, callback),
+                           kTrafficAnnotation);
     if (result > 0) {
       UMA_HISTOGRAM_COUNTS_100000("Net.WebSocket.DataUse.Upstream", result);
       buffer->DidConsume(result);

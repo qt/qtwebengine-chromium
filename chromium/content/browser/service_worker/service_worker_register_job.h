@@ -15,8 +15,8 @@
 #include "content/browser/service_worker/service_worker_register_job_base.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/service_worker/service_worker_status_code.h"
-#include "third_party/WebKit/common/service_worker/service_worker_event_status.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -148,6 +148,7 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
   RegistrationJobType job_type_;
   const GURL pattern_;
   GURL script_url_;
+  const blink::mojom::ServiceWorkerUpdateViaCache update_via_cache_;
   std::vector<RegistrationCallback> callbacks_;
   Phase phase_;
   Internal internal_;

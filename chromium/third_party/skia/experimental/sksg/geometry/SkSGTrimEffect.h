@@ -33,6 +33,7 @@ public:
     SG_ATTRIBUTE(Offset, SkScalar, fOffset)
 
 protected:
+    void onClip(SkCanvas*, bool antiAlias) const override;
     void onDraw(SkCanvas*, const SkPaint&) const override;
 
     SkRect onRevalidate(InvalidationController*, const SkMatrix&) override;
@@ -46,6 +47,8 @@ private:
     SkScalar                  fStart  = 0, // starting t
                               fEnd    = 1, // ending t
                               fOffset = 0; // t offset
+
+    using INHERITED = GeometryNode;
 };
 
 } // namespace sksg

@@ -39,6 +39,7 @@
 #include "SkMipMap.h"
 #include "SkPixelRef.h"
 #include "SkReadPixelsRec.h"
+#include "SkTraceEvent.h"
 
 SkImage_Gpu::SkImage_Gpu(GrContext* context, uint32_t uniqueID, SkAlphaType at,
                          sk_sp<GrTextureProxy> proxy,
@@ -149,12 +150,29 @@ static void apply_premul(const SkImageInfo& info, void* pixels, size_t rowBytes)
         for (int x = 0; x < info.width(); ++x) {
             row[x] = SkPreMultiplyColor(row[x]);
         }
+        row = (SkColor*)((char*)(row) + rowBytes);
     }
 }
 
 GrBackendObject SkImage_Gpu::onGetTextureHandle(bool flushPendingGrContextIO,
                                                 GrSurfaceOrigin* origin) const {
     SkASSERT(fProxy);
+
+    if (!fContext->contextPriv().resourceProvider() && !fProxy->priv().isInstantiated()) {
+        // This image was created with a DDL context and cannot be instantiated. Thus we return 0
+        // here which is considered invalid for all backends.
+        return 0;
+    }
+
+    if (GrSurfaceProxy::LazyState::kNot != fProxy->lazyInstantiationState()) {
+        SkASSERT(fContext->contextPriv().resourceProvider());
+        fProxy->priv().doLazyInstantiation(fContext->contextPriv().resourceProvider());
+        if (!fProxy->priv().isInstantiated()) {
+            // We failed to instantiate the lazy proxy. Thus we return 0 here which is considered
+            // invalid for all backends.
+            return 0;
+        }
+    }
 
     if (!fProxy->instantiate(fContext->contextPriv().resourceProvider())) {
         return 0;
@@ -212,12 +230,18 @@ bool SkImage_Gpu::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size
     // with arbitrary color spaces. Unfortunately, this is one spot where we go from image to
     // surface (rather than the opposite), and our lenient image rules break our (currently) more
     // strict surface rules.
-    // We treat null-dst color space as always equal to fColorSpace for this kind of read-back.
+    // GrSurfaceContext::readPixels does not make use of the context's color space. However, we
+    // don't allow creating a surface context for a sRGB GrPixelConfig unless the color space has
+    // sRGB gamma. So we choose null for non-SRGB GrPixelConfigs and sRGB for sRGB GrPixelConfigs.
     sk_sp<SkColorSpace> surfaceColorSpace = fColorSpace;
     if (!flags) {
         if (!dstInfo.colorSpace() ||
-                SkColorSpace::Equals(fColorSpace.get(), dstInfo.colorSpace())) {
-            surfaceColorSpace = nullptr;
+            SkColorSpace::Equals(fColorSpace.get(), dstInfo.colorSpace())) {
+            if (GrPixelConfigIsSRGB(fProxy->config())) {
+                surfaceColorSpace = SkColorSpace::MakeSRGB();
+            } else {
+                surfaceColorSpace = nullptr;
+            }
         }
     }
 
@@ -284,17 +308,12 @@ static sk_sp<SkImage> new_wrapped_texture_common(GrContext* ctx,
         return nullptr;
     }
 
-    GrResourceProvider* resourceProvider = ctx->contextPriv().resourceProvider();
-
-    sk_sp<GrTexture> tex = resourceProvider->wrapBackendTexture(backendTex, ownership);
-    if (!tex) {
+    GrProxyProvider* proxyProvider = ctx->contextPriv().proxyProvider();
+    sk_sp<GrTextureProxy> proxy = proxyProvider->createWrappedTextureProxy(
+                                        backendTex, origin, ownership, releaseProc, releaseCtx);
+    if (!proxy) {
         return nullptr;
     }
-    if (releaseProc) {
-        tex->setRelease(releaseProc, releaseCtx);
-    }
-
-    sk_sp<GrTextureProxy> proxy(GrSurfaceProxy::MakeWrapped(std::move(tex), origin));
 
     return sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID,
                                    at, std::move(proxy), std::move(colorSpace), SkBudgeted::kNo);
@@ -340,6 +359,10 @@ sk_sp<SkImage> SkImage::MakeFromTexture(GrContext* ctx,
 sk_sp<SkImage> SkImage::MakeFromAdoptedTexture(GrContext* ctx,
                                                const GrBackendTexture& tex, GrSurfaceOrigin origin,
                                                SkAlphaType at, sk_sp<SkColorSpace> cs) {
+    if (!ctx->contextPriv().resourceProvider()) {
+        // We have a DDL context and we don't support adopted textures for them.
+        return nullptr;
+    }
     return new_wrapped_texture_common(ctx, tex, origin, at, std::move(cs), kAdopt_GrWrapOwnership,
                                       nullptr, nullptr);
 }
@@ -423,13 +446,8 @@ static sk_sp<SkImage> make_from_yuv_textures_copy(GrContext* ctx, SkYUVColorSpac
 
     // Needs to be a render target in order to draw to it for the yuv->rgb conversion.
     sk_sp<GrRenderTargetContext> renderTargetContext(ctx->makeDeferredRenderTargetContext(
-                                                                         SkBackingFit::kExact,
-                                                                         width, height,
-                                                                         kRGBA_8888_GrPixelConfig,
-                                                                         std::move(imageColorSpace),
-                                                                         0,
-                                                                         GrMipMapped::kNo,
-                                                                         origin));
+            SkBackingFit::kExact, width, height, kRGBA_8888_GrPixelConfig,
+            std::move(imageColorSpace), 1, GrMipMapped::kNo, origin));
     if (!renderTargetContext) {
         return nullptr;
     }
@@ -595,7 +613,8 @@ sk_sp<SkImage> SkImage::MakeCrossContextFromEncoded(GrContext* context, sk_sp<Sk
     // Flush any writes or uploads
     context->contextPriv().prepareSurfaceForExternalIO(proxy.get());
 
-    sk_sp<GrSemaphore> sema = context->getGpu()->prepareTextureForCrossContextUsage(texture.get());
+    GrGpu* gpu = context->contextPriv().getGpu();
+    sk_sp<GrSemaphore> sema = gpu->prepareTextureForCrossContextUsage(texture.get());
 
     auto gen = GrBackendTextureImageGenerator::Make(std::move(texture), proxy->origin(),
                                                     std::move(sema), codecImage->alphaType(),
@@ -610,16 +629,31 @@ sk_sp<SkImage> SkImage::MakeCrossContextFromPixmap(GrContext* context, const SkP
         return SkImage::MakeRasterCopy(pixmap);
     }
 
+    // If we don't have access to the resource provider and gpu (i.e. in a DDL context) we will not
+    // be able to make everything needed for a GPU CrossContext image. Thus return a raster copy
+    // instead.
+    if (!context->contextPriv().resourceProvider()) {
+        return SkImage::MakeRasterCopy(pixmap);
+    }
+
     GrProxyProvider* proxyProvider = context->contextPriv().proxyProvider();
     // Turn the pixmap into a GrTextureProxy
     sk_sp<GrTextureProxy> proxy;
     if (buildMips) {
         SkBitmap bmp;
         bmp.installPixels(pixmap);
-        proxy = GrGenerateMipMapsAndUploadToTextureProxy(proxyProvider, bmp, dstColorSpace);
+        proxy = proxyProvider->createMipMapProxyFromBitmap(bmp, dstColorSpace);
     } else {
-        proxy = GrUploadPixmapToTextureProxy(proxyProvider, pixmap, SkBudgeted::kYes,
-                                             dstColorSpace);
+        SkDestinationSurfaceColorMode colorMode = dstColorSpace
+                ? SkDestinationSurfaceColorMode::kGammaAndColorSpaceAware
+                : SkDestinationSurfaceColorMode::kLegacy;
+
+        if (SkImageInfoIsValid(pixmap.info(), colorMode)) {
+            ATRACE_ANDROID_FRAMEWORK("Upload Texture [%ux%u]", pixmap.width(), pixmap.height());
+            GrSurfaceDesc desc = GrImageInfoToSurfaceDesc(pixmap.info(), *proxyProvider->caps());
+            proxy = proxyProvider->createTextureProxy(desc, SkBudgeted::kYes, pixmap.addr(),
+                                                      pixmap.rowBytes());
+        }
     }
 
     if (!proxy) {
@@ -630,8 +664,9 @@ sk_sp<SkImage> SkImage::MakeCrossContextFromPixmap(GrContext* context, const SkP
 
     // Flush any writes or uploads
     context->contextPriv().prepareSurfaceForExternalIO(proxy.get());
+    GrGpu* gpu = context->contextPriv().getGpu();
 
-    sk_sp<GrSemaphore> sema = context->getGpu()->prepareTextureForCrossContextUsage(texture.get());
+    sk_sp<GrSemaphore> sema = gpu->prepareTextureForCrossContextUsage(texture.get());
 
     auto gen = GrBackendTextureImageGenerator::Make(std::move(texture), proxy->origin(),
                                                     std::move(sema), pixmap.alphaType(),
@@ -646,385 +681,6 @@ sk_sp<SkImage> SkImage::MakeFromAHardwareBuffer(AHardwareBuffer* graphicBuffer, 
     return SkImage::MakeFromGenerator(std::move(gen));
 }
 #endif
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace {
-struct MipMapLevelData {
-    void* fPixelData;
-    size_t fRowBytes;
-};
-
-struct DeferredTextureImage {
-    uint32_t                      fContextUniqueID;
-    // Right now, the destination color mode is only considered when generating mipmaps
-    SkDestinationSurfaceColorMode fColorMode;
-    // We don't store a SkImageInfo because it contains a ref-counted SkColorSpace.
-    int                           fWidth;
-    int                           fHeight;
-    SkColorType                   fColorType;
-    SkAlphaType                   fAlphaType;
-    void*                         fColorSpace;
-    size_t                        fColorSpaceSize;
-    int                           fMipMapLevelCount;
-    // The fMipMapLevelData array may contain more than 1 element.
-    // It contains fMipMapLevelCount elements.
-    // That means this struct's size is not known at compile-time.
-    MipMapLevelData               fMipMapLevelData[1];
-};
-}  // anonymous namespace
-
-static bool should_use_mip_maps(const SkImage::DeferredTextureImageUsageParams & param) {
-    // There is a bug in the mipmap pre-generation logic in use in getDeferredTextureImageData.
-    // This can cause runaway memory leaks, so we are disabling this path until we can
-    // investigate further. crbug.com/669775
-    return false;
-}
-
-namespace {
-
-class DTIBufferFiller
-{
-public:
-    explicit DTIBufferFiller(char* bufferAsCharPtr)
-        : bufferAsCharPtr_(bufferAsCharPtr) {}
-
-    void fillMember(const void* source, size_t memberOffset, size_t size) {
-        memcpy(bufferAsCharPtr_ + memberOffset, source, size);
-    }
-
-private:
-
-    char* bufferAsCharPtr_;
-};
-}
-
-#define FILL_MEMBER(bufferFiller, member, source) \
-    bufferFiller.fillMember(source, \
-               offsetof(DeferredTextureImage, member), \
-               sizeof(DeferredTextureImage::member));
-
-static bool SupportsColorSpace(SkColorType colorType) {
-    switch (colorType) {
-        case kRGBA_8888_SkColorType:
-        case kBGRA_8888_SkColorType:
-        case kRGBA_F16_SkColorType:
-            return true;
-        default:
-            return false;
-    }
-}
-
-size_t SkImage::getDeferredTextureImageData(const GrContextThreadSafeProxy& proxy,
-                                            const DeferredTextureImageUsageParams params[],
-                                            int paramCnt, void* buffer,
-                                            SkColorSpace* dstColorSpace,
-                                            SkColorType dstColorType) const {
-    // Some quick-rejects where is makes no sense to return CPU data
-    //  e.g.
-    //      - texture backed
-    //      - picture backed
-    //
-    if (this->isTextureBacked()) {
-        return 0;
-    }
-    if (as_IB(this)->onCanLazyGenerateOnGPU()) {
-        return 0;
-    }
-
-    bool supportsColorSpace = SupportsColorSpace(dstColorType);
-    // Quick reject if the caller requests a color space with an unsupported color type.
-    if (SkToBool(dstColorSpace) && !supportsColorSpace) {
-        return 0;
-    }
-
-    // Extract relevant min/max values from the params array.
-    int lowestPreScaleMipLevel = params[0].fPreScaleMipLevel;
-    SkFilterQuality highestFilterQuality = params[0].fQuality;
-    bool useMipMaps = should_use_mip_maps(params[0]);
-    for (int i = 1; i < paramCnt; ++i) {
-        if (lowestPreScaleMipLevel > params[i].fPreScaleMipLevel)
-            lowestPreScaleMipLevel = params[i].fPreScaleMipLevel;
-        if (highestFilterQuality < params[i].fQuality)
-            highestFilterQuality = params[i].fQuality;
-        useMipMaps |= should_use_mip_maps(params[i]);
-    }
-
-    const bool fillMode = SkToBool(buffer);
-    if (fillMode && !SkIsAlign8(reinterpret_cast<intptr_t>(buffer))) {
-        return 0;
-    }
-
-    // Calculate scaling parameters.
-    bool isScaled = lowestPreScaleMipLevel != 0;
-
-    SkISize scaledSize;
-    if (isScaled) {
-        // SkMipMap::ComputeLevelSize takes an index into an SkMipMap. SkMipMaps don't contain the
-        // base level, so to get an SkMipMap index we must subtract one from the GL MipMap level.
-        scaledSize = SkMipMap::ComputeLevelSize(this->width(), this->height(),
-                                                lowestPreScaleMipLevel - 1);
-    } else {
-        scaledSize = SkISize::Make(this->width(), this->height());
-    }
-
-    // We never want to scale at higher than SW medium quality, as SW medium matches GPU high.
-    SkFilterQuality scaleFilterQuality = highestFilterQuality;
-    if (scaleFilterQuality > kMedium_SkFilterQuality) {
-        scaleFilterQuality = kMedium_SkFilterQuality;
-    }
-
-    const int maxTextureSize = proxy.fCaps->maxTextureSize();
-    if (scaledSize.width() > maxTextureSize || scaledSize.height() > maxTextureSize) {
-        return 0;
-    }
-
-    SkAutoPixmapStorage pixmap;
-    SkImageInfo info;
-    size_t pixelSize = 0;
-    if (!isScaled && this->peekPixels(&pixmap) && pixmap.info().colorType() == dstColorType) {
-        info = pixmap.info();
-        pixelSize = SkAlign8(pixmap.computeByteSize());
-        if (!dstColorSpace) {
-            pixmap.setColorSpace(nullptr);
-            info = info.makeColorSpace(nullptr);
-        }
-    } else {
-        if (!this->isLazyGenerated() && !this->peekPixels(nullptr)) {
-            return 0;
-        }
-        if (SkImageCacherator* cacher = as_IB(this)->peekCacherator()) {
-            // Generator backed image. Tweak info to trigger correct kind of decode.
-            SkImageCacherator::CachedFormat cacheFormat = cacher->chooseCacheFormat(
-                dstColorSpace, proxy.fCaps.get());
-            info = cacher->buildCacheInfo(cacheFormat).makeWH(scaledSize.width(),
-                                                              scaledSize.height());
-        } else {
-            info = as_IB(this)->onImageInfo().makeWH(scaledSize.width(), scaledSize.height());
-            if (!dstColorSpace) {
-                info = info.makeColorSpace(nullptr);
-            }
-        }
-        // Force color type to be the requested type.
-        info = info.makeColorType(dstColorType);
-        pixelSize = SkAlign8(SkAutoPixmapStorage::AllocSize(info, nullptr));
-        if (fillMode) {
-            // Always decode to N32 and convert to the requested type if necessary.
-            SkImageInfo decodeInfo = info.makeColorType(kN32_SkColorType);
-            SkAutoPixmapStorage decodePixmap;
-            decodePixmap.alloc(decodeInfo);
-
-            if (isScaled) {
-                if (!this->scalePixels(decodePixmap, scaleFilterQuality,
-                                       SkImage::kDisallow_CachingHint)) {
-                    return 0;
-                }
-            } else {
-                if (!this->readPixels(decodePixmap, 0, 0, SkImage::kDisallow_CachingHint)) {
-                    return 0;
-                }
-            }
-
-            if (decodeInfo.colorType() != info.colorType()) {
-                pixmap.alloc(info);
-                // Convert and copy the decoded pixmap to the target pixmap.
-                decodePixmap.readPixels(pixmap.info(), pixmap.writable_addr(), pixmap.rowBytes(), 0,
-                                        0);
-            } else {
-                pixmap = std::move(decodePixmap);
-            }
-        }
-    }
-    int mipMapLevelCount = 1;
-    if (useMipMaps) {
-        // SkMipMap only deals with the mipmap levels it generates, which does
-        // not include the base level.
-        // That means it generates and holds levels 1-x instead of 0-x.
-        // So the total mipmap level count is 1 more than what
-        // SkMipMap::ComputeLevelCount returns.
-        mipMapLevelCount = SkMipMap::ComputeLevelCount(scaledSize.width(), scaledSize.height()) + 1;
-
-        // We already initialized pixelSize to the size of the base level.
-        // SkMipMap will generate the extra mipmap levels. Their sizes need to
-        // be added to the total.
-        // Index 0 here does not refer to the base mipmap level -- it is
-        // SkMipMap's first generated mipmap level (level 1).
-        for (int currentMipMapLevelIndex = mipMapLevelCount - 2; currentMipMapLevelIndex >= 0;
-             currentMipMapLevelIndex--) {
-            SkISize mipSize = SkMipMap::ComputeLevelSize(scaledSize.width(), scaledSize.height(),
-                                                         currentMipMapLevelIndex);
-            SkImageInfo mipInfo = info.makeWH(mipSize.fWidth, mipSize.fHeight);
-            pixelSize += SkAlign8(SkAutoPixmapStorage::AllocSize(mipInfo, nullptr));
-        }
-    }
-    size_t size = 0;
-    size_t dtiSize = SkAlign8(sizeof(DeferredTextureImage));
-    size += dtiSize;
-    size += (mipMapLevelCount - 1) * sizeof(MipMapLevelData);
-    // We subtract 1 because DeferredTextureImage already includes the base
-    // level in its size
-    size_t pixelOffset = size;
-    size += pixelSize;
-    size_t colorSpaceOffset = 0;
-    size_t colorSpaceSize = 0;
-    SkColorSpaceTransferFn fn;
-    if (info.colorSpace()) {
-        SkASSERT(dstColorSpace);
-        SkASSERT(supportsColorSpace);
-        colorSpaceOffset = size;
-        colorSpaceSize = info.colorSpace()->writeToMemory(nullptr);
-        size += colorSpaceSize;
-    } else if (supportsColorSpace && this->colorSpace() && this->colorSpace()->isNumericalTransferFn(&fn)) {
-        // In legacy mode, preserve the color space tag on the SkImage.  This is only
-        // supported if the color space has a parametric transfer function.
-        SkASSERT(!dstColorSpace);
-        colorSpaceOffset = size;
-        colorSpaceSize = this->colorSpace()->writeToMemory(nullptr);
-        size += colorSpaceSize;
-    }
-    if (!fillMode) {
-        return size;
-    }
-    char* bufferAsCharPtr = reinterpret_cast<char*>(buffer);
-    char* pixelsAsCharPtr = bufferAsCharPtr + pixelOffset;
-    void* pixels = pixelsAsCharPtr;
-
-    memcpy(reinterpret_cast<void*>(SkAlign8(reinterpret_cast<uintptr_t>(pixelsAsCharPtr))),
-                                   pixmap.addr(), pixmap.computeByteSize());
-
-    // If the context has sRGB support, and we're intending to render to a surface with an attached
-    // color space, and the image has an sRGB-like color space attached, then use our gamma (sRGB)
-    // aware mip-mapping.
-    SkDestinationSurfaceColorMode colorMode = SkDestinationSurfaceColorMode::kLegacy;
-    if (proxy.fCaps->srgbSupport() && SkToBool(dstColorSpace) &&
-        info.colorSpace() && info.colorSpace()->gammaCloseToSRGB()) {
-        SkASSERT(supportsColorSpace);
-        colorMode = SkDestinationSurfaceColorMode::kGammaAndColorSpaceAware;
-    }
-
-    SkASSERT(info == pixmap.info());
-    size_t rowBytes = pixmap.rowBytes();
-    static_assert(std::is_standard_layout<DeferredTextureImage>::value,
-                  "offsetof, which we use below, requires the type have standard layout");
-    auto dtiBufferFiller = DTIBufferFiller{bufferAsCharPtr};
-    FILL_MEMBER(dtiBufferFiller, fColorMode, &colorMode);
-    FILL_MEMBER(dtiBufferFiller, fContextUniqueID, &proxy.fContextUniqueID);
-    int width = info.width();
-    FILL_MEMBER(dtiBufferFiller, fWidth, &width);
-    int height = info.height();
-    FILL_MEMBER(dtiBufferFiller, fHeight, &height);
-    SkColorType colorType = info.colorType();
-    FILL_MEMBER(dtiBufferFiller, fColorType, &colorType);
-    SkAlphaType alphaType = info.alphaType();
-    FILL_MEMBER(dtiBufferFiller, fAlphaType, &alphaType);
-    FILL_MEMBER(dtiBufferFiller, fMipMapLevelCount, &mipMapLevelCount);
-    memcpy(bufferAsCharPtr + offsetof(DeferredTextureImage, fMipMapLevelData[0].fPixelData),
-           &pixels, sizeof(pixels));
-    memcpy(bufferAsCharPtr + offsetof(DeferredTextureImage, fMipMapLevelData[0].fRowBytes),
-           &rowBytes, sizeof(rowBytes));
-    if (colorSpaceSize) {
-        void* colorSpace = bufferAsCharPtr + colorSpaceOffset;
-        FILL_MEMBER(dtiBufferFiller, fColorSpace, &colorSpace);
-        FILL_MEMBER(dtiBufferFiller, fColorSpaceSize, &colorSpaceSize);
-        if (info.colorSpace()) {
-            info.colorSpace()->writeToMemory(bufferAsCharPtr + colorSpaceOffset);
-        } else {
-            SkASSERT(this->colorSpace() && this->colorSpace()->isNumericalTransferFn(&fn));
-            SkASSERT(!dstColorSpace);
-            this->colorSpace()->writeToMemory(bufferAsCharPtr + colorSpaceOffset);
-        }
-    } else {
-        memset(bufferAsCharPtr + offsetof(DeferredTextureImage, fColorSpace),
-               0, sizeof(DeferredTextureImage::fColorSpace));
-        memset(bufferAsCharPtr + offsetof(DeferredTextureImage, fColorSpaceSize),
-               0, sizeof(DeferredTextureImage::fColorSpaceSize));
-    }
-
-    // Fill in the mipmap levels if they exist
-    char* mipLevelPtr = pixelsAsCharPtr + SkAlign8(pixmap.computeByteSize());
-
-    if (useMipMaps) {
-        static_assert(std::is_standard_layout<MipMapLevelData>::value,
-                      "offsetof, which we use below, requires the type have a standard layout");
-
-        std::unique_ptr<SkMipMap> mipmaps(SkMipMap::Build(pixmap, colorMode, nullptr));
-        // SkMipMap holds only the mipmap levels it generates.
-        // A programmer can use the data they provided to SkMipMap::Build as level 0.
-        // So the SkMipMap provides levels 1-x but it stores them in its own
-        // range 0-(x-1).
-        for (int generatedMipLevelIndex = 0; generatedMipLevelIndex < mipMapLevelCount - 1;
-             generatedMipLevelIndex++) {
-            SkMipMap::Level mipLevel;
-            mipmaps->getLevel(generatedMipLevelIndex, &mipLevel);
-
-            // Make sure the mipmap data is after the start of the buffer
-            SkASSERT(mipLevelPtr > bufferAsCharPtr);
-            // Make sure the mipmap data starts before the end of the buffer
-            SkASSERT(mipLevelPtr < bufferAsCharPtr + pixelOffset + pixelSize);
-            // Make sure the mipmap data ends before the end of the buffer
-            SkASSERT(mipLevelPtr + mipLevel.fPixmap.computeByteSize() <=
-                     bufferAsCharPtr + pixelOffset + pixelSize);
-
-            memcpy(mipLevelPtr, mipLevel.fPixmap.addr(), mipLevel.fPixmap.computeByteSize());
-
-            memcpy(bufferAsCharPtr + offsetof(DeferredTextureImage, fMipMapLevelData) +
-                   sizeof(MipMapLevelData) * (generatedMipLevelIndex + 1) +
-                   offsetof(MipMapLevelData, fPixelData), &mipLevelPtr, sizeof(void*));
-            size_t rowBytes = mipLevel.fPixmap.rowBytes();
-            memcpy(bufferAsCharPtr + offsetof(DeferredTextureImage, fMipMapLevelData) +
-                   sizeof(MipMapLevelData) * (generatedMipLevelIndex + 1) +
-                   offsetof(MipMapLevelData, fRowBytes), &rowBytes, sizeof(rowBytes));
-
-            mipLevelPtr += SkAlign8(mipLevel.fPixmap.computeByteSize());
-        }
-    }
-    return size;
-}
-
-sk_sp<SkImage> SkImage::MakeFromDeferredTextureImageData(GrContext* context, const void* data,
-                                                         SkBudgeted budgeted) {
-    if (!data) {
-        return nullptr;
-    }
-    const DeferredTextureImage* dti = reinterpret_cast<const DeferredTextureImage*>(data);
-
-    if (!context || context->uniqueID() != dti->fContextUniqueID || context->abandoned()) {
-        return nullptr;
-    }
-    int mipLevelCount = dti->fMipMapLevelCount;
-    SkASSERT(mipLevelCount >= 1);
-    sk_sp<SkColorSpace> colorSpace;
-    if (dti->fColorSpaceSize) {
-        colorSpace = SkColorSpace::Deserialize(dti->fColorSpace, dti->fColorSpaceSize);
-    }
-    SkImageInfo info = SkImageInfo::Make(dti->fWidth, dti->fHeight,
-                                         dti->fColorType, dti->fAlphaType, colorSpace);
-    if (mipLevelCount == 1) {
-        SkPixmap pixmap;
-        pixmap.reset(info, dti->fMipMapLevelData[0].fPixelData, dti->fMipMapLevelData[0].fRowBytes);
-
-        // Pass nullptr for the |dstColorSpace|.  This opts in to more lenient color space
-        // verification.  This is ok because we've already verified the color space in
-        // getDeferredTextureImageData().
-        sk_sp<GrTextureProxy> proxy(GrUploadPixmapToTextureProxy(
-                context->contextPriv().proxyProvider(), pixmap, budgeted, nullptr));
-        if (!proxy) {
-            return nullptr;
-        }
-        return sk_make_sp<SkImage_Gpu>(context, kNeedNewImageUniqueID, pixmap.alphaType(),
-                                       std::move(proxy), std::move(colorSpace), budgeted);
-    } else {
-        std::unique_ptr<GrMipLevel[]> texels(new GrMipLevel[mipLevelCount]);
-        for (int i = 0; i < mipLevelCount; i++) {
-            texels[i].fPixels = dti->fMipMapLevelData[i].fPixelData;
-            texels[i].fRowBytes = dti->fMipMapLevelData[i].fRowBytes;
-        }
-
-        return SkImage::MakeTextureFromMipMap(context, info, texels.get(),
-                                              mipLevelCount, SkBudgeted::kYes,
-                                              dti->fColorMode);
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1091,35 +747,6 @@ bool SkImage::MakeBackendTextureFromSkImage(GrContext* ctx,
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-sk_sp<SkImage> SkImage::MakeTextureFromMipMap(GrContext* ctx, const SkImageInfo& info,
-                                              const GrMipLevel texels[], int mipLevelCount,
-                                              SkBudgeted budgeted,
-                                              SkDestinationSurfaceColorMode colorMode) {
-    SkASSERT(mipLevelCount >= 1);
-    if (!ctx) {
-        return nullptr;
-    }
-    GrProxyProvider* proxyProvider = ctx->contextPriv().proxyProvider();
-
-    // For images where the client is passing the mip data we require that all the mip levels have
-    // valid data.
-    for (int i = 0; i < mipLevelCount; ++i) {
-        if (!texels[i].fPixels) {
-            return nullptr;
-        }
-    }
-    sk_sp<GrTextureProxy> proxy(GrUploadMipMapToTextureProxy(proxyProvider, info,
-                                                             texels, mipLevelCount, colorMode));
-    if (!proxy) {
-        return nullptr;
-    }
-
-    SkASSERT(proxy->priv().isExact());
-    return sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID,
-                                   info.alphaType(), std::move(proxy),
-                                   info.refColorSpace(), budgeted);
-}
 
 sk_sp<SkImage> SkImage_Gpu::onMakeColorSpace(sk_sp<SkColorSpace> target, SkColorType,
                                              SkTransferFunctionBehavior premulBehavior) const {

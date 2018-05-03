@@ -94,11 +94,12 @@ def callback_interface_context(callback_interface, _):
 
     return {
         'cpp_class': callback_interface.name,
-        'v8_class': v8_utilities.v8_class_name(callback_interface),
+        'forward_declarations': sorted(forward_declarations(callback_interface)),
         'header_includes': set(CALLBACK_INTERFACE_H_INCLUDES),
         'is_single_operation_callback_interface': is_single_operation,
         'methods': [method_context(operation)
                     for operation in callback_interface.operations],
+        'v8_class': v8_utilities.v8_class_name(callback_interface),
     }
 
 
@@ -116,6 +117,23 @@ def legacy_callback_interface_context(callback_interface, _):
     }
 
 
+def forward_declarations(callback_interface):
+    def find_forward_declaration(idl_type):
+        if idl_type.is_interface_type or idl_type.is_dictionary:
+            return idl_type.implemented_as
+        elif idl_type.is_array_or_sequence_type:
+            return find_forward_declaration(idl_type.element_type)
+        return None
+
+    declarations = set()
+    for operation in callback_interface.operations:
+        for argument in operation.arguments:
+            name = find_forward_declaration(argument.idl_type)
+            if name:
+                declarations.add(name)
+    return declarations
+
+
 def add_includes_for_operation(operation):
     operation.idl_type.add_includes_for_type()
     for argument in operation.arguments:
@@ -128,16 +146,13 @@ def method_context(operation):
     idl_type_str = str(idl_type)
     if idl_type_str not in ['boolean', 'void']:
         raise Exception('We only support callbacks that return boolean or void values.')
-    is_custom = 'Custom' in extended_attributes
-    if not is_custom:
-        add_includes_for_operation(operation)
+    add_includes_for_operation(operation)
     call_with = extended_attributes.get('CallWith')
     call_with_this_handle = v8_utilities.extended_attribute_value_contains(call_with, 'ThisValue')
     context = {
         'call_with_this_handle': call_with_this_handle,
         'cpp_type': idl_type.callback_cpp_type,
         'idl_type': idl_type_str,
-        'is_custom': is_custom,
         'name': operation.name,
     }
     context.update(arguments_context(operation.arguments,
@@ -148,13 +163,14 @@ def method_context(operation):
 def arguments_context(arguments, call_with_this_handle):
     def argument_context(argument):
         return {
-            'handle': '%sHandle' % argument.name,
             'cpp_value_to_v8_value': argument.idl_type.cpp_value_to_v8_value(
                 argument.name, isolate='GetIsolate()',
                 creation_context='argument_creation_context'),
+            'handle': '%sHandle' % argument.name,
+            'name': argument.name,
         }
 
-    argument_declarations = ['ScriptValue thisValue'] if call_with_this_handle else []
+    argument_declarations = ['ScriptWrappable* callback_this_value']
     argument_declarations.extend(
         '%s %s' % (argument.idl_type.callback_cpp_type, argument.name)
         for argument in arguments)

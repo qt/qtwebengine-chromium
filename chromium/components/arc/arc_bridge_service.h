@@ -65,7 +65,11 @@ class PrintHost;
 class PrintInstance;
 class ProcessInstance;
 class RotationLockInstance;
+class ScreenCaptureHost;
+class ScreenCaptureInstance;
 class StorageManagerInstance;
+class TimerInstance;
+class TimerHost;
 class TracingInstance;
 class TtsHost;
 class TtsInstance;
@@ -77,6 +81,7 @@ class VoiceInteractionArcHomeHost;
 class VoiceInteractionArcHomeInstance;
 class VoiceInteractionFrameworkHost;
 class VoiceInteractionFrameworkInstance;
+class VolumeMounterHost;
 class VolumeMounterInstance;
 class WallpaperHost;
 class WallpaperInstance;
@@ -181,8 +186,15 @@ class ArcBridgeService {
   ConnectionHolder<mojom::RotationLockInstance>* rotation_lock() {
     return &rotation_lock_;
   }
+  ConnectionHolder<mojom::ScreenCaptureInstance, mojom::ScreenCaptureHost>*
+  screen_capture() {
+    return &screen_capture_;
+  }
   ConnectionHolder<mojom::StorageManagerInstance>* storage_manager() {
     return &storage_manager_;
+  }
+  ConnectionHolder<mojom::TimerInstance, mojom::TimerHost>* timer() {
+    return &timer_;
   }
   ConnectionHolder<mojom::TracingInstance>* tracing() { return &tracing_; }
   ConnectionHolder<mojom::TtsInstance, mojom::TtsHost>* tts() { return &tts_; }
@@ -202,7 +214,8 @@ class ArcBridgeService {
   voice_interaction_framework() {
     return &voice_interaction_framework_;
   }
-  ConnectionHolder<mojom::VolumeMounterInstance>* volume_mounter() {
+  ConnectionHolder<mojom::VolumeMounterInstance, mojom::VolumeMounterHost>*
+  volume_mounter() {
     return &volume_mounter_;
   }
   ConnectionHolder<mojom::WallpaperInstance, mojom::WallpaperHost>*
@@ -249,7 +262,10 @@ class ArcBridgeService {
   ConnectionHolder<mojom::PrintInstance, mojom::PrintHost> print_;
   ConnectionHolder<mojom::ProcessInstance> process_;
   ConnectionHolder<mojom::RotationLockInstance> rotation_lock_;
+  ConnectionHolder<mojom::ScreenCaptureInstance, mojom::ScreenCaptureHost>
+      screen_capture_;
   ConnectionHolder<mojom::StorageManagerInstance> storage_manager_;
+  ConnectionHolder<mojom::TimerInstance, mojom::TimerHost> timer_;
   ConnectionHolder<mojom::TracingInstance> tracing_;
   ConnectionHolder<mojom::TtsInstance, mojom::TtsHost> tts_;
   ConnectionHolder<mojom::UsbHostInstance, mojom::UsbHostHost> usb_host_;
@@ -260,7 +276,8 @@ class ArcBridgeService {
   ConnectionHolder<mojom::VoiceInteractionFrameworkInstance,
                    mojom::VoiceInteractionFrameworkHost>
       voice_interaction_framework_;
-  ConnectionHolder<mojom::VolumeMounterInstance> volume_mounter_;
+  ConnectionHolder<mojom::VolumeMounterInstance, mojom::VolumeMounterHost>
+      volume_mounter_;
   ConnectionHolder<mojom::WallpaperInstance, mojom::WallpaperHost> wallpaper_;
 
   DISALLOW_COPY_AND_ASSIGN(ArcBridgeService);

@@ -178,6 +178,10 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   // TrafficReportHints::InvalidInstance() can be used to omit reporting.
   bool Release(ClientId, ReleaseOption, const TrafficReportHints&);
 
+  // Checks if the specified client was already scheduled to call Run(), but
+  // haven't call Release() yet.
+  bool IsRunning(ClientId id) { return running_requests_.Contains(id); }
+
   // Sets outstanding limit for testing.
   void SetOutstandingLimitForTesting(size_t limit) {
     SetOutstandingLimitForTesting(limit, limit);
@@ -243,7 +247,7 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   void MaybeRun();
 
   // Grants a client to run,
-  void Run(ClientId, ResourceLoadSchedulerClient*);
+  void Run(ClientId, ResourceLoadSchedulerClient*, bool throttlable);
 
   size_t GetOutstandingLimit() const;
 
@@ -276,6 +280,8 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   // Holds clients that were granted and are running.
   HashSet<ClientId> running_requests_;
 
+  HashSet<ClientId> running_throttlable_requests_;
+
   // Largest number of running requests seen so far.
   unsigned maximum_running_requests_seen_ = 0;
 
@@ -301,6 +307,10 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
 
   // Holds FetchContext reference to contact WebFrameScheduler.
   Member<FetchContext> context_;
+
+  // Handle to throttling observer.
+  std::unique_ptr<WebFrameScheduler::ThrottlingObserverHandle>
+      scheduler_observer_handle_;
 };
 
 }  // namespace blink

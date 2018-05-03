@@ -8,7 +8,7 @@
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/layout/HitTestResult.h"
 #include "platform/exported/WebActiveGestureAnimation.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 
@@ -74,6 +74,10 @@ void WebViewFrameWidget::UpdateLifecycle(LifecycleUpdate requested_update) {
   return web_view_->UpdateLifecycle(requested_update);
 }
 
+void WebViewFrameWidget::UpdateAllLifecyclePhasesAndCompositeForTesting() {
+  web_view_->UpdateAllLifecyclePhasesAndCompositeForTesting();
+}
+
 void WebViewFrameWidget::Paint(WebCanvas* canvas, const WebRect& view_port) {
   return web_view_->Paint(canvas, view_port);
 }
@@ -95,6 +99,10 @@ void WebViewFrameWidget::ThemeChanged() {
 WebInputEventResult WebViewFrameWidget::HandleInputEvent(
     const WebCoalescedInputEvent& event) {
   return web_view_->HandleInputEvent(event);
+}
+
+WebInputEventResult WebViewFrameWidget::DispatchBufferedTouchEvents() {
+  return web_view_->DispatchBufferedTouchEvents();
 }
 
 void WebViewFrameWidget::SetCursorVisibilityState(bool is_visible) {
@@ -146,11 +154,6 @@ WebColor WebViewFrameWidget::BackgroundColor() const {
 
 WebPagePopup* WebViewFrameWidget::GetPagePopup() const {
   return web_view_->GetPagePopup();
-}
-
-bool WebViewFrameWidget::GetCompositionCharacterBounds(
-    WebVector<WebRect>& bounds) {
-  return web_view_->GetCompositionCharacterBounds(bounds);
 }
 
 void WebViewFrameWidget::UpdateBrowserControlsState(

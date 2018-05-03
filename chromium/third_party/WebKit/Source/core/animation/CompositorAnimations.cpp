@@ -49,11 +49,11 @@
 #include "core/paint/compositing/CompositedLayerMapping.h"
 #include "platform/animation/AnimationTranslationUtil.h"
 #include "platform/animation/CompositorAnimation.h"
-#include "platform/animation/CompositorAnimationPlayer.h"
 #include "platform/animation/CompositorFilterAnimationCurve.h"
 #include "platform/animation/CompositorFilterKeyframe.h"
 #include "platform/animation/CompositorFloatAnimationCurve.h"
 #include "platform/animation/CompositorFloatKeyframe.h"
+#include "platform/animation/CompositorKeyframeModel.h"
 #include "platform/animation/CompositorTransformAnimationCurve.h"
 #include "platform/animation/CompositorTransformKeyframe.h"
 #include "platform/geometry/FloatBox.h"
@@ -65,7 +65,8 @@ namespace blink {
 namespace {
 
 bool ConsiderAnimationAsIncompatible(const Animation& animation,
-                                     const Animation& animation_to_add) {
+                                     const Animation& animation_to_add,
+                                     const EffectModel& effect_to_add) {
   if (&animation == &animation_to_add)
     return false;
 
@@ -77,7 +78,10 @@ bool ConsiderAnimationAsIncompatible(const Animation& animation,
       return true;
     case Animation::kPaused:
     case Animation::kFinished:
-      return Animation::HasLowerPriority(&animation_to_add, &animation);
+      if (Animation::HasLowerPriority(&animation, &animation_to_add)) {
+        return effect_to_add.AffectedByUnderlyingAnimations();
+      }
+      return true;
     default:
       NOTREACHED();
       return true;
@@ -103,6 +107,12 @@ bool IsTransformRelatedAnimation(const Element& target_element,
 bool HasIncompatibleAnimations(const Element& target_element,
                                const Animation& animation_to_add,
                                const EffectModel& effect_to_add) {
+  if (!target_element.HasAnimations())
+    return false;
+
+  ElementAnimations* element_animations = target_element.GetElementAnimations();
+  DCHECK(element_animations);
+
   const bool affects_opacity =
       effect_to_add.Affects(PropertyHandle(GetCSSPropertyOpacity()));
   const bool affects_transform = effect_to_add.IsTransformRelatedEffect();
@@ -111,16 +121,12 @@ bool HasIncompatibleAnimations(const Element& target_element,
   const bool affects_backdrop_filter =
       effect_to_add.Affects(PropertyHandle(GetCSSPropertyBackdropFilter()));
 
-  if (!target_element.HasAnimations())
-    return false;
-
-  ElementAnimations* element_animations = target_element.GetElementAnimations();
-  DCHECK(element_animations);
-
   for (const auto& entry : element_animations->Animations()) {
     const Animation* attached_animation = entry.key;
-    if (!ConsiderAnimationAsIncompatible(*attached_animation, animation_to_add))
+    if (!ConsiderAnimationAsIncompatible(*attached_animation, animation_to_add,
+                                         effect_to_add)) {
       continue;
+    }
 
     if ((affects_opacity && attached_animation->Affects(
                                 target_element, GetCSSPropertyOpacity())) ||
@@ -130,8 +136,9 @@ bool HasIncompatibleAnimations(const Element& target_element,
          attached_animation->Affects(target_element, GetCSSPropertyFilter())) ||
         (affects_backdrop_filter &&
          attached_animation->Affects(target_element,
-                                     GetCSSPropertyBackdropFilter())))
+                                     GetCSSPropertyBackdropFilter()))) {
       return true;
+    }
   }
 
   return false;
@@ -146,6 +153,23 @@ CompositorAnimations::CheckCanStartEffectOnCompositor(
     const Animation* animation_to_add,
     const EffectModel& effect,
     double animation_playback_rate) {
+  // Check whether this animation is main thread compositable or not.
+  // If this runtime feature is on + we have either opacity or 2d transform
+  // animation, then this animation is main thread compositable.
+  if (RuntimeEnabledFeatures::
+          TurnOff2DAndOpacityCompositorAnimationsEnabled()) {
+    LayoutObject* layout_object = target_element.GetLayoutObject();
+    if (layout_object) {
+      const ComputedStyle* style = layout_object->Style();
+      if (style && (style->HasCurrentOpacityAnimation() ||
+                    (style->HasCurrentTransformAnimation() &&
+                     !style->Has3DTransform()))) {
+        return FailureCode::AcceleratableAnimNotAccelerated(
+            "Acceleratable animation not accelerated due to an experiment");
+      }
+    }
+  }
+
   const KeyframeEffectModelBase& keyframe_effect =
       ToKeyframeEffectModelBase(effect);
 
@@ -283,25 +307,20 @@ CompositorAnimations::CheckCanStartElementOnCompositor(
       }
     }
   } else {
+    LayoutObject* layout_object = target_element.GetLayoutObject();
     bool paints_into_own_backing =
-        target_element.GetLayoutObject() &&
-        target_element.GetLayoutObject()->GetCompositingState() ==
-            kPaintsIntoOwnBacking;
-    // This function is called in CheckCanStartAnimationOnCompositor(), after
-    // CheckCanStartEffectOnCompositor returns code.Ok(), which means that we
-    // know this animation could be accelerated. If |!paints_into_own_backing|,
-    // then we know that the animation is not composited due to certain check,
-    // such as the ComputedStyle::ShouldCompositeForCurrentAnimations(), for
-    // a running experiment.
+        layout_object &&
+        layout_object->GetCompositingState() == kPaintsIntoOwnBacking;
     if (!paints_into_own_backing) {
-      return FailureCode::NotPaintIntoOwnBacking(
-          "Acceleratable animation not accelerated due to an experiment");
+      return FailureCode::NonActionable(
+          "Element does not paint into own backing");
     }
   }
 
   return FailureCode::None();
 }
 
+// TODO(crbug.com/809685): consider refactor this function.
 CompositorAnimations::FailureCode
 CompositorAnimations::CheckCanStartAnimationOnCompositor(
     const Timing& timing,
@@ -338,8 +357,10 @@ void CompositorAnimations::CancelIncompatibleAnimationsOnCompositor(
 
   for (const auto& entry : element_animations->Animations()) {
     Animation* attached_animation = entry.key;
-    if (!ConsiderAnimationAsIncompatible(*attached_animation, animation_to_add))
+    if (!ConsiderAnimationAsIncompatible(*attached_animation, animation_to_add,
+                                         effect_to_add)) {
       continue;
+    }
 
     if ((affects_opacity && attached_animation->Affects(
                                 target_element, GetCSSPropertyOpacity())) ||
@@ -349,8 +370,9 @@ void CompositorAnimations::CancelIncompatibleAnimationsOnCompositor(
          attached_animation->Affects(target_element, GetCSSPropertyFilter())) ||
         (affects_backdrop_filter &&
          attached_animation->Affects(target_element,
-                                     GetCSSPropertyBackdropFilter())))
+                                     GetCSSPropertyBackdropFilter()))) {
       attached_animation->CancelAnimationOnCompositor();
+    }
   }
 }
 
@@ -361,7 +383,7 @@ void CompositorAnimations::StartAnimationOnCompositor(
     double time_offset,
     const Timing& timing,
     const Animation* animation,
-    CompositorAnimationPlayer& compositor_player,
+    CompositorAnimation& compositor_animation,
     const EffectModel& effect,
     Vector<int>& started_animation_ids,
     double animation_playback_rate) {
@@ -373,14 +395,14 @@ void CompositorAnimations::StartAnimationOnCompositor(
   const KeyframeEffectModelBase& keyframe_effect =
       ToKeyframeEffectModelBase(effect);
 
-  Vector<std::unique_ptr<CompositorAnimation>> animations;
+  Vector<std::unique_ptr<CompositorKeyframeModel>> keyframe_models;
   GetAnimationOnCompositor(timing, group, start_time, time_offset,
-                           keyframe_effect, animations,
+                           keyframe_effect, keyframe_models,
                            animation_playback_rate);
-  DCHECK(!animations.IsEmpty());
-  for (auto& compositor_animation : animations) {
-    int id = compositor_animation->Id();
-    compositor_player.AddAnimation(std::move(compositor_animation));
+  DCHECK(!keyframe_models.IsEmpty());
+  for (auto& compositor_keyframe_model : keyframe_models) {
+    int id = compositor_keyframe_model->Id();
+    compositor_animation.AddKeyframeModel(std::move(compositor_keyframe_model));
     started_animation_ids.push_back(id);
   }
   DCHECK(!started_animation_ids.IsEmpty());
@@ -398,9 +420,10 @@ void CompositorAnimations::CancelAnimationOnCompositor(
     // compositing update.
     return;
   }
-  CompositorAnimationPlayer* compositor_player = animation.CompositorPlayer();
-  if (compositor_player)
-    compositor_player->RemoveAnimation(id);
+  CompositorAnimation* compositor_animation =
+      animation.GetCompositorAnimation();
+  if (compositor_animation)
+    compositor_animation->RemoveKeyframeModel(id);
 }
 
 void CompositorAnimations::PauseAnimationForTestingOnCompositor(
@@ -414,15 +437,16 @@ void CompositorAnimations::PauseAnimationForTestingOnCompositor(
   DisableCompositingQueryAsserts disabler;
 
   DCHECK(CheckCanStartElementOnCompositor(element).Ok());
-  CompositorAnimationPlayer* compositor_player = animation.CompositorPlayer();
-  DCHECK(compositor_player);
-  compositor_player->PauseAnimation(id, pause_time);
+  CompositorAnimation* compositor_animation =
+      animation.GetCompositorAnimation();
+  DCHECK(compositor_animation);
+  compositor_animation->PauseKeyframeModel(id, pause_time);
 }
 
 void CompositorAnimations::AttachCompositedLayers(
     Element& element,
-    CompositorAnimationPlayer* compositor_player) {
-  if (!compositor_player)
+    CompositorAnimation* compositor_animation) {
+  if (!compositor_animation)
     return;
 
   if (!element.GetLayoutObject() ||
@@ -446,7 +470,7 @@ void CompositorAnimations::AttachCompositedLayers(
       return;
   }
 
-  compositor_player->AttachElement(CompositorElementIdFromUniqueObjectId(
+  compositor_animation->AttachElement(CompositorElementIdFromUniqueObjectId(
       element.GetLayoutObject()->UniqueId(),
       CompositorElementIdNamespace::kPrimary));
 }
@@ -552,9 +576,9 @@ void CompositorAnimations::GetAnimationOnCompositor(
     double start_time,
     double time_offset,
     const KeyframeEffectModelBase& effect,
-    Vector<std::unique_ptr<CompositorAnimation>>& animations,
+    Vector<std::unique_ptr<CompositorKeyframeModel>>& keyframe_models,
     double animation_playback_rate) {
-  DCHECK(animations.IsEmpty());
+  DCHECK(keyframe_models.IsEmpty());
   CompositorTiming compositor_timing;
   bool timing_valid = ConvertTimingForCompositor(
       timing, time_offset, compositor_timing, animation_playback_rate);
@@ -617,21 +641,21 @@ void CompositorAnimations::GetAnimationOnCompositor(
     }
     DCHECK(curve.get());
 
-    std::unique_ptr<CompositorAnimation> animation =
-        CompositorAnimation::Create(*curve, target_property, group, 0);
+    std::unique_ptr<CompositorKeyframeModel> keyframe_model =
+        CompositorKeyframeModel::Create(*curve, target_property, group, 0);
 
     if (!std::isnan(start_time))
-      animation->SetStartTime(start_time);
+      keyframe_model->SetStartTime(start_time);
 
-    animation->SetIterations(compositor_timing.adjusted_iteration_count);
-    animation->SetIterationStart(compositor_timing.iteration_start);
-    animation->SetTimeOffset(compositor_timing.scaled_time_offset);
-    animation->SetDirection(compositor_timing.direction);
-    animation->SetPlaybackRate(compositor_timing.playback_rate);
-    animation->SetFillMode(compositor_timing.fill_mode);
-    animations.push_back(std::move(animation));
+    keyframe_model->SetIterations(compositor_timing.adjusted_iteration_count);
+    keyframe_model->SetIterationStart(compositor_timing.iteration_start);
+    keyframe_model->SetTimeOffset(compositor_timing.scaled_time_offset);
+    keyframe_model->SetDirection(compositor_timing.direction);
+    keyframe_model->SetPlaybackRate(compositor_timing.playback_rate);
+    keyframe_model->SetFillMode(compositor_timing.fill_mode);
+    keyframe_models.push_back(std::move(keyframe_model));
   }
-  DCHECK(!animations.IsEmpty());
+  DCHECK(!keyframe_models.IsEmpty());
 }
 
 }  // namespace blink

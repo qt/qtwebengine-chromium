@@ -21,6 +21,7 @@ class AudioWorkletProcessorDefinition;
 class CrossThreadAudioWorkletProcessorInfo;
 class ExceptionState;
 class MessagePortChannel;
+class SerializedScriptValue;
 struct GlobalScopeCreationParams;
 
 
@@ -69,9 +70,10 @@ class MODULES_EXPORT AudioWorkletGlobalScope final
   //
   // This function may return nullptr when a new V8 object cannot be constructed
   // for some reason.
-  AudioWorkletProcessor* CreateProcessor(const String& name,
-                                         float sample_rate,
-                                         MessagePortChannel);
+  AudioWorkletProcessor* CreateProcessor(
+      const String& name,
+      MessagePortChannel,
+      scoped_refptr<SerializedScriptValue> node_options);
 
   // Invokes the JS audio processing function from an instance of
   // AudioWorkletProcessor, along with given AudioBuffer from the audio graph.
@@ -79,8 +81,7 @@ class MODULES_EXPORT AudioWorkletGlobalScope final
       AudioWorkletProcessor*,
       Vector<AudioBus*>* input_buses,
       Vector<AudioBus*>* output_buses,
-      HashMap<String, std::unique_ptr<AudioFloatArray>>* param_value_map,
-      double current_time);
+      HashMap<String, std::unique_ptr<AudioFloatArray>>* param_value_map);
 
   AudioWorkletProcessorDefinition* FindDefinition(const String& name);
 
@@ -93,8 +94,12 @@ class MODULES_EXPORT AudioWorkletGlobalScope final
   // is no on-going processor construction, this MUST return nullptr.
   ProcessorCreationParams* GetProcessorCreationParams();
 
+  void SetCurrentFrame(size_t current_frame);
+  void SetSampleRate(float sample_rate);
+
   // IDL
-  double currentTime() const { return current_time_; }
+  unsigned long long currentFrame() const { return current_frame_; }
+  double currentTime() const;
   float sampleRate() const { return sample_rate_; }
 
   void Trace(blink::Visitor*);
@@ -121,7 +126,7 @@ class MODULES_EXPORT AudioWorkletGlobalScope final
   // detail.
   std::unique_ptr<ProcessorCreationParams> processor_creation_params_;
 
-  double current_time_ = 0.0;
+  size_t current_frame_ = 0;
   float sample_rate_ = 0.0;
 };
 

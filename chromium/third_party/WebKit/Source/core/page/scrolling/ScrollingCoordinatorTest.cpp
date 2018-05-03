@@ -747,7 +747,8 @@ TEST_P(ScrollingCoordinatorTest, iframeScrolling) {
       ToLayoutEmbeddedContent(layout_object);
   ASSERT_TRUE(layout_embedded_content);
 
-  LocalFrameView* inner_frame_view = layout_embedded_content->ChildFrameView();
+  LocalFrameView* inner_frame_view =
+      ToLocalFrameView(layout_embedded_content->ChildFrameView());
   ASSERT_TRUE(inner_frame_view);
 
   auto* inner_layout_view = inner_frame_view->GetLayoutView();
@@ -800,7 +801,8 @@ TEST_P(ScrollingCoordinatorTest, rtlIframe) {
       ToLayoutEmbeddedContent(layout_object);
   ASSERT_TRUE(layout_embedded_content);
 
-  LocalFrameView* inner_frame_view = layout_embedded_content->ChildFrameView();
+  LocalFrameView* inner_frame_view =
+      ToLocalFrameView(layout_embedded_content->ChildFrameView());
   ASSERT_TRUE(inner_frame_view);
 
   auto* inner_layout_view = inner_frame_view->GetLayoutView();
@@ -979,7 +981,8 @@ TEST_P(ScrollingCoordinatorTest,
       ToLayoutEmbeddedContent(layout_object);
   ASSERT_TRUE(layout_embedded_content);
 
-  LocalFrameView* inner_frame_view = layout_embedded_content->ChildFrameView();
+  LocalFrameView* inner_frame_view =
+      ToLocalFrameView(layout_embedded_content->ChildFrameView());
   ASSERT_TRUE(inner_frame_view);
 
   auto* inner_layout_view = inner_frame_view->GetLayoutView();
@@ -1114,6 +1117,18 @@ TEST_P(ScrollingCoordinatorTest,
         web_scroll_layer->MainThreadScrollingReasons() &
         MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects);
   }
+}
+
+TEST_P(ScrollingCoordinatorTest, StickyTriggersMainThreadScroll) {
+  GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
+  LoadHTML(
+      "<body style='height: 1200px'>"
+      "<div style='position: sticky; top: 0'>sticky</div>");
+  ForceFullCompositingUpdate();
+  ScrollableArea* viewport = GetFrame()->View()->LayoutViewportScrollableArea();
+  WebLayer* scroll_layer = viewport->LayerForScrolling()->PlatformLayer();
+  ASSERT_EQ(MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects,
+            scroll_layer->MainThreadScrollingReasons());
 }
 
 class NonCompositedMainThreadScrollingReasonTest

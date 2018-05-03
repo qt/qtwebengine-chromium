@@ -14,8 +14,8 @@
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/child/child_process.h"
-#include "content/renderer/media/mock_peer_connection_impl.h"
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
+#include "content/renderer/media/webrtc/mock_peer_connection_impl.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_adapter_map.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_track_adapter_map.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -85,7 +85,7 @@ class WebRtcSetRemoteDescriptionObserverHandlerTest : public ::testing::Test {
         base::BindOnce(
             &WebRtcSetRemoteDescriptionObserverHandlerTest::
                 InvokeOnSetRemoteDescriptionCompleteOnSignalingThread,
-            base::Unretained(this), base::Passed(&error),
+            base::Unretained(this), std::move(error),
             base::Unretained(&run_loop)));
     run_loop.Run();
   }

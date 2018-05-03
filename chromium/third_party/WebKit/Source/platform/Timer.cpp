@@ -40,7 +40,8 @@
 
 namespace blink {
 
-TimerBase::TimerBase(scoped_refptr<WebTaskRunner> web_task_runner)
+TimerBase::TimerBase(
+    scoped_refptr<base::SingleThreadTaskRunner> web_task_runner)
     : web_task_runner_(std::move(web_task_runner)),
 #if DCHECK_IS_ON()
       thread_(CurrentThread()),
@@ -61,7 +62,7 @@ void TimerBase::Start(TimeDelta next_fire_interval,
 
   location_ = caller;
   repeat_interval_ = repeat_interval;
-  SetNextFireTime(TimerCurrentTimeTicksInSeconds(), next_fire_interval);
+  SetNextFireTime(TimerCurrentTimeTicks(), next_fire_interval);
 }
 
 void TimerBase::Stop() {
@@ -76,13 +77,14 @@ void TimerBase::Stop() {
 
 TimeDelta TimerBase::NextFireIntervalDelta() const {
   DCHECK(IsActive());
-  TimeTicks current = TimerCurrentTimeTicksInSeconds();
+  TimeTicks current = TimerCurrentTimeTicks();
   if (next_fire_time_ < current)
     return TimeDelta();
   return next_fire_time_ - current;
 }
 
-void TimerBase::MoveToNewTaskRunner(scoped_refptr<WebTaskRunner> task_runner) {
+void TimerBase::MoveToNewTaskRunner(
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
 #if DCHECK_IS_ON()
   DCHECK_EQ(thread_, CurrentThread());
   DCHECK(task_runner->RunsTasksInCurrentSequence());
@@ -99,19 +101,14 @@ void TimerBase::MoveToNewTaskRunner(scoped_refptr<WebTaskRunner> task_runner) {
   if (!active)
     return;
 
-  TimeTicks now = TimerCurrentTimeTicksInSeconds();
+  TimeTicks now = TimerCurrentTimeTicks();
   TimeTicks next_fire_time = std::max(next_fire_time_, now);
   next_fire_time_ = TimeTicks();
 
   SetNextFireTime(now, next_fire_time - now);
 }
 
-// static
-scoped_refptr<WebTaskRunner> TimerBase::GetTimerTaskRunner() {
-  return Platform::Current()->CurrentThread()->Scheduler()->TimerTaskRunner();
-}
-
-scoped_refptr<WebTaskRunner> TimerBase::TimerTaskRunner() const {
+scoped_refptr<base::SingleThreadTaskRunner> TimerBase::TimerTaskRunner() const {
   return web_task_runner_;
 }
 
@@ -150,7 +147,7 @@ void TimerBase::RunInternal() {
 #endif
 
   if (!repeat_interval_.is_zero()) {
-    TimeTicks now = TimerCurrentTimeTicksInSeconds();
+    TimeTicks now = TimerCurrentTimeTicks();
     // This computation should be drift free, and it will cope if we miss a
     // beat, which can easily happen if the thread is busy.  It will also cope
     // if we get called slightly before m_unalignedNextFireTime, which can
@@ -170,9 +167,11 @@ bool TimerBase::Comparator::operator()(const TimerBase* a,
 }
 
 // static
-TimeTicks TimerBase::TimerCurrentTimeTicksInSeconds() const {
-  return TimeTicks::FromSeconds(
-      TimerTaskRunner()->MonotonicallyIncreasingVirtualTimeSeconds());
+TimeTicks TimerBase::TimerCurrentTimeTicks() const {
+  return WTF::TimeTicks(Platform::Current()
+                            ->CurrentThread()
+                            ->Scheduler()
+                            ->MonotonicallyIncreasingVirtualTime());
 }
 
 }  // namespace blink

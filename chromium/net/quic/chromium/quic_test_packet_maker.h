@@ -44,6 +44,12 @@ class QuicTestPacketMaker {
   void set_hostname(const std::string& host);
   std::unique_ptr<QuicReceivedPacket> MakePingPacket(QuicPacketNumber num,
                                                      bool include_version);
+  std::unique_ptr<QuicReceivedPacket> MakeAckAndPingPacket(
+      QuicPacketNumber num,
+      bool include_version,
+      QuicPacketNumber largest_received,
+      QuicPacketNumber smallest_received,
+      QuicPacketNumber least_unacked);
   std::unique_ptr<QuicReceivedPacket> MakeRstPacket(
       QuicPacketNumber num,
       bool include_version,
@@ -86,7 +92,10 @@ class QuicTestPacketMaker {
       QuicErrorCode quic_error,
       const std::string& quic_error_details);
   std::unique_ptr<QuicReceivedPacket> MakeConnectionClosePacket(
-      QuicPacketNumber num);
+      QuicPacketNumber num,
+      bool include_version,
+      QuicErrorCode quic_error,
+      const std::string& quic_error_details);
   std::unique_ptr<QuicReceivedPacket> MakeGoAwayPacket(
       QuicPacketNumber num,
       QuicErrorCode error_code,
@@ -251,9 +260,31 @@ class QuicTestPacketMaker {
       QuicStreamOffset* offset,
       std::string* stream_data);
 
+  std::unique_ptr<QuicReceivedPacket> MakePriorityPacket(
+      QuicPacketNumber packet_number,
+      bool should_include_version,
+      QuicStreamId id,
+      QuicStreamId parent_stream_id,
+      SpdyPriority priority,
+      QuicStreamOffset* offset);
+
+  std::unique_ptr<QuicReceivedPacket> MakeAckAndPriorityPacket(
+      QuicPacketNumber packet_number,
+      bool should_include_version,
+      QuicPacketNumber largest_received,
+      QuicPacketNumber smallest_received,
+      QuicPacketNumber least_unacked,
+      QuicStreamId stream_id,
+      QuicStreamId parent_stream_id,
+      SpdyPriority spdy_priority,
+      QuicStreamOffset* offset);
+
   SpdyHeaderBlock GetRequestHeaders(const std::string& method,
                                     const std::string& scheme,
                                     const std::string& path);
+
+  SpdyHeaderBlock ConnectRequestHeaders(const std::string& host_port);
+
   SpdyHeaderBlock GetResponseHeaders(const std::string& status);
 
   SpdyHeaderBlock GetResponseHeaders(const std::string& status,

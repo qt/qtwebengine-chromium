@@ -28,7 +28,8 @@ class ToolbarModelImpl : public ToolbarModel {
 
  private:
   // ToolbarModel:
-  base::string16 GetFormattedURL(size_t* prefix_end) const override;
+  base::string16 GetFormattedFullURL() const override;
+  base::string16 GetURLForDisplay() const override;
   GURL GetURL() const override;
   security_state::SecurityLevel GetSecurityLevel(
       bool ignore_editing) const override;

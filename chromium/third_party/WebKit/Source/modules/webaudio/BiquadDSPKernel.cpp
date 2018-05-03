@@ -31,6 +31,21 @@
 
 namespace blink {
 
+static bool hasConstantValues(float* values, int frames_to_process) {
+  // TODO(rtoy): Use SIMD to optimize this.  This would speed up
+  // processing by a factor of 4 because we can process 4 floats at a
+  // time.
+  float value = values[0];
+
+  for (int k = 1; k < frames_to_process; ++k) {
+    if (values[k] != value) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 void BiquadDSPKernel::UpdateCoefficientsIfNecessary(int frames_to_process) {
   if (GetBiquadProcessor()->FilterCoefficientsDirty()) {
     float cutoff_frequency[AudioUtilities::kRenderQuantumFrames];
@@ -50,12 +65,23 @@ void BiquadDSPKernel::UpdateCoefficientsIfNecessary(int frames_to_process) {
           gain, frames_to_process);
       GetBiquadProcessor()->Parameter4().CalculateSampleAccurateValues(
           detune, frames_to_process);
-      UpdateCoefficients(frames_to_process, cutoff_frequency, q, gain, detune);
+
+      // If all the values are actually constant for this render, we
+      // don't need to compute filter coefficients for each frame
+      // since they would be the same as the first.
+      bool isConstant =
+          hasConstantValues(cutoff_frequency, frames_to_process) &&
+          hasConstantValues(q, frames_to_process) &&
+          hasConstantValues(gain, frames_to_process) &&
+          hasConstantValues(detune, frames_to_process);
+
+      UpdateCoefficients(isConstant ? 1 : frames_to_process, cutoff_frequency,
+                         q, gain, detune);
     } else {
-      cutoff_frequency[0] = GetBiquadProcessor()->Parameter1().SmoothedValue();
-      q[0] = GetBiquadProcessor()->Parameter2().SmoothedValue();
-      gain[0] = GetBiquadProcessor()->Parameter3().SmoothedValue();
-      detune[0] = GetBiquadProcessor()->Parameter4().SmoothedValue();
+      cutoff_frequency[0] = GetBiquadProcessor()->Parameter1().Value();
+      q[0] = GetBiquadProcessor()->Parameter2().Value();
+      gain[0] = GetBiquadProcessor()->Parameter3().Value();
+      detune[0] = GetBiquadProcessor()->Parameter4().Value();
       UpdateCoefficients(1, cutoff_frequency, q, gain, detune);
     }
   }
@@ -75,8 +101,10 @@ void BiquadDSPKernel::UpdateCoefficients(int number_of_frames,
     double normalized_frequency = cutoff_frequency[k] / nyquist;
 
     // Offset frequency by detune.
-    if (detune[k])
-      normalized_frequency *= pow(2, detune[k] / 1200);
+    if (detune[k]) {
+      // Detune multiplies the frequency by 2^(detune[k] / 1200).
+      normalized_frequency *= exp2(detune[k] / 1200);
+    }
 
     // Configure the biquad with the new filter parameters for the appropriate
     // type of filter.

@@ -141,35 +141,39 @@ StyleEngine::StyleSheetsForStyleSheetList(TreeScope& tree_scope) {
   return collection.StyleSheetsForStyleSheetList();
 }
 
-WebStyleSheetId StyleEngine::InjectSheet(StyleSheetContents* sheet,
-                                         WebDocument::CSSOrigin origin) {
-  if (origin == WebDocument::kUserOrigin) {
-    injected_user_style_sheets_.push_back(
-        std::make_pair(++injected_sheets_id_count_,
-                       CSSStyleSheet::Create(sheet, *document_)));
+void StyleEngine::InjectSheet(const StyleSheetKey& key,
+                              StyleSheetContents* sheet,
+                              WebDocument::CSSOrigin origin) {
+  HeapVector<std::pair<StyleSheetKey, TraceWrapperMember<CSSStyleSheet>>>&
+      injected_style_sheets = origin == WebDocument::kUserOrigin
+                                  ? injected_user_style_sheets_
+                                  : injected_author_style_sheets_;
+  injected_style_sheets.push_back(
+      std::make_pair(key, CSSStyleSheet::Create(sheet, *document_)));
+  if (origin == WebDocument::kUserOrigin)
     MarkUserStyleDirty();
-  } else {
-    injected_author_style_sheets_.push_back(
-        std::make_pair(++injected_sheets_id_count_,
-                       CSSStyleSheet::Create(sheet, *document_)));
+  else
     MarkDocumentDirty();
-  }
-
-  return injected_sheets_id_count_;
 }
 
-void StyleEngine::RemoveInjectedSheet(WebStyleSheetId sheet_id) {
-  for (size_t i = 0; i < injected_user_style_sheets_.size(); ++i) {
-    if (injected_user_style_sheets_[i].first == sheet_id) {
-      injected_user_style_sheets_.EraseAt(i);
+void StyleEngine::RemoveInjectedSheet(const StyleSheetKey& key,
+                                      WebDocument::CSSOrigin origin) {
+  HeapVector<std::pair<StyleSheetKey, TraceWrapperMember<CSSStyleSheet>>>&
+      injected_style_sheets = origin == WebDocument::kUserOrigin
+                                  ? injected_user_style_sheets_
+                                  : injected_author_style_sheets_;
+  // Remove the last sheet that matches.
+  const auto& it = std::find_if(injected_style_sheets.rbegin(),
+                                injected_style_sheets.rend(),
+                                [&key](const auto& item) {
+                                  return item.first == key;
+                                });
+  if (it != injected_style_sheets.rend()) {
+    injected_style_sheets.erase(std::next(it).base());
+    if (origin == WebDocument::kUserOrigin)
       MarkUserStyleDirty();
-    }
-  }
-  for (size_t i = 0; i < injected_author_style_sheets_.size(); ++i) {
-    if (injected_author_style_sheets_[i].first == sheet_id) {
-      injected_author_style_sheets_.EraseAt(i);
+    else
       MarkDocumentDirty();
-    }
   }
 }
 
@@ -273,6 +277,42 @@ void StyleEngine::ModifiedStyleSheetCandidateNode(Node& node) {
     SetNeedsActiveStyleUpdate(node.GetTreeScope());
 }
 
+void StyleEngine::MoreStyleSheetsWillChange(TreeScope& tree_scope,
+                                            StyleSheetList* old_sheets,
+                                            StyleSheetList* new_sheets) {
+  if (GetDocument().IsDetached())
+    return;
+
+  unsigned old_sheets_count = old_sheets ? old_sheets->length() : 0;
+  unsigned new_sheets_count = new_sheets ? new_sheets->length() : 0;
+
+  unsigned min_count = std::min(old_sheets_count, new_sheets_count);
+  unsigned index = 0;
+  while (index < min_count &&
+         old_sheets->item(index) == new_sheets->item(index)) {
+    index++;
+  }
+
+  if (old_sheets_count == new_sheets_count && index == old_sheets_count)
+    return;
+
+  for (unsigned i = index; i < old_sheets_count; ++i) {
+    ToCSSStyleSheet(old_sheets->item(i))
+        ->RemovedConstructedFromTreeScope(&tree_scope);
+  }
+  for (unsigned i = index; i < new_sheets_count; ++i) {
+    ToCSSStyleSheet(new_sheets->item(i))
+        ->AddedConstructedToTreeScope(&tree_scope);
+  }
+
+  if (new_sheets_count) {
+    EnsureStyleSheetCollectionFor(tree_scope);
+    if (tree_scope != document_)
+      active_tree_scopes_.insert(&tree_scope);
+  }
+  SetNeedsActiveStyleUpdate(tree_scope);
+}
+
 void StyleEngine::MediaQueriesChangedInScope(TreeScope& tree_scope) {
   if (ScopedStyleResolver* resolver = tree_scope.GetScopedStyleResolver())
     resolver->SetNeedsAppendAllSheets();
@@ -348,7 +388,8 @@ void StyleEngine::UpdateActiveStyleSheetsInShadow(
       ToShadowTreeStyleSheetCollection(StyleSheetCollectionFor(*tree_scope));
   DCHECK(collection);
   collection->UpdateActiveStyleSheets(*this);
-  if (!collection->HasStyleSheetCandidateNodes()) {
+  if (!collection->HasStyleSheetCandidateNodes() &&
+      !tree_scope->HasMoreStyleSheets()) {
     tree_scopes_removed.insert(tree_scope);
     // When removing TreeScope from ActiveTreeScopes,
     // its resolver should be destroyed by invoking resetAuthorStyle.
@@ -696,7 +737,7 @@ void StyleEngine::FontsNeedUpdate(FontSelector*) {
   GetDocument().SetNeedsStyleRecalc(
       kSubtreeStyleChange,
       StyleChangeReasonForTracing::Create(StyleChangeReason::kFonts));
-  probe::fontsUpdated(document_);
+  probe::fontsUpdated(document_, nullptr, String(), nullptr);
 }
 
 void StyleEngine::SetFontSelector(CSSFontSelector* font_selector) {
@@ -985,7 +1026,7 @@ void StyleEngine::ScheduleTypeRuleSetInvalidations(
 }
 
 void StyleEngine::InvalidateSlottedElements(HTMLSlotElement& slot) {
-  for (auto& node : slot.GetDistributedNodes()) {
+  for (auto& node : slot.FlattenedAssignedNodes()) {
     if (node->IsElementNode()) {
       node->SetNeedsStyleRecalc(kLocalStyleChange,
                                 StyleChangeReasonForTracing::Create(
@@ -1032,12 +1073,9 @@ void StyleEngine::ScheduleInvalidationsForRuleSets(
       InvalidateSlottedElements(ToHTMLSlotElement(*element));
 
     if (invalidation_scope == kInvalidateAllScopes) {
-      ElementShadow* shadow = element->Shadow();
-      ShadowRoot* shadow_root = shadow ? &shadow->OldestShadowRoot() : nullptr;
-      while (shadow_root) {
+      if (ShadowRoot* shadow_root = element->GetShadowRoot()) {
         ScheduleInvalidationsForRuleSets(*shadow_root, rule_sets,
                                          kInvalidateAllScopes);
-        shadow_root = shadow_root->YoungerShadowRoot();
       }
     }
 

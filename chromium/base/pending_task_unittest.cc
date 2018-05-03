@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -68,7 +69,7 @@ TEST_F(PendingTaskTest, SingleThreadedSimple) {
       location5,
       ExpectedTrace({location3.program_counter(), location2.program_counter(),
                      location1.program_counter(), location0.program_counter()}),
-      Bind(&DoNothing));
+      DoNothing());
   Closure task4 = Bind(
       &PendingTaskTest::VerifyTraceAndPost, loop.task_runner(), location3,
       location4,
@@ -118,7 +119,7 @@ TEST_F(PendingTaskTest, MultipleThreads) {
            ExpectedTrace(
                {location_c0.program_counter(), location_b0.program_counter(),
                 location_a1.program_counter(), location_a0.program_counter()}),
-           Bind(&DoNothing));
+           DoNothing());
   Closure task_c0 = Bind(&PendingTaskTest::VerifyTraceAndPost,
                          loop.task_runner(), location_c0, location_a2,
                          ExpectedTrace({location_b0.program_counter(),
@@ -142,7 +143,7 @@ TEST_F(PendingTaskTest, MultipleThreads) {
            thread_b.message_loop()->task_runner(), location_b0, location_b1,
            ExpectedTrace({location_a1.program_counter(),
                           location_a0.program_counter(), nullptr}),
-           Bind(&DoNothing));
+           DoNothing());
 
   // Push one frame onto the stack in thread a then pass to thread b.
   Closure task_a1 =

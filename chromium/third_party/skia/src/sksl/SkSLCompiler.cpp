@@ -34,24 +34,24 @@
 #define STRINGIFY(x) #x
 
 static const char* SKSL_INCLUDE =
-#include "sksl.include"
+#include "sksl.inc"
 ;
 
 static const char* SKSL_VERT_INCLUDE =
-#include "sksl_vert.include"
+#include "sksl_vert.inc"
 ;
 
 static const char* SKSL_FRAG_INCLUDE =
-#include "sksl_frag.include"
+#include "sksl_frag.inc"
 ;
 
 static const char* SKSL_GEOM_INCLUDE =
-#include "sksl_geom.include"
+#include "sksl_geom.inc"
 ;
 
 static const char* SKSL_FP_INCLUDE =
-#include "sksl_enums.include"
-#include "sksl_fp.include"
+#include "sksl_enums.inc"
+#include "sksl_fp.inc"
 ;
 
 namespace SkSL {
@@ -247,6 +247,17 @@ void Compiler::addDefinition(const Expression* lvalue, std::unique_ptr<Expressio
                                 (std::unique_ptr<Expression>*) &fContext.fDefined_Expression,
                                 definitions);
             break;
+        case Expression::kTernary_Kind:
+            // To simplify analysis, we just pretend that we write to both sides of the ternary.
+            // This allows for false positives (meaning we fail to detect that a variable might not
+            // have been assigned), but is preferable to false negatives.
+            this->addDefinition(((TernaryExpression*) lvalue)->fIfTrue.get(),
+                                (std::unique_ptr<Expression>*) &fContext.fDefined_Expression,
+                                definitions);
+            this->addDefinition(((TernaryExpression*) lvalue)->fIfFalse.get(),
+                                (std::unique_ptr<Expression>*) &fContext.fDefined_Expression,
+                                definitions);
+            break;
         default:
             // not an lvalue, can't happen
             ASSERT(false);
@@ -395,6 +406,10 @@ static bool is_dead(const Expression& lvalue) {
         case Expression::kIndex_Kind: {
             const IndexExpression& idx = (IndexExpression&) lvalue;
             return is_dead(*idx.fBase) && !idx.fIndex->hasSideEffects();
+        }
+        case Expression::kTernary_Kind: {
+            const TernaryExpression& t = (TernaryExpression&) lvalue;
+            return !t.fTest->hasSideEffects() && is_dead(*t.fIfTrue) && is_dead(*t.fIfFalse);
         }
         default:
             ABORT("invalid lvalue: %s\n", lvalue.description().c_str());
@@ -698,7 +713,8 @@ void Compiler::simplifyExpression(DefinitionMap& definitions,
                     }
                     else if (is_constant(*bin->fLeft, 0)) {
                         if (bin->fLeft->fType.kind() == Type::kScalar_Kind &&
-                            bin->fRight->fType.kind() == Type::kVector_Kind) {
+                            bin->fRight->fType.kind() == Type::kVector_Kind &&
+                            !bin->fRight->hasSideEffects()) {
                             // 0 * float4(x) -> float4(0)
                             vectorize_left(&b, iter, outUpdated, outNeedsRescan);
                         } else {
@@ -724,7 +740,8 @@ void Compiler::simplifyExpression(DefinitionMap& definitions,
                     }
                     else if (is_constant(*bin->fRight, 0)) {
                         if (bin->fLeft->fType.kind() == Type::kVector_Kind &&
-                            bin->fRight->fType.kind() == Type::kScalar_Kind) {
+                            bin->fRight->fType.kind() == Type::kScalar_Kind &&
+                            !bin->fLeft->hasSideEffects()) {
                             // float4(x) * 0 -> float4(0)
                             vectorize_right(&b, iter, outUpdated, outNeedsRescan);
                         } else {
@@ -790,7 +807,8 @@ void Compiler::simplifyExpression(DefinitionMap& definitions,
                         }
                     } else if (is_constant(*bin->fLeft, 0)) {
                         if (bin->fLeft->fType.kind() == Type::kScalar_Kind &&
-                            bin->fRight->fType.kind() == Type::kVector_Kind) {
+                            bin->fRight->fType.kind() == Type::kVector_Kind &&
+                            !bin->fRight->hasSideEffects()) {
                             // 0 / float4(x) -> float4(0)
                             vectorize_left(&b, iter, outUpdated, outNeedsRescan);
                         } else {

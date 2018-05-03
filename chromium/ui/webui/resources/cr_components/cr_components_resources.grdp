@@ -208,4 +208,15 @@
                type="chrome_html"
                compress="gzip" />
   </if>
+  <if expr="chromeos">
+    <!-- Shared between settings and OOBE, which is not vulcanized. -->
+    <structure name="IDR_WEBUI_CHROMEOS_QUICK_UNLOCK_PIN_KEYBOARD_HTML"
+               file="cr_components/chromeos/quick_unlock/pin_keyboard.html"
+               type="chrome_html"
+               compress="gzip" />
+    <structure name="IDR_WEBUI_CHROMEOS_QUICK_UNLOCK_PIN_KEYBOARD_JS"
+               file="cr_components/chromeos/quick_unlock/pin_keyboard.js"
+               type="chrome_html"
+               compress="gzip" />
+  </if>
 </grit-part>

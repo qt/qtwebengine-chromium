@@ -4,9 +4,9 @@
 
 #include "components/history/core/browser/history_model_worker.h"
 
+#include <memory>
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "components/history/core/browser/history_db_task.h"
 #include "components/history/core/browser/history_service.h"
 
@@ -44,7 +44,8 @@ void PostWorkerTask(
     base::CancelableTaskTracker* cancelable_tracker) {
   if (history_service.get()) {
     history_service->ScheduleDBTask(
-        base::MakeUnique<WorkerTask>(std::move(work)), cancelable_tracker);
+        FROM_HERE, std::make_unique<WorkerTask>(std::move(work)),
+        cancelable_tracker);
   }
 }
 
@@ -78,9 +79,9 @@ HistoryModelWorker::~HistoryModelWorker() {
 }
 
 void HistoryModelWorker::ScheduleWork(base::OnceClosure work) {
-  ui_thread_->PostTask(FROM_HERE, base::Bind(&PostWorkerTask, history_service_,
-                                             base::Passed(std::move(work)),
-                                             cancelable_tracker_.get()));
+  ui_thread_->PostTask(
+      FROM_HERE, base::BindOnce(&PostWorkerTask, history_service_,
+                                std::move(work), cancelable_tracker_.get()));
 }
 
 }  // namespace browser_sync

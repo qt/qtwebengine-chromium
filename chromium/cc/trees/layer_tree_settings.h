@@ -36,6 +36,10 @@ class CC_EXPORT LayerTreeSettings {
   bool single_thread_proxy_scheduler = true;
   bool main_frame_before_activation_enabled = false;
   bool using_synchronous_renderer_compositor = false;
+  bool enable_early_damage_check = false;
+  // When |enable_early_damage_check| is true, the early damage check is
+  // performed if one of the last |damaged_frame_limit| frames had no damage.
+  int damaged_frame_limit = 3;
   bool enable_latency_recovery = true;
   bool can_use_lcd_text = true;
   bool use_distance_field_text = false;
@@ -84,8 +88,7 @@ class CC_EXPORT LayerTreeSettings {
   bool use_occlusion_for_tile_prioritization = false;
   bool use_layer_lists = false;
   int max_staging_buffer_usage_in_bytes = 32 * 1024 * 1024;
-  ManagedMemoryPolicy gpu_memory_policy;
-  ManagedMemoryPolicy software_memory_policy;
+  ManagedMemoryPolicy memory_policy;
   size_t decoded_image_working_set_budget_bytes = 128 * 1024 * 1024;
   int max_preraster_distance_in_screen_pixels = 1000;
   viz::ResourceFormat preferred_tile_format;
@@ -141,6 +144,14 @@ class CC_EXPORT LayerTreeSettings {
 
   // Whether to use edge anti-aliasing for all layer types that supports it.
   bool enable_edge_anti_aliasing = true;
+
+  // Whether to request presentation time regardless if existance of
+  // presentation time callbacks.
+  bool always_request_presentation_time = false;
+
+  // Whether SetViewportSizeAndScale should update the painted scale factor or
+  // the device scale factor.
+  bool use_painted_device_scale_factor = false;
 };
 
 }  // namespace cc

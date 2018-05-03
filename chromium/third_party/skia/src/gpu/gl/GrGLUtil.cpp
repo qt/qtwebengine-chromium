@@ -397,9 +397,37 @@ void GrGLGetANGLEInfoFromString(const char* rendererString, GrGLANGLEBackend* ba
     }
     if (strstr(rendererString, "Intel")) {
         *vendor = GrGLANGLEVendor::kIntel;
-    }
-    if (strstr(rendererString, "HD Graphics 4000") || strstr(rendererString, "HD Graphics 2500")) {
-        *renderer = GrGLANGLERenderer::kIvyBridge;
+
+        const char* modelStr;
+        int modelNumber;
+        if ((modelStr = strstr(rendererString, "HD Graphics")) &&
+            (1 == sscanf(modelStr, "HD Graphics %i", &modelNumber) ||
+             1 == sscanf(modelStr, "HD Graphics P%i", &modelNumber))) {
+            switch (modelNumber) {
+                case 4000:
+                case 2500:
+                    *renderer = GrGLANGLERenderer::kIvyBridge;
+                    break;
+                case 510:
+                case 515:
+                case 520:
+                case 530:
+                    *renderer = GrGLANGLERenderer::kSkylake;
+                    break;
+            }
+        } else if ((modelStr = strstr(rendererString, "Iris")) &&
+                   (1 == sscanf(modelStr, "Iris(TM) Graphics %i", &modelNumber) ||
+                    1 == sscanf(modelStr, "Iris(TM) Pro Graphics %i", &modelNumber) ||
+                    1 == sscanf(modelStr, "Iris(TM) Pro Graphics P%i", &modelNumber))) {
+            switch (modelNumber) {
+                case 540:
+                case 550:
+                case 555:
+                case 580:
+                    *renderer = GrGLANGLERenderer::kSkylake;
+                    break;
+            }
+        }
     }
     if (strstr(rendererString, "Direct3D11")) {
         *backend = GrGLANGLEBackend::kD3D11;
@@ -470,8 +498,6 @@ GrPixelConfig GrGLSizedFormatToPixelConfig(GrGLenum sizedFormat) {
             return kBGRA_8888_GrPixelConfig;
         case GR_GL_SRGB8_ALPHA8:
             return kSRGBA_8888_GrPixelConfig;
-        case GR_GL_RGBA8I:
-            return kRGBA_8888_sint_GrPixelConfig;
         case GR_GL_RGB565:
             return kRGB_565_GrPixelConfig;
         case GR_GL_RGB5:

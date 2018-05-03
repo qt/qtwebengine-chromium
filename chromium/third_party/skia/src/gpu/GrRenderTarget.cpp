@@ -24,10 +24,9 @@ GrRenderTarget::GrRenderTarget(GrGpu* gpu, const GrSurfaceDesc& desc,
         : INHERITED(gpu, desc)
         , fSampleCnt(desc.fSampleCnt)
         , fStencilAttachment(stencil)
-        , fMultisampleSpecsID(0)
         , fFlags(flags) {
     SkASSERT(desc.fFlags & kRenderTarget_GrSurfaceFlag);
-    SkASSERT(!(fFlags & GrRenderTargetFlags::kMixedSampled) || fSampleCnt > 0);
+    SkASSERT(!(fFlags & GrRenderTargetFlags::kMixedSampled) || fSampleCnt > 1);
     SkASSERT(!(fFlags & GrRenderTargetFlags::kWindowRectsSupport) ||
              gpu->caps()->maxWindowRectangles() > 0);
     fResolveRect = SkRectPriv::MakeILargestInverted();
@@ -93,17 +92,3 @@ int GrRenderTargetPriv::numStencilBits() const {
     SkASSERT(this->getStencilAttachment());
     return this->getStencilAttachment()->bits();
 }
-
-const GrGpu::MultisampleSpecs&
-GrRenderTargetPriv::getMultisampleSpecs(const GrPipeline& pipeline) const {
-    SkASSERT(fRenderTarget == pipeline.renderTarget()); // TODO: remove RT from pipeline.
-    GrGpu* gpu = fRenderTarget->getGpu();
-    if (auto id = fRenderTarget->fMultisampleSpecsID) {
-        SkASSERT(gpu->queryMultisampleSpecs(pipeline).fUniqueID == id);
-        return gpu->getMultisampleSpecs(id);
-    }
-    const GrGpu::MultisampleSpecs& specs = gpu->queryMultisampleSpecs(pipeline);
-    fRenderTarget->fMultisampleSpecsID = specs.fUniqueID;
-    return specs;
-}
-

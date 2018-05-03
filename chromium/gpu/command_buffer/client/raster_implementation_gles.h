@@ -6,10 +6,11 @@
 #define GPU_COMMAND_BUFFER_CLIENT_RASTER_IMPLEMENTATION_GLES_H_
 
 #include "base/macros.h"
-#include "gles2_impl_export.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/command_buffer/common/capabilities.h"
+#include "gpu/raster_export.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace gpu {
 
@@ -20,7 +21,7 @@ namespace raster {
 struct Capabilities;
 
 // An implementation of RasterInterface on top of GLES2Interface.
-class GLES2_IMPL_EXPORT RasterImplementationGLES : public RasterInterface {
+class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
  public:
   RasterImplementationGLES(gles2::GLES2Interface* gl,
                            ContextSupport* support,
@@ -125,6 +126,12 @@ class GLES2_IMPL_EXPORT RasterImplementationGLES : public RasterInterface {
                               GLboolean unpack_premultiply_alpha,
                               GLboolean unpack_unmultiply_alpha) override;
   void CompressedCopyTextureCHROMIUM(GLuint source_id, GLuint dest_id) override;
+  void UnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
+                                          GLuint dest_id,
+                                          GLint x,
+                                          GLint y,
+                                          GLsizei width,
+                                          GLsizei height) override;
 
   // Discardable textures.
   void InitializeDiscardableTextureCHROMIUM(GLuint texture_id) override;
@@ -132,18 +139,22 @@ class GLES2_IMPL_EXPORT RasterImplementationGLES : public RasterInterface {
   bool LockDiscardableTextureCHROMIUM(GLuint texture_id) override;
 
   // OOP-Raster
-  void BeginRasterCHROMIUM(GLuint texture_id,
-                           GLuint sk_color,
-                           GLuint msaa_sample_count,
-                           GLboolean can_use_lcd_text,
-                           GLboolean use_distance_field_text,
-                           GLint pixel_config) override;
+  void BeginRasterCHROMIUM(
+      GLuint texture_id,
+      GLuint sk_color,
+      GLuint msaa_sample_count,
+      GLboolean can_use_lcd_text,
+      GLboolean use_distance_field_text,
+      GLint color_type,
+      const cc::RasterColorSpace& raster_color_space) override;
   void RasterCHROMIUM(const cc::DisplayItemList* list,
                       cc::ImageProvider* provider,
-                      const gfx::Vector2d& translate,
+                      const gfx::Size& content_size,
+                      const gfx::Rect& full_raster_rect,
                       const gfx::Rect& playback_rect,
                       const gfx::Vector2dF& post_translate,
-                      GLfloat post_scale) override;
+                      GLfloat post_scale,
+                      bool requires_clear) override;
   void EndRasterCHROMIUM() override;
 
   // Raster via GrContext.
@@ -152,6 +163,7 @@ class GLES2_IMPL_EXPORT RasterImplementationGLES : public RasterInterface {
 
  private:
   gles2::GLES2Interface* gl_;
+  SkColor background_color_;
   ContextSupport* support_;
   bool use_texture_storage_;
   bool use_texture_storage_image_;

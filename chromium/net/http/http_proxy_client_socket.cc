@@ -4,8 +4,11 @@
 
 #include "net/http/http_proxy_client_socket.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/base/auth.h"
@@ -58,7 +61,7 @@ HttpProxyClientSocket::~HttpProxyClientSocket() {
   Disconnect();
 }
 
-int HttpProxyClientSocket::RestartWithAuth(const CompletionCallback& callback) {
+int HttpProxyClientSocket::RestartWithAuth(CompletionOnceCallback callback) {
   DCHECK_EQ(STATE_NONE, next_state_);
   DCHECK(user_callback_.is_null());
 
@@ -69,7 +72,7 @@ int HttpProxyClientSocket::RestartWithAuth(const CompletionCallback& callback) {
   rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING) {
     if (!callback.is_null())
-      user_callback_ =  callback;
+      user_callback_ = std::move(callback);
   }
 
   return rv;
@@ -309,9 +312,7 @@ void HttpProxyClientSocket::DoCallback(int result) {
 
   // Since Run() may result in Read being called,
   // clear user_callback_ up front.
-  CompletionCallback c = user_callback_;
-  user_callback_.Reset();
-  c.Run(result);
+  base::ResetAndReturn(&user_callback_).Run(result);
 }
 
 void HttpProxyClientSocket::OnIOComplete(int result) {

@@ -33,6 +33,8 @@
 
 namespace blink {
 
+using namespace cssvalue;
+
 // TODO(rjwright): make this const
 CSSValue* ComputedStyleUtils::ZoomAdjustedPixelValueForLength(
     const Length& length,
@@ -96,7 +98,7 @@ CSSValue* ComputedStyleUtils::CurrentColorOrValidColor(
     const StyleColor& color) {
   // This function does NOT look at visited information, so that computed style
   // doesn't expose that.
-  return cssvalue::CSSColorValue::Create(color.Resolve(style.GetColor()).Rgb());
+  return CSSColorValue::Create(color.Resolve(style.GetColor()).Rgb());
 }
 
 const blink::Color ComputedStyleUtils::BorderSideColor(
@@ -283,8 +285,8 @@ const CSSValue* ComputedStyleUtils::BackgroundPositionYOrWebkitMaskPositionY(
   return list;
 }
 
-cssvalue::CSSBorderImageSliceValue*
-ComputedStyleUtils::ValueForNinePieceImageSlice(const NinePieceImage& image) {
+CSSBorderImageSliceValue* ComputedStyleUtils::ValueForNinePieceImageSlice(
+    const NinePieceImage& image) {
   // Create the slices.
   CSSPrimitiveValue* top = nullptr;
   CSSPrimitiveValue* right = nullptr;
@@ -440,8 +442,7 @@ CSSValue* ComputedStyleUtils::ValueForNinePieceImage(
     image_value = image.GetImage()->ComputedCSSValue();
 
   // Create the image slice.
-  cssvalue::CSSBorderImageSliceValue* image_slices =
-      ValueForNinePieceImageSlice(image);
+  CSSBorderImageSliceValue* image_slices = ValueForNinePieceImageSlice(image);
 
   // Create the border area slices.
   CSSValue* border_slices =
@@ -496,11 +497,14 @@ CSSValue* ComputedStyleUtils::ValueForReflection(
 CSSValue* ComputedStyleUtils::MinWidthOrMinHeightAuto(
     Node* styled_node,
     const ComputedStyle& style) {
-  Node* parent = styled_node->parentNode();
-  const ComputedStyle* ensured_style =
-      parent ? parent->EnsureComputedStyle() : nullptr;
-  if (ensured_style && ensured_style->IsDisplayFlexibleOrGridBox())
-    return CSSIdentifierValue::Create(CSSValueAuto);
+  if (styled_node) {
+    Node* parent = styled_node->parentNode();
+    const ComputedStyle* ensured_style =
+        parent ? parent->EnsureComputedStyle() : nullptr;
+    if (ensured_style && ensured_style->IsDisplayFlexibleOrGridBox())
+      return CSSIdentifierValue::Create(CSSValueAuto);
+  }
+
   return ZoomAdjustedPixelValue(0, style);
 }
 
@@ -640,11 +644,14 @@ CSSValueList* ComputedStyleUtils::ValueForItemPositionWithOverflowAlignment(
                               CSSIdentifierValue::Create(CSSValueBaseline),
                               CSSValuePair::kDropIdenticalValues));
   } else {
-    result->Append(*CSSIdentifierValue::Create(data.GetPosition()));
+    if (data.GetPosition() >= ItemPosition::kCenter &&
+        data.Overflow() != OverflowAlignment::kDefault)
+      result->Append(*CSSIdentifierValue::Create(data.Overflow()));
+    if (data.GetPosition() == ItemPosition::kLegacy)
+      result->Append(*CSSIdentifierValue::Create(CSSValueNormal));
+    else
+      result->Append(*CSSIdentifierValue::Create(data.GetPosition()));
   }
-  if (data.GetPosition() >= ItemPosition::kCenter &&
-      data.Overflow() != OverflowAlignment::kDefault)
-    result->Append(*CSSIdentifierValue::Create(data.Overflow()));
   DCHECK_LE(result->length(), 2u);
   return result;
 }
@@ -672,14 +679,14 @@ ComputedStyleUtils::ValueForContentPositionAndDistributionWithOverflowAlignment(
                                 CSSValuePair::kDropIdenticalValues));
       break;
     default:
+      // Handle overflow-alignment (only allowed for content-position values)
+      if ((data.GetPosition() >= ContentPosition::kCenter ||
+           data.Distribution() != ContentDistributionType::kDefault) &&
+          data.Overflow() != OverflowAlignment::kDefault)
+        result->Append(*CSSIdentifierValue::Create(data.Overflow()));
       result->Append(*CSSIdentifierValue::Create(data.GetPosition()));
   }
 
-  // Handle overflow-alignment (only allowed for content-position values)
-  if ((data.GetPosition() >= ContentPosition::kCenter ||
-       data.Distribution() != ContentDistributionType::kDefault) &&
-      data.Overflow() != OverflowAlignment::kDefault)
-    result->Append(*CSSIdentifierValue::Create(data.Overflow()));
   DCHECK_GT(result->length(), 0u);
   DCHECK_LE(result->length(), 3u);
   return result;
@@ -2274,6 +2281,47 @@ CSSValue* ComputedStyleUtils::ValuesForFontVariantProperty(
       NOTREACHED();
       return nullptr;
   }
+}
+
+// Returns up to two values for 'scroll-customization' property. The values
+// correspond to the customization values for 'x' and 'y' axes.
+CSSValue* ComputedStyleUtils::ScrollCustomizationFlagsToCSSValue(
+    ScrollCustomization::ScrollDirection scroll_customization) {
+  CSSValueList* list = CSSValueList::CreateSpaceSeparated();
+  if (scroll_customization == ScrollCustomization::kScrollDirectionAuto) {
+    list->Append(*CSSIdentifierValue::Create(CSSValueAuto));
+  } else if (scroll_customization ==
+             ScrollCustomization::kScrollDirectionNone) {
+    list->Append(*CSSIdentifierValue::Create(CSSValueNone));
+  } else {
+    if ((scroll_customization & ScrollCustomization::kScrollDirectionPanX) ==
+        ScrollCustomization::kScrollDirectionPanX)
+      list->Append(*CSSIdentifierValue::Create(CSSValuePanX));
+    else if (scroll_customization &
+             ScrollCustomization::kScrollDirectionPanLeft)
+      list->Append(*CSSIdentifierValue::Create(CSSValuePanLeft));
+    else if (scroll_customization &
+             ScrollCustomization::kScrollDirectionPanRight)
+      list->Append(*CSSIdentifierValue::Create(CSSValuePanRight));
+    if ((scroll_customization & ScrollCustomization::kScrollDirectionPanY) ==
+        ScrollCustomization::kScrollDirectionPanY)
+      list->Append(*CSSIdentifierValue::Create(CSSValuePanY));
+    else if (scroll_customization & ScrollCustomization::kScrollDirectionPanUp)
+      list->Append(*CSSIdentifierValue::Create(CSSValuePanUp));
+    else if (scroll_customization &
+             ScrollCustomization::kScrollDirectionPanDown)
+      list->Append(*CSSIdentifierValue::Create(CSSValuePanDown));
+  }
+
+  DCHECK(list->length());
+  return list;
+}
+
+CSSValue* ComputedStyleUtils::ValueForGapLength(const GapLength& gap_length,
+                                                const ComputedStyle& style) {
+  if (gap_length.IsNormal())
+    return CSSIdentifierValue::Create(CSSValueNormal);
+  return ZoomAdjustedPixelValueForLength(gap_length.GetLength(), style);
 }
 
 }  // namespace blink

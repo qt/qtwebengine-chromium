@@ -87,8 +87,8 @@ class PdfToPwgRasterBrowserTest : public InProcessBrowserTest {
     bool success = false;
     base::RunLoop run_loop;
     converter_->Start(pdf_data, conversion_settings, bitmap_settings,
-                      base::Bind(&ResultCallbackImpl, &called, &success,
-                                 temp_file, run_loop.QuitClosure()));
+                      base::BindOnce(&ResultCallbackImpl, &called, &success,
+                                     temp_file, run_loop.QuitClosure()));
     run_loop.Run();
     ASSERT_TRUE(called);
     EXPECT_EQ(success, expect_success);
@@ -116,7 +116,8 @@ IN_PROC_BROWSER_TEST_F(PdfToPwgRasterBrowserTest, TestSuccessColor) {
   GetPdfData("pdf_to_pwg_raster_test.pdf", &test_data_dir, &pdf_data);
 
   PdfRenderSettings pdf_settings(gfx::Rect(0, 0, 500, 500), gfx::Point(0, 0),
-                                 /*dpi=*/1000, /*autorotate=*/false,
+                                 /*dpi=*/gfx::Size(1000, 1000),
+                                 /*autorotate=*/false,
                                  PdfRenderSettings::Mode::NORMAL);
   PwgRasterSettings pwg_settings;
   pwg_settings.odd_page_transform = PwgRasterTransformType::TRANSFORM_NORMAL;
@@ -142,7 +143,8 @@ IN_PROC_BROWSER_TEST_F(PdfToPwgRasterBrowserTest, TestSuccessMono) {
   GetPdfData("pdf_to_pwg_raster_test.pdf", &test_data_dir, &pdf_data);
 
   PdfRenderSettings pdf_settings(gfx::Rect(0, 0, 500, 500), gfx::Point(0, 0),
-                                 /*dpi=*/1000, /*autorotate=*/false,
+                                 /*dpi=*/gfx::Size(1000, 1000),
+                                 /*autorotate=*/false,
                                  PdfRenderSettings::Mode::NORMAL);
   PwgRasterSettings pwg_settings;
   pwg_settings.odd_page_transform = PwgRasterTransformType::TRANSFORM_NORMAL;

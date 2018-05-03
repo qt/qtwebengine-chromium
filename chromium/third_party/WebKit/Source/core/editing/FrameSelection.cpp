@@ -138,6 +138,15 @@ Element* FrameSelection::RootEditableElementOrDocumentElement() const {
   return selection_root ? selection_root : GetDocument().documentElement();
 }
 
+size_t FrameSelection::CharacterIndexForPoint(const IntPoint& point) const {
+  const EphemeralRange range = GetFrame()->GetEditor().RangeForPoint(point);
+  if (range.IsNull())
+    return kNotFound;
+  Element* const editable = RootEditableElementOrDocumentElement();
+  DCHECK(editable);
+  return PlainTextRange::Create(*editable, range).Start();
+}
+
 VisibleSelection FrameSelection::ComputeVisibleSelectionInDOMTreeDeprecated()
     const {
   // TODO(editing-dev): Hoist updateStyleAndLayoutIgnorePendingStylesheets
@@ -161,7 +170,6 @@ void FrameSelection::MoveCaretSelection(const IntPoint& point) {
   const VisiblePosition position =
       VisiblePositionForContentsPoint(point, GetFrame());
   SelectionInDOMTree::Builder builder;
-  builder.SetIsDirectional(GetSelectionInDOMTree().IsDirectional());
   if (position.IsNotNull())
     builder.Collapse(position.ToPositionWithAffinity());
   SetSelection(builder.Build(), SetSelectionOptions::Builder()
@@ -188,19 +196,14 @@ void FrameSelection::SetSelectionAndEndTyping(
 }
 
 bool FrameSelection::SetSelectionDeprecated(
-    const SelectionInDOMTree& passed_selection,
+    const SelectionInDOMTree& new_selection,
     const SetSelectionOptions& passed_options) {
-  DCHECK(IsAvailable());
-  passed_selection.AssertValidFor(GetDocument());
-
   SetSelectionOptions::Builder options_builder(passed_options);
-  SelectionInDOMTree::Builder builder(passed_selection);
   if (ShouldAlwaysUseDirectionalSelection(frame_)) {
-    builder.SetIsDirectional(true);
     options_builder.SetIsDirectional(true);
   }
-  SelectionInDOMTree new_selection = builder.Build();
   SetSelectionOptions options = options_builder.Build();
+
   if (granularity_strategy_ && !options.DoNotClearStrategy())
     granularity_strategy_->Clear();
   granularity_ = options.Granularity();
@@ -535,10 +538,8 @@ bool FrameSelection::ComputeAbsoluteBounds(IntRect& anchor,
         ComputeVisibleSelectionInDOMTree().ToNormalizedEphemeralRange();
     if (selected_range.IsNull())
       return false;
-    anchor = frame_->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.StartPosition()));
-    focus = frame_->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.EndPosition()));
+    anchor = FirstRectForRange(EphemeralRange(selected_range.StartPosition()));
+    focus = FirstRectForRange(EphemeralRange(selected_range.EndPosition()));
   }
 
   if (!ComputeVisibleSelectionInDOMTree().IsBaseFirst())
@@ -750,6 +751,34 @@ void FrameSelection::SelectAll() {
   SelectAll(SetSelectionBy::kSystem);
 }
 
+// Implementation of |SVGTextControlElement::selectSubString()|
+void FrameSelection::SelectSubString(const Element& element,
+                                     int offset,
+                                     int length) {
+  // Find selection start
+  VisiblePosition start = VisiblePosition::FirstPositionInNode(element);
+  for (int i = 0; i < offset; ++i)
+    start = NextPositionOf(start);
+  if (start.IsNull())
+    return;
+
+  // Find selection end
+  VisiblePosition end(start);
+  for (int i = 0; i < length; ++i)
+    end = NextPositionOf(end);
+  if (end.IsNull())
+    return;
+
+  // TODO(editing-dev): We assume |start| and |end| are not null and we don't
+  // known when |start| and |end| are null. Once we get a such case, we check
+  // null for |start| and |end|.
+  SetSelectionAndEndTyping(
+      SelectionInDOMTree::Builder()
+          .SetBaseAndExtent(start.DeepEquivalent(), end.DeepEquivalent())
+          .SetAffinity(start.Affinity())
+          .Build());
+}
+
 void FrameSelection::NotifyAccessibilityForSelectionChange() {
   if (GetSelectionInDOMTree().IsNone())
     return;
@@ -945,7 +974,7 @@ String FrameSelection::SelectedTextForClipboard() const {
                  .Build());
 }
 
-LayoutRect FrameSelection::UnclippedBounds() const {
+LayoutRect FrameSelection::AbsoluteUnclippedBounds() const {
   LocalFrameView* view = frame_->View();
   LayoutView* layout_view = frame_->ContentLayoutObject();
 
@@ -953,7 +982,7 @@ LayoutRect FrameSelection::UnclippedBounds() const {
     return LayoutRect();
 
   view->UpdateLifecycleToLayoutClean();
-  return LayoutRect(layout_selection_->SelectionBounds());
+  return LayoutRect(layout_selection_->AbsoluteSelectionBounds());
 }
 
 IntRect FrameSelection::ComputeRectToScroll(
@@ -965,7 +994,7 @@ IntRect FrameSelection::ComputeRectToScroll(
   if (reveal_extent_option == kRevealExtent)
     return AbsoluteCaretBoundsOf(CreateVisiblePosition(selection.Extent()));
   layout_selection_->SetHasPendingSelection();
-  return layout_selection_->SelectionBounds();
+  return layout_selection_->AbsoluteSelectionBounds();
 }
 
 // TODO(editing-dev): This should be done in FlatTree world.
@@ -1137,19 +1166,25 @@ void FrameSelection::MoveRangeSelectionExtent(const IntPoint& contents_point) {
           .Build());
 }
 
-// TODO(yosin): We should make |FrameSelection::moveRangeSelection()| to take
-// two |IntPoint| instead of two |VisiblePosition| like
-// |moveRangeSelectionExtent()|.
-void FrameSelection::MoveRangeSelection(const VisiblePosition& base_position,
-                                        const VisiblePosition& extent_position,
+void FrameSelection::MoveRangeSelection(const IntPoint& base_point,
+                                        const IntPoint& extent_point,
                                         TextGranularity granularity) {
-  SelectionInDOMTree new_selection =
+  const VisiblePosition& base_position =
+      VisiblePositionForContentsPoint(base_point, GetFrame());
+  const VisiblePosition& extent_position =
+      VisiblePositionForContentsPoint(extent_point, GetFrame());
+  MoveRangeSelectionInternal(
       SelectionInDOMTree::Builder()
           .SetBaseAndExtentDeprecated(base_position.DeepEquivalent(),
                                       extent_position.DeepEquivalent())
           .SetAffinity(base_position.Affinity())
-          .Build();
+          .Build(),
+      granularity);
+}
 
+void FrameSelection::MoveRangeSelectionInternal(
+    const SelectionInDOMTree& new_selection,
+    TextGranularity granularity) {
   if (new_selection.IsNone())
     return;
 
@@ -1212,7 +1247,7 @@ void FrameSelection::ClearLayoutSelection() {
 }
 
 std::pair<unsigned, unsigned> FrameSelection::LayoutSelectionStartEndForNG(
-    const NGPhysicalTextFragment& text_fragment) {
+    const NGPhysicalTextFragment& text_fragment) const {
   return layout_selection_->SelectionStartEndForNG(text_fragment);
 }
 

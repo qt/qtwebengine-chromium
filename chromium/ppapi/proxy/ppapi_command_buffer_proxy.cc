@@ -203,7 +203,7 @@ bool PpapiCommandBufferProxy::IsFenceSyncReleased(uint64_t release) {
 }
 
 void PpapiCommandBufferProxy::SignalSyncToken(const gpu::SyncToken& sync_token,
-                                              const base::Closure& callback) {
+                                              base::OnceClosure callback) {
   NOTIMPLEMENTED();
 }
 
@@ -220,7 +220,7 @@ bool PpapiCommandBufferProxy::CanWaitUnverifiedSyncToken(
 void PpapiCommandBufferProxy::SetSnapshotRequested() {}
 
 void PpapiCommandBufferProxy::SignalQuery(uint32_t query,
-                                          const base::Closure& callback) {
+                                          base::OnceClosure callback) {
   NOTREACHED();
 }
 

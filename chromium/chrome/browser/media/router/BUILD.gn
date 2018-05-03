@@ -64,6 +64,7 @@ static_library("router") {
       "discovery",
       "//extensions/browser",
       "//mojo/public/cpp/bindings",
+      "//ui/base:ui_features",
     ]
     sources += [
       "event_page_request_manager.cc",
@@ -80,10 +81,22 @@ static_library("router") {
       "mojo/media_router_mojo_impl.h",
       "mojo/media_router_mojo_metrics.cc",
       "mojo/media_router_mojo_metrics.h",
+      "mojo/media_sink_service_status.cc",
+      "mojo/media_sink_service_status.h",
       "presentation/independent_otr_profile_manager.cc",
       "presentation/independent_otr_profile_manager.h",
       "presentation/presentation_navigation_policy.cc",
       "presentation/presentation_navigation_policy.h",
+      "providers/cast/cast_app_availability_tracker.cc",
+      "providers/cast/cast_app_availability_tracker.h",
+      "providers/cast/cast_app_discovery_service.cc",
+      "providers/cast/cast_app_discovery_service.h",
+      "providers/cast/cast_media_route_provider.cc",
+      "providers/cast/cast_media_route_provider.h",
+      "providers/cast/cast_media_route_provider_metrics.cc",
+      "providers/cast/cast_media_route_provider_metrics.h",
+      "providers/cast/chrome_cast_message_handler.cc",
+      "providers/cast/chrome_cast_message_handler.h",
       "providers/cast/dual_media_sink_service.cc",
       "providers/cast/dual_media_sink_service.h",
       "providers/extension/extension_media_route_provider_proxy.cc",
@@ -130,6 +143,8 @@ static_library("test_support") {
       "test/mock_dns_sd_registry.h",
       "test/mock_mojo_media_router.cc",
       "test/mock_mojo_media_router.h",
+      "test/noop_dual_media_sink_service.cc",
+      "test/noop_dual_media_sink_service.h",
     ]
   }
 }

@@ -41,7 +41,8 @@
 #include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerSkipWaitingCallbacks.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerStreamHandle.h"
-#include "third_party/WebKit/common/service_worker/service_worker_event_status.mojom-blink.h"
+#include "third_party/WebKit/public/common/message_port/transferable_message.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_event_status.mojom-blink.h"
 
 namespace blink {
 
@@ -62,6 +63,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScopeClient
   WTF_MAKE_NONCOPYABLE(ServiceWorkerGlobalScopeClient);
 
  public:
+  static const char kSupplementName[];
+
   explicit ServiceWorkerGlobalScopeClient(WebServiceWorkerContextClient&);
 
   // Called from ServiceWorkerClients.
@@ -140,9 +143,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScopeClient
   void DidHandlePaymentRequestEvent(int payment_request_event_id,
                                     mojom::ServiceWorkerEventStatus,
                                     double event_dispatch_time);
-  void PostMessageToClient(const WebString& client_uuid,
-                           const WebString& message,
-                           Vector<MessagePortChannel>);
+  void PostMessageToClient(const WebString& client_uuid, TransferableMessage);
   void SkipWaiting(std::unique_ptr<WebServiceWorkerSkipWaitingCallbacks>);
   void Claim(std::unique_ptr<WebServiceWorkerClientsClaimCallbacks>);
   void Focus(const WebString& client_uuid,
@@ -151,7 +152,6 @@ class MODULES_EXPORT ServiceWorkerGlobalScopeClient
                 const WebURL&,
                 std::unique_ptr<WebServiceWorkerClientCallbacks>);
 
-  static const char* SupplementName();
   static ServiceWorkerGlobalScopeClient* From(ExecutionContext*);
 
   void Trace(blink::Visitor*) override;

@@ -14,15 +14,22 @@
 #include <memory>
 #include <vector>
 
+#include "modules/audio_processing/agc2/fixed_gain_controller.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "modules/include/module_common_types.h"
 
 namespace webrtc {
+class ApmDataDumper;
+class FixedGainController;
 
 class FrameCombiner {
  public:
-  explicit FrameCombiner(bool use_apm_limiter);
+  enum class LimiterType { kNoLimiter, kApmAgcLimiter, kApmAgc2Limiter };
+  explicit FrameCombiner(LimiterType limiter_type);
+  explicit FrameCombiner(bool use_limiter);
   ~FrameCombiner();
+
+  void SetLimiterType(LimiterType limiter_type);
 
   // Combine several frames into one. Assumes sample_rate,
   // samples_per_channel of the input frames match the parameters. The
@@ -34,11 +41,13 @@ class FrameCombiner {
                size_t number_of_channels,
                int sample_rate,
                size_t number_of_streams,
-               AudioFrame* audio_frame_for_mixing) const;
+               AudioFrame* audio_frame_for_mixing);
 
  private:
-  const bool use_apm_limiter_;
-  std::unique_ptr<AudioProcessing> limiter_;
+  LimiterType limiter_type_;
+  std::unique_ptr<AudioProcessing> apm_agc_limiter_;
+  std::unique_ptr<ApmDataDumper> data_dumper_;
+  FixedGainController apm_agc2_limiter_;
 };
 }  // namespace webrtc
 

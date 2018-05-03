@@ -9,7 +9,7 @@
 #include "base/time/time.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/scheduler/util/task_duration_metric_reporter.h"
-#include "platform/scheduler/util/thread_type.h"
+#include "public/platform/WebThreadType.h"
 
 namespace blink {
 namespace scheduler {
@@ -27,7 +27,7 @@ class TaskQueue;
 // own instantiation of this class.
 class PLATFORM_EXPORT MetricsHelper {
  public:
-  explicit MetricsHelper(ThreadType thread_type);
+  explicit MetricsHelper(WebThreadType thread_type);
   ~MetricsHelper();
 
  protected:
@@ -44,13 +44,22 @@ class PLATFORM_EXPORT MetricsHelper {
                                base::TimeTicks end_time,
                                base::Optional<base::TimeDelta> thread_time);
 
-  void SetThreadType(ThreadType thread_type);
+  void SetThreadType(WebThreadType thread_type);
+
+ protected:
+  WebThreadType thread_type_;
 
  private:
-  ThreadType thread_type_;
-
-  TaskDurationMetricReporter<ThreadType> thread_task_duration_reporter_;
-  TaskDurationMetricReporter<ThreadType> thread_task_cpu_duration_reporter_;
+  TaskDurationMetricReporter<WebThreadType> thread_task_duration_reporter_;
+  TaskDurationMetricReporter<WebThreadType> thread_task_cpu_duration_reporter_;
+  TaskDurationMetricReporter<WebThreadType>
+      foreground_thread_task_duration_reporter_;
+  TaskDurationMetricReporter<WebThreadType>
+      foreground_thread_task_cpu_duration_reporter_;
+  TaskDurationMetricReporter<WebThreadType>
+      background_thread_task_duration_reporter_;
+  TaskDurationMetricReporter<WebThreadType>
+      background_thread_task_cpu_duration_reporter_;
 
   DISALLOW_COPY_AND_ASSIGN(MetricsHelper);
 };

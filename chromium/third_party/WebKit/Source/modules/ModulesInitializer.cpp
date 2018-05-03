@@ -65,7 +65,6 @@
 #include "modules/presentation/PresentationController.h"
 #include "modules/presentation/PresentationReceiver.h"
 #include "modules/push_messaging/PushController.h"
-#include "modules/quota/StorageQuotaClient.h"
 #include "modules/remoteplayback/HTMLMediaElementRemotePlayback.h"
 #include "modules/remoteplayback/RemotePlayback.h"
 #include "modules/screen_orientation/ScreenOrientationControllerImpl.h"
@@ -83,6 +82,7 @@
 #include "modules/webdatabase/WebDatabaseImpl.h"
 #include "modules/webgl/WebGL2RenderingContext.h"
 #include "modules/webgl/WebGLRenderingContext.h"
+#include "modules/xr/XRPresentationContext.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/mojo/MojoHelper.h"
 #include "platform/wtf/Functional.h"
@@ -127,6 +127,8 @@ void ModulesInitializer::Initialize() {
       std::make_unique<WebGL2RenderingContext::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
       std::make_unique<ImageBitmapRenderingContext::Factory>());
+  HTMLCanvasElement::RegisterRenderingContextFactory(
+      std::make_unique<XRPresentationContext::Factory>());
 
   // OffscreenCanvas context types must be registered with the OffscreenCanvas.
   OffscreenCanvas::RegisterRenderingContextFactory(
@@ -166,8 +168,7 @@ void ModulesInitializer::InstallSupplements(LocalFrame& frame) const {
       *frame.DomWindow()->navigator(),
       NavigatorContentUtilsClient::Create(web_frame));
 
-  ScreenOrientationControllerImpl::ProvideTo(
-      frame, client->GetWebScreenOrientationClient());
+  ScreenOrientationControllerImpl::ProvideTo(frame);
   if (RuntimeEnabledFeatures::PresentationEnabled())
     PresentationController::ProvideTo(frame, client->PresentationClient());
   if (RuntimeEnabledFeatures::AudioOutputDevicesEnabled()) {
@@ -221,8 +222,7 @@ void ModulesInitializer::OnClearWindowObjectInMainWorld(
   NavigatorGamepad::From(document);
   NavigatorServiceWorker::From(document);
   DOMWindowStorageController::From(document);
-  if (RuntimeEnabledFeatures::WebVREnabled() ||
-      OriginTrials::webVREnabled(document.GetExecutionContext()))
+  if (OriginTrials::webVREnabled(document.GetExecutionContext()))
     NavigatorVR::From(document);
   if (RuntimeEnabledFeatures::PresentationEnabled() &&
       settings.GetPresentationReceiver()) {
@@ -256,7 +256,6 @@ void ModulesInitializer::ProvideModulesToPage(Page& page,
   MediaKeysController::ProvideMediaKeysTo(page);
   ::blink::ProvideContextFeaturesTo(page, ContextFeaturesClientImpl::Create());
   ::blink::ProvideDatabaseClientTo(page, new DatabaseClient);
-  ::blink::ProvideStorageQuotaClientTo(page, StorageQuotaClient::Create());
   StorageNamespaceController::ProvideStorageNamespaceTo(page, client);
   ::blink::ProvideSpeechRecognitionTo(
       page, SpeechRecognitionClientProxy::Create(

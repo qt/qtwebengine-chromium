@@ -6,23 +6,25 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #include "net/quic/core/crypto/crypto_handshake.h"
 #include "net/quic/core/crypto/crypto_protocol.h"
 #include "net/quic/platform/api/quic_socket_address.h"
+#include "net/quic/platform/api/quic_string.h"
 #include "net/quic/platform/api/quic_test.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_stream_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "testing/gmock_mutant.h"
 
-using std::string;
 
 using testing::_;
 using testing::InSequence;
 using testing::Invoke;
+using testing::InvokeWithoutArgs;
 
 namespace net {
 namespace test {
@@ -111,7 +113,7 @@ TEST_F(QuicCryptoStreamTest, ProcessRawData) {
 }
 
 TEST_F(QuicCryptoStreamTest, ProcessBadData) {
-  string bad(message_data_->data(), message_data_->length());
+  QuicString bad(message_data_->data(), message_data_->length());
   const int kFirstTagIndex = sizeof(uint32_t) +  // message tag
                              sizeof(uint16_t) +  // number of tag-value pairs
                              sizeof(uint16_t);   // padding
@@ -130,13 +132,10 @@ TEST_F(QuicCryptoStreamTest, NoConnectionLevelFlowControl) {
 }
 
 TEST_F(QuicCryptoStreamTest, RetransmitCryptoData) {
-  if (!FLAGS_quic_reloadable_flag_quic_allow_multiple_acks_for_data2) {
-    return;
-  }
   InSequence s;
   // Send [0, 1350) in ENCRYPTION_NONE.
   EXPECT_EQ(ENCRYPTION_NONE, connection_->encryption_level());
-  string data(1350, 'a');
+  QuicString data(1350, 'a');
   EXPECT_CALL(session_, WritevData(_, kCryptoStreamId, 1350, 0, _))
       .WillOnce(Invoke(MockQuicSession::ConsumeData));
   stream_.WriteOrBufferData(data, false, nullptr);
@@ -169,12 +168,9 @@ TEST_F(QuicCryptoStreamTest, RetransmitCryptoData) {
 }
 
 TEST_F(QuicCryptoStreamTest, NeuterUnencryptedStreamData) {
-  if (!FLAGS_quic_reloadable_flag_quic_allow_multiple_acks_for_data2) {
-    return;
-  }
   // Send [0, 1350) in ENCRYPTION_NONE.
   EXPECT_EQ(ENCRYPTION_NONE, connection_->encryption_level());
-  string data(1350, 'a');
+  QuicString data(1350, 'a');
   EXPECT_CALL(session_, WritevData(_, kCryptoStreamId, 1350, 0, _))
       .WillOnce(Invoke(MockQuicSession::ConsumeData));
   stream_.WriteOrBufferData(data, false, nullptr);
@@ -200,6 +196,51 @@ TEST_F(QuicCryptoStreamTest, NeuterUnencryptedStreamData) {
   EXPECT_TRUE(stream_.HasPendingRetransmission());
   stream_.NeuterUnencryptedStreamData();
   EXPECT_TRUE(stream_.HasPendingRetransmission());
+}
+
+TEST_F(QuicCryptoStreamTest, RetransmitStreamData) {
+  InSequence s;
+  // Send [0, 1350) in ENCRYPTION_NONE.
+  EXPECT_EQ(ENCRYPTION_NONE, connection_->encryption_level());
+  QuicString data(1350, 'a');
+  EXPECT_CALL(session_, WritevData(_, kCryptoStreamId, 1350, 0, _))
+      .WillOnce(Invoke(MockQuicSession::ConsumeData));
+  stream_.WriteOrBufferData(data, false, nullptr);
+  // Send [1350, 2700) in ENCRYPTION_INITIAL.
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_INITIAL);
+  EXPECT_EQ(ENCRYPTION_INITIAL, connection_->encryption_level());
+  EXPECT_CALL(session_, WritevData(_, kCryptoStreamId, 1350, 1350, _))
+      .WillOnce(Invoke(MockQuicSession::ConsumeData));
+  stream_.WriteOrBufferData(data, false, nullptr);
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
+  EXPECT_EQ(ENCRYPTION_FORWARD_SECURE, connection_->encryption_level());
+
+  // Ack [2000, 2500).
+  stream_.OnStreamFrameAcked(2000, 500, false, QuicTime::Delta::Zero());
+
+  // Force crypto stream to send [1350, 2700) and only [1350, 1500) is consumed.
+  EXPECT_CALL(session_, WritevData(_, kCryptoStreamId, 650, 1350, _))
+      .WillOnce(InvokeWithoutArgs([this]() {
+        return MockQuicSession::ConsumeData(&stream_, kCryptoStreamId, 150,
+                                            1350, NO_FIN);
+      }));
+
+  EXPECT_FALSE(stream_.RetransmitStreamData(1350, 1350, false));
+  // Verify connection's encryption level has restored.
+  EXPECT_EQ(ENCRYPTION_FORWARD_SECURE, connection_->encryption_level());
+
+  // Force session to send [1350, 1500) again and all data is consumed.
+  EXPECT_CALL(session_, WritevData(_, kCryptoStreamId, 650, 1350, _))
+      .WillOnce(Invoke(MockQuicSession::ConsumeData));
+  EXPECT_CALL(session_, WritevData(_, kCryptoStreamId, 200, 2500, _))
+      .WillOnce(Invoke(MockQuicSession::ConsumeData));
+  EXPECT_TRUE(stream_.RetransmitStreamData(1350, 1350, false));
+  // Verify connection's encryption level has restored.
+  EXPECT_EQ(ENCRYPTION_FORWARD_SECURE, connection_->encryption_level());
+
+  EXPECT_CALL(session_, WritevData(_, _, _, _, _)).Times(0);
+  // Force to send an empty frame.
+  EXPECT_TRUE(stream_.RetransmitStreamData(0, 0, false));
 }
 
 }  // namespace

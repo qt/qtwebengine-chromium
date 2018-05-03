@@ -8,6 +8,7 @@
 <translation id="1243314992276662751">Lähetä</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">SOVELLUSSUOSITUKSET</translation>
+<translation id="1368832886055348810">Vasemmalta oikealle</translation>
 <translation id="1398853756734560583">Suurenna</translation>
 <translation id="1413622004203049571">Poista ilmoitukset käytöstä sovellukselta <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 minuutti ja }other{# minuuttia ja }}</translation>
@@ -21,6 +22,7 @@
 <translation id="1812519734428420144">Tähtiluokitus: <ph name="RATING_SCORE" /></translation>
 <translation id="1830179671306812954">{HOURS,plural, =1{1 tunti ja }other{# tuntia ja }}</translation>
 <translation id="1842960171412779397">Valitse</translation>
+<translation id="1859234291848436338">Kirjoitussuunta</translation>
 <translation id="1860796786778352021">Ilmoitus sulje</translation>
 <translation id="1871244248791675517">Ins</translation>
 <translation id="1884435127456172652"><ph name="NUMBER" /> %</translation>
@@ -30,6 +32,7 @@
 <translation id="2168039046890040389">Sivu ylös</translation>
 <translation id="2190355936436201913">(tyhjä)</translation>
 <translation id="219905428774326614">Käynnistysohjelma, kaikki sovellukset</translation>
+<translation id="2267918077332197517">Estä kaikki tämän sivuston ilmoitukset</translation>
 <translation id="2289052229480071835">Napauta näytölläsi olevia kosketettavia kohteita.</translation>
 <translation id="2295140143284145483">Kysely</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> Tt/s</translation>
@@ -50,7 +53,9 @@
 <translation id="3183922693828471536">Vieritä tähän</translation>
 <translation id="3234408098842461169">Nuoli al.</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{1 päivä}other{# päivää}}</translation>
+<translation id="335581015389089642">Puhe</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{1 päivä jäljellä}other{# päivää jäljellä}}</translation>
+<translation id="3618849550573277856">Hae ”<ph name="LOOKUP_STRING" />”</translation>
 <translation id="364720409959344976">Valitse lähetettävä kansio</translation>
 <translation id="3660179305079774227">Nuoli yl.</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> Gt/s</translation>
@@ -63,8 +68,8 @@
 <translation id="4202807286478387388">siirry</translation>
 <translation id="4250229828105606438">Kuvakaappaus</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{1 kuukausi sitten}other{# kuukautta sitten}}</translation>
+<translation id="4289300219472526559">Aloita puhuminen</translation>
 <translation id="4316910396681052118">KAIKKI SOVELLUKSET</translation>
-<translation id="4320177379694898372">Ei internetyhteyttä</translation>
 <translation id="4588090240171750605">Vieritä oikealle</translation>
 <translation id="4724120544754982507">Ilmoituskeskus, <ph name="UNREAD_NOTIFICATION_COUNT" /> lukematonta ilmoitusta</translation>
 <translation id="4730374152663651037">USEIN KÄYTETYT</translation>
@@ -102,7 +107,9 @@
 <translation id="6351032674660237738">SOVELLUSEHDOTUKSET</translation>
 <translation id="6364916375976753737">Vieritä vasemmalle</translation>
 <translation id="6394627529324717982">Pilkku</translation>
+<translation id="6397363302884558537">Lopeta puhuminen</translation>
 <translation id="6404817160109697034">{SECONDS,plural, =1{1 s sitten}other{# s sitten}}</translation>
+<translation id="6430678249303439055">Estä kaikki tämän sovelluksen ilmoitukset</translation>
 <translation id="6483402905448010557">{SECONDS,plural, =1{1 sekunti sitten}other{# sekuntia sitten}}</translation>
 <translation id="654149438358937226">Estä kaikki ilmoitukset</translation>
 <translation id="6567071839949112727">klikkaa edeltäjää</translation>
@@ -119,6 +126,7 @@
 <translation id="6917971086528278418">{YEARS,plural, =1{1 vuosi jäljellä}other{# vuotta jäljellä}}</translation>
 <translation id="6945221475159498467">Valitse</translation>
 <translation id="6965382102122355670">OK</translation>
+<translation id="6974053822202609517">Oikealta vasemmalle</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">TODENNÄKÖISIMMÄT</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -142,7 +150,6 @@
 <translation id="8328145009876646418">Vasen reuna</translation>
 <translation id="8331626408530291785">Vieritä ylös</translation>
 <translation id="8352146631962686268">{YEARS,plural, =1{1 vuosi}other{# vuotta}}</translation>
-<translation id="8371695176452482769">Puhu nyt</translation>
 <translation id="838869780401515933">valitse</translation>
 <translation id="8393700583063109961">Lähetä viesti</translation>
 <translation id="8394908167088220973">Media: toista/keskeytä</translation>
@@ -153,6 +160,7 @@
 <translation id="8725488761726303204">+<ph name="NUMBER" /> lisää</translation>
 <translation id="8730621377337864115">Valmis</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 h}other{# h}}</translation>
+<translation id="8798099450830957504">Oletus</translation>
 <translation id="8806053966018712535">Kansio <ph name="FOLDER_NAME" /></translation>
 <translation id="883911313571074303">Lisää kuvaan muistiinpano</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> kt</translation>

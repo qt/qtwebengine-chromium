@@ -20,8 +20,7 @@
 
 #include "core/svg/SVGPathElement.h"
 
-#include "core/css/StyleChangeReason.h"
-#include "core/layout/svg/LayoutSVGPath.h"
+#include "core/layout/LayoutObject.h"
 #include "core/svg/SVGMPathElement.h"
 #include "core/svg/SVGPathQuery.h"
 #include "core/svg/SVGPathUtilities.h"
@@ -77,25 +76,8 @@ SVGPointTearOff* SVGPathElement::getPointAtLength(float length) {
 
 void SVGPathElement::SvgAttributeChanged(const QualifiedName& attr_name) {
   if (attr_name == SVGNames::dAttr) {
-    SVGElement::InvalidationGuard invalidation_guard(this);
-    InvalidateSVGPresentationAttributeStyle();
-    SetNeedsStyleRecalc(kLocalStyleChange,
-                        StyleChangeReasonForTracing::FromAttribute(attr_name));
-
-    if (LayoutSVGShape* layout_path = ToLayoutSVGShape(this->GetLayoutObject()))
-      layout_path->SetNeedsShapeUpdate();
-
     InvalidateMPathDependencies();
-    if (GetLayoutObject())
-      MarkForLayoutAndParentResourceInvalidation(GetLayoutObject());
-
-    return;
-  }
-
-  if (attr_name == SVGNames::pathLengthAttr) {
-    SVGElement::InvalidationGuard invalidation_guard(this);
-    if (GetLayoutObject())
-      MarkForLayoutAndParentResourceInvalidation(GetLayoutObject());
+    GeometryPresentationAttributeChanged(attr_name);
     return;
   }
 
@@ -114,7 +96,7 @@ void SVGPathElement::CollectStyleForPresentationAttribute(
     if (const SVGElement* element = CorrespondingElement())
       path = ToSVGPathElement(element)->GetPath();
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &path->CssValue());
+                                            path->CssValue());
     return;
   }
   SVGGeometryElement::CollectStyleForPresentationAttribute(name, value, style);

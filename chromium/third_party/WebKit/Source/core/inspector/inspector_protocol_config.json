@@ -69,7 +69,7 @@
             },
             {
                 "domain": "Memory",
-                "include": ["getDOMCounters", "prepareForLeakDetection"],
+                "include": ["getDOMCounters", "prepareForLeakDetection", "startSampling", "stopSampling", "getSamplingProfile", "getAllTimeSamplingProfile"],
                 "async": ["prepareForLeakDetection"]
             },
             {
@@ -97,11 +97,11 @@
                 "domain": "Network",
                 "exclude": ["clearBrowserCache", "clearBrowserCookies", "getCookies", "getAllCookies", "deleteCookies", "setCookie", "setCookies", "canEmulateNetworkConditions",
                             "setRequestInterception", "continueInterceptedRequest", "getResponseBodyForInterception"],
-                "async": ["getResponseBody"]
+                "async": ["getResponseBody", "getRequestPostData"]
             },
             {
                 "domain": "Target",
-                "include": ["setAutoAttach", "sendMessageToTarget", "setAttachToFrames"],
+                "include": ["setAutoAttach", "sendMessageToTarget"],
                 "include_events": ["attachedToTarget", "detachedFromTarget", "receivedMessageFromTarget"]
             }
         ]

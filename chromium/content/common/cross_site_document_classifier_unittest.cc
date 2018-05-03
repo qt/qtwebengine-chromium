@@ -30,51 +30,23 @@ TEST(CrossSiteDocumentClassifierTest, IsBlockableScheme) {
   EXPECT_TRUE(CrossSiteDocumentClassifier::IsBlockableScheme(https_url));
 }
 
-TEST(CrossSiteDocumentClassifierTest, IsSameSite) {
-  GURL a_com_url0("https://mock1.a.com:8080/page1.html");
-  GURL a_com_url1("https://mock2.a.com:9090/page2.html");
-  GURL a_com_url2("https://a.com/page3.html");
-  url::Origin a_com_origin0 = url::Origin::Create(a_com_url0);
-  EXPECT_TRUE(
-      CrossSiteDocumentClassifier::IsSameSite(a_com_origin0, a_com_url1));
-  EXPECT_TRUE(CrossSiteDocumentClassifier::IsSameSite(
-      url::Origin::Create(a_com_url1), a_com_url2));
-  EXPECT_TRUE(CrossSiteDocumentClassifier::IsSameSite(
-      url::Origin::Create(a_com_url2), a_com_url0));
-
-  GURL b_com_url0("https://mock1.b.com/index.html");
-  EXPECT_FALSE(
-      CrossSiteDocumentClassifier::IsSameSite(a_com_origin0, b_com_url0));
-
-  GURL about_blank_url("about:blank");
-  EXPECT_FALSE(
-      CrossSiteDocumentClassifier::IsSameSite(a_com_origin0, about_blank_url));
-
-  GURL chrome_url("chrome://extension");
-  EXPECT_FALSE(
-      CrossSiteDocumentClassifier::IsSameSite(a_com_origin0, chrome_url));
-
-  GURL empty_url("");
-  EXPECT_FALSE(
-      CrossSiteDocumentClassifier::IsSameSite(a_com_origin0, empty_url));
-}
-
 TEST(CrossSiteDocumentClassifierTest, IsValidCorsHeaderSet) {
   url::Origin frame_origin = url::Origin::Create(GURL("http://www.google.com"));
-  GURL site_origin_url("http://www.yahoo.com");
 
+  EXPECT_TRUE(
+      CrossSiteDocumentClassifier::IsValidCorsHeaderSet(frame_origin, "*"));
+  EXPECT_FALSE(
+      CrossSiteDocumentClassifier::IsValidCorsHeaderSet(frame_origin, "\"*\""));
+  EXPECT_FALSE(CrossSiteDocumentClassifier::IsValidCorsHeaderSet(
+      frame_origin, "http://mail.google.com"));
   EXPECT_TRUE(CrossSiteDocumentClassifier::IsValidCorsHeaderSet(
-      frame_origin, site_origin_url, "*"));
+      frame_origin, "http://www.google.com"));
   EXPECT_FALSE(CrossSiteDocumentClassifier::IsValidCorsHeaderSet(
-      frame_origin, site_origin_url, "\"*\""));
-  EXPECT_TRUE(CrossSiteDocumentClassifier::IsValidCorsHeaderSet(
-      frame_origin, site_origin_url, "http://mail.google.com"));
+      frame_origin, "https://www.google.com"));
   EXPECT_FALSE(CrossSiteDocumentClassifier::IsValidCorsHeaderSet(
-      frame_origin, site_origin_url, "https://mail.google.com"));
+      frame_origin, "http://yahoo.com"));
   EXPECT_FALSE(CrossSiteDocumentClassifier::IsValidCorsHeaderSet(
-      frame_origin, site_origin_url, "http://yahoo.com"));
-  EXPECT_FALSE(CrossSiteDocumentClassifier::IsValidCorsHeaderSet(
-      frame_origin, site_origin_url, "www.google.com"));
+      frame_origin, "www.google.com"));
 }
 
 TEST(CrossSiteDocumentClassifierTest, SniffForHTML) {

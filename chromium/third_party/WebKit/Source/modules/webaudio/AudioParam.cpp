@@ -26,7 +26,6 @@
 #include "modules/webaudio/AudioParam.h"
 
 #include "core/dom/ExceptionCode.h"
-#include "core/frame/Deprecation.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioNodeOutput.h"
@@ -248,9 +247,6 @@ int AudioParamHandler::ComputeQHistogramValue(float new_value) const {
 
 // ----------------------------------------------------------------
 
-// TODO(crbug.com/764396): Remove this when fixed.
-bool AudioParam::s_value_setter_warning_done_ = false;
-
 AudioParam::AudioParam(BaseAudioContext& context,
                        AudioParamType param_type,
                        String param_name,
@@ -296,79 +292,20 @@ void AudioParam::WarnIfOutsideRange(const String& param_method, float value) {
   }
 }
 
-void AudioParam::setInitialValue(float value) {
-  WarnIfOutsideRange("value", value);
-  Handler().SetValue(value);
-}
-
 void AudioParam::setValue(float value) {
-  // These nodes have dezippering which is being removed.  Print a
-  // deprecation message.
-  // TODO(rtoy): Remove this when dezippering has been removed.
-  switch (GetParamType()) {
-    case kParamTypeBiquadFilterFrequency:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperBiquadFilterNodeFrequency);
-      break;
-    case kParamTypeBiquadFilterQ:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperBiquadFilterNodeQ);
-      break;
-    case kParamTypeBiquadFilterGain:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperBiquadFilterNodeGain);
-      break;
-    case kParamTypeBiquadFilterDetune:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperBiquadFilterNodeDetune);
-      break;
-    case kParamTypeDelayDelayTime:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperDelayNodeDelayTime);
-      break;
-    case kParamTypeGainGain:
-      Deprecation::CountDeprecation(Context()->GetExecutionContext(),
-                                    WebFeature::kWebAudioDezipperGainNodeGain);
-      break;
-    case kParamTypeOscillatorFrequency:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperOscillatorNodeFrequency);
-      break;
-    case kParamTypeOscillatorDetune:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperOscillatorNodeDetune);
-      break;
-    case kParamTypeStereoPannerPan:
-      Deprecation::CountDeprecation(
-          Context()->GetExecutionContext(),
-          WebFeature::kWebAudioDezipperStereoPannerNodePan);
-      break;
-    default:
-      break;
-  };
-
-  // TODO(crbug.com/764396): Remove this when fixed.
-  WarnIfSetterOverlapsEvent();
-
   WarnIfOutsideRange("value", value);
   Handler().SetValue(value);
 }
 
-// TODO(crbug.com/764396): Remove this when fixed.
-void AudioParam::WarnIfSetterOverlapsEvent() {
-  DCHECK(IsMainThread());
+void AudioParam::setValue(float value, ExceptionState& exception_state) {
+  WarnIfOutsideRange("value", value);
 
-  // Check for overlap and print a warning only if we haven't already
-  // printed a warning.
-  Handler().Timeline().WarnIfSetterOverlapsEvent(
-      Context(), Handler().GetParamName(), !s_value_setter_warning_done_);
+  // This is to signal any errors, if necessary, about conflicting
+  // automations.
+  setValueAtTime(value, Context()->currentTime(), exception_state);
+  // This is to change the value so that an immediate query for the
+  // value returns the expected values.
+  Handler().SetValue(value);
 }
 
 float AudioParam::defaultValue() const {

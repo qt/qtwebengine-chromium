@@ -70,8 +70,8 @@ static_library("browser") {
     "profile_oauth2_token_service.h",
     "signin_client.cc",
     "signin_client.h",
-    "signin_cookie_changed_subscription.cc",
-    "signin_cookie_changed_subscription.h",
+    "signin_cookie_change_subscription.cc",
+    "signin_cookie_change_subscription.h",
     "signin_error_controller.cc",
     "signin_error_controller.h",
     "signin_header_helper.cc",
@@ -118,17 +118,20 @@ static_library("browser") {
     "//components/signin/core/browser:signin_features",
     "//google_apis",
     "//net",
+    "//ui/gfx",
     "//url",
   ]
   deps = [
     "//base:i18n",
     "//components/data_use_measurement/core",
     "//components/google/core/browser",
+    "//components/image_fetcher/core",
     "//components/metrics",
     "//components/os_crypt",
     "//components/pref_registry",
     "//components/webdata/common",
     "//crypto",
+    "//skia",
     "//sql",
     "//third_party/icu",
     "//third_party/re2",
@@ -181,11 +184,13 @@ static_library("test_support") {
 
   deps = [
     "//base/test:test_support",
+    "//ui/gfx:test_support",
   ]
 
   public_deps = [
     ":browser",
     "//base",
+    "//components/image_fetcher/core/",
     "//components/prefs:test_support",
     "//components/webdata/common",
     "//google_apis:test_support",

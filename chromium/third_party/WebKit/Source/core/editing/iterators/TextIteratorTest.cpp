@@ -32,6 +32,7 @@
 
 #include "core/dom/Document.h"
 #include "core/editing/EphemeralRange.h"
+#include "core/editing/SelectionTemplate.h"
 #include "core/editing/testing/EditingTestBase.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/html/forms/TextControlElement.h"
@@ -138,12 +139,17 @@ Range* TextIteratorTest::GetBodyRange() const {
 class ParameterizedTextIteratorTest
     : public ::testing::WithParamInterface<bool>,
       private ScopedLayoutNGForTest,
-      private ScopedLayoutNGPaintFragmentsForTest,
       public TextIteratorTest {
  public:
-  ParameterizedTextIteratorTest()
-      : ScopedLayoutNGForTest(GetParam()),
-        ScopedLayoutNGPaintFragmentsForTest(GetParam()) {}
+  ParameterizedTextIteratorTest() : ScopedLayoutNGForTest(GetParam()) {}
+
+ protected:
+  bool LayoutNGEnabled() const { return GetParam(); }
+
+  int TestRangeLength(const std::string& selection_text) {
+    return TextIterator::RangeLength(
+        SetSelectionTextToBody(selection_text).ComputeRange());
+  }
 };
 
 INSTANTIATE_TEST_CASE_P(All, ParameterizedTextIteratorTest, ::testing::Bool());
@@ -486,6 +492,40 @@ TEST_F(TextIteratorTest, RangeLengthInMultilineSpan) {
   EXPECT_EQ(3, TextIterator::RangeLength(
                    range,
                    TextIteratorBehavior::NoTrailingSpaceRangeLengthBehavior()));
+}
+
+TEST_P(ParameterizedTextIteratorTest, RangeLengthBasic) {
+  EXPECT_EQ(0, TestRangeLength("<p>^| (1) abc def</p>"));
+  EXPECT_EQ(0, TestRangeLength("<p>^ |(1) abc def</p>"));
+  EXPECT_EQ(1, TestRangeLength("<p>^ (|1) abc def</p>"));
+  EXPECT_EQ(2, TestRangeLength("<p>^ (1|) abc def</p>"));
+  EXPECT_EQ(3, TestRangeLength("<p>^ (1)| abc def</p>"));
+  EXPECT_EQ(4, TestRangeLength("<p>^ (1) |abc def</p>"));
+  EXPECT_EQ(5, TestRangeLength("<p>^ (1) a|bc def</p>"));
+  EXPECT_EQ(6, TestRangeLength("<p>^ (1) ab|c def</p>"));
+  EXPECT_EQ(7, TestRangeLength("<p>^ (1) abc| def</p>"));
+  EXPECT_EQ(8, TestRangeLength("<p>^ (1) abc |def</p>"));
+  EXPECT_EQ(9, TestRangeLength("<p>^ (1) abc d|ef</p>"));
+  EXPECT_EQ(10, TestRangeLength("<p>^ (1) abc de|f</p>"));
+  EXPECT_EQ(11, TestRangeLength("<p>^ (1) abc def|</p>"));
+}
+
+TEST_P(ParameterizedTextIteratorTest, RangeLengthWithFirstLetter) {
+  InsertStyleElement("p::first-letter {font-size:200%;}");
+  // Expectation should be as same as |RangeLengthBasic|
+  EXPECT_EQ(0, TestRangeLength("<p>^| (1) abc def</p>"));
+  EXPECT_EQ(0, TestRangeLength("<p>^ |(1) abc def</p>"));
+  EXPECT_EQ(1, TestRangeLength("<p>^ (|1) abc def</p>"));
+  EXPECT_EQ(2, TestRangeLength("<p>^ (1|) abc def</p>"));
+  EXPECT_EQ(3, TestRangeLength("<p>^ (1)| abc def</p>"));
+  EXPECT_EQ(4, TestRangeLength("<p>^ (1) |abc def</p>"));
+  EXPECT_EQ(5, TestRangeLength("<p>^ (1) a|bc def</p>"));
+  EXPECT_EQ(6, TestRangeLength("<p>^ (1) ab|c def</p>"));
+  EXPECT_EQ(7, TestRangeLength("<p>^ (1) abc| def</p>"));
+  EXPECT_EQ(8, TestRangeLength("<p>^ (1) abc |def</p>"));
+  EXPECT_EQ(9, TestRangeLength("<p>^ (1) abc d|ef</p>"));
+  EXPECT_EQ(10, TestRangeLength("<p>^ (1) abc de|f</p>"));
+  EXPECT_EQ(11, TestRangeLength("<p>^ (1) abc def|</p>"));
 }
 
 TEST_F(TextIteratorTest, WhitespaceCollapseForReplacedElements) {
@@ -1018,7 +1058,7 @@ TEST_F(TextIteratorTest, BasicIterationInputiWithBr) {
   TextControlElement* input_element =
       ToTextControlElement(GetDocument().getElementById("a"));
   Element* inner_editor = input_element->InnerEditorElement();
-  Element* br = GetDocument().createElement("br");
+  Element* br = GetDocument().CreateRawElement(HTMLNames::brTag);
   inner_editor->AppendChild(br);
   const ShadowRoot* shadow_root = input_element->UserAgentShadowRoot();
   const Position start = Position::FirstPositionInNode(*shadow_root);

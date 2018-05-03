@@ -52,7 +52,7 @@ Timing::FillMode ResolvedFillMode(Timing::FillMode fill_mode,
 
 AnimationEffectReadOnly::AnimationEffectReadOnly(const Timing& timing,
                                                  EventDelegate* event_delegate)
-    : animation_(nullptr),
+    : owner_(nullptr),
       timing_(timing),
       event_delegate_(event_delegate),
       calculated_(),
@@ -89,9 +89,8 @@ void AnimationEffectReadOnly::UpdateSpecifiedTiming(const Timing& timing) {
   // FIXME: Test whether the timing is actually different?
   timing_ = timing;
   Invalidate();
-  if (animation_)
-    animation_->SetOutdated();
-  SpecifiedTimingChanged();
+  if (owner_)
+    owner_->SpecifiedTimingChanged();
 }
 
 void AnimationEffectReadOnly::getComputedTiming(
@@ -102,7 +101,7 @@ void AnimationEffectReadOnly::getComputedTiming(
 
   if (EnsureCalculated().is_in_effect) {
     computed_timing.setLocalTime(EnsureCalculated().local_time * 1000);
-    computed_timing.setProgress(EnsureCalculated().progress);
+    computed_timing.setProgress(EnsureCalculated().progress.value());
     computed_timing.setCurrentIteration(EnsureCalculated().current_iteration);
   } else {
     computed_timing.setLocalTimeToNull();
@@ -140,7 +139,7 @@ void AnimationEffectReadOnly::UpdateInheritedTime(
       needs_update_ ||
       (last_update_time_ != inherited_time &&
        !(IsNull(last_update_time_) && IsNull(inherited_time))) ||
-      (GetAnimation() && GetAnimation()->EffectSuppressed());
+      (owner_ && owner_->EffectSuppressed());
   needs_update_ = false;
   last_update_time_ = inherited_time;
 
@@ -160,7 +159,7 @@ void AnimationEffectReadOnly::UpdateInheritedTime(
         local_time, kParentPhase, current_phase, timing_);
 
     double current_iteration;
-    double progress;
+    WTF::Optional<double> progress;
     if (const double iteration_duration = this->IterationDuration()) {
       const double start_offset = MultiplyZeroAlwaysGivesZero(
           timing_.iteration_start, iteration_duration);
@@ -173,7 +172,7 @@ void AnimationEffectReadOnly::UpdateInheritedTime(
 
       current_iteration = CalculateCurrentIteration(
           iteration_duration, iteration_time, scaled_active_time, timing_);
-      const double transformed_time = CalculateTransformedTime(
+      const WTF::Optional<double> transformed_time = CalculateTransformedTime(
           current_iteration, iteration_duration, iteration_time, timing_);
 
       // The infinite iterationDuration case here is a workaround because
@@ -182,8 +181,8 @@ void AnimationEffectReadOnly::UpdateInheritedTime(
       // https://github.com/w3c/web-animations/issues/142
       if (!std::isfinite(iteration_duration))
         progress = fmod(timing_.iteration_start, 1.0);
-      else
-        progress = transformed_time / iteration_duration;
+      else if (transformed_time)
+        progress = transformed_time.value() / iteration_duration;
 
       if (!IsNull(iteration_time)) {
         time_to_next_iteration = (iteration_duration - iteration_time) /
@@ -238,10 +237,10 @@ void AnimationEffectReadOnly::UpdateInheritedTime(
 
   // Test for events even if timing didn't need an update as the animation may
   // have gained a start time.
-  // FIXME: Refactor so that we can DCHECK(m_animation) here, this is currently
+  // FIXME: Refactor so that we can DCHECK(owner_) here, this is currently
   // required to be nullable for testing.
   if (reason == kTimingUpdateForAnimationFrame &&
-      (!animation_ || animation_->HasStartTime() || animation_->Paused())) {
+      (!owner_ || owner_->IsEventDispatchAllowed())) {
     if (event_delegate_)
       event_delegate_->OnEventCondition(*this);
   }
@@ -258,11 +257,10 @@ void AnimationEffectReadOnly::UpdateInheritedTime(
 
 const AnimationEffectReadOnly::CalculatedTiming&
 AnimationEffectReadOnly::EnsureCalculated() const {
-  if (!animation_)
+  if (!owner_)
     return calculated_;
-  if (animation_->Outdated())
-    animation_->Update(kTimingUpdateOnDemand);
-  DCHECK(!animation_->Outdated());
+
+  owner_->UpdateIfNecessary();
   return calculated_;
 }
 
@@ -270,8 +268,15 @@ AnimationEffectTimingReadOnly* AnimationEffectReadOnly::timing() {
   return AnimationEffectTimingReadOnly::Create(this);
 }
 
+Animation* AnimationEffectReadOnly::GetAnimation() {
+  return owner_ ? owner_->GetAnimation() : nullptr;
+}
+const Animation* AnimationEffectReadOnly::GetAnimation() const {
+  return owner_ ? owner_->GetAnimation() : nullptr;
+}
+
 void AnimationEffectReadOnly::Trace(blink::Visitor* visitor) {
-  visitor->Trace(animation_);
+  visitor->Trace(owner_);
   visitor->Trace(event_delegate_);
   ScriptWrappable::Trace(visitor);
 }

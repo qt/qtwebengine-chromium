@@ -11,6 +11,7 @@
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
 #include "platform/scheduler/test/create_task_queue_manager_for_test.h"
 #include "platform/wtf/ThreadSpecific.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/scheduler/child/webthread_base.h"
 
 namespace blink {
@@ -45,7 +46,8 @@ TestingPlatformSupportWithMockScheduler::
       scheduler_(new scheduler::RendererSchedulerImpl(
           scheduler::CreateTaskQueueManagerForTest(nullptr,
                                                    mock_task_runner_,
-                                                   &clock_))),
+                                                   &clock_),
+          base::nullopt)),
       thread_(scheduler_->CreateMainThread()) {
   DCHECK(IsMainThread());
   // Set the work batch size to one so RunPendingTasks behaves as expected.
@@ -61,13 +63,14 @@ TestingPlatformSupportWithMockScheduler::
 }
 
 std::unique_ptr<WebThread>
-TestingPlatformSupportWithMockScheduler::CreateThread(const char* name) {
+TestingPlatformSupportWithMockScheduler::CreateThread(
+    const WebThreadCreationParams& params) {
   std::unique_ptr<scheduler::WebThreadBase> thread =
-      scheduler::WebThreadBase::CreateWorkerThread(name,
+      scheduler::WebThreadBase::CreateWorkerThread(params.name,
                                                    base::Thread::Options());
   thread->Init();
   WaitableEvent event;
-  thread->GetSingleThreadTaskRunner()->PostTask(
+  thread->GetTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(PrepareCurrentThread, base::Unretained(&event),
                                 base::Unretained(thread.get())));
   event.Wait();
@@ -109,7 +112,7 @@ void TestingPlatformSupportWithMockScheduler::RunForPeriodSeconds(
     // task, but don't pass |deadline|.
     if (!task_queue_manager->HasImmediateWorkForTesting()) {
       base::TimeTicks next_delayed_task;
-      if (!task_queue_manager->real_time_domain()->NextScheduledRunTime(
+      if (!task_queue_manager->GetRealTimeDomain()->NextScheduledRunTime(
               &next_delayed_task) ||
           next_delayed_task > deadline) {
         break;

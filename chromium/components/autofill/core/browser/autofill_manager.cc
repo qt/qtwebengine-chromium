@@ -69,7 +69,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/security_state/core/security_state.h"
 #include "components/strings/grit/components_strings.h"
-#include "google_apis/gaia/identity_provider.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
@@ -96,9 +95,9 @@ const size_t kMaxFormCacheSize = 100;
 // Precondition: |form_structure| and |form| should correspond to the same
 // logical form.  Returns true if any field in the given |section| within |form|
 // is auto-filled.
-bool SectionIsAutofilled(const FormStructure& form_structure,
-                         const FormData& form,
-                         const std::string& section) {
+bool SectionHasAutofilledField(const FormStructure& form_structure,
+                               const FormData& form,
+                               const std::string& section) {
   DCHECK_EQ(form_structure.field_count(), form.fields.size());
   for (size_t i = 0; i < form_structure.field_count(); ++i) {
     if (form_structure.field(i)->section() == section &&
@@ -606,14 +605,14 @@ void AutofillManager::OnQueryFormFieldAutofillImpl(
             POPUP_ITEM_ID_INSECURE_CONTEXT_PAYMENT_DISABLED_MESSAGE;
         suggestions.assign(1, warning_suggestion);
       } else {
-        bool section_is_autofilled = SectionIsAutofilled(
+        bool section_has_autofilled_field = SectionHasAutofilledField(
             *form_structure, form, autofill_field->section());
-        if (section_is_autofilled) {
-          // If the relevant section is auto-filled and the renderer is querying
-          // for suggestions, then the user is editing the value of a field.
-          // In this case, mimic autocomplete: don't display labels or icons,
-          // as that information is redundant. Moreover, filter out duplicate
-          // suggestions.
+        if (section_has_autofilled_field) {
+          // If the relevant section has auto-filled  fields and the renderer is
+          // querying for suggestions, then for some fields, the user is editing
+          // the value of a field. In this case, mimic autocomplete: don't
+          // display labels or icons, as that information is redundant.
+          // Moreover, filter out duplicate suggestions.
           std::set<base::string16> seen_values;
           for (auto iter = suggestions.begin(); iter != suggestions.end();) {
             if (!seen_values.insert(iter->value).second) {
@@ -631,7 +630,8 @@ void AutofillManager::OnQueryFormFieldAutofillImpl(
         // suggestions available.
         // TODO(mathp): Differentiate between number of suggestions available
         // (current metric) and number shown to the user.
-        if (!has_logged_address_suggestions_count_ && !section_is_autofilled) {
+        if (!has_logged_address_suggestions_count_ &&
+            !section_has_autofilled_field) {
           AutofillMetrics::LogAddressSuggestionsCount(suggestions.size());
           has_logged_address_suggestions_count_ = true;
         }
@@ -690,17 +690,12 @@ bool AutofillManager::WillFillCreditCardNumber(const FormData& form,
   if (autofill_field->Type().GetStorableType() == CREDIT_CARD_NUMBER)
     return true;
 
-  // If the relevant section is already autofilled, the new fill operation will
-  // only fill |autofill_field|.
-  if (SectionIsAutofilled(*form_structure, form, autofill_field->section()))
-    return false;
-
   DCHECK_EQ(form_structure->field_count(), form.fields.size());
   for (size_t i = 0; i < form_structure->field_count(); ++i) {
     if (form_structure->field(i)->section() == autofill_field->section() &&
         form_structure->field(i)->Type().GetStorableType() ==
             CREDIT_CARD_NUMBER &&
-        form.fields[i].value.empty()) {
+        form.fields[i].value.empty() && !form.fields[i].is_autofilled) {
       return true;
     }
   }
@@ -1178,7 +1173,7 @@ AutofillManager::AutofillManager(
       payments_client_(std::make_unique<payments::PaymentsClient>(
           driver->GetURLRequestContext(),
           client->GetPrefs(),
-          client->GetIdentityProvider(),
+          client->GetIdentityManager(),
           /*unmask_delegate=*/this,
           // save_delegate starts out as nullptr and is set up by the
           // CreditCardSaveManager owned by form_data_importer_.
@@ -1325,25 +1320,6 @@ void AutofillManager::FillOrPreviewDataModelForm(
     form_structure->RationalizePhoneNumbersInSection(autofill_field->section());
   }
 
-  // If the relevant section is auto-filled, we should fill |field| but not the
-  // rest of the form.
-  if (SectionIsAutofilled(*form_structure, form, autofill_field->section())) {
-    for (FormFieldData& iter : result.fields) {
-      if (iter.SameFieldAs(field)) {
-        FillFieldWithValue(autofill_field, data_model, &iter,
-                           /*should_notify=*/!is_credit_card, cvc);
-        break;
-      }
-    }
-
-    // Note that this may invalidate |data_model|.
-    if (action == AutofillDriver::FORM_DATA_ACTION_FILL)
-      personal_data_->RecordUseOf(data_model);
-
-    driver()->SendFormDataToRenderer(query_id, action, result);
-    return;
-  }
-
   DCHECK_EQ(form_structure->field_count(), form.fields.size());
 
   for (size_t i = 0; i < form_structure->field_count(); ++i) {
@@ -1359,6 +1335,17 @@ void AutofillManager::FillOrPreviewDataModelForm(
 
     AutofillField* cached_field = form_structure->field(i);
     FieldTypeGroup field_group_type = cached_field->Type().group();
+
+    // Don't fill hidden fields.
+    if (!cached_field->is_focusable ||
+        cached_field->role == FormFieldData::ROLE_ATTRIBUTE_PRESENTATION) {
+      continue;
+    }
+
+    // Don't fill previously autofilled fields.
+    if (result.fields[i].is_autofilled && !cached_field->SameFieldAs(field)) {
+      continue;
+    }
 
     if (field_group_type == NO_GROUP)
       continue;
@@ -1411,7 +1398,9 @@ std::unique_ptr<FormStructure> AutofillManager::ValidateSubmittedForm(
   if (!FindCachedForm(form, &cached_submitted_form))
     return std::unique_ptr<FormStructure>();
 
-  submitted_form->UpdateFromCache(*cached_submitted_form, false);
+  submitted_form->RetrieveFromCache(*cached_submitted_form,
+                                    /* apply_is_autofilled */ false,
+                                    /* only_server_and_autofill_state */ false);
   return submitted_form;
 }
 
@@ -1513,9 +1502,11 @@ bool AutofillManager::UpdateCachedForm(const FormData& live_form,
   if (!ParseForm(live_form, updated_form))
     return false;
 
+  // We need to keep the server data.
   if (cached_form)
-    (*updated_form)->UpdateFromCache(*cached_form, true);
-
+    (*updated_form)
+        ->RetrieveFromCache(*cached_form, /* apply_is_autofilled */ true,
+                            /* only_server_and_autofill_state */ true);
   // Annotate the updated form with its predicted types.
   driver()->SendAutofillTypePredictionsToRenderer({*updated_form});
 

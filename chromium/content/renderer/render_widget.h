@@ -190,6 +190,9 @@ class CONTENT_EXPORT RenderWidget
   blink::WebInputMethodController* GetInputMethodController() const;
 
   const gfx::Size& size() const { return size_; }
+  const gfx::Size& compositor_viewport_pixel_size() const {
+    return compositor_viewport_pixel_size_;
+  }
   bool is_fullscreen_granted() const { return is_fullscreen_granted_; }
   blink::WebDisplayMode display_mode() const { return display_mode_; }
   bool is_hidden() const { return is_hidden_; }
@@ -208,9 +211,6 @@ class CONTENT_EXPORT RenderWidget
   }
 
   RenderWidgetOwnerDelegate* owner_delegate() const { return owner_delegate_; }
-
-  // ScreenInfo exposed so it can be passed to subframe RenderWidgets.
-  ScreenInfo screen_info() const { return screen_info_; }
 
   // Sets whether this RenderWidget has been swapped out to be displayed by
   // a RenderWidget in a different process.  If so, no new IPC messages will be
@@ -296,6 +296,8 @@ class CONTENT_EXPORT RenderWidget
 
   // blink::WebWidgetClient
   blink::WebLayerTreeView* InitializeLayerTreeView() override;
+  void IntrinsicSizingInfoChanged(
+      const blink::WebIntrinsicSizingInfo&) override;
   void DidMeaningfulLayout(blink::WebMeaningfulLayout layout_type) override;
   void DidChangeCursor(const blink::WebCursorInfo&) override;
   void AutoscrollStart(const blink::WebFloatPoint& point) override;
@@ -406,15 +408,19 @@ class CONTENT_EXPORT RenderWidget
     return mouse_lock_dispatcher_.get();
   }
 
-  // When emulated, this returns original device scale factor.
-  float GetOriginalDeviceScaleFactor() const;
+  // Returns the ScreenInfo exposed to Blink. In device emulation, this
+  // may not match the compositor ScreenInfo.
+  const ScreenInfo& GetWebScreenInfo() const;
+
+  // When emulated, this returns the original (non-emulated) ScreenInfo.
+  const ScreenInfo& GetOriginalScreenInfo() const;
 
   // Helper to convert |point| using ConvertWindowToViewport().
   gfx::PointF ConvertWindowPointToViewport(const gfx::PointF& point);
   gfx::Point ConvertWindowPointToViewport(const gfx::Point& point);
 
   uint32_t GetContentSourceId();
-  void IncrementContentSourceId();
+  void DidNavigate();
 
   // MainThreadEventQueueClient overrides.
 
@@ -469,6 +475,8 @@ class CONTENT_EXPORT RenderWidget
   };
 
   void DidResizeOrRepaintAck();
+
+  base::WeakPtr<RenderWidget> AsWeakPtr();
 
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
@@ -525,6 +533,9 @@ class CONTENT_EXPORT RenderWidget
   // frame widgets beings closed, since subsequent calls are ignored.
   void CloseWebWidget();
 
+  // Update the web view's device scale factor.
+  void UpdateWebViewWithDeviceScaleFactor();
+
   // Used to force the size of a window when running layout tests.
   void SetWindowRectSynchronously(const gfx::Rect& new_window_rect);
 #if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
@@ -536,6 +547,7 @@ class CONTENT_EXPORT RenderWidget
   void SetLocalSurfaceIdForAutoResize(
       uint64_t sequence_number,
       const content::ScreenInfo& screen_info,
+      uint32_t content_source_id,
       const viz::LocalSurfaceId& local_surface_id);
 
   // RenderWidget IPC message handlers
@@ -552,6 +564,7 @@ class CONTENT_EXPORT RenderWidget
       const gfx::Size& min_size,
       const gfx::Size& max_size,
       const content::ScreenInfo& screen_info,
+      uint32_t content_source_id,
       const viz::LocalSurfaceId& local_surface_id);
   void OnEnableDeviceEmulation(const blink::WebDeviceEmulationParams& params);
   void OnDisableDeviceEmulation();
@@ -564,9 +577,6 @@ class CONTENT_EXPORT RenderWidget
   // Request from browser to show context menu.
   virtual void OnShowContextMenu(ui::MenuSourceType source_type,
                                  const gfx::Point& location);
-  // Called when the device scale factor is changed, or the layer tree is
-  // initialized.
-  virtual void OnDeviceScaleFactorChanged();
 
   void OnRepaint(gfx::Size size_to_paint);
   void OnSetTextDirection(blink::WebTextDirection direction);
@@ -600,11 +610,6 @@ class CONTENT_EXPORT RenderWidget
                          blink::WebDragOperation drag_operation);
   void OnDragSourceSystemDragEnded();
 
-  // Notify the compositor about a change in viewport size. This should be
-  // used only with auto resize mode WebWidgets, as normal WebWidgets should
-  // go through OnResize.
-  void AutoResizeCompositor(const viz::LocalSurfaceId& local_surface_id);
-
   void OnOrientationChange();
 
   // Override points to notify derived classes that a paint has happened.
@@ -624,6 +629,7 @@ class CONTENT_EXPORT RenderWidget
   bool next_paint_is_resize_ack() const;
   void set_next_paint_is_resize_ack();
   void set_next_paint_is_repaint_ack();
+  void reset_next_paint_is_resize_ack();
 
   // QueueMessage implementation extracted into a static method for easy
   // testing.
@@ -705,13 +711,16 @@ class CONTENT_EXPORT RenderWidget
   // messages.
   WebCursor current_cursor_;
 
-  // The size of the RenderWidget.
+  // The size of the RenderWidget in DIPs. This may differ from
+  // |compositor_viewport_pixel_size_| in the following (and possibly other)
+  // cases: * On Android, for top and bottom controls * On OOPIF, due to
+  // rounding
   gfx::Size size_;
 
-  // The size of the view's backing surface in non-DPI-adjusted pixels.
-  gfx::Size physical_backing_size_;
+  // The size of the compositor's surface in pixels.
+  gfx::Size compositor_viewport_pixel_size_;
 
-  // The size of the visible viewport in DPI-adjusted pixels.
+  // The size of the visible viewport in pixels.
   gfx::Size visible_viewport_size_;
 
   // Flags for the next ViewHostMsg_ResizeOrRepaint_ACK message.
@@ -725,8 +734,8 @@ class CONTENT_EXPORT RenderWidget
   // the browser about an already-completed auto-resize.
   bool need_resize_ack_for_auto_resize_;
 
-  // The sequence number used for ViewHostMsg_UpdateRect.
-  uint64_t resize_or_repaint_ack_num_ = 0;
+  // The sequence number used for the auto-resize request.
+  uint64_t auto_resize_sequence_number_ = 0;
 
   // A pending ResizeOrRepaintAck callback in response to an auto-resize
   // initiated by Blink. If auto-resize mode is canceled with an in-flight
@@ -818,10 +827,6 @@ class CONTENT_EXPORT RenderWidget
   // Properties of the screen hosting this RenderWidget instance.
   ScreenInfo screen_info_;
 
-  // The device scale factor. This value is computed from the DPI entries in
-  // |screen_info_| on some platforms, and defaults to 1 on other platforms.
-  float device_scale_factor_;
-
   // True if the IME requests updated composition info.
   bool monitor_composition_info_;
 
@@ -861,6 +866,8 @@ class CONTENT_EXPORT RenderWidget
 
   bool has_added_input_handler_;
 
+  viz::LocalSurfaceId local_surface_id_;
+
  private:
   // TODO(ekaramad): This method should not be confused with its RenderView
   // variant, GetWebFrameWidget(). Currently Cast and AndroidWebview's
@@ -882,6 +889,11 @@ class CONTENT_EXPORT RenderWidget
   bool CreateWidget(int32_t opener_id,
                     blink::WebPopupType popup_type,
                     int32_t* routing_id);
+
+  void UpdateSurfaceAndScreenInfo(
+      viz::LocalSurfaceId new_local_surface_id,
+      const gfx::Size& new_compositor_viewport_pixel_size,
+      const ScreenInfo& new_screen_info);
 
   // A variant of Send but is fatal if it fails. The browser may
   // be waiting for this IPC Message and if the send fails the browser will
@@ -963,13 +975,21 @@ class CONTENT_EXPORT RenderWidget
   // to replace it. See https://crbug.com/695579.
   uint32_t current_content_source_id_;
 
-  viz::LocalSurfaceId local_surface_id_;
-
   scoped_refptr<MainThreadEventQueue> input_event_queue_;
 
   mojo::Binding<mojom::Widget> widget_binding_;
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
+  // Keep track of whether we committed after the latest resize that needs to be
+  // acked was received. This helps us make sure we don't ack a resize before
+  // it's committed.
+  bool did_commit_after_resize_ = false;
+
+  // Cache whether or not we have touch handlers, to reduce IPCs sent.
+  // Different consumers in the browser process makes different assumptions, so
+  // must always send the first IPC regardless of value.
+  base::Optional<bool> has_touch_handlers_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

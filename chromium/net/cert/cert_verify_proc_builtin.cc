@@ -20,6 +20,7 @@
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/ev_root_ca_metadata.h"
 #include "net/cert/internal/cert_errors.h"
+#include "net/cert/internal/cert_issuer_source_aia.h"
 #include "net/cert/internal/cert_issuer_source_static.h"
 #include "net/cert/internal/common_cert_errors.h"
 #include "net/cert/internal/parsed_certificate.h"
@@ -27,6 +28,7 @@
 #include "net/cert/internal/revocation_checker.h"
 #include "net/cert/internal/simple_path_builder_delegate.h"
 #include "net/cert/internal/system_trust_store.h"
+#include "net/cert/known_roots.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
 #include "net/der/encode_values.h"
@@ -358,6 +360,9 @@ void MapPathBuilderErrorsToCertStatus(const CertPathErrors& errors,
     *cert_status |= CERT_STATUS_DATE_INVALID;
   }
 
+  if (errors.ContainsError(cert_errors::kDistrustedByTrustStore))
+    *cert_status |= CERT_STATUS_AUTHORITY_INVALID;
+
   // IMPORTANT: If the path was invalid for a reason that was not
   // explicity checked above, set a general error. This is important as
   // |cert_status| is what ultimately indicates whether verification was
@@ -442,8 +447,17 @@ void TryBuildPath(const scoped_refptr<ParsedCertificate>& target,
   // |input_cert|.
   path_builder.AddCertIssuerSource(intermediates);
 
-  // TODO(crbug.com/649017): Allow the path builder to discover intermediates
-  // through AIA fetching.
+  // Allow the path builder to discover intermediates through AIA fetching.
+  std::unique_ptr<CertIssuerSourceAia> aia_cert_issuer_source;
+  if (flags & CertVerifier::VERIFY_CERT_IO_ENABLED) {
+    if (net_fetcher) {
+      aia_cert_issuer_source =
+          std::make_unique<CertIssuerSourceAia>(net_fetcher);
+      path_builder.AddCertIssuerSource(aia_cert_issuer_source.get());
+    } else {
+      LOG(ERROR) << "VERIFY_CERT_IO_ENABLED specified but no net_fetcher";
+    }
+  }
 
   path_builder.Run();
 }
@@ -468,12 +482,24 @@ int AssignVerifyResult(X509Certificate* input_cert,
   const CertPathBuilderResultPath& partial_path =
       *result.paths[result.best_result_index].get();
 
+  AppendPublicKeyHashes(partial_path, &verify_result->public_key_hashes);
+
+  for (auto it = verify_result->public_key_hashes.rbegin();
+       it != verify_result->public_key_hashes.rend() &&
+       !verify_result->is_issued_by_known_root;
+       ++it) {
+    verify_result->is_issued_by_known_root =
+        GetNetTrustAnchorHistogramIdForSPKI(*it) != 0;
+  }
+
   bool path_is_valid = partial_path.IsValid();
 
   const ParsedCertificate* trusted_cert = partial_path.GetTrustedCert();
   if (trusted_cert) {
-    verify_result->is_issued_by_known_root =
-        ssl_trust_store->IsKnownRoot(trusted_cert);
+    if (!verify_result->is_issued_by_known_root) {
+      verify_result->is_issued_by_known_root =
+          ssl_trust_store->IsKnownRoot(trusted_cert);
+    }
 
     verify_result->is_issued_by_additional_trust_anchor =
         ssl_trust_store->IsAdditionalTrustAnchor(trusted_cert);
@@ -494,7 +520,6 @@ int AssignVerifyResult(X509Certificate* input_cert,
   verify_result->verified_cert =
       CreateVerifiedCertChain(input_cert, partial_path);
 
-  AppendPublicKeyHashes(partial_path, &verify_result->public_key_hashes);
   MapPathBuilderErrorsToCertStatus(partial_path.errors,
                                    &verify_result->cert_status);
 

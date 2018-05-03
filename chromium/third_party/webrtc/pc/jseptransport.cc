@@ -25,18 +25,8 @@ using webrtc::SdpType;
 
 namespace cricket {
 
-TransportChannelStats::TransportChannelStats() = default;
-
-TransportChannelStats::TransportChannelStats(const TransportChannelStats&) =
-    default;
-
-TransportChannelStats::~TransportChannelStats() = default;
-
-TransportStats::TransportStats() = default;
-
-TransportStats::~TransportStats() = default;
-
-bool BadTransportDescription(const std::string& desc, std::string* err_desc) {
+static bool BadTransportDescription(const std::string& desc,
+                                    std::string* err_desc) {
   if (err_desc) {
     *err_desc = desc;
   }
@@ -234,7 +224,7 @@ bool JsepTransport::GetStats(TransportStats* stats) {
     dtls_transport->GetSslCipherSuite(&substats.ssl_cipher_suite);
     substats.dtls_state = dtls_transport->dtls_state();
     if (!dtls_transport->ice_transport()->GetStats(
-            &substats.connection_infos)) {
+            &substats.connection_infos, &substats.candidate_stats_list)) {
       return false;
     }
     stats->channel_stats.push_back(substats);
@@ -289,7 +279,7 @@ bool JsepTransport::ApplyNegotiatedTransportDescription(
     std::string* error_desc) {
   // Set SSL role. Role must be set before fingerprint is applied, which
   // initiates DTLS setup.
-  if (ssl_role_ && !dtls_transport->SetSslRole(*ssl_role_)) {
+  if (ssl_role_ && !dtls_transport->SetDtlsRole(*ssl_role_)) {
     return BadTransportDescription("Failed to set SSL role for the channel.",
                                    error_desc);
   }

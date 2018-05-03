@@ -93,7 +93,8 @@ class CONTENT_EXPORT AppCacheRequestHandler
   bool MaybeCreateLoaderForResponse(
       const network::ResourceResponseHead& response,
       network::mojom::URLLoaderPtr* loader,
-      network::mojom::URLLoaderClientRequest* client_request) override;
+      network::mojom::URLLoaderClientRequest* client_request,
+      ThrottlingURLLoader* url_loader) override;
   base::Optional<SubresourceLoaderParams> MaybeCreateSubresourceLoaderParams()
       override;
 
@@ -187,14 +188,12 @@ class CONTENT_EXPORT AppCacheRequestHandler
                            const GURL& mainfest_url) override;
 
   // NetworkService loading:
-  // Called when a |callback| that is originally given to
-  // MaybeCreateLoader() runs for the main resource.
-  // This flips should_create_subresource_loader_ if non-null
-  // |start_loader_callback| is given, and then (always) run
-  // |callback| passing in |start_loader_callback|.
+  // Called when a |callback| that is originally given to |MaybeCreateLoader()|
+  // runs for the main resource. This flips |should_create_subresource_loader_|
+  // if a non-null |handler| is given. Always invokes |callback| with |handler|.
   void RunLoaderCallbackForMainResource(
       LoaderCallback callback,
-      StartLoaderCallback start_loader_callback);
+      SingleRequestURLLoaderFactory::RequestHandler handler);
 
   // Sub-resource loading -------------------------------------
   // Dedicated worker and all manner of sub-resources are handled here.
@@ -271,8 +270,8 @@ class CONTENT_EXPORT AppCacheRequestHandler
   LoaderCallback loader_callback_;
 
   // Flipped to true if AppCache wants to handle subresource requests
-  // (i.e. when |loader_callback_| is fired with a non-null callback for
-  // non-error cases.
+  // (i.e. when |loader_callback_| is fired with a non-null
+  // RequestHandler for non-error cases.
   bool should_create_subresource_loader_ = false;
 
   // Points to the getter for the network URL loader.

@@ -183,8 +183,12 @@ static sk_sp<SkColorFilter> make_fuzz_colorfilter(Fuzz* fuzz, int depth) {
         }
         case 2: {
             sk_sp<SkColorFilter> outer = make_fuzz_colorfilter(fuzz, depth - 1);
+            if (!outer) {
+                return nullptr;
+            }
             sk_sp<SkColorFilter> inner = make_fuzz_colorfilter(fuzz, depth - 1);
-            return SkColorFilter::MakeComposeFilter(std::move(outer), std::move(inner));
+            // makeComposed should be able to handle nullptr.
+            return outer->makeComposed(std::move(inner));
         }
         case 3: {
             SkScalar array[20];
@@ -897,7 +901,10 @@ static SkBitmap make_fuzz_bitmap(Fuzz* fuzz) {
     int w, h;
     fuzz->nextRange(&w, 1, 1024);
     fuzz->nextRange(&h, 1, 1024);
-    bitmap.allocN32Pixels(w, h);
+    if (!bitmap.tryAllocN32Pixels(w, h)) {
+        SkDEBUGF(("Could not allocate pixels %d x %d", w, h));
+        return bitmap;
+    }
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             SkColor c;
@@ -969,6 +976,11 @@ static SkTDArray<uint8_t> make_fuzz_text(Fuzz* fuzz, const SkPaint& paint) {
     if (SkPaint::kGlyphID_TextEncoding == paint.getTextEncoding()) {
         int glyphRange = paint.getTypeface() ? paint.getTypeface()->countGlyphs()
                                              : SkTypeface::MakeDefault()->countGlyphs();
+        if (glyphRange == 0) {
+            // Some fuzzing environments have no fonts, so empty array is the best
+            // we can do.
+            return array;
+        }
         int glyphCount;
         fuzz->nextRange(&glyphCount, 1, kMaxGlyphCount);
         SkGlyphID* glyphs = (SkGlyphID*)array.append(glyphCount * sizeof(SkGlyphID));
@@ -1150,9 +1162,6 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
                 }
                 // _DumpCanvas can't handle this.
                 // if (make_fuzz_t<bool>(fuzz)) {
-                //     saveLayerRec.fSaveLayerFlags |= SkCanvas::kIsOpaque_SaveLayerFlag;
-                // }
-                // if (make_fuzz_t<bool>(fuzz)) {
                 //     saveLayerRec.fSaveLayerFlags |= SkCanvas::kPreserveLCDText_SaveLayerFlag;
                 // }
 
@@ -1289,6 +1298,7 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
                 canvas->drawOval(r, paint);
                 break;
             }
+            case 28: break; // must have deleted this some time earlier
             case 29: {
                 fuzz_paint(fuzz, &paint, depth - 1);
                 SkRRect rr;
@@ -1462,6 +1472,10 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
                 if (make_fuzz_t<bool>(fuzz)) {
                     fuzz->next(&center);
                 } else {  // Make valid center, see SkLatticeIter::Valid().
+                    if (img.width() == 0 || img.height() == 0) {
+                        // bitmap may not have had its pixels initialized.
+                        break;
+                    }
                     fuzz->nextRange(&center.fLeft, 0, img.width() - 1);
                     fuzz->nextRange(&center.fTop, 0, img.height() - 1);
                     fuzz->nextRange(&center.fRight, center.fLeft + 1, img.width());

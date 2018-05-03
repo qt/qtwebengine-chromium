@@ -8,16 +8,20 @@
 #include "base/memory/ptr_util.h"
 #include "base/process/process_handle.h"
 #include "base/strings/stringprintf.h"
+#include "base/task_scheduler/post_task.h"
 #include "components/download/downloader/in_progress/download_entry.h"
 #include "components/download/downloader/in_progress/in_progress_cache.h"
-#include "content/browser/download/download_create_info.h"
-#include "content/browser/download/download_interrupt_reasons_impl.h"
-#include "content/browser/download/download_stats.h"
+#include "components/download/public/common/download_create_info.h"
+#include "components/download/public/common/download_save_info.h"
+#include "components/download/public/common/download_stats.h"
+#include "components/download/public/common/download_url_parameters.h"
+#include "content/browser/blob_storage/chrome_blob_storage_context.h"
+#include "content/browser/download/download_interrupt_reasons_utils.h"
+#include "content/browser/loader/upload_data_stream_builder.h"
+#include "content/browser/resource_context_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager_delegate.h"
-#include "content/public/browser/download_save_info.h"
-#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "net/base/elements_upload_data_stream.h"
@@ -33,12 +37,13 @@ namespace content {
 namespace {
 
 void AppendExtraHeaders(net::HttpRequestHeaders* headers,
-                        DownloadUrlParameters* params) {
+                        download::DownloadUrlParameters* params) {
   for (const auto& header : params->request_headers())
     headers->SetHeaderIfMissing(header.first, header.second);
 }
 
-int GetLoadFlags(DownloadUrlParameters* params, bool has_upload_data) {
+int GetLoadFlags(download::DownloadUrlParameters* params,
+                 bool has_upload_data) {
   int load_flags = 0;
   if (params->prefer_cache()) {
     // If there is upload data attached, only retrieve from cache because there
@@ -56,10 +61,10 @@ int GetLoadFlags(DownloadUrlParameters* params, bool has_upload_data) {
 }
 
 std::unique_ptr<net::HttpRequestHeaders> GetAdditionalRequestHeaders(
-    DownloadUrlParameters* params) {
+    download::DownloadUrlParameters* params) {
   auto headers = std::make_unique<net::HttpRequestHeaders>();
   if (params->offset() == 0 &&
-      params->length() == DownloadSaveInfo::kLengthFullContent) {
+      params->length() == download::DownloadSaveInfo::kLengthFullContent) {
     AppendExtraHeaders(headers.get(), params);
     return headers;
   }
@@ -78,7 +83,7 @@ std::unique_ptr<net::HttpRequestHeaders> GetAdditionalRequestHeaders(
 
   // Add "Range" header.
   std::string range_header =
-      (params->length() == DownloadSaveInfo::kLengthFullContent)
+      (params->length() == download::DownloadSaveInfo::kLengthFullContent)
           ? base::StringPrintf("bytes=%" PRId64 "-", params->offset())
           : base::StringPrintf("bytes=%" PRId64 "-%" PRId64, params->offset(),
                                params->offset() + params->length() - 1);
@@ -118,9 +123,19 @@ std::unique_ptr<net::HttpRequestHeaders> GetAdditionalRequestHeaders(
 
 }  // namespace
 
-DownloadInterruptReason HandleRequestCompletionStatus(
-    net::Error error_code, bool has_strong_validators,
-    net::CertStatus cert_status, DownloadInterruptReason abort_reason) {
+storage::BlobStorageContext* BlobStorageContextGetter(
+    ResourceContext* resource_context) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  ChromeBlobStorageContext* blob_context =
+      GetChromeBlobStorageContextForResourceContext(resource_context);
+  return blob_context->context();
+}
+
+download::DownloadInterruptReason HandleRequestCompletionStatus(
+    net::Error error_code,
+    bool has_strong_validators,
+    net::CertStatus cert_status,
+    download::DownloadInterruptReason abort_reason) {
   // ERR_CONTENT_LENGTH_MISMATCH can be caused by 1 of the following reasons:
   // 1. Server or proxy closes the connection too early.
   // 2. The content-length header is wrong.
@@ -135,7 +150,8 @@ DownloadInterruptReason HandleRequestCompletionStatus(
   if (error_code == net::ERR_CONTENT_LENGTH_MISMATCH &&
       !has_strong_validators) {
     error_code = net::OK;
-    RecordDownloadCount(COMPLETED_WITH_CONTENT_LENGTH_MISMATCH_COUNT);
+    download::RecordDownloadCount(
+        download::COMPLETED_WITH_CONTENT_LENGTH_MISMATCH_COUNT);
   }
 
   if (error_code == net::ERR_ABORTED) {
@@ -149,10 +165,10 @@ DownloadInterruptReason HandleRequestCompletionStatus(
     // interruption that doesn't discard the partial state, unlike
      // USER_CANCELLED. (https://crbug.com/166179)
     if (net::IsCertStatusError(cert_status))
-      return DOWNLOAD_INTERRUPT_REASON_SERVER_CERT_PROBLEM;
+      return download::DOWNLOAD_INTERRUPT_REASON_SERVER_CERT_PROBLEM;
     else
-      return DOWNLOAD_INTERRUPT_REASON_USER_CANCELED;
-  } else if (abort_reason != DOWNLOAD_INTERRUPT_REASON_NONE) {
+      return download::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED;
+  } else if (abort_reason != download::DOWNLOAD_INTERRUPT_REASON_NONE) {
     // If a more specific interrupt reason was specified before the request
     // was explicitly cancelled, then use it.
     return abort_reason;
@@ -163,7 +179,7 @@ DownloadInterruptReason HandleRequestCompletionStatus(
 }
 
 std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
-    DownloadUrlParameters* params) {
+    download::DownloadUrlParameters* params) {
   DCHECK(params->offset() >= 0);
 
   std::unique_ptr<network::ResourceRequest> request(
@@ -173,9 +189,8 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   request->request_initiator = params->initiator();
   request->do_not_prompt_for_login = params->do_not_prompt_for_login();
   request->site_for_cookies = params->url();
-  request->referrer = params->referrer().url;
-  request->referrer_policy =
-      Referrer::ReferrerPolicyForUrlRequest(params->referrer().policy);
+  request->referrer = params->referrer();
+  request->referrer_policy = params->referrer_policy();
   request->download_to_file = true;
   request->allow_download = true;
   request->is_main_frame = true;
@@ -184,9 +199,8 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
     request->render_frame_id = params->render_frame_host_routing_id();
 
   bool has_upload_data = false;
-  if (!params->post_body().empty()) {
-    request->request_body = network::ResourceRequestBody::CreateFromBytes(
-        params->post_body().data(), params->post_body().size());
+  if (params->post_body()) {
+    request->request_body = params->post_body();
     has_upload_data = true;
   }
 
@@ -212,14 +226,15 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   return request;
 }
 
-std::unique_ptr<net::URLRequest>
-CreateURLRequestOnIOThread(DownloadUrlParameters* params) {
+std::unique_ptr<net::URLRequest> CreateURLRequestOnIOThread(
+    download::DownloadUrlParameters* params) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(params->offset() >= 0);
 
   // ResourceDispatcherHost{Base} is-not-a URLRequest::Delegate, and
-  // DownloadUrlParameters can-not include resource_dispatcher_host_impl.h, so
-  // we must down cast. RDHI is the only subclass of RDH as of 2012 May 4.
+  // download::DownloadUrlParameters can-not include
+  // resource_dispatcher_host_impl.h, so we must down cast. RDHI is the only
+  // subclass of RDH as of 2012 May 4.
   std::unique_ptr<net::URLRequest> request(
       params->url_request_context_getter()
           ->GetURLRequestContext()
@@ -227,12 +242,17 @@ CreateURLRequestOnIOThread(DownloadUrlParameters* params) {
                           params->GetNetworkTrafficAnnotation()));
   request->set_method(params->method());
 
-  if (!params->post_body().empty()) {
-    const std::string& body = params->post_body();
-    std::unique_ptr<net::UploadElementReader> reader(
-        net::UploadOwnedBytesElementReader::CreateWithString(body));
-    request->set_upload(
-        net::ElementsUploadDataStream::CreateWithReader(std::move(reader), 0));
+  if (params->post_body()) {
+    storage::BlobStorageContext* blob_context =
+        params->get_blob_storage_context_getter().Run();
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+        base::CreateSingleThreadTaskRunnerWithTraits(
+            {base::MayBlock(), base::TaskPriority::USER_VISIBLE});
+    std::unique_ptr<net::UploadDataStream> upload_data_stream =
+        UploadDataStreamBuilder::Build(params->post_body().get(), blob_context,
+                                       nullptr /*FileSystemContext*/,
+                                       task_runner.get());
+    request->set_upload(std::move(upload_data_stream));
   }
 
   if (params->post_id() >= 0) {
@@ -266,11 +286,12 @@ CreateURLRequestOnIOThread(DownloadUrlParameters* params) {
   return request;
 }
 
-DownloadInterruptReason HandleSuccessfulServerResponse(
+download::DownloadInterruptReason HandleSuccessfulServerResponse(
     const net::HttpResponseHeaders& http_headers,
-    DownloadSaveInfo* save_info,
+    download::DownloadSaveInfo* save_info,
     bool fetch_error_body) {
-  DownloadInterruptReason result = DOWNLOAD_INTERRUPT_REASON_NONE;
+  download::DownloadInterruptReason result =
+      download::DOWNLOAD_INTERRUPT_REASON_NONE;
   switch (http_headers.response_code()) {
     case -1:  // Non-HTTP request.
     case net::HTTP_OK:
@@ -296,35 +317,35 @@ DownloadInterruptReason HandleSuccessfulServerResponse(
     // resource not being found since there is no entity to download.
 
     case net::HTTP_NOT_FOUND:
-      result = DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
+      result = download::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
       break;
 
     case net::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE:
       // Retry by downloading from the start automatically:
       // If we haven't received data when we get this error, we won't.
-      result = DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE;
+      result = download::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE;
       break;
     case net::HTTP_UNAUTHORIZED:
     case net::HTTP_PROXY_AUTHENTICATION_REQUIRED:
       // Server didn't authorize this request.
-      result = DOWNLOAD_INTERRUPT_REASON_SERVER_UNAUTHORIZED;
+      result = download::DOWNLOAD_INTERRUPT_REASON_SERVER_UNAUTHORIZED;
       break;
     case net::HTTP_FORBIDDEN:
       // Server forbids access to this resource.
-      result = DOWNLOAD_INTERRUPT_REASON_SERVER_FORBIDDEN;
+      result = download::DOWNLOAD_INTERRUPT_REASON_SERVER_FORBIDDEN;
       break;
     default:  // All other errors.
       // Redirection and informational codes should have been handled earlier
       // in the stack.
       // TODO(xingliu): Handle HTTP_PRECONDITION_FAILED and resurrect
-      // DOWNLOAD_INTERRUPT_REASON_SERVER_PRECONDITION for range requests.
-      // This will change extensions::api::download::InterruptReason.
+      // download::DOWNLOAD_INTERRUPT_REASON_SERVER_PRECONDITION for range
+      // requests. This will change extensions::api::download::InterruptReason.
       DCHECK_NE(3, http_headers.response_code() / 100);
       DCHECK_NE(1, http_headers.response_code() / 100);
-      result = DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED;
+      result = download::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED;
   }
 
-  if (result != DOWNLOAD_INTERRUPT_REASON_NONE && !fetch_error_body)
+  if (result != download::DOWNLOAD_INTERRUPT_REASON_NONE && !fetch_error_body)
     return result;
 
   // The caller is expecting a partial response.
@@ -333,9 +354,9 @@ DownloadInterruptReason HandleSuccessfulServerResponse(
       // Server should send partial content when "If-Match" or
       // "If-Unmodified-Since" check passes, and the range request header has
       // last byte position. e.g. "Range:bytes=50-99".
-      if (save_info->length != DownloadSaveInfo::kLengthFullContent &&
+      if (save_info->length != download::DownloadSaveInfo::kLengthFullContent &&
           !fetch_error_body)
-        return DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
+        return download::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
 
       // Requested a partial range, but received the entire response, when
       // the range request header is "Range:bytes={offset}-".
@@ -344,14 +365,14 @@ DownloadInterruptReason HandleSuccessfulServerResponse(
       save_info->offset = 0;
       save_info->hash_of_partial_file.clear();
       save_info->hash_state.reset();
-      return DOWNLOAD_INTERRUPT_REASON_NONE;
+      return download::DOWNLOAD_INTERRUPT_REASON_NONE;
     }
 
     int64_t first_byte = -1;
     int64_t last_byte = -1;
     int64_t length = -1;
     if (!http_headers.GetContentRangeFor206(&first_byte, &last_byte, &length))
-      return DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
+      return download::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
     DCHECK_GE(first_byte, 0);
 
     if (first_byte != save_info->offset ||
@@ -363,20 +384,20 @@ DownloadInterruptReason HandleSuccessfulServerResponse(
       // In the future we should consider allowing offsets that are less than
       // the offset we've requested, since in theory we can truncate the partial
       // file at the offset and continue.
-      return DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
+      return download::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
     }
 
-    return DOWNLOAD_INTERRUPT_REASON_NONE;
+    return download::DOWNLOAD_INTERRUPT_REASON_NONE;
   }
 
   if (http_headers.response_code() == net::HTTP_PARTIAL_CONTENT)
-    return DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
+    return download::DOWNLOAD_INTERRUPT_REASON_SERVER_BAD_CONTENT;
 
-  return DOWNLOAD_INTERRUPT_REASON_NONE;
+  return download::DOWNLOAD_INTERRUPT_REASON_NONE;
 }
 
 void HandleResponseHeaders(const net::HttpResponseHeaders* headers,
-                           DownloadCreateInfo* create_info) {
+                           download::DownloadCreateInfo* create_info) {
   if (!headers)
     return;
 
@@ -409,61 +430,6 @@ void HandleResponseHeaders(const net::HttpResponseHeaders* headers,
       headers->HasHeaderValue("Accept-Ranges", "bytes") ||
       (headers->HasHeader("Content-Range") &&
        headers->response_code() == net::HTTP_PARTIAL_CONTENT);
-}
-
-download::DownloadSource ToDownloadSource(
-    content::DownloadSource download_source) {
-  switch (download_source) {
-    case DownloadSource::UNKNOWN:
-      return download::DownloadSource::UNKNOWN;
-    case DownloadSource::NAVIGATION:
-      return download::DownloadSource::NAVIGATION;
-    case DownloadSource::DRAG_AND_DROP:
-      return download::DownloadSource::DRAG_AND_DROP;
-    case DownloadSource::FROM_RENDERER:
-      return download::DownloadSource::FROM_RENDERER;
-    case DownloadSource::EXTENSION_API:
-      return download::DownloadSource::EXTENSION_API;
-    case DownloadSource::EXTENSION_INSTALLER:
-      return download::DownloadSource::EXTENSION_INSTALLER;
-    case DownloadSource::INTERNAL_API:
-      return download::DownloadSource::INTERNAL_API;
-    case DownloadSource::WEB_CONTENTS_API:
-      return download::DownloadSource::WEB_CONTENTS_API;
-    case DownloadSource::OFFLINE_PAGE:
-      return download::DownloadSource::OFFLINE_PAGE;
-    case DownloadSource::CONTEXT_MENU:
-      return download::DownloadSource::CONTEXT_MENU;
-  }
-  NOTREACHED();
-  return download::DownloadSource::UNKNOWN;
-}
-
-DownloadSource ToDownloadSource(download::DownloadSource download_source) {
-  switch (download_source) {
-    case download::DownloadSource::UNKNOWN:
-      return DownloadSource::UNKNOWN;
-    case download::DownloadSource::NAVIGATION:
-      return DownloadSource::NAVIGATION;
-    case download::DownloadSource::DRAG_AND_DROP:
-      return DownloadSource::DRAG_AND_DROP;
-    case download::DownloadSource::FROM_RENDERER:
-      return DownloadSource::FROM_RENDERER;
-    case download::DownloadSource::EXTENSION_API:
-      return DownloadSource::EXTENSION_API;
-    case download::DownloadSource::EXTENSION_INSTALLER:
-      return DownloadSource::EXTENSION_INSTALLER;
-    case download::DownloadSource::INTERNAL_API:
-      return DownloadSource::INTERNAL_API;
-    case download::DownloadSource::WEB_CONTENTS_API:
-      return DownloadSource::WEB_CONTENTS_API;
-    case download::DownloadSource::OFFLINE_PAGE:
-      return DownloadSource::OFFLINE_PAGE;
-    case download::DownloadSource::CONTEXT_MENU:
-      return DownloadSource::CONTEXT_MENU;
-  }
-  NOTREACHED();
-  return DownloadSource::UNKNOWN;
 }
 
 base::Optional<download::DownloadEntry> GetInProgressEntry(

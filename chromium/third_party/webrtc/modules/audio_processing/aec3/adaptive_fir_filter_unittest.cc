@@ -268,13 +268,13 @@ TEST(AdaptiveFirFilter, UpdateErlSse2Optimization) {
 #if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
 // Verifies that the check for non-null data dumper works.
 TEST(AdaptiveFirFilter, NullDataDumper) {
-  EXPECT_DEATH(AdaptiveFirFilter(9, DetectOptimization(), nullptr), "");
+  EXPECT_DEATH(AdaptiveFirFilter(9, 9, 250, DetectOptimization(), nullptr), "");
 }
 
 // Verifies that the check for non-null filter output works.
 TEST(AdaptiveFirFilter, NullFilterOutput) {
   ApmDataDumper data_dumper(42);
-  AdaptiveFirFilter filter(9, DetectOptimization(), &data_dumper);
+  AdaptiveFirFilter filter(9, 9, 250, DetectOptimization(), &data_dumper);
   std::unique_ptr<RenderDelayBuffer> render_delay_buffer(
       RenderDelayBuffer::Create(EchoCanceller3Config(), 3));
   EXPECT_DEATH(filter.Filter(*render_delay_buffer->GetRenderBuffer(), nullptr),
@@ -287,7 +287,7 @@ TEST(AdaptiveFirFilter, NullFilterOutput) {
 // are turned on.
 TEST(AdaptiveFirFilter, FilterStatisticsAccess) {
   ApmDataDumper data_dumper(42);
-  AdaptiveFirFilter filter(9, DetectOptimization(), &data_dumper);
+  AdaptiveFirFilter filter(9, 9, 250, DetectOptimization(), &data_dumper);
   filter.Erl();
   filter.FilterFrequencyResponse();
 }
@@ -296,7 +296,8 @@ TEST(AdaptiveFirFilter, FilterStatisticsAccess) {
 TEST(AdaptiveFirFilter, FilterSize) {
   ApmDataDumper data_dumper(42);
   for (size_t filter_size = 1; filter_size < 5; ++filter_size) {
-    AdaptiveFirFilter filter(filter_size, DetectOptimization(), &data_dumper);
+    AdaptiveFirFilter filter(filter_size, filter_size, 250,
+                             DetectOptimization(), &data_dumper);
     EXPECT_EQ(filter_size, filter.SizePartitions());
   }
 }
@@ -308,19 +309,23 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
   ApmDataDumper data_dumper(42);
   EchoCanceller3Config config;
   AdaptiveFirFilter filter(config.filter.main.length_blocks,
+                           config.filter.main.length_blocks,
+                           config.filter.config_change_duration_blocks,
                            DetectOptimization(), &data_dumper);
   Aec3Fft fft;
   config.delay.min_echo_path_delay_blocks = 0;
   config.delay.default_delay = 1;
   std::unique_ptr<RenderDelayBuffer> render_delay_buffer(
       RenderDelayBuffer::Create(config, 3));
-  ShadowFilterUpdateGain gain(config.filter.shadow);
+  ShadowFilterUpdateGain gain(config.filter.shadow,
+                              config.filter.config_change_duration_blocks);
   Random random_generator(42U);
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::vector<float> n(kBlockSize, 0.f);
   std::vector<float> y(kBlockSize, 0.f);
   AecState aec_state(EchoCanceller3Config{});
-  RenderSignalAnalyzer render_signal_analyzer;
+  RenderSignalAnalyzer render_signal_analyzer(config);
+  rtc::Optional<DelayEstimate> delay_estimate;
   std::vector<float> e(kBlockSize, 0.f);
   std::array<float, kFftLength> s_scratch;
   std::array<float, kBlockSize> s;
@@ -346,7 +351,7 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
     CascadedBiQuadFilter y_hp_filter(kHighPassFilterCoefficients, 1);
 
     SCOPED_TRACE(ProduceDebugText(delay_samples));
-    for (size_t k = 0; k < kNumBlocksToProcess; ++k) {
+    for (size_t j = 0; j < kNumBlocksToProcess; ++j) {
       RandomizeSampleVector(&random_generator, x[0]);
       delay_buffer.Delay(x[0], y);
 
@@ -360,13 +365,14 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
       y_hp_filter.Process(y);
 
       render_delay_buffer->Insert(x);
-      if (k == 0) {
+      if (j == 0) {
         render_delay_buffer->Reset();
       }
       render_delay_buffer->PrepareCaptureProcessing();
       const auto& render_buffer = render_delay_buffer->GetRenderBuffer();
 
-      render_signal_analyzer.Update(*render_buffer, aec_state.FilterDelay());
+      render_signal_analyzer.Update(*render_buffer,
+                                    aec_state.FilterDelayBlocks());
 
       filter.Filter(*render_buffer, &S);
       fft.Ifft(S, &s_scratch);
@@ -387,15 +393,14 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
       filter.Adapt(*render_buffer, G);
       aec_state.HandleEchoPathChange(EchoPathVariability(
           false, EchoPathVariability::DelayAdjustment::kNone, false));
-      aec_state.Update(filter.FilterFrequencyResponse(),
-                       filter.FilterImpulseResponse(), true, *render_buffer,
-                       E2_main, Y2, s, false);
+
+      aec_state.Update(delay_estimate, filter.FilterFrequencyResponse(),
+                       filter.FilterImpulseResponse(), true, false,
+                       *render_buffer, E2_main, Y2, s);
     }
     // Verify that the filter is able to perform well.
     EXPECT_LT(1000 * std::inner_product(e.begin(), e.end(), e.begin(), 0.f),
               std::inner_product(y.begin(), y.end(), y.begin(), 0.f));
-    EXPECT_EQ(delay_samples / kBlockSize,
-              static_cast<size_t>(aec_state.FilterDelay()));
   }
 }
 }  // namespace aec3

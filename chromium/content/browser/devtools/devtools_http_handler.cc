@@ -15,6 +15,7 @@
 #include "base/json/json_writer.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -30,6 +31,7 @@
 #include "content/browser/devtools/grit/devtools_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_external_agent_proxy_delegate.h"
+#include "content/public/browser/devtools_frontend_host.h"
 #include "content/public/browser/devtools_manager_delegate.h"
 #include "content/public/browser/devtools_socket_factory.h"
 #include "content/public/common/content_client.h"
@@ -39,10 +41,12 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "net/base/url_util.h"
 #include "net/server/http_server.h"
 #include "net/server/http_server_request_info.h"
 #include "net/server/http_server_response_info.h"
 #include "net/socket/server_socket.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "third_party/brotli/include/brotli/decode.h"
 #include "v8/include/v8-version-string.h"
 
@@ -75,6 +79,39 @@ const char kTargetDevtoolsFrontendUrlField[] = "devtoolsFrontendUrl";
 const int32_t kSendBufferSizeForDevTools = 256 * 1024 * 1024;  // 256Mb
 const int32_t kReceiveBufferSizeForDevTools = 100 * 1024 * 1024;  // 100Mb
 
+constexpr net::NetworkTrafficAnnotationTag
+    kDevtoolsHttpHandlerTrafficAnnotation =
+        net::DefineNetworkTrafficAnnotation("devtools_http_handler", R"(
+      semantics {
+        sender: "Devtools Http Handler"
+        description:
+          "This is a remote debugging server, only enabled by "
+          "'--remote-debugging-port' switch. It exposes debugging protocol "
+          "over websockets."
+        trigger: "Run with '--remote-debugging-port' switch."
+        data: "Debugging data, including any data on the open pages."
+        destination: OTHER
+        destination_other: "The data can be sent to any destination."
+      }
+      policy {
+        cookies_allowed: NO
+        setting:
+          "This request cannot be disabled in settings. However it will never "
+          "be made if user does not run with '--remote-debugging-port' switch."
+        policy_exception_justification:
+          "Not implemented, only used in Devtools and is behind a switch."
+      })");
+
+bool RequestIsSafeToServe(const net::HttpServerRequestInfo& info) {
+  // For browser-originating requests, serve only those that are coming from
+  // pages loaded off localhost or fixed IPs.
+  std::string header = info.headers["host"];
+  if (header.empty())
+    return true;
+  GURL url = GURL("http://" + header);
+  return url.HostIsIPAddress() || net::IsLocalHostname(url.host(), nullptr);
+}
+
 }  // namespace
 
 // ServerWrapper -------------------------------------------------------------
@@ -83,7 +120,7 @@ class ServerWrapper : net::HttpServer::Delegate {
  public:
   ServerWrapper(base::WeakPtr<DevToolsHttpHandler> handler,
                 std::unique_ptr<net::ServerSocket> socket,
-                const base::FilePath& frontend_dir,
+                const base::FilePath& debug_frontend_dir,
                 bool bundles_resources);
 
   int GetLocalAddress(net::IPEndPoint* address);
@@ -115,17 +152,17 @@ class ServerWrapper : net::HttpServer::Delegate {
 
   base::WeakPtr<DevToolsHttpHandler> handler_;
   std::unique_ptr<net::HttpServer> server_;
-  base::FilePath frontend_dir_;
+  base::FilePath debug_frontend_dir_;
   bool bundles_resources_;
 };
 
 ServerWrapper::ServerWrapper(base::WeakPtr<DevToolsHttpHandler> handler,
                              std::unique_ptr<net::ServerSocket> socket,
-                             const base::FilePath& frontend_dir,
+                             const base::FilePath& debug_frontend_dir,
                              bool bundles_resources)
     : handler_(handler),
       server_(new net::HttpServer(std::move(socket), this)),
-      frontend_dir_(frontend_dir),
+      debug_frontend_dir_(debug_frontend_dir),
       bundles_resources_(bundles_resources) {}
 
 int ServerWrapper::GetLocalAddress(net::IPEndPoint* address) {
@@ -136,32 +173,37 @@ void ServerWrapper::AcceptWebSocket(int connection_id,
                                     const net::HttpServerRequestInfo& request) {
   server_->SetSendBufferSize(connection_id, kSendBufferSizeForDevTools);
   server_->SetReceiveBufferSize(connection_id, kReceiveBufferSizeForDevTools);
-  server_->AcceptWebSocket(connection_id, request);
+  server_->AcceptWebSocket(connection_id, request,
+                           kDevtoolsHttpHandlerTrafficAnnotation);
 }
 
 void ServerWrapper::SendOverWebSocket(int connection_id,
                                       const std::string& message) {
-  server_->SendOverWebSocket(connection_id, message);
+  server_->SendOverWebSocket(connection_id, message,
+                             kDevtoolsHttpHandlerTrafficAnnotation);
 }
 
 void ServerWrapper::SendResponse(int connection_id,
                                  const net::HttpServerResponseInfo& response) {
-  server_->SendResponse(connection_id, response);
+  server_->SendResponse(connection_id, response,
+                        kDevtoolsHttpHandlerTrafficAnnotation);
 }
 
 void ServerWrapper::Send200(int connection_id,
                             const std::string& data,
                             const std::string& mime_type) {
-  server_->Send200(connection_id, data, mime_type);
+  server_->Send200(connection_id, data, mime_type,
+                   kDevtoolsHttpHandlerTrafficAnnotation);
 }
 
 void ServerWrapper::Send404(int connection_id) {
-  server_->Send404(connection_id);
+  server_->Send404(connection_id, kDevtoolsHttpHandlerTrafficAnnotation);
 }
 
 void ServerWrapper::Send500(int connection_id,
                             const std::string& message) {
-  server_->Send500(connection_id, message);
+  server_->Send500(connection_id, message,
+                   kDevtoolsHttpHandlerTrafficAnnotation);
 }
 
 void ServerWrapper::Close(int connection_id) {
@@ -209,7 +251,7 @@ void StartServerOnHandlerThread(
     std::unique_ptr<base::Thread> thread,
     std::unique_ptr<DevToolsSocketFactory> socket_factory,
     const base::FilePath& output_directory,
-    const base::FilePath& frontend_dir,
+    const base::FilePath& debug_frontend_dir,
     const std::string& browser_guid,
     bool bundles_resources) {
   DCHECK(thread->task_runner()->BelongsToCurrentThread());
@@ -219,7 +261,8 @@ void StartServerOnHandlerThread(
   std::unique_ptr<net::IPEndPoint> ip_address(new net::IPEndPoint);
   if (server_socket) {
     server_wrapper.reset(new ServerWrapper(handler, std::move(server_socket),
-                                           frontend_dir, bundles_resources));
+                                           debug_frontend_dir,
+                                           bundles_resources));
     if (server_wrapper->GetLocalAddress(ip_address.get()) != net::OK)
       ip_address.reset();
   } else {
@@ -367,6 +410,12 @@ static std::string GetMimeType(const std::string& filename) {
 
 void ServerWrapper::OnHttpRequest(int connection_id,
                                   const net::HttpServerRequestInfo& info) {
+  if (!RequestIsSafeToServe(info)) {
+    Send500(connection_id,
+            "Host header is specified and is not an IP address or localhost.");
+    return;
+  }
+
   server_->SetSendBufferSize(connection_id, kSendBufferSizeForDevTools);
 
   if (base::StartsWith(info.path, "/json", base::CompareCase::SENSITIVE)) {
@@ -387,18 +436,19 @@ void ServerWrapper::OnHttpRequest(int connection_id,
 
   if (!base::StartsWith(info.path, "/devtools/",
                         base::CompareCase::SENSITIVE)) {
-    server_->Send404(connection_id);
+    server_->Send404(connection_id, kDevtoolsHttpHandlerTrafficAnnotation);
     return;
   }
 
   std::string filename = PathWithoutParams(info.path.substr(10));
   std::string mime_type = GetMimeType(filename);
 
-  if (!frontend_dir_.empty()) {
-    base::FilePath path = frontend_dir_.AppendASCII(filename);
+  if (!debug_frontend_dir_.empty()) {
+    base::FilePath path = debug_frontend_dir_.AppendASCII(filename);
     std::string data;
     base::ReadFileToString(path, &data);
-    server_->Send200(connection_id, data, mime_type);
+    server_->Send200(connection_id, data, mime_type,
+                     kDevtoolsHttpHandlerTrafficAnnotation);
     return;
   }
 
@@ -409,7 +459,7 @@ void ServerWrapper::OnHttpRequest(int connection_id,
                        handler_, connection_id, filename));
     return;
   }
-  server_->Send404(connection_id);
+  server_->Send404(connection_id, kDevtoolsHttpHandlerTrafficAnnotation);
 }
 
 void ServerWrapper::OnWebSocketRequest(
@@ -436,15 +486,22 @@ void ServerWrapper::OnClose(int connection_id) {
 }
 
 std::string DevToolsHttpHandler::GetFrontendURLInternal(
+    scoped_refptr<DevToolsAgentHost> agent_host,
     const std::string& id,
     const std::string& host) {
-  return base::StringPrintf(
-      "%s%sws=%s%s%s",
-      frontend_url_.c_str(),
-      frontend_url_.find("?") == std::string::npos ? "?" : "&",
-      host.c_str(),
-      kPageUrlPrefix,
-      id.c_str());
+  std::string frontend_url;
+  if (delegate_->HasBundledFrontendResources()) {
+    frontend_url = "/devtools/inspector.html";
+  } else {
+    std::string type = agent_host->GetType();
+    bool is_worker = type == DevToolsAgentHost::kTypeServiceWorker ||
+                     type == DevToolsAgentHost::kTypeSharedWorker;
+    frontend_url = base::StringPrintf(
+        "http://chrome-devtools-frontend.appspot.com/serve_rev/%s/%s.html",
+        GetWebKitRevision().c_str(), is_worker ? "worker_app" : "inspector");
+  }
+  return base::StringPrintf("%s?ws=%s%s%s", frontend_url.c_str(), host.c_str(),
+                            kPageUrlPrefix, id.c_str());
 }
 
 static bool ParseJsonPath(
@@ -646,9 +703,13 @@ void DevToolsHttpHandler::OnDiscoveryPageRequest(int connection_id) {
 
 void DevToolsHttpHandler::OnFrontendResourceRequest(
     int connection_id, const std::string& path) {
+#if defined(OS_ANDROID)
+  Send404(connection_id);
+#else
   Send200(connection_id,
-          delegate_->GetFrontendResource(path),
+          content::DevToolsFrontendHost::GetFrontendResource(path).as_string(),
           GetMimeType(path));
+#endif
 }
 
 void DevToolsHttpHandler::OnWebSocketRequest(
@@ -707,18 +768,13 @@ void DevToolsHttpHandler::OnClose(int connection_id) {
 DevToolsHttpHandler::DevToolsHttpHandler(
     DevToolsManagerDelegate* delegate,
     std::unique_ptr<DevToolsSocketFactory> socket_factory,
-    const std::string& frontend_url,
     const base::FilePath& output_directory,
     const base::FilePath& debug_frontend_dir)
-    : frontend_url_(frontend_url), delegate_(delegate), weak_factory_(this) {
+    : delegate_(delegate), weak_factory_(this) {
   browser_guid_ = delegate_->IsBrowserTargetDiscoverable()
                       ? kBrowserUrlPrefix
                       : base::StringPrintf("%s/%s", kBrowserUrlPrefix,
                                            base::GenerateGUID().c_str());
-  bool bundles_resources = frontend_url_.empty();
-  if (frontend_url_.empty())
-    frontend_url_ = "/devtools/inspector.html";
-
   std::unique_ptr<base::Thread> thread(
       new base::Thread(kDevToolsHandlerThreadName));
   base::Thread::Options options;
@@ -730,7 +786,7 @@ DevToolsHttpHandler::DevToolsHttpHandler(
         base::BindOnce(&StartServerOnHandlerThread, weak_factory_.GetWeakPtr(),
                        std::move(thread), std::move(socket_factory),
                        output_directory, debug_frontend_dir, browser_guid_,
-                       bundles_resources));
+                       delegate_->HasBundledFrontendResources()));
   }
 }
 
@@ -835,7 +891,8 @@ std::unique_ptr<base::DictionaryValue> DevToolsHttpHandler::SerializeDescriptor(
   dictionary->SetString(kTargetWebSocketDebuggerUrlField,
                         base::StringPrintf("ws://%s%s%s", host.c_str(),
                                            kPageUrlPrefix, id.c_str()));
-  std::string devtools_frontend_url = GetFrontendURLInternal(id, host);
+  std::string devtools_frontend_url =
+      GetFrontendURLInternal(agent_host, id, host);
   dictionary->SetString(kTargetDevtoolsFrontendUrlField, devtools_frontend_url);
 
   return dictionary;

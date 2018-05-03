@@ -21,9 +21,13 @@
 #include "third_party/WebKit/public/web/devtools_agent.mojom.h"
 
 #if defined(OS_ANDROID)
-#include "services/device/public/interfaces/wake_lock.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
 #include "ui/android/view_android.h"
 #endif  // OS_ANDROID
+
+namespace network {
+struct ResourceResponse;
+}
 
 namespace viz {
 class CompositorFrameMetadata;
@@ -34,7 +38,6 @@ namespace content {
 class BrowserContext;
 class DevToolsFrameTraceRecorder;
 class FrameTreeNode;
-class NavigationHandle;
 class NavigationHandleImpl;
 class NavigationRequest;
 class NavigationThrottle;
@@ -63,8 +66,19 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
 
   static void OnResetNavigationRequest(NavigationRequest* navigation_request);
 
+  static void ApplyOverrides(FrameTreeNode* frame_tree_node,
+                             mojom::BeginNavigationParams* begin_params,
+                             bool* report_raw_headers);
+  static void OnNavigationRequestWillBeSent(
+      const NavigationRequest& navigation_request);
+  static void OnNavigationResponseReceived(
+      const NavigationRequest& nav_request,
+      const network::ResourceResponse& response);
+  static void OnNavigationRequestFailed(const NavigationRequest& nav_request,
+                                        int error_code);
+
   static std::vector<std::unique_ptr<NavigationThrottle>>
-  CreateNavigationThrottles(NavigationHandle* navigation_handle);
+  CreateNavigationThrottles(NavigationHandleImpl* navigation_handle);
   static bool IsNetworkHandlerEnabled(FrameTreeNode* frame_tree_node);
   static void WebContentsCreated(WebContents* web_contents);
 
@@ -102,10 +116,9 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   // DevToolsAgentHostImpl overrides.
   void AttachSession(DevToolsSession* session) override;
   void DetachSession(DevToolsSession* session) override;
-  void InspectElement(DevToolsSession* session, int x, int y) override;
-  bool DispatchProtocolMessage(
-      DevToolsSession* session,
-      const std::string& message) override;
+  void InspectElement(RenderFrameHost* frame_host, int x, int y) override;
+  void DispatchProtocolMessage(DevToolsSession* session,
+                               const std::string& message) override;
 
   // WebContentsObserver overrides.
   void DidStartNavigation(NavigationHandle* navigation_handle) override;
@@ -118,8 +131,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   void RenderProcessGone(base::TerminationStatus status) override;
   void DidAttachInterstitialPage() override;
   void DidDetachInterstitialPage() override;
-  void WasShown() override;
-  void WasHidden() override;
+  void OnVisibilityChanged(content::Visibility visibility) override;
   void DidReceiveCompositorFrame() override;
 
   bool IsChildFrame();
@@ -150,16 +162,6 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   blink::mojom::DevToolsAgentAssociatedPtr agent_ptr_;
   base::flat_set<NavigationHandleImpl*> navigation_handles_;
   bool render_frame_alive_ = false;
-
-  // These messages were queued after suspending, not sent to the agent,
-  // and will be sent after resuming.
-  struct Message {
-    int call_id;
-    std::string method;
-    std::string message;
-  };
-  std::map<DevToolsSession*, std::vector<Message>>
-      suspended_messages_by_session_;
 
   // The FrameTreeNode associated with this agent.
   FrameTreeNode* frame_tree_node_;

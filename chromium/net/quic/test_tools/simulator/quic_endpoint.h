@@ -11,6 +11,7 @@
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/core/quic_stream_frame_data_producer.h"
 #include "net/quic/platform/api/quic_containers.h"
+#include "net/quic/test_tools/simple_session_notifier.h"
 #include "net/quic/test_tools/simulator/link.h"
 #include "net/quic/test_tools/simulator/queue.h"
 #include "net/tools/quic/quic_default_packet_writer.h"
@@ -34,7 +35,8 @@ QuicSocketAddress GetAddressFromName(std::string name);
 class QuicEndpoint : public Endpoint,
                      public UnconstrainedPortInterface,
                      public Queue::ListenerInterface,
-                     public QuicConnectionVisitorInterface {
+                     public QuicConnectionVisitorInterface,
+                     public SessionNotifierInterface {
  public:
   QuicEndpoint(Simulator* simulator,
                std::string name,
@@ -44,8 +46,8 @@ class QuicEndpoint : public Endpoint,
   ~QuicEndpoint() override;
 
   inline QuicConnection* connection() { return &connection_; }
-  inline QuicByteCount bytes_to_transfer() const { return bytes_to_transfer_; }
-  inline QuicByteCount bytes_transferred() const { return bytes_transferred_; }
+  QuicByteCount bytes_to_transfer() const;
+  QuicByteCount bytes_transferred() const;
   QuicByteCount bytes_received() const;
   inline size_t write_blocked_count() { return write_blocked_count_; }
   inline bool wrong_data_received() const { return wrong_data_received_; }
@@ -85,17 +87,29 @@ class QuicEndpoint : public Endpoint,
                           ConnectionCloseSource source) override {}
   void OnWriteBlocked() override {}
   void OnSuccessfulVersionNegotiation(
-      const QuicTransportVersion& version) override {}
+      const ParsedQuicVersion& version) override {}
   void OnConnectivityProbeReceived(
       const QuicSocketAddress& self_address,
       const QuicSocketAddress& peer_address) override {}
   void OnCongestionWindowChange(QuicTime now) override {}
-  void OnConnectionMigration(PeerAddressChangeType type) override {}
+  void OnConnectionMigration(AddressChangeType type) override {}
   void OnPathDegrading() override {}
   void PostProcessAfterData() override {}
   void OnAckNeedsRetransmittableFrame() override {}
+  void SendPing() override {}
   bool AllowSelfAddressChange() const override;
   // End QuicConnectionVisitorInterface implementation.
+
+  // Begin SessionNotifierInterface methods:
+  bool OnFrameAcked(const QuicFrame& frame,
+                    QuicTime::Delta ack_delay_time) override;
+  void OnStreamFrameRetransmitted(const QuicStreamFrame& frame) override {}
+  void OnFrameLost(const QuicFrame& frame) override;
+  void RetransmitFrames(const QuicFrames& frames,
+                        TransmissionType type) override;
+  bool IsFrameOutstanding(const QuicFrame& frame) const override;
+  bool HasPendingCryptoData() const override;
+  // End SessionNotifierInterface implementation.
 
  private:
   // A Writer object that writes into the |nic_tx_queue_|.
@@ -157,6 +171,8 @@ class QuicEndpoint : public Endpoint,
 
   // Record of received offsets in the data stream.
   QuicIntervalSet<QuicStreamOffset> offsets_received_;
+
+  std::unique_ptr<test::SimpleSessionNotifier> notifier_;
 };
 
 // Multiplexes multiple connections at the same host on the network.

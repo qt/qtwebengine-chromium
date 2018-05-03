@@ -9,15 +9,11 @@
 #include "base/bind.h"
 #include "base/containers/circular_deque.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
-#include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
-#include "base/run_loop.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/test/trace_event_analyzer.h"
-#include "base/trace_event/trace_buffer.h"
 #include "cc/input/main_thread_scrolling_reason.h"
 #include "cc/trees/swap_promise_monitor.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -111,12 +107,8 @@ WebGestureEvent CreateFling(WebGestureDevice source_device,
                             WebPoint point,
                             WebPoint global_point,
                             int modifiers) {
-  return CreateFling(base::TimeTicks(),
-                     source_device,
-                     velocity,
-                     point,
-                     global_point,
-                     modifiers);
+  return CreateFling(base::TimeTicks(), source_device, velocity, point,
+                     global_point, modifiers);
 }
 
 WebScopedInputEvent CreateGestureScrollFlingPinch(
@@ -126,7 +118,7 @@ WebScopedInputEvent CreateGestureScrollFlingPinch(
     int x = 0,
     int y = 0) {
   WebGestureEvent gesture(type, WebInputEvent::kNoModifiers,
-                          WebInputEvent::kTimeStampForTesting);
+                          WebInputEvent::GetStaticTimeStampForTests());
   gesture.source_device = source_device;
   if (type == WebInputEvent::kGestureScrollUpdate) {
     gesture.data.scroll_update.delta_y = delta_y_or_scale;
@@ -140,15 +132,6 @@ WebScopedInputEvent CreateGestureScrollFlingPinch(
     gesture.y = y;
   }
   return WebInputEventTraits::Clone(gesture);
-}
-
-void OnTraceDataCollected(base::Closure quit_closure,
-                          base::trace_event::TraceResultBuffer* buffer,
-                          const scoped_refptr<base::RefCountedString>& json,
-                          bool has_more_events) {
-  buffer->AddFragment(json->data());
-  if (!has_more_events)
-    quit_closure.Run();
 }
 
 class MockInputHandler : public cc::InputHandler {
@@ -544,32 +527,6 @@ class InputHandlerProxyEventQueueTest : public testing::TestWithParam<bool> {
           std::make_unique<CompositorThreadEventQueue>();
   }
 
-  void StartTracing() {
-    base::trace_event::TraceLog::GetInstance()->SetEnabled(
-        base::trace_event::TraceConfig("*"),
-        base::trace_event::TraceLog::RECORDING_MODE);
-  }
-
-  void StopTracing() {
-    base::trace_event::TraceLog::GetInstance()->SetDisabled();
-  }
-
-  std::unique_ptr<trace_analyzer::TraceAnalyzer> CreateTraceAnalyzer() {
-    base::trace_event::TraceResultBuffer buffer;
-    base::trace_event::TraceResultBuffer::SimpleOutput trace_output;
-    buffer.SetOutputCallback(trace_output.GetCallback());
-    base::RunLoop run_loop;
-    buffer.Start();
-    base::trace_event::TraceLog::GetInstance()->Flush(
-        base::Bind(&OnTraceDataCollected, run_loop.QuitClosure(),
-                   base::Unretained(&buffer)));
-    run_loop.Run();
-    buffer.Finish();
-
-    return base::WrapUnique(
-        trace_analyzer::TraceAnalyzer::Create(trace_output.json_output));
-  }
-
   void HandleGestureEvent(WebInputEvent::Type type,
                           float delta_y_or_scale = 0,
                           int x = 0,
@@ -606,9 +563,8 @@ class InputHandlerProxyEventQueueTest : public testing::TestWithParam<bool> {
     return input_handler_proxy_->compositor_event_queue_->queue_;
   }
 
-  void SetInputHandlerProxyTickClockForTesting(
-      std::unique_ptr<base::TickClock> tick_clock) {
-    input_handler_proxy_->SetTickClockForTesting(std::move(tick_clock));
+  void SetInputHandlerProxyTickClockForTesting(base::TickClock* tick_clock) {
+    input_handler_proxy_->SetTickClockForTesting(tick_clock);
   }
 
  protected:
@@ -632,7 +588,7 @@ TEST_P(InputHandlerProxyTest, MouseWheelNoListener) {
 
   WebMouseWheelEvent wheel(WebInputEvent::kMouseWheel,
                            WebInputEvent::kControlKey,
-                           WebInputEvent::kTimeStampForTesting);
+                           WebInputEvent::GetStaticTimeStampForTests());
   EXPECT_EQ(expected_disposition_, input_handler_->HandleInputEvent(wheel));
   VERIFY_AND_RESET_MOCKS();
 }
@@ -645,7 +601,7 @@ TEST_P(InputHandlerProxyTest, MouseWheelPassiveListener) {
 
   WebMouseWheelEvent wheel(WebInputEvent::kMouseWheel,
                            WebInputEvent::kControlKey,
-                           WebInputEvent::kTimeStampForTesting);
+                           WebInputEvent::GetStaticTimeStampForTests());
   EXPECT_EQ(expected_disposition_, input_handler_->HandleInputEvent(wheel));
   VERIFY_AND_RESET_MOCKS();
 }
@@ -658,7 +614,7 @@ TEST_P(InputHandlerProxyTest, MouseWheelBlockingListener) {
 
   WebMouseWheelEvent wheel(WebInputEvent::kMouseWheel,
                            WebInputEvent::kControlKey,
-                           WebInputEvent::kTimeStampForTesting);
+                           WebInputEvent::GetStaticTimeStampForTests());
   EXPECT_EQ(expected_disposition_, input_handler_->HandleInputEvent(wheel));
   VERIFY_AND_RESET_MOCKS();
 }
@@ -672,7 +628,7 @@ TEST_P(InputHandlerProxyTest, MouseWheelBlockingAndPassiveListener) {
 
   WebMouseWheelEvent wheel(WebInputEvent::kMouseWheel,
                            WebInputEvent::kControlKey,
-                           WebInputEvent::kTimeStampForTesting);
+                           WebInputEvent::GetStaticTimeStampForTests());
   EXPECT_EQ(expected_disposition_, input_handler_->HandleInputEvent(wheel));
   VERIFY_AND_RESET_MOCKS();
 }
@@ -1759,7 +1715,7 @@ TEST_P(InputHandlerProxyTest, HitTestTouchEventNonNullTouchAction) {
   // hit-testing for the third touch point.
 
   WebTouchEvent touch(WebInputEvent::kTouchStart, WebInputEvent::kNoModifiers,
-                      WebInputEvent::kTimeStampForTesting);
+                      WebInputEvent::GetStaticTimeStampForTests());
 
   touch.touches_length = 3;
   touch.touch_start_or_first_touch_move = true;
@@ -1801,7 +1757,7 @@ TEST_P(InputHandlerProxyTest, HitTestTouchEventNullTouchAction) {
   // hit-testing for the third touch point.
 
   WebTouchEvent touch(WebInputEvent::kTouchMove, WebInputEvent::kNoModifiers,
-                      WebInputEvent::kTimeStampForTesting);
+                      WebInputEvent::GetStaticTimeStampForTests());
 
   touch.touches_length = 3;
   touch.touches[0] = CreateWebTouchPoint(WebTouchPoint::kStatePressed, 0, 0);
@@ -1846,7 +1802,7 @@ TEST_P(InputHandlerProxyTest, MultiTouchPointHitTestNegative) {
       .WillOnce(testing::Return());
 
   WebTouchEvent touch(WebInputEvent::kTouchStart, WebInputEvent::kNoModifiers,
-                      WebInputEvent::kTimeStampForTesting);
+                      WebInputEvent::GetStaticTimeStampForTests());
 
   touch.unique_touch_event_id = 1;
   touch.touches_length = 3;
@@ -1892,7 +1848,7 @@ TEST_P(InputHandlerProxyTest, MultiTouchPointHitTestPositive) {
   // hit-testing for the third touch point.
 
   WebTouchEvent touch(WebInputEvent::kTouchStart, WebInputEvent::kNoModifiers,
-                      WebInputEvent::kTimeStampForTesting);
+                      WebInputEvent::GetStaticTimeStampForTests());
 
   touch.unique_touch_event_id = 1;
   touch.touches_length = 3;
@@ -1934,7 +1890,7 @@ TEST_P(InputHandlerProxyTest, MultiTouchPointHitTestPassivePositive) {
       .WillOnce(testing::Return());
 
   WebTouchEvent touch(WebInputEvent::kTouchStart, WebInputEvent::kNoModifiers,
-                      WebInputEvent::kTimeStampForTesting);
+                      WebInputEvent::GetStaticTimeStampForTests());
 
   touch.unique_touch_event_id = 1;
   touch.touches_length = 3;
@@ -1975,7 +1931,7 @@ TEST_P(InputHandlerProxyTest, TouchStartPassiveAndTouchEndBlocking) {
       .WillOnce(testing::Return());
 
   WebTouchEvent touch(WebInputEvent::kTouchStart, WebInputEvent::kNoModifiers,
-                      WebInputEvent::kTimeStampForTesting);
+                      WebInputEvent::GetStaticTimeStampForTests());
   touch.unique_touch_event_id = 1;
   touch.touches_length = 1;
   touch.touches[0] = CreateWebTouchPoint(WebTouchPoint::kStatePressed, 0, 0);
@@ -2010,7 +1966,7 @@ TEST_P(InputHandlerProxyTest, TouchMoveBlockingAddedAfterPassiveTouchStart) {
       .WillOnce(testing::Return());
 
   WebTouchEvent touch(WebInputEvent::kTouchStart, WebInputEvent::kNoModifiers,
-                      WebInputEvent::kTimeStampForTesting);
+                      WebInputEvent::GetStaticTimeStampForTests());
   touch.touches_length = 1;
   touch.touch_start_or_first_touch_move = true;
   touch.touches[0] = CreateWebTouchPoint(WebTouchPoint::kStatePressed, 0, 0);
@@ -2050,7 +2006,7 @@ TEST_P(InputHandlerProxyTest, GestureFlingCancelledByKeyboardEvent) {
   // Keyboard events received during a scroll should have no effect.
   WebKeyboardEvent key_event(WebInputEvent::kKeyDown,
                              WebInputEvent::kNoModifiers,
-                             WebInputEvent::kTimeStampForTesting);
+                             WebInputEvent::GetStaticTimeStampForTests());
   EXPECT_EQ(InputHandlerProxy::DID_NOT_HANDLE,
             input_handler_->HandleInputEvent(key_event));
   EXPECT_TRUE(input_handler_->gesture_scroll_on_impl_thread_for_testing());
@@ -2111,7 +2067,7 @@ TEST_P(InputHandlerProxyTest, GestureFlingCancelledByWheelEvent) {
 
   WebMouseWheelEvent wheel_event(WebInputEvent::kMouseWheel,
                                  WebInputEvent::kNoModifiers,
-                                 WebInputEvent::kTimeStampForTesting);
+                                 WebInputEvent::GetStaticTimeStampForTests());
   input_handler_->HandleInputEvent(wheel_event);
   EXPECT_TRUE(input_handler_->gesture_scroll_on_impl_thread_for_testing());
   VERIFY_AND_RESET_MOCKS();
@@ -2135,7 +2091,6 @@ TEST_P(InputHandlerProxyTest, GestureFlingCancelledByWheelEvent) {
   EXPECT_CALL(mock_input_handler_,
               GetEventListenerProperties(cc::EventListenerClass::kMouseWheel))
       .WillOnce(testing::Return(cc::EventListenerProperties::kBlocking));
-
 
   input_handler_->HandleInputEvent(wheel_event);
   EXPECT_FALSE(input_handler_->gesture_scroll_on_impl_thread_for_testing());
@@ -2638,7 +2593,7 @@ TEST_P(InputHandlerProxyTest, DidReceiveInputEvent_ForFlingTouchscreen) {
   EXPECT_CALL(mock_input_handler_, FlingScrollBegin())
       .WillOnce(testing::Return(kImplThreadScrollState));
   EXPECT_EQ(InputHandlerProxy::DID_HANDLE,
-      input_handler_->HandleInputEvent(gesture_));
+            input_handler_->HandleInputEvent(gesture_));
   VERIFY_AND_RESET_MOCKS();
 
   EXPECT_SET_NEEDS_ANIMATE_INPUT(1);
@@ -2751,7 +2706,7 @@ TEST_P(InputHandlerProxyTest, GestureScrollingThreadStatusHistogram) {
 
   WebTouchEvent touch_start(WebInputEvent::kTouchStart,
                             WebInputEvent::kNoModifiers,
-                            WebInputEvent::kTimeStampForTesting);
+                            WebInputEvent::GetStaticTimeStampForTests());
   touch_start.touches_length = 1;
   touch_start.touch_start_or_first_touch_move = true;
   touch_start.touches[0] =
@@ -2859,7 +2814,7 @@ TEST_P(InputHandlerProxyTest, WheelScrollingThreadStatusHistogram) {
 
   WebMouseWheelEvent wheel(WebInputEvent::kMouseWheel,
                            WebInputEvent::kControlKey,
-                           WebInputEvent::kTimeStampForTesting);
+                           WebInputEvent::GetStaticTimeStampForTests());
 
   WebGestureEvent gesture_scroll_begin;
   gesture_scroll_begin.SetType(WebInputEvent::kGestureScrollBegin);
@@ -3068,11 +3023,9 @@ TEST_P(InputHandlerProxyEventQueueTest, VSyncAlignedGestureScrollPinchScroll) {
 
 TEST_P(InputHandlerProxyEventQueueTest, VSyncAlignedQueueingTime) {
   base::HistogramTester histogram_tester;
-  std::unique_ptr<base::SimpleTestTickClock> tick_clock =
-      std::make_unique<base::SimpleTestTickClock>();
-  base::SimpleTestTickClock* tick_clock_ptr = tick_clock.get();
-  tick_clock_ptr->SetNowTicks(base::TimeTicks::Now());
-  SetInputHandlerProxyTickClockForTesting(std::move(tick_clock));
+  base::SimpleTestTickClock tick_clock;
+  tick_clock.SetNowTicks(base::TimeTicks::Now());
+  SetInputHandlerProxyTickClockForTesting(&tick_clock);
 
   // Handle scroll on compositor.
   cc::InputHandlerScrollResult scroll_result_did_scroll_;
@@ -3088,17 +3041,17 @@ TEST_P(InputHandlerProxyEventQueueTest, VSyncAlignedQueueingTime) {
   EXPECT_CALL(mock_input_handler_, ScrollEnd(testing::_, true));
 
   HandleGestureEvent(WebInputEvent::kGestureScrollBegin);
-  tick_clock_ptr->Advance(base::TimeDelta::FromMicroseconds(10));
+  tick_clock.Advance(base::TimeDelta::FromMicroseconds(10));
   HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -20);
-  tick_clock_ptr->Advance(base::TimeDelta::FromMicroseconds(40));
+  tick_clock.Advance(base::TimeDelta::FromMicroseconds(40));
   HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -40);
-  tick_clock_ptr->Advance(base::TimeDelta::FromMicroseconds(20));
+  tick_clock.Advance(base::TimeDelta::FromMicroseconds(20));
   HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -10);
-  tick_clock_ptr->Advance(base::TimeDelta::FromMicroseconds(10));
+  tick_clock.Advance(base::TimeDelta::FromMicroseconds(10));
   HandleGestureEvent(WebInputEvent::kGestureScrollEnd);
 
   // Dispatch all queued events.
-  tick_clock_ptr->Advance(base::TimeDelta::FromMicroseconds(70));
+  tick_clock.Advance(base::TimeDelta::FromMicroseconds(70));
   input_handler_proxy_->DeliverInputForBeginFrame();
   EXPECT_EQ(0ul, event_queue().size());
   EXPECT_EQ(5ul, event_disposition_recorder_.size());
@@ -3183,7 +3136,7 @@ TEST_P(InputHandlerProxyEventQueueTest, OriginalEventsTracing) {
   EXPECT_CALL(mock_input_handler_, ScrollEnd(testing::_, true))
       .Times(::testing::AtLeast(1));
 
-  StartTracing();
+  trace_analyzer::Start("*");
   // Simulate scroll.
   HandleGestureEvent(WebInputEvent::kGestureScrollBegin);
   HandleGestureEvent(WebInputEvent::kGestureScrollUpdate, -20);
@@ -3201,11 +3154,9 @@ TEST_P(InputHandlerProxyEventQueueTest, OriginalEventsTracing) {
 
   // Dispatch all events.
   input_handler_proxy_->DeliverInputForBeginFrame();
-  StopTracing();
 
   // Retrieve tracing data.
-  std::unique_ptr<trace_analyzer::TraceAnalyzer> analyzer =
-      CreateTraceAnalyzer();
+  auto analyzer = trace_analyzer::Stop();
   trace_analyzer::TraceEventVector begin_events;
   trace_analyzer::Query begin_query = trace_analyzer::Query::EventPhaseIs(
       TRACE_EVENT_PHASE_NESTABLE_ASYNC_BEGIN);

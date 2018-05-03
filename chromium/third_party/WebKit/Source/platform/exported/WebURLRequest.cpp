@@ -42,28 +42,6 @@
 
 namespace blink {
 
-namespace {
-
-class URLRequestExtraDataContainer : public ResourceRequest::ExtraData {
- public:
-  static scoped_refptr<URLRequestExtraDataContainer> Create(
-      WebURLRequest::ExtraData* extra_data) {
-    return base::AdoptRef(new URLRequestExtraDataContainer(extra_data));
-  }
-
-  ~URLRequestExtraDataContainer() override = default;
-
-  WebURLRequest::ExtraData* GetExtraData() const { return extra_data_.get(); }
-
- private:
-  explicit URLRequestExtraDataContainer(WebURLRequest::ExtraData* extra_data)
-      : extra_data_(WTF::WrapUnique(extra_data)) {}
-
-  std::unique_ptr<WebURLRequest::ExtraData> extra_data_;
-};
-
-}  // namespace
-
 // The purpose of this struct is to permit allocating a ResourceRequest on the
 // heap, which is otherwise disallowed by DISALLOW_NEW_EXCEPT_PLACEMENT_NEW
 // annotation on ResourceRequest.
@@ -225,8 +203,8 @@ WebReferrerPolicy WebURLRequest::GetReferrerPolicy() const {
   return static_cast<WebReferrerPolicy>(resource_request_->GetReferrerPolicy());
 }
 
-void WebURLRequest::AddHTTPOriginIfNeeded(const WebSecurityOrigin& origin) {
-  resource_request_->AddHTTPOriginIfNeeded(origin.Get());
+void WebURLRequest::SetHTTPOriginIfNeeded(const WebSecurityOrigin& origin) {
+  resource_request_->SetHTTPOriginIfNeeded(origin.Get());
 }
 
 bool WebURLRequest::HasUserGesture() const {
@@ -294,13 +272,12 @@ void WebURLRequest::SetKeepalive(bool keepalive) {
   resource_request_->SetKeepalive(keepalive);
 }
 
-WebURLRequest::ServiceWorkerMode WebURLRequest::GetServiceWorkerMode() const {
-  return resource_request_->GetServiceWorkerMode();
+bool WebURLRequest::GetSkipServiceWorker() const {
+  return resource_request_->GetSkipServiceWorker();
 }
 
-void WebURLRequest::SetServiceWorkerMode(
-    WebURLRequest::ServiceWorkerMode service_worker_mode) {
-  resource_request_->SetServiceWorkerMode(service_worker_mode);
+void WebURLRequest::SetSkipServiceWorker(bool skip_service_worker) {
+  resource_request_->SetSkipServiceWorker(skip_service_worker);
 }
 
 bool WebURLRequest::ShouldResetAppCache() const {
@@ -356,18 +333,11 @@ void WebURLRequest::SetPreviewsState(
 }
 
 WebURLRequest::ExtraData* WebURLRequest::GetExtraData() const {
-  scoped_refptr<ResourceRequest::ExtraData> data =
-      resource_request_->GetExtraData();
-  if (!data)
-    return nullptr;
-  return static_cast<URLRequestExtraDataContainer*>(data.get())->GetExtraData();
+  return resource_request_->GetExtraData();
 }
 
-void WebURLRequest::SetExtraData(WebURLRequest::ExtraData* extra_data) {
-  if (extra_data != GetExtraData()) {
-    resource_request_->SetExtraData(
-        URLRequestExtraDataContainer::Create(extra_data));
-  }
+void WebURLRequest::SetExtraData(std::unique_ptr<ExtraData> extra_data) {
+  resource_request_->SetExtraData(std::move(extra_data));
 }
 
 ResourceRequest& WebURLRequest::ToMutableResourceRequest() {

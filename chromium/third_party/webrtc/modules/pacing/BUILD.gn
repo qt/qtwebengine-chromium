@@ -21,10 +21,12 @@ rtc_static_library("pacing") {
     "pacer.h",
     "packet_queue.cc",
     "packet_queue.h",
-    "packet_queue2.cc",
-    "packet_queue2.h",
+    "packet_queue_interface.cc",
+    "packet_queue_interface.h",
     "packet_router.cc",
     "packet_router.h",
+    "round_robin_packet_queue.cc",
+    "round_robin_packet_queue.h",
   ]
 
   if (!build_with_chromium && is_clang) {
@@ -37,7 +39,9 @@ rtc_static_library("pacing") {
     "../../:typedefs",
     "../../:webrtc_common",
     "../../api:optional",
+    "../../logging:rtc_event_bwe",
     "../../logging:rtc_event_log_api",
+    "../../logging:rtc_event_pacing",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
     "../../rtc_base/experiments:alr_experiment",
@@ -76,7 +80,6 @@ if (rtc_include_tests) {
       "../rtp_rtcp",
       "../rtp_rtcp:mock_rtp_rtcp",
       "../rtp_rtcp:rtp_rtcp_format",
-      "//testing/gmock",
     ]
 
     # TODO(jschuh): bugs.webrtc.org/1348: fix this warning.

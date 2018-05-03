@@ -74,8 +74,8 @@ class GLES2Interface;
 }
 
 namespace media {
+class CdmContextRef;
 class ChunkDemuxer;
-class ContentDecryptionModule;
 class VideoDecodeStatsReporter;
 class MediaLog;
 class UrlIndex;
@@ -121,6 +121,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void OnWebLayerUpdated() override;
   void RegisterContentsLayer(blink::WebLayer* web_layer) override;
   void UnregisterContentsLayer(blink::WebLayer* web_layer) override;
+  void OnSurfaceIdUpdated(viz::SurfaceId surface_id) override;
 
   void Load(LoadType load_type,
             const blink::WebMediaPlayerSource& source,
@@ -132,6 +133,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void Seek(double seconds) override;
   void SetRate(double rate) override;
   void SetVolume(double volume) override;
+  void EnterPictureInPicture() override;
   void SetSinkId(const blink::WebString& sink_id,
                  const blink::WebSecurityOrigin& security_origin,
                  blink::WebSetSinkIdCallbacks* web_callback) override;
@@ -180,6 +182,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   blink::WebString GetErrorMessage() const override;
   bool DidLoadingProgress() override;
 
+  bool DidGetOpaqueResponseFromServiceWorker() const override;
   bool HasSingleSecurityOrigin() const override;
   bool DidPassCORSAccessCheck() const override;
 
@@ -218,7 +221,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void EnteredFullscreen() override;
   void ExitedFullscreen() override;
   void BecameDominantVisibleContent(bool isDominant) override;
-  void SetIsEffectivelyFullscreen(bool isEffectivelyFullscreen) override;
+  void SetIsEffectivelyFullscreen(
+      blink::WebFullscreenVideoStatus fullscreen_video_status) override;
   void OnHasNativeControlsChanged(bool) override;
   void OnDisplayTypeChanged(WebMediaPlayer::DisplayType) override;
 
@@ -260,6 +264,10 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
       MediaObserverClient::ReasonToSwitchToLocal reason) override;
   void ActivateViewportIntersectionMonitoring(bool activate) override;
   void UpdateRemotePlaybackCompatibility(bool is_compatible) override;
+
+  // Test helper methods for exercising media suspension.
+  void ForceStaleStateForTesting() override;
+  bool IsSuspendedForTesting() override;
 
   // Called from WebMediaPlayerCast.
   // TODO(hubbe): WMPI_CAST make private.
@@ -691,13 +699,13 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   std::unique_ptr<blink::WebContentDecryptionModuleResult> set_cdm_result_;
 
-  // If a CDM is attached keep a reference to it, so that it is not destroyed
-  // until after the pipeline is done with it.
-  scoped_refptr<ContentDecryptionModule> cdm_;
+  // If a CdmContext is attached keep a reference to the CdmContextRef, so that
+  // it is not destroyed until after the pipeline is done with it.
+  std::unique_ptr<CdmContextRef> cdm_context_ref_;
 
-  // Keep track of the CDM while it is in the process of attaching to the
-  // pipeline.
-  scoped_refptr<ContentDecryptionModule> pending_cdm_;
+  // Keep track of the CdmContextRef while it is in the process of attaching to
+  // the pipeline.
+  std::unique_ptr<CdmContextRef> pending_cdm_context_ref_;
 
 #if defined(OS_ANDROID)  // WMPI_CAST
   WebMediaPlayerCast cast_impl_;
@@ -864,8 +872,14 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   mojom::MediaMetricsProviderPtr media_metrics_provider_;
 
-  base::Callback<mojom::VideoDecodeStatsRecorderPtr()>
-      create_decode_stats_recorder_cb_;
+  base::Optional<bool> stale_state_override_for_testing_;
+
+  // Keeps track of the SurfaceId for Picture-in-Picture. This is used to
+  // route the video to be shown in the Picture-in-Picture window.
+  viz::SurfaceId pip_surface_id_;
+
+  // Callback to pass updated information about the current surface info.
+  WebMediaPlayerParams::PipSurfaceInfoCB pip_surface_info_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

@@ -22,12 +22,8 @@ class ReadingListModel;
 
 // A ReadingListModelStorage storing and syncing data in protobufs.
 class ReadingListStore : public ReadingListModelStorage {
-  using StoreFactoryFunction = base::Callback<void(
-      syncer::ModelType type,
-      const syncer::ModelTypeStore::InitCallback& callback)>;
-
  public:
-  ReadingListStore(StoreFactoryFunction create_store_callback,
+  ReadingListStore(syncer::OnceModelTypeStoreFactory create_store_callback,
                    const ChangeProcessorFactory& change_processor_factory);
   ~ReadingListStore() override;
 
@@ -129,7 +125,7 @@ class ReadingListStore : public ReadingListModelStorage {
   std::string GetStorageKey(const syncer::EntityData& entity_data) override;
 
   // Methods used as callbacks given to DataTypeStore.
-  void OnStoreCreated(syncer::ModelTypeStore::Result result,
+  void OnStoreCreated(const base::Optional<syncer::ModelError>& error,
                       std::unique_ptr<syncer::ModelTypeStore> store);
 
   class ScopedBatchUpdate : public ReadingListModelStorage::ScopedBatchUpdate {
@@ -149,10 +145,10 @@ class ReadingListStore : public ReadingListModelStorage {
   void CommitTransaction();
   // Callbacks needed for the database handling.
   void OnDatabaseLoad(
-      syncer::ModelTypeStore::Result result,
+      const base::Optional<syncer::ModelError>& error,
       std::unique_ptr<syncer::ModelTypeStore::RecordList> entries);
-  void OnDatabaseSave(syncer::ModelTypeStore::Result result);
-  void OnReadAllMetadata(base::Optional<syncer::ModelError> error,
+  void OnDatabaseSave(const base::Optional<syncer::ModelError>& error);
+  void OnReadAllMetadata(const base::Optional<syncer::ModelError>& error,
                          std::unique_ptr<syncer::MetadataBatch> metadata_batch);
 
   void AddEntryToBatch(syncer::MutableDataBatch* batch,
@@ -161,7 +157,7 @@ class ReadingListStore : public ReadingListModelStorage {
   std::unique_ptr<syncer::ModelTypeStore> store_;
   ReadingListModel* model_;
   ReadingListStoreDelegate* delegate_;
-  StoreFactoryFunction create_store_callback_;
+  syncer::OnceModelTypeStoreFactory create_store_callback_;
 
   int pending_transaction_count_;
   std::unique_ptr<syncer::ModelTypeStore::WriteBatch> batch_;

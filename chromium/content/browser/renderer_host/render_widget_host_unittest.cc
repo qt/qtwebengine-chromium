@@ -19,11 +19,14 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/test/begin_frame_args_test.h"
 #include "components/viz/test/compositor_frame_helpers.h"
+#include "components/viz/test/mock_compositor_frame_sink_client.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/browser/renderer_host/frame_token_message_queue.h"
 #include "content/browser/renderer_host/input/legacy_input_router_impl.h"
 #include "content/browser/renderer_host/input/touch_emulator.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
@@ -32,6 +35,7 @@
 #include "content/common/edit_command.h"
 #include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/common/input_messages.h"
+#include "content/common/render_frame_metadata.mojom.h"
 #include "content/common/resize_params.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
@@ -147,6 +151,29 @@ class MockInputRouter : public InputRouter {
   DISALLOW_COPY_AND_ASSIGN(MockInputRouter);
 };
 
+// TestFrameTokenMessageQueue ----------------------------------------------
+
+class TestFrameTokenMessageQueue : public FrameTokenMessageQueue {
+ public:
+  TestFrameTokenMessageQueue(FrameTokenMessageQueue::Client* client)
+      : FrameTokenMessageQueue(client) {}
+  ~TestFrameTokenMessageQueue() override {}
+
+  uint32_t processed_frame_messages_count() {
+    return processed_frame_messages_count_;
+  }
+
+ protected:
+  void ProcessSwapMessages(std::vector<IPC::Message> messages) override {
+    processed_frame_messages_count_++;
+  }
+
+ private:
+  uint32_t processed_frame_messages_count_ = 0;
+
+  DISALLOW_COPY_AND_ASSIGN(TestFrameTokenMessageQueue);
+};
+
 // MockRenderWidgetHost ----------------------------------------------------
 
 class MockRenderWidgetHost : public RenderWidgetHostImpl {
@@ -161,7 +188,7 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   using RenderWidgetHostImpl::is_hidden_;
   using RenderWidgetHostImpl::resize_ack_pending_;
   using RenderWidgetHostImpl::input_router_;
-  using RenderWidgetHostImpl::queued_messages_;
+  using RenderWidgetHostImpl::frame_token_message_queue_;
 
   void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
                        InputEventAckSource ack_source,
@@ -197,6 +224,15 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     return acked_touch_event_type_;
   }
 
+  // Mocks out |renderer_compositor_frame_sink_| with a
+  // CompositorFrameSinkClientPtr bound to
+  // |mock_renderer_compositor_frame_sink|.
+  void SetMockRendererCompositorFrameSink(
+      viz::MockCompositorFrameSinkClient* mock_renderer_compositor_frame_sink) {
+    renderer_compositor_frame_sink_ =
+        mock_renderer_compositor_frame_sink->BindInterfacePtr();
+  }
+
   void SetupForInputRouterTest() {
     input_router_.reset(new MockInputRouter(this));
     legacy_widget_input_handler_ = nullptr;
@@ -207,7 +243,10 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   uint32_t processed_frame_messages_count() {
-    return processed_frame_messages_count_;
+    CHECK(frame_token_message_queue_);
+    return static_cast<TestFrameTokenMessageQueue*>(
+               frame_token_message_queue_.get())
+        ->processed_frame_messages_count();
   }
 
   static MockRenderWidgetHost* Create(RenderWidgetHostDelegate* delegate,
@@ -252,12 +291,9 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
         new_content_rendering_timeout_fired_(false),
         widget_impl_(std::move(widget_impl)) {
     acked_touch_event_type_ = blink::WebInputEvent::kUndefined;
+    frame_token_message_queue_.reset(new TestFrameTokenMessageQueue(this));
   }
 
-  void ProcessSwapMessages(std::vector<IPC::Message> messages) override {
-    processed_frame_messages_count_++;
-  }
-  uint32_t processed_frame_messages_count_ = 0;
   std::unique_ptr<MockWidgetImpl> widget_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(MockRenderWidgetHost);
@@ -291,7 +327,7 @@ class TestView : public TestRenderWidgetHostView {
         unhandled_wheel_event_count_(0),
         acked_event_count_(0),
         gesture_event_type_(-1),
-        use_fake_physical_backing_size_(false),
+        use_fake_compositor_viewport_pixel_size_(false),
         ack_result_(INPUT_EVENT_ACK_STATE_UNKNOWN),
         top_controls_height_(0.f),
         bottom_controls_height_(0.f) {}
@@ -302,6 +338,14 @@ class TestView : public TestRenderWidgetHostView {
       return;
     bounds_ = bounds;
     local_surface_id_ = local_surface_id_allocator_.GenerateId();
+  }
+
+  void SetScreenInfo(const ScreenInfo& screen_info) {
+    screen_info_ = screen_info;
+  }
+
+  void GetScreenInfo(ScreenInfo* screen_info) const override {
+    *screen_info = screen_info_;
   }
 
   void set_top_controls_height(float top_controls_height) {
@@ -328,12 +372,13 @@ class TestView : public TestRenderWidgetHostView {
   int gesture_event_type() const { return gesture_event_type_; }
   InputEventAckState ack_result() const { return ack_result_; }
 
-  void SetMockPhysicalBackingSize(const gfx::Size& mock_physical_backing_size) {
-    use_fake_physical_backing_size_ = true;
-    mock_physical_backing_size_ = mock_physical_backing_size;
+  void SetMockCompositorViewportPixelSize(
+      const gfx::Size& mock_compositor_viewport_pixel_size) {
+    use_fake_compositor_viewport_pixel_size_ = true;
+    mock_compositor_viewport_pixel_size_ = mock_compositor_viewport_pixel_size;
   }
-  void ClearMockPhysicalBackingSize() {
-    use_fake_physical_backing_size_ = false;
+  void ClearMockCompositorViewportPixelSize() {
+    use_fake_compositor_viewport_pixel_size_ = false;
   }
 
   const viz::BeginFrameAck& last_did_not_produce_frame_ack() {
@@ -367,10 +412,10 @@ class TestView : public TestRenderWidgetHostView {
     gesture_event_type_ = event.GetType();
     ack_result_ = ack_result;
   }
-  gfx::Size GetPhysicalBackingSize() const override {
-    if (use_fake_physical_backing_size_)
-      return mock_physical_backing_size_;
-    return TestRenderWidgetHostView::GetPhysicalBackingSize();
+  gfx::Size GetCompositorViewportPixelSize() const override {
+    if (use_fake_compositor_viewport_pixel_size_)
+      return mock_compositor_viewport_pixel_size_;
+    return TestRenderWidgetHostView::GetCompositorViewportPixelSize();
   }
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override {
     last_did_not_produce_frame_ack_ = ack;
@@ -383,14 +428,15 @@ class TestView : public TestRenderWidgetHostView {
   int acked_event_count_;
   int gesture_event_type_;
   gfx::Rect bounds_;
-  bool use_fake_physical_backing_size_;
-  gfx::Size mock_physical_backing_size_;
+  bool use_fake_compositor_viewport_pixel_size_;
+  gfx::Size mock_compositor_viewport_pixel_size_;
   InputEventAckState ack_result_;
   float top_controls_height_;
   float bottom_controls_height_;
   viz::BeginFrameAck last_did_not_produce_frame_ack_;
   viz::LocalSurfaceId local_surface_id_;
   viz::ParentLocalSurfaceIdAllocator local_surface_id_allocator_;
+  ScreenInfo screen_info_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestView);
@@ -419,6 +465,34 @@ class MockRenderViewHostDelegateView : public RenderViewHostDelegateView {
 
   DISALLOW_COPY_AND_ASSIGN(MockRenderViewHostDelegateView);
 };
+
+// FakeRenderFrameMetadataObserver -----------------------------------------
+
+// Fake out the renderer side of mojom::RenderFrameMetadataObserver, allowing
+// for RenderWidgetHostImpl to be created.
+//
+// All methods are no-opts, the provided mojo request and info are held, but
+// never bound.
+class FakeRenderFrameMetadataObserver
+    : public mojom::RenderFrameMetadataObserver {
+ public:
+  FakeRenderFrameMetadataObserver(
+      mojom::RenderFrameMetadataObserverRequest request,
+      mojom::RenderFrameMetadataObserverClientPtrInfo client_info);
+  ~FakeRenderFrameMetadataObserver() override {}
+
+  void ReportAllFrameSubmissionsForTesting(bool enabled) override {}
+
+ private:
+  mojom::RenderFrameMetadataObserverRequest request_;
+  mojom::RenderFrameMetadataObserverClientPtrInfo client_info_;
+  DISALLOW_COPY_AND_ASSIGN(FakeRenderFrameMetadataObserver);
+};
+
+FakeRenderFrameMetadataObserver::FakeRenderFrameMetadataObserver(
+    mojom::RenderFrameMetadataObserverRequest request,
+    mojom::RenderFrameMetadataObserverClientPtrInfo client_info)
+    : request_(std::move(request)), client_info_(std::move(client_info)) {}
 
 // MockRenderWidgetHostDelegate --------------------------------------------
 
@@ -475,15 +549,6 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
     return render_view_host_delegate_view_.get();
   }
 
-  void SetScreenInfo(const ScreenInfo& screen_info) {
-    screen_info_ = screen_info;
-  }
-
-  // RenderWidgetHostDelegate overrides.
-  void GetScreenInfo(ScreenInfo* screen_info) override {
-    *screen_info = screen_info_;
-  }
-
   RenderViewHostDelegateView* GetDelegateView() override {
     return mock_delegate_view();
   }
@@ -536,8 +601,6 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
   bool handle_wheel_event_called_;
 
   bool unresponsive_timer_fired_;
-
-  ScreenInfo screen_info_;
 
   std::unique_ptr<MockRenderViewHostDelegateView>
       render_view_host_delegate_view_;
@@ -642,9 +705,26 @@ class RenderWidgetHostTest : public testing::Test {
     renderer_compositor_frame_sink_ =
         std::make_unique<FakeRendererCompositorFrameSink>(
             std::move(sink), std::move(client_request));
+
+    mojom::RenderFrameMetadataObserverPtr
+        renderer_render_frame_metadata_observer_ptr;
+    mojom::RenderFrameMetadataObserverRequest
+        render_frame_metadata_observer_request =
+            mojo::MakeRequest(&renderer_render_frame_metadata_observer_ptr);
+    mojom::RenderFrameMetadataObserverClientPtrInfo
+        render_frame_metadata_observer_client_info;
+    mojom::RenderFrameMetadataObserverClientRequest
+        render_frame_metadata_observer_client_request =
+            mojo::MakeRequest(&render_frame_metadata_observer_client_info);
+    renderer_render_frame_metadata_observer_ =
+        std::make_unique<FakeRenderFrameMetadataObserver>(
+            std::move(render_frame_metadata_observer_request),
+            std::move(render_frame_metadata_observer_client_info));
+
     host_->RequestCompositorFrameSink(
-        std::move(sink_request),
-        std::move(renderer_compositor_frame_sink_ptr_));
+        std::move(sink_request), std::move(renderer_compositor_frame_sink_ptr_),
+        std::move(render_frame_metadata_observer_client_request),
+        std::move(renderer_render_frame_metadata_observer_ptr));
   }
 
   void TearDown() override {
@@ -857,6 +937,8 @@ class RenderWidgetHostTest : public testing::Test {
   IPC::TestSink* sink_;
   std::unique_ptr<FakeRendererCompositorFrameSink>
       renderer_compositor_frame_sink_;
+  std::unique_ptr<FakeRenderFrameMetadataObserver>
+      renderer_render_frame_metadata_observer_;
   bool wheel_scroll_latching_enabled_;
 
  private:
@@ -928,7 +1010,7 @@ TEST_F(RenderWidgetHostTest, Resize) {
 
   // No resize ack if the physical backing gets set, but the view bounds are
   // zero.
-  view_->SetMockPhysicalBackingSize(gfx::Size(200, 200));
+  view_->SetMockCompositorViewportPixelSize(gfx::Size(200, 200));
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
 
@@ -937,7 +1019,7 @@ TEST_F(RenderWidgetHostTest, Resize) {
   gfx::Rect original_size(0, 0, 100, 100);
   process_->sink().ClearMessages();
   view_->SetBounds(original_size);
-  view_->SetMockPhysicalBackingSize(gfx::Size());
+  view_->SetMockCompositorViewportPixelSize(gfx::Size());
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
   EXPECT_EQ(original_size.size(), host_->old_resize_params_->new_size);
@@ -946,7 +1028,7 @@ TEST_F(RenderWidgetHostTest, Resize) {
   // Setting the bounds and physical backing size to nonzero should send out
   // the notification and expect an ack.
   process_->sink().ClearMessages();
-  view_->ClearMockPhysicalBackingSize();
+  view_->ClearMockCompositorViewportPixelSize();
   host_->WasResized();
   EXPECT_TRUE(host_->resize_ack_pending_);
   EXPECT_EQ(original_size.size(), host_->old_resize_params_->new_size);
@@ -1044,10 +1126,7 @@ TEST_F(RenderWidgetHostTest, ResizeScreenInfo) {
   screen_info.orientation_angle = 0;
   screen_info.orientation_type = SCREEN_ORIENTATION_VALUES_PORTRAIT_PRIMARY;
 
-  auto* host_delegate =
-      static_cast<MockRenderWidgetHostDelegate*>(host_->delegate());
-
-  host_delegate->SetScreenInfo(screen_info);
+  view_->SetScreenInfo(screen_info);
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
   EXPECT_TRUE(process_->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID));
@@ -1056,7 +1135,7 @@ TEST_F(RenderWidgetHostTest, ResizeScreenInfo) {
   screen_info.orientation_angle = 180;
   screen_info.orientation_type = SCREEN_ORIENTATION_VALUES_LANDSCAPE_PRIMARY;
 
-  host_delegate->SetScreenInfo(screen_info);
+  view_->SetScreenInfo(screen_info);
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
   EXPECT_TRUE(process_->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID));
@@ -1064,14 +1143,14 @@ TEST_F(RenderWidgetHostTest, ResizeScreenInfo) {
 
   screen_info.device_scale_factor = 2.f;
 
-  host_delegate->SetScreenInfo(screen_info);
+  view_->SetScreenInfo(screen_info);
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
   EXPECT_TRUE(process_->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID));
   process_->sink().ClearMessages();
 
   // No screen change.
-  host_delegate->SetScreenInfo(screen_info);
+  view_->SetScreenInfo(screen_info);
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
   EXPECT_FALSE(process_->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID));
@@ -1719,18 +1798,32 @@ TEST_F(RenderWidgetHostTest, MultipleInputEvents) {
   EXPECT_TRUE(delegate_->unresponsive_timer_fired());
 }
 
-// Test that the rendering timeout for newly loaded content fires
-// when enough time passes without receiving a new compositor frame.
-TEST_F(RenderWidgetHostTest, NewContentRenderingTimeout) {
+// Test that the rendering timeout for newly loaded content fires when enough
+// time passes without receiving a new compositor frame. This test assumes
+// Surface Synchronization is off.
+TEST_F(RenderWidgetHostTest, NewContentRenderingTimeoutWithoutSurfaceSync) {
+  // If Surface Synchronization is on, we have a separate code path for
+  // cancelling new content rendering timeout that is tested separately.
+  if (features::IsSurfaceSynchronizationEnabled())
+    return;
+
   const viz::LocalSurfaceId local_surface_id(1,
                                              base::UnguessableToken::Create());
+
+  // Mocking |renderer_compositor_frame_sink_| to prevent crashes in
+  // renderer_compositor_frame_sink_->DidReceiveCompositorFrameAck(resources).
+  std::unique_ptr<viz::MockCompositorFrameSinkClient>
+      mock_compositor_frame_sink_client =
+          std::make_unique<viz::MockCompositorFrameSinkClient>();
+  host_->SetMockRendererCompositorFrameSink(
+      mock_compositor_frame_sink_client.get());
 
   host_->set_new_content_rendering_delay_for_testing(
       base::TimeDelta::FromMicroseconds(10));
 
   // Start the timer and immediately send a CompositorFrame with the
   // content_source_id of the new page. The timeout shouldn't fire.
-  host_->StartNewContentRenderingTimeout(5);
+  host_->DidNavigate(5);
   auto frame = viz::CompositorFrameBuilder()
                    .AddDefaultRenderPass()
                    .SetContentSourceId(5)
@@ -1746,7 +1839,7 @@ TEST_F(RenderWidgetHostTest, NewContentRenderingTimeout) {
 
   // Start the timer but receive frames only from the old page. The timer
   // should fire.
-  host_->StartNewContentRenderingTimeout(10);
+  host_->DidNavigate(10);
   frame = viz::CompositorFrameBuilder()
               .AddDefaultRenderPass()
               .SetContentSourceId(9)
@@ -1767,7 +1860,7 @@ TEST_F(RenderWidgetHostTest, NewContentRenderingTimeout) {
               .SetContentSourceId(7)
               .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  host_->StartNewContentRenderingTimeout(7);
+  host_->DidNavigate(7);
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
       TimeDelta::FromMicroseconds(20));
@@ -1777,7 +1870,7 @@ TEST_F(RenderWidgetHostTest, NewContentRenderingTimeout) {
   host_->reset_new_content_rendering_timeout_fired();
 
   // Don't send any frames after the timer starts. The timer should fire.
-  host_->StartNewContentRenderingTimeout(20);
+  host_->DidNavigate(20);
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
       TimeDelta::FromMicroseconds(20));
@@ -1789,10 +1882,14 @@ TEST_F(RenderWidgetHostTest, NewContentRenderingTimeout) {
 // This tests that a compositor frame received with a stale content source ID
 // in its metadata is properly discarded.
 TEST_F(RenderWidgetHostTest, SwapCompositorFrameWithBadSourceId) {
+  // If Surface Synchronization is on, we don't keep track of content_source_id
+  // in CompositorFrameMetadata.
+  if (features::IsSurfaceSynchronizationEnabled())
+    return;
   const viz::LocalSurfaceId local_surface_id(1,
                                              base::UnguessableToken::Create());
 
-  host_->StartNewContentRenderingTimeout(100);
+  host_->DidNavigate(100);
   host_->set_new_content_rendering_delay_for_testing(
       base::TimeDelta::FromMicroseconds(9999));
 
@@ -1803,6 +1900,15 @@ TEST_F(RenderWidgetHostTest, SwapCompositorFrameWithBadSourceId) {
                      .SetBeginFrameAck(viz::BeginFrameAck(0, 1, true))
                      .SetContentSourceId(99)
                      .Build();
+
+    // Mocking |renderer_compositor_frame_sink_| to prevent crashes in
+    // renderer_compositor_frame_sink_->DidReceiveCompositorFrameAck(resources).
+    std::unique_ptr<viz::MockCompositorFrameSinkClient>
+        mock_compositor_frame_sink_client =
+            std::make_unique<viz::MockCompositorFrameSinkClient>();
+    host_->SetMockRendererCompositorFrameSink(
+        mock_compositor_frame_sink_client.get());
+
     host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr,
                                  0);
     EXPECT_FALSE(
@@ -2602,14 +2708,15 @@ TEST_F(RenderWidgetHostTest, RendererExitedResetsIsHidden) {
 
 TEST_F(RenderWidgetHostTest, ResizeParams) {
   gfx::Rect bounds(0, 0, 100, 100);
-  gfx::Size physical_backing_size(40, 50);
+  gfx::Size compositor_viewport_pixel_size(40, 50);
   view_->SetBounds(bounds);
-  view_->SetMockPhysicalBackingSize(physical_backing_size);
+  view_->SetMockCompositorViewportPixelSize(compositor_viewport_pixel_size);
 
   ResizeParams resize_params;
   host_->GetResizeParams(&resize_params);
   EXPECT_EQ(bounds.size(), resize_params.new_size);
-  EXPECT_EQ(physical_backing_size, resize_params.physical_backing_size);
+  EXPECT_EQ(compositor_viewport_pixel_size,
+            resize_params.compositor_viewport_pixel_size);
 }
 
 TEST_F(RenderWidgetHostTest, ResizeParamsDeviceScale) {
@@ -2620,10 +2727,7 @@ TEST_F(RenderWidgetHostTest, ResizeParamsDeviceScale) {
   ScreenInfo screen_info;
   screen_info.device_scale_factor = device_scale;
 
-  auto* host_delegate =
-      static_cast<MockRenderWidgetHostDelegate*>(host_->delegate());
-
-  host_delegate->SetScreenInfo(screen_info);
+  view_->SetScreenInfo(screen_info);
   host_->WasResized();
 
   float top_controls_height = 10.0f;
@@ -2714,12 +2818,12 @@ TEST_F(RenderWidgetHostTest, FrameToken_MessageThenFrame) {
   std::vector<IPC::Message> messages;
   messages.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(5));
 
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token, messages));
-  EXPECT_EQ(1u, host_->queued_messages_.size());
+  EXPECT_EQ(1u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   auto frame = viz::CompositorFrameBuilder()
@@ -2727,7 +2831,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_MessageThenFrame) {
                    .SetFrameToken(frame_token)
                    .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(1u, host_->processed_frame_messages_count());
 }
 
@@ -2740,7 +2844,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_FrameThenMessage) {
   std::vector<IPC::Message> messages;
   messages.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(5));
 
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   auto frame = viz::CompositorFrameBuilder()
@@ -2748,12 +2852,12 @@ TEST_F(RenderWidgetHostTest, FrameToken_FrameThenMessage) {
                    .SetFrameToken(frame_token)
                    .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token, messages));
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(1u, host_->processed_frame_messages_count());
 }
 
@@ -2769,17 +2873,17 @@ TEST_F(RenderWidgetHostTest, FrameToken_MultipleMessagesThenTokens) {
   messages1.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(5));
   messages2.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(6));
 
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token1, messages1));
-  EXPECT_EQ(1u, host_->queued_messages_.size());
+  EXPECT_EQ(1u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token2, messages2));
-  EXPECT_EQ(2u, host_->queued_messages_.size());
+  EXPECT_EQ(2u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   auto frame = viz::CompositorFrameBuilder()
@@ -2787,7 +2891,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_MultipleMessagesThenTokens) {
                    .SetFrameToken(frame_token1)
                    .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(1u, host_->queued_messages_.size());
+  EXPECT_EQ(1u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(1u, host_->processed_frame_messages_count());
 
   frame = viz::CompositorFrameBuilder()
@@ -2795,7 +2899,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_MultipleMessagesThenTokens) {
               .SetFrameToken(frame_token2)
               .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(2u, host_->processed_frame_messages_count());
 }
 
@@ -2811,7 +2915,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_MultipleTokensThenMessages) {
   messages1.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(5));
   messages2.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(6));
 
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   auto frame = viz::CompositorFrameBuilder()
@@ -2819,7 +2923,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_MultipleTokensThenMessages) {
                    .SetFrameToken(frame_token1)
                    .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   frame = viz::CompositorFrameBuilder()
@@ -2827,17 +2931,17 @@ TEST_F(RenderWidgetHostTest, FrameToken_MultipleTokensThenMessages) {
               .SetFrameToken(frame_token2)
               .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token1, messages1));
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(1u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token2, messages2));
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(2u, host_->processed_frame_messages_count());
 }
 
@@ -2853,17 +2957,17 @@ TEST_F(RenderWidgetHostTest, FrameToken_DroppedFrame) {
   messages1.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(5));
   messages2.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(6));
 
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token1, messages1));
-  EXPECT_EQ(1u, host_->queued_messages_.size());
+  EXPECT_EQ(1u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token2, messages2));
-  EXPECT_EQ(2u, host_->queued_messages_.size());
+  EXPECT_EQ(2u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   auto frame = viz::CompositorFrameBuilder()
@@ -2871,7 +2975,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_DroppedFrame) {
                    .SetFrameToken(frame_token2)
                    .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(2u, host_->processed_frame_messages_count());
 }
 
@@ -2888,17 +2992,25 @@ TEST_F(RenderWidgetHostTest, FrameToken_RendererCrash) {
   messages1.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(5));
   messages3.push_back(ViewHostMsg_DidFirstVisuallyNonEmptyPaint(6));
 
+  // Mocking |renderer_compositor_frame_sink_| to prevent crashes in
+  // renderer_compositor_frame_sink_->DidReceiveCompositorFrameAck(resources).
+  std::unique_ptr<viz::MockCompositorFrameSinkClient>
+      mock_compositor_frame_sink_client =
+          std::make_unique<viz::MockCompositorFrameSinkClient>();
+  host_->SetMockRendererCompositorFrameSink(
+      mock_compositor_frame_sink_client.get());
+
   // If we don't do this, then RWHI destroys the view in RendererExited and
   // then a crash occurs when we attempt to destroy it again in TearDown().
   host_->SetView(nullptr);
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token1, messages1));
-  EXPECT_EQ(1u, host_->queued_messages_.size());
+  EXPECT_EQ(1u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
   host_->Init();
 
@@ -2907,18 +3019,18 @@ TEST_F(RenderWidgetHostTest, FrameToken_RendererCrash) {
                    .SetFrameToken(frame_token2)
                    .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
   host_->SetView(view_.get());
   host_->Init();
 
   host_->OnMessageReceived(
       ViewHostMsg_FrameSwapMessages(0, frame_token3, messages3));
-  EXPECT_EQ(1u, host_->queued_messages_.size());
+  EXPECT_EQ(1u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(0u, host_->processed_frame_messages_count());
 
   frame = viz::CompositorFrameBuilder()
@@ -2926,7 +3038,7 @@ TEST_F(RenderWidgetHostTest, FrameToken_RendererCrash) {
               .SetFrameToken(frame_token3)
               .Build();
   host_->SubmitCompositorFrame(local_surface_id, std::move(frame), nullptr, 0);
-  EXPECT_EQ(0u, host_->queued_messages_.size());
+  EXPECT_EQ(0u, host_->frame_token_message_queue_->size());
   EXPECT_EQ(1u, host_->processed_frame_messages_count());
 }
 
@@ -2960,6 +3072,28 @@ TEST_F(RenderWidgetHostTest, RenderWidgetSurfaceProperties) {
       prop2.ToDiffString(prop1));
   EXPECT_EQ("", prop1.ToDiffString(prop1));
   EXPECT_EQ("", prop2.ToDiffString(prop2));
+}
+
+// If a navigation happens while the widget is hidden, we shouldn't show
+// contents of the previous page when we become visible.
+TEST_F(RenderWidgetHostTest, NavigateInBackgroundShowsBlank) {
+  // When visible, navigation does not immediately call into
+  // ClearDisplayedGraphics.
+  host_->WasShown(ui::LatencyInfo());
+  host_->DidNavigate(5);
+  EXPECT_FALSE(host_->new_content_rendering_timeout_fired());
+
+  // Hide then show. ClearDisplayedGraphics must be called.
+  host_->WasHidden();
+  host_->WasShown(ui::LatencyInfo());
+  EXPECT_TRUE(host_->new_content_rendering_timeout_fired());
+  host_->reset_new_content_rendering_timeout_fired();
+
+  // Hide, navigate, then show. ClearDisplayedGraphics must be called.
+  host_->WasHidden();
+  host_->DidNavigate(6);
+  host_->WasShown(ui::LatencyInfo());
+  EXPECT_TRUE(host_->new_content_rendering_timeout_fired());
 }
 
 }  // namespace content

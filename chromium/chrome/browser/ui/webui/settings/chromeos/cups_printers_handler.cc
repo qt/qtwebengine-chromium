@@ -8,12 +8,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/containers/flat_map.h"
 #include "base/files/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
+#include "base/task_scheduler/post_task.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -32,7 +34,11 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
 #include "chromeos/printing/ppd_cache.h"
+#include "chromeos/printing/ppd_line_reader.h"
 #include "chromeos/printing/ppd_provider.h"
+#include "chromeos/printing/printer_configuration.h"
+#include "chromeos/printing/printing_constants.h"
+#include "chromeos/printing/uri_components.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_ui.h"
@@ -40,33 +46,17 @@
 #include "net/base/filename_util.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "printing/backend/print_backend.h"
-#include "url/third_party/mozilla/url_parse.h"
 
 namespace chromeos {
 namespace settings {
 
 namespace {
 
-constexpr char kIppScheme[] = "ipp";
-constexpr char kIppsScheme[] = "ipps";
-
-constexpr int kIppPort = 631;
-// IPPS commonly uses the HTTPS port despite the spec saying it should use the
-// IPP port.
-constexpr int kIppsPort = 443;
-
 // These values are written to logs.  New enum values can be added, but existing
 // enums must never be renumbered or deleted and reused.
 enum PpdSourceForHistogram { kUser = 0, kScs = 1, kPpdSourceMax };
 
-// A parsed representation of a printer uri.
-struct PrinterUri {
-  bool encrypted = false;
-  std::string scheme;
-  std::string host;
-  int port = url::SpecialPort::PORT_INVALID;
-  std::string path;
-};
+constexpr int kPpdMaxLineLength = 255;
 
 void RecordPpdSource(const PpdSourceForHistogram& source) {
   UMA_HISTOGRAM_ENUMERATION("Printing.CUPS.PpdSource", source, kPpdSourceMax);
@@ -80,43 +70,6 @@ void OnRemovedPrinter(const Printer::PrinterProtocol& protocol, bool success) {
 // Log if the IPP attributes request was succesful.
 void RecordIppQuerySuccess(bool success) {
   UMA_HISTOGRAM_BOOLEAN("Printing.CUPS.IppAttributesSuccess", success);
-}
-
-// Parses |printer_uri| into its components and written into |uri|.  Returns
-// true if the uri was parsed successfully, returns false otherwise.  No changes
-// are made to |uri| if this function returns false.
-bool ParseUri(const std::string& printer_uri, PrinterUri* uri) {
-  DCHECK(uri);
-  const char* uri_ptr = printer_uri.c_str();
-  url::Parsed parsed;
-  url::ParseStandardURL(uri_ptr, printer_uri.length(), &parsed);
-  if (!parsed.scheme.is_valid() || !parsed.host.is_valid() ||
-      !parsed.path.is_valid()) {
-    return false;
-  }
-  base::StringPiece scheme(&uri_ptr[parsed.scheme.begin], parsed.scheme.len);
-  base::StringPiece host(&uri_ptr[parsed.host.begin], parsed.host.len);
-  base::StringPiece path(&uri_ptr[parsed.path.begin], parsed.path.len);
-
-  bool encrypted = scheme != kIppScheme;
-  int port = ParsePort(uri_ptr, parsed.port);
-  // Port not specified.
-  if (port == url::SpecialPort::PORT_UNSPECIFIED ||
-      port == url::SpecialPort::PORT_INVALID) {
-    if (scheme == kIppScheme) {
-      port = kIppPort;
-    } else if (scheme == kIppsScheme) {
-      port = kIppsPort;
-    }
-  }
-
-  uri->encrypted = encrypted;
-  uri->scheme = scheme.as_string();
-  uri->host = host.as_string();
-  uri->port = port;
-  uri->path = path.as_string();
-
-  return true;
 }
 
 // Returns true if |printer_uri| is an IPP uri.
@@ -136,15 +89,17 @@ bool IsIppUri(base::StringPiece printer_uri) {
 // error to attempt this with a non-IPP printer.
 void QueryAutoconf(const std::string& printer_uri,
                    const PrinterInfoCallback& callback) {
-  PrinterUri uri;
+  auto optional = ParseUri(printer_uri);
   // Behavior for querying a non-IPP uri is undefined and disallowed.
-  if (!IsIppUri(printer_uri) || !ParseUri(printer_uri, &uri)) {
+  if (!IsIppUri(printer_uri) || !optional.has_value()) {
     LOG(WARNING) << "Printer uri is invalid: " << printer_uri;
     callback.Run(false, "", "", "", false);
     return;
   }
 
-  QueryIppPrinter(uri.host, uri.port, uri.path, uri.encrypted, callback);
+  UriComponents uri = optional.value();
+  QueryIppPrinter(uri.host(), uri.port(), uri.path(), uri.encrypted(),
+                  callback);
 }
 
 // Create an empty CupsPrinterInfo dictionary value. It should be consistent
@@ -193,8 +148,8 @@ std::unique_ptr<base::DictionaryValue> GetPrinterInfo(const Printer& printer) {
   printer_info->SetString("printerModel", printer.model());
   printer_info->SetString("printerMakeAndModel", printer.make_and_model());
 
-  PrinterUri uri;
-  if (!ParseUri(printer.uri(), &uri)) {
+  auto optional = printer.GetUriComponents();
+  if (!optional.has_value()) {
     // Uri is invalid so we set default values.
     LOG(WARNING) << "Could not parse uri.  Defaulting values";
     printer_info->SetString("printerAddress", "");
@@ -204,7 +159,9 @@ std::unique_ptr<base::DictionaryValue> GetPrinterInfo(const Printer& printer) {
     return printer_info;
   }
 
-  if (base::ToLowerASCII(uri.scheme) == "usb") {
+  UriComponents uri = optional.value();
+
+  if (base::ToLowerASCII(uri.scheme()) == "usb") {
     // USB has URI path (and, maybe, query) components that aren't really
     // associated with a queue -- the mapping between printing semantics and URI
     // semantics breaks down a bit here.  From the user's point of view, the
@@ -213,12 +170,12 @@ std::unique_ptr<base::DictionaryValue> GetPrinterInfo(const Printer& printer) {
                             printer.uri().substr(strlen("usb://")));
   } else {
     printer_info->SetString("printerAddress",
-                            PrinterAddress(uri.host, uri.port));
-    if (!uri.path.empty()) {
-      printer_info->SetString("printerQueue", uri.path.substr(1));
+                            PrinterAddress(uri.host(), uri.port()));
+    if (!uri.path().empty()) {
+      printer_info->SetString("printerQueue", uri.path().substr(1));
     }
   }
-  printer_info->SetString("printerProtocol", base::ToLowerASCII(uri.scheme));
+  printer_info->SetString("printerProtocol", base::ToLowerASCII(uri.scheme()));
 
   return printer_info;
 }
@@ -282,6 +239,16 @@ std::unique_ptr<chromeos::Printer> DictToPrinter(
   printer->set_uri(printer_uri);
 
   return printer;
+}
+
+std::string ReadFileToStringWithMaxSize(const base::FilePath& path,
+                                        int max_size) {
+  std::string contents;
+  // This call can fail, but it doesn't matter for our purposes. If it fails,
+  // we simply return an empty string for the contents, and it will be rejected
+  // as an invalid PPD.
+  base::ReadFileToStringWithMaxSize(path, &contents, max_size);
+  return contents;
 }
 
 }  // namespace
@@ -348,7 +315,6 @@ void CupsPrintersHandler::RegisterMessages() {
 
 void CupsPrintersHandler::OnJavascriptAllowed() {
   printers_manager_->AddObserver(this);
-  printers_manager_->Start();
 }
 
 void CupsPrintersHandler::OnJavascriptDisallowed() {
@@ -412,9 +378,8 @@ void CupsPrintersHandler::HandleRemoveCupsPrinter(const base::ListValue* args) {
   printers_manager_->RemoveConfiguredPrinter(printer_id);
 
   DebugDaemonClient* client = DBusThreadManager::Get()->GetDebugDaemonClient();
-  client->CupsRemovePrinter(printer_name,
-                            base::Bind(&OnRemovedPrinter, protocol),
-                            base::Bind(&base::DoNothing));
+  client->CupsRemovePrinter(
+      printer_name, base::Bind(&OnRemovedPrinter, protocol), base::DoNothing());
 }
 
 void CupsPrintersHandler::HandleGetPrinterInfo(const base::ListValue* args) {
@@ -532,9 +497,17 @@ void CupsPrintersHandler::HandleAddCupsPrinter(const base::ListValue* args) {
   CHECK(args->GetDictionary(0, &printer_dict));
 
   std::unique_ptr<Printer> printer = DictToPrinter(*printer_dict);
-  PrinterUri uri;
-  if (!printer || !ParseUri(printer->uri(), &uri)) {
-    LOG(ERROR) << "Failed to parse printer";
+  if (!printer) {
+    LOG(ERROR) << "Failed to parse printer URI";
+    OnAddPrinterError(PrinterSetupResult::kFatalError);
+    return;
+  }
+
+  auto optional = printer->GetUriComponents();
+  if (!optional.has_value()) {
+    // If the returned optional does not contain a value then it means that the
+    // printer's uri was not able to be parsed successfully.
+    LOG(ERROR) << "Failed to parse printer URI";
     OnAddPrinterError(PrinterSetupResult::kFatalError);
     return;
   }
@@ -761,8 +734,26 @@ void CupsPrintersHandler::FileSelected(const base::FilePath& path,
                                        int index,
                                        void* params) {
   DCHECK(!webui_callback_id_.empty());
+
+  // Load the beggining contents of the file located at |path| and callback into
+  // VerifyPpdContents() in order to determine whether the file appears to be a
+  // PPD file. The task's priority is USER_BLOCKING because the this task
+  // updates the UI as a result of a direct user action.
+  base::PostTaskWithTraitsAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+      base::BindOnce(&ReadFileToStringWithMaxSize, path, kPpdMaxLineLength),
+      base::BindOnce(&CupsPrintersHandler::VerifyPpdContents,
+                     weak_factory_.GetWeakPtr(), path));
+}
+
+void CupsPrintersHandler::VerifyPpdContents(const base::FilePath& path,
+                                            const std::string& contents) {
+  std::string result = "";
+  if (PpdLineReader::ContainsMagicNumber(contents, kPpdMaxLineLength))
+    result = path.value();
+
   ResolveJavascriptCallback(base::Value(webui_callback_id_),
-                            base::Value(path.value()));
+                            base::Value(result));
   webui_callback_id_.clear();
 }
 
@@ -837,11 +828,17 @@ void CupsPrintersHandler::HandleAddDiscoveredPrinter(
   CHECK(args->GetString(0, &printer_id));
 
   std::unique_ptr<Printer> printer = printers_manager_->GetPrinter(printer_id);
-  PrinterUri uri;
-  if (printer == nullptr || !ParseUri(printer->uri(), &uri)) {
+  if (printer == nullptr) {
     // Printer disappeared, so we don't have information about it anymore and
-    // can't really do much.  Or the printer uri was not parsed successfully.
-    // Fail the add.
+    // can't really do much. Fail the add.
+    FireWebUIListener("on-add-cups-printer", base::Value(false),
+                      base::Value(printer_id));
+    return;
+  }
+
+  auto optional = printer->GetUriComponents();
+  if (!optional.has_value()) {
+    // The printer uri was not parsed successfully. Fail the add.
     FireWebUIListener("on-add-cups-printer", base::Value(false),
                       base::Value(printer_id));
     return;

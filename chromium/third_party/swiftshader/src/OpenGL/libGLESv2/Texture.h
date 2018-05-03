@@ -33,8 +33,6 @@ namespace gl { class Surface; }
 
 namespace es2
 {
-class Framebuffer;
-
 enum
 {
 	IMPLEMENTATION_MAX_TEXTURE_LEVELS = sw::MIPMAP_LEVELS,
@@ -73,30 +71,29 @@ public:
 	bool setSwizzleB(GLenum swizzleB);
 	bool setSwizzleA(GLenum swizzleA);
 
-	GLenum getMinFilter() const;
-	GLenum getMagFilter() const;
-	GLenum getWrapS() const;
-	GLenum getWrapT() const;
-	GLenum getWrapR() const;
-	GLfloat getMaxAnisotropy() const;
-	GLint getBaseLevel() const;
-	GLenum getCompareFunc() const;
-	GLenum getCompareMode() const;
-	GLboolean getImmutableFormat() const;
-	GLsizei getImmutableLevels() const;
-	GLint getMaxLevel() const;
-	GLfloat getMaxLOD() const;
-	GLfloat getMinLOD() const;
-	GLenum getSwizzleR() const;
-	GLenum getSwizzleG() const;
-	GLenum getSwizzleB() const;
-	GLenum getSwizzleA() const;
+	GLenum getMinFilter() const { return mMinFilter; }
+	GLenum getMagFilter() const { return mMagFilter; }
+	GLenum getWrapS() const { return mWrapS; }
+	GLenum getWrapT() const { return mWrapT; }
+	GLenum getWrapR() const { return mWrapR; }
+	GLfloat getMaxAnisotropy() const { return mMaxAnisotropy; }
+	GLint getBaseLevel() const { return mBaseLevel; }
+	GLenum getCompareFunc() const { return mCompareFunc; }
+	GLenum getCompareMode() const { return mCompareMode; }
+	GLboolean getImmutableFormat() const { return mImmutableFormat; }
+	GLsizei getImmutableLevels() const { return mImmutableLevels; }
+	GLint getMaxLevel() const { return mMaxLevel; }
+	GLfloat getMaxLOD() const { return mMaxLOD; }
+	GLfloat getMinLOD() const { return mMinLOD; }
+	GLenum getSwizzleR() const { return mSwizzleR; }
+	GLenum getSwizzleG() const { return mSwizzleG; }
+	GLenum getSwizzleB() const { return mSwizzleB; }
+	GLenum getSwizzleA() const { return mSwizzleA; }
 
 	virtual GLsizei getWidth(GLenum target, GLint level) const = 0;
 	virtual GLsizei getHeight(GLenum target, GLint level) const = 0;
 	virtual GLsizei getDepth(GLenum target, GLint level) const;
-	virtual GLenum getFormat(GLenum target, GLint level) const = 0;
-	virtual GLenum getType(GLenum target, GLint level) const = 0;
+	virtual GLint getFormat(GLenum target, GLint level) const = 0;
 	virtual int getTopLevel() const = 0;
 
 	virtual bool isSamplerComplete() const = 0;
@@ -109,13 +106,13 @@ public:
 	virtual bool isShared(GLenum target, unsigned int level) const = 0;
 
 	virtual void generateMipmaps() = 0;
-	virtual void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Framebuffer *source) = 0;
+	virtual void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source) = 0;
 
 protected:
 	~Texture() override;
 
-	void setImage(egl::Context *context, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels, egl::Image *image);
-	void subImage(egl::Context *context, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels, egl::Image *image);
+	void setImage(GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels, egl::Image *image);
+	void subImage(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels, egl::Image *image);
 	void setCompressedImage(GLsizei imageSize, const void *pixels, egl::Image *image);
 	void subImageCompressed(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void *pixels, egl::Image *image);
 
@@ -158,16 +155,15 @@ public:
 
 	GLsizei getWidth(GLenum target, GLint level) const override;
 	GLsizei getHeight(GLenum target, GLint level) const override;
-	GLenum getFormat(GLenum target, GLint level) const override;
-	GLenum getType(GLenum target, GLint level) const override;
+	GLint getFormat(GLenum target, GLint level) const override;
 	int getTopLevel() const override;
 
-	void setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
+	void setImage(GLint level, GLsizei width, GLsizei height, GLint internalformat, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
 	void setCompressedImage(GLint level, GLenum format, GLsizei width, GLsizei height, GLsizei imageSize, const void *pixels);
-	void subImage(egl::Context *context, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
+	void subImage(GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
 	void subImageCompressed(GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const void *pixels);
-	void copyImage(GLint level, GLenum format, GLint x, GLint y, GLsizei width, GLsizei height, Framebuffer *source);
-	void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Framebuffer *source) override;
+	void copyImage(GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source);
+	void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source) override;
 
 	void setSharedImage(egl::Image *image);
 
@@ -203,6 +199,16 @@ protected:
 	unsigned int mProxyRefs;
 };
 
+class Texture2DRect : public Texture2D
+{
+public:
+	explicit Texture2DRect(GLuint name);
+
+	GLenum getTarget() const override;
+
+	Renderbuffer *getRenderbuffer(GLenum target, GLint level) override;
+};
+
 class TextureCubeMap : public Texture
 {
 public:
@@ -216,17 +222,16 @@ public:
 
 	GLsizei getWidth(GLenum target, GLint level) const override;
 	GLsizei getHeight(GLenum target, GLint level) const override;
-	GLenum getFormat(GLenum target, GLint level) const override;
-	GLenum getType(GLenum target, GLint level) const override;
+	GLint getFormat(GLenum target, GLint level) const override;
 	int getTopLevel() const override;
 
-	void setImage(egl::Context *context, GLenum target, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
+	void setImage(GLenum target, GLint level, GLsizei width, GLsizei height, GLint internalformat, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
 	void setCompressedImage(GLenum target, GLint level, GLenum format, GLsizei width, GLsizei height, GLsizei imageSize, const void *pixels);
 
-	void subImage(egl::Context *context, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
+	void subImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
 	void subImageCompressed(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const void *pixels);
-	void copyImage(GLenum target, GLint level, GLenum format, GLint x, GLint y, GLsizei width, GLsizei height, Framebuffer *source);
-	void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Framebuffer *source) override;
+	void copyImage(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source);
+	void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source) override;
 
 	bool isSamplerComplete() const override;
 	bool isCompressed(GLenum target, GLint level) const override;
@@ -278,16 +283,15 @@ public:
 	GLsizei getWidth(GLenum target, GLint level) const override;
 	GLsizei getHeight(GLenum target, GLint level) const override;
 	GLsizei getDepth(GLenum target, GLint level) const override;
-	GLenum getFormat(GLenum target, GLint level) const override;
-	GLenum getType(GLenum target, GLint level) const override;
+	GLint getFormat(GLenum target, GLint level) const override;
 	int getTopLevel() const override;
 
-	void setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
+	void setImage(GLint level, GLsizei width, GLsizei height, GLsizei depth, GLint internalformat, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
 	void setCompressedImage(GLint level, GLenum format, GLsizei width, GLsizei height, GLsizei depth, GLsizei imageSize, const void *pixels);
-	void subImage(egl::Context *context, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
+	void subImage(GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const gl::PixelStorageModes &unpackParameters, const void *pixels);
 	void subImageCompressed(GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void *pixels);
-	void copyImage(GLint level, GLenum format, GLint x, GLint y, GLint z, GLsizei width, GLsizei height, GLsizei depth, Framebuffer *source);
-	void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Framebuffer *source);
+	void copyImage(GLint level, GLenum internalformat, GLint x, GLint y, GLint z, GLsizei width, GLsizei height, GLsizei depth, Renderbuffer *source);
+	void copySubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height, Renderbuffer *source);
 
 	void setSharedImage(egl::Image *image);
 

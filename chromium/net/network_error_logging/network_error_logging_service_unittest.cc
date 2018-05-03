@@ -9,14 +9,14 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/values_test_util.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
+#include "net/network_error_logging/network_error_logging_delegate.h"
 #include "net/network_error_logging/network_error_logging_service.h"
+#include "net/reporting/reporting_policy.h"
 #include "net/reporting/reporting_service.h"
 #include "net/socket/next_proto.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -85,8 +85,14 @@ class TestReportingService : public ReportingService {
     return true;
   }
 
+  const ReportingPolicy& GetPolicy() const override {
+    NOTREACHED();
+    return dummy_policy_;
+  }
+
  private:
   std::vector<Report> reports_;
+  ReportingPolicy dummy_policy_;
 
   DISALLOW_COPY_AND_ASSIGN(TestReportingService);
 };
@@ -94,15 +100,15 @@ class TestReportingService : public ReportingService {
 class NetworkErrorLoggingServiceTest : public ::testing::Test {
  protected:
   NetworkErrorLoggingServiceTest() {
-    scoped_feature_list_.InitAndEnableFeature(features::kNetworkErrorLogging);
-    service_ = NetworkErrorLoggingService::Create();
+    service_ = NetworkErrorLoggingService::Create(
+        NetworkErrorLoggingDelegate::Create());
     CreateReportingService();
   }
 
   void CreateReportingService() {
     DCHECK(!reporting_service_);
 
-    reporting_service_ = base::MakeUnique<TestReportingService>();
+    reporting_service_ = std::make_unique<TestReportingService>();
     service_->SetReportingService(reporting_service_.get());
   }
 
@@ -113,15 +119,15 @@ class NetworkErrorLoggingServiceTest : public ::testing::Test {
     reporting_service_.reset();
   }
 
-  NetworkErrorLoggingDelegate::ErrorDetails MakeErrorDetails(GURL url,
-                                                             Error error_type) {
-    NetworkErrorLoggingDelegate::ErrorDetails details;
+  NetworkErrorLoggingService::RequestDetails
+  MakeRequestDetails(GURL url, Error error_type, int status_code = 0) {
+    NetworkErrorLoggingService::RequestDetails details;
 
     details.uri = url;
     details.referrer = kReferrer_;
     details.server_ip = IPAddress::IPv4AllZeros();
     details.protocol = kProtoUnknown;
-    details.status_code = 0;
+    details.status_code = status_code;
     details.elapsed_time = base::TimeDelta::FromSeconds(1);
     details.type = error_type;
     details.is_reporting_upload = false;
@@ -158,22 +164,20 @@ class NetworkErrorLoggingServiceTest : public ::testing::Test {
   const GURL kReferrer_ = GURL("https://referrer.com/");
 
  private:
-  base::test::ScopedFeatureList scoped_feature_list_;
   std::unique_ptr<NetworkErrorLoggingService> service_;
   std::unique_ptr<TestReportingService> reporting_service_;
 };
 
-TEST_F(NetworkErrorLoggingServiceTest, FeatureDisabled) {
-  // N.B. This test does not actually use the test fixture.
-
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndDisableFeature(features::kNetworkErrorLogging);
-
-  auto service = NetworkErrorLoggingService::Create();
-  EXPECT_FALSE(service);
+void ExpectDictDoubleValue(double expected_value,
+                           const base::DictionaryValue& value,
+                           const std::string& key) {
+  double double_value = 0.0;
+  EXPECT_TRUE(value.GetDouble(key, &double_value)) << key;
+  EXPECT_DOUBLE_EQ(expected_value, double_value) << key;
 }
 
-TEST_F(NetworkErrorLoggingServiceTest, FeatureEnabled) {
+TEST_F(NetworkErrorLoggingServiceTest, CreateService) {
+  // Service is created by default in the test fixture..
   EXPECT_TRUE(service());
 }
 
@@ -182,7 +186,7 @@ TEST_F(NetworkErrorLoggingServiceTest, NoReportingService) {
 
   service()->OnHeader(kOrigin_, kHeader_);
 
-  service()->OnNetworkError(MakeErrorDetails(kUrl_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
 }
 
 TEST_F(NetworkErrorLoggingServiceTest, OriginInsecure) {
@@ -191,24 +195,26 @@ TEST_F(NetworkErrorLoggingServiceTest, OriginInsecure) {
 
   service()->OnHeader(kInsecureOrigin, kHeader_);
 
-  service()->OnNetworkError(
-      MakeErrorDetails(kInsecureUrl, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(
+      MakeRequestDetails(kInsecureUrl, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
 }
 
 TEST_F(NetworkErrorLoggingServiceTest, NoPolicyForOrigin) {
-  service()->OnNetworkError(MakeErrorDetails(kUrl_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
 }
 
-TEST_F(NetworkErrorLoggingServiceTest, ReportQueued) {
-  service()->OnHeader(kOrigin_, kHeader_);
+TEST_F(NetworkErrorLoggingServiceTest, SuccessReportQueued) {
+  static const std::string kHeaderSuccessFraction1 =
+      "{\"report-to\":\"group\",\"max-age\":86400,\"success-fraction\":1.0}";
+  service()->OnHeader(kOrigin_, kHeaderSuccessFraction1);
 
-  service()->OnNetworkError(MakeErrorDetails(kUrl_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(MakeRequestDetails(kUrl_, OK));
 
-  EXPECT_EQ(1u, reports().size());
+  ASSERT_EQ(1u, reports().size());
   EXPECT_EQ(kUrl_, reports()[0].url);
   EXPECT_EQ(kGroup_, reports()[0].group);
   EXPECT_EQ(kType_, reports()[0].type);
@@ -220,6 +226,41 @@ TEST_F(NetworkErrorLoggingServiceTest, ReportQueued) {
   base::ExpectDictStringValue(kReferrer_.spec(), *body,
                               NetworkErrorLoggingService::kReferrerKey);
   // TODO(juliatuttle): Extract these constants.
+  ExpectDictDoubleValue(1.0, *body,
+                        NetworkErrorLoggingService::kSamplingFractionKey);
+  base::ExpectDictStringValue("0.0.0.0", *body,
+                              NetworkErrorLoggingService::kServerIpKey);
+  base::ExpectDictStringValue("", *body,
+                              NetworkErrorLoggingService::kProtocolKey);
+  base::ExpectDictIntegerValue(0, *body,
+                               NetworkErrorLoggingService::kStatusCodeKey);
+  base::ExpectDictIntegerValue(1000, *body,
+                               NetworkErrorLoggingService::kElapsedTimeKey);
+  base::ExpectDictStringValue("ok", *body,
+                              NetworkErrorLoggingService::kTypeKey);
+}
+
+TEST_F(NetworkErrorLoggingServiceTest, FailureReportQueued) {
+  static const std::string kHeaderFailureFraction1 =
+      "{\"report-to\":\"group\",\"max-age\":86400,\"failure-fraction\":1.0}";
+  service()->OnHeader(kOrigin_, kHeaderFailureFraction1);
+
+  service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
+
+  ASSERT_EQ(1u, reports().size());
+  EXPECT_EQ(kUrl_, reports()[0].url);
+  EXPECT_EQ(kGroup_, reports()[0].group);
+  EXPECT_EQ(kType_, reports()[0].type);
+
+  const base::DictionaryValue* body;
+  ASSERT_TRUE(reports()[0].body->GetAsDictionary(&body));
+  base::ExpectDictStringValue(kUrl_.spec(), *body,
+                              NetworkErrorLoggingService::kUriKey);
+  base::ExpectDictStringValue(kReferrer_.spec(), *body,
+                              NetworkErrorLoggingService::kReferrerKey);
+  // TODO(juliatuttle): Extract these constants.
+  ExpectDictDoubleValue(1.0, *body,
+                        NetworkErrorLoggingService::kSamplingFractionKey);
   base::ExpectDictStringValue("0.0.0.0", *body,
                               NetworkErrorLoggingService::kServerIpKey);
   base::ExpectDictStringValue("", *body,
@@ -232,22 +273,149 @@ TEST_F(NetworkErrorLoggingServiceTest, ReportQueued) {
                               NetworkErrorLoggingService::kTypeKey);
 }
 
+TEST_F(NetworkErrorLoggingServiceTest, HttpErrorReportQueued) {
+  static const std::string kHeaderFailureFraction1 =
+      "{\"report-to\":\"group\",\"max-age\":86400,\"failure-fraction\":1.0}";
+  service()->OnHeader(kOrigin_, kHeaderFailureFraction1);
+
+  service()->OnRequest(MakeRequestDetails(kUrl_, OK, 504));
+
+  ASSERT_EQ(1u, reports().size());
+  EXPECT_EQ(kUrl_, reports()[0].url);
+  EXPECT_EQ(kGroup_, reports()[0].group);
+  EXPECT_EQ(kType_, reports()[0].type);
+
+  const base::DictionaryValue* body;
+  ASSERT_TRUE(reports()[0].body->GetAsDictionary(&body));
+  base::ExpectDictStringValue(kUrl_.spec(), *body,
+                              NetworkErrorLoggingService::kUriKey);
+  base::ExpectDictStringValue(kReferrer_.spec(), *body,
+                              NetworkErrorLoggingService::kReferrerKey);
+  // TODO(juliatuttle): Extract these constants.
+  ExpectDictDoubleValue(1.0, *body,
+                        NetworkErrorLoggingService::kSamplingFractionKey);
+  base::ExpectDictStringValue("0.0.0.0", *body,
+                              NetworkErrorLoggingService::kServerIpKey);
+  base::ExpectDictStringValue("", *body,
+                              NetworkErrorLoggingService::kProtocolKey);
+  base::ExpectDictIntegerValue(504, *body,
+                               NetworkErrorLoggingService::kStatusCodeKey);
+  base::ExpectDictIntegerValue(1000, *body,
+                               NetworkErrorLoggingService::kElapsedTimeKey);
+  base::ExpectDictStringValue("http.error", *body,
+                              NetworkErrorLoggingService::kTypeKey);
+}
+
 TEST_F(NetworkErrorLoggingServiceTest, MaxAge0) {
   service()->OnHeader(kOrigin_, kHeader_);
 
   service()->OnHeader(kOrigin_, kHeaderMaxAge0_);
 
-  service()->OnNetworkError(MakeErrorDetails(kUrl_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
+}
+
+TEST_F(NetworkErrorLoggingServiceTest, SuccessFraction0) {
+  static const std::string kHeaderSuccessFraction0 =
+      "{\"report-to\":\"group\",\"max-age\":86400,\"success-fraction\":0.0}";
+  service()->OnHeader(kOrigin_, kHeaderSuccessFraction0);
+
+  // Each network error has a 0% chance of being reported.  Fire off several and
+  // verify that no reports are produced.
+  constexpr size_t kReportCount = 100;
+  for (size_t i = 0; i < kReportCount; ++i)
+    service()->OnRequest(MakeRequestDetails(kUrl_, OK));
+
+  EXPECT_TRUE(reports().empty());
+}
+
+TEST_F(NetworkErrorLoggingServiceTest, SuccessFractionHalf) {
+  // Include a different value for failure-fraction to ensure that we copy the
+  // right value into sampling-fraction.
+  static const std::string kHeaderSuccessFractionHalf =
+      "{\"report-to\":\"group\",\"max-age\":86400,\"success-fraction\":0.5,"
+      "\"failure-fraction\":0.25}";
+  service()->OnHeader(kOrigin_, kHeaderSuccessFractionHalf);
+
+  // Each network error has a 50% chance of being reported.  Fire off several
+  // and verify that some requests were reported and some weren't.  (We can't
+  // verify exact counts because each decision is made randomly.)
+  constexpr size_t kReportCount = 100;
+  for (size_t i = 0; i < kReportCount; ++i)
+    service()->OnRequest(MakeRequestDetails(kUrl_, OK));
+
+  // If our random selection logic is correct, there is a 2^-100 chance that
+  // every single report above was skipped.  If this check fails, it's much more
+  // likely that our code is wrong.
+  EXPECT_FALSE(reports().empty());
+
+  // There's also a 2^-100 chance that every single report was logged.  Same as
+  // above, that's much more likely to be a code error.
+  EXPECT_GT(kReportCount, reports().size());
+
+  for (const auto& report : reports()) {
+    const base::DictionaryValue* body;
+    ASSERT_TRUE(report.body->GetAsDictionary(&body));
+    // Our header includes a different value for failure-fraction, so that this
+    // check verifies that we copy the correct fraction into sampling-fraction.
+    ExpectDictDoubleValue(0.5, *body,
+                          NetworkErrorLoggingService::kSamplingFractionKey);
+  }
+}
+
+TEST_F(NetworkErrorLoggingServiceTest, FailureFraction0) {
+  static const std::string kHeaderFailureFraction0 =
+      "{\"report-to\":\"group\",\"max-age\":86400,\"failure-fraction\":0.0}";
+  service()->OnHeader(kOrigin_, kHeaderFailureFraction0);
+
+  // Each network error has a 0% chance of being reported.  Fire off several and
+  // verify that no reports are produced.
+  constexpr size_t kReportCount = 100;
+  for (size_t i = 0; i < kReportCount; ++i)
+    service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
+
+  EXPECT_TRUE(reports().empty());
+}
+
+TEST_F(NetworkErrorLoggingServiceTest, FailureFractionHalf) {
+  // Include a different value for success-fraction to ensure that we copy the
+  // right value into sampling-fraction.
+  static const std::string kHeaderFailureFractionHalf =
+      "{\"report-to\":\"group\",\"max-age\":86400,\"failure-fraction\":0.5,"
+      "\"success-fraction\":0.25}";
+  service()->OnHeader(kOrigin_, kHeaderFailureFractionHalf);
+
+  // Each network error has a 50% chance of being reported.  Fire off several
+  // and verify that some requests were reported and some weren't.  (We can't
+  // verify exact counts because each decision is made randomly.)
+  constexpr size_t kReportCount = 100;
+  for (size_t i = 0; i < kReportCount; ++i)
+    service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
+
+  // If our random selection logic is correct, there is a 2^-100 chance that
+  // every single report above was skipped.  If this check fails, it's much more
+  // likely that our code is wrong.
+  EXPECT_FALSE(reports().empty());
+
+  // There's also a 2^-100 chance that every single report was logged.  Same as
+  // above, that's much more likely to be a code error.
+  EXPECT_GT(kReportCount, reports().size());
+
+  for (const auto& report : reports()) {
+    const base::DictionaryValue* body;
+    ASSERT_TRUE(report.body->GetAsDictionary(&body));
+    ExpectDictDoubleValue(0.5, *body,
+                          NetworkErrorLoggingService::kSamplingFractionKey);
+  }
 }
 
 TEST_F(NetworkErrorLoggingServiceTest,
        ExcludeSubdomainsDoesntMatchDifferentPort) {
   service()->OnHeader(kOrigin_, kHeader_);
 
-  service()->OnNetworkError(
-      MakeErrorDetails(kUrlDifferentPort_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(
+      MakeRequestDetails(kUrlDifferentPort_, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
 }
@@ -255,8 +423,8 @@ TEST_F(NetworkErrorLoggingServiceTest,
 TEST_F(NetworkErrorLoggingServiceTest, ExcludeSubdomainsDoesntMatchSubdomain) {
   service()->OnHeader(kOrigin_, kHeader_);
 
-  service()->OnNetworkError(
-      MakeErrorDetails(kUrlSubdomain_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(
+      MakeRequestDetails(kUrlSubdomain_, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
 }
@@ -264,27 +432,27 @@ TEST_F(NetworkErrorLoggingServiceTest, ExcludeSubdomainsDoesntMatchSubdomain) {
 TEST_F(NetworkErrorLoggingServiceTest, IncludeSubdomainsMatchesDifferentPort) {
   service()->OnHeader(kOrigin_, kHeaderIncludeSubdomains_);
 
-  service()->OnNetworkError(
-      MakeErrorDetails(kUrlDifferentPort_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(
+      MakeRequestDetails(kUrlDifferentPort_, ERR_CONNECTION_REFUSED));
 
-  EXPECT_EQ(1u, reports().size());
+  ASSERT_EQ(1u, reports().size());
   EXPECT_EQ(kUrlDifferentPort_, reports()[0].url);
 }
 
 TEST_F(NetworkErrorLoggingServiceTest, IncludeSubdomainsMatchesSubdomain) {
   service()->OnHeader(kOrigin_, kHeaderIncludeSubdomains_);
 
-  service()->OnNetworkError(
-      MakeErrorDetails(kUrlSubdomain_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(
+      MakeRequestDetails(kUrlSubdomain_, ERR_CONNECTION_REFUSED));
 
-  EXPECT_EQ(1u, reports().size());
+  ASSERT_EQ(1u, reports().size());
 }
 
 TEST_F(NetworkErrorLoggingServiceTest,
        IncludeSubdomainsDoesntMatchSuperdomain) {
   service()->OnHeader(kOriginSubdomain_, kHeaderIncludeSubdomains_);
 
-  service()->OnNetworkError(MakeErrorDetails(kUrl_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
 }
@@ -294,7 +462,7 @@ TEST_F(NetworkErrorLoggingServiceTest, RemoveAllBrowsingData) {
 
   service()->RemoveBrowsingData(base::RepeatingCallback<bool(const GURL&)>());
 
-  service()->OnNetworkError(MakeErrorDetails(kUrl_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
 }
@@ -308,14 +476,14 @@ TEST_F(NetworkErrorLoggingServiceTest, RemoveSomeBrowsingData) {
         return origin.host() == "example.com";
       }));
 
-  service()->OnNetworkError(MakeErrorDetails(kUrl_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(MakeRequestDetails(kUrl_, ERR_CONNECTION_REFUSED));
 
   EXPECT_TRUE(reports().empty());
 
-  service()->OnNetworkError(
-      MakeErrorDetails(kUrlDifferentHost_, ERR_CONNECTION_REFUSED));
+  service()->OnRequest(
+      MakeRequestDetails(kUrlDifferentHost_, ERR_CONNECTION_REFUSED));
 
-  EXPECT_EQ(1u, reports().size());
+  ASSERT_EQ(1u, reports().size());
 }
 
 }  // namespace

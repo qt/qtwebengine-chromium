@@ -32,9 +32,9 @@
 #include "content/public/common/service_manager_connection.h"
 #include "media/base/video_util.h"
 #include "media/capture/content/capture_resolution_chooser.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/wake_lock.mojom.h"
-#include "services/device/public/interfaces/wake_lock_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
+#include "services/device/public/mojom/wake_lock_provider.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "third_party/libyuv/include/libyuv/scale_argb.h"
 #include "third_party/webrtc/modules/desktop_capture/cropped_desktop_frame.h"
@@ -466,7 +466,7 @@ void DesktopCaptureDevice::Core::RequestWakeLock(
                            mojo::MakeRequest(&wake_lock_provider));
   wake_lock_provider->GetWakeLockWithoutContext(
       device::mojom::WakeLockType::kPreventDisplaySleep,
-      device::mojom::WakeLockReason::kOther, "Desktop capture is running",
+      device::mojom::WakeLockReason::kOther, "Native desktop capture",
       mojo::MakeRequest(&wake_lock_));
 
   wake_lock_->RequestWakeLock();
@@ -479,7 +479,7 @@ base::TimeTicks DesktopCaptureDevice::Core::NowTicks() const {
 // static
 std::unique_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
     const DesktopMediaID& source) {
-  auto options = CreateDesktopCaptureOptions();
+  auto options = desktop_capture::CreateDesktopCaptureOptions();
   std::unique_ptr<webrtc::DesktopCapturer> capturer;
   std::unique_ptr<media::VideoCaptureDevice> result;
 
@@ -538,7 +538,7 @@ void DesktopCaptureDevice::AllocateAndStart(
   thread_.task_runner()->PostTask(
       FROM_HERE,
       base::BindOnce(&Core::AllocateAndStart, base::Unretained(core_.get()),
-                     params, base::Passed(&client)));
+                     params, std::move(client)));
 }
 
 void DesktopCaptureDevice::StopAndDeAllocate() {

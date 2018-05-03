@@ -73,6 +73,16 @@ class LocalDOMWindow;
 class LocalFrame;
 class XPathNSResolver;
 
+// Determines how a V8 -> C++ union conversion should be performed: when the
+// JavaScript value being converted is either undefined or null, kNullable will
+// stop the conversion attempt and the union's IsNull() method will return true.
+// If kNotNullable is used, the other conversion steps listed in
+// https://heycam.github.io/webidl/#es-union will continue being attempted.
+enum class UnionTypeConversionMode {
+  kNullable,
+  kNotNullable,
+};
+
 template <typename CallbackInfo>
 inline void V8SetReturnValue(const CallbackInfo& callback_info,
                              DOMWindow* impl) {
@@ -364,17 +374,6 @@ CORE_EXPORT float ToRestrictedFloat(v8::Isolate*,
                                     v8::Local<v8::Value>,
                                     ExceptionState&);
 
-// Converts a value to a String, throwing if any code unit is outside 0-255.
-CORE_EXPORT String ToByteString(v8::Isolate*,
-                                v8::Local<v8::Value>,
-                                ExceptionState&);
-
-// Converts a value to a String, replacing unmatched UTF-16 surrogates with
-// replacement characters.
-CORE_EXPORT String ToUSVString(v8::Isolate*,
-                               v8::Local<v8::Value>,
-                               ExceptionState&);
-
 inline double ToCoreDate(v8::Isolate* isolate,
                          v8::Local<v8::Value> object,
                          ExceptionState& exception_state) {
@@ -386,6 +385,9 @@ inline double ToCoreDate(v8::Isolate* isolate,
   }
   return object.As<v8::Date>()->ValueOf();
 }
+
+// USVString conversion helper.
+CORE_EXPORT String ReplaceUnmatchedSurrogates(const String&);
 
 // FIXME: Remove the special casing for XPathNSResolver.
 XPathNSResolver* ToXPathNSResolver(ScriptState*, v8::Local<v8::Value>);

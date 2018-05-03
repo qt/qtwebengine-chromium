@@ -94,7 +94,7 @@ VTTRegion::VTTRegion()
       viewport_anchor_(DoublePoint(kDefaultAnchorPointX, kDefaultAnchorPointY)),
       scroll_(kDefaultScroll),
       current_top_(0),
-      scroll_timer_(Platform::Current()->CurrentThread()->GetWebTaskRunner(),
+      scroll_timer_(Platform::Current()->CurrentThread()->GetTaskRunner(),
                     this,
                     &VTTRegion::ScrollTimerFired) {}
 
@@ -111,13 +111,7 @@ void VTTRegion::setWidth(double value, ExceptionState& exception_state) {
   width_ = value;
 }
 
-void VTTRegion::setLines(int value, ExceptionState& exception_state) {
-  if (value < 0) {
-    exception_state.ThrowDOMException(
-        kIndexSizeError,
-        "The height provided (" + String::Number(value) + ") is negative.");
-    return;
-  }
+void VTTRegion::setLines(unsigned value) {
   lines_ = value;
 }
 
@@ -230,11 +224,11 @@ void VTTRegion::ParseSettingValue(RegionSetting setting, VTTScanner& input) {
       break;
     }
     case kLines: {
-      int number;
+      unsigned number;
       if (input.ScanDigits(number) && ParsedEntireRun(input, value_run))
         lines_ = number;
       else
-        DVLOG(VTT_LOG_LEVEL) << "parseSettingValue, invalid Height";
+        DVLOG(VTT_LOG_LEVEL) << "parseSettingValue, invalid Lines";
       break;
     }
     case kRegionAnchor: {

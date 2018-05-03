@@ -20,8 +20,8 @@
 #include "media/capture/content/thread_safe_capture_oracle.h"
 #include "media/capture/content/video_capture_oracle.h"
 #include "media/capture/video_capture_types.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/wake_lock_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/wake_lock_provider.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "skia/ext/image_operations.h"
 #include "ui/aura/client/screen_position_client.h"
@@ -102,7 +102,7 @@ bool AuraWindowCaptureMachine::InternalStart(
                              mojo::MakeRequest(&wake_lock_provider));
     wake_lock_provider->GetWakeLockWithoutContext(
         device::mojom::WakeLockType::kPreventDisplaySleep,
-        device::mojom::WakeLockReason::kOther, "Desktop capturer is running",
+        device::mojom::WakeLockReason::kOther, "Aura window or desktop capture",
         mojo::MakeRequest(&wake_lock_));
 
     wake_lock_->RequestWakeLock();
@@ -228,7 +228,7 @@ void AuraWindowCaptureMachine::Capture(base::TimeTicks event_time) {
   const base::TimeTicks start_time = base::TimeTicks::Now();
   media::VideoCaptureOracle::Event event;
   if (event_time.is_null()) {
-    event = media::VideoCaptureOracle::kActiveRefreshRequest;
+    event = media::VideoCaptureOracle::kRefreshRequest;
     event_time = start_time;
   } else {
     event = media::VideoCaptureOracle::kCompositorUpdate;
@@ -419,7 +419,7 @@ void AuraWindowCaptureMachine::OnWindowBoundsChanged(
 void AuraWindowCaptureMachine::OnWindowDestroying(aura::Window* window) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  InternalStop(base::Bind(&base::DoNothing));
+  InternalStop(base::DoNothing());
 
   oracle_proxy_->ReportError(FROM_HERE, "OnWindowDestroying()");
 }

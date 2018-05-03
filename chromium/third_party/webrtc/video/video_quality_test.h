@@ -33,7 +33,7 @@ class VideoQualityTest : public test::CallTest {
     ~Params();
     struct CallConfig {
       bool send_side_bwe;
-      Call::Config::BitrateConfig call_bitrate_config;
+      BitrateConstraints call_bitrate_config;
       int num_thumbnails;
       // Indicates if secondary_(video|ss|screenshare) structures are used.
       bool dual_video;
@@ -96,6 +96,8 @@ class VideoQualityTest : public test::CallTest {
   };
 
   VideoQualityTest();
+  explicit VideoQualityTest(
+      std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory);
   void RunWithAnalyzer(const Params& params);
   void RunWithRenderers(const Params& params);
 
@@ -111,6 +113,7 @@ class VideoQualityTest : public test::CallTest {
 
  protected:
   std::map<uint8_t, webrtc::MediaType> payload_type_map_;
+  std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory_;
 
   // No-op implementation to be able to instantiate this class from non-TEST_F
   // locations.

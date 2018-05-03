@@ -37,7 +37,7 @@
 #include "public/platform/WebDragOperation.h"
 #include "public/platform/WebFocusType.h"
 #include "public/platform/WebString.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-shared.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-shared.h"
 
 namespace blink {
 
@@ -84,6 +84,7 @@ class WebView : protected WebWidget {
   using WebWidget::CompositeAndReadbackAsync;
   using WebWidget::ThemeChanged;
   using WebWidget::HandleInputEvent;
+  using WebWidget::DispatchBufferedTouchEvents;
   using WebWidget::SetCursorVisibilityState;
   using WebWidget::ApplyViewportDeltas;
   using WebWidget::MouseCaptureLost;

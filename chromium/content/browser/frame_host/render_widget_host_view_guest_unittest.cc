@@ -13,7 +13,6 @@
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "components/viz/common/surfaces/surface_sequence.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_manager.h"
@@ -33,6 +32,7 @@
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/compositor/compositor.h"
 
 namespace content {
@@ -124,8 +124,7 @@ class TestBrowserPluginGuest : public BrowserPluginGuest {
     BrowserPluginGuest::set_attached_for_test(attached);
   }
 
-  void SetChildFrameSurface(const viz::SurfaceInfo& surface_info,
-                            const viz::SurfaceSequence& sequence) override {
+  void SetChildFrameSurface(const viz::SurfaceInfo& surface_info) override {
     last_surface_info_ = surface_info;
   }
 
@@ -238,6 +237,10 @@ viz::CompositorFrame CreateDelegatedFrame(float scale_factor,
 }  // anonymous namespace
 
 TEST_F(RenderWidgetHostViewGuestSurfaceTest, TestGuestSurface) {
+  // TODO: fix for mash.
+  if (base::FeatureList::IsEnabled(features::kMash))
+    return;
+
   gfx::Size view_size(100, 100);
   gfx::Rect view_rect(view_size);
   float scale_factor = 1.f;

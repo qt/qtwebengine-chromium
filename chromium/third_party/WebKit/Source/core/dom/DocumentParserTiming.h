@@ -20,6 +20,8 @@ class DocumentParserTiming final
   USING_GARBAGE_COLLECTED_MIXIN(DocumentParserTiming);
 
  public:
+  static const char kSupplementName[];
+
   virtual ~DocumentParserTiming() = default;
 
   static DocumentParserTiming& From(Document&);
@@ -63,8 +65,8 @@ class DocumentParserTiming final
   // given parser event has not yet occurred.  See the comments for
   // monotonicallyIncreasingTime in wtf/Time.h for additional details.
 
-  double ParserStart() const { return parser_start_; }
-  double ParserStop() const { return parser_stop_; }
+  TimeTicks ParserStart() const { return parser_start_; }
+  TimeTicks ParserStop() const { return parser_stop_; }
 
   // Returns the sum of all blocking script load durations reported via
   // recordParseBlockedOnScriptLoadDuration.
@@ -100,8 +102,8 @@ class DocumentParserTiming final
   explicit DocumentParserTiming(Document&);
   void NotifyDocumentParserTimingChanged();
 
-  double parser_start_ = 0.0;
-  double parser_stop_ = 0.0;
+  TimeTicks parser_start_;
+  TimeTicks parser_stop_;
   double parser_blocked_on_script_load_duration_ = 0.0;
   double parser_blocked_on_script_load_from_document_write_duration_ = 0.0;
   double parser_blocked_on_script_execution_duration_ = 0.0;

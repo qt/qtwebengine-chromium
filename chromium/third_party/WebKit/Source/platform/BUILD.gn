@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/buildflag_header.gni")
+import("//build/compiled_action.gni")
 import("//build/config/features.gni")
 import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
@@ -15,6 +16,11 @@ import("//third_party/WebKit/Source/platform/platform_generated.gni")
 
 # Most targets in this file are private actions so use that as the default.
 visibility = [ ":*" ]
+
+blink_platform_avx_files = [
+  "audio/cpu/x86/VectorMathAVX.cpp",
+  "audio/cpu/x86/VectorMathAVX.h",
+]
 
 blink_platform_neon_files = [
   "audio/cpu/arm/VectorMathNEON.h",
@@ -93,26 +99,12 @@ action("color_data") {
   ]
 }
 
-action("character_data") {
-  script = "../build/scripts/gperf.py"
-  deps = [
-    ":character_data_generator($host_toolchain)",
-  ]
-  output_file = "$blink_platform_output_dir/CharacterPropertyData.cpp"
+compiled_action("character_data") {
+  tool = ":character_data_generator"
   outputs = [
-    output_file,
+    "$blink_platform_output_dir/CharacterPropertyData.cpp",
   ]
-
-  # Find character_data_generator, which is generated in a different directory
-  # when cross-compile.
-  generator = "./" + rebase_path(
-                  get_label_info(":character_data_generator($host_toolchain)",
-                                 "root_out_dir") + "/character_data_generator",
-                  root_build_dir)
-  args = [
-    generator,
-    rebase_path(output_file, root_build_dir),
-  ]
+  args = rebase_path(outputs, root_build_dir)
 }
 
 action("instrumentation_probes") {
@@ -202,28 +194,27 @@ group("blink_platform_public_deps") {
     "//cc/animation",
     "//cc/paint",
     "//gpu/command_buffer/client:client",
-    "//gpu/command_buffer/client:gles2_c_lib",
     "//gpu/command_buffer/client:gles2_interface",
     "//gpu/command_buffer/common:common",
     "//media",
     "//net",
-    "//services/device/public/interfaces:generic_sensor_blink",
-    "//services/device/public/interfaces:interfaces_blink",
+    "//services/device/public/mojom:generic_sensor_blink",
+    "//services/device/public/mojom:mojom_blink",
     "//services/network/public/cpp:cpp",
-    "//services/network/public/interfaces",
-    "//services/network/public/interfaces:interfaces_blink",
+    "//services/network/public/mojom",
+    "//services/network/public/mojom:mojom_blink",
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
-    "//services/resource_coordinator/public/interfaces:interfaces_blink",
-    "//services/service_manager/public/interfaces:interfaces_blink",
+    "//services/resource_coordinator/public/mojom:mojom_blink",
+    "//services/service_manager/public/mojom:mojom_blink",
     "//skia",
     "//third_party:jpeg",
-    "//third_party/WebKit/Source/platform/heap:blink_heap_incremental_marking",
+    "//third_party/WebKit/Source/platform/heap:blink_heap_flags",
     "//third_party/WebKit/Source/platform/network:make_generated",
     "//third_party/WebKit/Source/platform/wtf",
-    "//third_party/WebKit/common:blink_common",
-    "//third_party/WebKit/common:mojo_platform_bindings_blink",
     "//third_party/WebKit/public:blink_headers",
     "//third_party/WebKit/public:mojo_bindings_blink",
+    "//third_party/WebKit/public/common",
+    "//third_party/WebKit/public/mojom:mojom_platform_blink",
     "//third_party/iccjpeg",
     "//third_party/libpng",
     "//third_party/libwebp",
@@ -273,14 +264,26 @@ config("blink_platform_pch") {
   }
 }
 
+source_set("platform_export") {
+  sources = [
+    "PlatformExport.h",
+  ]
+
+  visibility = []  # Allow re-assignment of list.
+  visibility = [
+    ":platform",
+    "//mojo/public/cpp/bindings:wtf_support",
+  ]
+}
+
 jumbo_component("platform") {
   visibility = []  # Allow re-assignment of list.
   visibility = [
     "//components/pdf/common:interfaces_blink",
-    "//services/device/public/interfaces:interfaces_blink",
+    "//services/device/public/mojom:mojom_blink",
     "//third_party/WebKit/*",
-    "//url/mojo:url_mojom_origin_blink",
-    "//url/mojo:url_mojom_gurl_blink",
+    "//url/mojom:url_mojom_origin_blink",
+    "//url/mojom:url_mojom_gurl_blink",
   ]
   output_name = "blink_platform"
 
@@ -358,7 +361,6 @@ jumbo_component("platform") {
     "PartitionAllocMemoryDumpProvider.h",
     "PasteMode.h",
     "PlatformChromeClient.h",
-    "PlatformExport.h",
     "PlatformFrameView.h",
     "Prerender.cpp",
     "Prerender.h",
@@ -384,6 +386,8 @@ jumbo_component("platform") {
     "Timer.h",
     "UUID.cpp",
     "UUID.h",
+    "UkmTimeAggregator.cpp",
+    "UkmTimeAggregator.h",
     "WaitableEvent.cpp",
     "WaitableEvent.h",
     "WebFrameScheduler.h",
@@ -398,6 +402,7 @@ jumbo_component("platform") {
     "WebThread.cpp",
     "WebThreadSupportingGC.cpp",
     "WebThreadSupportingGC.h",
+    "WebThreadType.cpp",
     "WebTouchEvent.cpp",
     "WindowsKeyboardCodes.h",
     "animation/AnimationTranslationUtil.cpp",
@@ -405,14 +410,12 @@ jumbo_component("platform") {
     "animation/AnimationUtilities.h",
     "animation/CompositorAnimation.cpp",
     "animation/CompositorAnimation.h",
+    "animation/CompositorAnimationClient.cpp",
+    "animation/CompositorAnimationClient.h",
     "animation/CompositorAnimationCurve.h",
     "animation/CompositorAnimationDelegate.h",
     "animation/CompositorAnimationHost.cpp",
     "animation/CompositorAnimationHost.h",
-    "animation/CompositorAnimationPlayer.cpp",
-    "animation/CompositorAnimationPlayer.h",
-    "animation/CompositorAnimationPlayerClient.cpp",
-    "animation/CompositorAnimationPlayerClient.h",
     "animation/CompositorAnimationTimeline.cpp",
     "animation/CompositorAnimationTimeline.h",
     "animation/CompositorFilterAnimationCurve.cpp",
@@ -425,6 +428,8 @@ jumbo_component("platform") {
     "animation/CompositorFloatKeyframe.h",
     "animation/CompositorKeyframe.cpp",
     "animation/CompositorKeyframe.h",
+    "animation/CompositorKeyframeModel.cpp",
+    "animation/CompositorKeyframeModel.h",
     "animation/CompositorScrollOffsetAnimationCurve.cpp",
     "animation/CompositorScrollOffsetAnimationCurve.h",
     "animation/CompositorTargetProperty.h",
@@ -524,6 +529,9 @@ jumbo_component("platform") {
     "audio/android/FFTFrameOpenMAXDLAndroid.cpp",
     "audio/cpu/arm/VectorMathNEON.h",
     "audio/cpu/mips/VectorMathMSA.h",
+    "audio/cpu/x86/VectorMathAVX.cpp",
+    "audio/cpu/x86/VectorMathAVX.h",
+    "audio/cpu/x86/VectorMathImpl.h",
     "audio/cpu/x86/VectorMathSSE.cpp",
     "audio/cpu/x86/VectorMathSSE.h",
     "audio/cpu/x86/VectorMathX86.h",
@@ -554,6 +562,8 @@ jumbo_component("platform") {
     "bindings/ScriptState.h",
     "bindings/ScriptWrappable.cpp",
     "bindings/ScriptWrappable.h",
+    "bindings/ScriptWrappableMarkingVisitor.cpp",
+    "bindings/ScriptWrappableMarkingVisitor.h",
     "bindings/ScriptWrappableVisitor.cpp",
     "bindings/ScriptWrappableVisitor.h",
     "bindings/ScriptWrappableVisitorVerifier.h",
@@ -564,6 +574,8 @@ jumbo_component("platform") {
     "bindings/TraceWrapperBase.h",
     "bindings/TraceWrapperMember.h",
     "bindings/TraceWrapperV8Reference.h",
+    "bindings/TraceWrapperV8String.cpp",
+    "bindings/TraceWrapperV8String.h",
     "bindings/V0CustomElementBinding.cpp",
     "bindings/V0CustomElementBinding.h",
     "bindings/V8Binding.cpp",
@@ -606,7 +618,6 @@ jumbo_component("platform") {
     "exported/WebAudioDevice.cpp",
     "exported/WebBlobInfo.cpp",
     "exported/WebCORS.cpp",
-    "exported/WebCORSPreflightResultCache.cpp",
     "exported/WebCache.cpp",
     "exported/WebCanvasCaptureHandler.cpp",
     "exported/WebClipboardImpl.cpp",
@@ -651,8 +662,6 @@ jumbo_component("platform") {
     "exported/WebNetworkStateNotifier.cpp",
     "exported/WebPrerender.cpp",
     "exported/WebPrerenderingSupport.cpp",
-    "exported/WebPresentationConnection.cpp",
-    "exported/WebPresentationConnectionCallbacks.cpp",
     "exported/WebPresentationReceiver.cpp",
     "exported/WebRTCAnswerOptions.cpp",
     "exported/WebRTCOfferOptions.cpp",
@@ -697,7 +706,6 @@ jumbo_component("platform") {
     "exported/WebVideoFrameSubmitter.cpp",
     "exported/WrappedResourceRequest.h",
     "exported/WrappedResourceResponse.h",
-    "exported/linux/WebFontRenderStyle.cpp",
     "feature_policy/FeaturePolicy.cpp",
     "feature_policy/FeaturePolicy.h",
     "fonts/AcceptLanguagesResolver.cpp",
@@ -758,6 +766,7 @@ jumbo_component("platform") {
     "fonts/FontVariantEastAsian.h",
     "fonts/FontVariantNumeric.cpp",
     "fonts/FontVariantNumeric.h",
+    "fonts/FontVerticalPositionType.h",
     "fonts/FontWidthVariant.cpp",
     "fonts/FontWidthVariant.h",
     "fonts/GenericFontFamilySettings.cpp",
@@ -788,17 +797,19 @@ jumbo_component("platform") {
     "fonts/VDMXParser.h",
     "fonts/WebFontDecoder.cpp",
     "fonts/WebFontDecoder.h",
+    "fonts/WebFontRenderStyle.cpp",
+    "fonts/WebFontTypefaceFactory.cpp",
+    "fonts/WebFontTypefaceFactory.h",
     "fonts/android/FontCacheAndroid.cpp",
     "fonts/linux/FontCacheLinux.cpp",
-    "fonts/linux/FontPlatformDataLinux.cpp",
-    "fonts/linux/FontRenderStyle.cpp",
-    "fonts/linux/FontRenderStyle.h",
     "fonts/mac/CoreTextVariationsSupport.cpp",
     "fonts/mac/CoreTextVariationsSupport.h",
     "fonts/mac/FontCacheMac.mm",
     "fonts/mac/FontFamilyMatcherMac.h",
     "fonts/mac/FontFamilyMatcherMac.mm",
     "fonts/mac/FontPlatformDataMac.mm",
+    "fonts/opentype/FontFormatCheck.cpp",
+    "fonts/opentype/FontFormatCheck.h",
     "fonts/opentype/FontSettings.cpp",
     "fonts/opentype/FontSettings.h",
     "fonts/opentype/OpenTypeCapsSupport.cpp",
@@ -807,8 +818,6 @@ jumbo_component("platform") {
     "fonts/opentype/OpenTypeTypes.h",
     "fonts/opentype/OpenTypeVerticalData.cpp",
     "fonts/opentype/OpenTypeVerticalData.h",
-    "fonts/opentype/VariableFontCheck.cpp",
-    "fonts/opentype/VariableFontCheck.h",
     "fonts/shaping/CachingWordShapeIterator.cpp",
     "fonts/shaping/CachingWordShapeIterator.h",
     "fonts/shaping/CachingWordShaper.cpp",
@@ -885,7 +894,6 @@ jumbo_component("platform") {
     "geometry/LayoutRectOutsets.h",
     "geometry/LayoutSize.cpp",
     "geometry/LayoutSize.h",
-    "geometry/LayoutSizeHash.h",
     "geometry/Region.cpp",
     "geometry/Region.h",
     "geometry/TransformState.cpp",
@@ -1046,6 +1054,7 @@ jumbo_component("platform") {
     "graphics/VideoFrameResourceProvider.h",
     "graphics/VideoFrameSubmitter.cpp",
     "graphics/VideoFrameSubmitter.h",
+    "graphics/WebGraphicsContext3DProviderWrapper.cpp",
     "graphics/WebGraphicsContext3DProviderWrapper.h",
     "graphics/compositing/CompositedLayerRasterInvalidator.cpp",
     "graphics/compositing/CompositedLayerRasterInvalidator.h",
@@ -1206,6 +1215,8 @@ jumbo_component("platform") {
     "graphics/paint/PropertyTreeState.h",
     "graphics/paint/RasterInvalidationTracking.cpp",
     "graphics/paint/RasterInvalidationTracking.h",
+    "graphics/paint/RefCountedPropertyTreeState.cpp",
+    "graphics/paint/RefCountedPropertyTreeState.h",
     "graphics/paint/ScopedDisplayItemFragment.h",
     "graphics/paint/ScopedPaintChunkProperties.h",
     "graphics/paint/ScrollDisplayItem.cpp",
@@ -1295,14 +1306,21 @@ jumbo_component("platform") {
     "mhtml/MHTMLArchive.h",
     "mhtml/MHTMLParser.cpp",
     "mhtml/MHTMLParser.h",
+    "mojo/BigStringMojomTraits.cpp",
+    "mojo/BigStringMojomTraits.h",
     "mojo/BluetoothStructTraits.cpp",
     "mojo/BluetoothStructTraits.h",
-    "mojo/CommonCustomTypesStructTraits.cpp",
-    "mojo/CommonCustomTypesStructTraits.h",
     "mojo/FetchAPIRequestStructTraits.cpp",
+    "mojo/InterfaceInvalidator.cpp",
+    "mojo/InterfaceInvalidator.h",
     "mojo/MojoHelper.h",
     "mojo/NotificationStructTraits.cpp",
     "mojo/NotificationStructTraits.h",
+    "mojo/RevocableBinding.h",
+    "mojo/RevocableInterfacePtr.h",
+    "mojo/RevocableStrongBinding.h",
+    "mojo/String16MojomTraits.cpp",
+    "mojo/String16MojomTraits.h",
     "peerconnection/RTCAnswerOptionsPlatform.h",
     "peerconnection/RTCOfferOptionsPlatform.h",
     "peerconnection/RTCSessionDescriptionRequest.h",
@@ -1330,6 +1348,8 @@ jumbo_component("platform") {
     "scroll/ScrollAnimatorBase.h",
     "scroll/ScrollAnimatorCompositorCoordinator.cpp",
     "scroll/ScrollAnimatorCompositorCoordinator.h",
+    "scroll/ScrollCustomization.cpp",
+    "scroll/ScrollCustomization.h",
     "scroll/ScrollSnapData.h",
     "scroll/ScrollStateData.h",
     "scroll/ScrollTypes.h",
@@ -1472,11 +1492,10 @@ jumbo_component("platform") {
     "weborigin/SecurityPolicy.cpp",
     "weborigin/SecurityPolicy.h",
     "weborigin/SecurityViolationReportingPolicy.h",
-    "weborigin/Suborigin.cpp",
-    "weborigin/Suborigin.h",
     "weborigin/URLSecurityOriginMap.h",
   ]
 
+  sources -= blink_platform_avx_files
   sources -= blink_platform_neon_files
   sources -= blink_platform_msa_files
   sources -= blink_platform_sse_files
@@ -1529,9 +1548,11 @@ jumbo_component("platform") {
     "//third_party/WebKit/Source/platform/scheduler",
   ]
   deps = [
+    ":platform_export",
+    "//base/allocator:buildflags",
     "//components/viz/service",
     "//device/base/synchronization",
-    "//device/vr:mojo_bindings_blink",
+    "//device/vr/public/mojom:mojom_blink",
     "//gin",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
@@ -1549,6 +1570,7 @@ jumbo_component("platform") {
     sources -= [
       # Uses KillRingMac.mm instead.
       "KillRingNone.cpp",
+      "fonts/WebFontRenderStyle.cpp",
       "fonts/skia/FontCacheSkia.cpp",
       "scroll/ScrollAnimator.cpp",
       "scroll/ScrollAnimator.h",
@@ -1578,6 +1600,9 @@ jumbo_component("platform") {
   if (is_win) {
     sources += [ "clipboard/ClipboardUtilitiesWin.cpp" ]
     sources -= [
+      # TODO(https://crbug.com/808221): Use WebFontRenderStyle on Windows.
+      "fonts/WebFontRenderStyle.cpp",
+
       # Uses LocaleWin instead.
       "text/LocaleICU.cpp",
       "text/LocaleICU.h",
@@ -1592,17 +1617,7 @@ jumbo_component("platform") {
     }
   }
 
-  if (is_android) {
-    # Add in some Linux files also shared with Android.
-    set_sources_assignment_filter([])
-    sources += [
-      "exported/linux/WebFontRenderStyle.cpp",
-      "fonts/linux/FontPlatformDataLinux.cpp",
-      "fonts/linux/FontRenderStyle.cpp",
-      "fonts/linux/FontRenderStyle.h",
-    ]
-    set_sources_assignment_filter(sources_assignment_filter)
-  } else {
+  if (!is_android) {
     if (!snake_case_source_files) {
       sources -= [ "scroll/ScrollbarThemeAndroid.cpp" ]
     }
@@ -1611,7 +1626,6 @@ jumbo_component("platform") {
   if (is_fuchsia) {
     sources += [
       "fonts/fuchsia/FontCacheFuchsia.cpp",
-      "fonts/fuchsia/FontPlatformDataFuchsia.cpp",
       "text/fuchsia/HyphenationFuchsia.cpp",
     ]
   }
@@ -1641,7 +1655,10 @@ jumbo_component("platform") {
   }
 
   if (current_cpu == "x86" || current_cpu == "x64") {
-    deps += [ ":blink_x86_sse" ]
+    deps += [
+      ":blink_x86_avx",
+      ":blink_x86_sse",
+    ]
   }
 
   if (use_webaudio_ffmpeg) {
@@ -1653,10 +1670,8 @@ jumbo_component("platform") {
     deps += [ "//third_party/openmax_dl/dl" ]
   }
 
-  if (remove_webcore_debug_symbols) {
-    configs -= [ "//build/config/compiler:default_symbols" ]
-    configs += remove_webcore_symbols_config
-  }
+  configs -= [ "//build/config/compiler:default_symbols" ]
+  configs += blink_symbols_config
 }
 
 jumbo_static_library("test_support") {
@@ -1739,6 +1754,7 @@ jumbo_static_library("test_support") {
   deps = [
     "//base/test:test_support",
     "//mojo/edk/system",
+    "//third_party/WebKit/Source/platform/blob:test_support",
     "//third_party/WebKit/Source/platform/loader:test_support",
     "//third_party/WebKit/Source/platform/network:test_support",
     "//third_party/WebKit/Source/platform/scheduler:test_support",
@@ -1777,23 +1793,23 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "TimeClamperTest.cpp",
     "TimerTest.cpp",
     "UUIDTest.cpp",
+    "UkmTimeAggregatorTest.cpp",
     "WebIconSizesParserTest.cpp",
     "WebScreenInfoTest.cpp",
     "WebTaskRunnerTest.cpp",
     "WebVectorTest.cpp",
     "animation/AnimationTranslationUtilTest.cpp",
     "animation/CompositorAnimationHostTest.cpp",
-    "animation/CompositorAnimationPlayerTest.cpp",
     "animation/CompositorAnimationTest.cpp",
     "animation/CompositorAnimationTimelineTest.cpp",
     "animation/CompositorFloatAnimationCurveTest.cpp",
+    "animation/CompositorKeyframeModelTest.cpp",
     "animation/TimingFunctionTest.cpp",
     "audio/PushPullFIFOMultithreadTest.cpp",
     "audio/PushPullFIFOTest.cpp",
     "audio/VectorMathTest.cpp",
     "bindings/RuntimeCallStatsTest.cpp",
     "exported/FilePathConversionTest.cpp",
-    "exported/WebCORSPreflightResultCacheTest.cpp",
     "exported/WebCORSTest.cpp",
     "exported/WebStringTest.cpp",
     "feature_policy/FeaturePolicyTest.cpp",
@@ -1839,6 +1855,7 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "geometry/LayoutRectTest.cpp",
     "geometry/LayoutSizeTest.cpp",
     "geometry/RegionTest.cpp",
+    "graphics/AcceleratedStaticBitmapImageTest.cpp",
     "graphics/BitmapImageTest.cpp",
     "graphics/CompositorElementIdTest.cpp",
     "graphics/ContiguousContainerTest.cpp",
@@ -1886,10 +1903,13 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "json/JSONValuesTest.cpp",
     "mac/GraphicsContextCanvasTest.mm",
     "mac/VersionUtilMacTest.mm",
-    "mojo/CommonCustomTypesStructTraitsTest.cpp",
+    "mhtml/MHTMLParserTest.cpp",
+    "mojo/BigStringMojomTraitsTest.cpp",
     "mojo/GeometryStructTraitsTest.cpp",
+    "mojo/InterfaceInvalidatorTest.cpp",
     "mojo/KURLSecurityOriginTest.cpp",
     "mojo/NotificationStructTraitsTest.cpp",
+    "mojo/String16MojomTraitsTest.cpp",
     "scroll/ScrollableAreaTest.cpp",
     "scroll/ScrollbarThemeOverlayTest.cpp",
     "testing/ArenaTestHelpers.h",
@@ -1920,7 +1940,6 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "weborigin/SchemeRegistryTest.cpp",
     "weborigin/SecurityOriginTest.cpp",
     "weborigin/SecurityPolicyTest.cpp",
-    "weborigin/SuboriginTest.cpp",
   ]
 
   if (is_win) {
@@ -1960,6 +1979,7 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "//mojo/edk/system",
     "//mojo/public/cpp/bindings/tests:for_blink_tests",
     "//mojo/public/cpp/test_support:test_utils",
+    "//mojo/public/interfaces/bindings/tests:test_interfaces_blink",
     "//services/viz/public/interfaces",
     "//services/viz/public/interfaces:interfaces_blink",
     "//skia",
@@ -1976,7 +1996,7 @@ jumbo_source_set("blink_platform_unittests_sources") {
     "//ui/gfx/geometry",
     "//ui/gfx/geometry/mojo:test_interfaces_blink",
     "//url",
-    "//url/mojo:test_url_mojom_gurl_blink",
+    "//url/mojom:test_url_mojom_gurl_blink",
   ]
 
   data_deps = [
@@ -1988,7 +2008,7 @@ jumbo_source_set("blink_platform_unittests_sources") {
   include_dirs = [ "$root_gen_dir/blink" ]
 }
 
-test("image_decode_bench") {
+executable("image_decode_bench") {
   visibility = []  # Allow re-assignment of list.
   visibility = [ "*" ]
 
@@ -1998,9 +2018,9 @@ test("image_decode_bench") {
 
   deps = [
     ":platform",
+    "//build/config:exe_and_shlib_deps",
     "//mojo/edk/system",
     "//third_party/WebKit/Source/platform/wtf",
-    "//ui/gfx:test_support",
   ]
 
   configs += [
@@ -2072,6 +2092,19 @@ if (current_cpu == "mipsel" || current_cpu == "mips64el") {
 }
 
 if (current_cpu == "x86" || current_cpu == "x64") {
+  source_set("blink_x86_avx") {
+    sources = blink_platform_avx_files
+    configs += [
+      ":blink_platform_config",
+      ":blink_platform_implementation",
+      "//third_party/WebKit/Source:non_test_config",
+    ]
+    if (!is_clang && is_win) {
+      cflags = [ "/arch:AVX" ]
+    } else {
+      cflags = [ "-mavx" ]
+    }
+  }
   source_set("blink_x86_sse") {
     sources = blink_platform_sse_files
   }

@@ -105,7 +105,14 @@ gfx::NativeViewAccessible TestAXNodeWrapper::ChildAtIndex(int index) {
       nullptr;
 }
 
-gfx::Rect TestAXNodeWrapper::GetScreenBoundsRect() const {
+gfx::Rect TestAXNodeWrapper::GetClippedScreenBoundsRect() const {
+  // We could add clipping here if needed.
+  gfx::RectF bounds = GetData().location;
+  bounds.Offset(g_offset);
+  return gfx::ToEnclosingRect(bounds);
+}
+
+gfx::Rect TestAXNodeWrapper::GetUnclippedScreenBoundsRect() const {
   gfx::RectF bounds = GetData().location;
   bounds.Offset(g_offset);
   return gfx::ToEnclosingRect(bounds);
@@ -115,7 +122,7 @@ TestAXNodeWrapper* TestAXNodeWrapper::HitTestSyncInternal(int x, int y) {
   // Here we find the deepest child whose bounding box contains the given point.
   // The assuptions are that there are no overlapping bounding rects and that
   // all children have smaller bounding rects than their parents.
-  if (!GetScreenBoundsRect().Contains(gfx::Rect(x, y)))
+  if (!GetClippedScreenBoundsRect().Contains(gfx::Rect(x, y)))
     return nullptr;
 
   for (int i = 0; i < GetChildCount(); i++) {
@@ -176,7 +183,7 @@ TestAXNodeWrapper::GetTargetForNativeAccessibilityEvent() {
 }
 
 void TestAXNodeWrapper::ReplaceIntAttribute(int32_t node_id,
-                                            AXIntAttribute attribute,
+                                            ax::mojom::IntAttribute attribute,
                                             int32_t value) {
   if (!tree_)
     return;
@@ -186,7 +193,7 @@ void TestAXNodeWrapper::ReplaceIntAttribute(int32_t node_id,
     return;
 
   AXNodeData new_data = node->data();
-  std::vector<std::pair<AXIntAttribute, int32_t>>& attributes =
+  std::vector<std::pair<ax::mojom::IntAttribute, int32_t>>& attributes =
       new_data.int_attributes;
 
   auto deleted = std::remove_if(
@@ -200,21 +207,23 @@ void TestAXNodeWrapper::ReplaceIntAttribute(int32_t node_id,
 
 bool TestAXNodeWrapper::AccessibilityPerformAction(
     const ui::AXActionData& data) {
-  if (data.action == ui::AX_ACTION_SCROLL_TO_POINT) {
+  if (data.action == ax::mojom::Action::kScrollToPoint) {
     g_offset = gfx::Vector2d(data.target_point.x(), data.target_point.y());
     return true;
   }
 
-  if (data.action == ui::AX_ACTION_SCROLL_TO_MAKE_VISIBLE) {
+  if (data.action == ax::mojom::Action::kScrollToMakeVisible) {
     auto offset = node_->data().location.OffsetFromOrigin();
     g_offset = gfx::Vector2d(-offset.x(), -offset.y());
     return true;
   }
 
-  if (data.action == ui::AX_ACTION_SET_SELECTION) {
-    ReplaceIntAttribute(data.anchor_node_id, AX_ATTR_TEXT_SEL_START,
+  if (data.action == ax::mojom::Action::kSetSelection) {
+    ReplaceIntAttribute(data.anchor_node_id,
+                        ax::mojom::IntAttribute::kTextSelStart,
                         data.anchor_offset);
-    ReplaceIntAttribute(data.anchor_node_id, AX_ATTR_TEXT_SEL_END,
+    ReplaceIntAttribute(data.anchor_node_id,
+                        ax::mojom::IntAttribute::kTextSelEnd,
                         data.focus_offset);
     return true;
   }
@@ -230,13 +239,14 @@ bool TestAXNodeWrapper::IsOffscreen() const {
   return false;
 }
 
-std::set<int32_t> TestAXNodeWrapper::GetReverseRelations(AXIntAttribute attr,
-                                                         int32_t dst_id) {
+std::set<int32_t> TestAXNodeWrapper::GetReverseRelations(
+    ax::mojom::IntAttribute attr,
+    int32_t dst_id) {
   return tree_->GetReverseRelations(attr, dst_id);
 }
 
 std::set<int32_t> TestAXNodeWrapper::GetReverseRelations(
-    AXIntListAttribute attr,
+    ax::mojom::IntListAttribute attr,
     int32_t dst_id) {
   return tree_->GetReverseRelations(attr, dst_id);
 }

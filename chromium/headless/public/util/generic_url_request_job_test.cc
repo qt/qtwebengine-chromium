@@ -18,6 +18,7 @@
 #include "headless/public/util/expedited_dispatcher.h"
 #include "headless/public/util/testing/generic_url_request_mocks.h"
 #include "headless/public/util/url_fetcher.h"
+#include "net/base/completion_once_callback.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/http/http_response_headers.h"
@@ -124,9 +125,15 @@ class MockFetcher : public URLFetcher {
     const base::Value* response_data_value = reply_dictionary->FindKey("data");
     ASSERT_THAT(response_data_value, NotNull());
     response_data_ = response_data_value->GetString();
+    const base::Value* total_received_bytes_value =
+        reply_dictionary->FindKey("total_received_bytes");
+    int total_received_bytes = 0;
+    if (total_received_bytes_value)
+      total_received_bytes = total_received_bytes_value->GetInt();
     result_listener->OnFetchComplete(
         GURL(final_url_value->GetString()), std::move(response_headers),
-        response_data_.c_str(), response_data_.size(), load_timing_info);
+        response_data_.c_str(), response_data_.size(), load_timing_info,
+        total_received_bytes);
   }
 
  private:
@@ -391,7 +398,8 @@ TEST_F(GenericURLRequestJobTest, BasicRequestContents) {
         "data": "Reply",
         "headers": {
           "Content-Type": "text/html; charset=UTF-8"
-        }
+        },
+        "total_received_bytes": 100
       })";
 
   std::unique_ptr<net::URLRequest> request(
@@ -403,6 +411,7 @@ TEST_F(GenericURLRequestJobTest, BasicRequestContents) {
   EXPECT_TRUE(request->Read(buffer.get(), kBufferSize, &bytes_read));
   EXPECT_EQ(5, bytes_read);
   EXPECT_EQ("Reply", std::string(buffer->data(), 5));
+  EXPECT_EQ(100, request->GetTotalReceivedBytes());
 
   net::LoadTimingInfo load_timing_info;
   request->GetLoadTimingInfo(&load_timing_info);
@@ -615,7 +624,7 @@ class ByteAtATimeUploadElementReader : public net::UploadElementReader {
       : content_(content) {}
 
   // net::UploadElementReader implementation:
-  int Init(const net::CompletionCallback& callback) override {
+  int Init(net::CompletionOnceCallback callback) override {
     offset_ = 0;
     return net::OK;
   }
@@ -628,26 +637,27 @@ class ByteAtATimeUploadElementReader : public net::UploadElementReader {
 
   int Read(net::IOBuffer* buf,
            int buf_length,
-           const net::CompletionCallback& callback) override {
+           net::CompletionOnceCallback callback) override {
     if (!BytesRemaining())
       return net::OK;
 
     base::MessageLoop::current()->task_runner()->PostTask(
-        FROM_HERE, base::Bind(&ByteAtATimeUploadElementReader::ReadImpl,
-                              base::Unretained(this), base::WrapRefCounted(buf),
-                              buf_length, callback));
+        FROM_HERE,
+        base::BindOnce(&ByteAtATimeUploadElementReader::ReadImpl,
+                       base::Unretained(this), base::WrapRefCounted(buf),
+                       buf_length, std::move(callback)));
     return net::ERR_IO_PENDING;
   }
 
  private:
   void ReadImpl(scoped_refptr<net::IOBuffer> buf,
                 int buf_length,
-                const net::CompletionCallback callback) {
+                net::CompletionOnceCallback callback) {
     if (BytesRemaining()) {
       *buf->data() = content_[offset_++];
-      callback.Run(1u);
+      std::move(callback).Run(1u);
     } else {
-      callback.Run(0u);
+      std::move(callback).Run(0u);
     }
   }
 

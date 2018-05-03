@@ -203,6 +203,10 @@ content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
                              IDS_MD_EXTENSIONS_DEPENDENT_ENTRY);
   source->AddLocalizedString("itemDetails", IDS_MD_EXTENSIONS_ITEM_DETAILS);
   source->AddLocalizedString("itemErrors", IDS_MD_EXTENSIONS_ITEM_ERRORS);
+  source->AddLocalizedString("accessibilityErrorLine",
+                             IDS_MD_EXTENSIONS_ACCESSIBILITY_ERROR_LINE);
+  source->AddLocalizedString("accessibilityErrorMultiLine",
+                             IDS_MD_EXTENSIONS_ACCESSIBILITY_ERROR_MULTI_LINE);
   source->AddLocalizedString("appIcon", IDS_MD_EXTENSIONS_APP_ICON);
   source->AddLocalizedString("extensionIcon", IDS_MD_EXTENSIONS_EXTENSION_ICON);
   source->AddLocalizedString("extensionA11yAssociation",
@@ -253,7 +257,7 @@ content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
       l10n_util::GetStringFUTF16(
           IDS_EXTENSIONS_ADDED_WITHOUT_KNOWLEDGE,
           l10n_util::GetStringUTF16(IDS_EXTENSION_WEB_STORE_TITLE)));
-  source->AddLocalizedString("learnMore", IDS_MD_EXTENSIONS_LEARN_MORE);
+  source->AddLocalizedString("learnMore", IDS_LEARN_MORE);
   source->AddLocalizedString(
       "loadErrorCouldNotLoadManifest",
       IDS_MD_EXTENSIONS_LOAD_ERROR_COULD_NOT_LOAD_MANIFEST);
@@ -319,6 +323,8 @@ content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
                              IDS_MD_EXTENSIONS_TOOLBAR_UPDATE_NOW_TOOLTIP);
   source->AddLocalizedString("toolbarUpdateDone",
                              IDS_MD_EXTENSIONS_TOOLBAR_UPDATE_DONE);
+  source->AddLocalizedString("toolbarUpdatingToast",
+                             IDS_MD_EXTENSIONS_TOOLBAR_UPDATING_TOAST);
   source->AddLocalizedString(
       "updateRequiredByPolicy",
       IDS_MD_EXTENSIONS_DISABLED_UPDATE_REQUIRED_BY_POLICY);

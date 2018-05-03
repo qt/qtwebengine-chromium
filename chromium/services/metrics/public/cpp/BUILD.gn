@@ -27,13 +27,27 @@ component("metrics_cpp") {
 
   public_deps = [
     "//base",
-    "//services/metrics/public/interfaces",
+    "//services/metrics/public/mojom",
     "//url",
   ]
 
   deps = [
     "//mojo/public/cpp/bindings",
     "//services/service_manager/public/cpp",
+  ]
+}
+
+source_set("tests") {
+  testonly = true
+
+  sources = [
+    "metrics_utils_unittest.cc",
+  ]
+
+  deps = [
+    ":metrics_cpp",
+    "//base",
+    "//testing/gtest",
   ]
 }
 

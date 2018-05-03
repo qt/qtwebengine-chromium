@@ -79,7 +79,7 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document& document)
 
 HTMLTextAreaElement* HTMLTextAreaElement::Create(Document& document) {
   HTMLTextAreaElement* text_area = new HTMLTextAreaElement(document);
-  text_area->EnsureUserAgentShadowRootV1();
+  text_area->EnsureUserAgentShadowRoot();
   return text_area;
 }
 
@@ -623,19 +623,14 @@ bool HTMLTextAreaElement::SupportsAutofocus() const {
   return true;
 }
 
-const AtomicString& HTMLTextAreaElement::DefaultAutocapitalize() const {
-  DEFINE_STATIC_LOCAL(const AtomicString, sentences, ("sentences"));
-  return sentences;
-}
-
-void HTMLTextAreaElement::CopyNonAttributePropertiesFromElement(
-    const Element& source) {
-  const HTMLTextAreaElement& source_element =
-      static_cast<const HTMLTextAreaElement&>(source);
+void HTMLTextAreaElement::CloneNonAttributePropertiesFrom(
+    const Element& source,
+    CloneChildrenFlag flag) {
+  const HTMLTextAreaElement& source_element = ToHTMLTextAreaElement(source);
   SetValueCommon(source_element.value(), kDispatchNoEvent,
                  TextControlSetValueSelection::kSetSelectionToEnd);
   is_dirty_ = source_element.is_dirty_;
-  TextControlElement::CopyNonAttributePropertiesFromElement(source);
+  TextControlElement::CloneNonAttributePropertiesFrom(source, flag);
 }
 
 }  // namespace blink

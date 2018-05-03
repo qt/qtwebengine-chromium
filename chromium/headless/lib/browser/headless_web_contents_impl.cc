@@ -39,6 +39,7 @@
 #include "printing/features/features.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor.h"
+#include "ui/gfx/switches.h"
 
 #if BUILDFLAG(ENABLE_BASIC_PRINTING)
 #include "headless/lib/browser/headless_print_manager.h"
@@ -187,6 +188,24 @@ class HeadlessWebContentsImpl::Delegate : public content::WebContentsDelegate {
     return target;
   }
 
+  bool ShouldCreateWebContents(
+      content::WebContents* web_contents,
+      content::RenderFrameHost* opener,
+      content::SiteInstance* source_site_instance,
+      int32_t route_id,
+      int32_t main_frame_route_id,
+      int32_t main_frame_widget_route_id,
+      content::mojom::WindowContainerType window_container_type,
+      const GURL& opener_url,
+      const std::string& frame_name,
+      const GURL& target_url,
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace) override {
+    return !headless_web_contents_->browser_context()
+                ->options()
+                ->block_new_web_contents();
+  }
+
  private:
   HeadlessBrowserImpl* browser() { return headless_web_contents_->browser(); }
 
@@ -213,7 +232,7 @@ struct HeadlessWebContentsImpl::PendingFrame {
   bool MaybeRunCallback() {
     if (wait_for_copy_result || !display_did_finish_frame)
       return false;
-    callback.Run(has_damage, main_frame_content_updated, std::move(bitmap));
+    callback.Run(has_damage, std::move(bitmap));
     return true;
   }
 
@@ -221,7 +240,6 @@ struct HeadlessWebContentsImpl::PendingFrame {
   bool wait_for_copy_result = false;
   bool display_did_finish_frame = false;
   bool has_damage = false;
-  bool main_frame_content_updated = false;
   std::unique_ptr<SkBitmap> bitmap;
   FrameFinishedCallback callback;
 
@@ -253,7 +271,8 @@ std::unique_ptr<HeadlessWebContentsImpl> HeadlessWebContentsImpl::Create(
 
   headless_web_contents->mojo_services_ = std::move(builder->mojo_services_);
   headless_web_contents->begin_frame_control_enabled_ =
-      builder->enable_begin_frame_control_;
+      builder->enable_begin_frame_control_ ||
+      headless_web_contents->browser()->options()->enable_begin_frame_control;
   headless_web_contents->InitializeWindow(gfx::Rect(builder->window_size_));
   if (!headless_web_contents->OpenURL(builder->initial_url_))
     return nullptr;
@@ -326,6 +345,8 @@ HeadlessWebContentsImpl::HeadlessWebContentsImpl(
 #endif
   web_contents->GetMutableRendererPrefs()->accept_languages =
       browser_context->options()->accept_language();
+  web_contents->GetMutableRendererPrefs()->hinting =
+      browser_context->options()->font_render_hinting();
   web_contents_->SetDelegate(web_contents_delegate_.get());
   render_process_host_->AddObserver(this);
   agent_host_->AddObserver(this);
@@ -393,19 +414,30 @@ void HeadlessWebContentsImpl::RenderFrameDeleted(
 void HeadlessWebContentsImpl::RenderViewReady() {
   DCHECK(web_contents()->GetMainFrame()->IsRenderFrameLive());
 
+  if (devtools_target_ready_notification_sent_)
+    return;
+
   for (auto& observer : observers_)
     observer.DevToolsTargetReady();
+
+  devtools_target_ready_notification_sent_ = true;
 }
 
 int HeadlessWebContentsImpl::GetMainFrameRenderProcessId() const {
+  if (!web_contents() || !web_contents()->GetMainFrame())
+    return -1;
   return web_contents()->GetMainFrame()->GetProcess()->GetID();
 }
 
 int HeadlessWebContentsImpl::GetMainFrameTreeNodeId() const {
+  if (!web_contents() || !web_contents()->GetMainFrame())
+    return -1;
   return web_contents()->GetMainFrame()->GetFrameTreeNodeId();
 }
 
 std::string HeadlessWebContentsImpl::GetMainFrameDevToolsId() const {
+  if (!web_contents() || !web_contents()->GetMainFrame())
+    return "";
   return web_contents()->GetMainFrame()->GetDevToolsFrameToken().ToString();
 }
 
@@ -581,48 +613,17 @@ void HeadlessWebContentsImpl::SendNeedsBeginFramesEvent(
   client->DispatchProtocolMessage(agent_host_.get(), json_result);
 }
 
-void HeadlessWebContentsImpl::DidReceiveCompositorFrame() {
-  TRACE_EVENT0("headless",
-               "HeadlessWebContentsImpl::DidReceiveCompositorFrame");
-  DCHECK(agent_host_);
-
-  if (!first_compositor_frame_received_) {
-    first_compositor_frame_received_ = true;
-
-    // Send an event to the devtools clients.
-    base::DictionaryValue event;
-    event.SetString("method",
-                    "HeadlessExperimental.mainFrameReadyForScreenshots");
-    event.Set("params", std::make_unique<base::DictionaryValue>());
-
-    std::string json_result;
-    CHECK(base::JSONWriter::Write(event, &json_result));
-    for (content::DevToolsAgentHostClient* client :
-         begin_frame_events_enabled_clients_) {
-      client->DispatchProtocolMessage(agent_host_.get(), json_result);
-    }
-  }
-
-  // Set main_frame_content_updated on pending frames that the display hasn't
-  // completed yet. Pending frames that it did complete won't incorporate this
-  // CompositorFrame. In practice, this should only be a single PendingFrame.
-  for (const std::unique_ptr<PendingFrame>& pending_frame : pending_frames_) {
-    if (!pending_frame->display_did_finish_frame)
-      pending_frame->main_frame_content_updated = true;
-  }
-}
-
 void HeadlessWebContentsImpl::PendingFrameReadbackComplete(
     HeadlessWebContentsImpl::PendingFrame* pending_frame,
-    const SkBitmap& bitmap,
-    content::ReadbackResponse response) {
-  TRACE_EVENT2(
-      "headless", "HeadlessWebContentsImpl::PendingFrameReadbackComplete",
-      "sequence_number", pending_frame->sequence_number, "response", response);
-  if (response == content::READBACK_SUCCESS) {
-    pending_frame->bitmap = std::make_unique<SkBitmap>(bitmap);
+    const SkBitmap& bitmap) {
+  TRACE_EVENT2("headless",
+               "HeadlessWebContentsImpl::PendingFrameReadbackComplete",
+               "sequence_number", pending_frame->sequence_number, "success",
+               !bitmap.drawsNothing());
+  if (bitmap.drawsNothing()) {
+    LOG(WARNING) << "Readback from surface failed.";
   } else {
-    LOG(WARNING) << "Readback from surface failed with response " << response;
+    pending_frame->bitmap = std::make_unique<SkBitmap>(bitmap);
   }
 
   pending_frame->wait_for_copy_result = false;
@@ -652,22 +653,26 @@ void HeadlessWebContentsImpl::BeginFrame(
   auto pending_frame = std::make_unique<PendingFrame>();
   pending_frame->sequence_number = sequence_number;
   pending_frame->callback = frame_finished_callback;
+  // Note: It's important to move |pending_frame| into |pending_frames_| now
+  // since the CopyFromSurface() call below can run its result callback
+  // synchronously on certain platforms/environments.
+  auto* const pending_frame_raw_ptr = pending_frame.get();
+  pending_frames_.emplace_back(std::move(pending_frame));
 
   if (capture_screenshot) {
-    pending_frame->wait_for_copy_result = true;
     content::RenderWidgetHostView* view =
         web_contents()->GetRenderWidgetHostView();
-    if (view) {
+    if (view && view->IsSurfaceAvailableForCopy()) {
+      pending_frame_raw_ptr->wait_for_copy_result = true;
       view->CopyFromSurface(
           gfx::Rect(), gfx::Size(),
-          base::Bind(&HeadlessWebContentsImpl::PendingFrameReadbackComplete,
-                     base::Unretained(this),
-                     base::Unretained(pending_frame.get())),
-          kN32_SkColorType);
+          base::BindOnce(&HeadlessWebContentsImpl::PendingFrameReadbackComplete,
+                         weak_ptr_factory_.GetWeakPtr(),
+                         pending_frame_raw_ptr));
+    } else {
+      LOG(WARNING) << "Surface not ready for screenshot.";
     }
   }
-
-  pending_frames_.push_back(std::move(pending_frame));
 
   ui::Compositor* compositor = browser()->PlatformGetCompositor(this);
   DCHECK(compositor);

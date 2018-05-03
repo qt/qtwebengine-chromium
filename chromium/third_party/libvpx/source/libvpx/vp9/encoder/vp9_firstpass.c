@@ -731,9 +731,8 @@ static void first_pass_stat_calc(VP9_COMP *cpi, FIRSTPASS_STATS *fps,
   // Exclude any image dead zone
   if (fp_acc_data->image_data_start_row > 0) {
     fp_acc_data->intra_skip_count =
-        VPXMAX(0,
-               fp_acc_data->intra_skip_count -
-                   (fp_acc_data->image_data_start_row * cm->mb_cols * 2));
+        VPXMAX(0, fp_acc_data->intra_skip_count -
+                      (fp_acc_data->image_data_start_row * cm->mb_cols * 2));
   }
 
   fp_acc_data->intra_factor = fp_acc_data->intra_factor / (double)num_mbs;
@@ -2238,9 +2237,6 @@ static void allocate_gf_group_bits(VP9_COMP *cpi, int64_t gf_group_bits,
     }
     gf_group->arf_update_idx[0] = arf_buffer_indices[0];
     gf_group->arf_ref_idx[0] = arf_buffer_indices[0];
-
-    // Step over the golden frame / overlay frame
-    if (EOF == input_stats(twopass, &frame_stats)) return;
   }
 
   // Deduct the boost bits for arf (or gf if it is not a key frame)
@@ -2285,7 +2281,8 @@ static void allocate_gf_group_bits(VP9_COMP *cpi, int64_t gf_group_bits,
   // Define middle frame
   mid_frame_idx = frame_index + (rc->baseline_gf_interval >> 1) - 1;
 
-  normal_frames = (rc->baseline_gf_interval - rc->source_alt_ref_pending);
+  normal_frames =
+      rc->baseline_gf_interval - (key_frame || rc->source_alt_ref_pending);
   if (normal_frames > 1)
     normal_frame_bits = (int)(total_group_bits / normal_frames);
   else
@@ -2551,9 +2548,9 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     }
 
     // Break out conditions.
-    if (
-        // Break at active_max_gf_interval unless almost totally static.
-        ((i >= active_max_gf_interval) && (zero_motion_accumulator < 0.995)) ||
+    // Break at maximum of active_max_gf_interval unless almost totally static.
+    if (((twopass->kf_zeromotion_pct < STATIC_KF_GROUP_THRESH) &&
+         (i >= active_max_gf_interval) && (zero_motion_accumulator < 0.995)) ||
         (
             // Don't break out with a very short interval.
             (i >= active_min_gf_interval) &&
@@ -2573,8 +2570,8 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   rc->constrained_gf_group = (i >= rc->frames_to_key) ? 1 : 0;
 
   // Should we use the alternate reference frame.
-  if (allow_alt_ref && (i < cpi->oxcf.lag_in_frames) &&
-      (i >= rc->min_gf_interval)) {
+  if ((twopass->kf_zeromotion_pct < STATIC_KF_GROUP_THRESH) && allow_alt_ref &&
+      (i < cpi->oxcf.lag_in_frames) && (i >= rc->min_gf_interval)) {
     const int forward_frames = (rc->frames_to_key - i >= i - 1)
                                    ? i - 1
                                    : VPXMAX(0, rc->frames_to_key - i);
@@ -2602,7 +2599,10 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
 #endif
 
   // Set the interval until the next gf.
-  rc->baseline_gf_interval = i - (is_key_frame || rc->source_alt_ref_pending);
+  rc->baseline_gf_interval =
+      (twopass->kf_zeromotion_pct < STATIC_KF_GROUP_THRESH)
+          ? (i - (is_key_frame || rc->source_alt_ref_pending))
+          : i;
 
   // Only encode alt reference frame in temporal base layer. So
   // baseline_gf_interval should be multiple of a temporal layer group
@@ -2700,13 +2700,24 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
 #endif
 }
 
+// Intra / Inter threshold very low
+#define VERY_LOW_II 1.5
+// Clean slide transitions we expect a sharp single frame spike in error.
+#define ERROR_SPIKE 5.0
+
 // Slide show transition detection.
 // Tests for case where there is very low error either side of the current frame
 // but much higher just for this frame. This can help detect key frames in
 // slide shows even where the slides are pictures of different sizes.
+// Also requires that intra and inter errors are very similar to help eliminate
+// harmful false positives.
 // It will not help if the transition is a fade or other multi-frame effect.
-static int slide_transition(double this_err, double last_err, double next_err) {
-  return (this_err > (last_err * 5.0)) && (this_err > (next_err * 5.0));
+static int slide_transition(const FIRSTPASS_STATS *this_frame,
+                            const FIRSTPASS_STATS *last_frame,
+                            const FIRSTPASS_STATS *next_frame) {
+  return (this_frame->intra_error < (this_frame->coded_error * VERY_LOW_II)) &&
+         (this_frame->coded_error > (last_frame->coded_error * ERROR_SPIKE)) &&
+         (this_frame->coded_error > (next_frame->coded_error * ERROR_SPIKE));
 }
 
 // Threshold for use of the lagging second reference frame. High second ref
@@ -2753,8 +2764,7 @@ static int test_candidate_kf(TWO_PASS *twopass,
   if ((this_frame->pcnt_second_ref < SECOND_REF_USEAGE_THRESH) &&
       (next_frame->pcnt_second_ref < SECOND_REF_USEAGE_THRESH) &&
       ((this_frame->pcnt_inter < VERY_LOW_INTER_THRESH) ||
-       (slide_transition(this_frame->coded_error, last_frame->coded_error,
-                         next_frame->coded_error)) ||
+       (slide_transition(this_frame, last_frame, next_frame)) ||
        ((pcnt_intra > MIN_INTRA_LEVEL) &&
         (pcnt_intra > (INTRA_VS_INTER_THRESH * modified_pcnt_inter)) &&
         ((this_frame->intra_error /
@@ -3019,8 +3029,14 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
       double zm_factor;
 
       // Monitor for static sections.
-      zero_motion_accumulator = VPXMIN(
-          zero_motion_accumulator, get_zero_motion_factor(cpi, &next_frame));
+      // First frame in kf group the second ref indicator is invalid.
+      if (i > 0) {
+        zero_motion_accumulator = VPXMIN(
+            zero_motion_accumulator, get_zero_motion_factor(cpi, &next_frame));
+      } else {
+        zero_motion_accumulator =
+            next_frame.pcnt_inter - next_frame.pcnt_motion;
+      }
 
       // Factor 0.75-1.25 based on how much of frame is static.
       zm_factor = (0.75 + (zero_motion_accumulator / 2.0));
@@ -3056,10 +3072,16 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   twopass->section_intra_rating = calculate_section_intra_ratio(
       start_position, twopass->stats_in_end, rc->frames_to_key);
 
-  // Apply various clamps for min and max boost
-  rc->kf_boost = VPXMAX((int)boost_score, (rc->frames_to_key * 3));
-  rc->kf_boost = VPXMAX(rc->kf_boost, MIN_KF_TOT_BOOST);
-  rc->kf_boost = VPXMIN(rc->kf_boost, MAX_KF_TOT_BOOST);
+  // Special case for static / slide show content but dont apply
+  // if the kf group is very short.
+  if ((zero_motion_accumulator > 0.99) && (rc->frames_to_key > 8)) {
+    rc->kf_boost = VPXMAX((rc->frames_to_key * 100), MAX_KF_TOT_BOOST);
+  } else {
+    // Apply various clamps for min and max boost
+    rc->kf_boost = VPXMAX((int)boost_score, (rc->frames_to_key * 3));
+    rc->kf_boost = VPXMAX(rc->kf_boost, MIN_KF_TOT_BOOST);
+    rc->kf_boost = VPXMIN(rc->kf_boost, MAX_KF_TOT_BOOST);
+  }
 
   // Work out how many bits to allocate for the key frame itself.
   kf_bits = calculate_boost_bits((rc->frames_to_key - 1), rc->kf_boost,

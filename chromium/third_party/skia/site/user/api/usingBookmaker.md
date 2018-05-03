@@ -20,12 +20,15 @@ documentation to be deprecated as well.
 
 <pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
 # void someMethodThatIsNowDeprecated()
-
 #Deprecated
-##
+##</pre>
 
-##
-</pre>
+Use
+
+<pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
+## soon</pre>
+
+if the change is soon to be deprecated.
 
 To regenerate the documentation, follow the <a href="#Installing">Installing</a> and <a href="#Regenerate">Regenerate</a> steps below.
 
@@ -103,11 +106,11 @@ $ ninja -C out/dir bookmaker</pre>
 Complete rebuilding of all bookmaker output looks like:
 
 <pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
-$ ./out/skia/bookmaker.exe -a docs/status.json -e fiddle.json
-$ ~/go/bin/fiddlecli.exe --input fiddle.json --output fiddleout.json
-$ ./out/skia/bookmaker.exe -a docs/status.json -f fiddleout.json -r site/user/api -c
-$ ./out/skia/bookmaker.exe -a docs/status.json -x
-$ ./out/skia/bookmaker.exe -a docs/status.json -p</pre>
+$ ./out/skia/bookmaker -a docs/status.json -e fiddle.json
+$ ~/go/bin/fiddlecli --input fiddle.json --output fiddleout.json
+$ ./out/skia/bookmaker -a docs/status.json -f fiddleout.json -r site/user/api -c
+$ ./out/skia/bookmaker -a docs/status.json -x
+$ ./out/skia/bookmaker -a docs/status.json -p</pre>
 
 ## <a name="New_Documentation"></a> New Documentation
 

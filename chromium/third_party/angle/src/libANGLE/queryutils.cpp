@@ -183,6 +183,10 @@ void QueryTexParameterBase(const Texture *texture, GLenum pname, ParamType *para
         case GL_TEXTURE_SRGB_DECODE_EXT:
             *params = CastFromGLintStateValue<ParamType>(pname, texture->getSRGBDecode());
             break;
+        case GL_DEPTH_STENCIL_TEXTURE_MODE:
+            *params =
+                CastFromGLintStateValue<ParamType>(pname, texture->getDepthStencilTextureMode());
+            break;
         default:
             UNREACHABLE();
             break;
@@ -598,9 +602,7 @@ GLint QueryProgramInterfaceMaxNameLength(const Program *program, GLenum programI
             break;
 
         case GL_UNIFORM_BLOCK:
-            maxNameLength =
-                FindMaxSize(program->getState().getUniformBlocks(), &InterfaceBlock::name);
-            break;
+            return program->getActiveUniformBlockMaxNameLength();
 
         case GL_BUFFER_VARIABLE:
             maxNameLength =
@@ -608,13 +610,10 @@ GLint QueryProgramInterfaceMaxNameLength(const Program *program, GLenum programI
             break;
 
         case GL_SHADER_STORAGE_BLOCK:
-            maxNameLength =
-                FindMaxSize(program->getState().getShaderStorageBlocks(), &InterfaceBlock::name);
-            break;
+            return program->getActiveShaderStorageBlockMaxNameLength();
 
         case GL_TRANSFORM_FEEDBACK_VARYING:
-            maxNameLength = clampCast<GLint>(program->getTransformFeedbackVaryingMaxLength() - 1);
-            break;
+            return clampCast<GLint>(program->getTransformFeedbackVaryingMaxLength());
 
         default:
             UNREACHABLE();
@@ -981,7 +980,7 @@ void QueryProgramiv(const Context *context, const Program *program, GLenum pname
             *params = program->getActiveUniformBlockCount();
             return;
         case GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH:
-            *params = program->getActiveUniformBlockMaxLength();
+            *params = program->getActiveUniformBlockMaxNameLength();
             break;
         case GL_TRANSFORM_FEEDBACK_BUFFER_MODE:
             *params = program->getTransformFeedbackBufferMode();

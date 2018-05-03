@@ -445,6 +445,7 @@ Error ValidateGetPlatformDisplayCommon(EGLenum platform,
                                   "platform type of EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE or "
                                   "EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE.";
                     }
+                    break;
                 default:
                     break;
             }
@@ -762,7 +763,7 @@ Error ValidateCreateContext(Display *display, Config *configuration, gl::Context
             {
                 return EglBadConfig();
             }
-            if (!(configuration->conformant & EGL_OPENGL_ES3_BIT_KHR))
+            if (!(configuration->renderableType & EGL_OPENGL_ES3_BIT_KHR))
             {
                 return EglBadConfig();
             }
@@ -1166,10 +1167,21 @@ Error ValidateCreatePbufferFromClientBuffer(Display *display, EGLenum buftype, E
                     return EglBadAttribute() << "<buftype> doesn't support texture internal format";
                 }
                 break;
-
+            case EGL_GL_COLORSPACE:
+                if (buftype != EGL_D3D_TEXTURE_ANGLE)
+                {
+                    return EglBadAttribute() << "<buftype> doesn't support setting GL colorspace";
+                }
+                break;
             default:
                 return EglBadAttribute();
         }
+    }
+
+    EGLAttrib colorspace = attributes.get(EGL_GL_COLORSPACE, EGL_GL_COLORSPACE_LINEAR);
+    if (colorspace != EGL_GL_COLORSPACE_LINEAR && colorspace != EGL_GL_COLORSPACE_SRGB)
+    {
+        return EglBadAttribute() << "invalid GL colorspace";
     }
 
     if (!(config->surfaceType & EGL_PBUFFER_BIT))
@@ -1188,8 +1200,8 @@ Error ValidateCreatePbufferFromClientBuffer(Display *display, EGLenum buftype, E
         (textureFormat == EGL_TEXTURE_RGBA && config->bindToTextureRGBA != EGL_TRUE))
     {
         // TODO(cwallez@chromium.org): For IOSurface pbuffers we require that EGL_TEXTURE_RGBA is
-        // set so that eglBinTexImage works. Normally this is only allowed if the config exposes the
-        // bindToTextureRGB/RGBA flag. This issue is that enabling this flags means that
+        // set so that eglBindTexImage works. Normally this is only allowed if the config exposes
+        // the bindToTextureRGB/RGBA flag. This issue is that enabling this flags means that
         // eglBindTexImage should also work for regular pbuffers which isn't implemented on macOS.
         // Instead of adding the flag we special case the check here to be ignored for IOSurfaces.
         // The TODO is to find a proper solution for this, maybe by implementing eglBindTexImage on
@@ -2462,6 +2474,7 @@ Error ValidateSurfaceAttrib(const Display *display,
                 default:
                     return EglBadAttribute() << "Invalid multisample resolve type.";
             }
+            break;
 
         case EGL_SWAP_BEHAVIOR:
             switch (value)
@@ -2480,6 +2493,7 @@ Error ValidateSurfaceAttrib(const Display *display,
                 default:
                     return EglBadAttribute() << "Invalid swap behaviour.";
             }
+            break;
 
         default:
             return EglBadAttribute() << "Invalid surface attribute.";

@@ -142,9 +142,9 @@ class HttpStreamFactoryImpl::JobController
 
   // Invoked to notify the Request and Factory of the readiness of new
   // SPDY session.
-  void OnNewSpdySessionReady(Job* job,
-                             const base::WeakPtr<SpdySession>& spdy_session,
-                             bool direct) override;
+  void OnNewSpdySessionReady(
+      Job* job,
+      const base::WeakPtr<SpdySession>& spdy_session) override;
 
   // Invoked when the |job| finishes pre-connecting sockets.
   void OnPreconnectsComplete(Job* job) override;
@@ -285,13 +285,13 @@ class HttpStreamFactoryImpl::JobController
   void RemoveRequestFromSpdySessionRequestMap();
 
   // Returns true if the |request_| can be fetched via an alternative
-  // proxy server, and sets |alternative_proxy_server| to the available
-  // alternative proxy server. |alternative_proxy_server| should not be null,
+  // proxy server, and sets |alternative_proxy_info| to the alternative proxy
+  // server configuration. |alternative_proxy_info| should not be null,
   // and is owned by the caller.
   bool ShouldCreateAlternativeProxyServerJob(
       const ProxyInfo& proxy_info_,
       const GURL& url,
-      ProxyServer* alternative_proxy_server) const;
+      ProxyInfo* alternative_proxy_info) const;
 
   // Records histogram metrics for the usage of alternative protocol. Must be
   // called when |job| has succeeded and the other job will be orphaned.
@@ -371,7 +371,7 @@ class HttpStreamFactoryImpl::JobController
   bool can_start_alternative_proxy_job_;
 
   State next_state_;
-  ProxyService::Request* proxy_resolve_request_;
+  ProxyResolutionService::Request* proxy_resolve_request_;
   CompletionCallback io_callback_;
   const HttpRequestInfo request_info_;
   ProxyInfo proxy_info_;

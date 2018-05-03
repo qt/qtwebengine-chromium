@@ -106,16 +106,8 @@ void EventPath::CalculatePath() {
     HeapVector<Member<V0InsertionPoint>, 8> insertion_points;
     CollectDestinationInsertionPoints(*current, insertion_points);
     if (!insertion_points.IsEmpty()) {
-      for (const auto& insertion_point : insertion_points) {
-        if (insertion_point->IsShadowInsertionPoint()) {
-          ShadowRoot* containing_shadow_root =
-              insertion_point->ContainingShadowRoot();
-          DCHECK(containing_shadow_root);
-          if (!containing_shadow_root->IsOldest())
-            nodes_in_path.push_back(containing_shadow_root->OlderShadowRoot());
-        }
+      for (const auto& insertion_point : insertion_points)
         nodes_in_path.push_back(insertion_point);
-      }
       current = insertion_points.back();
       continue;
     }
@@ -153,12 +145,8 @@ void EventPath::CalculateTreeOrderAndSetNearestAncestorClosedTree() {
   //   - The root tree must be included.
   TreeScopeEventContext* root_tree = nullptr;
   for (const auto& tree_scope_event_context : tree_scope_event_contexts_) {
-    // Use olderShadowRootOrParentTreeScope here for parent-child relationships.
-    // See the definition of trees of trees in the Shadow DOM spec:
-    // http://w3c.github.io/webcomponents/spec/shadow/
-    TreeScope* parent = tree_scope_event_context.Get()
-                            ->GetTreeScope()
-                            .OlderShadowRootOrParentTreeScope();
+    TreeScope* parent =
+        tree_scope_event_context.Get()->GetTreeScope().ParentTreeScope();
     if (!parent) {
       DCHECK(!root_tree);
       root_tree = tree_scope_event_context.Get();
@@ -197,8 +185,7 @@ TreeScopeEventContext* EventPath::EnsureTreeScopeEventContext(
     tree_scope_event_contexts_.push_back(tree_scope_event_context);
 
     TreeScopeEventContext* parent_tree_scope_event_context =
-        EnsureTreeScopeEventContext(
-            nullptr, tree_scope->OlderShadowRootOrParentTreeScope());
+        EnsureTreeScopeEventContext(nullptr, tree_scope->ParentTreeScope());
     if (parent_tree_scope_event_context &&
         parent_tree_scope_event_context->Target()) {
       tree_scope_event_context->SetTarget(
@@ -250,7 +237,7 @@ EventTarget* EventPath::FindRelatedNode(TreeScope& scope,
   HeapVector<Member<TreeScope>, 32> parent_tree_scopes;
   EventTarget* related_node = nullptr;
   for (TreeScope* current = &scope; current;
-       current = current->OlderShadowRootOrParentTreeScope()) {
+       current = current->ParentTreeScope()) {
     parent_tree_scopes.push_back(current);
     RelatedTargetMap::const_iterator iter = related_target_map.find(current);
     if (iter != related_target_map.end() && iter->value) {
@@ -269,13 +256,13 @@ void EventPath::AdjustForRelatedTarget(Node& target,
                                        EventTarget* related_target) {
   if (!related_target)
     return;
-  Node* related_node = related_target->ToNode();
-  if (!related_node)
+  Node* related_target_node = related_target->ToNode();
+  if (!related_target_node)
     return;
-  if (target.GetDocument() != related_node->GetDocument())
+  if (target.GetDocument() != related_target_node->GetDocument())
     return;
-  RetargetRelatedTarget(*related_node);
-  ShrinkForRelatedTarget(target);
+  RetargetRelatedTarget(*related_target_node);
+  ShrinkForRelatedTarget(target, *related_target_node);
 }
 
 void EventPath::RetargetRelatedTarget(const Node& related_target_node) {
@@ -290,22 +277,37 @@ void EventPath::RetargetRelatedTarget(const Node& related_target_node) {
   }
 }
 
-bool EventPath::ShouldStopEventPath(EventTarget& current_target,
-                                    EventTarget& current_related_target,
-                                    const Node& target) {
-  if (&current_target != &current_related_target)
+namespace {
+
+bool ShouldStopEventPath(EventTarget& adjusted_target,
+                         EventTarget& adjusted_related_target,
+                         const Node& event_target_node,
+                         const Node& event_related_target_node) {
+  if (&adjusted_target != &adjusted_related_target)
     return false;
-  if (event_->isTrusted())
-    return true;
-  Node* current_target_node = current_target.ToNode();
-  if (!current_target_node)
+  Node* adjusted_target_node = adjusted_target.ToNode();
+  if (!adjusted_target_node)
     return false;
-  return current_target_node->GetTreeScope() != target.GetTreeScope();
+  Node* adjusted_related_target_node = adjusted_related_target.ToNode();
+  if (!adjusted_related_target_node)
+    return false;
+  // Events should be dispatched at least until its root even when event's
+  // target and related_target are identical.
+  if (adjusted_target_node->GetTreeScope() ==
+          event_target_node.GetTreeScope() &&
+      adjusted_related_target_node->GetTreeScope() ==
+          event_related_target_node.GetTreeScope())
+    return false;
+  return true;
 }
 
-void EventPath::ShrinkForRelatedTarget(const Node& target) {
+}  // anonymous namespace
+
+void EventPath::ShrinkForRelatedTarget(const Node& event_target_node,
+                                       const Node& event_related_target_node) {
   for (size_t i = 0; i < size(); ++i) {
-    if (ShouldStopEventPath(*at(i).Target(), *at(i).RelatedTarget(), target)) {
+    if (ShouldStopEventPath(*at(i).Target(), *at(i).RelatedTarget(),
+                            event_target_node, event_related_target_node)) {
       Shrink(i);
       break;
     }

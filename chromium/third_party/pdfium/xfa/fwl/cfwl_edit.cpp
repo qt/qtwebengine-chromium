@@ -79,7 +79,6 @@ CFWL_Edit::CFWL_Edit(const CFWL_App* app,
   m_rtEngine.Reset();
   m_rtStatic.Reset();
 
-  InitCaret();
   m_EdtEngine.SetDelegate(this);
 }
 
@@ -1065,21 +1064,34 @@ bool CFWL_Edit::ValidateNumberChar(wchar_t cNum) {
 }
 
 void CFWL_Edit::InitCaret() {
-  m_pCaret.reset();
-  m_rtCaret = CFX_RectF();
+  if (m_pCaret)
+    return;
+
+  m_pCaret = pdfium::MakeUnique<CFWL_Caret>(
+      m_pOwnerApp.Get(), pdfium::MakeUnique<CFWL_WidgetProperties>(), this);
+  m_pCaret->SetParent(this);
+  m_pCaret->SetStates(m_pProperties->m_dwStates);
+  UpdateCursorRect();
 }
 
 void CFWL_Edit::UpdateCursorRect() {
-  int32_t bidi_level = 0;
-  m_rtCaret = CFX_RectF();
-  std::tie(bidi_level, m_rtCaret) =
-      m_EdtEngine.GetCharacterInfo(m_CursorPosition);
+  int32_t bidi_level;
+  if (m_EdtEngine.GetLength() > 0) {
+    std::tie(bidi_level, m_rtCaret) =
+        m_EdtEngine.GetCharacterInfo(m_CursorPosition);
+  } else {
+    bidi_level = 0;
+    m_rtCaret = CFX_RectF();
+  }
+
   // TODO(dsinclair): This should handle bidi level  ...
 
-  if (m_rtCaret.width == 0 && m_rtCaret.left > 1.0f)
-    m_rtCaret.left -= 1.0f;
-
   m_rtCaret.width = 1.0f;
+
+  // TODO(hnakashima): Handle correctly edits with empty text instead of using
+  // these defaults.
+  if (m_rtCaret.height == 0)
+    m_rtCaret.height = 8.0f;
 }
 
 void CFWL_Edit::SetCursorPosition(size_t position) {

@@ -52,7 +52,7 @@
 #include "public/web/WebSettings.h"
 #include "public/web/WebTreeScopeType.h"
 #include "public/web/WebViewClient.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 namespace FrameTestHelpers {
@@ -80,7 +80,7 @@ void RunServeAsyncRequestsTask() {
   // getting the platform's one. (crbug.com/751425)
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   if (TestWebFrameClient::IsLoading()) {
-    Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+    Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
         FROM_HERE, WTF::Bind(&RunServeAsyncRequestsTask));
   } else {
     testing::ExitRunLoop();
@@ -102,7 +102,11 @@ std::unique_ptr<T> CreateDefaultClientIfNeeded(T*& client) {
 
 void LoadFrame(WebLocalFrame* frame, const std::string& url) {
   WebURLRequest url_request(URLTestHelpers::ToKURL(url));
-  frame->LoadRequest(url_request);
+  if (url_request.Url().ProtocolIs("javascript")) {
+    frame->LoadJavaScriptURL(url_request.Url());
+  } else {
+    frame->LoadRequest(url_request);
+  }
   PumpPendingRequestsForFrameToLoad(frame);
 }
 
@@ -135,7 +139,7 @@ void ReloadFrameBypassingCache(WebLocalFrame* frame) {
 }
 
 void PumpPendingRequestsForFrameToLoad(WebFrame* frame) {
-  Platform::Current()->CurrentThread()->GetWebTaskRunner()->PostTask(
+  Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&RunServeAsyncRequestsTask));
   testing::EnterRunLoop();
 }
@@ -144,7 +148,8 @@ WebMouseEvent CreateMouseEvent(WebInputEvent::Type type,
                                WebMouseEvent::Button button,
                                const IntPoint& point,
                                int modifiers) {
-  WebMouseEvent result(type, modifiers, WebInputEvent::kTimeStampForTesting);
+  WebMouseEvent result(type, modifiers,
+                       WebInputEvent::GetStaticTimeStampForTests());
   result.pointer_type = WebPointerProperties::PointerType::kMouse;
   result.SetPositionInWidget(point.X(), point.Y());
   result.SetPositionInScreen(point.X(), point.Y());
@@ -195,6 +200,9 @@ WebLocalFrameImpl* CreateProvisional(WebRemoteFrame& old_frame,
   }
   if (owned_widget_client) {
     WebFrameWidget::Create(owned_widget_client.get(), frame);
+    // Set an initial size for subframes.
+    if (frame->Parent())
+      frame->FrameWidget()->Resize(WebSize());
     client->BindWidgetClient(std::move(owned_widget_client));
   }
   return frame;
@@ -221,6 +229,9 @@ WebLocalFrameImpl* CreateLocalChild(WebRemoteFrame& parent,
 
   auto owned_widget_client = CreateDefaultClientIfNeeded(widget_client);
   WebFrameWidget::Create(widget_client, frame);
+  // Set an initial size for subframes.
+  if (frame->Parent())
+    frame->FrameWidget()->Resize(WebSize());
   client->BindWidgetClient(std::move(owned_widget_client));
   return frame;
 }
@@ -274,6 +285,9 @@ WebViewImpl* WebViewHelper::InitializeWithOpener(
     web_widget_client = owned_web_widget_client.get();
   }
   blink::WebFrameWidget::Create(web_widget_client, frame);
+  // Set an initial size for subframes.
+  if (frame->Parent())
+    frame->FrameWidget()->Resize(WebSize());
   web_frame_client->BindWidgetClient(std::move(owned_web_widget_client));
 
   return web_view_;

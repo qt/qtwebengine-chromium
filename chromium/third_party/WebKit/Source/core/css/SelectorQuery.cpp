@@ -305,21 +305,14 @@ void SelectorQuery::ExecuteSlow(
   }
 }
 
-// FIXME: Move the following helper functions, authorShadowRootOf,
-// firstWithinTraversingShadowTree, nextTraversingShadowTree to the best place,
-// e.g. NodeTraversal.
+// FIXME: Move the following helper functions, AuthorShadowRootOf,
+// NextTraversingShadowTree to the best place, e.g. NodeTraversal.
 static ShadowRoot* AuthorShadowRootOf(const ContainerNode& node) {
   if (!node.IsElementNode())
     return nullptr;
-  ElementShadow* shadow = ToElement(node).Shadow();
-  if (!shadow)
-    return nullptr;
-
-  for (ShadowRoot* shadow_root = &shadow->OldestShadowRoot(); shadow_root;
-       shadow_root = shadow_root->YoungerShadowRoot()) {
-    if (shadow_root->IsOpenOrV0())
-      return shadow_root;
-  }
+  ShadowRoot* root = node.GetShadowRoot();
+  if (root && root->IsOpenOrV0())
+    return root;
   return nullptr;
 }
 
@@ -339,10 +332,6 @@ static ContainerNode* NextTraversingShadowTree(const ContainerNode& node,
     ShadowRoot* shadow_root = current->ContainingShadowRoot();
     if (shadow_root == root_node)
       return nullptr;
-    if (ShadowRoot* younger_shadow_root = shadow_root->YoungerShadowRoot()) {
-      DCHECK(younger_shadow_root->IsOpenOrV0());
-      return younger_shadow_root;
-    }
 
     current = &shadow_root->host();
   }

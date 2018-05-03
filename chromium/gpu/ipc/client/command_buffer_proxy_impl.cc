@@ -4,6 +4,7 @@
 
 #include "gpu/ipc/client/command_buffer_proxy_impl.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -11,7 +12,6 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/optional.h"
 #include "base/stl_util.h"
@@ -234,9 +234,9 @@ void CommandBufferProxyImpl::OnSignalAck(uint32_t id,
                            gpu::error::kLostContext);
     return;
   }
-  base::Closure callback = it->second;
+  base::OnceClosure callback = std::move(it->second);
   signal_tasks_.erase(it);
-  callback.Run();
+  std::move(callback).Run();
 }
 
 CommandBuffer::State CommandBufferProxyImpl::GetLastState() {
@@ -575,7 +575,7 @@ bool CommandBufferProxyImpl::IsFenceSyncReleased(uint64_t release) {
 }
 
 void CommandBufferProxyImpl::SignalSyncToken(const gpu::SyncToken& sync_token,
-                                             const base::Closure& callback) {
+                                             base::OnceClosure callback) {
   CheckLock();
   base::AutoLock lock(last_state_lock_);
   if (last_state_.error != gpu::error::kNoError)
@@ -584,7 +584,7 @@ void CommandBufferProxyImpl::SignalSyncToken(const gpu::SyncToken& sync_token,
   uint32_t signal_id = next_signal_id_++;
   Send(new GpuCommandBufferMsg_SignalSyncToken(route_id_, sync_token,
                                                signal_id));
-  signal_tasks_.insert(std::make_pair(signal_id, callback));
+  signal_tasks_.insert(std::make_pair(signal_id, std::move(callback)));
 }
 
 void CommandBufferProxyImpl::WaitSyncTokenHint(
@@ -614,7 +614,7 @@ void CommandBufferProxyImpl::SetSnapshotRequested() {
 }
 
 void CommandBufferProxyImpl::SignalQuery(uint32_t query,
-                                         const base::Closure& callback) {
+                                         base::OnceClosure callback) {
   CheckLock();
   base::AutoLock lock(last_state_lock_);
   if (last_state_.error != gpu::error::kNoError)
@@ -630,7 +630,7 @@ void CommandBufferProxyImpl::SignalQuery(uint32_t query,
   // called, leading to stalled threads and/or memory leaks.
   uint32_t signal_id = next_signal_id_++;
   Send(new GpuCommandBufferMsg_SignalQuery(route_id_, query, signal_id));
-  signal_tasks_.insert(std::make_pair(signal_id, callback));
+  signal_tasks_.insert(std::make_pair(signal_id, std::move(callback)));
 }
 
 void CommandBufferProxyImpl::CreateGpuFence(uint32_t gpu_fence_id,
@@ -667,7 +667,7 @@ void CommandBufferProxyImpl::OnGetGpuFenceHandleComplete(
     uint32_t gpu_fence_id,
     const gfx::GpuFenceHandle& handle) {
   // Always consume the provided handle to avoid leaks on error.
-  auto gpu_fence = base::MakeUnique<gfx::GpuFence>(handle);
+  auto gpu_fence = std::make_unique<gfx::GpuFence>(handle);
 
   GetGpuFenceTaskMap::iterator it = get_gpu_fence_tasks_.find(gpu_fence_id);
   if (it == get_gpu_fence_tasks_.end()) {

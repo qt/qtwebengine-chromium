@@ -661,9 +661,9 @@ void HTMLMediaElement::ParserDidSetAttributes() {
 // attribute as there is no callback notifying about the end of a cloning
 // operation. Indeed, it is required per spec to set the muted state based on
 // the content attribute when the object is created.
-void HTMLMediaElement::CopyNonAttributePropertiesFromElement(
-    const Element& other) {
-  HTMLElement::CopyNonAttributePropertiesFromElement(other);
+void HTMLMediaElement::CloneNonAttributePropertiesFrom(const Element& other,
+                                                       CloneChildrenFlag flag) {
+  HTMLElement::CloneNonAttributePropertiesFrom(other, flag);
 
   if (FastHasAttribute(mutedAttr))
     muted_ = true;
@@ -840,6 +840,8 @@ void HTMLMediaElement::InvokeLoadAlgorithm() {
   sent_stalled_event_ = false;
   have_fired_loaded_data_ = false;
   display_mode_ = kUnknown;
+
+  autoplay_policy_->StopAutoplayMutedWhenVisible();
 
   // 1 - Abort any already-running instance of the resource selection algorithm
   // for this element.
@@ -1468,17 +1470,30 @@ bool HTMLMediaElement::IsSafeToLoadURL(const KURL& url,
 
 bool HTMLMediaElement::IsMediaDataCORSSameOrigin(
     const SecurityOrigin* origin) const {
-  // hasSingleSecurityOrigin() tells us whether the origin in the src is
-  // the same as the actual request (i.e. after redirect).
-  // didPassCORSAccessCheck() means it was a successful CORS-enabled fetch
-  // (vs. non-CORS-enabled or failed).
-  // taintsCanvas() does checkAccess() on the URL plus allow data sources,
-  // to ensure that it is not a URL that requires CORS (basically same
-  // origin).
-  return HasSingleSecurityOrigin() &&
-         ((GetWebMediaPlayer() &&
-           GetWebMediaPlayer()->DidPassCORSAccessCheck()) ||
-          !origin->TaintsCanvas(currentSrc()));
+  // If a service worker handled the request, we don't know if the origin in the
+  // src is the same as the actual response URL so can't rely on URL checks
+  // alone. So detect an opaque response via
+  // DidGetOpaqueResponseFromServiceWorker().
+  if (GetWebMediaPlayer() &&
+      GetWebMediaPlayer()->DidGetOpaqueResponseFromServiceWorker()) {
+    return false;
+  }
+
+  // At this point, either a service worker was not used, or it didn't provide
+  // an opaque response, so continue with the normal checks.
+
+  // HasSingleSecurityOrigin() tells us whether the origin in the src
+  // is the same as the actual request (i.e. after redirects).
+  if (!HasSingleSecurityOrigin())
+    return false;
+
+  // DidPassCORSAccessCheck() means it was a successful CORS-enabled fetch (vs.
+  // non-CORS-enabled or failed). TaintsCanvas() does CheckAccess() on the URL
+  // plus allows data sources, to ensure that it is not a URL that requires
+  // CORS (basically same origin).
+  return (GetWebMediaPlayer() &&
+          GetWebMediaPlayer()->DidPassCORSAccessCheck()) ||
+         !origin->TaintsCanvas(currentSrc());
 }
 
 bool HTMLMediaElement::IsInCrossOriginFrame() const {
@@ -2336,15 +2351,15 @@ ScriptPromise HTMLMediaElement::playForBindings(ScriptState* script_state) {
   ScriptPromise promise = resolver->Promise();
   play_promise_resolvers_.push_back(resolver);
 
-  Nullable<ExceptionCode> code = Play();
-  if (!code.IsNull()) {
+  Optional<ExceptionCode> code = Play();
+  if (code) {
     DCHECK(!play_promise_resolvers_.IsEmpty());
     play_promise_resolvers_.pop_back();
 
     String message;
-    switch (code.Get()) {
+    switch (code.value()) {
       case kNotAllowedError:
-        message = "play() can only be initiated by a user gesture.";
+        message = autoplay_policy_->GetPlayErrorMessage();
         RecordPlayPromiseRejected(
             PlayPromiseRejectReason::kFailedAutoplayPolicy);
         break;
@@ -2355,24 +2370,24 @@ ScriptPromise HTMLMediaElement::playForBindings(ScriptState* script_state) {
       default:
         NOTREACHED();
     }
-    resolver->Reject(DOMException::Create(code.Get(), message));
+    resolver->Reject(DOMException::Create(code.value(), message));
     return promise;
   }
 
   return promise;
 }
 
-Nullable<ExceptionCode> HTMLMediaElement::Play() {
+Optional<ExceptionCode> HTMLMediaElement::Play() {
   BLINK_MEDIA_LOG << "play(" << (void*)this << ")";
 
-  Nullable<ExceptionCode> exception_code = autoplay_policy_->RequestPlay();
+  Optional<ExceptionCode> exception_code = autoplay_policy_->RequestPlay();
 
   if (exception_code == kNotAllowedError) {
     // If we're already playing, then this play would do nothing anyway.
     // Call playInternal to handle scheduling the promise resolution.
     if (!paused_) {
       PlayInternal();
-      return nullptr;
+      return WTF::nullopt;
     }
     return exception_code;
   }
@@ -2382,11 +2397,11 @@ Nullable<ExceptionCode> HTMLMediaElement::Play() {
   if (error_ && error_->code() == MediaError::kMediaErrSrcNotSupported)
     return kNotSupportedError;
 
-  DCHECK(exception_code.IsNull());
+  DCHECK(!exception_code.has_value());
 
   PlayInternal();
 
-  return nullptr;
+  return WTF::nullopt;
 }
 
 void HTMLMediaElement::PlayInternal() {
@@ -2579,6 +2594,11 @@ void HTMLMediaElement::setMuted(bool muted) {
   autoplay_policy_->StopAutoplayMutedWhenVisible();
 }
 
+void HTMLMediaElement::enterPictureInPicture() {
+  if (GetWebMediaPlayer())
+    GetWebMediaPlayer()->EnterPictureInPicture();
+}
+
 double HTMLMediaElement::EffectiveMediaVolume() const {
   if (muted_)
     return 0;
@@ -2625,21 +2645,21 @@ void HTMLMediaElement::PlaybackProgressTimerFired(TimerBase*) {
 void HTMLMediaElement::ScheduleTimeupdateEvent(bool periodic_event) {
   // Per spec, consult current playback position to check for changing time.
   double media_time = CurrentPlaybackPosition();
-  TimeTicks now = CurrentTimeTicks();
-
-  bool have_not_recently_fired_timeupdate =
-      (now - last_time_update_event_wall_time_) >= kMaxTimeupdateEventFrequency;
   bool media_time_has_progressed =
       media_time != last_time_update_event_media_time_;
 
-  // Non-periodic timeupdate events must always fire as mandated by the spec,
-  // otherwise we shouldn't fire duplicate periodic timeupdate events when the
-  // movie time hasn't changed.
-  if (!periodic_event ||
-      (have_not_recently_fired_timeupdate && media_time_has_progressed)) {
-    ScheduleEvent(EventTypeNames::timeupdate);
-    last_time_update_event_wall_time_ = now;
-    last_time_update_event_media_time_ = media_time;
+  if (periodic_event && !media_time_has_progressed)
+    return;
+
+  ScheduleEvent(EventTypeNames::timeupdate);
+
+  last_time_update_event_media_time_ = media_time;
+
+  // Ensure periodic event fires 250ms from _this_ event. Restarting the timer
+  // cancels pending callbacks.
+  if (!periodic_event && playback_progress_timer_.IsActive()) {
+    playback_progress_timer_.StartRepeating(kMaxTimeupdateEventFrequency,
+                                            FROM_HERE);
   }
 }
 
@@ -3149,11 +3169,6 @@ void HTMLMediaElement::TimeChanged() {
       !GetWebMediaPlayer()->Seeking())
     FinishSeek();
 
-  // Always call scheduleTimeupdateEvent when the media engine reports a time
-  // discontinuity, it will only queue a 'timeupdate' event if we haven't
-  // already posted one at the current movie time.
-  ScheduleTimeupdateEvent(false);
-
   double now = CurrentPlaybackPosition();
   double dur = duration();
 
@@ -3168,6 +3183,10 @@ void HTMLMediaElement::TimeChanged() {
       //  abort these steps.
       Seek(EarliestPossiblePosition());
     } else {
+      // Queue a task to fire a simple event named timeupdate at the media
+      // element.
+      ScheduleTimeupdateEvent(false);
+
       // If the media element has still ended playback, and the direction of
       // playback is still forwards, and paused is false,
       if (!paused_) {
@@ -3614,11 +3633,11 @@ bool HTMLMediaElement::TextTracksVisible() const {
 // static
 void HTMLMediaElement::AssertShadowRootChildren(ShadowRoot& shadow_root) {
 #if DCHECK_IS_ON()
-  // There can be up to three children: media remoting interstitial, text track
-  // container, and media controls. The media controls has to be the last child
-  // if presend, and has to be the next sibling of the text track container if
-  // both present. When present, media remoting interstitial has to be the first
-  // child.
+  // There can be up to three children: an interstitial (media remoting or
+  // picture in picture), text track container, and media controls. The media
+  // controls has to be the last child if present, and has to be the next
+  // sibling of the text track container if both present. When present, media
+  // remoting interstitial has to be the first child.
   unsigned number_of_children = shadow_root.CountChildren();
   DCHECK_LE(number_of_children, 3u);
   Node* first_child = shadow_root.firstChild();
@@ -3626,16 +3645,19 @@ void HTMLMediaElement::AssertShadowRootChildren(ShadowRoot& shadow_root) {
   if (number_of_children == 1) {
     DCHECK(first_child->IsTextTrackContainer() ||
            first_child->IsMediaControls() ||
-           first_child->IsMediaRemotingInterstitial());
+           first_child->IsMediaRemotingInterstitial() ||
+           first_child->IsPictureInPictureInterstitial());
   } else if (number_of_children == 2) {
     DCHECK(first_child->IsTextTrackContainer() ||
-           first_child->IsMediaRemotingInterstitial());
+           first_child->IsMediaRemotingInterstitial() ||
+           first_child->IsPictureInPictureInterstitial());
     DCHECK(last_child->IsTextTrackContainer() || last_child->IsMediaControls());
     if (first_child->IsTextTrackContainer())
       DCHECK(last_child->IsMediaControls());
   } else if (number_of_children == 3) {
     Node* second_child = first_child->nextSibling();
-    DCHECK(first_child->IsMediaRemotingInterstitial());
+    DCHECK(first_child->IsMediaRemotingInterstitial() ||
+           first_child->IsPictureInPictureInterstitial());
     DCHECK(second_child->IsTextTrackContainer());
     DCHECK(last_child->IsMediaControls());
   }
@@ -3643,7 +3665,7 @@ void HTMLMediaElement::AssertShadowRootChildren(ShadowRoot& shadow_root) {
 }
 
 TextTrackContainer& HTMLMediaElement::EnsureTextTrackContainer() {
-  ShadowRoot& shadow_root = EnsureUserAgentShadowRootV1();
+  ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
   AssertShadowRootChildren(shadow_root);
 
   Node* first_child = shadow_root.firstChild();
@@ -3772,7 +3794,7 @@ void HTMLMediaElement::EnsureMediaControls() {
   if (GetMediaControls())
     return;
 
-  ShadowRoot& shadow_root = EnsureUserAgentShadowRootV1();
+  ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
   media_controls_ =
       CoreInitializer::GetInstance().CreateMediaControls(*this, shadow_root);
 
@@ -3865,7 +3887,8 @@ void HTMLMediaElement::SetAudioSourceNode(
   DCHECK(IsMainThread());
   audio_source_node_ = source_node;
 
-  AudioSourceProviderClientLockScope scope(*this);
+  // No need to lock the |audio_source_node| because it locks itself when
+  // setFormat() is invoked.
   GetAudioSourceProvider().SetClient(audio_source_node_);
 }
 
@@ -4191,6 +4214,10 @@ gfx::ColorSpace HTMLMediaElement::TargetColorSpace() {
   if (!frame)
     return gfx::ColorSpace();
   return frame->GetPage()->GetChromeClient().GetScreenInfo().color_space;
+}
+
+bool HTMLMediaElement::WasAutoplayInitiated() {
+  return autoplay_policy_->WasAutoplayInitiated();
 }
 
 void HTMLMediaElement::CheckViewportIntersectionTimerFired(TimerBase*) {

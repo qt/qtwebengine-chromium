@@ -15,6 +15,7 @@ extern const char kDefaultBackgroundColor[];
 extern const char kDeterministicFetch[];
 extern const char kDisableCrashReporter[];
 extern const char kDumpDom[];
+extern const char kEnableBeginFrameControl[];
 extern const char kEnableCrashReporter[];
 extern const char kHideScrollbars[];
 extern const char kPasswordStore[];
@@ -33,9 +34,9 @@ extern const char kUserDataDir[];
 extern const char kVirtualTimeBudget[];
 extern const char kWindowSize[];
 extern const char kAuthServerWhitelist[];
+extern const char kFontRenderHinting[];
 
 // Switches which are replicated from content.
-using ::switches::kHostResolverRules;
 using ::switches::kRemoteDebuggingPort;
 
 }  // namespace switches

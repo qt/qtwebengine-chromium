@@ -153,11 +153,7 @@ public:
     */
     SkCanvas(int width, int height, const SkSurfaceProps* props = nullptr);
 
-    /** Construct a canvas that draws into device.
-        Used by child classes of SkCanvas.
-
-        @param device  specifies a device for the canvas to draw into
-        @return        SkCanvas that can be used to draw into device
+    /** To be deprecated soon.
     */
     explicit SkCanvas(SkBaseDevice* device);
 
@@ -203,8 +199,8 @@ public:
     */
     SkCanvas(const SkBitmap& bitmap, const SkSurfaceProps& props);
 
-    /** Draw saved layers, if any.
-        Free up resources used by SkCanvas.
+    /** Draws saved layer, if any.
+        Frees up resources used by SkCanvas.
     */
     virtual ~SkCanvas();
 
@@ -358,7 +354,7 @@ public:
         Caller must allocate pixel storage in pixmap if needed.
 
         Pixel values are converted only if SkColorType and SkAlphaType
-        do not match. Only pixels within both source and destination rects
+        do not match. Only pixels within both source and destination SkRect
         are copied. pixmap pixels contents outside SkRect intersection are unchanged.
 
         Pass negative values for srcX or srcY to offset pixels across or down pixmap.
@@ -434,8 +430,8 @@ public:
 
         Does not copy, and returns false if:
         - Source and destination rectangles do not intersect.
-        - pixels could not be converted to this->imageInfo().colorType() or
-        this->imageInfo().alphaType().
+        - pixels could not be converted to SkCanvas imageInfo().colorType() or
+        imageInfo().alphaType().
         - SkCanvas pixels are not writable; for instance, SkCanvas is document-based.
         - rowBytes is too small to contain one row of pixels.
 
@@ -472,8 +468,8 @@ public:
         Does not copy, and returns false if:
         - Source and destination rectangles do not intersect.
         - bitmap does not have allocated pixels.
-        - bitmap pixels could not be converted to this->imageInfo().colorType() or
-        this->imageInfo().alphaType().
+        - bitmap pixels could not be converted to SkCanvas imageInfo().colorType() or
+        imageInfo().alphaType().
         - SkCanvas pixels are not writable; for instance, SkCanvas is document based.
         - bitmap pixels are inaccessible; for instance, bitmap wraps a texture.
 
@@ -484,7 +480,7 @@ public:
     */
     bool writePixels(const SkBitmap& bitmap, int x, int y);
 
-    /** Saves SkMatrix, clip, and SkDrawFilter (Draw_Filter deprecated on most platforms).
+    /** Saves SkMatrix, clip, and SkDrawFilter (SkDrawFilter deprecated on most platforms).
         Calling restore() discards changes to SkMatrix, clip, and SkDrawFilter,
         restoring the SkMatrix, clip, and SkDrawFilter to their state when save() was called.
 
@@ -500,7 +496,7 @@ public:
     */
     int save();
 
-    /** Saves SkMatrix, clip, and SkDrawFilter (Draw_Filter deprecated on most platforms),
+    /** Saves SkMatrix, clip, and SkDrawFilter (SkDrawFilter deprecated on most platforms),
         and allocates a SkBitmap for subsequent drawing.
         Calling restore() discards changes to SkMatrix, clip, and SkDrawFilter,
         and draws the SkBitmap.
@@ -523,7 +519,7 @@ public:
     */
     int saveLayer(const SkRect* bounds, const SkPaint* paint);
 
-    /** Saves SkMatrix, clip, and SkDrawFilter (Draw_Filter deprecated on most platforms),
+    /** Saves SkMatrix, clip, and SkDrawFilter (SkDrawFilter deprecated on most platforms),
         and allocates a SkBitmap for subsequent drawing.
         Calling restore() discards changes to SkMatrix, clip, and SkDrawFilter,
         and draws the SkBitmap.
@@ -548,9 +544,9 @@ public:
         return this->saveLayer(&bounds, paint);
     }
 
-    /** Saves SkMatrix, clip, and SkDrawFilter (Draw_Filter deprecated on most platforms),
+    /** Saves SkMatrix, clip, and SkDrawFilter (SkDrawFilter deprecated on most platforms),
         and allocates a SkBitmap for subsequent drawing.
-        lcd text is preserved when the layer is drawn to the prior layer.
+        LCD text is preserved when the layer is drawn to the prior layer.
 
         Calling restore() discards changes to SkMatrix, clip, and SkDrawFilter,
         and draws layer.
@@ -567,8 +563,8 @@ public:
 
         Call restoreToCount() with returned value to restore this and subsequent saves.
 
-        Draw text on an opaque background so that lcd text blends correctly with the
-        prior layer. lcd text drawn on a background with transparency may result in
+        Draw text on an opaque background so that LCD text blends correctly with the
+        prior layer. LCD text drawn on a background with transparency may result in
         incorrect blending.
 
         @param bounds  hint to limit the size of layer; may be nullptr
@@ -577,7 +573,7 @@ public:
     */
     int saveLayerPreserveLCDTextRequests(const SkRect* bounds, const SkPaint* paint);
 
-    /** Saves SkMatrix, clip, and SkDrawFilter (Draw_Filter deprecated on most platforms),
+    /** Saves SkMatrix, clip, and SkDrawFilter (SkDrawFilter deprecated on most platforms),
         and allocates SkBitmap for subsequent drawing.
 
         Calling restore() discards changes to SkMatrix, clip, and SkDrawFilter,
@@ -605,11 +601,6 @@ public:
         defining how layer allocated by saveLayer() operates.
     */
     enum {
-        /** Creates layer without transparency. Flag is ignored if layer SkPaint contains
-            SkImageFilter or SkColorFilter.
-        */
-        kIsOpaque_SaveLayerFlag               = 1 << 0,
-
         /** Creates layer for LCD text. Flag is ignored if layer SkPaint contains
             SkImageFilter or SkColorFilter.
         */
@@ -619,7 +610,7 @@ public:
         kInitWithPrevious_SaveLayerFlag       = 1 << 2,
 
 #ifdef SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
-        /** to be deprecated: bug.skia.org/2440 */
+        /** To be deprecated soon. */
         kDontClipToLayer_Legacy_SaveLayerFlag = kDontClipToLayer_PrivateSaveLayerFlag,
 #endif
     };
@@ -733,7 +724,7 @@ public:
 
     };
 
-    /** Saves SkMatrix, clip, and SkDrawFilter (Draw_Filter deprecated on most platforms),
+    /** Saves SkMatrix, clip, and SkDrawFilter (SkDrawFilter deprecated on most platforms),
         and allocates SkBitmap for subsequent drawing.
 
         Calling restore() discards changes to SkMatrix, clip, and SkDrawFilter,
@@ -1098,7 +1089,7 @@ public:
     */
     void discard() { this->onDiscard(); }
 
-    /** Fill clip with SkPaint paint. SkPaint components SkRasterizer, SkMaskFilter, SkShader,
+    /** Fill clip with SkPaint paint. SkPaint components SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkBlendMode affect drawing;
         SkPathEffect in paint is ignored.
 
@@ -1754,7 +1745,7 @@ public:
                         const SkPaint* paint = nullptr);
 
     /** \struct SkCanvas::Lattice
-        Lattice divides SkBitmap or SkImage into a rectangular grid.
+        SkCanvas::Lattice divides SkBitmap or SkImage into a rectangular grid.
         Grid entries on even columns and even rows are fixed; these entries are
         always drawn at their original size if the destination is large enough.
         If the destination side is too small to hold the fixed entries, all fixed
@@ -1827,7 +1818,7 @@ public:
 
     /** Draw SkBitmap bitmap stretched proportionally to fit into SkRect dst.
 
-        Lattice lattice divides bitmap into a rectangular grid.
+        SkCanvas::Lattice lattice divides bitmap into a rectangular grid.
         Each intersection of an even-numbered row and column is fixed; like the corners
         of drawBitmapNine(), fixed lattice elements never scale larger than their initial
         size and shrink proportionately when all fixed elements exceed the bitmap
@@ -1855,7 +1846,7 @@ public:
 
     /** Draw SkImage image stretched proportionally to fit into SkRect dst.
 
-        Lattice lattice divides image into a rectangular grid.
+        SkCanvas::Lattice lattice divides image into a rectangular grid.
         Each intersection of an even-numbered row and column is fixed; like the corners
         of drawBitmapNine(), fixed lattice elements never scale larger than their initial
         size and shrink proportionately when all fixed elements exceed the bitmap
@@ -1890,7 +1881,7 @@ public:
         text draws left to right, positioning the first glyph left side bearing at x
         and its baseline at y. Text size is affected by SkMatrix and SkPaint text size.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -1914,7 +1905,7 @@ public:
         string draws left to right, positioning the first glyph left side bearing at x
         and its baseline at y. Text size is affected by SkMatrix and SkPaint text size.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -1942,7 +1933,7 @@ public:
         string draws left to right, positioning the first glyph left side bearing at x
         and its baseline at y. Text size is affected by SkMatrix and SkPaint text size.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -1964,7 +1955,7 @@ public:
         baseline is positioned at y. Text size is affected by SkMatrix and
         SkPaint text size.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -1989,7 +1980,7 @@ public:
         its baseline is positioned at constY. Text size is affected by SkMatrix and
         SkPaint text size.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -2019,7 +2010,7 @@ public:
         default text positions the first glyph left side bearing at origin x and its
         baseline at origin y. Text size is affected by SkMatrix and SkPaint text size.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -2046,7 +2037,7 @@ public:
         default text positions the first glyph left side bearing at origin x and its
         baseline at origin y. Text size is affected by SkMatrix and SkPaint text size.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -2069,7 +2060,7 @@ public:
         Optional SkRect cullRect is a conservative bounds of text, taking into account
         SkRSXform and paint. If cullRect is outside of clip, canvas can skip drawing.
 
-        All elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader,
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
         SkColorFilter, SkImageFilter, and SkDrawLooper; apply to text. By default, draws
         filled 12 point black glyphs.
 
@@ -2086,13 +2077,13 @@ public:
 
         blob contains glyphs, their positions, and paint attributes specific to text:
         SkTypeface, SkPaint text size, SkPaint text scale x, SkPaint text skew x,
-        SkPaint::Align, SkPaint::Hinting, anti-alias, SkPaint fake bold,
-        font embedded bitmaps, full hinting spacing, lcd text, linear text,
-        subpixel text, and SkPaint vertical text.
+        SkPaint::Align, SkPaint::Hinting, SkPaint anti-alias, SkPaint fake bold,
+        SkPaint font embedded bitmaps, SkPaint full hinting spacing, LCD text, SkPaint linear text,
+        SkPaint subpixel text, and SkPaint vertical text.
 
         SkPaint::TextEncoding must be set to SkPaint::kGlyphID_TextEncoding.
 
-        Elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader, SkColorFilter,
+        Elements of paint: SkPathEffect, SkMaskFilter, SkShader, SkColorFilter,
         SkImageFilter, and SkDrawLooper; apply to blob.
 
         @param blob   glyphs, positions, and their paints' text size, typeface, and so on
@@ -2106,13 +2097,13 @@ public:
 
         blob contains glyphs, their positions, and paint attributes specific to text:
         SkTypeface, SkPaint text size, SkPaint text scale x, SkPaint text skew x,
-        SkPaint::Align, SkPaint::Hinting, anti-alias, SkPaint fake bold,
-        font embedded bitmaps, full hinting spacing, lcd text, linear text,
-        subpixel text, and SkPaint vertical text.
+        SkPaint::Align, SkPaint::Hinting, SkPaint anti-alias, SkPaint fake bold,
+        SkPaint font embedded bitmaps, SkPaint full hinting spacing, LCD text, SkPaint linear text,
+        SkPaint subpixel text, and SkPaint vertical text.
 
         SkPaint::TextEncoding must be set to SkPaint::kGlyphID_TextEncoding.
 
-        Elements of paint: SkPathEffect, SkRasterizer, SkMaskFilter, SkShader, SkColorFilter,
+        Elements of paint: SkPathEffect, SkMaskFilter, SkShader, SkColorFilter,
         SkImageFilter, and SkDrawLooper; apply to blob.
 
         @param blob   glyphs, positions, and their paints' text size, typeface, and so on
@@ -2204,8 +2195,8 @@ public:
         as Coons_Patch texture; SkBlendMode mode combines color colors and SkShader if
         both are provided.
 
-        SkPoint array cubics specifies four cubics starting at the top-left corner,
-        in clockwise order, sharing every fourth point. The last cubic ends at the
+        SkPoint array cubics specifies four SkPath cubic starting at the top-left corner,
+        in clockwise order, sharing every fourth point. The last SkPath cubic ends at the
         first point.
 
         Color array color associates colors with corners in top-left, top-right,
@@ -2224,7 +2215,7 @@ public:
     void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
                    const SkPoint texCoords[4], SkBlendMode mode, const SkPaint& paint);
 
-    /** Draws cubic Coons_Patch: the interpolation of four cubics with shared corners,
+    /** Draws SkPath cubic Coons_Patch: the interpolation of four cubics with shared corners,
         associating a color, and optionally a texture coordinate, with each corner.
 
         Coons_Patch uses clip and SkMatrix, paint SkShader, SkColorFilter,
@@ -2232,8 +2223,8 @@ public:
         as Coons_Patch texture; SkBlendMode mode combines color colors and SkShader if
         both are provided.
 
-        SkPoint array cubics specifies four cubics starting at the top-left corner,
-        in clockwise order, sharing every fourth point. The last cubic ends at the
+        SkPoint array cubics specifies four SkPath cubic starting at the top-left corner,
+        in clockwise order, sharing every fourth point. The last SkPath cubic ends at the
         first point.
 
         Color array color associates colors with corners in top-left, top-right,
@@ -2254,7 +2245,7 @@ public:
     }
 
     /** Draw a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
-        paint uses anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
+        paint uses SkPaint anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
         to draw, if present. For each entry in the array, SkRect tex locates sprite in
         atlas, and SkRSXform xform transforms it into destination space.
 
@@ -2277,7 +2268,7 @@ public:
                    const SkPaint* paint);
 
     /** Draw a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
-        paint uses anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
+        paint uses SkPaint anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
         to draw, if present. For each entry in the array, SkRect tex locates sprite in
         atlas, and SkRSXform xform transforms it into destination space.
 
@@ -2302,7 +2293,7 @@ public:
     }
 
     /** Draw a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
-        paint uses anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
+        paint uses SkPaint anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
         to draw, if present. For each entry in the array, SkRect tex locates sprite in
         atlas, and SkRSXform xform transforms it into destination space.
 
@@ -2323,7 +2314,7 @@ public:
     }
 
     /** Draw a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
-        paint uses anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
+        paint uses SkPaint anti-alias, color alpha, SkColorFilter, SkImageFilter, and SkBlendMode
         to draw, if present. For each entry in the array, SkRect tex locates sprite in
         atlas, and SkRSXform xform transforms it into destination space.
 
@@ -2370,7 +2361,7 @@ public:
     */
     void drawDrawable(SkDrawable* drawable, SkScalar x, SkScalar y);
 
-    /** Associate SkRect on SkCanvas when an annotation; a key-value pair, where the key is
+    /** Associate SkRect on SkCanvas with an annotation; a key-value pair, where the key is
         a null-terminated utf8 string, and optional value is stored as SkData.
 
         Only some canvas implementations, such as recording to SkPicture, or drawing to
@@ -2399,11 +2390,11 @@ public:
     //////////////////////////////////////////////////////////////////////////
 
 #ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-    /** Legacy call to be deprecated.
+    /** To be deprecated soon.
     */
     SkDrawFilter* getDrawFilter() const;
 
-    /** Legacy call to be deprecated.
+    /** To be deprecated soon.
     */
     virtual SkDrawFilter* setDrawFilter(SkDrawFilter* filter);
 #endif
@@ -2779,7 +2770,7 @@ private:
 class SkAutoCanvasRestore : SkNoncopyable {
 public:
 
-    /** Preserves SkCanvas save count. Optionally saves SkCanvas clip and SkMatrix.
+    /** Preserves SkCanvas save count. Optionally saves SkCanvas clip and SkCanvas matrix.
 
         @param canvas  SkCanvas to guard
         @param doSave  call SkCanvas::save()

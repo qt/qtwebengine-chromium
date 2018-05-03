@@ -52,10 +52,10 @@ void FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
   // If this is the first time we run autosize, start from small height and
   // allow it to grow.
   if (!did_run_autosize_)
-    frame_view_->Resize(frame_view_->FrameRect().Width(),
-                        min_auto_size_.Height());
+    frame_view_->Resize(frame_view_->Width(), min_auto_size_.Height());
 
-  IntSize size = frame_view_->FrameRect().Size();
+  IntSize size = frame_view_->Size();
+  ScrollableArea* layout_viewport = frame_view_->LayoutViewportScrollableArea();
 
   // Do the resizing twice. The first time is basically a rough calculation
   // using the preferred width which may result in a height change during the
@@ -68,6 +68,9 @@ void FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
     if (!layout_view)
       return;
 
+    // TODO(bokan): This code doesn't handle subpixel sizes correctly. Because
+    // of that, it's forced to maintain all the special ScrollbarMode code
+    // below. https://crbug.com/812311.
     int width = layout_view->MinPreferredLogicalWidth().ToInt();
 
     LayoutBox* document_layout_box = document_element->GetLayoutBox();
@@ -83,21 +86,25 @@ void FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
     // dimension exceeds the maximum, there is no need to increase it further.
     if (new_size.Width() > max_auto_size_.Width()) {
       Scrollbar* local_horizontal_scrollbar =
-          frame_view_->HorizontalScrollbar();
-      if (!local_horizontal_scrollbar)
+          layout_viewport->HorizontalScrollbar();
+      if (!local_horizontal_scrollbar) {
         local_horizontal_scrollbar =
-            frame_view_->CreateScrollbar(kHorizontalScrollbar);
-      if (!local_horizontal_scrollbar->IsOverlayScrollbar())
+            layout_viewport->CreateScrollbar(kHorizontalScrollbar);
+      }
+      if (!local_horizontal_scrollbar->IsOverlayScrollbar()) {
         new_size.SetHeight(new_size.Height() +
                            local_horizontal_scrollbar->Height());
+      }
 
       // Don't bother checking for a vertical scrollbar because the width is at
       // already greater the maximum.
     } else if (new_size.Height() > max_auto_size_.Height()) {
-      Scrollbar* local_vertical_scrollbar = frame_view_->VerticalScrollbar();
-      if (!local_vertical_scrollbar)
+      Scrollbar* local_vertical_scrollbar =
+          layout_viewport->VerticalScrollbar();
+      if (!local_vertical_scrollbar) {
         local_vertical_scrollbar =
-            frame_view_->CreateScrollbar(kVerticalScrollbar);
+            layout_viewport->CreateScrollbar(kVerticalScrollbar);
+      }
       if (!local_vertical_scrollbar->IsOverlayScrollbar())
         new_size.SetWidth(new_size.Width() + local_vertical_scrollbar->Width());
 
@@ -110,10 +117,10 @@ void FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
 
     // Bound the dimensions by the max bounds and determine what scrollbars to
     // show.
-    ScrollbarMode horizonal_scrollbar_mode = kScrollbarAlwaysOff;
+    ScrollbarMode horizontal_scrollbar_mode = kScrollbarAlwaysOff;
     if (new_size.Width() > max_auto_size_.Width()) {
       new_size.SetWidth(max_auto_size_.Width());
-      horizonal_scrollbar_mode = kScrollbarAlwaysOn;
+      horizontal_scrollbar_mode = kScrollbarAlwaysOn;
     }
     ScrollbarMode vertical_scrollbar_mode = kScrollbarAlwaysOff;
     if (new_size.Height() > max_auto_size_.Height()) {
@@ -138,10 +145,8 @@ void FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
     // causing them to be needed. For example, a vertical scrollbar may cause
     // text to wrap and thus increase the height (which is the only reason the
     // scollbar is needed).
-    frame_view_->SetVerticalScrollbarLock(false);
-    frame_view_->SetHorizontalScrollbarLock(false);
-    frame_view_->SetScrollbarModes(horizonal_scrollbar_mode,
-                                   vertical_scrollbar_mode, true, true);
+    layout_viewport->SetAutosizeScrollbarModes(vertical_scrollbar_mode,
+                                               horizontal_scrollbar_mode);
   }
   did_run_autosize_ = true;
 }

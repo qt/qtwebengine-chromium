@@ -433,10 +433,9 @@ class ProfileSyncServiceAutofillTest
     EXPECT_CALL(personal_data_manager(), LoadProfiles());
     EXPECT_CALL(personal_data_manager(), LoadCreditCards());
 
-    personal_data_manager_->Init(
-        web_data_service_, profile_sync_service_bundle()->pref_service(),
-        profile_sync_service_bundle()->account_tracker(),
-        profile_sync_service_bundle()->signin_manager(), false);
+    personal_data_manager_->Init(web_data_service_,
+                                 profile_sync_service_bundle()->pref_service(),
+                                 nullptr, false);
 
     web_data_service_->StartSyncableService();
 
@@ -625,12 +624,12 @@ class ProfileSyncServiceAutofillTest
     DCHECK(type == AUTOFILL || type == AUTOFILL_PROFILE);
     if (type == AUTOFILL) {
       return std::make_unique<AutofillDataTypeController>(
-          data_type_thread()->task_runner(), base::Bind(&base::DoNothing),
-          sync_client_, web_data_service_);
+          data_type_thread()->task_runner(), base::DoNothing(), sync_client_,
+          web_data_service_);
     } else {
       return std::make_unique<AutofillProfileDataTypeController>(
-          data_type_thread()->task_runner(), base::Bind(&base::DoNothing),
-          sync_client_, web_data_service_);
+          data_type_thread()->task_runner(), base::DoNothing(), sync_client_,
+          web_data_service_);
     }
   }
 

@@ -17,6 +17,7 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/restore_type.h"
 #include "content/public/browser/session_storage_namespace.h"
@@ -45,6 +46,9 @@ class WebContents;
 // exactly one NavigationController.
 class NavigationController {
  public:
+  typedef base::RepeatingCallback<bool(const content::NavigationEntry& entry)>
+      DeletionPredicate;
+
   // Load type used in LoadURLParams.
   //
   // A Java counterpart will be generated for this enum.
@@ -115,7 +119,8 @@ class NavigationController {
     // Note the default value in constructor below.
     ui::PageTransition transition_type;
 
-    // The FrameTreeNode ID for the frame to navigate, or -1 for the main frame.
+    // The browser-global FrameTreeNode ID for the frame to navigate, or
+    // RenderFrameHost::kNoFrameTreeNodeId for the main frame.
     int frame_tree_node_id;
 
     // Referrer for this load. Empty if none.
@@ -178,11 +183,10 @@ class NavigationController {
     // the original intent that prompted the load (in milliseconds active time
     // since boot).
     int64_t intent_received_timestamp;
-
-    // When Chrome launches the intent chooser, user can select Chrome itself to
-    // open the intent. In this case, we should carry over the user gesture.
-    bool has_user_gesture;
 #endif
+
+    // Indicates that the navigation was triggered by a user gesture.
+    bool has_user_gesture;
 
     // Indicates that during this navigation, the session history should be
     // cleared such that the resulting page is the first and only entry of the
@@ -200,12 +204,15 @@ class NavigationController {
     // of that attribute.
     base::Optional<std::string> suggested_filename;
 
+    // This value should only be set for main frame navigations. Subframe
+    // navigations will always get their NavigationUIData from
+    // ContentBrowserClient::GetNavigationUIData.
+    std::unique_ptr<NavigationUIData> navigation_ui_data;
+
     explicit LoadURLParams(const GURL& url);
     ~LoadURLParams();
 
-    // Allows copying of LoadURLParams struct.
-    LoadURLParams(const LoadURLParams& other);
-    LoadURLParams& operator=(const LoadURLParams& other);
+    DISALLOW_COPY_AND_ASSIGN(LoadURLParams);
   };
 
   // Disables checking for a repost and prompting the user. This is used during
@@ -459,6 +466,13 @@ class NavigationController {
   // |CanPruneAllButLastCommitted| returns true before calling this, or it will
   // crash.
   virtual void PruneAllButLastCommitted() = 0;
+
+  // Removes all navigation entries matching |deletionPredicate| except the last
+  // commited entry.
+  // Callers must ensure |CanPruneAllButLastCommitted| returns true before
+  // calling this, or it will crash.
+  virtual void DeleteNavigationEntries(
+      const DeletionPredicate& deletionPredicate) = 0;
 
   // Clears all screenshots associated with navigation entries in this
   // controller. Useful to reduce memory consumption in low-memory situations.

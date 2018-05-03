@@ -29,7 +29,7 @@ CJX_Subform::CJX_Subform(CXFA_Node* node) : CJX_Container(node) {
 CJX_Subform::~CJX_Subform() {}
 
 CJS_Return CJX_Subform::execEvent(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -40,31 +40,33 @@ CJS_Return CJX_Subform::execEvent(
 }
 
 CJS_Return CJX_Subform::execInitialize(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
   if (pNotify)
-    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Initialize);
+    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Initialize, false,
+                                  true);
   return CJS_Return(true);
 }
 
 CJS_Return CJX_Subform::execCalculate(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
   if (pNotify)
-    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate);
+    pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate, false,
+                                  true);
   return CJS_Return(true);
 }
 
 CJS_Return CJX_Subform::execValidate(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -73,8 +75,8 @@ CJS_Return CJX_Subform::execValidate(
   if (!pNotify)
     return CJS_Return(runtime->NewBoolean(false));
 
-  int32_t iRet =
-      pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Validate);
+  int32_t iRet = pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Validate,
+                                               false, true);
   return CJS_Return(runtime->NewBoolean(iRet != XFA_EVENTERROR_Error));
 }
 

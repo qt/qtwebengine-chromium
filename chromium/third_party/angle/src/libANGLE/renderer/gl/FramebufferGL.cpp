@@ -114,7 +114,7 @@ bool AreAllLayersActive(const FramebufferAttachment &attachment)
     }
     const ImageIndex &imageIndex = attachment.getTextureImageIndex();
     int numLayers =
-        static_cast<int>(attachment.getTexture()->getDepth(imageIndex.type, imageIndex.mipIndex));
+        static_cast<int>(attachment.getTexture()->getDepth(imageIndex.target, imageIndex.mipIndex));
     return (attachment.getNumViews() == numLayers);
 }
 
@@ -710,7 +710,7 @@ bool FramebufferGL::isDefault() const
     return mIsDefault;
 }
 
-void FramebufferGL::maskOutInactiveOutputDrawBuffers(DrawBufferMask maxSet)
+void FramebufferGL::maskOutInactiveOutputDrawBuffers(GLenum binding, DrawBufferMask maxSet)
 {
     auto targetAppliedDrawBuffers = mState.getEnabledDrawBuffers() & maxSet;
     if (mAppliedEnabledDrawBuffers != targetAppliedDrawBuffers)
@@ -727,7 +727,7 @@ void FramebufferGL::maskOutInactiveOutputDrawBuffers(DrawBufferMask maxSet)
             drawBuffers[i] = targetAppliedDrawBuffers[i] ? stateDrawBuffers[i] : GL_NONE;
         }
 
-        mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
+        mStateManager->bindFramebuffer(binding, mFramebufferID);
         mFunctions->drawBuffers(drawBufferCount, drawBuffers);
     }
 }

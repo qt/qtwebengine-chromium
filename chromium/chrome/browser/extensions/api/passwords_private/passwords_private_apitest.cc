@@ -150,15 +150,30 @@ class TestDelegate : public PasswordsPrivateDelegate {
     importPasswordsTriggered = true;
   }
 
-  void ExportPasswords(content::WebContents* web_contents) override {
+  void ExportPasswords(base::OnceCallback<void(const std::string&)> callback,
+                       content::WebContents* web_contents) override {
     // The testing of password exporting itself should be handled via
     // |PasswordManagerPorter|.
     exportPasswordsTriggered = true;
+    std::move(callback).Run(std::string());
+  }
+
+  void CancelExportPasswords() override {
+    cancelExportPasswordsTriggered = true;
+  }
+
+  api::passwords_private::ExportProgressStatus GetExportProgressStatus()
+      override {
+    // The testing of password exporting itself should be handled via
+    // |PasswordManagerPorter|.
+    return api::passwords_private::ExportProgressStatus::
+        EXPORT_PROGRESS_STATUS_IN_PROGRESS;
   }
 
   // Flags for detecting whether import/export operations have been invoked.
   bool importPasswordsTriggered = false;
   bool exportPasswordsTriggered = false;
+  bool cancelExportPasswordsTriggered = false;
 
  private:
   // The current list of entries/exceptions. Cached here so that when new
@@ -220,6 +235,10 @@ class PasswordsPrivateApiTest : public ExtensionApiTest {
     return s_test_delegate_->exportPasswordsTriggered;
   }
 
+  bool cancelExportPasswordsWasTriggered() {
+    return s_test_delegate_->cancelExportPasswordsTriggered;
+  }
+
  private:
   static TestDelegate* s_test_delegate_;
 
@@ -279,6 +298,19 @@ IN_PROC_BROWSER_TEST_F(PasswordsPrivateApiTest, ExportPasswords) {
   if (!ExtensionApiTest::ExtensionSubtestsAreSkipped()) {
     EXPECT_TRUE(exportPasswordsWasTriggered());
   }
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordsPrivateApiTest, CancelExportPasswords) {
+  EXPECT_FALSE(cancelExportPasswordsWasTriggered());
+  EXPECT_TRUE(RunPasswordsSubtest("cancelExportPasswords")) << message_;
+
+  if (!ExtensionApiTest::ExtensionSubtestsAreSkipped()) {
+    EXPECT_TRUE(cancelExportPasswordsWasTriggered());
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordsPrivateApiTest, RequestExportProgressStatus) {
+  EXPECT_TRUE(RunPasswordsSubtest("requestExportProgressStatus")) << message_;
 }
 
 }  // namespace extensions

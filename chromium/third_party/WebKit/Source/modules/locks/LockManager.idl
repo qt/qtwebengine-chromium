@@ -8,15 +8,15 @@ callback LockGrantedCallback = any (Lock lock);
 [
     SecureContext,
     Exposed=(Window,Worker),
-    RuntimeEnabled=LocksAPI
+    OriginTrialEnabled=WebLocksAPI
 ] interface LockManager {
-    [CallWith=ScriptState, RaisesException] Promise<Lock> acquire(
+    [CallWith=ScriptState, RaisesException, Measure] Promise<Lock> request(
         DOMString name,
         LockGrantedCallback callback);
-    [CallWith=ScriptState, RaisesException] Promise<Lock> acquire(
+    [CallWith=ScriptState, RaisesException, Measure] Promise<Lock> request(
         DOMString name,
         LockOptions options,
         LockGrantedCallback callback);
 
-    [CallWith=ScriptState, RaisesException] Promise<LockState> query();
+    [CallWith=ScriptState, RaisesException, Measure] Promise<LockState> query();
 };

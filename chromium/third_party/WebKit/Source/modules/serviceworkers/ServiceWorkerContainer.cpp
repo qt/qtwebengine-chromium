@@ -45,6 +45,7 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/messaging/BlinkTransferableMessage.h"
 #include "core/messaging/MessagePort.h"
 #include "modules/EventTargetModules.h"
 #include "modules/serviceworkers/NavigatorServiceWorker.h"
@@ -61,7 +62,7 @@
 #include "public/platform/modules/serviceworker/WebServiceWorker.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
-#include "third_party/WebKit/common/service_worker/service_worker_error_type.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom-blink.h"
 
 namespace blink {
 
@@ -464,20 +465,18 @@ void ServiceWorkerContainer::SetController(
 
 void ServiceWorkerContainer::DispatchMessageEvent(
     std::unique_ptr<WebServiceWorker::Handle> handle,
-    const WebString& message,
-    WebVector<MessagePortChannel> channels) {
+    TransferableMessage message) {
   if (!GetExecutionContext() || !GetExecutionContext()->ExecutingWindow())
     return;
-
+  auto msg = ToBlinkTransferableMessage(std::move(message));
   MessagePortArray* ports =
-      MessagePort::EntanglePorts(*GetExecutionContext(), std::move(channels));
-  scoped_refptr<SerializedScriptValue> value =
-      SerializedScriptValue::Create(message);
+      MessagePort::EntanglePorts(*GetExecutionContext(), std::move(msg.ports));
   ServiceWorker* source =
       ServiceWorker::From(GetExecutionContext(), std::move(handle));
   DispatchEvent(MessageEvent::Create(
-      ports, value, GetExecutionContext()->GetSecurityOrigin()->ToString(),
-      String() /* lastEventId */, source, String() /* suborigin */));
+      ports, std::move(msg.message),
+      GetExecutionContext()->GetSecurityOrigin()->ToString(),
+      String() /* lastEventId */, source));
 }
 
 void ServiceWorkerContainer::CountFeature(mojom::WebFeature feature) {

@@ -33,7 +33,8 @@ class WebFrameSchedulerImplTest : public ::testing::Test {
     mock_task_runner_ =
         base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, true);
     scheduler_.reset(new RendererSchedulerImpl(
-        CreateTaskQueueManagerForTest(nullptr, mock_task_runner_, &clock_)));
+        CreateTaskQueueManagerForTest(nullptr, mock_task_runner_, &clock_),
+        base::nullopt));
     web_view_scheduler_.reset(
         new WebViewSchedulerImpl(nullptr, nullptr, scheduler_.get(), false));
     web_frame_scheduler_ = web_view_scheduler_->CreateWebFrameSchedulerImpl(
@@ -274,7 +275,7 @@ TEST_F(WebFrameSchedulerImplTest, ThrottlingObserver) {
   observer->CheckObserverState(throttled_count, not_throttled_count,
                                stopped_count);
 
-  web_frame_scheduler_->AddThrottlingObserver(
+  auto observer_handle = web_frame_scheduler_->AddThrottlingObserver(
       WebFrameScheduler::ObserverType::kLoader, observer.get());
 
   // Initial state should be synchronously notified here.
@@ -295,13 +296,13 @@ TEST_F(WebFrameSchedulerImplTest, ThrottlingObserver) {
                                stopped_count);
 
   // Setting background page to STOPPED, notifies observers of kStopped.
-  web_view_scheduler_->SetPageStopped(true);
+  web_view_scheduler_->SetPageFrozen(true);
   observer->CheckObserverState(throttled_count, not_throttled_count,
                                ++stopped_count);
 
   // When page is not in the STOPPED state, then page visibility is used,
   // notifying observer of kThrottled.
-  web_view_scheduler_->SetPageStopped(false);
+  web_view_scheduler_->SetPageFrozen(false);
   observer->CheckObserverState(++throttled_count, not_throttled_count,
                                stopped_count);
 
@@ -313,8 +314,7 @@ TEST_F(WebFrameSchedulerImplTest, ThrottlingObserver) {
 
   // Remove from the observer list, and see if any other callback should not be
   // invoked when the condition is changed.
-  web_frame_scheduler_->RemoveThrottlingObserver(
-      WebFrameScheduler::ObserverType::kLoader, observer.get());
+  observer_handle.reset();
   web_view_scheduler_->SetPageVisible(false);
 
   // Wait 100 secs virtually and run pending tasks just in case.

@@ -6,7 +6,6 @@
 #define CC_IPC_CC_PARAM_TRAITS_MACROS_H_
 
 #include "cc/paint/filter_operation.h"
-#include "cc/trees/render_frame_metadata.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/debug_border_draw_quad.h"
@@ -24,7 +23,6 @@
 #include "components/viz/common/resources/transferable_resource.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "components/viz/common/surfaces/surface_info.h"
-#include "components/viz/common/surfaces/surface_sequence.h"
 #include "ui/gfx/ipc/buffer_types/gfx_param_traits.h"
 #include "ui/gfx/ipc/color/gfx_param_traits.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
@@ -44,11 +42,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(viz::ResourceFormat, viz::RESOURCE_FORMAT_MAX)
 
 // TODO(fsamuel): This trait belongs with skia code.
 IPC_ENUM_TRAITS_MAX_VALUE(SkBlendMode, SkBlendMode::kLastMode)
-
-IPC_STRUCT_TRAITS_BEGIN(viz::SurfaceSequence)
-  IPC_STRUCT_TRAITS_MEMBER(frame_sink_id)
-  IPC_STRUCT_TRAITS_MEMBER(sequence)
-IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(viz::DrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(material)
@@ -189,8 +182,6 @@ IPC_STRUCT_TRAITS_BEGIN(viz::CompositorFrameMetadata)
   IPC_STRUCT_TRAITS_MEMBER(root_layer_size)
   IPC_STRUCT_TRAITS_MEMBER(min_page_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(max_page_scale_factor)
-  IPC_STRUCT_TRAITS_MEMBER(root_overflow_x_hidden)
-  IPC_STRUCT_TRAITS_MEMBER(root_overflow_y_hidden)
   IPC_STRUCT_TRAITS_MEMBER(root_overflow_y_hidden)
   IPC_STRUCT_TRAITS_MEMBER(may_contain_video)
   IPC_STRUCT_TRAITS_MEMBER(
@@ -203,15 +194,11 @@ IPC_STRUCT_TRAITS_BEGIN(viz::CompositorFrameMetadata)
   IPC_STRUCT_TRAITS_MEMBER(selection)
   IPC_STRUCT_TRAITS_MEMBER(latency_info)
   IPC_STRUCT_TRAITS_MEMBER(referenced_surfaces)
-  IPC_STRUCT_TRAITS_MEMBER(deadline_in_frames)
+  IPC_STRUCT_TRAITS_MEMBER(deadline)
   IPC_STRUCT_TRAITS_MEMBER(activation_dependencies)
   IPC_STRUCT_TRAITS_MEMBER(content_source_id)
   IPC_STRUCT_TRAITS_MEMBER(begin_frame_ack)
   IPC_STRUCT_TRAITS_MEMBER(frame_token)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(cc::RenderFrameMetadata)
-  IPC_STRUCT_TRAITS_MEMBER(root_scroll_offset)
 IPC_STRUCT_TRAITS_END()
 
 #endif  // CC_IPC_CC_PARAM_TRAITS_MACROS_H_

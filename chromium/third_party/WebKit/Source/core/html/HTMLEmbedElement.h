@@ -32,12 +32,14 @@ class CORE_EXPORT HTMLEmbedElement final : public HTMLPlugInElement {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  static HTMLEmbedElement* Create(Document&, bool created_by_parser = false);
+  static HTMLEmbedElement* Create(
+      Document&,
+      const CreateElementFlags = CreateElementFlags());
 
   bool IsExposed() const;
 
  private:
-  HTMLEmbedElement(Document&, bool created_by_parser);
+  HTMLEmbedElement(Document&, const CreateElementFlags);
 
   void ParseAttribute(const AttributeModificationParams&) override;
   bool IsPresentationAttribute(const QualifiedName&) const override;
@@ -55,8 +57,7 @@ class CORE_EXPORT HTMLEmbedElement final : public HTMLPlugInElement {
 
   void UpdatePluginInternal() override;
 
-  void ParametersForPlugin(Vector<String>& param_names,
-                           Vector<String>& param_values);
+  void ParametersForPlugin(PluginParameters& plugin_params);
 
   NamedItemType GetNamedItemType() const override {
     return NamedItemType::kName;

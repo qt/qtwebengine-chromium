@@ -41,14 +41,16 @@ bool AppendFragmentOffsetAndSize(const NGPhysicalFragment* fragment,
   return has_content;
 }
 
-String StringForBoxType(NGPhysicalFragment::NGBoxType box_type,
-                        bool is_old_layout_root) {
+String StringForBoxType(const NGPhysicalFragment& fragment) {
   StringBuilder result;
-  switch (box_type) {
+  switch (fragment.BoxType()) {
     case NGPhysicalFragment::NGBoxType::kNormalBox:
       break;
-    case NGPhysicalFragment::NGBoxType::kInlineBlock:
-      result.Append("inline-block");
+    case NGPhysicalFragment::NGBoxType::kInlineBox:
+      result.Append("inline");
+      break;
+    case NGPhysicalFragment::NGBoxType::kAtomicInline:
+      result.Append("atomic-inline");
       break;
     case NGPhysicalFragment::NGBoxType::kFloating:
       result.Append("floating");
@@ -56,17 +58,24 @@ String StringForBoxType(NGPhysicalFragment::NGBoxType box_type,
     case NGPhysicalFragment::NGBoxType::kOutOfFlowPositioned:
       result.Append("out-of-flow-positioned");
       break;
-    case NGPhysicalFragment::NGBoxType::kAnonymousBox:
-      result.Append("anonymous");
-      break;
-    default:
-      NOTREACHED();
   }
-  if (is_old_layout_root) {
+  if (fragment.IsOldLayoutRoot()) {
     if (result.length())
       result.Append(" ");
     result.Append("old-layout-root");
   }
+  if (fragment.IsBlockFlow()) {
+    if (result.length())
+      result.Append(" ");
+    result.Append("block-flow");
+  }
+  if (fragment.IsBox() &&
+      static_cast<const NGPhysicalBoxFragment&>(fragment).ChildrenInline()) {
+    if (result.length())
+      result.Append(" ");
+    result.Append("children-inline");
+  }
+
   return result.ToString();
 }
 
@@ -81,23 +90,28 @@ void AppendFragmentToString(const NGPhysicalFragment* fragment,
 
   bool has_content = false;
   if (fragment->IsBox()) {
+    const auto* box = ToNGPhysicalBoxFragment(fragment);
     if (flags & NGPhysicalFragment::DumpType) {
       builder->Append("Box");
-      String box_type =
-          StringForBoxType(fragment->BoxType(), fragment->IsOldLayoutRoot());
+      String box_type = StringForBoxType(*fragment);
+      has_content = true;
       if (!box_type.IsEmpty()) {
         builder->Append(" (");
         builder->Append(box_type);
         builder->Append(")");
       }
-      has_content = true;
+      if (flags & NGPhysicalFragment::DumpSelfPainting &&
+          box->HasSelfPaintingLayer()) {
+        if (box_type.IsEmpty())
+          builder->Append(" ");
+        builder->Append("(self paint)");
+      }
     }
     has_content =
         AppendFragmentOffsetAndSize(fragment, builder, flags, has_content);
 
     builder->Append("\n");
 
-    const auto* box = ToNGPhysicalBoxFragment(fragment);
     if (flags & NGPhysicalFragment::DumpSubtree) {
       const auto& children = box->Children();
       for (unsigned i = 0; i < children.size(); i++)
@@ -212,8 +226,21 @@ bool NGPhysicalFragment::HasLayer() const {
   return layout_object_->HasLayer();
 }
 
+PaintLayer* NGPhysicalFragment::Layer() const {
+  if (!HasLayer())
+    return nullptr;
+
+  // If the underlying LayoutObject has a layer it's guranteed to be a
+  // LayoutBoxModelObject.
+  return static_cast<LayoutBoxModelObject*>(layout_object_)->Layer();
+}
+
 bool NGPhysicalFragment::IsBlockFlow() const {
   return layout_object_ && layout_object_->IsLayoutBlockFlow();
+}
+
+bool NGPhysicalFragment::IsListMarker() const {
+  return layout_object_ && layout_object_->IsLayoutNGListMarker();
 }
 
 bool NGPhysicalFragment::IsPlacedByLayoutNG() const {
@@ -295,11 +322,29 @@ scoped_refptr<NGPhysicalFragment> NGPhysicalFragment::CloneWithoutOffset()
 }
 
 String NGPhysicalFragment::ToString() const {
-  return String::Format(
-      "Type: '%d' Size: '%s' Offset: '%s' Placed: '%d', BoxType: '%s'", Type(),
+  StringBuilder output;
+  output.Append(String::Format(
+      "Type: '%d' Size: '%s' Offset: '%s' Placed: '%d'", Type(),
       Size().ToString().Ascii().data(),
-      is_placed_ ? Offset().ToString().Ascii().data() : "no offset", IsPlaced(),
-      StringForBoxType(BoxType(), IsOldLayoutRoot()).Ascii().data());
+      is_placed_ ? Offset().ToString().Ascii().data() : "no offset",
+      IsPlaced()));
+  switch (Type()) {
+    case kFragmentBox:
+      output.Append(String::Format(", BoxType: '%s'",
+                                   StringForBoxType(*this).Ascii().data()));
+      break;
+    case kFragmentText: {
+      const NGPhysicalTextFragment& text = ToNGPhysicalTextFragment(*this);
+      output.Append(String::Format(", Text: (%u,%u) \"", text.StartOffset(),
+                                   text.EndOffset()));
+      output.Append(text.Text());
+      output.Append("\"");
+      break;
+    }
+    case kFragmentLineBox:
+      break;
+  }
+  return output.ToString();
 }
 
 String NGPhysicalFragment::DumpFragmentTree(DumpFlags flags,

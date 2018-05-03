@@ -11,8 +11,6 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/base_switches.h"
-#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/macros.h"
@@ -34,6 +32,7 @@
 #include "components/variations/proto/study.pb.h"
 #include "components/variations/proto/variations_seed.pb.h"
 #include "components/web_resource/resource_request_allowed_notifier_test_util.h"
+#include "net/base/mock_network_change_notifier.h"
 #include "net/base/url_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
@@ -384,6 +383,7 @@ TEST_F(VariationsServiceTest, VariationsURLHasParams) {
 }
 
 TEST_F(VariationsServiceTest, RequestsInitiallyNotAllowed) {
+  net::test::MockNetworkChangeNotifier network_change_notifier;
   // Pass ownership to TestVariationsService, but keep a weak pointer to
   // manipulate it for this test.
   std::unique_ptr<web_resource::TestRequestAllowedNotifier> test_notifier =
@@ -391,6 +391,7 @@ TEST_F(VariationsServiceTest, RequestsInitiallyNotAllowed) {
   web_resource::TestRequestAllowedNotifier* raw_notifier = test_notifier.get();
   TestVariationsService test_service(std::move(test_notifier), &prefs_,
                                      GetMetricsStateManager(), true);
+  test_service.InitResourceRequestedAllowedNotifier();
 
   // Force the notifier to initially disallow requests.
   raw_notifier->SetRequestsAllowedOverride(false);
@@ -746,137 +747,6 @@ TEST_F(VariationsServiceTest, OverrideStoredPermanentCountry) {
   }
 }
 
-TEST_F(VariationsServiceTest, SafeMode_NoPrefs) {
-  // Create a variations service.
-  base::HistogramTester histogram_tester;
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.FellBackToSafeMode",
-                                      false, 1);
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.Streak.Crashes", 0,
-                                      1);
-  histogram_tester.ExpectUniqueSample(
-      "Variations.SafeMode.Streak.FetchFailures", 0, 1);
-}
-
-TEST_F(VariationsServiceTest, SafeMode_NoCrashes_NoFetchFailures) {
-  prefs_.SetInteger(prefs::kVariationsCrashStreak, 0);
-  prefs_.SetInteger(prefs::kVariationsFailedToFetchSeedStreak, 0);
-
-  // Create a variations service.
-  base::HistogramTester histogram_tester;
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.FellBackToSafeMode",
-                                      false, 1);
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.Streak.Crashes", 0,
-                                      1);
-  histogram_tester.ExpectUniqueSample(
-      "Variations.SafeMode.Streak.FetchFailures", 0, 1);
-}
-
-TEST_F(VariationsServiceTest, SafeMode_SomeCrashes_SomeFetchFailures) {
-  prefs_.SetInteger(prefs::kVariationsCrashStreak, 1);
-  prefs_.SetInteger(prefs::kVariationsFailedToFetchSeedStreak, 2);
-
-  // Create a variations service.
-  base::HistogramTester histogram_tester;
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.FellBackToSafeMode",
-                                      false, 1);
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.Streak.Crashes", 1,
-                                      1);
-  histogram_tester.ExpectUniqueSample(
-      "Variations.SafeMode.Streak.FetchFailures", 2, 1);
-}
-
-TEST_F(VariationsServiceTest, SafeMode_NoCrashes_ManyFetchFailures) {
-  prefs_.SetInteger(prefs::kVariationsCrashStreak, 0);
-  prefs_.SetInteger(prefs::kVariationsFailedToFetchSeedStreak, 3);
-
-  // Create a variations service.
-  base::HistogramTester histogram_tester;
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.FellBackToSafeMode",
-                                      true, 1);
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.Streak.Crashes", 0,
-                                      1);
-  histogram_tester.ExpectUniqueSample(
-      "Variations.SafeMode.Streak.FetchFailures", 3, 1);
-}
-
-TEST_F(VariationsServiceTest, SafeMode_ManyCrashes_NoFetchFailures) {
-  prefs_.SetInteger(prefs::kVariationsCrashStreak, 3);
-  prefs_.SetInteger(prefs::kVariationsFailedToFetchSeedStreak, 0);
-
-  // Create a variations service.
-  base::HistogramTester histogram_tester;
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.FellBackToSafeMode",
-                                      true, 1);
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.Streak.Crashes", 3,
-                                      1);
-  histogram_tester.ExpectUniqueSample(
-      "Variations.SafeMode.Streak.FetchFailures", 0, 1);
-}
-
-TEST_F(VariationsServiceTest, SafeMode_OverriddenByCommandlineFlag) {
-  prefs_.SetInteger(prefs::kVariationsCrashStreak, 3);
-  prefs_.SetInteger(prefs::kVariationsFailedToFetchSeedStreak, 3);
-  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      ::switches::kForceFieldTrials, "SomeFieldTrial");
-
-  // Create a variations service.
-  base::HistogramTester histogram_tester;
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.FellBackToSafeMode",
-                                      false, 1);
-  histogram_tester.ExpectUniqueSample("Variations.SafeMode.Streak.Crashes", 3,
-                                      1);
-  histogram_tester.ExpectUniqueSample(
-      "Variations.SafeMode.Streak.FetchFailures", 3, 1);
-}
-
-TEST_F(VariationsServiceTest, SafeMode_CrashIncrementsCrashStreak) {
-  prefs_.SetInteger(prefs::kVariationsCrashStreak, 1);
-  prefs_.SetBoolean(metrics::prefs::kStabilityExitedCleanly, false);
-
-  // Create a variations service.
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  EXPECT_EQ(2, prefs_.GetInteger(prefs::kVariationsCrashStreak));
-}
-
-TEST_F(VariationsServiceTest, SafeMode_NoCrashPreservesCrashStreak) {
-  prefs_.SetInteger(prefs::kVariationsCrashStreak, 1);
-  prefs_.SetBoolean(metrics::prefs::kStabilityExitedCleanly, true);
-
-  // Create a variations service.
-  TestVariationsService service(
-      std::make_unique<web_resource::TestRequestAllowedNotifier>(&prefs_),
-      &prefs_, GetMetricsStateManager(), true);
-
-  EXPECT_EQ(1, prefs_.GetInteger(prefs::kVariationsCrashStreak));
-}
-
 TEST_F(VariationsServiceTest, SafeMode_StartingRequestIncrementsFetchFailures) {
   prefs_.SetInteger(prefs::kVariationsFailedToFetchSeedStreak, 1);
 
@@ -894,6 +764,8 @@ TEST_F(VariationsServiceTest, SafeMode_StartingRequestIncrementsFetchFailures) {
 TEST_F(VariationsServiceTest, SafeMode_SuccessfulFetchClearsFailureStreaks) {
   prefs_.SetInteger(prefs::kVariationsCrashStreak, 2);
   prefs_.SetInteger(prefs::kVariationsFailedToFetchSeedStreak, 1);
+
+  net::test::MockNetworkChangeNotifier network_change_notifier;
 
   // Create a variations service and perform a successful fetch.
   VariationsService service(

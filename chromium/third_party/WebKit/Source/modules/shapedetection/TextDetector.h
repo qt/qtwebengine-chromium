@@ -10,7 +10,7 @@
 #include "modules/ModulesExport.h"
 #include "modules/canvas/canvas2d/CanvasRenderingContext2D.h"
 #include "modules/shapedetection/ShapeDetector.h"
-#include "services/shape_detection/public/interfaces/textdetection.mojom-blink.h"
+#include "services/shape_detection/public/mojom/textdetection.mojom-blink.h"
 
 namespace blink {
 
@@ -28,8 +28,7 @@ class MODULES_EXPORT TextDetector final : public ShapeDetector {
   explicit TextDetector(ExecutionContext*);
   ~TextDetector() override = default;
 
-  ScriptPromise DoDetect(ScriptPromiseResolver*,
-                         skia::mojom::blink::BitmapPtr) override;
+  ScriptPromise DoDetect(ScriptPromiseResolver*, SkBitmap) override;
   void OnDetectText(
       ScriptPromiseResolver*,
       Vector<shape_detection::mojom::blink::TextDetectionResultPtr>);

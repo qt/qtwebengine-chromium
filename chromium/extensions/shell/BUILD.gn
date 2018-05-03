@@ -9,6 +9,7 @@ import("//components/nacl/features.gni")
 import("//extensions/features/features.gni")
 import("//testing/test.gni")
 import("//tools/grit/grit_rule.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 if (is_mac) {
   import("//build/config/mac/rules.gni")
   import("//third_party/icu/config.gni")
@@ -39,7 +40,9 @@ source_set("app_shell_lib") {
     "//components/guest_view/browser",
     "//components/guest_view/common",
     "//components/guest_view/renderer",
-    "//components/nacl/common:features",
+    "//components/keep_alive_registry",
+    "//components/keyed_service/content:content",
+    "//components/nacl/common:buildflags",
     "//components/network_session_configurator/common",
     "//components/pref_registry",
     "//components/prefs",
@@ -128,6 +131,8 @@ source_set("app_shell_lib") {
     "browser/shell_display_info_provider.h",
     "browser/shell_extension_host_delegate.cc",
     "browser/shell_extension_host_delegate.h",
+    "browser/shell_extension_loader.cc",
+    "browser/shell_extension_loader.h",
     "browser/shell_extension_system.cc",
     "browser/shell_extension_system.h",
     "browser/shell_extension_system_factory.cc",
@@ -138,6 +143,8 @@ source_set("app_shell_lib") {
     "browser/shell_extensions_api_client.h",
     "browser/shell_extensions_browser_client.cc",
     "browser/shell_extensions_browser_client.h",
+    "browser/shell_keep_alive_requester.cc",
+    "browser/shell_keep_alive_requester.h",
     "browser/shell_native_app_window.cc",
     "browser/shell_native_app_window.h",
     "browser/shell_native_app_window_mac.h",
@@ -285,6 +292,8 @@ test("app_shell_unittests") {
   sources = [
     "../test/extensions_unittests_main.cc",
     "browser/api/identity/identity_api_unittest.cc",
+    "browser/shell_extension_loader_unittest.cc",
+    "browser/shell_keep_alive_requester_unittest.cc",
     "browser/shell_oauth2_token_service_unittest.cc",
     "browser/shell_prefs_unittest.cc",
     "browser/system_logs/shell_system_logs_fetcher_unittest.cc",
@@ -298,14 +307,15 @@ test("app_shell_unittests") {
     "$root_out_dir/extensions_shell_and_test.pak",
 
     #"$root_out_dir/natives_blob.bin", # move to gin
-    #"$root_out_dir/snapshot_blob.bin",
   ]
 
   deps = [
     ":app_shell_lib",
+    "//apps",
     "//base",
     "//base/test:test_support",
     "//components/feedback",
+    "//components/keep_alive_registry",
     "//content/test:test_support",
     "//extensions:shell_and_test_pak",
     "//extensions:test_support",
@@ -363,23 +373,24 @@ if (is_mac) {
     sources = [
       "$root_gen_dir/extensions/shell/app_shell_resources.pak",
       "$root_out_dir/extensions_shell_and_test.pak",
-      "$root_out_dir/v8_context_snapshot.bin",
     ]
     public_deps = [
       ":resources_grit",
       "//extensions:shell_and_test_pak",
-      "//tools/v8_context_snapshot:v8_context_snapshot",
     ]
     if (icu_use_data_file) {
       sources += [ "$root_out_dir/icudtl.dat" ]
       public_deps += [ "//third_party/icu:icudata" ]
     }
     if (v8_use_external_startup_data) {
-      sources += [
-        "$root_out_dir/natives_blob.bin",
-        "$root_out_dir/snapshot_blob.bin",
-      ]
+      sources += [ "$root_out_dir/natives_blob.bin" ]
       public_deps += [ "//v8" ]
+      if (use_v8_context_snapshot) {
+        sources += [ "$root_out_dir/v8_context_snapshot.bin" ]
+        public_deps += [ "//tools/v8_context_snapshot" ]
+      } else {
+        sources += [ "$root_out_dir/snapshot_blob.bin" ]
+      }
     }
     outputs = [
       "{{bundle_resources_dir}}/{{source_file_part}}",

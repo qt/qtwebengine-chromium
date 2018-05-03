@@ -43,6 +43,17 @@ enum PageAccessibilityConfiguration {
   PageInaccessible,
   PageReadWrite,
   PageReadExecute,
+  // This flag is deprecated and will go away soon.
+  // TODO(bbudge) Remove this as soon as V8 doesn't need RWX pages.
+  PageReadWriteExecute,
+};
+
+// Mac OSX supports tagged memory regions, to help in debugging.
+enum class PageTag {
+  kFirst = 240,     // Minimum tag value.
+  kChromium = 254,  // Chromium page, including off-heap V8 ArrayBuffers.
+  kV8 = 255,        // V8 heap pages.
+  kLast = kV8       // Maximum tag value.
 };
 
 // Allocate one or more pages.
@@ -63,6 +74,7 @@ BASE_EXPORT void* AllocPages(void* address,
                              size_t length,
                              size_t align,
                              PageAccessibilityConfiguration page_accessibility,
+                             PageTag tag = PageTag::kChromium,
                              bool commit = true);
 
 // Free one or more pages starting at |address| and continuing for |length|

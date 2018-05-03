@@ -6,6 +6,7 @@
 #define CustomElement_h
 
 #include "core/CoreExport.h"
+#include "core/dom/CreateElementFlags.h"
 #include "core/dom/Element.h"
 #include "platform/text/Character.h"
 #include "platform/wtf/ASCIICType.h"
@@ -67,15 +68,19 @@ class CORE_EXPORT CustomElement {
       const AtomicString& local_name);
   static bool ShouldCreateCustomizedBuiltinElement(const QualifiedName&);
 
-  static HTMLElement* CreateCustomElementSync(Document&, const QualifiedName&);
-  static HTMLElement* CreateCustomElementSync(Document&,
-                                              const AtomicString& local_name,
-                                              CustomElementDefinition*);
-  static HTMLElement* CreateCustomElementSync(Document&,
-                                              const QualifiedName&,
-                                              CustomElementDefinition*);
-  static HTMLElement* CreateCustomElementAsync(Document&, const QualifiedName&);
+  // Look up a definition, and create an autonomous custom element if
+  // it's found.
+  static HTMLElement* CreateCustomElement(Document&,
+                                          const QualifiedName&,
+                                          const CreateElementFlags);
 
+  // Creates "uncustomized" or "undefined" state element. This should be
+  // used when CustomElementDefinition is not found.
+  static Element* CreateUncustomizedOrUndefinedElement(
+      Document&,
+      const QualifiedName&,
+      const CreateElementFlags,
+      const AtomicString& is_value);
   static HTMLElement* CreateFailedElement(Document&, const QualifiedName&);
 
   static void Enqueue(Element*, CustomElementReaction*);
@@ -97,7 +102,18 @@ class CORE_EXPORT CustomElement {
   // disallows these as custom element names.
   // https://html.spec.whatwg.org/#valid-custom-element-name
   static bool IsHyphenatedSpecElementName(const AtomicString&);
-  static HTMLElement* CreateUndefinedElement(Document&, const QualifiedName&);
+
+  enum CreateUUCheckLevel {
+    kCheckAll,
+    // QualifiedName is a valid custom element name, and is_value is null.
+    kQNameIsValid,
+  };
+  template <CreateUUCheckLevel>
+  static Element* CreateUncustomizedOrUndefinedElementTemplate(
+      Document&,
+      const QualifiedName&,
+      const CreateElementFlags,
+      const AtomicString& is_value);
 };
 
 }  // namespace blink

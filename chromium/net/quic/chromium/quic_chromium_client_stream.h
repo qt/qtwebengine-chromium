@@ -14,6 +14,7 @@
 #include "base/callback_forward.h"
 #include "base/containers/circular_deque.h"
 #include "base/macros.h"
+#include "net/base/completion_callback.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_export.h"
 #include "net/base/upload_data_stream.h"
@@ -23,6 +24,7 @@
 #include "net/log/net_log_with_source.h"
 #include "net/quic/core/quic_spdy_stream.h"
 #include "net/quic/platform/api/quic_string_piece.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace net {
 
@@ -124,7 +126,6 @@ class NET_EXPORT_PRIVATE QuicChromiumClientStream : public QuicSpdyStream {
     void OnPromiseHeaderList(QuicStreamId promised_id,
                              size_t frame_len,
                              const QuicHeaderList& header_list);
-    SpdyPriority priority() const;
     bool can_migrate();
 
     const NetLogWithSource& net_log() const;
@@ -183,7 +184,6 @@ class NET_EXPORT_PRIVATE QuicChromiumClientStream : public QuicSpdyStream {
     bool is_done_reading_;
     bool is_first_stream_;
     size_t num_bytes_consumed_;
-    SpdyPriority priority_;
 
     int net_error_;
 
@@ -194,9 +194,11 @@ class NET_EXPORT_PRIVATE QuicChromiumClientStream : public QuicSpdyStream {
     DISALLOW_COPY_AND_ASSIGN(Handle);
   };
 
-  QuicChromiumClientStream(QuicStreamId id,
-                           QuicSpdyClientSessionBase* session,
-                           const NetLogWithSource& net_log);
+  QuicChromiumClientStream(
+      QuicStreamId id,
+      QuicSpdyClientSessionBase* session,
+      const NetLogWithSource& net_log,
+      const NetworkTrafficAnnotationTag& traffic_annotation);
 
   ~QuicChromiumClientStream() override;
 
@@ -217,7 +219,6 @@ class NET_EXPORT_PRIVATE QuicChromiumClientStream : public QuicSpdyStream {
                       bool fin,
                       QuicReferenceCountedPointer<QuicAckListenerInterface>
                           ack_listener) override;
-  SpdyPriority priority() const override;
 
   // While the server's set_priority shouldn't be called externally, the creator
   // of client-side streams should be able to set the priority.

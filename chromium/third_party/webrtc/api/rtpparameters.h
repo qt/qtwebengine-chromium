@@ -362,13 +362,34 @@ struct RtpEncodingParameters {
   rtc::Optional<DtxStatus> dtx;
 
   // The relative bitrate priority of this encoding. Currently this is
-  // implemented on the sender level (using the first RtpEncodingParameters
-  // of the rtp parameters).
+  // implemented for the entire rtp sender by using the value of the first
+  // encoding parameter.
+  // TODO(webrtc.bugs.org/8630): Implement this per encoding parameter.
+  // Currently there is logic for how bitrate is distributed per simulcast layer
+  // in the VideoBitrateAllocator. This must be updated to incorporate relative
+  // bitrate priority.
   double bitrate_priority = kDefaultBitratePriority;
+
+  // Indicates the preferred duration of media represented by a packet in
+  // milliseconds for this encoding. If set, this will take precedence over the
+  // ptime set in the RtpCodecParameters. This could happen if SDP negotiation
+  // creates a ptime for a specific codec, which is later changed in the
+  // RtpEncodingParameters by the application.
+  // TODO(bugs.webrtc.org/8819): Not implemented.
+  rtc::Optional<int> ptime;
 
   // If set, this represents the Transport Independent Application Specific
   // maximum bandwidth defined in RFC3890. If unset, there is no maximum
-  // bitrate.
+  // bitrate. Currently this is implemented for the entire rtp sender by using
+  // the value of the first encoding parameter.
+  //
+  // TODO(webrtc.bugs.org/8655): Implement this per encoding parameter.
+  // Current implementation for a sender:
+  // The max bitrate is decided by taking the minimum of the first encoding
+  // parameter's max_bitrate_bps and the max bitrate specified by the sdp with
+  // the b=AS attribute. In the case of simulcast video, default values are used
+  // for each simulcast layer, and if there is some bitrate left over from the
+  // sender's max bitrate then it will roll over into the highest quality layer.
   //
   // Just called "maxBitrate" in ORTC spec.
   //
@@ -389,10 +410,12 @@ struct RtpEncodingParameters {
   // TODO(deadbeef): Not implemented.
   double scale_framerate_down_by = 1.0;
 
-  // For an RtpSender, set to true to cause this encoding to be sent, and false
-  // for it not to be sent. For an RtpReceiver, set to true to cause the
-  // encoding to be decoded, and false for it to be ignored.
-  // TODO(deadbeef): Not implemented for PeerConnection RtpReceivers.
+  // For an RtpSender, set to true to cause this encoding to be encoded and
+  // sent, and false for it not to be encoded and sent. This allows control
+  // across multiple encodings of a sender for turning simulcast layers on and
+  // off.
+  // TODO(webrtc.bugs.org/8807): Updating this parameter will trigger an encoder
+  // reset, but this isn't necessarily required.
   bool active = true;
 
   // Value to use for RID RTP header extension.
@@ -408,7 +431,7 @@ struct RtpEncodingParameters {
   bool operator==(const RtpEncodingParameters& o) const {
     return ssrc == o.ssrc && codec_payload_type == o.codec_payload_type &&
            fec == o.fec && rtx == o.rtx && dtx == o.dtx &&
-           bitrate_priority == o.bitrate_priority &&
+           bitrate_priority == o.bitrate_priority && ptime == o.ptime &&
            max_bitrate_bps == o.max_bitrate_bps &&
            max_framerate == o.max_framerate &&
            scale_resolution_down_by == o.scale_resolution_down_by &&

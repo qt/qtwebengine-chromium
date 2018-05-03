@@ -39,11 +39,14 @@
       =1 {&lt;1 line not shown&gt;}
       other {&lt;$1 lines not shown&gt;}}
   </message>
-  <message name="IDS_MD_EXTENSIONS_LEARN_MORE" desc="Learn more text">
-    Learn more
-  </message>
   <message name="IDS_MD_EXTENSIONS_ITEM_ERRORS" desc="The label of the button to bring the user to the page showing an extension's errors.">
     Errors
+  </message>
+  <message name="IDS_MD_EXTENSIONS_ACCESSIBILITY_ERROR_LINE" desc="Accessibility message to indicate what line an error is on. The line of code will be read to the user. The place holder will be a number.">
+    Error on line <ph name="ERROR_LINE">$1</ph>
+  </message>
+  <message name="IDS_MD_EXTENSIONS_ACCESSIBILITY_ERROR_MULTI_LINE" desc="Accessibility message to indicate the lines that an error spans. The lines of code will be read to the user. The place holders will be numbers.">
+    Error from line <ph name="ERROR_LINE_START">$1</ph> to <ph name="ERROR_LINE_END">$2</ph>
   </message>
   <message name="IDS_MD_EXTENSIONS_GUEST_MODE" desc="The text displayed when viewing the page under guest-mode to indicate that guests cannot use this feature.">
     Extension management is not available to Guest users. Please sign in to manage extensions.
@@ -75,7 +78,7 @@
   <message name="IDS_MD_EXTENSIONS_ITEM_DETAILS" desc="The text on the button to show more details for a given extension.">
     Details
   </message>
-  <message name="IDS_MD_EXTENSIONS_EXTENSION_A11Y_ASSOCIATION" desc="Label used to associate an app or extension with actions for screen readers. This will only be read out lout.">
+  <message name="IDS_MD_EXTENSIONS_EXTENSION_A11Y_ASSOCIATION" desc="Label used to associate an app or extension with actions a user can take. This label is for screen readers and will only be read out lout. Ex: a button labeled 'Delete' would have the description 'Related to AdBlock'. Without the added description a user on a screen reader would not have context of the extension they want to delete. Note that the action can be 'view details', 'enable', 'delete', 'errors', or something else.">
     Related to <ph name="NAME_PH">$1<ex>AdBlock</ex></ph>
   </message>
   <message name="IDS_MD_EXTENSIONS_APP_ICON" desc="The alt text for the app's icon. Used for accessibility.">
@@ -224,6 +227,9 @@
   </message>
   <message name="IDS_MD_EXTENSIONS_TOOLBAR_UPDATE_DONE" desc="Text used to announce when extensions have been updated. This is for accessibility.">
     Extensions updated
+  </message>
+  <message name="IDS_MD_EXTENSIONS_TOOLBAR_UPDATING_TOAST" desc="Text displayed in a toast popup message while extensions are updating.">
+    Updating...
   </message>
   <message name="IDS_MD_EXTENSIONS_TYPE_A_SHORTCUT" desc="The prompt to the user to enter a keyboard shortcut in order to assign it to an extension.">
     Type a shortcut

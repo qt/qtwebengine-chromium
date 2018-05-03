@@ -21,6 +21,7 @@
             '<(angle_path)/src/tests/perf_tests/BindingPerf.cpp',
             '<(angle_path)/src/tests/perf_tests/BitSetIteratorPerf.cpp',
             '<(angle_path)/src/tests/perf_tests/BufferSubData.cpp',
+            '<(angle_path)/src/tests/perf_tests/CompilerPerf.cpp',
             '<(angle_path)/src/tests/perf_tests/DrawCallPerf.cpp',
             '<(angle_path)/src/tests/perf_tests/DrawCallPerfParams.cpp',
             '<(angle_path)/src/tests/perf_tests/DrawCallPerfParams.h',
@@ -49,7 +50,12 @@
         'angle_perf_tests_win_sources':
         [
             '<(angle_path)/src/tests/perf_tests/IndexDataManagerTest.cpp',
-        ]
+        ],
+        # Only enabled with angle_enable_vulkan. Not exposed in the gyp.
+        'angle_perf_tests_vulkan_sources':
+        [
+            '<(angle_path)/src/tests/perf_tests/VulkanPipelineCachePerf.cpp',
+        ],
     },
     # Everything below (except WinRT-related config) must be also maintained for GN.
     # If you change anything below, also update angle/src/tests/BUILD.gn.

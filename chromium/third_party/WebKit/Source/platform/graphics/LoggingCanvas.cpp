@@ -483,6 +483,11 @@ std::unique_ptr<JSONObject> ObjectForSkPaint(const SkPaint& paint) {
   paint_item->SetString("hinting", HintingName(paint.getHinting()));
   if (paint.getBlendMode() != SkBlendMode::kSrcOver)
     paint_item->SetString("blendMode", SkBlendMode_Name(paint.getBlendMode()));
+  if (const auto* filter = paint.getImageFilter()) {
+    SkString str;
+    filter->toString(&str);
+    paint_item->SetString("imageFilter", str.c_str());
+  }
   return paint_item;
 }
 
@@ -507,8 +512,6 @@ String ClipOpName(SkClipOp op) {
 
 String SaveLayerFlagsToString(SkCanvas::SaveLayerFlags flags) {
   String flags_string = "";
-  if (flags & SkCanvas::kIsOpaque_SaveLayerFlag)
-    flags_string.append("kIsOpaque_SaveLayerFlag ");
   if (flags & SkCanvas::kPreserveLCDText_SaveLayerFlag)
     flags_string.append("kPreserveLCDText_SaveLayerFlag ");
   return flags_string;
@@ -914,7 +917,6 @@ std::unique_ptr<JSONArray> LoggingCanvas::Log() {
   return JSONArray::From(log_->Clone());
 }
 
-#ifndef NDEBUG
 std::unique_ptr<JSONArray> RecordAsJSON(const PaintRecord& record) {
   LoggingCanvas canvas;
   record.Playback(&canvas);
@@ -928,6 +930,19 @@ String RecordAsDebugString(const PaintRecord& record) {
 void ShowPaintRecord(const PaintRecord& record) {
   DLOG(INFO) << RecordAsDebugString(record).Utf8().data();
 }
-#endif
+
+std::unique_ptr<JSONArray> SkPictureAsJSON(const SkPicture& picture) {
+  LoggingCanvas canvas;
+  picture.playback(&canvas);
+  return canvas.Log();
+}
+
+String SkPictureAsDebugString(const SkPicture& picture) {
+  return SkPictureAsJSON(picture)->ToPrettyJSONString();
+}
+
+void ShowSkPicture(const SkPicture& picture) {
+  DLOG(INFO) << SkPictureAsDebugString(picture).Utf8().data();
+}
 
 }  // namespace blink

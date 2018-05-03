@@ -79,22 +79,24 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/layout/AdjustForAbsoluteZoom.h"
+#include "core/layout/LayoutView.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/appcache/ApplicationCache.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/CreateWindow.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/page/scrolling/SnapCoordinator.h"
 #include "core/probe/CoreProbes.h"
 #include "core/script/Modulator.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/WebFrameScheduler.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "platform/weborigin/Suborigin.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebScreenInfo.h"
@@ -655,13 +657,7 @@ void LocalDOMWindow::DispatchMessageEventWithOriginCheck(
     // the timer was scheduled.
     const SecurityOrigin* security_origin = document()->GetSecurityOrigin();
     bool valid_target =
-        intended_target_origin->IsSameSchemeHostPortAndSuborigin(
-            security_origin);
-    if (security_origin->HasSuborigin() &&
-        security_origin->GetSuborigin()->PolicyContains(
-            Suborigin::SuboriginPolicyOptions::kUnsafePostMessageReceive))
-      valid_target =
-          intended_target_origin->IsSameSchemeHostPort(security_origin);
+        intended_target_origin->IsSameSchemeHostPort(security_origin);
 
     if (!valid_target) {
       String message = ExceptionMessages::FailedToExecute(
@@ -1109,9 +1105,13 @@ ScriptPromise LocalDOMWindow::getComputedAccessibleNode(
     ScriptState* script_state,
     Element* element) {
   DCHECK(element);
-  ComputedAccessibleNode* computed_accessible_node =
-      element->GetComputedAccessibleNode();
-  return computed_accessible_node->ComputePromiseProperty(script_state);
+  // TODO(meredithl): Create finer grain method for enabling accessibility.
+  element->GetDocument().GetPage()->GetSettings().SetAccessibilityEnabled(true);
+  ComputedAccessibleNodePromiseResolver* resolver =
+      ComputedAccessibleNodePromiseResolver::Create(script_state, *element);
+  ScriptPromise promise = resolver->Promise();
+  resolver->ComputeAccessibleNode();
+  return promise;
 }
 
 CSSRuleList* LocalDOMWindow::getMatchedCSSRules(
@@ -1144,9 +1144,14 @@ double LocalDOMWindow::devicePixelRatio() const {
   return GetFrame()->DevicePixelRatio();
 }
 
-void LocalDOMWindow::scrollBy(double x,
-                              double y,
-                              ScrollBehavior scroll_behavior) const {
+void LocalDOMWindow::scrollBy(double x, double y) const {
+  ScrollToOptions options;
+  options.setLeft(x);
+  options.setTop(y);
+  scrollBy(options);
+}
+
+void LocalDOMWindow::scrollBy(const ScrollToOptions& scroll_to_options) const {
   if (!IsCurrentlyDisplayedInFrame())
     return;
 
@@ -1160,56 +1165,49 @@ void LocalDOMWindow::scrollBy(double x,
   if (!page)
     return;
 
-  x = ScrollableArea::NormalizeNonFiniteScroll(x);
-  y = ScrollableArea::NormalizeNonFiniteScroll(y);
+  // TODO(810510): Move this logic inside "ScrollableArea::SetScrollOffset" and
+  // rely on ScrollType to detect js scrolls and set the flag. This requires
+  // adding new scroll type to enable this.
+  if (GetFrame()->Loader().GetDocumentLoader()) {
+    GetFrame()
+        ->Loader()
+        .GetDocumentLoader()
+        ->GetInitialScrollState()
+        .was_scrolled_by_js = true;
+  }
+
+  double x = 0.0;
+  double y = 0.0;
+  if (scroll_to_options.hasLeft())
+    x = ScrollableArea::NormalizeNonFiniteScroll(scroll_to_options.left());
+  if (scroll_to_options.hasTop())
+    y = ScrollableArea::NormalizeNonFiniteScroll(scroll_to_options.top());
 
   ScrollableArea* viewport = view->LayoutViewportScrollableArea();
   ScrollOffset current_offset = viewport->GetScrollOffset();
   ScrollOffset scaled_delta(x * GetFrame()->PageZoomFactor(),
                             y * GetFrame()->PageZoomFactor());
+  FloatPoint new_scaled_position = ScrollOffsetToPosition(
+      scaled_delta + current_offset, viewport->ScrollOrigin());
+  if (SnapCoordinator* coordinator = document()->GetSnapCoordinator()) {
+    new_scaled_position = coordinator->GetSnapPositionForPoint(
+        *document()->GetLayoutView(), new_scaled_position,
+        scroll_to_options.hasLeft(), scroll_to_options.hasTop());
+  }
 
-  viewport->SetScrollOffset(current_offset + scaled_delta, kProgrammaticScroll,
-                            scroll_behavior);
-}
-
-void LocalDOMWindow::scrollBy(const ScrollToOptions& scroll_to_options) const {
-  double x = 0.0;
-  double y = 0.0;
-  if (scroll_to_options.hasLeft())
-    x = scroll_to_options.left();
-  if (scroll_to_options.hasTop())
-    y = scroll_to_options.top();
   ScrollBehavior scroll_behavior = kScrollBehaviorAuto;
   ScrollableArea::ScrollBehaviorFromString(scroll_to_options.behavior(),
                                            scroll_behavior);
-  scrollBy(x, y, scroll_behavior);
+  viewport->SetScrollOffset(
+      ScrollPositionToOffset(new_scaled_position, viewport->ScrollOrigin()),
+      kProgrammaticScroll, scroll_behavior);
 }
 
 void LocalDOMWindow::scrollTo(double x, double y) const {
-  if (!IsCurrentlyDisplayedInFrame())
-    return;
-
-  LocalFrameView* view = GetFrame()->View();
-  if (!view)
-    return;
-
-  Page* page = GetFrame()->GetPage();
-  if (!page)
-    return;
-
-  x = ScrollableArea::NormalizeNonFiniteScroll(x);
-  y = ScrollableArea::NormalizeNonFiniteScroll(y);
-
-  // It is only necessary to have an up-to-date layout if the position may be
-  // clamped, which is never the case for (0, 0).
-  if (x || y)
-    document()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  ScrollOffset layout_offset(x * GetFrame()->PageZoomFactor(),
-                             y * GetFrame()->PageZoomFactor());
-  ScrollableArea* viewport = view->LayoutViewportScrollableArea();
-  viewport->SetScrollOffset(layout_offset, kProgrammaticScroll,
-                            kScrollBehaviorAuto);
+  ScrollToOptions options;
+  options.setLeft(x);
+  options.setTop(y);
+  scrollTo(options);
 }
 
 void LocalDOMWindow::scrollTo(const ScrollToOptions& scroll_to_options) const {
@@ -1223,6 +1221,17 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions& scroll_to_options) const {
   Page* page = GetFrame()->GetPage();
   if (!page)
     return;
+
+  // TODO(810510): Move this logic inside "ScrollableArea::SetScrollOffset" and
+  // rely on ScrollType to detect js scrolls and set the flag. This requires
+  // adding new scroll type to enable this.
+  if (GetFrame()->Loader().GetDocumentLoader()) {
+    GetFrame()
+        ->Loader()
+        .GetDocumentLoader()
+        ->GetInitialScrollState()
+        .was_scrolled_by_js = true;
+  }
 
   // It is only necessary to have an up-to-date layout if the position may be
   // clamped, which is never the case for (0, 0).
@@ -1249,12 +1258,21 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions& scroll_to_options) const {
         ScrollableArea::NormalizeNonFiniteScroll(scroll_to_options.top()) *
         GetFrame()->PageZoomFactor();
 
+  FloatPoint new_scaled_position = ScrollOffsetToPosition(
+      ScrollOffset(scaled_x, scaled_y), viewport->ScrollOrigin());
+  if (SnapCoordinator* coordinator = document()->GetSnapCoordinator()) {
+    new_scaled_position = coordinator->GetSnapPositionForPoint(
+        *document()->GetLayoutView(), new_scaled_position,
+        scroll_to_options.hasLeft(), scroll_to_options.hasTop());
+  }
+
   ScrollBehavior scroll_behavior = kScrollBehaviorAuto;
   ScrollableArea::ScrollBehaviorFromString(scroll_to_options.behavior(),
                                            scroll_behavior);
 
-  viewport->SetScrollOffset(ScrollOffset(scaled_x, scaled_y),
-                            kProgrammaticScroll, scroll_behavior);
+  viewport->SetScrollOffset(
+      ScrollPositionToOffset(new_scaled_position, viewport->ScrollOrigin()),
+      kProgrammaticScroll, scroll_behavior);
 }
 
 void LocalDOMWindow::moveBy(int x, int y) const {
@@ -1451,9 +1469,10 @@ void LocalDOMWindow::WarnUnusedPreloads(TimerBase* base) {
 
 void LocalDOMWindow::DispatchLoadEvent() {
   Event* load_event(Event::Create(EventTypeNames::load));
-  if (GetFrame() && GetFrame()->Loader().GetDocumentLoader() &&
-      !GetFrame()->Loader().GetDocumentLoader()->GetTiming().LoadEventStart()) {
-    DocumentLoader* document_loader = GetFrame()->Loader().GetDocumentLoader();
+  DocumentLoader* document_loader =
+      GetFrame() ? GetFrame()->Loader().GetDocumentLoader() : nullptr;
+  if (document_loader &&
+      document_loader->GetTiming().LoadEventStart().is_null()) {
     DocumentLoadTiming& timing = document_loader->GetTiming();
     timing.MarkLoadEventStart();
     DispatchEvent(load_event, document());
@@ -1472,7 +1491,7 @@ void LocalDOMWindow::DispatchLoadEvent() {
   }
 
   if (GetFrame()) {
-    Performance* performance = DOMWindowPerformance::performance(*this);
+    WindowPerformance* performance = DOMWindowPerformance::performance(*this);
     DCHECK(performance);
     performance->NotifyNavigationTimingToObservers();
   }

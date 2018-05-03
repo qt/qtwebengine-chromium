@@ -46,6 +46,7 @@
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/custom/CEReactionsScope.h"
+#include "core/html/custom/CustomElement.h"
 #include "core/html/custom/CustomElementDefinition.h"
 #include "core/html/custom/CustomElementDescriptor.h"
 #include "core/html/custom/CustomElementRegistry.h"
@@ -411,7 +412,13 @@ HTMLFormElement* HTMLConstructionSite::TakeForm() {
 void HTMLConstructionSite::InsertHTMLHtmlStartTagBeforeHTML(
     AtomicHTMLToken* token) {
   DCHECK(document_);
-  HTMLHtmlElement* element = HTMLHtmlElement::Create(*document_);
+  HTMLHtmlElement* element;
+  if (const auto* is_attribute = token->GetAttributeItem(HTMLNames::isAttr)) {
+    element = ToHTMLHtmlElement(document_->CreateElement(
+        HTMLNames::htmlTag, GetCreateElementFlags(), is_attribute->Value()));
+  } else {
+    element = HTMLHtmlElement::Create(*document_);
+  }
   SetAttributes(element, token, parser_content_policy_);
   AttachLater(attachment_root_, element);
   open_elements_.PushHTMLHtmlElement(HTMLStackItem::Create(element, token));
@@ -715,27 +722,31 @@ void HTMLConstructionSite::InsertFormattingElement(AtomicHTMLToken* token) {
 }
 
 void HTMLConstructionSite::InsertScriptElement(AtomicHTMLToken* token) {
-  // http://www.whatwg.org/specs/web-apps/current-work/multipage/scripting-1.html#already-started
-  // http://html5.org/specs/dom-parsing.html#dom-range-createcontextualfragment
-  // For createContextualFragment, the specifications say to mark it
-  // parser-inserted and already-started and later unmark them. However, we
-  // short circuit that logic to avoid the subtree traversal to find script
-  // elements since scripts can never see those flags or effects thereof.
-  const bool parser_inserted = parser_content_policy_ !=
-                               kAllowScriptingContentAndDoNotMarkAlreadyStarted;
-  const bool already_started = is_parsing_fragment_ && parser_inserted;
-  // TODO(csharrison): This logic only works if the tokenizer/parser was not
-  // blocked waiting for scripts when the element was inserted. This usually
-  // fails for instance, on second document.write if a script writes twice in a
-  // row. To fix this, the parser might have to keep track of raw string
-  // position.
-  // TODO(csharrison): Refactor this so that the bools that are passed
-  // in are packed in a bitfield from an enum class.
-  const bool created_during_document_write =
-      OwnerDocumentForCurrentNode().IsInDocumentWrite();
-  HTMLScriptElement* element =
-      HTMLScriptElement::Create(OwnerDocumentForCurrentNode(), parser_inserted,
-                                already_started, created_during_document_write);
+  CreateElementFlags flags;
+  flags
+      // http://www.whatwg.org/specs/web-apps/current-work/multipage/scripting-1.html#already-started
+      // http://html5.org/specs/dom-parsing.html#dom-range-createcontextualfragment
+      // For createContextualFragment, the specifications say to mark it
+      // parser-inserted and already-started and later unmark them. However, we
+      // short circuit that logic to avoid the subtree traversal to find script
+      // elements since scripts can never see those flags or effects thereof.
+      .SetCreatedByParser(parser_content_policy_ !=
+                          kAllowScriptingContentAndDoNotMarkAlreadyStarted)
+      .SetAlreadyStarted(is_parsing_fragment_ && flags.IsCreatedByParser())
+      // TODO(csharrison): This logic only works if the tokenizer/parser was not
+      // blocked waiting for scripts when the element was inserted. This usually
+      // fails for instance, on second document.write if a script writes twice
+      // in a row. To fix this, the parser might have to keep track of raw
+      // string position.
+      .SetCreatedDuringDocumentWrite(
+          OwnerDocumentForCurrentNode().IsInDocumentWrite());
+  HTMLScriptElement* element = nullptr;
+  if (const auto* is_attribute = token->GetAttributeItem(HTMLNames::isAttr)) {
+    element = ToHTMLScriptElement(OwnerDocumentForCurrentNode().CreateElement(
+        HTMLNames::scriptTag, flags, is_attribute->Value()));
+  } else {
+    element = HTMLScriptElement::Create(OwnerDocumentForCurrentNode(), flags);
+  }
   SetAttributes(element, token, parser_content_policy_);
   if (ScriptingContentIsAllowed(parser_content_policy_))
     AttachLater(CurrentNode(), element);
@@ -824,7 +835,8 @@ void HTMLConstructionSite::TakeAllChildren(
 }
 
 CreateElementFlags HTMLConstructionSite::GetCreateElementFlags() const {
-  return is_parsing_fragment_ ? kCreatedByFragmentParser : kCreatedByParser;
+  return is_parsing_fragment_ ? CreateElementFlags::ByFragmentParser()
+                              : CreateElementFlags::ByParser();
 }
 
 inline Document& HTMLConstructionSite::OwnerDocumentForCurrentNode() {
@@ -837,7 +849,8 @@ inline Document& HTMLConstructionSite::OwnerDocumentForCurrentNode() {
 // https://html.spec.whatwg.org/#look-up-a-custom-element-definition
 CustomElementDefinition* HTMLConstructionSite::LookUpCustomElementDefinition(
     Document& document,
-    AtomicHTMLToken* token) {
+    AtomicHTMLToken* token,
+    const AtomicString& is) {
   // "2. If document does not have a browsing context, return null."
   LocalDOMWindow* window = document.ExecutingWindow();
   if (!window)
@@ -850,8 +863,7 @@ CustomElementDefinition* HTMLConstructionSite::LookUpCustomElementDefinition(
     return nullptr;
 
   const AtomicString& local_name = token->GetName();
-  const Attribute* is_attribute = token->GetAttributeItem(HTMLNames::isAttr);
-  const AtomicString& name = is_attribute ? is_attribute->Value() : local_name;
+  const AtomicString& name = !is.IsNull() ? is : local_name;
   CustomElementDescriptor descriptor(name, local_name);
 
   // 4.-6.
@@ -869,10 +881,10 @@ Element* HTMLConstructionSite::CreateElement(
   // "2. Let local name be the tag name of the token."
   QualifiedName tag_name(g_null_atom, token->GetName(), namespace_uri);
   // "3. Let is be the value of the "is" attribute in the given token ..." etc.
+  const Attribute* is_attribute = token->GetAttributeItem(HTMLNames::isAttr);
+  const AtomicString& is = is_attribute ? is_attribute->Value() : g_null_atom;
   // "4. Let definition be the result of looking up a custom element ..." etc.
-  CustomElementDefinition* definition =
-      is_parsing_fragment_ ? nullptr
-                           : LookUpCustomElementDefinition(document, token);
+  auto* definition = LookUpCustomElementDefinition(document, token, is);
   // "5. If definition is non-null and the parser was not originally created
   // for the HTML fragment parsing algorithm, then let will execute script
   // be true."
@@ -899,7 +911,7 @@ Element* HTMLConstructionSite::CreateElement(
     CEReactionsScope reactions;
 
     // 7.
-    element = definition->CreateElementSync(document, tag_name);
+    element = definition->CreateAutonomousCustomElementSync(document, tag_name);
 
     // "8. Append each attribute in the given token to element." We don't use
     // setAttributes here because the custom element constructor may have
@@ -911,7 +923,14 @@ Element* HTMLConstructionSite::CreateElement(
     // and ThrowOnDynamicMarkupInsertionCountIncrementer destructors implement
     // steps 9.1-3.
   } else {
-    element = document.createElement(tag_name, GetCreateElementFlags());
+    if (definition) {
+      DCHECK(GetCreateElementFlags().IsAsyncCustomElements());
+      element = definition->CreateElement(document, tag_name,
+                                          GetCreateElementFlags());
+    } else {
+      element = CustomElement::CreateUncustomizedOrUndefinedElement(
+          document, tag_name, GetCreateElementFlags(), is);
+    }
     // Definition for the created element does not exist here and it cannot be
     // custom or failed.
     DCHECK_NE(element->GetCustomElementState(), CustomElementState::kCustom);

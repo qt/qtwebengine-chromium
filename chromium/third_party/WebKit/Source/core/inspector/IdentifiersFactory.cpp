@@ -65,17 +65,17 @@ String IdentifiersFactory::SubresourceRequestId(unsigned long identifier) {
 
 // static
 String IdentifiersFactory::FrameId(Frame* frame) {
-  if (!frame)
-    return g_empty_string;
-  return frame->GetDevToolsFrameToken();
+  return frame ? IdFromToken(frame->GetDevToolsFrameToken()) : g_empty_string;
 }
 
 // static
 LocalFrame* IdentifiersFactory::FrameById(InspectedFrames* inspected_frames,
                                           const String& frame_id) {
   for (auto* frame : *inspected_frames) {
-    if (frame->Client() && frame->GetDevToolsFrameToken() == frame_id)
+    if (frame->Client() &&
+        frame_id == IdFromToken(frame->GetDevToolsFrameToken())) {
       return frame;
+    }
   }
   return nullptr;
 }
@@ -85,6 +85,14 @@ String IdentifiersFactory::LoaderId(DocumentLoader* loader) {
   if (!loader)
     return g_empty_string;
   const base::UnguessableToken& token = loader->GetDevToolsNavigationToken();
+  // token.ToString() is latin1.
+  return String(token.ToString().c_str());
+}
+
+// static
+String IdentifiersFactory::IdFromToken(const base::UnguessableToken& token) {
+  if (token.is_empty())
+    return g_empty_string;
   // token.ToString() is latin1.
   return String(token.ToString().c_str());
 }

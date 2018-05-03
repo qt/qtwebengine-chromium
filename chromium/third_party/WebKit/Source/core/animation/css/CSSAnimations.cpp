@@ -148,8 +148,11 @@ StringKeyframeEffectModel* CreateKeyframeEffectModel(
   }
 
   // Merge duplicate keyframes.
-  std::stable_sort(keyframes.begin(), keyframes.end(),
-                   Keyframe::CompareOffsets);
+  std::stable_sort(
+      keyframes.begin(), keyframes.end(),
+      [](const scoped_refptr<Keyframe>& a, const scoped_refptr<Keyframe>& b) {
+        return a->CheckedOffset() < b->CheckedOffset();
+      });
   size_t target_index = 0;
   for (size_t i = 1; i < keyframes.size(); i++) {
     if (keyframes[i]->CheckedOffset() ==
@@ -750,12 +753,12 @@ void CSSAnimations::CalculateTransitionUpdateForProperty(
   const ComputedStyle* reversing_adjusted_start_value = &state.old_style;
   double reversing_shortening_factor = 1;
   if (interrupted_transition) {
-    const double interrupted_progress =
+    const WTF::Optional<double> interrupted_progress =
         interrupted_transition->animation->effect()->Progress();
-    if (!std::isnan(interrupted_progress)) {
+    if (interrupted_progress) {
       reversing_adjusted_start_value = interrupted_transition->to.get();
       reversing_shortening_factor =
-          clampTo((interrupted_progress *
+          clampTo((interrupted_progress.value() *
                    interrupted_transition->reversing_shortening_factor) +
                       (1 - interrupted_transition->reversing_shortening_factor),
                   0.0, 1.0);

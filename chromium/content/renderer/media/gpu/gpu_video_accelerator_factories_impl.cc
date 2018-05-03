@@ -11,6 +11,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/unguessable_token.h"
+#include "build/build_config.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "content/child/child_thread_impl.h"
 #include "content/public/common/content_features.h"
@@ -92,8 +93,7 @@ GpuVideoAcceleratorFactoriesImpl::GpuVideoAcceleratorFactoriesImpl(
       FROM_HERE,
       base::BindOnce(&GpuVideoAcceleratorFactoriesImpl::
                          BindVideoEncodeAcceleratorProviderOnTaskRunner,
-                     base::Unretained(this),
-                     base::Passed(&unbound_vea_provider)));
+                     base::Unretained(this), std::move(unbound_vea_provider)));
 }
 
 GpuVideoAcceleratorFactoriesImpl::~GpuVideoAcceleratorFactoriesImpl() {}
@@ -270,10 +270,8 @@ GpuVideoAcceleratorFactoriesImpl::CreateGpuMemoryBuffer(
     const gfx::Size& size,
     gfx::BufferFormat format,
     gfx::BufferUsage usage) {
-  std::unique_ptr<gfx::GpuMemoryBuffer> buffer =
-      gpu_memory_buffer_manager_->CreateGpuMemoryBuffer(
-          size, format, usage, gpu::kNullSurfaceHandle);
-  return buffer;
+  return gpu_memory_buffer_manager_->CreateGpuMemoryBuffer(
+      size, format, usage, gpu::kNullSurfaceHandle);
 }
 bool GpuVideoAcceleratorFactoriesImpl::ShouldUseGpuMemoryBuffersForVideoFrames()
     const {
@@ -296,14 +294,29 @@ GpuVideoAcceleratorFactoriesImpl::VideoFrameOutputFormat(size_t bit_depth) {
   viz::ContextProvider::ScopedContextLock lock(context_provider_);
   auto capabilities = context_provider_->ContextCapabilities();
   if (bit_depth > 8) {
-    // If high bit depth rendering is not enabled and we support RG textures,
-    // use those, albeit at a reduced bit depth of 8 bits per component.
+    // If high bit depth rendering is enabled, bail here, otherwise try and use
+    // XR30 storage, and if not and we support RG textures, use those, albeit at
+    // a reduced bit depth of 8 bits per component.
     // TODO(mcasas): continue working on this, avoiding dropping information as
     // long as the hardware may support it https://crbug.com/798485.
-    if (!rendering_color_space_.IsHDR() && capabilities.texture_rg)
-      return media::GpuVideoAcceleratorFactories::OutputFormat::I420;
-    else
+    if (rendering_color_space_.IsHDR())
       return media::GpuVideoAcceleratorFactories::OutputFormat::UNDEFINED;
+
+#if defined(OS_MACOSX) || defined(OS_LINUX)
+    // TODO(mcasas): enable other platforms https://crbug.com/776093
+    // https://crbug.com/803451.
+    // TODO(mcasas): remove the |bit_depth| check when libyuv supports more than
+    // just x010ToAR30 conversions, https://crbug.com/libyuv/751.
+    if (bit_depth == 10) {
+      if (capabilities.image_xr30)
+        return media::GpuVideoAcceleratorFactories::OutputFormat::XR30;
+      else if (capabilities.image_xb30)
+        return media::GpuVideoAcceleratorFactories::OutputFormat::XB30;
+    }
+#endif
+    if (capabilities.texture_rg)
+      return media::GpuVideoAcceleratorFactories::OutputFormat::I420;
+    return media::GpuVideoAcceleratorFactories::OutputFormat::UNDEFINED;
   }
   if (capabilities.image_ycbcr_420v &&
       !capabilities.image_ycbcr_420v_disabled_for_video_frames) {

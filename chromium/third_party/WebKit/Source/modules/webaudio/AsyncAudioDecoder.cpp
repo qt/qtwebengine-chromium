@@ -26,12 +26,11 @@
 #include "modules/webaudio/AsyncAudioDecoder.h"
 
 #include "base/location.h"
-#include "bindings/modules/v8/v8_decode_error_callback.h"
-#include "bindings/modules/v8/v8_decode_success_callback.h"
 #include "core/typed_arrays/DOMArrayBuffer.h"
 #include "modules/webaudio/AudioBuffer.h"
 #include "modules/webaudio/BaseAudioContext.h"
 #include "platform/CrossThreadFunctional.h"
+#include "platform/WebTaskRunner.h"
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/AudioFileReader.h"
 #include "platform/threading/BackgroundTaskRunner.h"
@@ -39,12 +38,13 @@
 
 namespace blink {
 
-void AsyncAudioDecoder::DecodeAsync(DOMArrayBuffer* audio_data,
-                                    float sample_rate,
-                                    V8DecodeSuccessCallback* success_callback,
-                                    V8DecodeErrorCallback* error_callback,
-                                    ScriptPromiseResolver* resolver,
-                                    BaseAudioContext* context) {
+void AsyncAudioDecoder::DecodeAsync(
+    DOMArrayBuffer* audio_data,
+    float sample_rate,
+    V8PersistentCallbackFunction<V8DecodeSuccessCallback>* success_callback,
+    V8PersistentCallbackFunction<V8DecodeErrorCallback>* error_callback,
+    ScriptPromiseResolver* resolver,
+    BaseAudioContext* context) {
   DCHECK(IsMainThread());
   DCHECK(audio_data);
   if (!audio_data)
@@ -63,8 +63,8 @@ void AsyncAudioDecoder::DecodeAsync(DOMArrayBuffer* audio_data,
 void AsyncAudioDecoder::DecodeOnBackgroundThread(
     DOMArrayBuffer* audio_data,
     float sample_rate,
-    V8DecodeSuccessCallback* success_callback,
-    V8DecodeErrorCallback* error_callback,
+    V8PersistentCallbackFunction<V8DecodeSuccessCallback>* success_callback,
+    V8PersistentCallbackFunction<V8DecodeErrorCallback>* error_callback,
     ScriptPromiseResolver* resolver,
     BaseAudioContext* context) {
   DCHECK(!IsMainThread());
@@ -79,7 +79,7 @@ void AsyncAudioDecoder::DecodeOnBackgroundThread(
   // exist any more.
   if (context) {
     PostCrossThreadTask(
-        *Platform::Current()->MainThread()->GetWebTaskRunner(), FROM_HERE,
+        *Platform::Current()->MainThread()->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(&AsyncAudioDecoder::NotifyComplete,
                         WrapCrossThreadPersistent(audio_data),
                         WrapCrossThreadPersistent(success_callback),
@@ -92,8 +92,8 @@ void AsyncAudioDecoder::DecodeOnBackgroundThread(
 
 void AsyncAudioDecoder::NotifyComplete(
     DOMArrayBuffer*,
-    V8DecodeSuccessCallback* success_callback,
-    V8DecodeErrorCallback* error_callback,
+    V8PersistentCallbackFunction<V8DecodeSuccessCallback>* success_callback,
+    V8PersistentCallbackFunction<V8DecodeErrorCallback>* error_callback,
     AudioBus* audio_bus,
     ScriptPromiseResolver* resolver,
     BaseAudioContext* context) {

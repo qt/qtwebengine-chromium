@@ -16,8 +16,8 @@
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/page_navigator.h"
+#include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 #include "content/public/browser/vpn_service_proxy.h"
-#include "content/public/common/content_features.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "device/geolocation/public/cpp/location_provider.h"
 #include "media/audio/audio_manager.h"
@@ -25,7 +25,10 @@
 #include "media/media_features.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "net/ssl/client_cert_identity.h"
+#include "net/ssl/client_cert_store.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "ui/gfx/image/image_skia.h"
@@ -183,6 +186,10 @@ bool ContentBrowserClient::IsFileAccessAllowed(
     const base::FilePath& absolute_path,
     const base::FilePath& profile_path) {
   return true;
+}
+
+bool ContentBrowserClient::ForceSniffingFileUrlsForHtml() {
+  return false;
 }
 
 std::string ContentBrowserClient::GetApplicationLocale() {
@@ -565,8 +572,11 @@ ContentBrowserClient::GetTaskSchedulerInitParams() {
 
 std::vector<std::unique_ptr<URLLoaderThrottle>>
 ContentBrowserClient::CreateURLLoaderThrottles(
-    const base::Callback<WebContents*()>& wc_getter,
-    NavigationUIData* navigation_ui_data) {
+    const network::ResourceRequest& request,
+    ResourceContext* resource_context,
+    const base::RepeatingCallback<WebContents*()>& wc_getter,
+    NavigationUIData* navigation_ui_data,
+    int frame_tree_node_id) {
   return std::vector<std::unique_ptr<URLLoaderThrottle>>();
 }
 
@@ -579,16 +589,24 @@ void ContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
     const GURL& frame_url,
     NonNetworkURLLoaderFactoryMap* factories) {}
 
+bool ContentBrowserClient::WillCreateURLLoaderFactory(
+    RenderFrameHost* frame,
+    bool is_navigation,
+    network::mojom::URLLoaderFactoryRequest* factory_request) {
+  return false;
+}
+
 network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
     BrowserContext* context,
     bool in_memory,
     const base::FilePath& relative_partition_path) {
-  if (!base::FeatureList::IsEnabled(features::kNetworkService))
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
     return nullptr;
 
   network::mojom::NetworkContextPtr network_context;
   network::mojom::NetworkContextParamsPtr context_params =
       network::mojom::NetworkContextParams::New();
+  context_params->user_agent = GetContentClient()->GetUserAgent();
   context_params->enable_data_url_support = true;
   context_params->enable_file_url_support = true;
   GetNetworkService()->CreateNetworkContext(MakeRequest(&network_context),
@@ -638,6 +656,36 @@ bool ContentBrowserClient::ShowPaymentHandlerWindow(
 
 bool ContentBrowserClient::ShouldCreateTaskScheduler() {
   return true;
+}
+
+bool ContentBrowserClient::ShouldPermitIndividualAttestationForWebauthnRPID(
+    content::BrowserContext* browser_context,
+    const std::string& rp_id) {
+  return false;
+}
+
+void ContentBrowserClient::ShouldReturnAttestationForWebauthnRPID(
+    content::RenderFrameHost* rfh,
+    const std::string& rp_id,
+    const url::Origin& origin,
+    base::OnceCallback<void(bool)> callback) {
+  std::move(callback).Run(true);
+}
+
+std::unique_ptr<net::ClientCertStore>
+ContentBrowserClient::CreateClientCertStore(ResourceContext* resource_context) {
+  return nullptr;
+}
+
+ResourceDispatcherHostLoginDelegate* ContentBrowserClient::CreateLoginDelegate(
+    net::AuthChallengeInfo* auth_info,
+    content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+    bool is_main_frame,
+    const GURL& url,
+    bool first_auth_attempt,
+    const base::Callback<void(const base::Optional<net::AuthCredentials>&)>&
+        auth_required_callback) {
+  return nullptr;
 }
 
 }  // namespace content

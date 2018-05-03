@@ -258,5 +258,19 @@ void QuicConnectionPeer::SetNoStopWaitingFrames(QuicConnection* connection,
   connection->no_stop_waiting_frames_ = no_stop_waiting_frames;
 }
 
+// static
+void QuicConnectionPeer::SetMaxTrackedPackets(
+    QuicConnection* connection,
+    QuicPacketCount max_tracked_packets) {
+  connection->max_tracked_packets_ = max_tracked_packets;
+}
+
+// static
+void QuicConnectionPeer::SetSessionDecidesWhatToWrite(
+    QuicConnection* connection) {
+  connection->sent_packet_manager_.SetSessionDecideWhatToWrite(true);
+  connection->packet_generator_.SetCanSetTransmissionType(true);
+}
+
 }  // namespace test
 }  // namespace net

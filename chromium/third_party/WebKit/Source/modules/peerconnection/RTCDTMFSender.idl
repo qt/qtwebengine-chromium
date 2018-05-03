@@ -23,14 +23,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-[
-    NoInterfaceObject
-] interface RTCDTMFSender : EventTarget {
+interface RTCDTMFSender : EventTarget {
     readonly attribute boolean canInsertDTMF;
-    readonly attribute MediaStreamTrack track;
+    [Measure] readonly attribute MediaStreamTrack track;
     readonly attribute DOMString toneBuffer;
-    readonly attribute long duration;
-    readonly attribute long interToneGap;
+    [Measure] readonly attribute long duration;
+    [Measure] readonly attribute long interToneGap;
 
     [RaisesException] void insertDTMF(DOMString tones, optional long duration, optional long interToneGap);
 

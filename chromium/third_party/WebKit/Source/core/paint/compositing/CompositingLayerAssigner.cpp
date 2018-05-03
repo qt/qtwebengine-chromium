@@ -160,8 +160,6 @@ CompositingLayerAssigner::GetReasonsPreventingSquashing(
       squashing_layer.GetLayoutObject().Style()->HasBlendMode())
     return SquashingDisallowedReason::kSquashingBlendingIsDisallowed;
 
-  // FIXME: this is not efficient, since it walks up the tree. We should store
-  // these values on the CompositingInputsCache.
   if (layer->ClippingContainer() != squashing_layer.ClippingContainer() &&
       !squashing_layer.GetCompositedLayerMapping()->ContainingSquashedLayer(
           layer->ClippingContainer(),
@@ -209,6 +207,14 @@ CompositingLayerAssigner::GetReasonsPreventingSquashing(
 
   if (layer->EnclosingPaginationLayer())
     return SquashingDisallowedReason::kFragmentedContent;
+
+  if (layer->GetLayoutObject().HasClipPath() ||
+      layer->ClipPathAncestor() != squashing_layer.ClipPathAncestor())
+    return SquashingDisallowedReason::kClipPathMismatch;
+
+  if (layer->GetLayoutObject().HasMask() ||
+      layer->MaskAncestor() != squashing_layer.MaskAncestor())
+    return SquashingDisallowedReason::kMaskMismatch;
 
   return SquashingDisallowedReason::kNone;
 }

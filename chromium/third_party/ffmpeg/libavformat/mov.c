@@ -3770,6 +3770,9 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
                 av_free(ctts_data_old);
                 return;
             }
+
+            memset((uint8_t*)(sc->ctts_data), 0, sc->ctts_allocated_size);
+
             for (i = 0; i < ctts_count_old &&
                         sc->ctts_count < sc->sample_count; i++)
                 for (j = 0; j < ctts_data_old[i].count &&
@@ -4920,6 +4923,10 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     avio_rb16(pb); // reserved
 
     item_count = avio_rb16(pb);
+    if (item_count == 0) {
+        av_log(c->fc, AV_LOG_WARNING, "sidx contains no segments\n");
+        return 0;
+    }
 
     for (i = 0; i < item_count; i++) {
         int index;
@@ -7157,7 +7164,7 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
     MOVContext *mov = s->priv_data;
     int index;
 
-    if (!mov->frag_index.complete)
+    if (!mov->frag_index.complete || mov->frag_index.nb_items == 0)
         return 0;
 
     index = search_frag_timestamp(&mov->frag_index, st, timestamp);

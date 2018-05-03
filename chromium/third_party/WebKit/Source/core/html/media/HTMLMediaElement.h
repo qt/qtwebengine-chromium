@@ -30,7 +30,6 @@
 #include <memory>
 #include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "core/CoreExport.h"
 #include "core/dom/ExceptionCode.h"
@@ -43,6 +42,7 @@
 #include "platform/audio/AudioSourceProvider.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
+#include "platform/wtf/Optional.h"
 #include "public/platform/WebAudioSourceProviderClient.h"
 #include "public/platform/WebMediaPlayerClient.h"
 
@@ -187,7 +187,7 @@ class CORE_EXPORT HTMLMediaElement
   bool Loop() const;
   void SetLoop(bool);
   ScriptPromise playForBindings(ScriptState*);
-  Nullable<ExceptionCode> Play();
+  Optional<ExceptionCode> Play();
   void pause();
   void RequestRemotePlayback();
   void RequestRemotePlaybackControl();
@@ -210,6 +210,7 @@ class CORE_EXPORT HTMLMediaElement
   void setVolume(double, ExceptionState& = ASSERT_NO_EXCEPTION);
   bool muted() const;
   void setMuted(bool);
+  void enterPictureInPicture();
 
   void TogglePlayState();
 
@@ -305,7 +306,6 @@ class CORE_EXPORT HTMLMediaElement
   bool IsInCrossOriginFrame() const;
 
   void ScheduleEvent(Event*);
-  void ScheduleTimeupdateEvent(bool periodic_event);
 
   // Returns the "effective media volume" value as specified in the HTML5 spec.
   double EffectiveMediaVolume() const;
@@ -337,7 +337,8 @@ class CORE_EXPORT HTMLMediaElement
   bool IsURLAttribute(const Attribute&) const override;
   void AttachLayoutTree(AttachContext&) override;
   void ParserDidSetAttributes() override;
-  void CopyNonAttributePropertiesFromElement(const Element&) override;
+  void CloneNonAttributePropertiesFrom(const Element&,
+                                       CloneChildrenFlag) override;
 
   InsertionNotificationRequest InsertedInto(ContainerNode*) override;
   void RemovedFrom(ContainerNode*) override;
@@ -425,10 +426,12 @@ class CORE_EXPORT HTMLMediaElement
     return remote_playback_client_;
   }
   gfx::ColorSpace TargetColorSpace() override;
+  bool WasAutoplayInitiated() override;
 
   void LoadTimerFired(TimerBase*);
   void ProgressEventTimerFired(TimerBase*);
   void PlaybackProgressTimerFired(TimerBase*);
+  void ScheduleTimeupdateEvent(bool periodic_event);
   void CheckViewportIntersectionTimerFired(TimerBase*);
   void StartPlaybackProgressTimer();
   void StartProgressEventTimer();
@@ -570,9 +573,6 @@ class CORE_EXPORT HTMLMediaElement
 
   // Cached duration to suppress duplicate events if duration unchanged.
   double duration_;
-
-  // The last time a timeupdate event was sent (wall clock).
-  TimeTicks last_time_update_event_wall_time_;
 
   // The last time a timeupdate event was sent in movie time.
   double last_time_update_event_media_time_;

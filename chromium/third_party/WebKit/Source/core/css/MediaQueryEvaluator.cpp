@@ -170,7 +170,7 @@ bool CompareValue(T a, T b, MediaFeaturePrefix op) {
 }
 
 bool CompareDoubleValue(double a, double b, MediaFeaturePrefix op) {
-  const double precision = std::numeric_limits<double>::epsilon();
+  const double precision = LayoutUnit::Epsilon();
   switch (op) {
     case kMinPrefix:
       return a >= (b - precision);
@@ -624,6 +624,26 @@ static bool Transform3dMediaFeatureEval(const MediaQueryExpValue& value,
     float number;
     return NumberValue(value, number) &&
            CompareValue(have3d_rendering, static_cast<int>(number), op);
+  }
+  return return_value_if_no_parameter;
+}
+
+static bool ImmersiveMediaFeatureEval(const MediaQueryExpValue& value,
+                                      MediaFeaturePrefix op,
+                                      const MediaValues& media_values) {
+  bool return_value_if_no_parameter;
+  int is_immersive_numeric_value;
+
+  bool immersive = media_values.InImmersiveMode();
+
+  return_value_if_no_parameter = immersive;
+  is_immersive_numeric_value = immersive ? 1 : 0;
+
+  if (value.IsValid()) {
+    float number;
+    return NumberValue(value, number) &&
+           CompareValue(is_immersive_numeric_value, static_cast<int>(number),
+                        op);
   }
   return return_value_if_no_parameter;
 }

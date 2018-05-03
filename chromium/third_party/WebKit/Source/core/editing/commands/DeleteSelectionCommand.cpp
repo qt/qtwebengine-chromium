@@ -37,6 +37,7 @@
 #include "core/editing/SelectionTemplate.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLStyleElement.h"
@@ -77,50 +78,26 @@ static bool CanMergeListElements(Element* first_list, Element* second_list) {
 
 DeleteSelectionCommand::DeleteSelectionCommand(
     Document& document,
-    bool smart_delete,
-    bool merge_blocks_after_delete,
-    bool expand_for_special_elements,
-    bool sanitize_markup,
+    const DeleteSelectionOptions& options,
     InputEvent::InputType input_type,
     const Position& reference_move_position)
     : CompositeEditCommand(document),
+      options_(options),
       has_selection_to_delete_(false),
-      smart_delete_(smart_delete),
-      merge_blocks_after_delete_(merge_blocks_after_delete),
-      need_placeholder_(false),
-      expand_for_special_elements_(expand_for_special_elements),
-      prune_start_block_if_necessary_(false),
-      starts_at_empty_line_(false),
-      sanitize_markup_(sanitize_markup),
+      merge_blocks_after_delete_(options.IsMergeBlocksAfterDelete()),
       input_type_(input_type),
-      reference_move_position_(reference_move_position),
-      start_block_(nullptr),
-      end_block_(nullptr),
-      typing_style_(nullptr),
-      delete_into_blockquote_style_(nullptr) {}
+      reference_move_position_(reference_move_position) {}
 
 DeleteSelectionCommand::DeleteSelectionCommand(
     const VisibleSelection& selection,
-    bool smart_delete,
-    bool merge_blocks_after_delete,
-    bool expand_for_special_elements,
-    bool sanitize_markup,
+    const DeleteSelectionOptions& options,
     InputEvent::InputType input_type)
     : CompositeEditCommand(*selection.Start().GetDocument()),
+      options_(options),
       has_selection_to_delete_(true),
-      smart_delete_(smart_delete),
-      merge_blocks_after_delete_(merge_blocks_after_delete),
-      need_placeholder_(false),
-      expand_for_special_elements_(expand_for_special_elements),
-      prune_start_block_if_necessary_(false),
-      starts_at_empty_line_(false),
-      sanitize_markup_(sanitize_markup),
+      merge_blocks_after_delete_(options.IsMergeBlocksAfterDelete()),
       input_type_(input_type),
-      selection_to_delete_(selection),
-      start_block_(nullptr),
-      end_block_(nullptr),
-      typing_style_(nullptr),
-      delete_into_blockquote_style_(nullptr) {}
+      selection_to_delete_(selection) {}
 
 void DeleteSelectionCommand::InitializeStartEnd(Position& start,
                                                 Position& end) {
@@ -144,7 +121,7 @@ void DeleteSelectionCommand::InitializeStartEnd(Position& start,
 
   // FIXME: This is only used so that moveParagraphs can avoid the bugs in
   // special element expansion.
-  if (!expand_for_special_elements_)
+  if (!options_.IsExpandForSpecialElements())
     return;
 
   while (1) {
@@ -217,12 +194,34 @@ void DeleteSelectionCommand::SetStartingSelectionOnSmartDelete(
   SelectionInDOMTree::Builder builder;
   builder.SetAffinity(new_base.Affinity())
       .SetBaseAndExtentDeprecated(new_base.DeepEquivalent(),
-                                  new_extent.DeepEquivalent())
-      .SetIsDirectional(StartingSelection().IsDirectional());
+                                  new_extent.DeepEquivalent());
   const VisibleSelection& visible_selection =
       CreateVisibleSelection(builder.Build());
   SetStartingSelection(
       SelectionForUndoStep::From(visible_selection.AsSelection()));
+}
+
+// This assumes that it starts in editable content.
+static Position TrailingWhitespacePosition(const Position& position,
+                                           WhitespacePositionOption option) {
+  DCHECK(!NeedsLayoutTreeUpdate(position));
+  DCHECK(IsEditablePosition(position)) << position;
+  if (position.IsNull())
+    return Position();
+
+  const VisiblePosition visible_position = CreateVisiblePosition(position);
+  const UChar character_after_visible_position =
+      CharacterAfter(visible_position);
+  const bool is_space =
+      option == kConsiderNonCollapsibleWhitespace
+          ? (IsSpaceOrNewline(character_after_visible_position) ||
+             character_after_visible_position == kNoBreakSpaceCharacter)
+          : IsCollapsibleWhitespace(character_after_visible_position);
+  // The space must not be in another paragraph and it must be editable.
+  if (is_space && !IsEndOfParagraph(visible_position) &&
+      NextPositionOf(visible_position, kCannotCrossEditingBoundary).IsNotNull())
+    return position;
+  return Position();
 }
 
 void DeleteSelectionCommand::InitializePositionData(
@@ -302,9 +301,10 @@ void DeleteSelectionCommand::InitializePositionData(
   // to the selection
   leading_whitespace_ = LeadingCollapsibleWhitespacePosition(
       upstream_start_, selection_to_delete_.Affinity());
-  trailing_whitespace_ = TrailingWhitespacePosition(downstream_end_);
+  trailing_whitespace_ = TrailingWhitespacePosition(
+      downstream_end_, kNotConsiderNonCollapsibleWhitespace);
 
-  if (smart_delete_) {
+  if (options_.IsSmartDelete()) {
     // skip smart delete if the selection to delete already starts or ends with
     // whitespace
     Position pos =
@@ -353,7 +353,8 @@ void DeleteSelectionCommand::InitializePositionData(
                 .DeepEquivalent();
       upstream_end_ = MostBackwardCaretPosition(pos);
       downstream_end_ = MostForwardCaretPosition(pos);
-      trailing_whitespace_ = TrailingWhitespacePosition(downstream_end_);
+      trailing_whitespace_ = TrailingWhitespacePosition(
+          downstream_end_, kNotConsiderNonCollapsibleWhitespace);
 
       SetStartingSelectionOnSmartDelete(downstream_start_, downstream_end_);
     }
@@ -652,6 +653,8 @@ void DeleteSelectionCommand::HandleGeneralDelete(EditingState* editing_state) {
           return;
         ending_position_ = upstream_start_;
       }
+      // We should update layout to associate |start_node| to layout object.
+      GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
     }
 
     // The selection to delete is all in one node.
@@ -1137,7 +1140,6 @@ void DeleteSelectionCommand::DoApply(EditingState* editing_state) {
     GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
     SelectionInDOMTree::Builder builder;
     builder.SetAffinity(affinity);
-    builder.SetIsDirectional(EndingSelection().IsDirectional());
     if (ending_position_.IsNotNull())
       builder.Collapse(ending_position_);
     const VisibleSelection& visible_selection =
@@ -1179,7 +1181,7 @@ void DeleteSelectionCommand::DoApply(EditingState* editing_state) {
       need_placeholder_ ? HTMLBRElement::Create(GetDocument()) : nullptr;
 
   if (placeholder) {
-    if (sanitize_markup_) {
+    if (options_.IsSanitizeMarkup()) {
       RemoveRedundantBlocks(editing_state);
       if (editing_state->IsAborted())
         return;
@@ -1201,7 +1203,6 @@ void DeleteSelectionCommand::DoApply(EditingState* editing_state) {
 
   SelectionInDOMTree::Builder builder;
   builder.SetAffinity(affinity);
-  builder.SetIsDirectional(EndingSelection().IsDirectional());
   if (ending_position_.IsNotNull())
     builder.Collapse(ending_position_);
   const VisibleSelection& visible_selection =

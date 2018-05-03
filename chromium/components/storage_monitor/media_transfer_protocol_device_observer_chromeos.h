@@ -21,9 +21,9 @@ class FilePath;
 namespace storage_monitor {
 
 // Gets the mtp device information given a |storage_name|.
-using GetMtpStorageInfoCallback =
-    base::RepeatingCallback<const device::mojom::MtpStorageInfo*(
-        const std::string&)>;
+using GetMtpStorageInfoCallback = base::RepeatingCallback<void(
+    const std::string&,
+    device::MediaTransferProtocolManager::GetStorageInfoCallback)>;
 
 // Helper class to send MTP storage attachment and detachment events to
 // StorageMonitor.
@@ -48,22 +48,24 @@ class MediaTransferProtocolDeviceObserverChromeOS
   MediaTransferProtocolDeviceObserverChromeOS(
       StorageMonitor::Receiver* receiver,
       device::MediaTransferProtocolManager* mtp_manager,
-      GetMtpStorageInfoCallback get_mtp_storage_info_cb);
+      const GetMtpStorageInfoCallback& get_mtp_storage_info_cb);
 
   // device::MediaTransferProtocolManager::Observer implementation.
   // Exposed for unit tests.
-  void StorageChanged(bool is_attached,
-                      const std::string& storage_name) override;
+  void StorageAttached(
+      const device::mojom::MtpStorageInfo& storage_info) override;
+  void StorageDetached(const std::string& storage_name) override;
 
  private:
   // Mapping of storage location and mtp storage info object.
   typedef std::map<std::string, StorageInfo> StorageLocationToInfoMap;
 
-  // Enumerate existing mtp storage devices.
-  void EnumerateStorages();
+  // The async handler for newly attached storage.
+  void DoAttachStorage(const device::mojom::MtpStorageInfo* mtp_storage_info);
 
-  // The callback for EnumerateStorages().
-  void OnReceivedStorages(const std::vector<std::string>& storages);
+  // Enumerate existing mtp storage devices.
+  void OnReceivedStorages(
+      std::vector<const device::mojom::MtpStorageInfo*> storage_info_list);
 
   // Find the |storage_map_| key for the record with this |device_id|. Returns
   // true on success, false on failure.

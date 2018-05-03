@@ -28,8 +28,7 @@ namespace internal {
 AudioState::AudioState(const AudioState::Config& config)
     : config_(config),
       audio_transport_(config_.audio_mixer,
-                       config_.audio_processing.get(),
-                       config_.audio_device_module.get()) {
+                       config_.audio_processing.get()) {
   process_thread_checker_.DetachFromThread();
   RTC_DCHECK(config_.audio_mixer);
   RTC_DCHECK(config_.audio_device_module);
@@ -52,7 +51,7 @@ void AudioState::AddReceivingStream(webrtc::AudioReceiveStream* stream) {
   receiving_streams_.insert(stream);
   if (!config_.audio_mixer->AddSource(
       static_cast<internal::AudioReceiveStream*>(stream))) {
-    RTC_LOG(LS_ERROR) << "Failed to add source to mixer.";
+    RTC_DLOG(LS_ERROR) << "Failed to add source to mixer.";
   }
 
   // Make sure playback is initialized; start playing if enabled.
@@ -150,9 +149,6 @@ AudioState::Stats AudioState::GetAudioInputStats() const {
   result.audio_level = audio_level.LevelFullRange();
   RTC_DCHECK_LE(0, result.audio_level);
   RTC_DCHECK_GE(32767, result.audio_level);
-  result.quantized_audio_level = audio_level.Level();
-  RTC_DCHECK_LE(0, result.quantized_audio_level);
-  RTC_DCHECK_GE(9, result.quantized_audio_level);
   result.total_energy = audio_level.TotalEnergy();
   result.total_duration = audio_level.TotalDuration();
   return result;

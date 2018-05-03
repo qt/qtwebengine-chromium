@@ -164,20 +164,9 @@ Node* NextLeafWithSameEditability(Node* node, EditableType editable_type) {
   return nullptr;
 }
 
-InlineBox* FindRightNonPseudoNodeInlineBox(const RootInlineBox& root_box) {
-  for (InlineBox* runner = root_box.FirstLeafChild(); runner;
-       runner = runner->NextLeafChild()) {
-    if (runner->GetLineLayoutItem().NonPseudoNode())
-      return runner;
-  }
-  return nullptr;
-}
-
-enum LineEndpointComputationMode { kUseLogicalOrdering, kUseInlineBoxOrdering };
-template <typename Strategy>
+template <typename Strategy, typename Ordering>
 PositionWithAffinityTemplate<Strategy> StartPositionForLine(
-    const PositionWithAffinityTemplate<Strategy>& c,
-    LineEndpointComputationMode mode) {
+    const PositionWithAffinityTemplate<Strategy>& c) {
   if (c.IsNull())
     return PositionWithAffinityTemplate<Strategy>();
 
@@ -195,24 +184,11 @@ PositionWithAffinityTemplate<Strategy> StartPositionForLine(
     return PositionWithAffinityTemplate<Strategy>();
   }
 
-  Node* start_node;
-  InlineBox* start_box;
-  if (mode == kUseLogicalOrdering) {
-    start_node = root_box->GetLogicalStartBoxWithNode(start_box);
-    if (!start_node)
-      return PositionWithAffinityTemplate<Strategy>();
-  } else {
-    // Generated content (e.g. list markers and CSS :before and :after
-    // pseudoelements) have no corresponding DOM element, and so cannot be
-    // represented by a VisiblePosition. Use whatever follows instead.
-    // TODO(editing-dev): We should consider text-direction of line to
-    // find non-pseudo node.
-    start_box = FindRightNonPseudoNodeInlineBox(*root_box);
-    if (!start_box)
-      return PositionWithAffinityTemplate<Strategy>();
-    start_node = start_box->GetLineLayoutItem().NonPseudoNode();
-  }
-
+  const auto& node_and_box = Ordering::StartNodeAndBoxOf(*root_box);
+  Node* const start_node = std::get<Node*>(node_and_box);
+  InlineBox* const start_box = std::get<InlineBox*>(node_and_box);
+  if (!start_node)
+    return PositionWithAffinityTemplate<Strategy>();
   return PositionWithAffinityTemplate<Strategy>(
       start_node->IsTextNode()
           ? PositionTemplate<Strategy>(ToText(start_node),
@@ -220,13 +196,69 @@ PositionWithAffinityTemplate<Strategy> StartPositionForLine(
           : PositionTemplate<Strategy>::BeforeNode(*start_node));
 }
 
+// Provides start and end of line in logical order for implementing Home and End
+// keys.
+struct LogicalOrdering {
+  static std::pair<Node*, InlineBox*> StartNodeAndBoxOf(
+      const RootInlineBox& root_box) {
+    InlineBox* start_box;
+    Node* const start_node = root_box.GetLogicalStartBoxWithNode(start_box);
+    if (!start_node)
+      return {nullptr, nullptr};
+    return {start_node, start_box};
+  }
+
+  static std::pair<Node*, InlineBox*> EndNodeAndBoxOf(
+      const RootInlineBox& root_box) {
+    InlineBox* end_box;
+    Node* const end_node = root_box.GetLogicalEndBoxWithNode(end_box);
+    if (!end_node)
+      return {nullptr, nullptr};
+    return {end_node, end_box};
+  }
+};
+
+// Provides start end end of line in visual order for implementing expanding
+// selection in line granularity.
+struct VisualOrdering {
+  static std::pair<Node*, InlineBox*> StartNodeAndBoxOf(
+      const RootInlineBox& root_box) {
+    // Generated content (e.g. list markers and CSS :before and :after
+    // pseudoelements) have no corresponding DOM element, and so cannot be
+    // represented by a VisiblePosition. Use whatever follows instead.
+    // TODO(editing-dev): We should consider text-direction of line to
+    // find non-pseudo node.
+    for (InlineBox* inline_box = root_box.FirstLeafChild(); inline_box;
+         inline_box = inline_box->NextLeafChild()) {
+      if (inline_box->GetLineLayoutItem().NonPseudoNode())
+        return {inline_box->GetLineLayoutItem().NonPseudoNode(), inline_box};
+    }
+    return {nullptr, nullptr};
+  }
+
+  static std::pair<Node*, InlineBox*> EndNodeAndBoxOf(
+      const RootInlineBox& root_box) {
+    // Generated content (e.g. list markers and CSS :before and :after
+    // pseudo elements) have no corresponding DOM element, and so cannot be
+    // represented by a VisiblePosition. Use whatever precedes instead.
+    // TODO(editing-dev): We should consider text-direction of line to
+    // find non-pseudo node.
+    for (InlineBox* inline_box = root_box.LastLeafChild(); inline_box;
+         inline_box = inline_box->PrevLeafChild()) {
+      if (inline_box->GetLineLayoutItem().NonPseudoNode())
+        return {inline_box->GetLineLayoutItem().NonPseudoNode(), inline_box};
+    }
+    return {nullptr, nullptr};
+  }
+};
+
 template <typename Strategy>
 PositionWithAffinityTemplate<Strategy> StartOfLineAlgorithm(
     const PositionWithAffinityTemplate<Strategy>& c) {
   // TODO: this is the current behavior that might need to be fixed.
   // Please refer to https://bugs.webkit.org/show_bug.cgi?id=49107 for detail.
   PositionWithAffinityTemplate<Strategy> vis_pos =
-      StartPositionForLine(c, kUseInlineBoxOrdering);
+      StartPositionForLine<Strategy, VisualOrdering>(c);
   return HonorEditingBoundaryAtOrBefore(vis_pos, c.GetPosition());
 }
 
@@ -351,7 +383,7 @@ static PositionWithAffinityTemplate<Strategy> LogicalStartOfLineAlgorithm(
   // TODO: this is the current behavior that might need to be fixed.
   // Please refer to https://bugs.webkit.org/show_bug.cgi?id=49107 for detail.
   PositionWithAffinityTemplate<Strategy> vis_pos =
-      StartPositionForLine(c, kUseLogicalOrdering);
+      StartPositionForLine<Strategy, LogicalOrdering>(c);
 
   if (ContainerNode* editable_root = HighestEditableRoot(c.GetPosition())) {
     if (!editable_root->contains(
@@ -387,19 +419,9 @@ VisiblePositionInFlatTree LogicalStartOfLine(
       LogicalStartOfLine(current_position.ToPositionWithAffinity()));
 }
 
-InlineBox* FindLeftNonPseudoNodeInlineBox(const RootInlineBox& root_box) {
-  for (InlineBox* runner = root_box.LastLeafChild(); runner;
-       runner = runner->PrevLeafChild()) {
-    if (runner->GetLineLayoutItem().NonPseudoNode())
-      return runner;
-  }
-  return nullptr;
-}
-
-template <typename Strategy>
+template <typename Strategy, typename Ordering>
 static PositionWithAffinityTemplate<Strategy> EndPositionForLine(
-    const PositionWithAffinityTemplate<Strategy>& c,
-    LineEndpointComputationMode mode) {
+    const PositionWithAffinityTemplate<Strategy>& c) {
   if (c.IsNull())
     return PositionWithAffinityTemplate<Strategy>();
 
@@ -416,23 +438,11 @@ static PositionWithAffinityTemplate<Strategy> EndPositionForLine(
     return PositionWithAffinityTemplate<Strategy>();
   }
 
-  Node* end_node;
-  InlineBox* end_box;
-  if (mode == kUseLogicalOrdering) {
-    end_node = root_box->GetLogicalEndBoxWithNode(end_box);
-    if (!end_node)
-      return PositionWithAffinityTemplate<Strategy>();
-  } else {
-    // Generated content (e.g. list markers and CSS :before and :after
-    // pseudo elements) have no corresponding DOM element, and so cannot be
-    // represented by a VisiblePosition. Use whatever precedes instead.
-    // TODO(editing-dev): We should consider text-direction of line to
-    // find non-pseudo node.
-    end_box = FindLeftNonPseudoNodeInlineBox(*root_box);
-    if (!end_box)
-      return PositionWithAffinityTemplate<Strategy>();
-    end_node = end_box->GetLineLayoutItem().NonPseudoNode();
-  }
+  const auto& node_and_box = Ordering::EndNodeAndBoxOf(*root_box);
+  Node* const end_node = std::get<Node*>(node_and_box);
+  InlineBox* const end_box = std::get<InlineBox*>(node_and_box);
+  if (!end_node)
+    return PositionWithAffinityTemplate<Strategy>();
 
   if (IsHTMLBRElement(*end_node)) {
     return PositionWithAffinityTemplate<Strategy>(
@@ -460,7 +470,7 @@ static PositionWithAffinityTemplate<Strategy> EndOfLineAlgorithm(
   // TODO(yosin) this is the current behavior that might need to be fixed.
   // Please refer to https://bugs.webkit.org/show_bug.cgi?id=49107 for detail.
   const PositionWithAffinityTemplate<Strategy>& candidate_position =
-      EndPositionForLine(current_position, kUseInlineBoxOrdering);
+      EndPositionForLine<Strategy, VisualOrdering>(current_position);
 
   // Make sure the end of line is at the same line as the given input
   // position. Else use the previous position to obtain end of line. This
@@ -480,7 +490,7 @@ static PositionWithAffinityTemplate<Strategy> EndOfLineAlgorithm(
   if (adjusted_position.IsNull())
     return PositionWithAffinityTemplate<Strategy>();
   return HonorEditingBoundaryAtOrAfter(
-      EndPositionForLine(adjusted_position, kUseInlineBoxOrdering),
+      EndPositionForLine<Strategy, VisualOrdering>(adjusted_position),
       current_position.GetPosition());
 }
 
@@ -522,7 +532,7 @@ static PositionWithAffinityTemplate<Strategy> LogicalEndOfLineAlgorithm(
   // TODO(yosin) this is the current behavior that might need to be fixed.
   // Please refer to https://bugs.webkit.org/show_bug.cgi?id=49107 for detail.
   PositionWithAffinityTemplate<Strategy> vis_pos =
-      EndPositionForLine<Strategy>(current_position, kUseLogicalOrdering);
+      EndPositionForLine<Strategy, LogicalOrdering>(current_position);
 
   // Make sure the end of line is at the same line as the given input
   // position. For a wrapping line, the logical end position for the

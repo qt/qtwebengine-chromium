@@ -19,7 +19,6 @@
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
-#include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "content/browser/media/media_internals.h"
@@ -684,7 +683,7 @@ void VideoCaptureManager::OnDeviceInfosReceived(
   for (const auto& entry : device_infos) {
     string_stream << std::endl
                   << "device_id: " << entry.descriptor.device_id
-                  << ", display_name: " << entry.descriptor.display_name;
+                  << ", display_name: " << entry.descriptor.display_name();
   }
   EmitLogMessage(string_stream.str(), 1);
 

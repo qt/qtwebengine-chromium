@@ -6,6 +6,8 @@
 
 #include <vector>
 
+#include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/quads/surface_draw_quad.h"
@@ -13,13 +15,15 @@
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
-#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/common/frame_messages.h"
+#include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "ui/base/layout.h"
+#include "ui/gfx/geometry/dip_util.h"
 
 namespace {
 
@@ -38,6 +42,26 @@ blink::WebGestureEvent DummyGestureScrollUpdate(double timeStampSeconds) {
   return blink::WebGestureEvent(blink::WebInputEvent::kGestureScrollUpdate,
                                 blink::WebInputEvent::kNoModifiers,
                                 timeStampSeconds);
+}
+
+viz::HitTestQuery* GetHitTestQuery(
+    viz::HostFrameSinkManager* host_frame_sink_manager,
+    const viz::FrameSinkId& frame_sink_id) {
+  DCHECK(frame_sink_id.is_valid());
+  const auto& display_hit_test_query_map =
+      host_frame_sink_manager->display_hit_test_query();
+  const auto iter = display_hit_test_query_map.find(frame_sink_id);
+  if (iter == display_hit_test_query_map.end())
+    return nullptr;
+  return iter->second.get();
+}
+
+gfx::PointF ComputePointInRootInPixels(
+    const gfx::PointF& point,
+    content::RenderWidgetHostViewBase* root_view,
+    float device_scale_factor) {
+  gfx::PointF point_in_root = point + root_view->GetOffsetFromRootSurface();
+  return gfx::ConvertPointToPixel(device_scale_factor, point_in_root);
 }
 
 }  // anonymous namespace
@@ -161,8 +185,7 @@ RenderWidgetHostInputEventRouter::RenderWidgetHostInputEventRouter()
       in_touchscreen_gesture_pinch_(false),
       gesture_pinch_did_send_scroll_begin_(false),
       event_targeter_(std::make_unique<RenderWidgetTargeter>(this)),
-      enable_viz_(
-          base::FeatureList::IsEnabled(features::kVizDisplayCompositor)),
+      use_viz_hit_test_(features::IsVizHitTestingEnabled()),
       weak_ptr_factory_(this) {}
 
 RenderWidgetHostInputEventRouter::~RenderWidgetHostInputEventRouter() {
@@ -209,30 +232,10 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindMouseEventTarget(
     needs_transform_point = false;
   }
 
-  if (target && target->IsRenderWidgetHostViewGuest()) {
-    RenderWidgetHostViewBase* owner_view =
-        static_cast<RenderWidgetHostViewGuest*>(target)
-            ->GetOwnerRenderWidgetHostView();
-    // In case there is nested RenderWidgetHostViewGuests (i.e., PDF inside
-    // <webview>), we will need the owner view of the top-most guest for input
-    // routing.
-    while (owner_view->IsRenderWidgetHostViewGuest()) {
-      owner_view = static_cast<RenderWidgetHostViewGuest*>(owner_view)
-                       ->GetOwnerRenderWidgetHostView();
-    }
-
-    if (owner_view != root_view) {
-      needs_transform_point = true;
-    } else {
-      needs_transform_point = false;
-      transformed_point = event.PositionInWidget();
-    }
-    target = owner_view;
-  }
-
   if (needs_transform_point) {
-    if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), target, &transformed_point)) {
+    if (!TransformPointToTargetCoordSpace(
+            root_view, target, event.PositionInWidget(), &transformed_point,
+            viz::EventSource::MOUSE)) {
       return {nullptr, false, base::nullopt};
     }
   }
@@ -250,8 +253,9 @@ RenderWidgetHostInputEventRouter::FindMouseWheelEventTarget(
                  ->delegate()
                  ->GetMouseLockWidget()
                  ->GetView();
-    if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), target, &transformed_point)) {
+    if (!TransformPointToTargetCoordSpace(
+            root_view, target, event.PositionInWidget(), &transformed_point,
+            viz::EventSource::MOUSE)) {
       return {nullptr, false, base::nullopt};
     }
     return {target, false, transformed_point};
@@ -281,41 +285,40 @@ RenderWidgetTargetResult RenderWidgetHostInputEventRouter::FindViewAtLocation(
     const gfx::PointF& point_in_screen,
     viz::EventSource source,
     gfx::PointF* transformed_point) const {
-  viz::FrameSinkId frame_sink_id;
+  // Short circuit if owner_map has only one RenderWidgetHostView, no need for
+  // hit testing.
+  if (owner_map_.size() <= 1) {
+    *transformed_point = point;
+    return {root_view, false, *transformed_point};
+  }
 
+  viz::FrameSinkId frame_sink_id;
   bool query_renderer = false;
-  if (enable_viz_) {
-    const auto& display_hit_test_query_map =
-        GetHostFrameSinkManager()->display_hit_test_query();
-    const auto iter =
-        display_hit_test_query_map.find(root_view->GetRootFrameSinkId());
-    if (iter == display_hit_test_query_map.end())
+  if (use_viz_hit_test_) {
+    viz::HitTestQuery* query = GetHitTestQuery(GetHostFrameSinkManager(),
+                                               root_view->GetRootFrameSinkId());
+    if (!query)
       return {root_view, false, base::nullopt};
-    // |point| is in the coordinate space of of the screen, but the display
-    // HitTestQuery does a hit test in the coordinate space of the root
+    // |point_in_screen| is in the coordinate space of of the screen, but the
+    // display HitTestQuery does a hit test in the coordinate space of the root
     // window. The following translation should account for that discrepancy.
-    gfx::Point point_in_root =
-        gfx::ToFlooredPoint(point_in_screen) -
-        root_view->GetBoundsInRootWindow().OffsetFromOrigin();
-    viz::HitTestQuery* query = iter->second.get();
-    // TODO(kenrb): Add the short circuit to avoid hit testing when there is
-    // only one RenderWidgetHostView in the map. It is absent right now to
-    // make it easier to test the Viz hit testing code in development.
-    viz::Target target = query->FindTargetForLocation(source, point_in_root);
+    // TODO(riajiang): Get rid of |point_in_screen| since it's not used.
+    float device_scale_factor = root_view->GetDeviceScaleFactor();
+    DCHECK_GT(device_scale_factor, 0.0f);
+    gfx::PointF point_in_root_in_pixels =
+        ComputePointInRootInPixels(point, root_view, device_scale_factor);
+    viz::Target target =
+        query->FindTargetForLocation(source, point_in_root_in_pixels);
     frame_sink_id = target.frame_sink_id;
     if (frame_sink_id.is_valid()) {
-      *transformed_point = gfx::PointF(target.location_in_target);
+      *transformed_point = gfx::ConvertPointToDIP(device_scale_factor,
+                                                  target.location_in_target);
     } else {
       *transformed_point = point;
     }
+    if (target.flags & viz::mojom::kHitTestAsk)
+      query_renderer = true;
   } else {
-    // Short circuit if owner_map has only one RenderWidgetHostView, no need for
-    // hit testing.
-    if (owner_map_.size() <= 1) {
-      *transformed_point = point;
-      return {root_view, false, *transformed_point};
-    }
-
     // The hittest delegate is used to reject hittesting quads based on extra
     // hittesting data send by the renderer.
     HittestDelegate delegate(hittest_data_);
@@ -343,7 +346,8 @@ void RenderWidgetHostInputEventRouter::DispatchMouseEvent(
     RenderWidgetHostViewBase* root_view,
     RenderWidgetHostViewBase* target,
     const blink::WebMouseEvent& mouse_event,
-    const ui::LatencyInfo& latency) {
+    const ui::LatencyInfo& latency,
+    const base::Optional<gfx::PointF>& target_location) {
   // TODO(wjmaclean): Should we be sending a no-consumer ack to the root_view
   // if there is no target?
   if (!target)
@@ -354,19 +358,23 @@ void RenderWidgetHostInputEventRouter::DispatchMouseEvent(
   else if (mouse_event.GetType() == blink::WebInputEvent::kMouseDown)
     mouse_capture_target_.target = target;
 
+  DCHECK(target_location.has_value());
+  blink::WebMouseEvent event = mouse_event;
+  event.SetPositionInWidget(target_location->x(), target_location->y());
+
   // SendMouseEnterOrLeaveEvents is called with the original event
   // coordinates, which are transformed independently for each view that will
   // receive an event. Also, since the view under the mouse has changed,
   // notify the CursorManager that it might need to change the cursor.
-  if ((mouse_event.GetType() == blink::WebInputEvent::kMouseLeave ||
-       mouse_event.GetType() == blink::WebInputEvent::kMouseMove) &&
+  if ((event.GetType() == blink::WebInputEvent::kMouseLeave ||
+       event.GetType() == blink::WebInputEvent::kMouseMove) &&
       target != last_mouse_move_target_) {
     SendMouseEnterOrLeaveEvents(mouse_event, target, root_view);
     if (root_view->GetCursorManager())
       root_view->GetCursorManager()->UpdateViewUnderCursor(target);
   }
 
-  target->ProcessMouseEvent(mouse_event, latency);
+  target->ProcessMouseEvent(event, latency);
 }
 
 void RenderWidgetHostInputEventRouter::RouteMouseWheelEvent(
@@ -684,9 +692,11 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
     // new compositor surface. The SurfaceID for that might not have
     // propagated to its embedding surface, which makes it impossible to
     // compute the transformation for it
-    if (!root_view->TransformPointToCoordSpaceForView(event.PositionInWidget(),
-                                                      view, &transformed_point))
+    if (!TransformPointToTargetCoordSpace(
+            root_view, view, event.PositionInWidget(), &transformed_point,
+            viz::EventSource::MOUSE)) {
       transformed_point = gfx::PointF();
+    }
     mouse_leave.SetPositionInWidget(transformed_point.x(),
                                     transformed_point.y());
     view->ProcessMouseEvent(mouse_leave, ui::LatencyInfo());
@@ -696,9 +706,11 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
   if (common_ancestor && common_ancestor != target) {
     blink::WebMouseEvent mouse_move(event);
     mouse_move.SetType(blink::WebInputEvent::kMouseMove);
-    if (!root_view->TransformPointToCoordSpaceForView(
-            event.PositionInWidget(), common_ancestor, &transformed_point))
+    if (!TransformPointToTargetCoordSpace(
+            root_view, common_ancestor, event.PositionInWidget(),
+            &transformed_point, viz::EventSource::MOUSE)) {
       transformed_point = gfx::PointF();
+    }
     mouse_move.SetPositionInWidget(transformed_point.x(),
                                    transformed_point.y());
     common_ancestor->ProcessMouseEvent(mouse_move, ui::LatencyInfo());
@@ -710,9 +722,11 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
       continue;
     blink::WebMouseEvent mouse_enter(event);
     mouse_enter.SetType(blink::WebInputEvent::kMouseMove);
-    if (!root_view->TransformPointToCoordSpaceForView(event.PositionInWidget(),
-                                                      view, &transformed_point))
+    if (!TransformPointToTargetCoordSpace(
+            root_view, view, event.PositionInWidget(), &transformed_point,
+            viz::EventSource::MOUSE)) {
       transformed_point = gfx::PointF();
+    }
     mouse_enter.SetPositionInWidget(transformed_point.x(),
                                     transformed_point.y());
     view->ProcessMouseEvent(mouse_enter, ui::LatencyInfo());
@@ -722,9 +736,39 @@ void RenderWidgetHostInputEventRouter::SendMouseEnterOrLeaveEvents(
   last_mouse_move_root_view_ = root_view;
 }
 
+void RenderWidgetHostInputEventRouter::ReportBubblingScrollToSameView(
+    const blink::WebGestureEvent& event,
+    const RenderWidgetHostViewBase* view) {
+#if 0
+  // For now, we've disabled the DumpWithoutCrashing as it's no longer
+  // providing useful information.
+  // TODO(828422): Determine useful crash keys and reenable the report.
+  base::debug::DumpWithoutCrashing();
+#endif
+}
+
+namespace {
+
+// Given |event| in root coordinates, return an event in |target_view|'s
+// coordinates.
+blink::WebGestureEvent GestureEventInTarget(
+    const blink::WebGestureEvent& event,
+    RenderWidgetHostViewBase* target_view) {
+  const gfx::Point point_in_target =
+      gfx::ToRoundedPoint(target_view->TransformRootPointToViewCoordSpace(
+          gfx::PointF(event.x, event.y)));
+  blink::WebGestureEvent event_for_target(event);
+  event_for_target.x = point_in_target.x();
+  event_for_target.y = point_in_target.y();
+  return event_for_target;
+}
+
+}  // namespace
+
 void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
     RenderWidgetHostViewBase* target_view,
-    const blink::WebGestureEvent& event) {
+    const blink::WebGestureEvent& event,
+    const RenderWidgetHostViewBase* resending_view) {
   DCHECK(target_view);
   DCHECK((target_view->wheel_scroll_latching_enabled() &&
           event.GetType() == blink::WebInputEvent::kGestureScrollBegin) ||
@@ -751,10 +795,14 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
       // event ack which didn't consume any scroll delta, and so another level
       // of bubbling is needed. This requires a GestureScrollEnd be sent to the
       // last view, which will no longer be the scroll target.
-      if (bubbling_gesture_scroll_target_.target)
-        SendGestureScrollEnd(bubbling_gesture_scroll_target_.target, event);
-      else
+      if (bubbling_gesture_scroll_target_.target) {
+        SendGestureScrollEnd(
+            bubbling_gesture_scroll_target_.target,
+            GestureEventInTarget(event,
+                                 bubbling_gesture_scroll_target_.target));
+      } else {
         first_bubbling_scroll_target_.target = target_view;
+      }
 
       bubbling_gesture_scroll_target_.target = target_view;
     } else {  // !(event.GetType() == blink::WebInputEvent::kGestureScrollBegin)
@@ -772,8 +820,23 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
       }
     }
 
-    bubbling_gesture_scroll_target_.target->ProcessGestureEvent(event,
-                                                                latency_info);
+    // If the router tries to resend a gesture scroll event back to the same
+    // view, we could hang.
+    DCHECK_NE(resending_view, bubbling_gesture_scroll_target_.target);
+    // We've seen reports of this, but don't know the cause yet. For now,
+    // instead of CHECKing or hanging, we'll report the issue and abort scroll
+    // bubbling.
+    // TODO(828422): Remove once this issue no longer occurs.
+    if (resending_view == bubbling_gesture_scroll_target_.target) {
+      ReportBubblingScrollToSameView(event, resending_view);
+      first_bubbling_scroll_target_.target = nullptr;
+      bubbling_gesture_scroll_target_.target = nullptr;
+      return;
+    }
+
+    bubbling_gesture_scroll_target_.target->ProcessGestureEvent(
+        GestureEventInTarget(event, bubbling_gesture_scroll_target_.target),
+        latency_info);
     if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
         event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
       first_bubbling_scroll_target_.target = nullptr;
@@ -793,8 +856,9 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
   // If target_view is already set up for bubbled scrolls, we forward
   // the event to the current scroll target without further consideration.
   if (target_view == first_bubbling_scroll_target_.target) {
-    bubbling_gesture_scroll_target_.target->ProcessGestureEvent(event,
-                                                                latency_info);
+    bubbling_gesture_scroll_target_.target->ProcessGestureEvent(
+        GestureEventInTarget(event, bubbling_gesture_scroll_target_.target),
+        latency_info);
     if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
         event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
       first_bubbling_scroll_target_.target = nullptr;
@@ -813,8 +877,9 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
   // have been sent to a renderer before the first one was ACKed, and the ACK
   // caused a bubble retarget. In this case they all get forwarded.
   if (target_view == bubbling_gesture_scroll_target_.target) {
-    bubbling_gesture_scroll_target_.target->ProcessGestureEvent(event,
-                                                                latency_info);
+    bubbling_gesture_scroll_target_.target->ProcessGestureEvent(
+        GestureEventInTarget(event, bubbling_gesture_scroll_target_.target),
+        latency_info);
     return;
   }
 
@@ -831,15 +896,19 @@ void RenderWidgetHostInputEventRouter::BubbleScrollEvent(
   // unused scroll delta, and so another level of bubbling is needed. This
   // requires a GestureScrollEnd be sent to the last view, which will no
   // longer be the scroll target.
-  if (bubbling_gesture_scroll_target_.target)
-    SendGestureScrollEnd(bubbling_gesture_scroll_target_.target, event);
-  else
+  if (bubbling_gesture_scroll_target_.target) {
+    SendGestureScrollEnd(
+        bubbling_gesture_scroll_target_.target,
+        GestureEventInTarget(event, bubbling_gesture_scroll_target_.target));
+  } else {
     first_bubbling_scroll_target_.target = target_view;
+  }
 
   bubbling_gesture_scroll_target_.target = target_view;
 
-  SendGestureScrollBegin(target_view, event);
-  target_view->ProcessGestureEvent(event, latency_info);
+  SendGestureScrollBegin(target_view, GestureEventInTarget(event, target_view));
+  target_view->ProcessGestureEvent(GestureEventInTarget(event, target_view),
+                                   latency_info);
 }
 
 void RenderWidgetHostInputEventRouter::SendGestureScrollBegin(
@@ -961,10 +1030,10 @@ RenderWidgetHostInputEventRouter::GetRenderWidgetHostAtPoint(
     gfx::PointF* transformed_point) {
   if (!root_view)
     return nullptr;
-  // TODO(kenrb): Pass screen coordinates through this method from all the
-  // callers. This will be broken with VizDisplayCompositor enabled until then.
+  gfx::PointF point_in_screen =
+      point + root_view->GetViewBounds().OffsetFromOrigin();
   return RenderWidgetHostImpl::From(
-      FindViewAtLocation(root_view, point, gfx::PointF(),
+      FindViewAtLocation(root_view, point, point_in_screen,
                          viz::EventSource::MOUSE, transformed_point)
           .view->GetRenderWidgetHost());
 }
@@ -1199,6 +1268,53 @@ RenderWidgetHostInputEventRouter::GetRenderWidgetTargeterForTests() {
   return event_targeter_.get();
 }
 
+bool RenderWidgetHostInputEventRouter::TransformPointToTargetCoordSpace(
+    RenderWidgetHostViewBase* root_view,
+    RenderWidgetHostViewBase* target,
+    const gfx::PointF& point,
+    gfx::PointF* transformed_point,
+    viz::EventSource source) const {
+  if (root_view == target) {
+    *transformed_point = point;
+    return true;
+  }
+
+  if (!use_viz_hit_test_) {
+    return root_view->TransformPointToCoordSpaceForView(point, target,
+                                                        transformed_point);
+  }
+
+  viz::HitTestQuery* query = GetHitTestQuery(GetHostFrameSinkManager(),
+                                             root_view->GetRootFrameSinkId());
+  if (!query)
+    return false;
+
+  std::vector<viz::FrameSinkId> target_ancestors;
+  target_ancestors.push_back(target->GetFrameSinkId());
+  RenderWidgetHostViewBase* cur_view = target;
+  while (cur_view->IsRenderWidgetHostViewChildFrame()) {
+    cur_view =
+        static_cast<RenderWidgetHostViewChildFrame*>(cur_view)->GetParentView();
+    DCHECK(cur_view);
+    target_ancestors.push_back(cur_view->GetFrameSinkId());
+  }
+  DCHECK_EQ(cur_view, root_view);
+  target_ancestors.push_back(root_view->GetRootFrameSinkId());
+
+  float device_scale_factor = root_view->GetDeviceScaleFactor();
+  DCHECK_GT(device_scale_factor, 0.0f);
+  gfx::PointF point_in_root_in_pixels =
+      ComputePointInRootInPixels(point, root_view, device_scale_factor);
+  if (!query->TransformLocationForTarget(source, target_ancestors,
+                                         point_in_root_in_pixels,
+                                         transformed_point)) {
+    return false;
+  }
+  *transformed_point =
+      gfx::ConvertPointToDIP(device_scale_factor, *transformed_point);
+  return true;
+}
+
 RenderWidgetTargetResult
 RenderWidgetHostInputEventRouter::FindTargetSynchronously(
     RenderWidgetHostViewBase* root_view,
@@ -1238,8 +1354,8 @@ void RenderWidgetHostInputEventRouter::DispatchEventToTarget(
     const base::Optional<gfx::PointF>& target_location) {
   if (blink::WebInputEvent::IsMouseEventType(event.GetType())) {
     DispatchMouseEvent(root_view, target,
-                       static_cast<const blink::WebMouseEvent&>(event),
-                       latency);
+                       static_cast<const blink::WebMouseEvent&>(event), latency,
+                       target_location);
     return;
   }
   if (event.GetType() == blink::WebInputEvent::kMouseWheel) {

@@ -1200,8 +1200,7 @@ void MenuController::SetSelection(MenuItemView* menu_item,
   if (menu_item &&
       (MenuDepth(menu_item) != 1 ||
        menu_item->GetType() != MenuItemView::SUBMENU)) {
-    menu_item->NotifyAccessibilityEvent(
-        ui::AX_EVENT_SELECTION, true);
+    menu_item->NotifyAccessibilityEvent(ax::mojom::Event::kSelection, true);
   }
 }
 
@@ -1328,7 +1327,8 @@ void MenuController::OnKeyDown(ui::KeyboardCode key_code) {
     case ui::VKEY_F4:
       if (!is_combobox_)
         break;
-    // Fallthrough to accept or dismiss combobox menus on F4, like windows.
+      // Fallthrough to accept or dismiss combobox menus on F4, like windows.
+      FALLTHROUGH;
     case ui::VKEY_RETURN:
 #if defined(OS_MACOSX)
     case ui::VKEY_SPACE:
@@ -2697,7 +2697,7 @@ void MenuController::SetHotTrackedButton(Button* hot_button) {
     // Hot-tracked state may change outside of the MenuController. Correct it.
     if (hot_button && !hot_button->IsHotTracked()) {
       hot_button->SetHotTracked(true);
-      hot_button->NotifyAccessibilityEvent(ui::AX_EVENT_SELECTION, true);
+      hot_button->NotifyAccessibilityEvent(ax::mojom::Event::kSelection, true);
     }
     return;
   }
@@ -2706,7 +2706,7 @@ void MenuController::SetHotTrackedButton(Button* hot_button) {
   hot_button_ = hot_button;
   if (hot_button) {
     hot_button->SetHotTracked(true);
-    hot_button->NotifyAccessibilityEvent(ui::AX_EVENT_SELECTION, true);
+    hot_button->NotifyAccessibilityEvent(ax::mojom::Event::kSelection, true);
   }
 }
 

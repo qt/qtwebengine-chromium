@@ -14,14 +14,12 @@
 
 namespace viz {
 
-class FrameSinkManagerImpl;
-
 // HitTestManager manages the collection of HitTestRegionList objects
 // submitted in calls to SubmitCompositorFrame.  This collection is
 // used by HitTestAggregator.
 class VIZ_SERVICE_EXPORT HitTestManager : public SurfaceObserver {
  public:
-  explicit HitTestManager(FrameSinkManagerImpl* frame_sink_manager);
+  explicit HitTestManager(SurfaceManager* surface_manager);
   virtual ~HitTestManager();
 
   // Called when HitTestRegionList is submitted along with every call
@@ -39,7 +37,8 @@ class VIZ_SERVICE_EXPORT HitTestManager : public SurfaceObserver {
   // SurfaceObserver:
   void OnSurfaceCreated(const SurfaceId& surface_id) override {}
   void OnFirstSurfaceActivation(const SurfaceInfo& surface_info) override {}
-  void OnSurfaceActivated(const SurfaceId& surface_id) override;
+  void OnSurfaceActivated(const SurfaceId& surface_id,
+                          base::Optional<base::TimeDelta> duration) override;
   void OnSurfaceDestroyed(const SurfaceId& surface_id) override {}
   bool OnSurfaceDamaged(const SurfaceId& surface_id,
                         const BeginFrameAck& ack) override;
@@ -48,15 +47,13 @@ class VIZ_SERVICE_EXPORT HitTestManager : public SurfaceObserver {
                                const BeginFrameArgs& args) override {}
 
  private:
-  friend class TestHitTestManager;
-
   bool ValidateHitTestRegionList(
       const SurfaceId& surface_id,
       const mojom::HitTestRegionListPtr& hit_test_region_list);
   bool ValidateHitTestRegion(const SurfaceId& surface_id,
                              const mojom::HitTestRegionPtr& hit_test_region);
 
-  FrameSinkManagerImpl* const frame_sink_manager_;
+  SurfaceManager* const surface_manager_;
 
   std::map<SurfaceId, base::flat_map<uint64_t, mojom::HitTestRegionListPtr>>
       hit_test_region_lists_;

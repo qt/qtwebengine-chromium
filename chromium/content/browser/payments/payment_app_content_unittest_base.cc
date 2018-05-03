@@ -21,7 +21,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -162,7 +162,7 @@ PaymentManager* PaymentAppContentUnitTestBase::CreatePaymentManager(
   EXPECT_FALSE(registration->waiting_version());
   EXPECT_FALSE(registration->installing_version());
   registration->active_version()->StopWorker(
-      base::Bind(&StopWorkerCallback, &called));
+      base::BindOnce(&StopWorkerCallback, &called));
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
 
@@ -189,7 +189,7 @@ PaymentManager* PaymentAppContentUnitTestBase::CreatePaymentManager(
   for (const auto& candidate_manager :
        payment_app_context()->payment_managers_) {
     if (!base::ContainsKey(existing_managers, candidate_manager.first)) {
-      candidate_manager.first->Init(sw_script_url.spec(), scope_url.spec());
+      candidate_manager.first->Init(sw_script_url, scope_url.spec());
       base::RunLoop().RunUntilIdle();
       return candidate_manager.first;
     }

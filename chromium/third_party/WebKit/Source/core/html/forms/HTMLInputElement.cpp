@@ -96,7 +96,8 @@ class ListAttributeTargetObserver : public IdTargetObserver {
 
 const int kDefaultSize = 20;
 
-HTMLInputElement::HTMLInputElement(Document& document, bool created_by_parser)
+HTMLInputElement::HTMLInputElement(Document& document,
+                                   const CreateElementFlags flags)
     : TextControlElement(inputTag, document),
       size_(kDefaultSize),
       has_dirty_value_(false),
@@ -107,28 +108,28 @@ HTMLInputElement::HTMLInputElement(Document& document, bool created_by_parser)
       autocomplete_(kUninitialized),
       has_non_empty_list_(false),
       state_restored_(false),
-      parsing_in_progress_(created_by_parser),
+      parsing_in_progress_(flags.IsCreatedByParser()),
       can_receive_dropped_files_(false),
       should_reveal_password_(false),
       needs_to_update_view_value_(true),
       is_placeholder_visible_(false),
       has_been_password_field_(false),
-      // |m_inputType| is lazily created when constructed by the parser to avoid
-      // constructing unnecessarily a text inputType and its shadow subtree,
+      // |input_type_| is lazily created when constructed by the parser to avoid
+      // constructing unnecessarily a text InputType and its shadow subtree,
       // just to destroy them when the |type| attribute gets set by the parser
       // to something else than 'text'.
-      input_type_(created_by_parser ? nullptr : InputType::CreateText(*this)),
+      input_type_(flags.IsCreatedByParser() ? nullptr
+                                            : InputType::CreateText(*this)),
       input_type_view_(input_type_ ? input_type_->CreateView() : nullptr) {
   SetHasCustomStyleCallbacks();
 }
 
 HTMLInputElement* HTMLInputElement::Create(Document& document,
-                                           bool created_by_parser) {
-  HTMLInputElement* input_element =
-      new HTMLInputElement(document, created_by_parser);
-  if (!created_by_parser) {
+                                           const CreateElementFlags flags) {
+  auto* input_element = new HTMLInputElement(document, flags);
+  if (!flags.IsCreatedByParser()) {
     DCHECK(input_element->input_type_view_->NeedsShadowSubtree());
-    input_element->CreateUserAgentShadowRootV1();
+    input_element->CreateUserAgentShadowRoot();
     input_element->CreateShadowSubtree();
   }
   return input_element;
@@ -316,7 +317,7 @@ void HTMLInputElement::UpdateFocusAppearanceWithOptions(
     GetDocument().EnsurePaintLocationDataValidForNode(this);
     if (!options.preventScroll()) {
       if (GetLayoutObject()) {
-        GetLayoutObject()->ScrollRectToVisible(BoundingBox(),
+        GetLayoutObject()->ScrollRectToVisible(BoundingBoxForScrollIntoView(),
                                                WebScrollIntoViewParams());
       }
       if (GetDocument().GetFrame())
@@ -381,7 +382,7 @@ void HTMLInputElement::InitializeTypeInParsing() {
   has_been_password_field_ |= new_type_name == InputTypeNames::password;
 
   if (input_type_view_->NeedsShadowSubtree()) {
-    CreateUserAgentShadowRootV1();
+    CreateUserAgentShadowRoot();
     CreateShadowSubtree();
   }
 
@@ -440,7 +441,7 @@ void HTMLInputElement::UpdateType() {
   input_type_ = new_type;
   input_type_view_ = input_type_->CreateView();
   if (input_type_view_->NeedsShadowSubtree()) {
-    EnsureUserAgentShadowRootV1();
+    EnsureUserAgentShadowRoot();
     CreateShadowSubtree();
   }
 
@@ -960,6 +961,14 @@ void HTMLInputElement::DispatchChangeEventIfNeeded() {
     DispatchChangeEvent();
 }
 
+void HTMLInputElement::DispatchInputAndChangeEventIfNeeded() {
+  if (isConnected() &&
+      input_type_->ShouldSendChangeEventAfterCheckedChanged()) {
+    DispatchInputEvent();
+    DispatchChangeEvent();
+  }
+}
+
 bool HTMLInputElement::checked() const {
   input_type_->ReadingChecked();
   return is_checked_;
@@ -1022,10 +1031,9 @@ bool HTMLInputElement::SizeShouldIncludeDecoration(int& preferred_size) const {
                                                        preferred_size);
 }
 
-void HTMLInputElement::CopyNonAttributePropertiesFromElement(
-    const Element& source) {
-  const HTMLInputElement& source_element =
-      static_cast<const HTMLInputElement&>(source);
+void HTMLInputElement::CloneNonAttributePropertiesFrom(const Element& source,
+                                                       CloneChildrenFlag flag) {
+  const HTMLInputElement& source_element = ToHTMLInputElement(source);
 
   non_attribute_value_ = source_element.non_attribute_value_;
   has_dirty_value_ = source_element.has_dirty_value_;
@@ -1034,7 +1042,7 @@ void HTMLInputElement::CopyNonAttributePropertiesFromElement(
   is_indeterminate_ = source_element.is_indeterminate_;
   input_type_->CopyNonAttributeProperties(source_element);
 
-  TextControlElement::CopyNonAttributePropertiesFromElement(source);
+  TextControlElement::CloneNonAttributePropertiesFrom(source, flag);
 
   needs_to_update_view_value_ = true;
   input_type_view_->UpdateView();
@@ -1717,14 +1725,6 @@ String HTMLInputElement::GetPlaceholderValue() const {
   return !SuggestedValue().IsEmpty() ? SuggestedValue() : StrippedPlaceholder();
 }
 
-bool HTMLInputElement::SupportsAutocapitalize() const {
-  return input_type_->SupportsAutocapitalize();
-}
-
-const AtomicString& HTMLInputElement::DefaultAutocapitalize() const {
-  return input_type_->DefaultAutocapitalize();
-}
-
 String HTMLInputElement::DefaultToolTip() const {
   return input_type_->DefaultToolTip(*input_type_view_);
 }
@@ -1949,7 +1949,7 @@ void HTMLInputElement::ChildrenChanged(const ChildrenChange& change) {
   // Some input types only need shadow roots to hide any children that may
   // have been appended by script. For such types, shadow roots are lazily
   // created when children are added for the first time.
-  EnsureUserAgentShadowRootV1();
+  EnsureUserAgentShadowRoot();
   ContainerNode::ChildrenChanged(change);
 }
 

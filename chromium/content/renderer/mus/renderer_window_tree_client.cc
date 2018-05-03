@@ -11,13 +11,13 @@
 #include "cc/base/switches.h"
 #include "components/viz/client/client_layer_tree_frame_sink.h"
 #include "components/viz/client/hit_test_data_provider.h"
+#include "components/viz/client/hit_test_data_provider_draw_quad.h"
 #include "components/viz/client/local_surface_id_provider.h"
-#include "components/viz/common/surfaces/surface_sequence.h"
-#include "content/renderer/mash_util.h"
+#include "components/viz/common/features.h"
 #include "content/renderer/mus/mus_embedded_frame.h"
 #include "content/renderer/mus/mus_embedded_frame_delegate.h"
 #include "content/renderer/render_frame_proxy.h"
-#include "ui/base/ui_base_switches_util.h"
+#include "ui/base/ui_base_features.h"
 
 namespace content {
 
@@ -31,7 +31,7 @@ base::LazyInstance<ConnectionMap>::Leaky g_connections =
 
 // static
 void RendererWindowTreeClient::CreateIfNecessary(int routing_id) {
-  if (!IsRunningWithMus() || Get(routing_id))
+  if (!features::IsMusEnabled() || Get(routing_id))
     return;
   RendererWindowTreeClient* connection =
       new RendererWindowTreeClient(routing_id);
@@ -140,6 +140,11 @@ void RendererWindowTreeClient::RequestLayerTreeFrameSinkInternal(
   params.local_surface_id_provider =
       std::make_unique<viz::DefaultLocalSurfaceIdProvider>();
   params.enable_surface_synchronization = true;
+  if (features::IsVizHitTestingDrawQuadEnabled()) {
+    params.hit_test_data_provider =
+        std::make_unique<viz::HitTestDataProviderDrawQuad>(
+            true /* should_ask_for_child_region */);
+  }
   auto frame_sink = std::make_unique<viz::ClientLayerTreeFrameSink>(
       std::move(context_provider), nullptr /* worker_context_provider */,
       &params);
@@ -218,7 +223,7 @@ void RendererWindowTreeClient::OnFrameSinkIdAllocated(
     const viz::FrameSinkId& frame_sink_id) {
   // When mus is not hosting viz FrameSinkIds come from the browser, so we
   // ignore them here.
-  if (!switches::IsMusHostingViz())
+  if (!base::FeatureList::IsEnabled(features::kMash))
     return;
 
   for (MusEmbeddedFrame* embedded_frame : embedded_frames_) {
@@ -251,17 +256,17 @@ void RendererWindowTreeClient::OnWindowTransformChanged(
     const gfx::Transform& new_transform) {}
 
 void RendererWindowTreeClient::OnClientAreaChanged(
-    uint32_t window_id,
+    ui::Id window_id,
     const gfx::Insets& new_client_area,
     const std::vector<gfx::Rect>& new_additional_client_areas) {}
 
 void RendererWindowTreeClient::OnTransientWindowAdded(
-    uint32_t window_id,
-    uint32_t transient_window_id) {}
+    ui::Id window_id,
+    ui::Id transient_window_id) {}
 
 void RendererWindowTreeClient::OnTransientWindowRemoved(
-    uint32_t window_id,
-    uint32_t transient_window_id) {}
+    ui::Id window_id,
+    ui::Id transient_window_id) {}
 
 void RendererWindowTreeClient::OnWindowHierarchyChanged(
     ui::Id window_id,
@@ -306,7 +311,7 @@ void RendererWindowTreeClient::OnWindowInputEvent(
 
 void RendererWindowTreeClient::OnPointerEventObserved(
     std::unique_ptr<ui::Event> event,
-    uint32_t window_id,
+    ui::Id window_id,
     int64_t display_id) {
   NOTREACHED();
 }
@@ -319,7 +324,7 @@ void RendererWindowTreeClient::OnWindowCursorChanged(ui::Id window_id,
 void RendererWindowTreeClient::OnWindowSurfaceChanged(
     ui::Id window_id,
     const viz::SurfaceInfo& surface_info) {
-  DCHECK(switches::IsMusHostingViz());
+  DCHECK(base::FeatureList::IsEnabled(features::kMash));
   for (MusEmbeddedFrame* embedded_frame : embedded_frames_) {
     if (embedded_frame->window_id_ == window_id) {
       embedded_frame->delegate_->OnMusEmbeddedFrameSurfaceChanged(surface_info);
@@ -354,7 +359,7 @@ void RendererWindowTreeClient::OnCompleteDrop(
     const OnCompleteDropCallback& callback) {}
 
 void RendererWindowTreeClient::OnPerformDragDropCompleted(
-    uint32_t window,
+    uint32_t change_id,
     bool success,
     uint32_t action_taken) {}
 
@@ -368,7 +373,7 @@ void RendererWindowTreeClient::OnChangeCompleted(uint32_t change_id,
   // controls the visibility of the root frame).
 }
 
-void RendererWindowTreeClient::RequestClose(uint32_t window_id) {}
+void RendererWindowTreeClient::RequestClose(ui::Id window_id) {}
 
 void RendererWindowTreeClient::GetWindowManager(
     mojo::AssociatedInterfaceRequest<ui::mojom::WindowManager> internal) {

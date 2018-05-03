@@ -7,20 +7,15 @@
 
 #include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "content/public/common/service_worker_modes.h"
-#include "content/public/renderer/child_url_loader_factory_getter.h"
+#include "content/public/common/shared_url_loader_factory.h"
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
-#include "third_party/WebKit/common/blob/blob_registry.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "third_party/WebKit/public/mojom/blob/blob_registry.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
 #include "third_party/WebKit/public/platform/WebApplicationCacheHost.h"
 #include "third_party/WebKit/public/platform/WebWorkerFetchContext.h"
 #include "url/gurl.h"
-
-namespace base {
-class SingleThreadTaskRunner;
-}  // namespace base
 
 namespace IPC {
 class Message;
@@ -39,18 +34,27 @@ class URLLoaderThrottleProvider;
 class WorkerFetchContextImpl : public blink::WebWorkerFetchContext,
                                public mojom::ServiceWorkerWorkerClient {
  public:
+  // |url_loader_factory_info| is a generic URLLoaderFactory that may
+  // contain multiple URLLoader factories for different schemes internally,
+  // and used for regular resource loading from the worker context.
+  // |direct_network_factory_info| is a URLLoader factory that directly
+  // goes to the network, used when this context creates a
+  // ServiceWorkerSubresourceLoader because it is controlled by a service
+  // worker.
   WorkerFetchContextImpl(
       mojom::ServiceWorkerWorkerClientRequest service_worker_client_request,
       mojom::ServiceWorkerContainerHostPtrInfo
           service_worker_container_host_info,
-      ChildURLLoaderFactoryGetter::Info url_loader_factory_getter_info,
+      std::unique_ptr<SharedURLLoaderFactoryInfo> url_loader_factory_info,
+      std::unique_ptr<SharedURLLoaderFactoryInfo> direct_network_factory_info,
       std::unique_ptr<URLLoaderThrottleProvider> throttle_provider);
   ~WorkerFetchContextImpl() override;
 
   // blink::WebWorkerFetchContext implementation:
-  void InitializeOnWorkerThread(
-      scoped_refptr<base::SingleThreadTaskRunner>) override;
+  void InitializeOnWorkerThread() override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
+  std::unique_ptr<blink::WebURLLoaderFactory> WrapURLLoaderFactory(
+      mojo::ScopedMessagePipeHandle url_loader_factory_handle) override;
   void WillSendRequest(blink::WebURLRequest&) override;
   bool IsControlledByServiceWorker() const override;
   void SetIsOnSubframe(bool) override;
@@ -99,8 +103,11 @@ class WorkerFetchContextImpl : public blink::WebWorkerFetchContext,
   mojom::ServiceWorkerWorkerClientRequest service_worker_client_request_;
   // Consumed on the worker thread to create |service_worker_container_host_|.
   mojom::ServiceWorkerContainerHostPtrInfo service_worker_container_host_info_;
-  // Consumed on the worker thread to create |url_loader_factory_getter_|.
-  ChildURLLoaderFactoryGetter::Info url_loader_factory_getter_info_;
+  // Consumed on the worker thread to create |shared_url_loader_factory_|.
+  std::unique_ptr<SharedURLLoaderFactoryInfo> url_loader_factory_info_;
+  // Consumed on the worker thread to create |direct_network_loader_factory_|.
+  std::unique_ptr<SharedURLLoaderFactoryInfo>
+      direct_network_loader_factory_info_;
   // Consumed on the worker thread to create |blob_registry_|.
   blink::mojom::BlobRegistryPtrInfo blob_registry_ptr_info_;
 
@@ -114,7 +121,14 @@ class WorkerFetchContextImpl : public blink::WebWorkerFetchContext,
   std::unique_ptr<ResourceDispatcher> resource_dispatcher_;
 
   // Initialized on the worker thread when InitializeOnWorkerThread() is called.
-  scoped_refptr<ChildURLLoaderFactoryGetter> url_loader_factory_getter_;
+  // |shared_url_loader_factory_| may be a bundled factory that contains
+  // multiple factories for different schemes and to be used for regular
+  // loading by the worker, while |direct_network_loader_factory_| is used
+  // specifically to initialize ServiceWorkerSubresourceLoader for network
+  // load that is controlled by a service worker (when this worker is a
+  // client of the service worker).
+  scoped_refptr<SharedURLLoaderFactory> shared_url_loader_factory_;
+  scoped_refptr<SharedURLLoaderFactory> direct_network_loader_factory_;
 
   // S13nServiceWorker:
   // Initialized on the worker thread when InitializeOnWorkerThread() is called.

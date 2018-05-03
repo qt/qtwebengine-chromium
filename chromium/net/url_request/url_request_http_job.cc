@@ -55,9 +55,9 @@
 #include "net/log/net_log_with_source.h"
 #include "net/net_features.h"
 #include "net/nqe/network_quality_estimator.h"
-#include "net/proxy/proxy_info.h"
-#include "net/proxy/proxy_retry_info.h"
-#include "net/proxy/proxy_service.h"
+#include "net/proxy_resolution/proxy_info.h"
+#include "net/proxy_resolution/proxy_retry_info.h"
+#include "net/proxy_resolution/proxy_service.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
@@ -76,9 +76,9 @@
 #endif
 
 #if BUILDFLAG(ENABLE_REPORTING)
+#include "net/network_error_logging/network_error_logging_service.h"
 #include "net/reporting/reporting_header_parser.h"
 #include "net/reporting/reporting_service.h"
-#include "net/url_request/network_error_logging_delegate.h"
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
 namespace {
@@ -348,6 +348,10 @@ void URLRequestHttpJob::Start() {
   request_info_.url = request_->url();
   request_info_.method = request_->method();
   request_info_.load_flags = request_->load_flags();
+  request_info_.traffic_annotation =
+      net::MutableNetworkTrafficAnnotationTag(request_->traffic_annotation());
+  request_info_.socket_tag = request_->socket_tag();
+
   // Enable privacy mode if cookie settings or flags tell us not send or
   // save cookies.
   bool enable_privacy_mode =
@@ -409,7 +413,7 @@ void URLRequestHttpJob::NotifyBeforeSendHeadersCallback(
   if (network_delegate()) {
     network_delegate()->NotifyBeforeSendHeaders(
         request_, proxy_info,
-        request_->context()->proxy_service()->proxy_retry_info(),
+        request_->context()->proxy_resolution_service()->proxy_retry_info(),
         request_headers);
   }
 }
@@ -461,7 +465,8 @@ void URLRequestHttpJob::DestroyTransaction() {
   total_sent_bytes_from_previous_transactions_ +=
       transaction_->GetTotalSentBytes();
   transaction_.reset();
-  response_info_ = NULL;
+  response_info_ = nullptr;
+  override_response_headers_ = nullptr;
   receive_headers_end_ = base::TimeTicks();
 }
 
@@ -514,6 +519,7 @@ void URLRequestHttpJob::MaybeStartTransactionInternal(int result) {
 void URLRequestHttpJob::StartTransactionInternal() {
   // This should only be called while the request's status is IO_PENDING.
   DCHECK_EQ(URLRequestStatus::IO_PENDING, request_->status().status());
+  DCHECK(!override_response_headers_);
 
   // NOTE: This method assumes that request_info_ is already setup properly.
 
@@ -676,9 +682,11 @@ void URLRequestHttpJob::SetCookieHeaderAndStart(const CookieList& cookie_list) {
     if (!request_info_.url.SchemeIsCryptographic())
       LogCookieAgeForNonSecureRequest(cookie_list, *request_);
 
-    request_info_.extra_headers.SetHeader(
-        HttpRequestHeaders::kCookie,
-        CanonicalCookie::BuildCookieLine(cookie_list));
+    std::string cookie_line = CanonicalCookie::BuildCookieLine(cookie_list);
+    UMA_HISTOGRAM_COUNTS_10000("Cookie.HeaderLength", cookie_line.length());
+    request_info_.extra_headers.SetHeader(HttpRequestHeaders::kCookie,
+                                          cookie_line);
+
     // Disable privacy mode as we are sending cookies anyway.
     request_info_.privacy_mode = PRIVACY_MODE_DISABLED;
   }
@@ -847,14 +855,14 @@ void URLRequestHttpJob::ProcessNetworkErrorLoggingHeader() {
 
   HttpResponseHeaders* headers = GetResponseHeaders();
   std::string value;
-  if (!headers->GetNormalizedHeader(NetworkErrorLoggingDelegate::kHeaderName,
+  if (!headers->GetNormalizedHeader(NetworkErrorLoggingService::kHeaderName,
                                     &value)) {
     return;
   }
 
-  NetworkErrorLoggingDelegate* delegate =
-      request_->context()->network_error_logging_delegate();
-  if (!delegate)
+  NetworkErrorLoggingService* service =
+      request_->context()->network_error_logging_service();
+  if (!service)
     return;
 
   // Only accept Report-To headers on HTTPS connections that have no
@@ -863,7 +871,7 @@ void URLRequestHttpJob::ProcessNetworkErrorLoggingHeader() {
   if (!ssl_info.is_valid() || IsCertStatusError(ssl_info.cert_status))
     return;
 
-  delegate->OnHeader(url::Origin::Create(request_info_.url), value);
+  service->OnHeader(url::Origin::Create(request_info_.url), value);
 }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
@@ -981,7 +989,8 @@ void URLRequestHttpJob::RestartTransactionWithAuth(
   auth_credentials_ = credentials;
 
   // These will be reset in OnStartCompleted.
-  response_info_ = NULL;
+  response_info_ = nullptr;
+  override_response_headers_ = nullptr;  // See https://crbug.com/801237.
   receive_headers_end_ = base::TimeTicks();
 
   ResetTimer();
@@ -1237,6 +1246,9 @@ void URLRequestHttpJob::CancelAuth() {
   // These will be reset in OnStartCompleted.
   response_info_ = NULL;
   receive_headers_end_ = base::TimeTicks::Now();
+  // TODO(davidben,mmenke): We should either reset override_response_headers_
+  // here or not call NotifyHeadersReceived a second time on the same response
+  // headers. See https://crbug.com/810063.
 
   ResetTimer();
 
@@ -1256,9 +1268,10 @@ void URLRequestHttpJob::CancelAuth() {
 void URLRequestHttpJob::ContinueWithCertificate(
     scoped_refptr<X509Certificate> client_cert,
     scoped_refptr<SSLPrivateKey> client_private_key) {
-  DCHECK(transaction_.get());
+  DCHECK(transaction_);
 
   DCHECK(!response_info_) << "should not have a response yet";
+  DCHECK(!override_response_headers_);
   receive_headers_end_ = base::TimeTicks();
 
   ResetTimer();
@@ -1282,6 +1295,7 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
     return;
 
   DCHECK(!response_info_) << "should not have a response yet";
+  DCHECK(!override_response_headers_);
   receive_headers_end_ = base::TimeTicks();
 
   ResetTimer();

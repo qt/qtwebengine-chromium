@@ -9,7 +9,7 @@
 #include <string>
 
 #include "base/trace_event/trace_event.h"
-#include "components/offline_pages/features/features.h"
+#include "components/offline_pages/buildflags/buildflags.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
@@ -167,8 +167,7 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
           request, network_delegate, provider_host_->client_uuid(),
           blob_storage_context_, resource_context, request_mode_,
           credentials_mode_, redirect_mode_, integrity_, keepalive_,
-          resource_type_, request_context_type_, frame_type_, body_,
-          ServiceWorkerFetchType::FETCH, this));
+          resource_type_, request_context_type_, frame_type_, body_, this));
   url_job_ = std::make_unique<ServiceWorkerURLJobWrapper>(job->GetWeakPtr());
 
   resource_context_ = resource_context;
@@ -205,7 +204,7 @@ void ServiceWorkerControlleeRequestHandler::MaybeCreateLoader(
 
   if (!context_ || !provider_host_) {
     // We can't do anything other than to fall back to network.
-    std::move(callback).Run(StartLoaderCallback());
+    std::move(callback).Run({});
     return;
   }
 
@@ -217,13 +216,13 @@ void ServiceWorkerControlleeRequestHandler::MaybeCreateLoader(
   // Fall back for the subsequent offline page interceptor to load the offline
   // snapshot of the page if required.
   if (ShouldFallbackToLoadOfflinePage(resource_request.headers)) {
-    std::move(callback).Run(StartLoaderCallback());
+    std::move(callback).Run({});
     return;
   }
 #endif  // BUILDFLAG(ENABLE_OFFLINE_PAGES)
 
   url_job_ = std::make_unique<ServiceWorkerURLJobWrapper>(
-      std::make_unique<ServiceWorkerURLLoaderJob>(
+      std::make_unique<ServiceWorkerNavigationLoader>(
           std::move(callback), this, resource_request,
           base::WrapRefCounted(context_->loader_factory_getter())));
 
@@ -268,6 +267,7 @@ ServiceWorkerControlleeRequestHandler::MaybeCreateSubresourceLoaderParams() {
   auto controller_info = mojom::ControllerServiceWorkerInfo::New();
   controller_info->endpoint =
       provider_host_->GetControllerServiceWorkerPtr().PassInterface();
+  controller_info->client_id = provider_host_->client_uuid();
   controller_info->object_info = provider_host_->GetOrCreateServiceWorkerHandle(
       provider_host_->controller());
   params.controller_service_worker_info = std::move(controller_info);
@@ -296,8 +296,8 @@ void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
   provider_host_->SetDocumentUrl(stripped_url_);
   provider_host_->SetTopmostFrameUrl(site_for_cookies);
   context_->storage()->FindRegistrationForDocument(
-      stripped_url_, base::Bind(&self::DidLookupRegistrationForMainResource,
-                                weak_factory_.GetWeakPtr()));
+      stripped_url_, base::BindOnce(&self::DidLookupRegistrationForMainResource,
+                                    weak_factory_.GetWeakPtr()));
 }
 
 void ServiceWorkerControlleeRequestHandler::
@@ -323,22 +323,9 @@ void ServiceWorkerControlleeRequestHandler::
   }
   DCHECK(registration.get());
 
-  base::Callback<WebContents*(void)> web_contents_getter;
-  if (IsBrowserSideNavigationEnabled()) {
-    web_contents_getter = provider_host_->web_contents_getter();
-  } else if (provider_host_->process_id() != -1 &&
-             provider_host_->frame_id() != -1) {
-    web_contents_getter = base::Bind(
-        [](int render_process_id, int render_frame_id) {
-          RenderFrameHost* rfh =
-              RenderFrameHost::FromID(render_process_id, render_frame_id);
-          return WebContents::FromRenderFrameHost(rfh);
-        },
-        provider_host_->process_id(), provider_host_->frame_id());
-  }
   if (!GetContentClient()->browser()->AllowServiceWorker(
           registration->pattern(), provider_host_->topmost_frame_url(),
-          resource_context_, web_contents_getter)) {
+          resource_context_, provider_host_->web_contents_getter())) {
     url_job_->FallbackToNetwork();
     TRACE_EVENT_ASYNC_END2(
         "ServiceWorker",
@@ -413,8 +400,7 @@ void ServiceWorkerControlleeRequestHandler::
   DCHECK_NE(active_version->fetch_handler_existence(),
             ServiceWorkerVersion::FetchHandlerExistence::UNKNOWN);
   ServiceWorkerMetrics::CountControlledPageLoad(
-      active_version->site_for_uma(), stripped_url_, is_main_frame_load_,
-      url_job_->GetPageTransition(), url_job_->GetURLChainSize());
+      active_version->site_for_uma(), stripped_url_, is_main_frame_load_);
 
   bool is_forwarded =
       MaybeForwardToServiceWorker(url_job_.get(), active_version.get());
@@ -446,8 +432,7 @@ void ServiceWorkerControlleeRequestHandler::OnVersionStatusChanged(
   DCHECK_NE(version->fetch_handler_existence(),
             ServiceWorkerVersion::FetchHandlerExistence::UNKNOWN);
   ServiceWorkerMetrics::CountControlledPageLoad(
-      version->site_for_uma(), stripped_url_, is_main_frame_load_,
-      url_job_->GetPageTransition(), url_job_->GetURLChainSize());
+      version->site_for_uma(), stripped_url_, is_main_frame_load_);
 
   provider_host_->AssociateRegistration(registration,
                                         false /* notify_controllerchange */);
@@ -475,8 +460,9 @@ void ServiceWorkerControlleeRequestHandler::DidUpdateRegistration(
     // Update failed. Look up the registration again since the original
     // registration was possibly unregistered in the meantime.
     context_->storage()->FindRegistrationForDocument(
-        stripped_url_, base::Bind(&self::DidLookupRegistrationForMainResource,
-                                  weak_factory_.GetWeakPtr()));
+        stripped_url_,
+        base::BindOnce(&self::DidLookupRegistrationForMainResource,
+                       weak_factory_.GetWeakPtr()));
     return;
   }
   DCHECK_EQ(original_registration->id(), registration_id);
@@ -506,8 +492,9 @@ void ServiceWorkerControlleeRequestHandler::OnUpdatedVersionStatusChanged(
     // continue with the incumbent version.
     // In case unregister job may have run, look up the registration again.
     context_->storage()->FindRegistrationForDocument(
-        stripped_url_, base::Bind(&self::DidLookupRegistrationForMainResource,
-                                  weak_factory_.GetWeakPtr()));
+        stripped_url_,
+        base::BindOnce(&self::DidLookupRegistrationForMainResource,
+                       weak_factory_.GetWeakPtr()));
     return;
   }
   version->RegisterStatusChangeCallback(

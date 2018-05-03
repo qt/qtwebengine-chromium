@@ -28,6 +28,7 @@
 
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/files/file.h"
@@ -71,7 +72,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#include "media/gpu/dxva_video_decode_accelerator_win.h"
+#include "media/gpu/windows/dxva_video_decode_accelerator_win.h"
 #endif  // defined(OS_WIN)
 #if BUILDFLAG(USE_VAAPI)
 #include "media/gpu/vaapi/vaapi_wrapper.h"
@@ -535,10 +536,6 @@ class GLRenderingVDAClient
   DISALLOW_IMPLICIT_CONSTRUCTORS(GLRenderingVDAClient);
 };
 
-static bool DoNothingReturnTrue() {
-  return true;
-}
-
 static bool DummyBindImage(uint32_t client_texture_id,
                            uint32_t texture_target,
                            const scoped_refptr<gl::GLImage>& image,
@@ -616,14 +613,14 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
 
   if (fake_decoder_) {
     decoder_.reset(new FakeVideoDecodeAccelerator(
-        frame_size_, base::Bind(&DoNothingReturnTrue)));
+        frame_size_, base::Bind([]() { return true; })));
     LOG_ASSERT(decoder_->Initialize(config, this));
   } else {
     if (!vda_factory_) {
       vda_factory_ = GpuVideoDecodeAcceleratorFactory::Create(
           base::Bind(&RenderingHelper::GetGLContext,
                      base::Unretained(rendering_helper_)),
-          base::Bind(&DoNothingReturnTrue), base::Bind(&DummyBindImage));
+          base::Bind([]() { return true; }), base::Bind(&DummyBindImage));
       LOG_ASSERT(vda_factory_);
     }
 

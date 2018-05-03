@@ -6,6 +6,7 @@
 #define COMPONENTS_VIZ_HOST_HOST_FRAME_SINK_MANAGER_H_
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -75,27 +76,41 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
   void RegisterFrameSinkId(const FrameSinkId& frame_sink_id,
                            HostFrameSinkClient* client);
 
-  // Invalidates |frame_sink_id| which cleans up any unsatisified surface
-  // sequences or dangling temporary references assigned to it. If there is a
-  // CompositorFrameSink for |frame_sink_id| then it will be destroyed and the
-  // message pipe to the client will be closed.
+  // Invalidates |frame_sink_id| which cleans up any dangling temporary
+  // references assigned to it. If there is a CompositorFrameSink for
+  // |frame_sink_id| then it will be destroyed and the message pipe to the
+  // client will be closed.
   void InvalidateFrameSinkId(const FrameSinkId& frame_sink_id);
+
+  // Tells FrameSinkManger to report when a synchronization event completes via
+  // tracing and UMA and the duration of that event. A synchronization event
+  // occurs when a CompositorFrame submitted to the CompositorFrameSink
+  // specified by |frame_sink_id| activates after having been blocked by
+  // unresolved dependencies.
+  void EnableSynchronizationReporting(const FrameSinkId& frame_sink_id,
+                                      const std::string& reporting_label);
 
   // |debug_label| is used when printing out the surface hierarchy so we know
   // which clients are contributing which surfaces.
   void SetFrameSinkDebugLabel(const FrameSinkId& frame_sink_id,
                               const std::string& debug_label);
 
-  // Creates a connection for a display root to viz. Provides the same
+  // Creates a connection from a display root to viz. Provides the same
   // interfaces as CreateCompositorFramesink() plus the priviledged
   // DisplayPrivate and (if requested) ExternalBeginFrameController interfaces.
   // When no longer needed, call InvalidateFrameSinkId().
+  //
+  // If there is already a CompositorFrameSink for |frame_sink_id| then calling
+  // this will destroy the existing CompositorFrameSink and create a new one.
   void CreateRootCompositorFrameSink(
       mojom::RootCompositorFrameSinkParamsPtr params);
 
-  // Creates a connection between client to viz, using |request| and |client|,
+  // Creates a connection from a client to viz, using |request| and |client|,
   // that allows the client to submit CompositorFrames. When no longer needed,
   // call InvalidateFrameSinkId().
+  //
+  // If there is already a CompositorFrameSink for |frame_sink_id| then calling
+  // this will destroy the existing CompositorFrameSink and create a new one.
   void CreateCompositorFrameSink(const FrameSinkId& frame_sink_id,
                                  mojom::CompositorFrameSinkRequest request,
                                  mojom::CompositorFrameSinkClientPtr client);
@@ -122,6 +137,9 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
 
   // Creates a FrameSinkVideoCapturer instance.
   void CreateVideoCapturer(mojom::FrameSinkVideoCapturerRequest request);
+
+  // Marks the given SurfaceIds for destruction.
+  void EvictSurfaces(const std::vector<SurfaceId>& surface_ids);
 
   // CompositorFrameSinkSupportManager:
   std::unique_ptr<CompositorFrameSinkSupport> CreateCompositorFrameSinkSupport(
@@ -156,6 +174,10 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
 
     // The client to be notified of changes to this FrameSink.
     HostFrameSinkClient* client = nullptr;
+
+    // The label to use whether this client would like reporting for
+    // synchronization events.
+    std::string synchronization_reporting_label;
 
     // The name of the HostFrameSinkClient used for debug purposes.
     std::string debug_label;

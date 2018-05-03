@@ -12,6 +12,7 @@
 #include "platform/graphics/paint/GeometryMapperTransformCache.h"
 #include "platform/graphics/paint/PaintPropertyNode.h"
 #include "platform/graphics/paint/ScrollPaintPropertyNode.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "platform/wtf/text/WTFString.h"
 
@@ -77,9 +78,11 @@ class PLATFORM_EXPORT TransformPaintPropertyNode
 
     if (matrix == matrix_ && origin == origin_ &&
         flattens_inherited_transform == flattens_inherited_transform_ &&
-        rendering_context_id == rendering_context_id_ &&
-        direct_compositing_reasons == direct_compositing_reasons_ &&
-        compositor_element_id == compositor_element_id_ && scroll == scroll_)
+        (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
+         (rendering_context_id == rendering_context_id_ &&
+          direct_compositing_reasons == direct_compositing_reasons_ &&
+          compositor_element_id == compositor_element_id_)) &&
+        scroll == scroll_)
       return parent_changed;
 
     SetChanged();
@@ -145,13 +148,12 @@ class PLATFORM_EXPORT TransformPaintPropertyNode
     return Parent() == o.Parent() && matrix_ == o.matrix_ &&
            origin_ == o.origin_ &&
            flattens_inherited_transform_ == o.flattens_inherited_transform_ &&
-           rendering_context_id_ == o.rendering_context_id_ &&
-           direct_compositing_reasons_ == o.direct_compositing_reasons_ &&
-           compositor_element_id_ == o.compositor_element_id_ &&
+           (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
+            (rendering_context_id_ == o.rendering_context_id_ &&
+             direct_compositing_reasons_ == o.direct_compositing_reasons_ &&
+             compositor_element_id_ == o.compositor_element_id_)) &&
            scroll_ == o.scroll_;
   }
-
-  String ToTreeString() const;
 #endif
 
   std::unique_ptr<JSONObject> ToJSON() const;

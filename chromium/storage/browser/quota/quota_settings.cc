@@ -54,15 +54,29 @@ base::Optional<storage::QuotaSettings> CalculateNominalDynamicSettings(
   // The fraction of the device's storage the browser is willing to
   // use for temporary storage, this is applied after adjusting the
   // total to take os_accomodation into account.
+#if defined(OS_CHROMEOS)
+  // Chrome OS is given a larger fraction, as web content is the considered
+  // the primary use of the platform. Chrome OS itself maintains free space by
+  // starting to evict data (old profiles) when less than 1GB remains,
+  // stopping eviction once 2GB is free.
+  // Prior to M66 this was 1/3, same as other platforms.
+  const double kTemporaryPoolSizeRatio = 2.0 / 3.0;  // 66%
+#else
   const double kTemporaryPoolSizeRatio = 1.0 / 3.0;  // 33%
+#endif
 
-  // The fraction of the device's storage the browser attempts to
-  // keep free.
-  const double kShouldRemainAvailableRatio = 0.1;  // 10%
+  // The amount of the device's storage the browser attempts to
+  // keep free. If there is less than this amount of storage free
+  // on the device, Chrome will grant 0 quota to origins.
+  //
+  // Prior to M66, this was 10% of total storage instead of a fixed value.
+  const int64_t kShouldRemainAvailable = 2048 * kMBytes;  // 2GB
 
-  // The fraction of the device's storage the browser attempts to
-  // keep free at all costs.
-  const double kMustRemainAvailableRatio = 0.01;  // 1%
+  // The amount of the device's storage the browser attempts to
+  // keep free at all costs. Data will be aggressively evicted.
+  //
+  // Prior to M66, this was 1% of total storage instead of a fixed value.
+  const int64_t kMustRemainAvailable = 1024 * kMBytes;  // 1GB
 
   // Determines the portion of the temp pool that can be
   // utilized by a single host (ie. 5 for 20%).
@@ -107,8 +121,8 @@ base::Optional<storage::QuotaSettings> CalculateNominalDynamicSettings(
   int64_t pool_size = adjusted_total * kTemporaryPoolSizeRatio;
 
   settings.pool_size = pool_size;
-  settings.should_remain_available = total * kShouldRemainAvailableRatio;
-  settings.must_remain_available = total * kMustRemainAvailableRatio;
+  settings.should_remain_available = kShouldRemainAvailable;
+  settings.must_remain_available = kMustRemainAvailable;
   settings.per_host_quota = pool_size / kPerHostTemporaryPortion;
   settings.session_only_per_host_quota = std::min(
       RandomizeByPercent(kMaxSessionOnlyHostQuota, kRandomizedPercentage),

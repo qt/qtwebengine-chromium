@@ -19,25 +19,28 @@ class DOMStorageSession;
 
 class SessionStorageNamespaceImpl : public SessionStorageNamespace {
  public:
-  // Constructs a |SessionStorageNamespaceImpl| and allocates new IDs for it.
+  // Constructs a SessionStorageNamespaceImpl and allocates a new ID for it.
   //
   // The CONTENT_EXPORT allows TestRenderViewHost to instantiate these.
-  CONTENT_EXPORT explicit SessionStorageNamespaceImpl(
-      DOMStorageContextWrapper* context);
+  CONTENT_EXPORT static scoped_refptr<SessionStorageNamespaceImpl> Create(
+      scoped_refptr<DOMStorageContextWrapper> context);
 
-  // Constructs a |SessionStorageNamespaceImpl| by cloning
-  // |namespace_to_clone|. Allocates new IDs for it.
-  SessionStorageNamespaceImpl(DOMStorageContextWrapper* context,
-                              int64_t namepace_id_to_clone);
+  // If there is an existing SessionStorageNamespaceImpl with the given id in
+  // the DOMStorageContextWrapper, this will return that object. Otherwise this
+  // constructs a SessionStorageNamespaceImpl and assigns |namepace_id| to it.
+  static scoped_refptr<SessionStorageNamespaceImpl> Create(
+      scoped_refptr<DOMStorageContextWrapper> context,
+      const std::string& namepace_id);
 
-  // Constructs a |SessionStorageNamespaceImpl| and assigns |persistent_id|
-  // to it. Allocates a new non-persistent ID.
-  SessionStorageNamespaceImpl(DOMStorageContextWrapper* context,
-                              const std::string& persistent_id);
+  // Constructs a |SessionStorageNamespaceImpl| with id |namespace_id| by
+  // cloning |namespace_to_clone|.
+  static scoped_refptr<SessionStorageNamespaceImpl> CloneFrom(
+      scoped_refptr<DOMStorageContextWrapper> context,
+      std::string namepace_id,
+      const std::string& namepace_id_to_clone);
 
   // SessionStorageNamespace implementation.
-  int64_t id() const override;
-  const std::string& persistent_id() const override;
+  const std::string& id() const override;
   void SetShouldPersist(bool should_persist) override;
   bool should_persist() const override;
 
@@ -45,10 +48,11 @@ class SessionStorageNamespaceImpl : public SessionStorageNamespace {
   bool IsFromContext(DOMStorageContextWrapper* context);
 
  private:
-  explicit SessionStorageNamespaceImpl(DOMStorageSession* clone);
+  explicit SessionStorageNamespaceImpl(
+      std::unique_ptr<DOMStorageSession> session);
   ~SessionStorageNamespaceImpl() override;
 
-  scoped_refptr<DOMStorageSession> session_;
+  std::unique_ptr<DOMStorageSession> session_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionStorageNamespaceImpl);
 };

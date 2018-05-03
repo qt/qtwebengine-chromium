@@ -16,7 +16,8 @@ NGContainerFragmentBuilder::NGContainerFragmentBuilder(
     scoped_refptr<const ComputedStyle> style,
     WritingMode writing_mode,
     TextDirection direction)
-    : NGBaseFragmentBuilder(std::move(style), writing_mode, direction) {}
+    : NGBaseFragmentBuilder(std::move(style), writing_mode, direction),
+      unpositioned_list_marker_(nullptr) {}
 
 NGContainerFragmentBuilder::~NGContainerFragmentBuilder() = default;
 
@@ -51,14 +52,21 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::SwapUnpositionedFloats(
   return *this;
 }
 
+NGContainerFragmentBuilder&
+NGContainerFragmentBuilder::SetUnpositionedListMarker(const NGBlockNode& node) {
+  DCHECK(!unpositioned_list_marker_ || !node);
+  unpositioned_list_marker_ = node;
+  return *this;
+}
+
 NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
     scoped_refptr<NGLayoutResult> child,
     const NGLogicalOffset& child_offset) {
   // Collect the child's out of flow descendants.
   // child_offset is offset of inline_start/block_start vertex.
   // Candidates need offset of top/left vertex.
-  const auto& ouf_of_flow_descendants = child->OutOfFlowPositionedDescendants();
-  if (!ouf_of_flow_descendants.IsEmpty()) {
+  const auto& out_of_flow_descendants = child->OutOfFlowPositionedDescendants();
+  if (!out_of_flow_descendants.IsEmpty()) {
     NGLogicalOffset top_left_offset;
     NGPhysicalSize child_size = child->PhysicalFragment()->Size();
     switch (GetWritingMode()) {
@@ -89,7 +97,7 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
         break;
     }
     for (const NGOutOfFlowPositionedDescendant& descendant :
-         ouf_of_flow_descendants) {
+         out_of_flow_descendants) {
       oof_positioned_candidates_.push_back(
           NGOutOfFlowPositionedCandidate{descendant, top_left_offset});
     }
@@ -158,6 +166,9 @@ void NGContainerFragmentBuilder::GetAndClearOutOfFlowDescendantCandidates(
     Vector<NGOutOfFlowPositionedDescendant>* descendant_candidates,
     const LayoutObject* current_container) {
   DCHECK(descendant_candidates->IsEmpty());
+
+  if (oof_positioned_candidates_.size() == 0)
+    return;
 
   descendant_candidates->ReserveCapacity(oof_positioned_candidates_.size());
 

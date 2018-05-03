@@ -41,13 +41,6 @@ Main.Main = class {
   }
 
   /**
-   * @param {boolean} hard
-   */
-  static _reloadPage(hard) {
-    SDK.ResourceTreeModel.reloadAllPages(hard);
-  }
-
-  /**
    * @param {string} label
    */
   static time(label) {
@@ -65,8 +58,9 @@ Main.Main = class {
     console.timeEnd(label);
   }
 
-  _loaded() {
+  async _loaded() {
     console.timeStamp('Main._loaded');
+    await Runtime.runtimeReady();
     Runtime.setPlatform(Host.platform());
     InspectorFrontendHost.getPreferences(this._gotPreferences.bind(this));
   }
@@ -88,20 +82,20 @@ Main.Main = class {
    */
   _createSettings(prefs) {
     this._initializeExperiments();
-    var storagePrefix = '';
+    let storagePrefix = '';
     if (Host.isCustomDevtoolsFrontend())
       storagePrefix = '__custom__';
     else if (!Runtime.queryParam('can_dock') && !!Runtime.queryParam('debugFrontend') && !Host.isUnderTest())
       storagePrefix = '__bundled__';
 
-    var localStorage;
+    let localStorage;
     if (!Host.isUnderTest() && window.localStorage) {
       localStorage = new Common.SettingsStorage(
           window.localStorage, undefined, undefined, () => window.localStorage.clear(), storagePrefix);
     } else {
       localStorage = new Common.SettingsStorage({}, undefined, undefined, undefined, storagePrefix);
     }
-    var globalStorage = new Common.SettingsStorage(
+    const globalStorage = new Common.SettingsStorage(
         prefs, InspectorFrontendHost.setPreference, InspectorFrontendHost.removePreference,
         InspectorFrontendHost.clearPreferences, storagePrefix);
     Common.settings = new Common.Settings(globalStorage, localStorage);
@@ -111,15 +105,13 @@ Main.Main = class {
 
   _initializeExperiments() {
     // Keep this sorted alphabetically: both keys and values.
-    Runtime.experiments.register('accessibilityInspection', 'Accessibility Inspection');
     Runtime.experiments.register('applyCustomStylesheet', 'Allow custom UI themes');
     Runtime.experiments.register('blackboxJSFramesOnTimeline', 'Blackbox JavaScript frames on Timeline', true);
     Runtime.experiments.register('colorContrastRatio', 'Color contrast ratio line in color picker', true);
     Runtime.experiments.register('emptySourceMapAutoStepping', 'Empty sourcemap auto-stepping');
     Runtime.experiments.register('inputEventsOnTimelineOverview', 'Input events on Timeline overview', true);
-    Runtime.experiments.register('logManagement', 'Log management', true);
-    Runtime.experiments.register('performanceMonitor', 'Performance Monitor', true);
-    Runtime.experiments.register('persistence2', 'Persistence 2.0');
+    Runtime.experiments.register('oopifInlineDOM', 'OOPIF: inline DOM ', true);
+    Runtime.experiments.register('nativeHeapProfiler', 'Native memory sampling heap profiler', true);
     Runtime.experiments.register('sourceDiff', 'Source diff');
     Runtime.experiments.register(
         'stepIntoAsync', 'Introduce separate step action, stepInto becomes powerful enough to go inside async call');
@@ -140,24 +132,20 @@ Main.Main = class {
     Runtime.experiments.cleanUpStaleExperiments();
 
     if (Host.isUnderTest()) {
-      var testPath = Runtime.queryParam('test');
+      const testPath = Runtime.queryParam('test');
       // Enable experiments for testing.
-      if (testPath.indexOf('accessibility/') !== -1)
-        Runtime.experiments.enableForTest('accessibilityInspection');
-      if (testPath.indexOf('console-sidebar/') !== -1)
-        Runtime.experiments.enableForTest('logManagement');
+      if (testPath.indexOf('oopif/') !== -1)
+        Runtime.experiments.enableForTest('oopifInlineDOM');
     }
 
-    Runtime.experiments.setDefaultExperiments([
-      'accessibilityInspection', 'colorContrastRatio', 'logManagement', 'performanceMonitor', 'persistence2',
-      'stepIntoAsync', 'timelineKeepHistory'
-    ]);
+    Runtime.experiments.setDefaultExperiments(
+        ['colorContrastRatio', 'stepIntoAsync', 'timelineKeepHistory', 'oopifInlineDOM']);
   }
 
   /**
    * @suppressGlobalPropertiesCheck
    */
-  _createAppUI() {
+  async _createAppUI() {
     Main.Main.time('Main._createAppUI');
 
     UI.viewManager = new UI.ViewManager();
@@ -165,7 +153,7 @@ Main.Main = class {
     // Request filesystems early, we won't create connections until callback is fired. Things will happen in parallel.
     Persistence.isolatedFileSystemManager = new Persistence.IsolatedFileSystemManager();
 
-    var themeSetting = Common.settings.createSetting('uiTheme', 'default');
+    const themeSetting = Common.settings.createSetting('uiTheme', 'default');
     UI.initializeUIUtils(document, themeSetting);
     themeSetting.addChangeListener(Components.reload.bind(Components));
 
@@ -173,16 +161,15 @@ Main.Main = class {
 
     this._addMainEventListeners(document);
 
-    var canDock = !!Runtime.queryParam('can_dock');
+    const canDock = !!Runtime.queryParam('can_dock');
     UI.zoomManager = new UI.ZoomManager(window, InspectorFrontendHost);
     UI.inspectorView = UI.InspectorView.instance();
     UI.ContextMenu.initialize();
     UI.ContextMenu.installHandler(document);
     UI.Tooltip.installHandler(document);
     Components.dockController = new Components.DockController(canDock);
-    ConsoleModel.consoleModel = new ConsoleModel.ConsoleModel();
+    SDK.consoleModel = new SDK.ConsoleModel();
     SDK.multitargetNetworkManager = new SDK.MultitargetNetworkManager();
-    NetworkLog.networkLog = new NetworkLog.NetworkLog();
     SDK.domDebuggerManager = new SDK.DOMDebuggerManager();
     SDK.targetManager.addEventListener(
         SDK.TargetManager.Events.SuspendStateChanged, this._onSuspendStateChanged.bind(this));
@@ -196,30 +183,24 @@ Main.Main = class {
 
     Workspace.fileManager = new Workspace.FileManager();
     Workspace.workspace = new Workspace.Workspace();
-    Persistence.fileSystemMapping = new Persistence.FileSystemMapping(Persistence.isolatedFileSystemManager);
 
-    Bindings.networkProjectManager = new Bindings.NetworkProjectManager(SDK.targetManager, Workspace.workspace);
+    Bindings.networkProjectManager = new Bindings.NetworkProjectManager();
     Bindings.resourceMapping = new Bindings.ResourceMapping(SDK.targetManager, Workspace.workspace);
-    Bindings.presentationConsoleMessageHelper = new Bindings.PresentationConsoleMessageHelper(Workspace.workspace);
+    new Bindings.PresentationConsoleMessageManager();
     Bindings.cssWorkspaceBinding = new Bindings.CSSWorkspaceBinding(SDK.targetManager, Workspace.workspace);
     Bindings.debuggerWorkspaceBinding = new Bindings.DebuggerWorkspaceBinding(SDK.targetManager, Workspace.workspace);
     Bindings.breakpointManager =
-        new Bindings.BreakpointManager(null, Workspace.workspace, SDK.targetManager, Bindings.debuggerWorkspaceBinding);
+        new Bindings.BreakpointManager(Workspace.workspace, SDK.targetManager, Bindings.debuggerWorkspaceBinding);
     Extensions.extensionServer = new Extensions.ExtensionServer();
 
     new Persistence.FileSystemWorkspaceBinding(Persistence.isolatedFileSystemManager, Workspace.workspace);
-    Persistence.persistence =
-        new Persistence.Persistence(Workspace.workspace, Bindings.breakpointManager, Persistence.fileSystemMapping);
+    Persistence.persistence = new Persistence.Persistence(Workspace.workspace, Bindings.breakpointManager);
     Persistence.networkPersistenceManager = new Persistence.NetworkPersistenceManager(Workspace.workspace);
 
     new Main.ExecutionContextSelector(SDK.targetManager, UI.context);
     Bindings.blackboxManager = new Bindings.BlackboxManager(Bindings.debuggerWorkspaceBinding);
 
     new Main.Main.PauseListener();
-    new Main.Main.InspectedNodeRevealer();
-    new Main.NetworkPanelIndicator();
-    new Main.SourcesPanelIndicator();
-    new Main.BackendSettingsSync();
 
     UI.actionRegistry = new UI.ActionRegistry();
     UI.shortcutRegistry = new UI.ShortcutRegistry(UI.actionRegistry, document);
@@ -227,7 +208,18 @@ Main.Main = class {
     this._registerForwardedShortcuts();
     this._registerMessageSinkListener();
 
-    self.runtime.extension(Common.AppProvider).instance().then(this._showAppUI.bind(this));
+    // Pick first app we could instantiate (for test harness).
+    for (const extension of self.runtime.extensions(Common.AppProvider)) {
+      try {
+        const instance = await extension.instance();
+        if (instance) {
+          this._showAppUI(instance);
+          break;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
     Main.Main.timeEnd('Main._createAppUI');
   }
 
@@ -237,12 +229,12 @@ Main.Main = class {
    */
   _showAppUI(appProvider) {
     Main.Main.time('Main._showAppUI');
-    var app = /** @type {!Common.AppProvider} */ (appProvider).createApp();
+    const app = /** @type {!Common.AppProvider} */ (appProvider).createApp();
     // It is important to kick controller lifetime after apps are instantiated.
     Components.dockController.initialize();
     app.presentUI(document);
 
-    var toggleSearchNodeAction = UI.actionRegistry.action('elements.toggle-element-search');
+    const toggleSearchNodeAction = UI.actionRegistry.action('elements.toggle-element-search');
     // TODO: we should not access actions from other modules.
     if (toggleSearchNodeAction) {
       InspectorFrontendHost.events.addEventListener(
@@ -255,12 +247,9 @@ Main.Main = class {
     UI.inspectorView.createToolbars();
     InspectorFrontendHost.loadCompleted();
 
-    InspectorFrontendHost.events.addEventListener(
-        InspectorFrontendHostAPI.Events.ReloadInspectedPage, this._reloadInspectedPage, this);
-
-    var extensions = self.runtime.extensions(Common.QueryParamHandler);
-    for (var extension of extensions) {
-      var value = Runtime.queryParam(extension.descriptor()['name']);
+    const extensions = self.runtime.extensions(Common.QueryParamHandler);
+    for (const extension of extensions) {
+      const value = Runtime.queryParam(extension.descriptor()['name']);
       if (value !== null)
         extension.instance().then(handleQueryParam.bind(null, value));
     }
@@ -278,38 +267,36 @@ Main.Main = class {
     Main.Main.timeEnd('Main._showAppUI');
   }
 
-  _initializeTarget() {
+  async _initializeTarget() {
     Main.Main.time('Main._initializeTarget');
-    SDK.targetManager.connectToMainTarget(webSocketConnectionLost);
-    InspectorFrontendHost.connectionReady();
-
+    const instances =
+        await Promise.all(self.runtime.extensions('early-initialization').map(extension => extension.instance()));
+    for (const instance of instances)
+      /** @type {!Common.Runnable} */ (instance).run();
     // Used for browser tests.
     InspectorFrontendHost.readyForTest();
-
     // Asynchronously run the extensions.
     setTimeout(this._lateInitialization.bind(this), 100);
     Main.Main.timeEnd('Main._initializeTarget');
-
-    function webSocketConnectionLost() {
-      if (!Main._disconnectedScreenWithReasonWasShown)
-        Main.RemoteDebuggingTerminatedScreen.show('WebSocket disconnected');
-    }
   }
 
   _lateInitialization() {
-    console.timeStamp('Main._lateInitialization');
+    Main.Main.time('Main._lateInitialization');
     this._registerShortcuts();
     Extensions.extensionServer.initializeExtensions();
-    if (!Host.isUnderTest())
-      Help.showReleaseNoteIfNeeded();
+    if (!Host.isUnderTest()) {
+      for (const extension of self.runtime.extensions('late-initialization'))
+        extension.instance().then(instance => (/** @type {!Common.Runnable} */ (instance)).run());
+    }
+    Main.Main.timeEnd('Main._lateInitialization');
   }
 
   _registerForwardedShortcuts() {
-    /** @const */ var forwardedActions = [
+    /** @const */ const forwardedActions = [
       'main.toggle-dock', 'debugger.toggle-breakpoints-active', 'debugger.toggle-pause', 'commandMenu.show',
       'console.show'
     ];
-    var actionKeys =
+    const actionKeys =
         UI.shortcutRegistry.keysForActions(forwardedActions).map(UI.KeyboardShortcut.keyCodeAndModifiersFromKey);
     InspectorFrontendHost.setWhitelistedShortcuts(JSON.stringify(actionKeys));
   }
@@ -321,7 +308,7 @@ Main.Main = class {
      * @param {!Common.Event} event
      */
     function messageAdded(event) {
-      var message = /** @type {!Common.Console.Message} */ (event.data);
+      const message = /** @type {!Common.Console.Message} */ (event.data);
       if (message.show)
         Common.console.show();
     }
@@ -331,11 +318,11 @@ Main.Main = class {
    * @param {!Common.Event} event
    */
   _revealSourceLine(event) {
-    var url = /** @type {string} */ (event.data['url']);
-    var lineNumber = /** @type {number} */ (event.data['lineNumber']);
-    var columnNumber = /** @type {number} */ (event.data['columnNumber']);
+    const url = /** @type {string} */ (event.data['url']);
+    const lineNumber = /** @type {number} */ (event.data['lineNumber']);
+    const columnNumber = /** @type {number} */ (event.data['columnNumber']);
 
-    var uiSourceCode = Workspace.workspace.uiSourceCodeForURL(url);
+    const uiSourceCode = Workspace.workspace.uiSourceCodeForURL(url);
     if (uiSourceCode) {
       Common.Revealer.reveal(uiSourceCode.uiLocation(lineNumber, columnNumber));
       return;
@@ -345,7 +332,7 @@ Main.Main = class {
      * @param {!Common.Event} event
      */
     function listener(event) {
-      var uiSourceCode = /** @type {!Workspace.UISourceCode} */ (event.data);
+      const uiSourceCode = /** @type {!Workspace.UISourceCode} */ (event.data);
       if (uiSourceCode.url() === url) {
         Common.Revealer.reveal(uiSourceCode.uiLocation(lineNumber, columnNumber));
         Workspace.workspace.removeEventListener(Workspace.Workspace.Events.UISourceCodeAdded, listener);
@@ -356,15 +343,15 @@ Main.Main = class {
   }
 
   _registerShortcuts() {
-    var shortcut = UI.KeyboardShortcut;
-    var section = UI.shortcutsScreen.section(Common.UIString('All Panels'));
-    var keys = [
+    const shortcut = UI.KeyboardShortcut;
+    const section = UI.shortcutsScreen.section(Common.UIString('All Panels'));
+    let keys = [
       shortcut.makeDescriptor('[', shortcut.Modifiers.CtrlOrMeta),
       shortcut.makeDescriptor(']', shortcut.Modifiers.CtrlOrMeta)
     ];
     section.addRelatedKeys(keys, Common.UIString('Go to the panel to the left/right'));
 
-    var toggleConsoleLabel = Common.UIString('Show console');
+    const toggleConsoleLabel = Common.UIString('Show console');
     section.addKey(shortcut.makeDescriptor(shortcut.Keys.Tilde, shortcut.Modifiers.Ctrl), toggleConsoleLabel);
     section.addKey(shortcut.makeDescriptor(shortcut.Keys.Esc), Common.UIString('Toggle drawer'));
     if (Components.dockController.canDock()) {
@@ -377,18 +364,18 @@ Main.Main = class {
     }
     section.addKey(shortcut.makeDescriptor('f', shortcut.Modifiers.CtrlOrMeta), Common.UIString('Search'));
 
-    var advancedSearchShortcutModifier = Host.isMac() ?
+    const advancedSearchShortcutModifier = Host.isMac() ?
         UI.KeyboardShortcut.Modifiers.Meta | UI.KeyboardShortcut.Modifiers.Alt :
         UI.KeyboardShortcut.Modifiers.Ctrl | UI.KeyboardShortcut.Modifiers.Shift;
-    var advancedSearchShortcut = shortcut.makeDescriptor('f', advancedSearchShortcutModifier);
+    const advancedSearchShortcut = shortcut.makeDescriptor('f', advancedSearchShortcutModifier);
     section.addKey(advancedSearchShortcut, Common.UIString('Search across all sources'));
 
-    var inspectElementModeShortcuts =
+    const inspectElementModeShortcuts =
         UI.shortcutRegistry.shortcutDescriptorsForAction('elements.toggle-element-search');
     if (inspectElementModeShortcuts.length)
       section.addKey(inspectElementModeShortcuts[0], Common.UIString('Select node to inspect'));
 
-    var openResourceShortcut = UI.KeyboardShortcut.makeDescriptor('p', UI.KeyboardShortcut.Modifiers.CtrlOrMeta);
+    const openResourceShortcut = UI.KeyboardShortcut.makeDescriptor('p', UI.KeyboardShortcut.Modifiers.CtrlOrMeta);
     section.addKey(openResourceShortcut, Common.UIString('Go to source'));
 
     if (Host.isMac()) {
@@ -419,10 +406,10 @@ Main.Main = class {
    * @param {!Event} event
    */
   _redispatchClipboardEvent(event) {
-    var eventCopy = new CustomEvent('clipboard-' + event.type, {bubbles: true});
+    const eventCopy = new CustomEvent('clipboard-' + event.type, {bubbles: true});
     eventCopy['original'] = event;
-    var document = event.target && event.target.ownerDocument;
-    var target = document ? document.deepActiveElement() : null;
+    const document = event.target && event.target.ownerDocument;
+    const target = document ? document.deepActiveElement() : null;
     if (target)
       target.dispatchEvent(eventCopy);
     if (eventCopy.handled)
@@ -446,78 +433,9 @@ Main.Main = class {
     document.addEventListener('contextmenu', this._contextMenuEventFired.bind(this), true);
   }
 
-  /**
-   * @param {!Common.Event} event
-   */
-  _reloadInspectedPage(event) {
-    var hard = /** @type {boolean} */ (event.data);
-    Main.Main._reloadPage(hard);
-  }
-
   _onSuspendStateChanged() {
-    var suspended = SDK.targetManager.allTargetsSuspended();
+    const suspended = SDK.targetManager.allTargetsSuspended();
     UI.inspectorView.onSuspendStateChanged(suspended);
-  }
-};
-
-/**
- * @implements {Protocol.InspectorDispatcher}
- */
-Main.Main.InspectorModel = class extends SDK.SDKModel {
-  /**
-   * @param {!SDK.Target} target
-   */
-  constructor(target) {
-    super(target);
-    target.registerInspectorDispatcher(this);
-    target.inspectorAgent().enable();
-  }
-
-  /**
-   * @override
-   * @param {string} reason
-   */
-  detached(reason) {
-    Main._disconnectedScreenWithReasonWasShown = true;
-    Main.RemoteDebuggingTerminatedScreen.show(reason);
-  }
-
-  /**
-   * @override
-   */
-  targetCrashed() {
-    var debuggerModel = this.target().model(SDK.DebuggerModel);
-    if (debuggerModel)
-      Main.TargetCrashedScreen.show(debuggerModel);
-  }
-};
-
-SDK.SDKModel.register(Main.Main.InspectorModel, SDK.Target.Capability.Inspector, true);
-
-/**
- * @implements {UI.ActionDelegate}
- * @unrestricted
- */
-Main.Main.ReloadActionDelegate = class {
-  /**
-   * @override
-   * @param {!UI.Context} context
-   * @param {string} actionId
-   * @return {boolean}
-   */
-  handleAction(context, actionId) {
-    switch (actionId) {
-      case 'main.reload':
-        Main.Main._reloadPage(false);
-        return true;
-      case 'main.hard-reload':
-        Main.Main._reloadPage(true);
-        return true;
-      case 'main.debug-reload':
-        Components.reload();
-        return true;
-    }
-    return false;
   }
 };
 
@@ -564,7 +482,7 @@ Main.Main.SearchActionDelegate = class {
    * @suppressGlobalPropertiesCheck
    */
   handleAction(context, actionId) {
-    var searchableView = UI.SearchableView.fromElement(document.deepActiveElement()) ||
+    const searchableView = UI.SearchableView.fromElement(document.deepActiveElement()) ||
         UI.inspectorView.currentPanelDeprecated().searchableView();
     if (!searchableView)
       return false;
@@ -604,19 +522,19 @@ Main.Main.MainMenuItem = class {
    */
   _handleContextMenu(contextMenu) {
     if (Components.dockController.canDock()) {
-      var dockItemElement = createElementWithClass('div', 'flex-centered flex-auto');
-      var titleElement = dockItemElement.createChild('span', 'flex-auto');
+      const dockItemElement = createElementWithClass('div', 'flex-centered flex-auto');
+      const titleElement = dockItemElement.createChild('span', 'flex-auto');
       titleElement.textContent = Common.UIString('Dock side');
-      var toggleDockSideShorcuts = UI.shortcutRegistry.shortcutDescriptorsForAction('main.toggle-dock');
+      const toggleDockSideShorcuts = UI.shortcutRegistry.shortcutDescriptorsForAction('main.toggle-dock');
       titleElement.title = Common.UIString(
           'Placement of DevTools relative to the page. (%s to restore last position)', toggleDockSideShorcuts[0].name);
       dockItemElement.appendChild(titleElement);
-      var dockItemToolbar = new UI.Toolbar('', dockItemElement);
+      const dockItemToolbar = new UI.Toolbar('', dockItemElement);
       dockItemToolbar.makeBlueOnHover();
-      var undock = new UI.ToolbarToggle(Common.UIString('Undock into separate window'), 'largeicon-undock');
-      var bottom = new UI.ToolbarToggle(Common.UIString('Dock to bottom'), 'largeicon-dock-to-bottom');
-      var right = new UI.ToolbarToggle(Common.UIString('Dock to right'), 'largeicon-dock-to-right');
-      var left = new UI.ToolbarToggle(Common.UIString('Dock to left'), 'largeicon-dock-to-left');
+      const undock = new UI.ToolbarToggle(Common.UIString('Undock into separate window'), 'largeicon-undock');
+      const bottom = new UI.ToolbarToggle(Common.UIString('Dock to bottom'), 'largeicon-dock-to-bottom');
+      const right = new UI.ToolbarToggle(Common.UIString('Dock to right'), 'largeicon-dock-to-right');
+      const left = new UI.ToolbarToggle(Common.UIString('Dock to left'), 'largeicon-dock-to-left');
       undock.addEventListener(UI.ToolbarButton.Events.MouseDown, event => event.data.consume());
       bottom.addEventListener(UI.ToolbarButton.Events.MouseDown, event => event.data.consume());
       right.addEventListener(UI.ToolbarButton.Events.MouseDown, event => event.data.consume());
@@ -648,15 +566,19 @@ Main.Main.MainMenuItem = class {
       contextMenu.discard();
     }
 
+    if (Components.dockController.dockSide() === Components.DockController.State.Undocked &&
+        SDK.targetManager.mainTarget() && SDK.targetManager.mainTarget().hasBrowserCapability())
+      contextMenu.defaultSection().appendAction('inspector_main.focus-debuggee', Common.UIString('Focus debuggee'));
+
     contextMenu.defaultSection().appendAction(
         'main.toggle-drawer',
         UI.inspectorView.drawerVisible() ? Common.UIString('Hide console drawer') :
                                            Common.UIString('Show console drawer'));
     contextMenu.appendItemsAtLocation('mainMenu');
-    var moreTools = contextMenu.defaultSection().appendSubMenuItem(Common.UIString('More tools'));
-    var extensions = self.runtime.extensions('view', undefined, true);
-    for (var extension of extensions) {
-      var descriptor = extension.descriptor();
+    const moreTools = contextMenu.defaultSection().appendSubMenuItem(Common.UIString('More tools'));
+    const extensions = self.runtime.extensions('view', undefined, true);
+    for (const extension of extensions) {
+      const descriptor = extension.descriptor();
       if (descriptor['persistence'] !== 'closeable')
         continue;
       if (descriptor['location'] !== 'drawer-view' && descriptor['location'] !== 'panel')
@@ -665,89 +587,8 @@ Main.Main.MainMenuItem = class {
           extension.title(), UI.viewManager.showView.bind(UI.viewManager, descriptor['id']));
     }
 
-    var helpSubMenu = contextMenu.footerSection().appendSubMenuItem(Common.UIString('Help'));
-    helpSubMenu.defaultSection().appendAction('settings.documentation');
-    helpSubMenu.defaultSection().appendItem(
-        'Release Notes', () => InspectorFrontendHost.openInNewTab(Help.latestReleaseNote().link));
-  }
-};
-
-/**
- * @implements {UI.ToolbarItem.Provider}
- */
-Main.Main.NodeIndicator = class {
-  constructor() {
-    var element = createElement('div');
-    var shadowRoot = UI.createShadowRootWithCoreStyles(element, 'main/nodeIcon.css');
-    this._element = shadowRoot.createChild('div', 'node-icon');
-    element.addEventListener('click', () => InspectorFrontendHost.openNodeFrontend(), false);
-    this._button = new UI.ToolbarItem(element);
-    this._button.setTitle(Common.UIString('Open dedicated DevTools for Node.js'));
-    SDK.targetManager.addEventListener(SDK.TargetManager.Events.AvailableNodeTargetsChanged, this._update, this);
-    this._button.setVisible(false);
-    this._update();
-  }
-
-  _update() {
-    this._element.classList.toggle('inactive', !SDK.targetManager.availableNodeTargetsCount());
-    if (SDK.targetManager.availableNodeTargetsCount())
-      this._button.setVisible(true);
-  }
-
-  /**
-   * @override
-   * @return {?UI.ToolbarItem}
-   */
-  item() {
-    return this._button;
-  }
-};
-
-Main.NetworkPanelIndicator = class {
-  constructor() {
-    // TODO: we should not access network from other modules.
-    if (!UI.inspectorView.hasPanel('network'))
-      return;
-    var manager = SDK.multitargetNetworkManager;
-    manager.addEventListener(SDK.MultitargetNetworkManager.Events.ConditionsChanged, updateVisibility);
-    manager.addEventListener(SDK.MultitargetNetworkManager.Events.BlockedPatternsChanged, updateVisibility);
-    manager.addEventListener(SDK.MultitargetNetworkManager.Events.InterceptorsChanged, updateVisibility);
-    updateVisibility();
-
-    function updateVisibility() {
-      var icon = null;
-      if (manager.isThrottling()) {
-        icon = UI.Icon.create('smallicon-warning');
-        icon.title = Common.UIString('Network throttling is enabled');
-      } else if (SDK.multitargetNetworkManager.isIntercepting()) {
-        icon = UI.Icon.create('smallicon-warning');
-        icon.title = Common.UIString('Requests may be rewritten');
-      } else if (manager.isBlocking()) {
-        icon = UI.Icon.create('smallicon-warning');
-        icon.title = Common.UIString('Requests may be blocked');
-      }
-      UI.inspectorView.setPanelIcon('network', icon);
-    }
-  }
-};
-
-/**
- * @unrestricted
- */
-Main.SourcesPanelIndicator = class {
-  constructor() {
-    Common.moduleSetting('javaScriptDisabled').addChangeListener(javaScriptDisabledChanged);
-    javaScriptDisabledChanged();
-
-    function javaScriptDisabledChanged() {
-      var icon = null;
-      var javaScriptDisabled = Common.moduleSetting('javaScriptDisabled').get();
-      if (javaScriptDisabled) {
-        icon = UI.Icon.create('smallicon-warning');
-        icon.title = Common.UIString('JavaScript is disabled');
-      }
-      UI.inspectorView.setPanelIcon('sources', icon);
-    }
+    const helpSubMenu = contextMenu.footerSection().appendSubMenuItem(Common.UIString('Help'));
+    helpSubMenu.appendItemsAtLocation('mainMenuHelp');
   }
 };
 
@@ -766,28 +607,10 @@ Main.Main.PauseListener = class {
   _debuggerPaused(event) {
     SDK.targetManager.removeModelListener(
         SDK.DebuggerModel, SDK.DebuggerModel.Events.DebuggerPaused, this._debuggerPaused, this);
-    var debuggerModel = /** @type {!SDK.DebuggerModel} */ (event.data);
-    var debuggerPausedDetails = debuggerModel.debuggerPausedDetails();
+    const debuggerModel = /** @type {!SDK.DebuggerModel} */ (event.data);
+    const debuggerPausedDetails = debuggerModel.debuggerPausedDetails();
     UI.context.setFlavor(SDK.Target, debuggerModel.target());
     Common.Revealer.reveal(debuggerPausedDetails);
-  }
-};
-
-/**
- * @unrestricted
- */
-Main.Main.InspectedNodeRevealer = class {
-  constructor() {
-    SDK.targetManager.addModelListener(
-        SDK.OverlayModel, SDK.OverlayModel.Events.InspectNodeRequested, this._inspectNode, this);
-  }
-
-  /**
-   * @param {!Common.Event} event
-   */
-  _inspectNode(event) {
-    var deferredNode = /** @type {!SDK.DeferredDOMNode} */ (event.data);
-    Common.Revealer.reveal(deferredNode);
   }
 };
 
@@ -807,142 +630,23 @@ Main.sendOverProtocol = function(method, params) {
 };
 
 /**
+ * @implements {UI.ActionDelegate}
  * @unrestricted
  */
-Main.RemoteDebuggingTerminatedScreen = class extends UI.VBox {
+Main.ReloadActionDelegate = class {
   /**
-   * @param {string} reason
+   * @override
+   * @param {!UI.Context} context
+   * @param {string} actionId
+   * @return {boolean}
    */
-  constructor(reason) {
-    super(true);
-    this.registerRequiredCSS('main/remoteDebuggingTerminatedScreen.css');
-    var message = this.contentElement.createChild('div', 'message');
-    message.createChild('span').textContent = Common.UIString('Debugging connection was closed. Reason: ');
-    message.createChild('span', 'reason').textContent = reason;
-    this.contentElement.createChild('div', 'message').textContent =
-        Common.UIString('Reconnect when ready by reopening DevTools.');
-    var button = UI.createTextButton(Common.UIString('Reconnect DevTools'), () => window.location.reload());
-    this.contentElement.createChild('div', 'button').appendChild(button);
-  }
-
-  /**
-   * @param {string} reason
-   */
-  static show(reason) {
-    var dialog = new UI.Dialog();
-    dialog.setSizeBehavior(UI.GlassPane.SizeBehavior.MeasureContent);
-    dialog.addCloseButton();
-    dialog.setDimmed(true);
-    new Main.RemoteDebuggingTerminatedScreen(reason).show(dialog.contentElement);
-    dialog.show();
-  }
-};
-
-
-/**
- * @unrestricted
- */
-Main.TargetCrashedScreen = class extends UI.VBox {
-  /**
-   * @param {function()} hideCallback
-   */
-  constructor(hideCallback) {
-    super(true);
-    this.registerRequiredCSS('main/targetCrashedScreen.css');
-    this.contentElement.createChild('div', 'message').textContent =
-        Common.UIString('DevTools was disconnected from the page.');
-    this.contentElement.createChild('div', 'message').textContent =
-        Common.UIString('Once page is reloaded, DevTools will automatically reconnect.');
-    this._hideCallback = hideCallback;
-  }
-
-  /**
-   * @param {!SDK.DebuggerModel} debuggerModel
-   */
-  static show(debuggerModel) {
-    var dialog = new UI.Dialog();
-    dialog.setSizeBehavior(UI.GlassPane.SizeBehavior.MeasureContent);
-    dialog.addCloseButton();
-    dialog.setDimmed(true);
-    var hideBound = dialog.hide.bind(dialog);
-    debuggerModel.addEventListener(SDK.DebuggerModel.Events.GlobalObjectCleared, hideBound);
-
-    new Main.TargetCrashedScreen(onHide).show(dialog.contentElement);
-    dialog.show();
-
-    function onHide() {
-      debuggerModel.removeEventListener(SDK.DebuggerModel.Events.GlobalObjectCleared, hideBound);
+  handleAction(context, actionId) {
+    switch (actionId) {
+      case 'main.debug-reload':
+        Components.reload();
+        return true;
     }
-  }
-
-  /**
-   * @override
-   */
-  willHide() {
-    this._hideCallback.call(null);
-  }
-};
-
-
-/**
- * @implements {SDK.TargetManager.Observer}
- * @unrestricted
- */
-Main.BackendSettingsSync = class {
-  constructor() {
-    this._autoAttachSetting = Common.settings.moduleSetting('autoAttachToCreatedPages');
-    this._autoAttachSetting.addChangeListener(this._updateAutoAttach, this);
-    this._updateAutoAttach();
-
-    this._adBlockEnabledSetting = Common.settings.moduleSetting('network.adBlockingEnabled');
-    this._adBlockEnabledSetting.addChangeListener(this._update, this);
-
-    SDK.targetManager.observeTargets(this, SDK.Target.Capability.Browser);
-  }
-
-  /**
-   * @param {!SDK.Target} target
-   */
-  _updateTarget(target) {
-    target.pageAgent().setAdBlockingEnabled(this._adBlockEnabledSetting.get());
-  }
-
-  _updateAutoAttach() {
-    InspectorFrontendHost.setOpenNewWindowForPopups(this._autoAttachSetting.get());
-  }
-
-  _update() {
-    SDK.targetManager.targets(SDK.Target.Capability.Browser).forEach(this._updateTarget, this);
-  }
-
-  /**
-   * @param {!SDK.Target} target
-   * @override
-   */
-  targetAdded(target) {
-    this._updateTarget(target);
-  }
-
-  /**
-   * @param {!SDK.Target} target
-   * @override
-   */
-  targetRemoved(target) {
-  }
-};
-
-/**
- * @implements {UI.SettingUI}
- * @unrestricted
- */
-Main.ShowMetricsRulersSettingUI = class {
-  /**
-   * @override
-   * @return {?Element}
-   */
-  settingElement() {
-    return UI.SettingsUI.createSettingCheckbox(
-        Common.UIString('Show rulers'), Common.moduleSetting('showMetricsRulers'));
+    return false;
   }
 };
 

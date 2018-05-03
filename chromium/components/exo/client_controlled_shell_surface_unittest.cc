@@ -9,6 +9,7 @@
 #include "ash/shell.h"
 #include "ash/shell_test_api.h"
 #include "ash/system/tray/system_tray.h"
+#include "ash/wm/splitview/split_view_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "ash/wm/window_positioning_utils.h"
 #include "ash/wm/window_state.h"
@@ -52,7 +53,7 @@ bool IsWidgetPinned(views::Widget* widget) {
          type == ash::mojom::WindowPinType::TRUSTED_PINNED;
 }
 
-wm::ShadowElevation GetShadowElevation(aura::Window* window) {
+int GetShadowElevation(aura::Window* window) {
   return window->GetProperty(wm::kShadowElevationKey);
 }
 
@@ -249,11 +250,8 @@ TEST_F(ClientControlledShellSurfaceTest, SurfaceShadow) {
 
   aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
 
-  // 1) Initial state, no shadow.
-  wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
-  ASSERT_TRUE(shadow);
-  EXPECT_FALSE(shadow->layer()->visible());
-
+  // 1) Initial state, no shadow (SurfaceFrameType is NONE);
+  EXPECT_FALSE(wm::ShadowController::GetShadowForWindow(window));
   std::unique_ptr<Display> display(new Display);
 
   // 2) Just creating a sub surface won't create a shadow.
@@ -265,11 +263,14 @@ TEST_F(ClientControlledShellSurfaceTest, SurfaceShadow) {
       display->CreateSubSurface(child.get(), surface.get()));
   surface->Commit();
 
-  EXPECT_FALSE(shadow->layer()->visible());
+  EXPECT_FALSE(wm::ShadowController::GetShadowForWindow(window));
 
   // 3) Create a shadow.
+  surface->SetFrame(SurfaceFrameType::NORMAL);
   shell_surface->SetShadowBounds(gfx::Rect(10, 10, 100, 100));
   surface->Commit();
+  wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+  ASSERT_TRUE(shadow);
   EXPECT_TRUE(shadow->layer()->visible());
 
   gfx::Rect before = shadow->layer()->bounds();
@@ -296,14 +297,14 @@ TEST_F(ClientControlledShellSurfaceTest, SurfaceShadow) {
   shell_surface->SetShadowBounds(gfx::Rect());
   surface->Commit();
 
-  EXPECT_EQ(wm::ShadowElevation::NONE, GetShadowElevation(window));
+  EXPECT_EQ(wm::kShadowElevationNone, GetShadowElevation(window));
   EXPECT_FALSE(shadow->layer()->visible());
 
   // 6) This should enable non surface shadow again.
   shell_surface->SetShadowBounds(gfx::Rect(10, 10, 100, 100));
   surface->Commit();
 
-  EXPECT_EQ(wm::ShadowElevation::DEFAULT, GetShadowElevation(window));
+  EXPECT_EQ(wm::kShadowElevationDefault, GetShadowElevation(window));
   EXPECT_TRUE(shadow->layer()->visible());
 }
 
@@ -320,6 +321,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowWithStateChange) {
   const gfx::Rect original_bounds(gfx::Point(10, 10), content_size);
   shell_surface->SetGeometry(original_bounds);
   surface->Attach(buffer.get());
+  surface->SetFrame(SurfaceFrameType::NORMAL);
   surface->Commit();
 
   // Placing a shadow at screen origin will make the shadow's origin (-10, -10).
@@ -335,7 +337,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowWithStateChange) {
 
   shell_surface->SetShadowBounds(shadow_bounds);
   surface->Commit();
-  EXPECT_EQ(wm::ShadowElevation::DEFAULT, GetShadowElevation(window));
+  EXPECT_EQ(wm::kShadowElevationDefault, GetShadowElevation(window));
 
   EXPECT_TRUE(shadow->layer()->visible());
   // Origin must be in sync.
@@ -378,6 +380,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowWithTransform) {
   const gfx::Rect original_bounds(gfx::Point(10, 10), content_size);
   shell_surface->SetGeometry(original_bounds);
   surface->Attach(buffer.get());
+  surface->SetFrame(SurfaceFrameType::NORMAL);
   surface->Commit();
 
   aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
@@ -407,6 +410,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowStartMaximized) {
       exo_test_helper()->CreateClientControlledShellSurface(surface.get());
   shell_surface->SetMaximized();
   surface->Attach(buffer.get());
+  surface->SetFrame(SurfaceFrameType::NORMAL);
   surface->Commit();
 
   views::Widget* widget = shell_surface->GetWidget();
@@ -415,7 +419,7 @@ TEST_F(ClientControlledShellSurfaceTest, ShadowStartMaximized) {
   // There is no shadow when started in maximized state.
   EXPECT_FALSE(wm::ShadowController::GetShadowForWindow(window));
 
-  // Sending a shadow bounds in maximized state won't create a shaodw.
+  // Sending a shadow bounds in maximized state won't create a shadow.
   shell_surface->SetShadowBounds(gfx::Rect(10, 10, 100, 100));
   surface->Commit();
   EXPECT_FALSE(wm::ShadowController::GetShadowForWindow(window));
@@ -799,6 +803,102 @@ TEST_F(ClientControlledShellSurfaceTest, ShellSurfaceInSystemModalHitTest) {
   aura::Window* found =
       static_cast<aura::Window*>(targeter.FindTargetForEvent(root, &event));
   EXPECT_FALSE(window->Contains(found));
+}
+
+// Test the snap functionalities in splitscreen in tablet mode.
+TEST_F(ClientControlledShellSurfaceTest, SnapWindowInSplitViewModeTest) {
+  UpdateDisplay("807x607");
+  ash::Shell* shell = ash::Shell::Get();
+  shell->tablet_mode_controller()->EnableTabletModeWindowManager(true);
+
+  const gfx::Size buffer_size(800, 600);
+  std::unique_ptr<Buffer> buffer1(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(buffer_size)));
+  std::unique_ptr<Surface> surface1(new Surface);
+  auto shell_surface1 =
+      exo_test_helper()->CreateClientControlledShellSurface(surface1.get());
+  // Start in maximized.
+  shell_surface1->SetMaximized();
+  surface1->Attach(buffer1.get());
+  surface1->Commit();
+
+  aura::Window* window1 = shell_surface1->GetWidget()->GetNativeWindow();
+  ash::wm::WindowState* window_state1 = ash::wm::GetWindowState(window1);
+  ash::wm::ClientControlledState* state1 =
+      static_cast<ash::wm::ClientControlledState*>(
+          ash::wm::WindowState::TestApi::GetStateImpl(window_state1));
+  EXPECT_EQ(window_state1->GetStateType(),
+            ash::mojom::WindowStateType::MAXIMIZED);
+
+  // Snap window to left.
+  ash::SplitViewController* split_view_controller =
+      shell->split_view_controller();
+  split_view_controller->SnapWindow(window1, ash::SplitViewController::LEFT);
+  state1->set_bounds_locally(true);
+  window1->SetBounds(split_view_controller->GetSnappedWindowBoundsInScreen(
+      window1, ash::SplitViewController::LEFT));
+  state1->set_bounds_locally(false);
+  EXPECT_EQ(window_state1->GetStateType(),
+            ash::mojom::WindowStateType::LEFT_SNAPPED);
+  EXPECT_EQ(shell_surface1->GetWidget()->GetWindowBoundsInScreen(),
+            split_view_controller->GetSnappedWindowBoundsInScreen(
+                window1, ash::SplitViewController::LEFT));
+  EXPECT_TRUE(HasBackdrop());
+  split_view_controller->EndSplitView();
+
+  // Snap window to right.
+  split_view_controller->SnapWindow(window1, ash::SplitViewController::RIGHT);
+  state1->set_bounds_locally(true);
+  window1->SetBounds(split_view_controller->GetSnappedWindowBoundsInScreen(
+      window1, ash::SplitViewController::RIGHT));
+  state1->set_bounds_locally(false);
+  EXPECT_EQ(window_state1->GetStateType(),
+            ash::mojom::WindowStateType::RIGHT_SNAPPED);
+  EXPECT_EQ(shell_surface1->GetWidget()->GetWindowBoundsInScreen(),
+            split_view_controller->GetSnappedWindowBoundsInScreen(
+                window1, ash::SplitViewController::RIGHT));
+  EXPECT_TRUE(HasBackdrop());
+}
+
+// The shell surface in SystemModal container should not become target
+// at the edge.
+TEST_F(ClientControlledShellSurfaceTest, ClientIniatedResize) {
+  std::unique_ptr<Surface> surface(new Surface);
+  auto shell_surface =
+      exo_test_helper()->CreateClientControlledShellSurface(surface.get());
+  shell_surface->set_client_controlled_move_resize(false);
+
+  display::Display display = display::Screen::GetScreen()->GetPrimaryDisplay();
+
+  gfx::Size window_size(100, 100);
+  std::unique_ptr<Buffer> desktop_buffer(
+      new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(window_size)));
+  surface->Attach(desktop_buffer.get());
+  shell_surface->SetGeometry(gfx::Rect(window_size));
+  surface->Commit();
+
+  EXPECT_TRUE(shell_surface->GetWidget()->widget_delegate()->CanResize());
+  shell_surface->StartResize(HTTOP);
+
+  aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
+  // Client cannot start drag if mouse isn't pressed.
+  ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
+  ASSERT_FALSE(window_state->is_dragged());
+
+  // Client can start drag only when the mouse is pressed on the widget.
+  ui::test::EventGenerator& event_generator = GetEventGenerator();
+  event_generator.MoveMouseToCenterOf(window);
+  event_generator.PressLeftButton();
+  shell_surface->StartResize(HTTOP);
+  ASSERT_TRUE(window_state->is_dragged());
+  event_generator.ReleaseLeftButton();
+  ASSERT_FALSE(window_state->is_dragged());
+
+  // Press pressed outside of the window.
+  event_generator.MoveMouseTo(gfx::Point(200, 50));
+  event_generator.PressLeftButton();
+  shell_surface->StartResize(HTTOP);
+  ASSERT_FALSE(window_state->is_dragged());
 }
 
 }  // namespace exo

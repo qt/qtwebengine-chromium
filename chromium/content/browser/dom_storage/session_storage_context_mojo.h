@@ -8,12 +8,21 @@
 #include <stdint.h>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "content/common/content_export.h"
 #include "content/common/leveldb_wrapper.mojom.h"
+#include "content/common/storage_partition_service.mojom.h"
+#include "content/public/browser/session_storage_usage_info.h"
 #include "url/origin.h"
+
+namespace base {
+class SequencedTaskRunner;
+}  // namespace base
 
 namespace service_manager {
 class Connector;
@@ -24,20 +33,36 @@ namespace content {
 // Used for mojo-based SessionStorage implementation.
 class CONTENT_EXPORT SessionStorageContextMojo {
  public:
-  SessionStorageContextMojo(service_manager::Connector* connector,
-                            base::FilePath subdirectory);
+  using GetStorageUsageCallback =
+      base::OnceCallback<void(std::vector<SessionStorageUsageInfo>)>;
+
+  SessionStorageContextMojo(
+      scoped_refptr<base::SequencedTaskRunner> task_runner,
+      service_manager::Connector* connector,
+      base::Optional<base::FilePath> partition_directory,
+      std::string leveldb_name);
   ~SessionStorageContextMojo();
 
-  void OpenSessionStorage(int64_t namespace_id,
-                          const url::Origin& origin,
-                          mojom::LevelDBWrapperRequest request);
+  void OpenSessionStorage(int process_id,
+                          const std::string& namespace_id,
+                          mojom::SessionStorageNamespaceRequest request);
 
-  void CreateSessionNamespace(int64_t namespace_id,
-                              const std::string& persistent_namespace_id);
-  void CloneSessionNamespace(int64_t namespace_id_to_clone,
-                             int64_t clone_namespace_id,
-                             const std::string& clone_persistent_namespace_id);
-  void DeleteSessionNamespace(int64_t namespace_id, bool should_persist);
+  void CreateSessionNamespace(const std::string& namespace_id);
+  void CloneSessionNamespace(const std::string& namespace_id_to_clone,
+                             const std::string& clone_namespace_id);
+  void DeleteSessionNamespace(const std::string& namespace_id,
+                              bool should_persist);
+  void Flush();
+
+  void GetStorageUsage(GetStorageUsageCallback callback);
+  void DeleteStorage(const GURL& origin,
+                     const std::string& persistent_namespace_id);
+
+  // Called when the owning BrowserContext is ending.
+  // Schedules the commit of any unsaved changes and will delete
+  // and keep data on disk per the content settings and special storage
+  // policies.
+  void ShutdownAndDelete();
 
   // Clears any caches, to free up as much memory as possible. Next access to
   // storage for a particular origin will reload the data from the database.
@@ -52,7 +77,8 @@ class CONTENT_EXPORT SessionStorageContextMojo {
 
  private:
   std::unique_ptr<service_manager::Connector> connector_;
-  const base::FilePath subdirectory_;
+  const base::Optional<base::FilePath> partition_directory_path_;
+  std::string leveldb_name_;
 
   base::WeakPtrFactory<SessionStorageContextMojo> weak_ptr_factory_;
 };

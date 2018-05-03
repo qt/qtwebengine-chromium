@@ -14,7 +14,7 @@
 
 namespace blink {
 
-extern DocumentPaintDefinition* const kInvalidDocumentDefinition;
+extern DocumentPaintDefinition* const kInvalidDocumentPaintDefinition;
 
 class CSSPaintImageGeneratorImpl;
 
@@ -26,6 +26,8 @@ class MODULES_EXPORT PaintWorklet : public Worklet,
   WTF_MAKE_NONCOPYABLE(PaintWorklet);
 
  public:
+  static const char kSupplementName[];
+
   // At this moment, paint worklet allows at most two global scopes at any time.
   static const size_t kNumGlobalScopes;
   static PaintWorklet* From(LocalDOMWindow&);
@@ -40,7 +42,7 @@ class MODULES_EXPORT PaintWorklet : public Worklet,
                              const IntSize& container_size,
                              const CSSStyleValueVector*);
 
-  typedef HeapHashMap<String, TraceWrapperMember<DocumentPaintDefinition>>
+  typedef HeapHashMap<String, Member<DocumentPaintDefinition>>
       DocumentDefinitionMap;
   DocumentDefinitionMap& GetDocumentDefinitionMap() {
     return document_definition_map_;
@@ -79,8 +81,6 @@ class MODULES_EXPORT PaintWorklet : public Worklet,
   // The number of paint calls remaining before Paint will select a new global
   // scope. SelectGlobalScope resets this at the beginning of each frame.
   int paints_before_switching_global_scope_;
-
-  static const char* SupplementName();
 };
 
 }  // namespace blink

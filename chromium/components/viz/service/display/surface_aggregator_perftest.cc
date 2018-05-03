@@ -6,8 +6,6 @@
 #include "cc/resources/display_resource_provider.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_resource_provider.h"
-#include "cc/test/test_context_provider.h"
-#include "cc/test/test_shared_bitmap_manager.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
@@ -16,6 +14,8 @@
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "components/viz/test/compositor_frame_helpers.h"
+#include "components/viz/test/test_context_provider.h"
+#include "components/viz/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
 
@@ -31,9 +31,9 @@ const base::UnguessableToken kArbitraryToken = base::UnguessableToken::Create();
 class SurfaceAggregatorPerfTest : public testing::Test {
  public:
   SurfaceAggregatorPerfTest() {
-    context_provider_ = cc::TestContextProvider::Create();
+    context_provider_ = TestContextProvider::Create();
     context_provider_->BindToCurrentThread();
-    shared_bitmap_manager_ = std::make_unique<cc::TestSharedBitmapManager>();
+    shared_bitmap_manager_ = std::make_unique<TestSharedBitmapManager>();
 
     resource_provider_ =
         cc::FakeResourceProvider::CreateDisplayResourceProvider(
@@ -139,14 +139,11 @@ class SurfaceAggregatorPerfTest : public testing::Test {
 
     perf_test::PrintResult("aggregator_speed", "", name, timer_.LapsPerSecond(),
                            "runs/s", true);
-    for (int i = 0; i < num_surfaces; i++)
-      child_supports[i]->EvictCurrentSurface();
-    root_support->EvictCurrentSurface();
   }
 
  protected:
   FrameSinkManagerImpl manager_;
-  scoped_refptr<cc::TestContextProvider> context_provider_;
+  scoped_refptr<TestContextProvider> context_provider_;
   std::unique_ptr<SharedBitmapManager> shared_bitmap_manager_;
   std::unique_ptr<cc::DisplayResourceProvider> resource_provider_;
   std::unique_ptr<SurfaceAggregator> aggregator_;

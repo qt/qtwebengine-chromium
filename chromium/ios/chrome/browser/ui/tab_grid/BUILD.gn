@@ -1,0 +1,87 @@
+# Copyright 2018 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//ios/public/provider/chrome/browser/build_config.gni")
+
+source_set("tab_grid") {
+  sources = [
+    "tab_grid_adaptor.h",
+    "tab_grid_adaptor.mm",
+    "tab_grid_coordinator.h",
+    "tab_grid_coordinator.mm",
+    "tab_grid_mediator.h",
+    "tab_grid_mediator.mm",
+  ]
+
+  configs += [ "//build/config/compiler:enable_arc" ]
+
+  deps = [
+    ":tab_grid_ui",
+    "//base",
+    "//components/favicon/ios",
+    "//ios/chrome/browser/snapshots",
+    "//ios/chrome/browser/tabs",
+    "//ios/chrome/browser/ui/commands",
+    "//ios/chrome/browser/ui/coordinators:chrome_coordinators",
+    "//ios/chrome/browser/ui/main",
+    "//ios/chrome/browser/ui/tab_switcher",
+    "//ios/chrome/browser/web",
+    "//ios/chrome/browser/web_state_list",
+    "//ios/web",
+    "//ui/gfx",
+  ]
+}
+
+source_set("tab_grid_ui") {
+  sources = [
+    "grid_cell.h",
+    "grid_cell.mm",
+    "grid_commands.h",
+    "grid_consumer.h",
+    "grid_image_data_source.h",
+    "grid_item.h",
+    "grid_item.mm",
+    "grid_layout.h",
+    "grid_layout.mm",
+    "grid_theme.h",
+    "grid_view_controller.h",
+    "grid_view_controller.mm",
+    "tab_grid_bottom_toolbar.h",
+    "tab_grid_bottom_toolbar.mm",
+    "tab_grid_top_toolbar.h",
+    "tab_grid_top_toolbar.mm",
+    "tab_grid_transition_handler.h",
+    "tab_grid_transition_handler.mm",
+    "tab_grid_transition_state_provider.h",
+    "tab_grid_view_controller.h",
+    "tab_grid_view_controller.mm",
+    "top_aligned_image_view.h",
+    "top_aligned_image_view.mm",
+  ]
+
+  configs += [ "//build/config/compiler:enable_arc" ]
+
+  deps = [
+    "//base",
+    "//ios/chrome/browser/ui/tab_grid/transitions",
+    "//ios/chrome/browser/ui/util:constraints_ui",
+  ]
+}
+
+source_set("unit_tests") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  testonly = true
+  sources = [
+    "tab_grid_coordinator_unittest.mm",
+  ]
+  deps = [
+    ":tab_grid",
+    "//base",
+    "//base/test:test_support",
+    "//ios/chrome/browser/ui/tab_switcher",
+    "//ios/chrome/test:block_cleanup_test",
+    "//ios/web/public/test",
+    "//testing/gtest",
+  ]
+}

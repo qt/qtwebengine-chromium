@@ -21,7 +21,7 @@
 #include "media/mojo/common/media_type_converters.h"
 #include "media/mojo/interfaces/decryptor.mojom.h"
 #include "services/service_manager/public/cpp/connect.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom.h"
 #include "url/origin.h"
 
 namespace media {
@@ -309,9 +309,9 @@ Decryptor* MojoCdm::GetDecryptor() {
 }
 
 int MojoCdm::GetCdmId() const {
-  base::AutoLock auto_lock(lock_);
   // Can be called on a different thread.
-  DCHECK_NE(CdmContext::kInvalidCdmId, cdm_id_);
+  base::AutoLock auto_lock(lock_);
+  DVLOG(2) << __func__ << ": cdm_id = " << cdm_id_;
   return cdm_id_;
 }
 

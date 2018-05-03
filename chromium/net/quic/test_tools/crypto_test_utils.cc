@@ -25,6 +25,7 @@
 #include "net/quic/platform/api/quic_bug_tracker.h"
 #include "net/quic/platform/api/quic_clock.h"
 #include "net/quic/platform/api/quic_logging.h"
+#include "net/quic/platform/api/quic_ptr_util.h"
 #include "net/quic/platform/api/quic_socket_address.h"
 #include "net/quic/platform/api/quic_test.h"
 #include "net/quic/platform/api/quic_text_utils.h"
@@ -117,7 +118,7 @@ QuicAsyncStatus TestChannelIDSource::GetChannelIDKey(
     const string& hostname,
     std::unique_ptr<ChannelIDKey>* channel_id_key,
     ChannelIDSourceCallback* /*callback*/) {
-  channel_id_key->reset(new TestChannelIDKey(HostnameToKey(hostname)));
+  *channel_id_key = QuicMakeUnique<TestChannelIDKey>(HostnameToKey(hostname));
   return QUIC_SUCCESS;
 }
 
@@ -238,7 +239,7 @@ class AsyncTestChannelIDSource : public ChannelIDSource, public CallbackSource {
 
   // CallbackSource implementation.
   void RunPendingCallbacks() override {
-    if (callback_.get()) {
+    if (callback_) {
       callback_->Run(&channel_id_key_);
       callback_.reset();
     }
@@ -300,8 +301,7 @@ class FullChloGenerator {
 
   std::unique_ptr<ValidateClientHelloCallback>
   GetValidateClientHelloCallback() {
-    return std::unique_ptr<ValidateClientHelloCallback>(
-        new ValidateClientHelloCallback(this));
+    return QuicMakeUnique<ValidateClientHelloCallback>(this);
   }
 
  private:
@@ -337,8 +337,7 @@ class FullChloGenerator {
   };
 
   std::unique_ptr<ProcessClientHelloCallback> GetProcessClientHelloCallback() {
-    return std::unique_ptr<ProcessClientHelloCallback>(
-        new ProcessClientHelloCallback(this));
+    return QuicMakeUnique<ProcessClientHelloCallback>(this);
   }
 
   void ProcessClientHelloDone(std::unique_ptr<CryptoHandshakeMessage> rej) {
@@ -404,6 +403,8 @@ int HandshakeWithFakeServer(QuicConfig* server_quic_config,
   TestQuicSpdyServerSession server_session(server_conn, *server_quic_config,
                                            &crypto_config,
                                            &compressed_certs_cache);
+  server_session.OnSuccessfulVersionNegotiation(
+      client_conn->supported_versions().front());
   EXPECT_CALL(*server_session.helper(),
               CanAcceptClientHello(testing::_, testing::_, testing::_))
       .Times(testing::AnyNumber());

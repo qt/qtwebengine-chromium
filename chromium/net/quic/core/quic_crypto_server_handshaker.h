@@ -11,6 +11,7 @@
 #include "net/quic/core/quic_crypto_server_stream.h"
 #include "net/quic/core/quic_session.h"
 #include "net/quic/platform/api/quic_export.h"
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
 
@@ -28,7 +29,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerHandshaker
   QuicCryptoServerHandshaker(const QuicCryptoServerConfig* crypto_config,
                              QuicCryptoServerStream* stream,
                              QuicCompressedCertsCache* compressed_certs_cache,
-                             bool use_stateless_rejects_if_peer_supported,
                              QuicSession* session,
                              QuicCryptoServerStream::Helper* helper);
 
@@ -36,18 +36,14 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerHandshaker
 
   // From HandshakerDelegate
   void CancelOutstandingCallbacks() override;
-  bool GetBase64SHA256ClientChannelID(std::string* output) const override;
+  bool GetBase64SHA256ClientChannelID(QuicString* output) const override;
   void SendServerConfigUpdate(
       const CachedNetworkParameters* cached_network_params) override;
   uint8_t NumHandshakeMessages() const override;
   uint8_t NumHandshakeMessagesWithServerNonces() const override;
   int NumServerConfigUpdateMessagesSent() const override;
   const CachedNetworkParameters* PreviousCachedNetworkParams() const override;
-  bool UseStatelessRejectsIfPeerSupported() const override;
-  bool PeerSupportsStatelessRejects() const override;
   bool ZeroRttAttempted() const override;
-  void SetPeerSupportsStatelessRejects(
-      bool peer_supports_stateless_rejects) override;
   void SetPreviousCachedNetworkParams(
       CachedNetworkParameters cached_network_params) override;
   bool ShouldSendExpectCTHeader() const override;
@@ -129,7 +125,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerHandshaker
   void FinishProcessingHandshakeMessageAfterProcessClientHello(
       const ValidateClientHelloResultCallback::Result& result,
       QuicErrorCode error,
-      const std::string& error_details,
+      const QuicString& error_details,
       std::unique_ptr<CryptoHandshakeMessage> reply,
       std::unique_ptr<DiversificationNonce> diversification_nonce,
       std::unique_ptr<ProofSource::Details> proof_source_details);
@@ -170,7 +166,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerHandshaker
 
   // Hash of the last received CHLO message which can be used for generating
   // server config update messages.
-  std::string chlo_hash_;
+  QuicString chlo_hash_;
 
   // Pointer to the helper for this crypto stream. Must outlive this stream.
   QuicCryptoServerStream::Helper* helper_;
@@ -199,17 +195,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerHandshaker
 
   // Contains any source address tokens which were present in the CHLO.
   SourceAddressTokens previous_source_address_tokens_;
-
-  // If true, the server should use stateless rejects, so long as the
-  // client supports them, as indicated by
-  // peer_supports_stateless_rejects_.
-  bool use_stateless_rejects_if_peer_supported_;
-
-  // Set to true, once the server has received information from the
-  // client that it supports stateless reject.
-  //  TODO(jokulik): Remove once client stateless reject support
-  // becomes the default.
-  bool peer_supports_stateless_rejects_;
 
   // True if client attempts 0-rtt handshake (which can succeed or fail). If
   // stateless rejects are used, this variable will be false for the stateless

@@ -53,7 +53,8 @@ bool PrintRenderFrameHelper::PrintPagesNative(blink::WebLocalFrame* frame,
   if (printed_pages.empty())
     return false;
 
-  PdfMetafileSkia metafile(print_params.printed_doc_type);
+  PdfMetafileSkia metafile(print_params.printed_doc_type,
+                           print_params.document_cookie);
   CHECK(metafile.Init());
 
   for (int page_number : printed_pages) {
@@ -82,12 +83,10 @@ bool PrintRenderFrameHelper::PrintPagesNative(blink::WebLocalFrame* frame,
   return true;
 #else
   PrintHostMsg_DidPrintDocument_Params page_params;
-  if (!CopyMetafileDataToReadOnlySharedMem(metafile,
-                                           &page_params.metafile_data_handle)) {
+  if (!CopyMetafileDataToReadOnlySharedMem(metafile, &page_params.content)) {
     return false;
   }
 
-  page_params.data_size = metafile.GetDataSize();
   page_params.document_cookie = print_params.document_cookie;
   Send(new PrintHostMsg_DidPrintDocument(routing_id(), page_params));
   return true;

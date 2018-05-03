@@ -63,7 +63,8 @@ std::unique_ptr<base::DictionaryValue>
     MetricsReportingHandler::CreateMetricsReportingDict() {
   std::unique_ptr<base::DictionaryValue> dict(
       std::make_unique<base::DictionaryValue>());
-  dict->SetBoolean("enabled",
+  dict->SetBoolean(
+      "enabled",
       ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled());
   dict->SetBoolean("managed", IsMetricsReportingPolicyManaged());
   return dict;

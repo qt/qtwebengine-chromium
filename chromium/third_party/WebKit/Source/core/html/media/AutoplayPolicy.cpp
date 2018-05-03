@@ -11,16 +11,26 @@
 #include "core/frame/Settings.h"
 #include "core/html/media/AutoplayUmaHelper.h"
 #include "core/html/media/HTMLMediaElement.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "platform/network/NetworkStateNotifier.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Assertions.h"
 #include "public/platform/WebMediaPlayer.h"
 #include "public/web/WebSettings.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
+#include "third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 
 namespace blink {
 
 namespace {
+
+const char kWarningUnmuteFailed[] =
+    "Unmuting failed and the element was paused instead because the user "
+    "didn't interact with the document before. https://goo.gl/xX8pDD";
+const char kErrorAutoplayFuncUnified[] =
+    "play() failed because the user didn't interact with the document first. "
+    "https://goo.gl/xX8pDD";
+const char kErrorAutoplayFuncMobile[] =
+    "play() can only be initiated by a user gesture.";
 
 bool IsDocumentCrossOrigin(const Document& document) {
   const LocalFrame* frame = document.GetFrame();
@@ -62,29 +72,6 @@ bool ComputeLockPendingUserGestureRequired(const Document& document) {
   return true;
 }
 
-// Return true if any frame between |frame| and the root has been activated in
-// either the current or previous navigation. If the
-// FeaturePolicyAutoplayFeature flag is disabled then it will stop at the
-// current frame.
-bool HasBeenActivated(const Frame& frame) {
-  // Check if the current frame has received a user activation.
-  if (frame.HasBeenActivated() ||
-      frame.HasReceivedUserGestureBeforeNavigation()) {
-    return true;
-  }
-
-  // Check feature policy before traversing the tree.
-  if (!RuntimeEnabledFeatures::FeaturePolicyAutoplayFeatureEnabled() ||
-      !frame.IsFeatureEnabled(FeaturePolicyFeature::kAutoplay)) {
-    return false;
-  }
-
-  // If there is a parent check if the parent has received a
-  // user gesture.
-  const Frame* parent = frame.Tree().Parent();
-  return parent && HasBeenActivated(*parent);
-}
-
 }  // anonymous namespace
 
 // static
@@ -96,11 +83,6 @@ AutoplayPolicy::Type AutoplayPolicy::GetAutoplayPolicyForDocument(
   if (IsDocumentWhitelisted(document))
     return Type::kNoUserGestureRequired;
 
-  if (RuntimeEnabledFeatures::MediaEngagementBypassAutoplayPoliciesEnabled() &&
-      document.HasHighMediaEngagement()) {
-    return Type::kNoUserGestureRequired;
-  }
-
   return document.GetSettings()->GetAutoplayPolicy();
 }
 
@@ -109,7 +91,29 @@ bool AutoplayPolicy::IsDocumentAllowedToPlay(const Document& document) {
   if (!document.GetFrame())
     return false;
 
-  return HasBeenActivated(*document.GetFrame());
+  for (Frame* frame = document.GetFrame(); frame;
+       frame = frame->Tree().Parent()) {
+    if (frame->HasBeenActivated() ||
+        frame->HasReceivedUserGestureBeforeNavigation()) {
+      return true;
+    }
+
+    // TODO(mlamouri): checking HasHighMediaEngagement from the document as all
+    // documents are in this state if the main frame has a high media
+    // engagement. This allows OOPIF to work but a follow-up fix is in progress.
+    if (RuntimeEnabledFeatures::
+            MediaEngagementBypassAutoplayPoliciesEnabled() &&
+        frame->IsMainFrame() && document.HasHighMediaEngagement()) {
+      return true;
+    }
+
+    if (!RuntimeEnabledFeatures::FeaturePolicyAutoplayFeatureEnabled() ||
+        !frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kAutoplay)) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 AutoplayPolicy::AutoplayPolicy(HTMLMediaElement* element)
@@ -180,6 +184,11 @@ bool AutoplayPolicy::RequestAutoplayUnmute() {
 
   if (was_autoplaying_muted) {
     if (IsGestureNeededForPlayback()) {
+      if (IsUsingDocumentUserActivationRequiredPolicy()) {
+        element_->GetDocument().AddConsoleMessage(ConsoleMessage::Create(
+            kJSMessageSource, kWarningMessageLevel, kWarningUnmuteFailed));
+      }
+
       autoplay_uma_helper_->RecordAutoplayUnmuteStatus(
           AutoplayUnmuteActionStatus::kFailure);
       return false;
@@ -202,6 +211,9 @@ bool AutoplayPolicy::RequestAutoplayByAttribute() {
     return false;
   }
 
+  // If it's the first playback, track that it started because of autoplay.
+  MaybeSetAutoplayInitiated();
+
   if (IsGestureNeededForPlaybackIfCrossOriginExperimentEnabled()) {
     autoplay_uma_helper_->RecordCrossOriginAutoplayResult(
         CrossOriginAutoplayResult::kAutoplayBlocked);
@@ -221,7 +233,7 @@ bool AutoplayPolicy::RequestAutoplayByAttribute() {
   return false;
 }
 
-Nullable<ExceptionCode> AutoplayPolicy::RequestPlay() {
+Optional<ExceptionCode> AutoplayPolicy::RequestPlay() {
   if (!Frame::HasTransientUserActivation(element_->GetDocument().GetFrame())) {
     autoplay_uma_helper_->OnAutoplayInitiated(AutoplaySource::kMethod);
     if (IsGestureNeededForPlayback()) {
@@ -243,7 +255,9 @@ Nullable<ExceptionCode> AutoplayPolicy::RequestPlay() {
     TryUnlockingUserGesture();
   }
 
-  return nullptr;
+  MaybeSetAutoplayInitiated();
+
+  return WTF::nullopt;
 }
 
 bool AutoplayPolicy::IsAutoplayingMuted() const {
@@ -268,10 +282,8 @@ bool AutoplayPolicy::IsOrWillBeAutoplayingMutedInternal(bool muted) const {
 }
 
 bool AutoplayPolicy::IsLockedPendingUserGesture() const {
-  if (GetAutoplayPolicyForDocument(element_->GetDocument()) ==
-      AutoplayPolicy::Type::kDocumentUserActivationRequired) {
+  if (IsUsingDocumentUserActivationRequiredPolicy())
     return !IsDocumentAllowedToPlay(element_->GetDocument());
-  }
 
   return locked_pending_user_gesture_;
 }
@@ -293,6 +305,17 @@ bool AutoplayPolicy::IsGestureNeededForPlayback() const {
     return false;
 
   return IsGestureNeededForPlaybackIfPendingUserGestureIsLocked();
+}
+
+String AutoplayPolicy::GetPlayErrorMessage() const {
+  return IsUsingDocumentUserActivationRequiredPolicy()
+             ? kErrorAutoplayFuncUnified
+             : kErrorAutoplayFuncMobile;
+}
+
+bool AutoplayPolicy::WasAutoplayInitiated() const {
+  DCHECK(autoplay_initiated_.has_value());
+  return *autoplay_initiated_;
 }
 
 bool AutoplayPolicy::IsGestureNeededForPlaybackIfPendingUserGestureIsLocked()
@@ -335,6 +358,29 @@ void AutoplayPolicy::OnVisibilityChangedForAutoplay(bool is_visible) {
     element_->ScheduleNotifyPlaying();
 
     element_->UpdatePlayState();
+  }
+}
+
+bool AutoplayPolicy::IsUsingDocumentUserActivationRequiredPolicy() const {
+  return GetAutoplayPolicyForDocument(element_->GetDocument()) ==
+         AutoplayPolicy::Type::kDocumentUserActivationRequired;
+}
+
+void AutoplayPolicy::MaybeSetAutoplayInitiated() {
+  if (autoplay_initiated_.has_value())
+    return;
+
+  autoplay_initiated_ = true;
+  for (Frame* frame = element_->GetDocument().GetFrame(); frame;
+       frame = frame->Tree().Parent()) {
+    if (frame->HasBeenActivated() ||
+        frame->HasReceivedUserGestureBeforeNavigation()) {
+      autoplay_initiated_ = false;
+      break;
+    }
+
+    if (!frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kAutoplay))
+      break;
   }
 }
 

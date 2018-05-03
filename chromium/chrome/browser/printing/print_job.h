@@ -31,8 +31,8 @@ class PrintedPage;
 #endif
 class PrinterQuery;
 
-void HoldRefCallback(const scoped_refptr<PrintJobWorkerOwner>& owner,
-                     const base::Closure& callback);
+void HoldRefCallback(scoped_refptr<PrintJobWorkerOwner> owner,
+                     base::OnceClosure callback);
 
 // Manages the print work for a specific document. Talks to the printer through
 // PrintingContext through PrintJobWorker. Hides access to PrintingContext in a
@@ -52,6 +52,15 @@ class PrintJob : public PrintJobWorkerOwner,
   void Initialize(PrintJobWorkerOwner* job,
                   const base::string16& name,
                   int page_count);
+
+#if defined(OS_WIN)
+  // Overwrites the PDF page mapping to fill in values of -1 for all indices
+  // that are not selected. This is needed when the user opens the system
+  // dialog from the link in Print Preview on Windows and then sets a selection
+  // of pages, because all PDF pages will be converted, but only the user's
+  // selected pages should be sent to the printer. See https://crbug.com/823876.
+  void ResetPageMapping();
+#endif
 
   // content::NotificationObserver implementation.
   void Observe(int type,

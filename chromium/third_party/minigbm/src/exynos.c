@@ -25,22 +25,17 @@ static const uint32_t texture_source_formats[] = { DRM_FORMAT_NV12 };
 
 static int exynos_init(struct driver *drv)
 {
-	int ret;
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &LINEAR_METADATA, BO_USE_RENDER_MASK);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &LINEAR_METADATA, BO_USE_RENDER_MASK);
 
-	ret = drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
-				   &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
+			     &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
 
 	return drv_modify_linear_combinations(drv);
 }
 
 static int exynos_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
-			    uint32_t flags)
+			    uint64_t use_flags)
 {
 	size_t plane;
 
@@ -105,13 +100,14 @@ cleanup_planes:
  * Use dumb mapping with exynos even though a GEM buffer is created.
  * libdrm does the same thing in exynos_drm.c
  */
-struct backend backend_exynos = {
+const struct backend backend_exynos = {
 	.name = "exynos",
 	.init = exynos_init,
 	.bo_create = exynos_bo_create,
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_import = drv_prime_bo_import,
 	.bo_map = drv_dumb_bo_map,
+	.bo_unmap = drv_bo_munmap,
 };
 
 #endif

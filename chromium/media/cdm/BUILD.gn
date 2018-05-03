@@ -28,6 +28,8 @@ source_set("cdm") {
   sources = [
     "aes_decryptor.cc",
     "aes_decryptor.h",
+    "cdm_context_ref_impl.cc",
+    "cdm_context_ref_impl.h",
 
     # TODO(crbug.com/676224): Move this to |enable_library_cdms| block below
     # when EnabledIf attribute is supported in mojom.
@@ -172,7 +174,7 @@ source_set("unit_tests") {
       "simple_cdm_buffer.cc",
       "simple_cdm_buffer.h",
     ]
-    data_deps += [ "//media/cdm/ppapi/clear_key_cdm" ]
+    data_deps += [ "//media/cdm/library_cdm/clear_key_cdm" ]
 
     deps += [
       ":cdm_api",

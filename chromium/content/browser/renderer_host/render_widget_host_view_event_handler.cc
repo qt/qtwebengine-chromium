@@ -475,7 +475,7 @@ void RenderWidgetHostViewEventHandler::OnTouchEvent(ui::TouchEvent* event) {
     event->SetHandled();
   } else {
     touch_event = ui::CreateWebTouchEventFromMotionEvent(
-        pointer_state_, event->may_cause_scrolling());
+        pointer_state_, event->may_cause_scrolling(), event->hovering());
   }
   pointer_state_.CleanupRemovedTouchPoints(*event);
 
@@ -575,6 +575,12 @@ void RenderWidgetHostViewEventHandler::OnGestureEvent(ui::GestureEvent* event) {
   // If a gesture is not processed by the webpage, then WebKit processes it
   // (e.g. generates synthetic mouse events).
   event->SetHandled();
+}
+
+void RenderWidgetHostViewEventHandler::GestureEventAck(
+    const blink::WebGestureEvent& event,
+    InputEventAckState ack_result) {
+  mouse_wheel_phase_handler_.GestureEventAck(event, ack_result);
 }
 
 bool RenderWidgetHostViewEventHandler::CanRendererHandleEvent(

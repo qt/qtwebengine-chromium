@@ -1118,6 +1118,7 @@ namespace sw
 		{
 		case LOCK_UNLOCKED:
 		case LOCK_READONLY:
+		case LOCK_UPDATE:
 			break;
 		case LOCK_WRITEONLY:
 		case LOCK_READWRITE:
@@ -1135,9 +1136,7 @@ namespace sw
 
 			switch(format)
 			{
-			#if S3TC_SUPPORT
 			case FORMAT_DXT1:
-			#endif
 			case FORMAT_ATI1:
 			case FORMAT_ETC1:
 			case FORMAT_R11_EAC:
@@ -1193,10 +1192,8 @@ namespace sw
 			case FORMAT_RGBA_ASTC_12x12_KHR:
 			case FORMAT_SRGB8_ALPHA8_ASTC_12x12_KHR:
 				return (unsigned char*)buffer + 16 * (x / 12) + (y / 12) * pitchB + z * sliceB;
-			#if S3TC_SUPPORT
 			case FORMAT_DXT3:
 			case FORMAT_DXT5:
-			#endif
 			case FORMAT_ATI2:
 				return (unsigned char*)buffer + 16 * (x / 4) + (y / 4) * pitchB + z * sliceB;
 			default:
@@ -1518,6 +1515,11 @@ namespace sw
 
 	void *Surface::lockStencil(int x, int y, int front, Accessor client)
 	{
+		if(stencil.format == FORMAT_NULL)
+		{
+			return nullptr;
+		}
+
 		resource->lock(client);
 
 		if(!stencil.buffer)
@@ -1598,11 +1600,9 @@ namespace sw
 		case FORMAT_A32B32G32R32I:		return 16;
 		case FORMAT_A32B32G32R32UI:		return 16;
 		// Compressed formats
-		#if S3TC_SUPPORT
 		case FORMAT_DXT1:				return 2;   // Column of four pixels
 		case FORMAT_DXT3:				return 4;   // Column of four pixels
 		case FORMAT_DXT5:				return 4;   // Column of four pixels
-		#endif
 		case FORMAT_ATI1:				return 2;   // Column of four pixels
 		case FORMAT_ATI2:				return 4;   // Column of four pixels
 		case FORMAT_ETC1:				return 2;   // Column of four pixels
@@ -1716,9 +1716,7 @@ namespace sw
 
 		switch(format)
 		{
-		#if S3TC_SUPPORT
 		case FORMAT_DXT1:
-		#endif
 		case FORMAT_ETC1:
 		case FORMAT_R11_EAC:
 		case FORMAT_SIGNED_R11_EAC:
@@ -1765,11 +1763,9 @@ namespace sw
 		case FORMAT_RGBA_ASTC_12x12_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_12x12_KHR:
 			return 16 * ((width + 11) / 12);
-		#if S3TC_SUPPORT
 		case FORMAT_DXT3:
 		case FORMAT_DXT5:
 			return 16 * ((width + 3) / 4);   // 128 bit per 4x4 block, computed per 4 rows
-		#endif
 		case FORMAT_ATI1:
 			return 2 * ((width + 3) / 4);    // 64 bit per 4x4 block, computed per row
 		case FORMAT_ATI2:
@@ -1801,11 +1797,9 @@ namespace sw
 
 		switch(format)
 		{
-		#if S3TC_SUPPORT
 		case FORMAT_DXT1:
 		case FORMAT_DXT3:
 		case FORMAT_DXT5:
-		#endif
 		case FORMAT_ETC1:
 		case FORMAT_R11_EAC:
 		case FORMAT_SIGNED_R11_EAC:
@@ -1882,11 +1876,9 @@ namespace sw
 			case FORMAT_X4R4G4B4:	decodeX4R4G4B4(destination, source);	break;   // FIXME: Check destination format
 			case FORMAT_A4R4G4B4:	decodeA4R4G4B4(destination, source);	break;   // FIXME: Check destination format
 			case FORMAT_P8:			decodeP8(destination, source);			break;   // FIXME: Check destination format
-			#if S3TC_SUPPORT
 			case FORMAT_DXT1:		decodeDXT1(destination, source);		break;   // FIXME: Check destination format
 			case FORMAT_DXT3:		decodeDXT3(destination, source);		break;   // FIXME: Check destination format
 			case FORMAT_DXT5:		decodeDXT5(destination, source);		break;   // FIXME: Check destination format
-			#endif
 			case FORMAT_ATI1:		decodeATI1(destination, source);		break;   // FIXME: Check destination format
 			case FORMAT_ATI2:		decodeATI2(destination, source);		break;   // FIXME: Check destination format
 			case FORMAT_R11_EAC:         decodeEAC(destination, source, 1, false); break; // FIXME: Check destination format
@@ -1936,7 +1928,7 @@ namespace sw
 	void Surface::genericUpdate(Buffer &destination, Buffer &source)
 	{
 		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
-		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_UPDATE);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -1984,7 +1976,7 @@ namespace sw
 	void Surface::decodeR8G8B8(Buffer &destination, Buffer &source)
 	{
 		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
-		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_UPDATE);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -2027,7 +2019,7 @@ namespace sw
 	void Surface::decodeX1R5G5B5(Buffer &destination, Buffer &source)
 	{
 		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
-		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_UPDATE);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -2072,7 +2064,7 @@ namespace sw
 	void Surface::decodeA1R5G5B5(Buffer &destination, Buffer &source)
 	{
 		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
-		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_UPDATE);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -2118,7 +2110,7 @@ namespace sw
 	void Surface::decodeX4R4G4B4(Buffer &destination, Buffer &source)
 	{
 		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
-		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_UPDATE);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -2163,7 +2155,7 @@ namespace sw
 	void Surface::decodeA4R4G4B4(Buffer &destination, Buffer &source)
 	{
 		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
-		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_UPDATE);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -2209,7 +2201,7 @@ namespace sw
 	void Surface::decodeP8(Buffer &destination, Buffer &source)
 	{
 		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
-		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_UPDATE);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -2252,10 +2244,9 @@ namespace sw
 		destination.unlockRect();
 	}
 
-#if S3TC_SUPPORT
 	void Surface::decodeDXT1(Buffer &internal, Buffer &external)
 	{
-		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_UPDATE);
 		const DXT1 *source = (const DXT1*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
@@ -2320,7 +2311,7 @@ namespace sw
 
 	void Surface::decodeDXT3(Buffer &internal, Buffer &external)
 	{
-		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_UPDATE);
 		const DXT3 *source = (const DXT3*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
@@ -2370,7 +2361,7 @@ namespace sw
 
 	void Surface::decodeDXT5(Buffer &internal, Buffer &external)
 	{
-		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_UPDATE);
 		const DXT5 *source = (const DXT5*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
@@ -2441,11 +2432,10 @@ namespace sw
 		external.unlockRect();
 		internal.unlockRect();
 	}
-#endif
 
 	void Surface::decodeATI1(Buffer &internal, Buffer &external)
 	{
-		byte *destSlice = (byte*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		byte *destSlice = (byte*)internal.lockRect(0, 0, 0, LOCK_UPDATE);
 		const ATI1 *source = (const ATI1*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
@@ -2501,7 +2491,7 @@ namespace sw
 
 	void Surface::decodeATI2(Buffer &internal, Buffer &external)
 	{
-		word *destSlice = (word*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		word *destSlice = (word*)internal.lockRect(0, 0, 0, LOCK_UPDATE);
 		const ATI2 *source = (const ATI2*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
@@ -2584,7 +2574,7 @@ namespace sw
 
 	void Surface::decodeETC2(Buffer &internal, Buffer &external, int nbAlphaBits, bool isSRGB)
 	{
-		ETC_Decoder::Decode((const byte*)external.lockRect(0, 0, 0, LOCK_READONLY), (byte*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY), external.width, external.height, internal.width, internal.height, internal.pitchB, internal.bytes,
+		ETC_Decoder::Decode((const byte*)external.lockRect(0, 0, 0, LOCK_READONLY), (byte*)internal.lockRect(0, 0, 0, LOCK_UPDATE), external.width, external.height, internal.width, internal.height, internal.pitchB, internal.bytes,
 		                    (nbAlphaBits == 8) ? ETC_Decoder::ETC_RGBA : ((nbAlphaBits == 1) ? ETC_Decoder::ETC_RGB_PUNCHTHROUGH_ALPHA : ETC_Decoder::ETC_RGB));
 		external.unlockRect();
 		internal.unlockRect();
@@ -2664,9 +2654,7 @@ namespace sw
 
 		switch(format)
 		{
-		#if S3TC_SUPPORT
 		case FORMAT_DXT1:
-		#endif
 		case FORMAT_ATI1:
 		case FORMAT_ETC1:
 		case FORMAT_R11_EAC:
@@ -2676,10 +2664,8 @@ namespace sw
 		case FORMAT_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:
 		case FORMAT_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:
 			return width4 * height4 * depth / 2;
-		#if S3TC_SUPPORT
 		case FORMAT_DXT3:
 		case FORMAT_DXT5:
-		#endif
 		case FORMAT_ATI2:
 		case FORMAT_RG11_EAC:
 		case FORMAT_SIGNED_RG11_EAC:
@@ -3041,11 +3027,9 @@ namespace sw
 		case FORMAT_X1R5G5B5:
 		case FORMAT_A1R5G5B5:
 		case FORMAT_A4R4G4B4:
-		#if S3TC_SUPPORT
 		case FORMAT_DXT1:
 		case FORMAT_DXT3:
 		case FORMAT_DXT5:
-		#endif
 		case FORMAT_ATI1:
 		case FORMAT_ATI2:
 			return true;
@@ -3089,11 +3073,9 @@ namespace sw
 	{
 		switch(format)
 		{
-		#if S3TC_SUPPORT
 		case FORMAT_DXT1:
 		case FORMAT_DXT3:
 		case FORMAT_DXT5:
-		#endif
 		case FORMAT_ATI1:
 		case FORMAT_ATI2:
 		case FORMAT_ETC1:
@@ -3901,11 +3883,9 @@ namespace sw
 		case FORMAT_SRGB8_A8:
 			return FORMAT_SRGB8_A8;
 		// Compressed formats
-		#if S3TC_SUPPORT
 		case FORMAT_DXT1:
 		case FORMAT_DXT3:
 		case FORMAT_DXT5:
-		#endif
 		case FORMAT_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:
 		case FORMAT_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:
 		case FORMAT_RGBA8_ETC2_EAC:

@@ -174,17 +174,16 @@ SocketDataProvider::~SocketDataProvider() {
     socket_->OnDataProviderDestroyed();
 }
 
-StaticSocketDataHelper::StaticSocketDataHelper(MockRead* reads,
+StaticSocketDataHelper::StaticSocketDataHelper(const MockRead* reads,
                                                size_t reads_count,
-                                               MockWrite* writes,
+                                               const MockWrite* writes,
                                                size_t writes_count)
     : reads_(reads),
       read_index_(0),
       read_count_(reads_count),
       writes_(writes),
       write_index_(0),
-      write_count_(writes_count) {
-}
+      write_count_(writes_count) {}
 
 StaticSocketDataHelper::~StaticSocketDataHelper() = default;
 
@@ -231,7 +230,7 @@ bool StaticSocketDataHelper::VerifyWriteData(const std::string& data) {
   std::string actual_data(data.substr(0, next_write.data_len));
   EXPECT_GE(data.length(), expected_data.length());
   EXPECT_TRUE(actual_data == expected_data)
-      << "Actual write data:\n" << HexDump(actual_data)
+      << "Actual write data:\n" << HexDump(data)
       << "Expected write data:\n" << HexDump(expected_data);
   return expected_data == actual_data;
 }
@@ -250,12 +249,11 @@ StaticSocketDataProvider::StaticSocketDataProvider()
     : StaticSocketDataProvider(nullptr, 0, nullptr, 0) {
 }
 
-StaticSocketDataProvider::StaticSocketDataProvider(MockRead* reads,
+StaticSocketDataProvider::StaticSocketDataProvider(const MockRead* reads,
                                                    size_t reads_count,
-                                                   MockWrite* writes,
+                                                   const MockWrite* writes,
                                                    size_t writes_count)
-    : helper_(reads, reads_count, writes, writes_count) {
-}
+    : helper_(reads, reads_count, writes, writes_count) {}
 
 StaticSocketDataProvider::~StaticSocketDataProvider() = default;
 
@@ -317,9 +315,9 @@ SSLSocketDataProvider::SSLSocketDataProvider(
 
 SSLSocketDataProvider::~SSLSocketDataProvider() = default;
 
-SequencedSocketData::SequencedSocketData(MockRead* reads,
+SequencedSocketData::SequencedSocketData(const MockRead* reads,
                                          size_t reads_count,
-                                         MockWrite* writes,
+                                         const MockWrite* writes,
                                          size_t writes_count)
     : helper_(reads, reads_count, writes, writes_count),
       sequence_number_(0),
@@ -395,9 +393,9 @@ SequencedSocketData::SequencedSocketData(MockRead* reads,
 }
 
 SequencedSocketData::SequencedSocketData(const MockConnect& connect,
-                                         MockRead* reads,
+                                         const MockRead* reads,
                                          size_t reads_count,
-                                         MockWrite* writes,
+                                         const MockWrite* writes,
                                          size_t writes_count)
     : SequencedSocketData(reads, reads_count, writes, writes_count) {
   set_connect_data(connect);
@@ -760,13 +758,13 @@ std::unique_ptr<SSLClientSocket> MockClientSocketFactory::CreateSSLClientSocket(
     const SSLConfig& ssl_config,
     const SSLClientSocketContext& context) {
   SSLSocketDataProvider* next_ssl_data = mock_ssl_data_.GetNext();
-  if (!next_ssl_data->next_protos_expected_in_ssl_config.empty()) {
-    EXPECT_EQ(next_ssl_data->next_protos_expected_in_ssl_config.size(),
+  if (next_ssl_data->next_protos_expected_in_ssl_config.has_value()) {
+    EXPECT_EQ(next_ssl_data->next_protos_expected_in_ssl_config.value().size(),
               ssl_config.alpn_protos.size());
-    EXPECT_TRUE(
-        std::equal(next_ssl_data->next_protos_expected_in_ssl_config.begin(),
-                   next_ssl_data->next_protos_expected_in_ssl_config.end(),
-                   ssl_config.alpn_protos.begin()));
+    EXPECT_TRUE(std::equal(
+        next_ssl_data->next_protos_expected_in_ssl_config.value().begin(),
+        next_ssl_data->next_protos_expected_in_ssl_config.value().end(),
+        ssl_config.alpn_protos.begin()));
   }
   return std::unique_ptr<SSLClientSocket>(new MockSSLClientSocket(
       std::move(transport_socket), host_and_port, ssl_config, next_ssl_data));
@@ -1331,6 +1329,7 @@ int MockUDPClientSocket::Read(IOBuffer* buf,
                               const CompletionCallback& callback) {
   if (!connected_ || !data_)
     return ERR_UNEXPECTED;
+  data_transferred_ = true;
 
   // If the buffer is already in use, a read is already in progress!
   DCHECK(!pending_read_buf_);
@@ -1365,6 +1364,7 @@ int MockUDPClientSocket::Write(
 
   if (!connected_ || !data_)
     return ERR_UNEXPECTED;
+  data_transferred_ = true;
 
   std::string data(buf->data(), buf_len);
   MockWriteResult write_result = data_->OnWrite(data);
@@ -1449,7 +1449,10 @@ NetworkChangeNotifier::NetworkHandle MockUDPClientSocket::GetBoundNetwork()
   return network_;
 }
 
-void MockUDPClientSocket::ApplySocketTag(const SocketTag& tag) {}
+void MockUDPClientSocket::ApplySocketTag(const SocketTag& tag) {
+  tagged_before_data_transferred_ &= !data_transferred_ || tag == tag_;
+  tag_ = tag;
+}
 
 void MockUDPClientSocket::OnReadComplete(const MockRead& data) {
   if (!data_)
@@ -1661,9 +1664,7 @@ void MockTransportClientSocketPool::MockConnectJob::OnConnect(int rv) {
   handle_ = NULL;
 
   if (!user_callback_.is_null()) {
-    CompletionCallback callback = user_callback_;
-    user_callback_.Reset();
-    callback.Run(rv);
+    base::ResetAndReturn(&user_callback_).Run(rv);
   }
 }
 
@@ -1884,7 +1885,8 @@ int WrappedStreamSocket::Write(
     int buf_len,
     const CompletionCallback& callback,
     const NetworkTrafficAnnotationTag& traffic_annotation) {
-  return transport_->Write(buf, buf_len, callback);
+  return transport_->Write(buf, buf_len, callback,
+                           TRAFFIC_ANNOTATION_FOR_TESTS);
 }
 
 int WrappedStreamSocket::SetReceiveBufferSize(int32_t size) {
@@ -1915,8 +1917,21 @@ MockTaggingClientSocketFactory::CreateTransportClientSocket(
   std::unique_ptr<MockTaggingStreamSocket> socket(new MockTaggingStreamSocket(
       MockClientSocketFactory::CreateTransportClientSocket(
           addresses, std::move(socket_performance_watcher), net_log, source)));
-  socket_ = socket.get();
+  tcp_socket_ = socket.get();
   return std::move(socket);
+}
+
+std::unique_ptr<DatagramClientSocket>
+MockTaggingClientSocketFactory::CreateDatagramClientSocket(
+    DatagramSocket::BindType bind_type,
+    const RandIntCallback& rand_int_cb,
+    NetLog* net_log,
+    const NetLogSource& source) {
+  std::unique_ptr<DatagramClientSocket> socket(
+      MockClientSocketFactory::CreateDatagramClientSocket(
+          bind_type, rand_int_cb, net_log, source));
+  udp_socket_ = static_cast<MockUDPClientSocket*>(socket.get());
+  return socket;
 }
 
 const char kSOCKS4OkRequestLocalHostPort80[] = {0x04, 0x01, 0x00, 0x50, 127,

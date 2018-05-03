@@ -36,8 +36,9 @@ class DEVICE_VR_EXPORT GvrDevice : public VRDeviceBase {
   void PauseTracking() override;
   void ResumeTracking() override;
 
-  void OnDIPScaleChanged(JNIEnv* env,
-                         const base::android::JavaRef<jobject>& obj);
+  void OnDisplayConfigurationChanged(
+      JNIEnv* env,
+      const base::android::JavaRef<jobject>& obj);
 
   void Activate(mojom::VRDisplayEventReason reason,
                 base::Callback<void(bool)> on_handled);

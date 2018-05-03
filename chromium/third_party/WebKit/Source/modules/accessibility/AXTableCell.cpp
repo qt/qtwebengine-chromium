@@ -190,6 +190,9 @@ AccessibilityRole AXTableCell::DetermineAccessibilityRole() {
   if (!IsTableCell())
     return AXLayoutObject::DetermineAccessibilityRole();
 
+  if (!ParentTable()->IsDataTable())
+    return kLayoutTableCellRole;
+
   aria_role_ = DetermineAriaRoleAttribute();
   return ScanToDecideHeaderRole();
 }

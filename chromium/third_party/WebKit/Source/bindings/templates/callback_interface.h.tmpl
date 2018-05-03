@@ -11,12 +11,11 @@
 
 namespace blink {
 
-{# TODO(yukishiino): Stop inheriting {{cpp_class}} as it\'s not necessary for
-   most cases. Those who need a common base class between this class and
-   another class should define an adapter class for themselves. #}
-class {{exported}}{{v8_class}} final
-    : public {{cpp_class}},
-      public CallbackInterfaceBase {
+{% for forward_declaration in forward_declarations %}
+class {{forward_declaration}};
+{% endfor %}
+
+class {{exported}}{{v8_class}} final : public CallbackInterfaceBase {
  public:
   static {{v8_class}}* Create(v8::Local<v8::Object> callback_object) {
     return new {{v8_class}}(callback_object);
@@ -25,16 +24,17 @@ class {{exported}}{{v8_class}} final
   ~{{v8_class}}() override = default;
 
 {% for method in methods %}
-  {# TODO(yukishiino): Add |ScriptWrappable* callback_this_value| as the first
-     argument of the IDL operations. The callsites must pass callback_this_value
-     explicitly. #}
-  {# TODO(yukishiino): Change the return type to v8::Maybe<T> so that the
-     function returns a return value or throws an exception. #}
   // Performs "call a user object's operation".
   // https://heycam.github.io/webidl/#call-a-user-objects-operation
-  {{method.cpp_type}} {{method.name}}({{method.argument_declarations | join(', ')}}) override;
+  v8::Maybe<{{method.cpp_type}}> {{method.name}}({{method.argument_declarations | join(', ')}}) WARN_UNUSED_RESULT;
 
 {% endfor %}
+
+{% if methods|length == 1 and methods[0].idl_type == 'void' %}
+  // Performs "call a user object's operation", and then reports an exception,
+  // if any, to the global error handler such as DevTools' console.
+  void InvokeAndReportException({{methods[0].argument_declarations | join(', ')}});
+{% endif %}
 
  private:
 {% set single_operation_enum_value =
@@ -43,6 +43,46 @@ class {{exported}}{{v8_class}} final
   explicit {{v8_class}}(v8::Local<v8::Object> callback_object)
       : CallbackInterfaceBase(callback_object, {{single_operation_enum_value}}) {}
 };
+
+template <>
+class {{exported|replace('_EXPORT', '_TEMPLATE_CLASS_EXPORT')}}V8PersistentCallbackInterface<{{v8_class}}> final : public V8PersistentCallbackInterfaceBase {
+  using V8CallbackInterface = {{v8_class}};
+
+ public:
+  ~V8PersistentCallbackInterface() override = default;
+
+{% for method in methods %}
+  {{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
+  v8::Maybe<{{method.cpp_type}}> {{method.name}}({{method.argument_declarations | join(', ')}}) WARN_UNUSED_RESULT;
+{% endfor %}
+{% if methods|length == 1 and methods[0].idl_type == 'void' %}
+  {{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
+  void InvokeAndReportException({{methods[0].argument_declarations | join(', ')}});
+{% endif %}
+
+ private:
+  explicit V8PersistentCallbackInterface(V8CallbackInterface* callback_interface)
+      : V8PersistentCallbackInterfaceBase(callback_interface) {}
+
+  V8CallbackInterface* Proxy() {
+    return As<V8CallbackInterface>();
+  }
+
+  template <typename V8CallbackInterface>
+  friend V8PersistentCallbackInterface<V8CallbackInterface>*
+  ToV8PersistentCallbackInterface(V8CallbackInterface*);
+};
+
+// {{v8_class}} is designed to be used with wrapper-tracing.
+// As blink::Persistent does not perform wrapper-tracing, use of
+// |WrapPersistent| for callback interfaces is likely (if not always) misuse.
+// Thus, this code prohibits such a use case. The call sites should explicitly
+// use WrapPersistent(V8PersistentCallbackInterface<T>*).
+#if 0
+// TODO(yukishiino): Enable this deletion once CallbackInterfaceBase transitions
+// to wrapper-tracing.
+Persistent<{{v8_class}}> WrapPersistent({{v8_class}}*) = delete;
+#endif
 
 }  // namespace blink
 

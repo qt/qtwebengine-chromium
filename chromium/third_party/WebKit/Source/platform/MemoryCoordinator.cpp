@@ -14,7 +14,7 @@
 #include "platform/wtf/allocator/Partitions.h"
 #include "public/platform/WebThread.h"
 #include "public/web/WebKit.h"
-#include "third_party/WebKit/common/device_memory/approximated_device_memory.h"
+#include "third_party/WebKit/public/common/device_memory/approximated_device_memory.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/sys_utils.h"
@@ -111,11 +111,11 @@ void MemoryCoordinator::OnPurgeMemory() {
 
   // Thread-specific data never issues a layout, so we are safe here.
   for (auto thread : web_threads_) {
-    if (!thread->GetWebTaskRunner())
+    if (!thread->GetTaskRunner())
       continue;
 
     PostCrossThreadTask(
-        *thread->GetWebTaskRunner(), FROM_HERE,
+        *thread->GetTaskRunner(), FROM_HERE,
         CrossThreadBind(MemoryCoordinator::ClearThreadSpecificMemory));
   }
 }

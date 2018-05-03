@@ -194,8 +194,9 @@ HonorEditingBoundaryAtOrBeforeTemplate(
 
   // Return the last position before |pos| that is in the same editable region
   // as this position
-  return LastEditablePositionBeforePositionInRoot(pos.GetPosition(),
-                                                  *highest_root);
+  return PositionWithAffinityTemplate<Strategy>(
+      LastEditablePositionBeforePositionInRoot(pos.GetPosition(),
+                                               *highest_root));
 }
 
 PositionWithAffinity HonorEditingBoundaryAtOrBefore(
@@ -262,8 +263,9 @@ HonorEditingBoundaryAtOrAfterTemplate(
 
   // Return the next position after |pos| that is in the same editable region
   // as this position
-  return FirstEditablePositionAfterPositionInRoot(pos.GetPosition(),
-                                                  *highest_root);
+  return PositionWithAffinityTemplate<Strategy>(
+      FirstEditablePositionAfterPositionInRoot(pos.GetPosition(),
+                                               *highest_root));
 }
 
 PositionWithAffinity HonorEditingBoundaryAtOrAfter(
@@ -275,7 +277,8 @@ PositionWithAffinity HonorEditingBoundaryAtOrAfter(
 PositionInFlatTreeWithAffinity HonorEditingBoundaryAtOrAfter(
     const PositionInFlatTreeWithAffinity& pos,
     const PositionInFlatTree& anchor) {
-  return HonorEditingBoundaryAtOrAfterTemplate(pos, anchor);
+  return HonorEditingBoundaryAtOrAfterTemplate(
+      PositionInFlatTreeWithAffinity(pos), anchor);
 }
 
 VisiblePosition HonorEditingBoundaryAtOrAfter(const VisiblePosition& pos,
@@ -1183,6 +1186,23 @@ IntRect AbsoluteCaretBoundsOf(const VisiblePosition& visible_position) {
   return AbsoluteCaretBoundsOfAlgorithm<EditingStrategy>(visible_position);
 }
 
+// TODO(editing-dev): This function does pretty much the same thing as
+// |AbsoluteCaretBoundsOf()|. Consider merging them.
+IntRect AbsoluteCaretRectOfPosition(const PositionWithAffinity& position,
+                                    LayoutUnit* extra_width_to_end_of_line) {
+  const LocalCaretRect local_caret_rect =
+      LocalCaretRectOfPosition(position, extra_width_to_end_of_line);
+  if (!local_caret_rect.layout_object)
+    return IntRect();
+
+  const IntRect local_rect = PixelSnappedIntRect(local_caret_rect.rect);
+  return local_rect == IntRect()
+             ? IntRect()
+             : local_caret_rect.layout_object
+                   ->LocalToAbsoluteQuad(FloatRect(local_rect))
+                   .EnclosingBoundingBox();
+}
+
 template <typename Strategy>
 static IntRect AbsoluteSelectionBoundsOfAlgorithm(
     const VisiblePositionTemplate<Strategy>& visible_position) {
@@ -1492,6 +1512,45 @@ IntRect ComputeTextRect(const EphemeralRangeInFlatTree& range) {
 
 FloatRect ComputeTextFloatRect(const EphemeralRange& range) {
   return ComputeTextRectTemplate(range);
+}
+
+IntRect FirstRectForRange(const EphemeralRange& range) {
+  DCHECK(!range.GetDocument().NeedsLayoutTreeUpdate());
+  DocumentLifecycle::DisallowTransitionScope disallow_transition(
+      range.GetDocument().Lifecycle());
+
+  LayoutUnit extra_width_to_end_of_line;
+  DCHECK(range.IsNotNull());
+
+  const PositionWithAffinity start_position(
+      CreateVisiblePosition(range.StartPosition()).DeepEquivalent(),
+      TextAffinity::kDownstream);
+  const IntRect start_caret_rect =
+      AbsoluteCaretRectOfPosition(start_position, &extra_width_to_end_of_line);
+  if (start_caret_rect.IsEmpty())
+    return IntRect();
+
+  const PositionWithAffinity end_position(
+      CreateVisiblePosition(range.EndPosition()).DeepEquivalent(),
+      TextAffinity::kUpstream);
+  const IntRect end_caret_rect = AbsoluteCaretRectOfPosition(end_position);
+  if (end_caret_rect.IsEmpty())
+    return IntRect();
+
+  if (start_caret_rect.Y() == end_caret_rect.Y()) {
+    // start and end are on the same line
+    return IntRect(
+        std::min(start_caret_rect.X(), end_caret_rect.X()),
+        start_caret_rect.Y(), abs(end_caret_rect.X() - start_caret_rect.X()),
+        std::max(start_caret_rect.Height(), end_caret_rect.Height()));
+  }
+
+  // start and end aren't on the same line, so go from start to the end of its
+  // line
+  return IntRect(
+      start_caret_rect.X(), start_caret_rect.Y(),
+      (start_caret_rect.Width() + extra_width_to_end_of_line).ToInt(),
+      start_caret_rect.Height());
 }
 
 }  // namespace blink

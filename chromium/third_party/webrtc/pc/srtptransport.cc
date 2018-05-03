@@ -177,7 +177,6 @@ void SrtpTransport::OnPacketReceived(bool rtcp,
 }
 
 void SrtpTransport::OnNetworkRouteChanged(
-
     rtc::Optional<rtc::NetworkRoute> network_route) {
   // Only append the SRTP overhead when there is a selected network route.
   if (network_route) {
@@ -228,9 +227,8 @@ bool SrtpTransport::SetRtpParams(int send_cs,
   }
 
   RTC_LOG(LS_INFO) << "SRTP " << (new_sessions ? "activated" : "updated")
-                   << " with negotiated parameters:"
-                   << " send cipher_suite " << send_cs << " recv cipher_suite "
-                   << recv_cs;
+                   << " with negotiated parameters: send cipher_suite "
+                   << send_cs << " recv cipher_suite " << recv_cs;
   return true;
 }
 
@@ -262,8 +260,8 @@ bool SrtpTransport::SetRtcpParams(int send_cs,
   }
 
   RTC_LOG(LS_INFO) << "SRTCP activated with negotiated parameters:"
-                   << " send cipher_suite " << send_cs << " recv cipher_suite "
-                   << recv_cs;
+                      " send cipher_suite "
+                   << send_cs << " recv cipher_suite " << recv_cs;
 
   return true;
 }

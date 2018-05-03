@@ -130,11 +130,7 @@ const char* QuicHttpDecoderAdapter::StateToString(int state) {
   return "UNKNOWN_STATE";
 }
 
-QuicHttpDecoderAdapter::QuicHttpDecoderAdapter()
-    : QuicHttpDecoderAdapter(false) {}
-
-QuicHttpDecoderAdapter::QuicHttpDecoderAdapter(bool h2_on_stream_pad_length)
-    : h2_on_stream_pad_length_(h2_on_stream_pad_length) {
+QuicHttpDecoderAdapter::QuicHttpDecoderAdapter() {
   DVLOG(1) << "QuicHttpDecoderAdapter ctor";
   ResetInternal();
 }
@@ -407,11 +403,7 @@ void QuicHttpDecoderAdapter::OnPadLength(size_t trailing_length) {
   opt_pad_length_ = trailing_length;
   DCHECK_LT(trailing_length, 256u);
   if (frame_header_.type == QuicHttpFrameType::DATA) {
-    if (h2_on_stream_pad_length_) {
-      visitor()->OnStreamPadLength(stream_id(), trailing_length);
-    } else {
-      visitor()->OnStreamPadding(stream_id(), 1);
-    }
+    visitor()->OnStreamPadLength(stream_id(), trailing_length);
   }
 }
 
@@ -449,7 +441,7 @@ void QuicHttpDecoderAdapter::OnSetting(
     const QuicHttpSettingFields& setting_fields) {
   DVLOG(1) << "OnSetting: " << setting_fields;
   const uint16_t parameter = static_cast<uint16_t>(setting_fields.parameter);
-  SpdySettingsIds setting_id;
+  SpdyKnownSettingsId setting_id;
   if (!ParseSettingsId(parameter, &setting_id)) {
     if (extension_ == nullptr) {
       DVLOG(1) << "Ignoring unknown setting id: " << setting_fields;
@@ -776,7 +768,7 @@ void QuicHttpDecoderAdapter::ResetInternal() {
   CorruptFrameHeader(&frame_header_);
   CorruptFrameHeader(&hpack_first_frame_header_);
 
-  frame_decoder_.reset(new QuicHttpFrameDecoder(this));
+  frame_decoder_ = QuicMakeUnique<QuicHttpFrameDecoder>(this);
   hpack_decoder_ = nullptr;
 }
 

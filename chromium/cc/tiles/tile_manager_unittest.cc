@@ -1726,10 +1726,16 @@ TEST_F(TileManagerTest, LowResHasNoImage) {
     EXPECT_EQ(TileDrawInfo::RESOURCE_MODE, tile->draw_info().mode());
     EXPECT_TRUE(tile->draw_info().IsReadyToDraw());
 
-    LayerTreeResourceProvider::ScopedWriteLockSoftware lock(
-        host_impl()->resource_provider(),
-        tile->draw_info().GetResource().software_backing_resource_id());
-    const SkBitmap bitmap = lock.sk_bitmap();
+    gfx::Size resource_size = tile->draw_info().resource_size();
+    auto info = SkImageInfo::MakeN32Premul(resource_size.width(),
+                                           resource_size.height());
+    // CreateLayerTreeFrameSink() sets up a software compositing, so the
+    // tile resource will be a bitmap.
+    viz::SharedBitmap* shared_bitmap =
+        tile->draw_info().GetResource().shared_bitmap();
+    SkBitmap bitmap;
+    bitmap.installPixels(info, shared_bitmap->pixels(), info.minRowBytes());
+
     for (int x = 0; x < size.width(); ++x) {
       for (int y = 0; y < size.height(); ++y) {
         SCOPED_TRACE(y);
@@ -1867,7 +1873,6 @@ TEST_F(PartialRasterTileManagerTest, CancelledTasksHaveNoContentId) {
 
   // Make sure that the tile we invalidated above was not returned to the pool
   // with its invalidated resource ID.
-  host_impl()->resource_pool()->CheckBusyResources();
   gfx::Rect total_invalidated_rect;
   EXPECT_FALSE(host_impl()->resource_pool()->TryAcquireResourceForPartialRaster(
       kInvalidatedId + 1, gfx::Rect(), kInvalidatedId,
@@ -1885,8 +1890,8 @@ class VerifyResourceContentIdRasterBufferProvider
     : public FakeRasterBufferProviderImpl {
  public:
   explicit VerifyResourceContentIdRasterBufferProvider(
-      uint64_t expected_resource_id)
-      : expected_resource_id_(expected_resource_id) {}
+      uint64_t expected_content_id)
+      : expected_content_id_(expected_content_id) {}
   ~VerifyResourceContentIdRasterBufferProvider() override = default;
 
   // RasterBufferProvider methods.
@@ -1894,12 +1899,12 @@ class VerifyResourceContentIdRasterBufferProvider
       const ResourcePool::InUsePoolResource& resource,
       uint64_t resource_content_id,
       uint64_t previous_content_id) override {
-    EXPECT_EQ(expected_resource_id_, resource_content_id);
+    EXPECT_EQ(expected_content_id_, resource_content_id);
     return nullptr;
   }
 
  private:
-  uint64_t expected_resource_id_;
+  uint64_t expected_content_id_;
 };
 
 // Runs a test to ensure that partial raster is either enabled or disabled,
@@ -1927,9 +1932,14 @@ void RunPartialRasterCheck(std::unique_ptr<LayerTreeHostImpl> host_impl,
   ResourcePool::InUsePoolResource resource =
       host_impl->resource_pool()->AcquireResource(kTileSize, viz::RGBA_8888,
                                                   gfx::ColorSpace());
+
+  resource.set_shared_bitmap(host_impl->layer_tree_frame_sink()
+                                 ->shared_bitmap_manager()
+                                 ->AllocateSharedBitmap(kTileSize));
+  host_impl->resource_pool()->PrepareForExport(resource);
+
   host_impl->resource_pool()->OnContentReplaced(resource, kInvalidatedId);
   host_impl->resource_pool()->ReleaseResource(std::move(resource));
-  host_impl->resource_pool()->CheckBusyResources();
 
   scoped_refptr<FakeRasterSource> pending_raster_source =
       FakeRasterSource::CreateFilled(kTileSize);
@@ -1989,7 +1999,6 @@ void RunPartialTileDecodeCheck(std::unique_ptr<LayerTreeHostImpl> host_impl,
                                                   gfx::ColorSpace());
   host_impl->resource_pool()->OnContentReplaced(resource, kInvalidatedId);
   host_impl->resource_pool()->ReleaseResource(std::move(resource));
-  host_impl->resource_pool()->CheckBusyResources();
 
   const gfx::Size layer_bounds(500, 500);
 
@@ -2097,6 +2106,9 @@ class MockReadyToDrawRasterBufferProviderImpl
       const ResourcePool::InUsePoolResource& resource,
       uint64_t resource_content_id,
       uint64_t previous_content_id) override {
+    if (!resource.shared_bitmap())
+      resource.set_shared_bitmap(
+          shared_bitmap_manager_.AllocateSharedBitmap(resource.size()));
     return std::make_unique<FakeRasterBuffer>();
   }
 
@@ -2111,6 +2123,8 @@ class MockReadyToDrawRasterBufferProviderImpl
         const gfx::AxisTransform2d& transform,
         const RasterSource::PlaybackSettings& playback_settings) override {}
   };
+
+  viz::TestSharedBitmapManager shared_bitmap_manager_;
 };
 
 class TileManagerReadyToDrawTest : public TileManagerTest {
@@ -2882,7 +2896,7 @@ class CheckerImagingTileManagerMemoryTest
       TaskRunnerProvider* task_runner_provider,
       TaskGraphRunner* task_graph_runner) override {
     LayerTreeSettings new_settings = settings;
-    new_settings.gpu_memory_policy.num_resources_limit = 4;
+    new_settings.memory_policy.num_resources_limit = 4;
     return CheckerImagingTileManagerTest::CreateHostImpl(
         new_settings, task_runner_provider, task_graph_runner);
   }

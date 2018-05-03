@@ -56,7 +56,6 @@
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/loader/resource_requester_info.h"
-#include "content/browser/loader/resource_scheduler.h"
 #include "content/browser/loader/stream_resource_handler.h"
 #include "content/browser/loader/throttling_resource_handler.h"
 #include "content/browser/loader/upload_data_stream_builder.h"
@@ -79,6 +78,7 @@
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
+#include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/browser/stream_handle.h"
 #include "content/public/browser/stream_info.h"
@@ -101,7 +101,6 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/log/net_log_with_source.h"
-#include "net/ssl/client_cert_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request.h"
@@ -109,11 +108,12 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "ppapi/features/features.h"
-#include "services/network/public/cpp/loader_util.h"
+#include "services/network/loader_util.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
+#include "services/network/resource_scheduler.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
@@ -276,6 +276,34 @@ void LogBackForwardNavigationFlagsHistogram(int load_flags) {
 
 }  // namespace
 
+constexpr int ResourceDispatcherHostImpl::kMaxKeepaliveConnections;
+constexpr int ResourceDispatcherHostImpl::kMaxKeepaliveConnectionsPerProcess;
+constexpr int
+    ResourceDispatcherHostImpl::kMaxKeepaliveConnectionsPerProcessForFetchAPI;
+
+class ResourceDispatcherHostImpl::ScheduledResourceRequestAdapter final
+    : public ResourceThrottle {
+ public:
+  explicit ScheduledResourceRequestAdapter(
+      std::unique_ptr<network::ResourceScheduler::ScheduledResourceRequest>
+          request)
+      : request_(std::move(request)) {
+    request_->set_resume_callback(base::BindOnce(
+        &ScheduledResourceRequestAdapter::Resume, base::Unretained(this)));
+  }
+  ~ScheduledResourceRequestAdapter() override {}
+
+  // ResourceThrottle implementation
+  void WillStartRequest(bool* defer) override {
+    request_->WillStartRequest(defer);
+  }
+  const char* GetNameForLogging() const override { return "ResourceScheduler"; }
+
+ private:
+  std::unique_ptr<network::ResourceScheduler::ScheduledResourceRequest>
+      request_;
+};
+
 ResourceDispatcherHostImpl::LoadInfo::LoadInfo() {}
 ResourceDispatcherHostImpl::LoadInfo::LoadInfo(const LoadInfo& other) = default;
 ResourceDispatcherHostImpl::LoadInfo::~LoadInfo() {}
@@ -384,6 +412,10 @@ void ResourceDispatcherHostImpl::CancelRequestsForContext(
     if (loader->GetRequestInfo()->GetContext() == context) {
       loaders_to_cancel.push_back(std::move(i->second));
       IncrementOutstandingRequestsMemory(-1, *loader->GetRequestInfo());
+      if (loader->GetRequestInfo()->keepalive()) {
+        keepalive_statistics_recorder_.OnLoadFinished(
+            loader->GetRequestInfo()->GetChildID());
+      }
       pending_loaders_.erase(i++);
     } else {
       ++i;
@@ -439,16 +471,6 @@ void ResourceDispatcherHostImpl::CancelRequestsForContext(
   loaders_to_cancel.clear();
 }
 
-void ResourceDispatcherHostImpl::ClearLoginDelegateForRequest(
-    net::URLRequest* request) {
-  ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
-  if (info) {
-    ResourceLoader* loader = GetLoader(info->GetGlobalRequestID());
-    if (loader)
-      loader->ClearLoginDelegate();
-  }
-}
-
 void ResourceDispatcherHostImpl::RegisterInterceptor(
     const std::string& http_header,
     const std::string& starts_with,
@@ -499,7 +521,6 @@ ResourceDispatcherHostImpl::CreateResourceHandlerForDownload(
 
 std::unique_ptr<ResourceHandler>
 ResourceDispatcherHostImpl::MaybeInterceptAsStream(
-    const base::FilePath& plugin_path,
     net::URLRequest* request,
     network::ResourceResponse* response,
     std::string* payload) {
@@ -508,9 +529,8 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(
   const std::string& mime_type = response->head.mime_type;
 
   GURL origin;
-  if (!delegate_ ||
-      !delegate_->ShouldInterceptResourceAsStream(
-          request, plugin_path, mime_type, &origin, payload)) {
+  if (!delegate_ || !delegate_->ShouldInterceptResourceAsStream(
+                        request, mime_type, &origin, payload)) {
     return std::unique_ptr<ResourceHandler>();
   }
 
@@ -543,7 +563,25 @@ ResourceDispatcherHostImpl::CreateLoginDelegate(
   if (!delegate_)
     return nullptr;
 
-  return delegate_->CreateLoginDelegate(auth_info, loader->request());
+  net::URLRequest* request = loader->request();
+
+  ResourceRequestInfoImpl* resource_request_info =
+      ResourceRequestInfoImpl::ForRequest(request);
+  DCHECK(resource_request_info);
+  bool is_main_frame = resource_request_info->IsMainFrame();
+
+  GURL url = request->url();
+
+  ResourceDispatcherHostLoginDelegate* login_delegate =
+      GetContentClient()->browser()->CreateLoginDelegate(
+          auth_info, resource_request_info->GetWebContentsGetterForRequest(),
+          is_main_frame, url, resource_request_info->first_auth_attempt(),
+          base::Bind(&ResourceDispatcherHostImpl::RunAuthRequiredCallback,
+                     base::Unretained(this), request));
+
+  resource_request_info->set_first_auth_attempt(false);
+
+  return login_delegate;
 }
 
 bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
@@ -567,7 +605,7 @@ bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
 void ResourceDispatcherHostImpl::DidStartRequest(ResourceLoader* loader) {
   // Make sure we have the load state monitors running.
   if (!update_load_states_timer_->IsRunning() &&
-      scheduler_->HasLoadingClients()) {
+      scheduler_->DeprecatedHasLoadingClients()) {
     update_load_states_timer_->Start(
         FROM_HERE, TimeDelta::FromMilliseconds(kUpdateLoadStatesIntervalMsec),
         this, &ResourceDispatcherHostImpl::UpdateLoadInfo);
@@ -672,20 +710,16 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
   RemovePendingRequest(info->GetChildID(), info->GetRequestID());
 }
 
-std::unique_ptr<net::ClientCertStore>
-    ResourceDispatcherHostImpl::CreateClientCertStore(ResourceLoader* loader) {
-  return delegate_->CreateClientCertStore(
-      loader->GetRequestInfo()->GetContext());
-}
-
 void ResourceDispatcherHostImpl::OnInit() {
-  scheduler_.reset(new ResourceScheduler(enable_resource_scheduler_));
+  scheduler_.reset(new network::ResourceScheduler(enable_resource_scheduler_));
 }
 
 void ResourceDispatcherHostImpl::OnShutdown() {
   DCHECK(io_thread_task_runner_->BelongsToCurrentThread());
 
   is_shutdown_ = true;
+  keepalive_statistics_recorder_.Shutdown();
+
   pending_loaders_.clear();
 
   // Make sure we shutdown the timers now, otherwise by the time our destructor
@@ -721,7 +755,9 @@ void ResourceDispatcherHostImpl::OnRequestResourceInternal(
     network::mojom::URLLoaderRequest mojo_request,
     network::mojom::URLLoaderClientPtr url_loader_client,
     const net::NetworkTrafficAnnotationTag& traffic_annotation) {
-  DCHECK(requester_info->IsRenderer() || requester_info->IsNavigationPreload());
+  DCHECK(requester_info->IsRenderer() ||
+         requester_info->IsNavigationPreload() ||
+         requester_info->IsCertificateFetcherForSignedExchange());
   BeginRequest(requester_info, request_id, request_data, is_sync_load,
                routing_id, std::move(mojo_request),
                std::move(url_loader_client), traffic_annotation);
@@ -876,7 +912,9 @@ void ResourceDispatcherHostImpl::BeginRequest(
     network::mojom::URLLoaderRequest mojo_request,
     network::mojom::URLLoaderClientPtr url_loader_client,
     const net::NetworkTrafficAnnotationTag& traffic_annotation) {
-  DCHECK(requester_info->IsRenderer() || requester_info->IsNavigationPreload());
+  DCHECK(requester_info->IsRenderer() ||
+         requester_info->IsNavigationPreload() ||
+         requester_info->IsCertificateFetcherForSignedExchange());
   int child_id = requester_info->child_id();
 
   // Reject request id that's currently in use.
@@ -1016,7 +1054,9 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
     BlobHandles blob_handles,
     const net::NetworkTrafficAnnotationTag& traffic_annotation,
     HeaderInterceptorResult interceptor_result) {
-  DCHECK(requester_info->IsRenderer() || requester_info->IsNavigationPreload());
+  DCHECK(requester_info->IsRenderer() ||
+         requester_info->IsNavigationPreload() ||
+         requester_info->IsCertificateFetcherForSignedExchange());
   if (interceptor_result != HeaderInterceptorResult::CONTINUE) {
     if (requester_info->IsRenderer() &&
         interceptor_result == HeaderInterceptorResult::KILL) {
@@ -1176,6 +1216,12 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
     }
   }
 
+  if (request_data.keepalive) {
+    const auto& map = keepalive_statistics_recorder_.per_process_records();
+    if (child_id != 0 && map.find(child_id) == map.end())
+      keepalive_statistics_recorder_.Register(child_id);
+  }
+
   new_request->SetLoadFlags(load_flags);
 
   // Make extra info and read footer (contains request ID).
@@ -1225,17 +1271,14 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
   } else {
     // Initialize the service worker handler for the request. We don't use
     // ServiceWorker for synchronous loads to avoid renderer deadlocks.
-    const ServiceWorkerMode service_worker_mode =
-        is_sync_load
-            ? ServiceWorkerMode::NONE
-            : static_cast<ServiceWorkerMode>(request_data.service_worker_mode);
+    const bool skip_service_worker =
+        is_sync_load || request_data.skip_service_worker;
     ServiceWorkerRequestHandler::InitializeHandler(
         new_request.get(), requester_info->service_worker_context(),
         blob_context, child_id, request_data.service_worker_provider_id,
-        service_worker_mode != ServiceWorkerMode::ALL,
-        request_data.fetch_request_mode, request_data.fetch_credentials_mode,
-        request_data.fetch_redirect_mode, request_data.fetch_integrity,
-        request_data.keepalive,
+        skip_service_worker, request_data.fetch_request_mode,
+        request_data.fetch_credentials_mode, request_data.fetch_redirect_mode,
+        request_data.fetch_integrity, request_data.keepalive,
         static_cast<ResourceType>(request_data.resource_type),
         static_cast<RequestContextType>(
             request_data.fetch_request_context_type),
@@ -1252,8 +1295,12 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
                                     resource_context, std::move(mojo_request),
                                     std::move(url_loader_client));
   }
-  if (handler)
-    BeginRequestInternal(std::move(new_request), std::move(handler));
+  if (handler) {
+    const bool is_initiated_by_fetch_api =
+        request_data.fetch_request_context_type == REQUEST_CONTEXT_TYPE_FETCH;
+    BeginRequestInternal(std::move(new_request), std::move(handler),
+                         is_initiated_by_fetch_api);
+  }
 }
 
 std::unique_ptr<ResourceHandler>
@@ -1266,7 +1313,9 @@ ResourceDispatcherHostImpl::CreateResourceHandler(
     ResourceContext* resource_context,
     network::mojom::URLLoaderRequest mojo_request,
     network::mojom::URLLoaderClientPtr url_loader_client) {
-  DCHECK(requester_info->IsRenderer() || requester_info->IsNavigationPreload());
+  DCHECK(requester_info->IsRenderer() ||
+         requester_info->IsNavigationPreload() ||
+         requester_info->IsCertificateFetcherForSignedExchange());
   // Construct the IPC resource handler.
   std::unique_ptr<ResourceHandler> handler;
   handler = CreateBaseResourceHandler(
@@ -1279,17 +1328,13 @@ ResourceDispatcherHostImpl::CreateResourceHandler(
         new RedirectToFileResourceHandler(std::move(handler), request));
   }
 
-  bool start_detached = request_data.download_to_network_cache_only;
-
   // Prefetches and <a ping> requests outlive their child process.
-  if (start_detached || request_data.resource_type == RESOURCE_TYPE_PREFETCH ||
+  if (request_data.resource_type == RESOURCE_TYPE_PREFETCH ||
       request_data.keepalive) {
     auto detachable_handler = std::make_unique<DetachableResourceHandler>(
         request,
         base::TimeDelta::FromMilliseconds(kDefaultDetachableCancelDelayMs),
         std::move(handler));
-    if (start_detached)
-      detachable_handler->Detach();
     handler = std::move(detachable_handler);
   }
 
@@ -1358,8 +1403,9 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
 
   // TODO(ricea): Stop looking this up so much.
   ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
-  throttles.push_back(scheduler_->ScheduleRequest(child_id, route_id,
-                                                  info->IsAsync(), request));
+  throttles.push_back(std::make_unique<ScheduledResourceRequestAdapter>(
+      scheduler_->ScheduleRequest(child_id, route_id, info->IsAsync(),
+                                  request)));
 
   // Split the handler in two groups: the ones that need to execute
   // WillProcessResponse before mime sniffing and the others.
@@ -1397,6 +1443,15 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
   plugin_service = PluginService::GetInstance();
 #endif
 
+  if (!IsResourceTypeFrame(resource_type)) {
+    // Add a handler to block cross-site documents from the renderer process.
+    bool is_nocors_plugin_request =
+        resource_type == RESOURCE_TYPE_PLUGIN_RESOURCE &&
+        fetch_request_mode == network::mojom::FetchRequestMode::kNoCORS;
+    handler.reset(new CrossSiteDocumentResourceHandler(
+        std::move(handler), request, is_nocors_plugin_request));
+  }
+
   // Insert a buffered event handler to sniff the mime type.
   // Note: all ResourceHandler following the MimeSniffingResourceHandler
   // should expect OnWillRead to be called *before* OnResponseStarted as
@@ -1408,17 +1463,6 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
   // Add the pre mime sniffing throttles.
   handler.reset(new ThrottlingResourceHandler(
       std::move(handler), request, std::move(pre_mime_sniffing_throttles)));
-
-  if (!IsResourceTypeFrame(resource_type)) {
-    // Add a handler to block cross-site documents from the renderer process.
-    // This should be pre mime-sniffing, since it affects whether the response
-    // will be read, and since it looks at the original mime type.
-    bool is_nocors_plugin_request =
-        resource_type == RESOURCE_TYPE_PLUGIN_RESOURCE &&
-        fetch_request_mode == network::mojom::FetchRequestMode::kNoCORS;
-    handler.reset(new CrossSiteDocumentResourceHandler(
-        std::move(handler), request, is_nocors_plugin_request));
-  }
 
   return handler;
 }
@@ -1442,8 +1486,7 @@ void ResourceDispatcherHostImpl::RegisterDownloadedTempFile(
   // reference to the temp file that outlives the url loaded that it was
   // loaded with to keep the file (and permissions) alive.
   reference->AddFinalReleaseCallback(
-      base::Bind(&RemoveDownloadFileFromChildSecurityPolicy,
-                 child_id));
+      base::BindOnce(&RemoveDownloadFileFromChildSecurityPolicy, child_id));
 }
 
 void ResourceDispatcherHostImpl::UnregisterDownloadedTempFile(
@@ -1511,7 +1554,7 @@ void ResourceDispatcherHostImpl::OnRenderViewHostDeleted(int child_id,
 void ResourceDispatcherHostImpl::OnRenderViewHostSetIsLoading(int child_id,
                                                               int route_id,
                                                               bool is_loading) {
-  scheduler_->OnLoadingStateChanged(child_id, route_id, !is_loading);
+  scheduler_->DeprecatedOnLoadingStateChanged(child_id, route_id, !is_loading);
 }
 
 void ResourceDispatcherHostImpl::MarkAsTransferredNavigation(
@@ -1534,6 +1577,9 @@ void ResourceDispatcherHostImpl::ResumeDeferredNavigation(
 void ResourceDispatcherHostImpl::CancelRequestsForProcess(int child_id) {
   CancelRequestsForRoute(
       GlobalFrameRoutingId(child_id, MSG_ROUTING_NONE /* cancel all */));
+  const auto& map = keepalive_statistics_recorder_.per_process_records();
+  if (map.find(child_id) != map.end())
+    keepalive_statistics_recorder_.Unregister(child_id);
   registered_temp_files_.erase(child_id);
 }
 
@@ -1625,8 +1671,8 @@ void ResourceDispatcherHostImpl::CancelRequestsForRoute(
       if (blocked_loaders.first.child_id == child_id)
         routing_ids.insert(blocked_loaders.first);
     }
-    for (const GlobalFrameRoutingId& route_id : routing_ids) {
-      CancelBlockedRequestsForRoute(route_id);
+    for (const GlobalFrameRoutingId& frame_route_id : routing_ids) {
+      CancelBlockedRequestsForRoute(frame_route_id);
     }
   }
 }
@@ -1646,6 +1692,9 @@ void ResourceDispatcherHostImpl::RemovePendingRequest(int child_id,
 void ResourceDispatcherHostImpl::RemovePendingLoader(
     const LoaderMap::iterator& iter) {
   ResourceRequestInfoImpl* info = iter->second->GetRequestInfo();
+
+  if (info->keepalive())
+    keepalive_statistics_recorder_.OnLoadFinished(info->GetChildID());
 
   // Remove the memory credit that we added when pushing the request onto
   // the pending list.
@@ -1846,8 +1895,13 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
   DCHECK(!(load_flags & net::LOAD_IGNORE_LIMITS));
 
   std::unique_ptr<net::URLRequest> new_request;
+  net::RequestPriority net_priority = net::HIGHEST;
+  if (!info.is_main_frame &&
+      base::FeatureList::IsEnabled(features::kLowPriorityIframes)) {
+    net_priority = net::LOWEST;
+  }
   new_request = request_context->CreateRequest(
-      info.common_params.url, net::HIGHEST, nullptr, GetTrafficAnnotation());
+      info.common_params.url, net_priority, nullptr, GetTrafficAnnotation());
 
   new_request->set_method(info.common_params.method);
   new_request->set_site_for_cookies(info.site_for_cookies);
@@ -1929,7 +1983,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       // If in the future this changes this should be updated to somehow get a
       // meaningful value.
       false,                                   // initiated_in_secure_context
-      info.begin_params->suggested_filename);  // suggested_filename
+      info.common_params.suggested_filename);  // suggested_filename
   extra_info->SetBlobHandles(std::move(blob_handles));
   extra_info->set_navigation_ui_data(std::move(navigation_ui_data));
 
@@ -1996,7 +2050,8 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       -1,  // route_id
       std::move(handler), loader, std::move(stream_handle));
 
-  BeginRequestInternal(std::move(new_request), std::move(handler));
+  BeginRequestInternal(std::move(new_request), std::move(handler),
+                       false /* is_initiated_by_fetch_api */);
 }
 
 void ResourceDispatcherHostImpl::SetLoaderDelegate(
@@ -2054,7 +2109,8 @@ int ResourceDispatcherHostImpl::CalculateApproximateMemoryCost(
 
 void ResourceDispatcherHostImpl::BeginRequestInternal(
     std::unique_ptr<net::URLRequest> request,
-    std::unique_ptr<ResourceHandler> handler) {
+    std::unique_ptr<ResourceHandler> handler,
+    bool is_initiated_by_fetch_api) {
   DCHECK(!request->is_pending());
   ResourceRequestInfoImpl* info =
       ResourceRequestInfoImpl::ForRequest(request.get());
@@ -2076,10 +2132,31 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
   // Add the memory estimate that starting this request will consume.
   info->set_memory_cost(CalculateApproximateMemoryCost(request.get()));
 
+  bool exhausted = false;
+
   // If enqueing/starting this request will exceed our per-process memory
   // bound, abort it right away.
   OustandingRequestsStats stats = IncrementOutstandingRequestsMemory(1, *info);
-  if (stats.memory_cost > max_outstanding_requests_cost_per_process_) {
+  if (stats.memory_cost > max_outstanding_requests_cost_per_process_)
+    exhausted = true;
+
+  // requests with keepalive set have additional limitations.
+  if (info->keepalive()) {
+    const auto& recorder = keepalive_statistics_recorder_;
+    if (recorder.num_inflight_requests() >= kMaxKeepaliveConnections)
+      exhausted = true;
+    if (recorder.NumInflightRequestsPerProcess(info->GetChildID()) >=
+        kMaxKeepaliveConnectionsPerProcess) {
+      exhausted = true;
+    }
+    if (is_initiated_by_fetch_api &&
+        recorder.NumInflightRequestsPerProcess(info->GetChildID()) >=
+            kMaxKeepaliveConnectionsPerProcessForFetchAPI) {
+      exhausted = true;
+    }
+  }
+
+  if (exhausted) {
     // We call "CancelWithError()" as a way of setting the net::URLRequest's
     // status -- it has no effect beyond this, since the request hasn't started.
     request->CancelWithError(net::ERR_INSUFFICIENT_RESOURCES);
@@ -2100,8 +2177,9 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
     return;
   }
 
+  ResourceContext* resource_context = info->GetContext();
   std::unique_ptr<ResourceLoader> loader(new ResourceLoader(
-      std::move(request), std::move(handler), this));
+      std::move(request), std::move(handler), this, resource_context));
 
   GlobalFrameRoutingId id(info->GetChildID(), info->GetRenderFrameID());
   BlockedLoadersMap::const_iterator iter = blocked_loaders_map_.find(id);
@@ -2170,7 +2248,8 @@ void ResourceDispatcherHostImpl::BeginURLRequest(
         request.get(), std::move(handler), is_content_initiated,
         true /* force_download */, true /* is_new_request */);
   }
-  BeginRequestInternal(std::move(request), std::move(handler));
+  BeginRequestInternal(std::move(request), std::move(handler),
+                       false /* is_initiated_by_fetch_api */);
 }
 
 int ResourceDispatcherHostImpl::MakeRequestID() {
@@ -2203,6 +2282,8 @@ void ResourceDispatcherHostImpl::StartLoading(
   ResourceLoader* loader_ptr = loader.get();
   DCHECK(pending_loaders_[info->GetGlobalRequestID()] == nullptr);
   pending_loaders_[info->GetGlobalRequestID()] = std::move(loader);
+  if (info->keepalive())
+    keepalive_statistics_recorder_.OnLoadStarted(info->GetChildID());
 
   loader_ptr->StartRequest();
 }
@@ -2301,7 +2382,7 @@ void ResourceDispatcherHostImpl::UpdateLoadInfo() {
   // will restart it as necessary.
   // Also stop the timer if there are no loading clients, to avoid waking up
   // unnecessarily when there is a long running (hanging get) request.
-  if (infos->empty() || !scheduler_->HasLoadingClients()) {
+  if (infos->empty() || !scheduler_->DeprecatedHasLoadingClients()) {
     update_load_states_timer_->Stop();
     return;
   }
@@ -2312,8 +2393,8 @@ void ResourceDispatcherHostImpl::UpdateLoadInfo() {
   // requests), we must go to the UI thread and compare the requests using their
   // WebContents.
   main_thread_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(UpdateLoadStateOnUI, loader_delegate_,
-                                base::Passed(&infos)));
+      FROM_HERE,
+      base::BindOnce(UpdateLoadStateOnUI, loader_delegate_, std::move(infos)));
 }
 
 void ResourceDispatcherHostImpl::RecordOutstandingRequestsStats() {
@@ -2525,6 +2606,27 @@ bool ResourceDispatcherHostImpl::HasRequestsFromMultipleActiveTabs() {
     }
   }
   return false;
+}
+
+void ResourceDispatcherHostImpl::RunAuthRequiredCallback(
+    net::URLRequest* url_request,
+    const base::Optional<net::AuthCredentials>& credentials) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  if (!credentials.has_value()) {
+    url_request->CancelAuth();
+  } else {
+    url_request->SetAuth(credentials.value());
+  }
+
+  // Clears the ResourceDispatcherHostLoginDelegate associated with the request.
+  ResourceRequestInfoImpl* info =
+      ResourceRequestInfoImpl::ForRequest(url_request);
+  if (info) {
+    ResourceLoader* loader = GetLoader(info->GetGlobalRequestID());
+    if (loader)
+      loader->ClearLoginDelegate();
+  }
 }
 
 // static

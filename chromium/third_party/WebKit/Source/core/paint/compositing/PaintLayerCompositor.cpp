@@ -44,6 +44,7 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/page/scrolling/SnapCoordinator.h"
 #include "core/page/scrolling/TopDocumentRootScrollerController.h"
 #include "core/paint/FramePainter.h"
 #include "core/paint/ObjectPaintInvalidator.h"
@@ -178,7 +179,6 @@ static LayoutVideo* FindFullscreenVideoLayoutObject(Document& document) {
 
 void PaintLayerCompositor::UpdateIfNeededRecursive(
     DocumentLifecycle::LifecycleState target_state) {
-  SCOPED_BLINK_UMA_HISTOGRAM_TIMER("Blink.Compositing.UpdateTime");
   CompositingReasonsStats compositing_reasons_stats;
   UpdateIfNeededRecursiveInternal(target_state, compositing_reasons_stats);
   UMA_HISTOGRAM_CUSTOM_COUNTS("Blink.Compositing.LayerPromotionCount.Overlap",
@@ -203,9 +203,10 @@ void PaintLayerCompositor::UpdateIfNeededRecursiveInternal(
     CompositingReasonsStats& compositing_reasons_stats) {
   DCHECK(target_state >= DocumentLifecycle::kCompositingInputsClean);
 
-  LocalFrameView* view = layout_view_.GetFrameView();
-  if (view->ShouldThrottleRendering())
+  if (ShouldThrottleRendering())
     return;
+
+  LocalFrameView* view = layout_view_.GetFrameView();
   view->ResetNeedsForcedCompositingUpdate();
 
   for (Frame* child =
@@ -313,7 +314,11 @@ void PaintLayerCompositor::AssertNoUnresolvedDirtyBits() {
 
 void PaintLayerCompositor::ApplyOverlayFullscreenVideoAdjustmentIfNeeded() {
   in_overlay_fullscreen_video_ = false;
-  if (!root_content_layer_)
+  GraphicsLayer* content_parent =
+      RuntimeEnabledFeatures::RootLayerScrollingEnabled()
+          ? ParentForContentLayers()
+          : root_content_layer_.get();
+  if (!content_parent)
     return;
 
   bool is_local_root = layout_view_.GetFrame()->IsLocalRoot();
@@ -343,8 +348,12 @@ void PaintLayerCompositor::ApplyOverlayFullscreenVideoAdjustmentIfNeeded() {
   if (!is_local_root)
     return;
 
-  root_content_layer_->RemoveAllChildren();
-  overflow_controls_host_layer_->AddChild(video_layer);
+  content_parent->RemoveAllChildren();
+  if (RuntimeEnabledFeatures::RootLayerScrollingEnabled())
+    content_parent->AddChild(video_layer);
+  else
+    overflow_controls_host_layer_->AddChild(video_layer);
+
   if (GraphicsLayer* background_layer = FixedRootBackgroundLayer())
     background_layer->RemoveFromParent();
   in_overlay_fullscreen_video_ = true;
@@ -379,16 +388,18 @@ static void ForceRecomputeVisualRectsIncludingNonCompositingDescendants(
   }
 }
 
-GraphicsLayer* PaintLayerCompositor::ParentForContentLayers() const {
+GraphicsLayer* PaintLayerCompositor::ParentForContentLayers(
+    GraphicsLayer* child_frame_parent_candidate) const {
   if (root_content_layer_)
     return root_content_layer_.get();
 
   DCHECK(RuntimeEnabledFeatures::RootLayerScrollingEnabled());
 
-  // Iframe content layers will be connected by the parent frame using
-  // attachFrameContentLayersToIframeLayer.
+  // Iframe content layers were connected by the parent frame using
+  // AttachFrameContentLayersToIframeLayer. Return whatever candidate was given
+  // to us as the child frame parent.
   if (!IsMainFrame())
-    return nullptr;
+    return child_frame_parent_candidate;
 
   // If this is a popup, don't hook into the VisualViewport layers.
   if (!layout_view_.GetDocument()
@@ -486,6 +497,24 @@ void PaintLayerCompositor::UpdateIfNeeded(
     }
   }
 
+  GraphicsLayer* current_parent = nullptr;
+  if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
+    // Save off our current parent. We need this in subframes, because our
+    // parent attached us to itself via AttachFrameContentLayersToIframeLayer().
+    // However, if we're about to update our layer structure in
+    // GraphicsLayerUpdater, we will sometimes remove our root graphics layer
+    // from its parent. If there are no further tree updates, this means that
+    // our root graphics layer will not be attached to anything. Below, we would
+    // normally get the ParentForContentLayer to fix up this situation. However,
+    // in RLS non-main frames don't have this parent. So, instead use this
+    // saved-off parent.
+    if (!IsMainFrame() && update_root->GetCompositedLayerMapping()) {
+      current_parent = update_root->GetCompositedLayerMapping()
+                           ->ChildForSuperlayers()
+                           ->Parent();
+    }
+  }
+
   GraphicsLayerUpdater updater;
   updater.Update(*update_root, layers_needing_paint_invalidation);
 
@@ -507,8 +536,10 @@ void PaintLayerCompositor::UpdateIfNeeded(
 
     if (!child_list.IsEmpty()) {
       CHECK(compositing_);
-      if (GraphicsLayer* content_parent = ParentForContentLayers())
+      if (GraphicsLayer* content_parent =
+              ParentForContentLayers(current_parent)) {
         content_parent->SetChildren(child_list);
+      }
     }
 
     ApplyOverlayFullscreenVideoAdjustmentIfNeeded();
@@ -535,6 +566,14 @@ void PaintLayerCompositor::UpdateIfNeeded(
   bool is_root_scroller_ancestor = IsRootScrollerAncestor();
   if (scroll_layer_)
     scroll_layer_->SetIsResizedByBrowserControls(is_root_scroller_ancestor);
+
+  if (scroll_layer_) {
+    if (SnapCoordinator* snap_coordinator =
+            layout_view_.GetDocument().GetSnapCoordinator()) {
+      scroll_layer_->SetSnapContainerData(
+          snap_coordinator->GetSnapContainerData(layout_view_));
+    }
+  }
 
   // Clip a frame's overflow controls layer only if it's not an ancestor of
   // the root scroller. If it is an ancestor, then it's guaranteed to be
@@ -756,7 +795,7 @@ void PaintLayerCompositor::RootFixedBackgroundsChanged() {
 std::unique_ptr<JSONObject> PaintLayerCompositor::LayerTreeAsJSON(
     LayerTreeFlags flags) const {
   DCHECK(Lifecycle().GetState() >= DocumentLifecycle::kPrePaintClean ||
-         layout_view_.GetFrameView()->ShouldThrottleRendering());
+         ShouldThrottleRendering());
 
   // We skip dumping the scroll and clip layers to keep layerTreeAsText output
   // similar between platforms (unless we explicitly request dumping from the
@@ -851,6 +890,15 @@ GraphicsLayer* PaintLayerCompositor::RootGraphicsLayer() const {
   return nullptr;
 }
 
+GraphicsLayer* PaintLayerCompositor::PaintRootGraphicsLayer() const {
+  if (RuntimeEnabledFeatures::RootLayerScrollingEnabled() &&
+      ParentForContentLayers() && ParentForContentLayers()->Children().size()) {
+    DCHECK_EQ(ParentForContentLayers()->Children().size(), 1U);
+    return ParentForContentLayers()->Children()[0];
+  }
+  return RootGraphicsLayer();
+}
+
 GraphicsLayer* PaintLayerCompositor::ScrollLayer() const {
   if (ScrollableArea* scrollable_area =
           layout_view_.GetFrameView()->GetScrollableArea())
@@ -896,10 +944,10 @@ void PaintLayerCompositor::UpdateRootLayerPosition() {
 }
 
 void PaintLayerCompositor::UpdatePotentialCompositingReasonsFromStyle(
-    PaintLayer* layer) {
-  layer->SetPotentialCompositingReasonsFromStyle(
+    PaintLayer& layer) {
+  layer.SetPotentialCompositingReasonsFromStyle(
       compositing_reason_finder_.PotentialCompositingReasonsFromStyle(
-          layer->GetLayoutObject()));
+          layer.GetLayoutObject()));
 }
 
 bool PaintLayerCompositor::CanBeComposited(const PaintLayer* layer) const {
@@ -1011,6 +1059,10 @@ GraphicsLayer* PaintLayerCompositor::FixedRootBackgroundLayer() const {
   return nullptr;
 }
 
+bool PaintLayerCompositor::ShouldThrottleRendering() const {
+  return layout_view_.GetFrameView()->ShouldThrottleRendering();
+}
+
 static void UpdateTrackingRasterInvalidationsRecursive(
     GraphicsLayer* graphics_layer) {
   if (!graphics_layer)
@@ -1031,9 +1083,8 @@ static void UpdateTrackingRasterInvalidationsRecursive(
 
 void PaintLayerCompositor::UpdateTrackingRasterInvalidations() {
 #if DCHECK_IS_ON()
-  LocalFrameView* view = layout_view_.GetFrameView();
   DCHECK(Lifecycle().GetState() == DocumentLifecycle::kPaintClean ||
-         (view && view->ShouldThrottleRendering()));
+         ShouldThrottleRendering());
 #endif
 
   if (GraphicsLayer* root_layer = RootGraphicsLayer())
@@ -1069,7 +1120,7 @@ void PaintLayerCompositor::UpdateOverflowControlsLayers() {
 
   if (RequiresHorizontalScrollbarLayer()) {
     if (!layer_for_horizontal_scrollbar_) {
-      layer_for_horizontal_scrollbar_ = GraphicsLayer::Create(this);
+      layer_for_horizontal_scrollbar_ = GraphicsLayer::Create(*this);
     }
 
     if (layer_for_horizontal_scrollbar_->Parent() != controls_parent) {
@@ -1094,7 +1145,7 @@ void PaintLayerCompositor::UpdateOverflowControlsLayers() {
 
   if (RequiresVerticalScrollbarLayer()) {
     if (!layer_for_vertical_scrollbar_) {
-      layer_for_vertical_scrollbar_ = GraphicsLayer::Create(this);
+      layer_for_vertical_scrollbar_ = GraphicsLayer::Create(*this);
     }
 
     if (layer_for_vertical_scrollbar_->Parent() != controls_parent) {
@@ -1119,7 +1170,7 @@ void PaintLayerCompositor::UpdateOverflowControlsLayers() {
 
   if (RequiresScrollCornerLayer()) {
     if (!layer_for_scroll_corner_)
-      layer_for_scroll_corner_ = GraphicsLayer::Create(this);
+      layer_for_scroll_corner_ = GraphicsLayer::Create(*this);
 
     if (layer_for_scroll_corner_->Parent() != controls_parent)
       controls_parent->AddChild(layer_for_scroll_corner_.get());
@@ -1152,7 +1203,7 @@ void PaintLayerCompositor::EnsureRootLayer() {
       !RuntimeEnabledFeatures::RootLayerScrollingEnabled();
 
   if (should_create_own_layers && !root_content_layer_) {
-    root_content_layer_ = GraphicsLayer::Create(this);
+    root_content_layer_ = GraphicsLayer::Create(*this);
     IntRect overflow_rect = layout_view_.PixelSnappedLayoutOverflowRect();
     root_content_layer_->SetSize(
         FloatSize(overflow_rect.MaxX(), overflow_rect.MaxY()));
@@ -1167,15 +1218,15 @@ void PaintLayerCompositor::EnsureRootLayer() {
 
     // Create a layer to host the clipping layer and the overflow controls
     // layers.
-    overflow_controls_host_layer_ = GraphicsLayer::Create(this);
+    overflow_controls_host_layer_ = GraphicsLayer::Create(*this);
 
     // Clip iframe's overflow controls layer.
     bool container_masks_to_bounds = !layout_view_.GetFrame()->IsLocalRoot();
     overflow_controls_host_layer_->SetMasksToBounds(container_masks_to_bounds);
 
     // Create a clipping layer if this is an iframe or settings require to clip.
-    container_layer_ = GraphicsLayer::Create(this);
-    scroll_layer_ = GraphicsLayer::Create(this);
+    container_layer_ = GraphicsLayer::Create(*this);
+    scroll_layer_ = GraphicsLayer::Create(*this);
     scroll_layer_->SetIsContainerForFixedPositionLayers(true);
 
     // In RLS mode, LayoutView scrolling contents layer gets this element ID (in

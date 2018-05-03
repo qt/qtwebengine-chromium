@@ -92,6 +92,7 @@ group("gn_all") {
   if (!is_ios && !is_android && !is_chromecast && !is_fuchsia) {
     deps += [
       "//chrome",
+      "//chrome/browser/resources/media_router/extension:all",
       "//chrome/installer/zucchini:zucchini",
       "//chrome/installer/zucchini:zucchini_unittests",
       "//chrome/test:browser_tests",
@@ -162,10 +163,8 @@ group("gn_all") {
       "//media/midi:midi_unittests",
       "//media/mojo:media_mojo_unittests",
       "//mojo",
+      "//mojo:mojo_unittests",
       "//mojo/common:mojo_common_unittests",
-      "//mojo/edk/system:mojo_system_unittests",
-      "//mojo/edk/test:mojo_public_bindings_unittests",
-      "//mojo/edk/test:mojo_public_system_unittests",
       "//net:net_perftests",
       "//third_party/WebKit/Source/controller:webkit_unit_tests",
       "//third_party/WebKit/Source/platform/wtf:wtf_unittests",
@@ -178,6 +177,14 @@ group("gn_all") {
     deps += [
       "//tools/gn",
       "//tools/gn:gn_unittests",
+    ]
+  }
+
+  # TODO(https://crbug.com/812268): Fix Windows build, and enable it.
+  if (!is_ios && !is_android && !is_win) {
+    deps += [
+      "//components/cronet:cronet_tests",
+      "//components/cronet:cronet_unittests",
     ]
   }
 
@@ -267,13 +274,6 @@ group("gn_all") {
     deps += [ "//tools/xdisplaycheck" ]
   }
 
-  if (is_win) {
-    deps += [
-      "//chrome/installer/gcapi",
-      "//chrome/tools/build/win/syzygy:chrome_dll_syzygy",
-    ]
-  }
-
   if (is_mac) {
     deps += [ "//chrome/installer/gcapi_mac:gcapi_example" ]
   }
@@ -325,7 +325,7 @@ group("gn_all") {
         "//components/cronet/android:cronet_sample_test_apk",
         "//components/cronet/android:cronet_test_apk",
         "//components/cronet/android:cronet_test_instrumentation_apk",
-        "//components/cronet/android:cronet_unittests",
+        "//components/cronet/android:cronet_unittests_android",
       ]
     }
 
@@ -373,7 +373,9 @@ group("gn_all") {
       "//ash:ash_unittests",
       "//chromeos:chromeos_unittests",
       "//chromeos/components:chromeos_components_unittests",
+      "//chromeos/services:chromeos_services_unittests",
       "//components/session_manager/core",
+      "//ui/app_list:app_list_demo",
       "//ui/app_list:app_list_unittests",
       "//ui/app_list/presenter:app_list_presenter_unittests",
       "//ui/arc:ui_arc_unittests",
@@ -389,12 +391,6 @@ group("gn_all") {
     ]
   }
 
-  # Accessibility API debugging tools.
-  if (is_win) {
-    deps += [ "//tools/accessibility/inspect:ax_dump_events" ]
-    deps += [ "//tools/accessibility/inspect:ax_dump_tree" ]
-  }
-
   if (is_linux) {
     # The following are definitely linux-only.
     deps += [
@@ -404,6 +400,7 @@ group("gn_all") {
       "//net:quic_server",
       "//sandbox/linux:chrome_sandbox",
       "//sandbox/linux:sandbox_linux_unittests",
+      "//testing:empty_main",
     ]
 
     if (use_dbus) {
@@ -467,10 +464,8 @@ group("gn_all") {
         "//media/cast:generate_barcode_video",
         "//media/cast:generate_timecode_audio",
         "//net:crash_cache",
-        "//net:crl_set_dump",
         "//net:dns_fuzz_stub",
         "//net:gdig",
-        "//net:get_server_time",
         "//net:net_watcher",  # TODO(GYP): This should be conditional on use_v8_in_net
         "//net:run_testserver",
         "//net:stress_cache",
@@ -515,7 +510,7 @@ group("gn_all") {
       "//components/network_hints/browser",
       "//content/public/app:browser",
       "//content/public/app:child",
-      "//mojo/edk/test:mojo_public_system_perftests",
+      "//mojo:mojo_perftests",
       "//services/service_manager/public/cpp",
       "//testing/gmock:gmock_main",
       "//third_party/breakpad:dump_syms($host_toolchain)",
@@ -567,7 +562,10 @@ group("gn_all") {
     deps += [
       "//base:pe_image_test",
       "//chrome/install_static:install_static_unittests",
+      "//chrome/installer/gcapi",
       "//chrome/installer/setup:setup_unittests",
+      "//chrome/installer/zucchini",
+      "//chrome/tools/build/win/syzygy:chrome_dll_syzygy",
       "//chrome_elf:chrome_elf_import_unittests",
       "//chrome_elf:chrome_elf_unittests",
       "//chrome_elf:dll_hash_main",
@@ -575,6 +573,7 @@ group("gn_all") {
       "//components/wifi:wifi_test",
       "//net:quic_client",
       "//net:quic_server",
+      "//notification_helper:notification_helper_unittests",
       "//sandbox/win:pocdll",
       "//sandbox/win:sandbox_poc",
       "//sandbox/win:sbox_integration_tests",
@@ -582,10 +581,16 @@ group("gn_all") {
       "//sandbox/win:sbox_validation_tests",
       "//testing/gtest:gtest_main",
       "//third_party/tcmalloc:addr2line-pdb",
+
+      # The following two are accessibility API debugging tools.
+      "//tools/accessibility/inspect:ax_dump_events",
+      "//tools/accessibility/inspect:ax_dump_tree",
       "//tools/win/chromeexts:chromeexts",
     ]
 
-    if (!(is_component_build && is_debug && target_cpu == "x86")) {
+    # TODO(thakis): Enable this in cross builds, https://crbug.com/799827
+    if (!(is_component_build && is_debug && target_cpu == "x86") &&
+        host_os == "win") {
       deps +=
           [ "//chrome/installer/mini_installer:next_version_mini_installer" ]
     }
@@ -643,7 +648,7 @@ group("gn_all") {
     }
   }
 
-  if (is_mac || is_linux) {
+  if (is_mac || is_linux || is_android) {
     deps += [ "//third_party/perfetto:all" ]
   }
 
@@ -758,6 +763,7 @@ if (is_win) {
       "//chrome/common/win:eventlog_provider",
       "//chrome/installer/gcapi",
       "//chrome/installer/mini_installer",
+      "//chrome/installer/zucchini",
       "//cloud_print",
       "//cloud_print/virtual_driver/win/port_monitor:copy_gcp_portmon_binaries",
       "//components/policy:pack_policy_templates",
@@ -853,10 +859,10 @@ group("gn_visibility") {
   ]
 
   if (!is_ios) {
-    deps += [
-      "//v8:postmortem-metadata",
-      "//v8:v8_snapshot",
-    ]
+    deps += [ "//v8:postmortem-metadata" ]
+    if (v8_use_snapshot) {
+      deps += [ "//v8:v8_snapshot" ]
+    }
   }
 }
 
@@ -906,15 +912,14 @@ if (!is_ios) {
       ":layout_test_data_mojo_bindings",
       "//content/shell:content_shell",
       "//content/test:mojo_layouttest_bindings_js_data_deps",
-      "//device/bluetooth/public/interfaces:fake_bluetooth_interfaces_js_data_deps",
-      "//device/geolocation/public/interfaces:interfaces_js_data_deps",
-      "//device/usb/public/interfaces:interfaces_js_data_deps",
-      "//device/vr:mojo_bindings_js_data_deps",
+      "//device/bluetooth/public/mojom:fake_bluetooth_interfaces_js_data_deps",
+      "//device/usb/public/mojom:mojom_js_data_deps",
+      "//device/vr/public/mojom:mojom_js_data_deps",
       "//media/capture/mojo:image_capture_js_data_deps",
       "//mojo/public/interfaces/bindings/tests:test_data_deps",
-      "//services/device/public/interfaces:interfaces_js_data_deps",
-      "//services/device/public/interfaces:generic_sensor_js_data_deps",
-      "//services/shape_detection/public/interfaces:interfaces_js_data_deps",
+      "//services/shape_detection/public/mojom:mojom_js_data_deps",
+      "//services/device/public/mojom:mojom_js_data_deps",
+      "//services/device/public/mojom:generic_sensor_js_data_deps",
       "//third_party/WebKit/public:blink_devtools_frontend_resources_files",
       "//third_party/WebKit/public:mojo_bindings_js_data_deps",
       "//third_party/mesa:osmesa",
@@ -947,7 +952,10 @@ if (!is_ios) {
     }
 
     if (is_fuchsia) {
-      data_deps += [ "//content/shell:content_shell_fuchsia" ]
+      data_deps += [
+        "//content/shell:content_shell_fuchsia",
+        "//build/fuchsia/layout_test_proxy:layout_test_proxy_runner",
+      ]
     }
 
     data = [
@@ -1144,16 +1152,6 @@ template("assert_valid_out_dir") {
   assert(
       sources == invoker.actual_sources,
       "Do not use a platform name in your output directory (found \"$root_build_dir\"). http://crbug.com/548283")
-}
-
-if (!is_win || !is_clang) {
-  group("webui_closure_compile") {
-    data_deps = []
-    if (is_chromeos) {
-      data_deps +=
-          [ "//chrome/browser/resources/chromeos/login:closure_compile" ]
-    }
-  }
 }
 
 assert_valid_out_dir("_unused") {

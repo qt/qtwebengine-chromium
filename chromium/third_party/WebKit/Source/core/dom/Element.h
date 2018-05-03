@@ -36,6 +36,7 @@
 #include "core/resize_observer/ResizeObserver.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
+#include "platform/scroll/ScrollCustomization.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "public/platform/WebFocusType.h"
 
@@ -44,7 +45,7 @@ namespace blink {
 class AccessibleNode;
 class Attr;
 class Attribute;
-class ComputedAccessibleNode;
+class CSSPropertyValueSet;
 class CSSStyleDeclaration;
 class CustomElementDefinition;
 class DOMRect;
@@ -53,6 +54,7 @@ class DOMStringMap;
 class DOMTokenList;
 class Document;
 class ElementAnimations;
+class ElementIntersectionObserverData;
 class ElementRareData;
 class ElementShadow;
 class ExceptionState;
@@ -63,7 +65,6 @@ class InputDeviceCapabilities;
 class Locale;
 class MutableCSSPropertyValueSet;
 class NamedNodeMap;
-class ElementIntersectionObserverData;
 class PseudoElement;
 class PseudoStyleRequest;
 class ResizeObservation;
@@ -77,9 +78,9 @@ class ShadowRootInit;
 class SpaceSplitString;
 class StringOrTrustedHTML;
 class StringOrTrustedScriptURL;
-class CSSPropertyValueSet;
 class StylePropertyMap;
 class V0CustomElementDefinition;
+class V8ScrollStateCallback;
 
 enum SpellcheckAttributeState {
   kSpellcheckAttributeTrue,
@@ -295,8 +296,6 @@ class CORE_EXPORT Element : public ContainerNode {
   AccessibleNode* ExistingAccessibleNode() const;
   AccessibleNode* accessibleNode();
 
-  ComputedAccessibleNode* GetComputedAccessibleNode();
-
   void DidMoveToNewDocument(Document&) override;
 
   void removeAttribute(const AtomicString& name);
@@ -352,8 +351,8 @@ class CORE_EXPORT Element : public ContainerNode {
 
   String nodeName() const override;
 
-  Element* CloneElementWithChildren();
-  Element* CloneElementWithoutChildren();
+  Element* CloneWithChildren(Document* = nullptr) const;
+  Element* CloneWithoutChildren(Document* = nullptr) const;
 
   void SetBooleanAttribute(const QualifiedName&, bool);
 
@@ -447,15 +446,13 @@ class CORE_EXPORT Element : public ContainerNode {
   }
 
   // Clones attributes only.
-  void CloneAttributesFromElement(const Element&);
-
-  // Clones all attribute-derived data, including subclass specifics (through
-  // copyNonAttributeProperties.)
-  void CloneDataFromElement(const Element&);
+  void CloneAttributesFrom(const Element&);
 
   bool HasEquivalentAttributes(const Element* other) const;
 
-  virtual void CopyNonAttributePropertiesFromElement(const Element&) {}
+  // Step 5 of https://dom.spec.whatwg.org/#concept-node-clone
+  virtual void CloneNonAttributePropertiesFrom(const Element&,
+                                               CloneChildrenFlag) {}
 
   void AttachLayoutTree(AttachContext&) override;
   void DetachLayoutTree(const AttachContext& = AttachContext()) override;
@@ -497,20 +494,19 @@ class CORE_EXPORT Element : public ContainerNode {
                            const ShadowRootInit&,
                            ExceptionState&);
   ShadowRoot& CreateShadowRootInternal();
-  ShadowRoot& CreateUserAgentShadowRootV1();
+  ShadowRoot& CreateUserAgentShadowRoot();
   ShadowRoot& AttachShadowRootInternal(ShadowRootType,
                                        bool delegates_focus = false);
 
+  ShadowRoot* GetShadowRoot() const;
   ShadowRoot* OpenShadowRoot() const;
   ShadowRoot* ClosedShadowRoot() const;
   ShadowRoot* AuthorShadowRoot() const;
   ShadowRoot* UserAgentShadowRoot() const;
 
-  ShadowRoot* YoungestShadowRoot() const;
-
   ShadowRoot* ShadowRootIfV1() const;
 
-  ShadowRoot& EnsureUserAgentShadowRootV1();
+  ShadowRoot& EnsureUserAgentShadowRoot();
 
   bool IsInDescendantTreeOf(const Element* shadow_host) const;
 
@@ -587,9 +583,12 @@ class CORE_EXPORT Element : public ContainerNode {
                                                 const FocusOptions&);
   virtual void blur();
 
-  void setDistributeScroll(ScrollStateCallback*, String native_scroll_behavior);
+  void setDistributeScroll(V8ScrollStateCallback*,
+                           const String& native_scroll_behavior);
   void NativeDistributeScroll(ScrollState&);
-  void setApplyScroll(ScrollStateCallback*, String native_scroll_behavior);
+  void setApplyScroll(V8ScrollStateCallback*,
+                      const String& native_scroll_behavior);
+  void SetApplyScroll(ScrollStateCallback*);
   void RemoveApplyScroll();
   void NativeApplyScroll(ScrollState&);
 
@@ -755,6 +754,8 @@ class CORE_EXPORT Element : public ContainerNode {
   // sent at all.
   virtual bool IsDisabledFormControl() const { return false; }
 
+  virtual bool ShouldForceLegacyLayout() const { return false; }
+
   bool HasPendingResources() const {
     return HasElementFlag(kHasPendingResources);
   }
@@ -767,6 +768,9 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void SetCustomElementDefinition(CustomElementDefinition*);
   CustomElementDefinition* GetCustomElementDefinition() const;
+  // https://dom.spec.whatwg.org/#concept-element-is-value
+  void SetIsValue(const AtomicString&);
+  const AtomicString& IsValue() const;
 
   bool ContainsFullScreenElement() const {
     return HasElementFlag(kContainsFullScreenElement);
@@ -839,6 +843,9 @@ class CORE_EXPORT Element : public ContainerNode {
   EnsureResizeObserverData();
   void SetNeedsResizeObserverUpdate();
 
+  void WillBeginCustomizedScrollPhase(ScrollCustomization::ScrollDirection);
+  void DidEndCustomizedScrollPhase();
+
  protected:
   Element(const QualifiedName& tag_name, Document*, ConstructionType);
 
@@ -855,10 +862,9 @@ class CORE_EXPORT Element : public ContainerNode {
   void AddPropertyToPresentationAttributeStyle(MutableCSSPropertyValueSet*,
                                                CSSPropertyID,
                                                const String& value);
-  // TODO(sashab): Make this take a const CSSValue&.
   void AddPropertyToPresentationAttributeStyle(MutableCSSPropertyValueSet*,
                                                CSSPropertyID,
-                                               const CSSValue*);
+                                               const CSSValue&);
 
   InsertionNotificationRequest InsertedInto(ContainerNode*) override;
   void RemovedFrom(ContainerNode*) override;
@@ -882,8 +888,7 @@ class CORE_EXPORT Element : public ContainerNode {
   // However, it must not retrieve layout information like position and size.
   // This method cannot be moved to LayoutObject because some focusable nodes
   // don't have layoutObjects. e.g., HTMLOptionElement.
-  // TODO(tkent): Rename this to isFocusableStyle.
-  virtual bool LayoutObjectIsFocusable() const;
+  virtual bool IsFocusableStyle() const;
 
   virtual bool ChildrenCanHaveStyle() const { return true; }
 
@@ -951,8 +956,6 @@ class CORE_EXPORT Element : public ContainerNode {
   inline PseudoElement* CreatePseudoElementIfNeeded(PseudoId);
   void CreateAndAttachPseudoElementIfNeeded(PseudoId, AttachContext&);
 
-  ShadowRoot* GetShadowRoot() const;
-
   // FIXME: Everyone should allow author shadows.
   virtual bool AreAuthorShadowsAllowed() const { return true; }
   virtual void DidAddUserAgentShadowRoot(ShadowRoot&) {}
@@ -994,9 +997,6 @@ class CORE_EXPORT Element : public ContainerNode {
                                const AtomicString& value,
                                SynchronizationOfLazyAttribute);
   void RemoveAttributeInternal(size_t index, SynchronizationOfLazyAttribute);
-  void AttributeChangedFromParserOrByCloning(const QualifiedName&,
-                                             const AtomicString&,
-                                             AttributeModificationReason);
 
   void CancelFocusAppearanceUpdate();
 
@@ -1010,10 +1010,10 @@ class CORE_EXPORT Element : public ContainerNode {
   inline void RemoveCallbackSelectors();
   inline void AddCallbackSelectors();
 
-  // cloneNode is private so that non-virtual cloneElementWithChildren and
-  // cloneElementWithoutChildren are used instead.
-  Node* cloneNode(bool deep, ExceptionState&) override;
-  virtual Element* CloneElementWithoutAttributesAndChildren();
+  // Clone is private so that non-virtual CloneElementWithChildren and
+  // CloneElementWithoutChildren are used instead.
+  Node* Clone(Document&, CloneChildrenFlag) const override;
+  virtual Element* CloneWithoutAttributesAndChildren(Document& factory) const;
 
   QualifiedName tag_name_;
 

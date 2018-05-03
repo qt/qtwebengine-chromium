@@ -11,21 +11,28 @@ Http2PriorityDependencies::Http2PriorityDependencies() = default;
 
 Http2PriorityDependencies::~Http2PriorityDependencies() = default;
 
-void Http2PriorityDependencies::OnStreamCreation(
-    SpdyStreamId id,
-    SpdyPriority priority,
-    SpdyStreamId* dependent_stream_id,
-    bool* exclusive) {
+void Http2PriorityDependencies::OnStreamCreation(SpdyStreamId id,
+                                                 SpdyPriority priority,
+                                                 SpdyStreamId* parent_stream_id,
+                                                 int* weight,
+                                                 bool* exclusive) {
   if (entry_by_stream_id_.find(id) != entry_by_stream_id_.end())
     return;
 
-  *dependent_stream_id = 0ul;
+  *parent_stream_id = 0;
   *exclusive = true;
+  // Since the generated dependency graph is a single linked list, the value
+  // of weight should not actually matter, and perhaps the default weight of 16
+  // from the HTTP/2 spec would be reasonable. However, there are some servers
+  // which currently interpret the weight field like an old SPDY priority value.
+  // As long as those servers need to be supported, weight should be set to
+  // a value those servers will interpret correctly.
+  *weight = Spdy3PriorityToHttp2Weight(priority);
 
   // Dependent on the lowest-priority stream that has a priority >= |priority|.
   IdList::iterator parent;
   if (PriorityLowerBound(priority, &parent)) {
-    *dependent_stream_id = parent->first;
+    *parent_stream_id = parent->first;
   }
 
   id_priority_lists_[priority].push_back(std::make_pair(id, priority));
@@ -128,18 +135,20 @@ Http2PriorityDependencies::OnStreamUpdate(SpdyStreamId id,
     // |old_parent|.
     IdList::iterator old_child;
     if (ChildOfStream(id, &old_child)) {
+      int weight = Spdy3PriorityToHttp2Weight(old_child->second);
       if (old_has_parent) {
-        result.push_back({old_child->first, old_parent->first, true});
+        result.push_back({old_child->first, old_parent->first, weight, true});
       } else {
-        result.push_back({old_child->first, 0, true});
+        result.push_back({old_child->first, 0, weight, true});
       }
     }
 
+    int weight = Spdy3PriorityToHttp2Weight(new_priority);
     // |id| moves to be dependent on |new_parent|.
     if (new_has_parent) {
-      result.push_back({id, new_parent->first, true});
+      result.push_back({id, new_parent->first, weight, true});
     } else {
-      result.push_back({id, 0, true});
+      result.push_back({id, 0, weight, true});
     }
   }
 

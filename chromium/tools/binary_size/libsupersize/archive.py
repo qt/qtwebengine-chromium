@@ -45,6 +45,10 @@ from grit.format import data_pack
 # max: shared .text symbols = 0 bytes, file size = 11.10MiB (1235449 symbols).
 _MAX_SAME_NAME_ALIAS_COUNT = 40  # 50kb is basically negligable.
 
+# This is an estimate of pak translation compression ratio to make comparisons
+# between .size files reasonable. Otherwise this can differ every pak change.
+_PAK_COMPRESSION_RATIO = 0.33
+
 
 def _OpenMaybeGz(path):
   """Calls `gzip.open()` if |path| ends in ".gz", otherwise calls `open()`."""
@@ -441,6 +445,10 @@ def _CalculatePadding(raw_symbols):
           'Input symbols must be sorted by section, then address.')
       seen_sections.append(symbol.section_name)
       continue
+    if symbol.full_name.startswith('Overhead: '):
+      # Overhead symbols are not actionable so should be padding-only.
+      symbol.padding = symbol.size
+      continue
     if (symbol.address <= 0 or prev_symbol.address <= 0 or
         symbol.IsPak() or prev_symbol.IsPak()):
       continue
@@ -508,29 +516,25 @@ def _AddNmAliases(raw_symbols, names_by_address):
 
   # Step 2: Create new symbols as siblings to each existing one.
   logging.debug('Creating %d new symbols from nm output', num_new_symbols)
-  src_cursor_end = len(raw_symbols)
-  raw_symbols += [None] * num_new_symbols
-  dst_cursor_end = len(raw_symbols)
-  for src_index, name_list in reversed(replacements):
-    # Copy over symbols that come after the current one.
-    chunk_size = src_cursor_end - src_index - 1
-    dst_cursor_end -= chunk_size
-    src_cursor_end -= chunk_size
-    raw_symbols[dst_cursor_end:dst_cursor_end + chunk_size] = (
-        raw_symbols[src_cursor_end:src_cursor_end + chunk_size])
-    sym = raw_symbols[src_index]
-    src_cursor_end -= 1
-
-    # Create symbols (does not bother reusing the existing symbol).
-    for i, full_name in enumerate(name_list):
-      dst_cursor_end -= 1
+  expected_num_symbols = len(raw_symbols) + num_new_symbols
+  ret = []
+  prev_src = 0
+  for cur_src, name_list in replacements:
+    ret += raw_symbols[prev_src:cur_src]
+    prev_src = cur_src + 1
+    sym = raw_symbols[cur_src]
+    # Create symbols (|sym| gets recreated and discarded).
+    new_syms = []
+    for full_name in name_list:
       # Do not set |aliases| in order to avoid being pruned by
       # _CompactLargeAliasesIntoSharedSymbols(), which assumes aliases differ
       # only by path. The field will be set afterwards by _ConnectNmAliases().
-      raw_symbols[dst_cursor_end] = models.Symbol(
-          sym.section_name, sym.size, address=sym.address, full_name=full_name)
-
-  assert dst_cursor_end == src_cursor_end
+      new_syms.append(models.Symbol(
+          sym.section_name, sym.size, address=sym.address, full_name=full_name))
+    ret += new_syms
+  ret += raw_symbols[prev_src:]
+  assert expected_num_symbols == len(ret)
+  return ret
 
 
 def LoadAndPostProcessSizeInfo(path):
@@ -642,7 +646,7 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, output_directory,
         'Adding symbols removed by identical code folding (as reported by nm)')
     # This normally does not block (it's finished by this time).
     names_by_address = elf_nm_result.get()
-    _AddNmAliases(raw_symbols, names_by_address)
+    raw_symbols = _AddNmAliases(raw_symbols, names_by_address)
 
     if output_directory:
       object_paths_by_name = bulk_analyzer.GetSymbolNames()
@@ -680,8 +684,7 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, output_directory,
 
 
 def _ComputePakFileSymbols(
-    file_name, contents, res_info, symbols_by_id, expected_size,
-    compression_ratio=1):
+    file_name, contents, res_info, symbols_by_id, compression_ratio=1):
   id_map = {id(v): k
             for k, v in sorted(contents.resources.items(), reverse=True)}
   alias_map = {k: id_map[id(v)] for k, v in contents.resources.iteritems()
@@ -694,7 +697,6 @@ def _ComputePakFileSymbols(
   overhead = (12 + 6) * compression_ratio  # Header size plus extra offset
   symbols_by_id[file_name] = models.Symbol(
       section_name, overhead, full_name='{}: overhead'.format(file_name))
-  total = overhead
   for resource_id in sorted(contents.resources):
     if resource_id in alias_map:
       # 4 extra bytes of metadata (2 16-bit ints)
@@ -710,10 +712,6 @@ def _ComputePakFileSymbols(
             section_name, 0, address=resource_id, full_name=full_name)
     size *= compression_ratio
     symbols_by_id[resource_id].size += size
-    total += size
-  total = int(round(total))
-  assert expected_size == total, (
-      '{} bytes in pak file not accounted for'.format(expected_size - total))
 
 
 def _ParsePakInfoFile(pak_info_path):
@@ -804,9 +802,9 @@ def _ParseApkOtherSymbols(section_sizes, apk_path):
             models.SECTION_OTHER, zip_info.compress_size,
             full_name=zip_info.filename))
   overhead_size = os.path.getsize(apk_path) - zip_info_total
-  apk_symbols.append(models.Symbol(
-        models.SECTION_OTHER, overhead_size,
-        full_name='APK zip overhead'))
+  zip_overhead_symbol = models.Symbol(
+      models.SECTION_OTHER, overhead_size, full_name='Overhead: APK file')
+  apk_symbols.append(zip_overhead_symbol)
   prev = section_sizes.setdefault(models.SECTION_OTHER, 0)
   section_sizes[models.SECTION_OTHER] = prev + sum(s.size for s in apk_symbols)
   return apk_symbols
@@ -819,13 +817,24 @@ def _FindPakSymbolsFromApk(apk_path, output_directory):
     pak_info_path = os.path.join(output_directory, 'size-info', apk_info_name)
     res_info = _ParsePakInfoFile(pak_info_path)
     symbols_by_id = {}
+    total_compressed_size = 0
+    total_uncompressed_size = 0
     for zip_info in pak_zip_infos:
       contents = data_pack.ReadDataPackFromString(z.read(zip_info))
-      compression_ratio = float(zip_info.compress_size) / zip_info.file_size
+      compression_ratio = 1.0
+      if zip_info.compress_size < zip_info.file_size:
+        total_compressed_size += zip_info.compress_size
+        total_uncompressed_size += zip_info.file_size
+        compression_ratio = _PAK_COMPRESSION_RATIO
       _ComputePakFileSymbols(
           os.path.relpath(zip_info.filename, output_directory), contents,
-          res_info, symbols_by_id, expected_size=zip_info.compress_size,
-          compression_ratio=compression_ratio)
+          res_info, symbols_by_id, compression_ratio=compression_ratio)
+    if total_uncompressed_size > 0:
+      actual_ratio = (
+          float(total_compressed_size) / total_uncompressed_size)
+      logging.info('Pak Compression Ratio: %f Actual: %f Diff: %.0f',
+          _PAK_COMPRESSION_RATIO, actual_ratio,
+          (_PAK_COMPRESSION_RATIO - actual_ratio) * total_uncompressed_size)
   return symbols_by_id
 
 
@@ -838,7 +847,7 @@ def _FindPakSymbolsFromFiles(pak_files, pak_info_path, output_directory):
       contents = data_pack.ReadDataPackFromString(f.read())
       _ComputePakFileSymbols(
           os.path.relpath(pak_file_path, output_directory), contents, res_info,
-          symbols_by_id, expected_size=os.path.getsize(pak_file_path))
+          symbols_by_id)
   return symbols_by_id
 
 
@@ -900,8 +909,7 @@ def CreateSectionSizesAndSymbols(
 
   if elf_path:
     elf_overhead_symbol = models.Symbol(
-        models.SECTION_OTHER, elf_overhead_size,
-        full_name='ELF file overhead')
+        models.SECTION_OTHER, elf_overhead_size, full_name='Overhead: ELF file')
     prev = section_sizes.setdefault(models.SECTION_OTHER, 0)
     section_sizes[models.SECTION_OTHER] = prev + elf_overhead_size
     raw_symbols.append(elf_overhead_symbol)
@@ -1014,8 +1022,8 @@ def _ElfInfoFromApk(apk_path, apk_so_path, tool_prefix):
     return build_id, section_sizes, elf_overhead_size
 
 
-def AddArguments(parser):
-  parser.add_argument('size_file', help='Path to output .size file.')
+def AddMainPathsArguments(parser):
+  """Add arguments for DeduceMainPaths()."""
   parser.add_argument('--apk-file',
                       help='.apk file to measure. When set, --elf-file will be '
                             'derived (if unset). Providing the .apk allows '
@@ -1027,37 +1035,42 @@ def AddArguments(parser):
                       help='Path to input .map(.gz) file. Defaults to '
                            '{{elf_file}}.map(.gz)?. If given without '
                            '--elf-file, no size metadata will be recorded.')
+  parser.add_argument('--no-source-paths', action='store_true',
+                      help='Do not use .ninja files to map '
+                           'object_path -> source_path')
+  parser.add_argument('--output-directory',
+                      help='Path to the root build directory.')
+  parser.add_argument('--tool-prefix',
+                      help='Path prefix for c++filt, nm, readelf.')
+
+
+def AddArguments(parser):
+  parser.add_argument('size_file', help='Path to output .size file.')
   parser.add_argument('--pak-file', action='append',
                       help='Paths to pak files.')
   parser.add_argument('--pak-info-file',
                       help='This file should contain all ids found in the pak '
                            'files that have been passed in.')
-  parser.add_argument('--no-source-paths', action='store_true',
-                      help='Do not use .ninja files to map '
-                           'object_path -> source_path')
-  parser.add_argument('--tool-prefix',
-                      help='Path prefix for c++filt, nm, readelf.')
-  parser.add_argument('--output-directory',
-                      help='Path to the root build directory.')
   parser.add_argument('--no-string-literals', dest='track_string_literals',
                       default=True, action='store_false',
                       help='Disable breaking down "** merge strings" into more '
                            'granular symbols.')
+  AddMainPathsArguments(parser)
 
 
-def Run(args, parser):
-  if not args.size_file.endswith('.size'):
-    parser.error('size_file must end with .size')
-
+def DeduceMainPaths(args, parser):
+  """Computes main paths based on input, and deduces them if needed."""
+  apk_path = args.apk_file
   elf_path = args.elf_file
   map_path = args.map_file
-  apk_path = args.apk_file
   any_input = apk_path or elf_path or map_path
   if not any_input:
-    parser.error('Most pass at least one of --apk-file, --elf-file, --map-file')
+    parser.error('Must pass at least one of --apk-file, --elf-file, --map-file')
   output_directory_finder = path_util.OutputDirectoryFinder(
       value=args.output_directory,
       any_path_within_output_directory=any_input)
+
+  apk_so_path = None
   if apk_path:
     with zipfile.ZipFile(apk_path) as z:
       lib_infos = [f for f in z.infolist()
@@ -1094,6 +1107,16 @@ def Run(args, parser):
   output_directory = None
   if not args.no_source_paths:
     output_directory = output_directory_finder.Finalized()
+  return (output_directory, tool_prefix, apk_path, apk_so_path, elf_path,
+          map_path)
+
+
+def Run(args, parser):
+  if not args.size_file.endswith('.size'):
+    parser.error('size_file must end with .size')
+
+  (output_directory, tool_prefix, apk_path, apk_so_path, elf_path, map_path) = (
+      DeduceMainPaths(args, parser))
 
   metadata = CreateMetadata(map_path, elf_path, apk_path, tool_prefix,
                             output_directory)

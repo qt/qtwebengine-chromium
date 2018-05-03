@@ -4,8 +4,9 @@
 
 import("//mojo/public/tools/bindings/mojom.gni")
 
-mojom("capture_types") {
+mojom("video_capture") {
   sources = [
+    "video_capture.mojom",
     "video_capture_types.mojom",
   ]
 
@@ -19,5 +20,16 @@ mojom("capture_types") {
 mojom("image_capture") {
   sources = [
     "image_capture.mojom",
+  ]
+}
+
+source_set("image_capture_types") {
+  sources = [
+    "image_capture_types.cc",
+    "image_capture_types.h",
+  ]
+
+  deps = [
+    "//media/capture/mojo:image_capture",
   ]
 }

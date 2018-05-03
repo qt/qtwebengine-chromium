@@ -58,6 +58,7 @@
 #include "core/html/forms/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html_names.h"
+#include "core/input_type_names.h"
 #include "core/layout/AdjustForAbsoluteZoom.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
@@ -530,6 +531,8 @@ AttributeTriggers* HTMLElement::TriggersForAttributeName(
        nullptr},
       {aria_valuetextAttr, WebFeature::kARIAValueTextAttribute, kNoEvent,
        nullptr},
+      {autocapitalizeAttr, WebFeature::kAutocapitalizeAttribute, kNoEvent,
+       nullptr},
   };
 
   using AttributeToTriggerIndexMap = HashMap<QualifiedName, int>;
@@ -792,6 +795,32 @@ void HTMLElement::setContentEditable(const String& enabled,
                                       "The value provided ('" + enabled +
                                           "') is not one of 'true', 'false', "
                                           "'plaintext-only', or 'inherit'.");
+}
+
+const AtomicString& HTMLElement::autocapitalize() const {
+  DEFINE_STATIC_LOCAL(const AtomicString, kOff, ("off"));
+  DEFINE_STATIC_LOCAL(const AtomicString, kNone, ("none"));
+  DEFINE_STATIC_LOCAL(const AtomicString, kCharacters, ("characters"));
+  DEFINE_STATIC_LOCAL(const AtomicString, kWords, ("words"));
+  DEFINE_STATIC_LOCAL(const AtomicString, kSentences, ("sentences"));
+
+  const AtomicString& value = FastGetAttribute(autocapitalizeAttr);
+  if (value.IsEmpty())
+    return g_empty_atom;
+
+  if (EqualIgnoringASCIICase(value, kNone) ||
+      EqualIgnoringASCIICase(value, kOff))
+    return kNone;
+  if (EqualIgnoringASCIICase(value, kCharacters))
+    return kCharacters;
+  if (EqualIgnoringASCIICase(value, kWords))
+    return kWords;
+  // "sentences", "on", or an invalid value
+  return kSentences;
+}
+
+void HTMLElement::setAutocapitalize(const AtomicString& value) {
+  setAttribute(autocapitalizeAttr, value);
 }
 
 bool HTMLElement::isContentEditableForBinding() const {

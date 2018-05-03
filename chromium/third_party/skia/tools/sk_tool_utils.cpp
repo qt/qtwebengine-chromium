@@ -10,9 +10,6 @@
 #include "Resources.h"
 #include "SkBitmap.h"
 #include "SkCanvas.h"
-#include "SkCommonFlags.h"
-#include "SkFontMgr.h"
-#include "SkFontStyle.h"
 #include "SkImage.h"
 #include "SkPixelRef.h"
 #include "SkPM4f.h"
@@ -24,88 +21,33 @@
 
 namespace sk_tool_utils {
 
-static const char* platform_os_name() {
-    for (int index = 0; index < FLAGS_key.count(); index += 2) {
-        if (!strcmp("os", FLAGS_key[index])) {
-            return FLAGS_key[index + 1];
-        }
+const char* alphatype_name(SkAlphaType at) {
+    switch (at) {
+        case kUnknown_SkAlphaType:  return "Unknown";
+        case kOpaque_SkAlphaType:   return "Opaque";
+        case kPremul_SkAlphaType:   return "Premul";
+        case kUnpremul_SkAlphaType: return "Unpremul";
     }
-    return "";
+    SkASSERT(false);
+    return "unexpected alphatype";
 }
-
-sk_sp<SkTypeface> emoji_typeface() {
-#if defined(SK_BUILD_FOR_WIN)
-    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
-    const char *colorEmojiFontName = "Segoe UI Emoji";
-    sk_sp<SkTypeface> typeface(fm->matchFamilyStyle(colorEmojiFontName, SkFontStyle()));
-    if (typeface) {
-        return typeface;
-    }
-    sk_sp<SkTypeface> fallback(fm->matchFamilyStyleCharacter(
-        colorEmojiFontName, SkFontStyle(), nullptr /* bcp47 */, 0 /* bcp47Count */,
-        0x1f4b0 /* character: 💰 */));
-    if (fallback) {
-        return fallback;
-    }
-    // If we don't have Segoe UI Emoji and can't find a fallback, try Segoe UI Symbol.
-    // Windows 7 does not have Segoe UI Emoji; Segoe UI Symbol has the (non - color) emoji.
-    return SkTypeface::MakeFromName("Segoe UI Symbol", SkFontStyle());
-
-#elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
-    return SkTypeface::MakeFromName("Apple Color Emoji", SkFontStyle());
-
-#else
-    return MakeResourceAsTypeface("fonts/Funkster.ttf");
-
-#endif
-}
-
-const char* emoji_sample_text() {
-#if defined(SK_BUILD_FOR_WIN) || defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
-    return "\xF0\x9F\x92\xB0" "\xF0\x9F\x8F\xA1" "\xF0\x9F\x8E\x85"  // 💰🏡🎅
-           "\xF0\x9F\x8D\xAA" "\xF0\x9F\x8D\x95" "\xF0\x9F\x9A\x80"  // 🍪🍕🚀
-           "\xF0\x9F\x9A\xBB" "\xF0\x9F\x92\xA9" "\xF0\x9F\x93\xB7"  // 🚻💩📷
-           "\xF0\x9F\x93\xA6"                                        // 📦
-           "\xF0\x9F\x87\xBA" "\xF0\x9F\x87\xB8" "\xF0\x9F\x87\xA6"; // 🇺🇸🇦
-#else
-    return "Hamburgefons";
-#endif
-}
-
-static bool extra_config_contains(const char* substring) {
-    for (int index = 0; index < FLAGS_key.count(); index += 2) {
-        if (0 == strcmp("extra_config", FLAGS_key[index])
-                && strstr(FLAGS_key[index + 1], substring)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-const char* platform_font_manager() {
-    if (extra_config_contains("GDI")) {
-        return "GDI";
-    }
-    if (extra_config_contains("NativeFonts")){
-        return platform_os_name();
-    }
-    return "";
-}
-
 
 const char* colortype_name(SkColorType ct) {
     switch (ct) {
         case kUnknown_SkColorType:      return "Unknown";
         case kAlpha_8_SkColorType:      return "Alpha_8";
-        case kARGB_4444_SkColorType:    return "ARGB_4444";
         case kRGB_565_SkColorType:      return "RGB_565";
+        case kARGB_4444_SkColorType:    return "ARGB_4444";
         case kRGBA_8888_SkColorType:    return "RGBA_8888";
+        case kRGB_888x_SkColorType:     return "RGB_888x";
         case kBGRA_8888_SkColorType:    return "BGRA_8888";
+        case kRGBA_1010102_SkColorType: return "RGBA_1010102";
+        case kRGB_101010x_SkColorType:  return "RGB_101010x";
+        case kGray_8_SkColorType:       return "Gray_8";
         case kRGBA_F16_SkColorType:     return "RGBA_F16";
-        default:
-            SkASSERT(false);
-            return "unexpected colortype";
     }
+    SkASSERT(false);
+    return "unexpected colortype";
 }
 
 SkColor color_to_565(SkColor color) {
@@ -114,20 +56,18 @@ SkColor color_to_565(SkColor color) {
     return SkPixel16ToColor(color16);
 }
 
-sk_sp<SkTypeface> create_portable_typeface(const char* name, SkFontStyle style) {
-    return create_font(name, style);
-}
-
-void set_portable_typeface(SkPaint* paint, const char* name, SkFontStyle style) {
-    paint->setTypeface(create_font(name, style));
-}
-
 void write_pixels(SkCanvas* canvas, const SkBitmap& bitmap, int x, int y,
                   SkColorType colorType, SkAlphaType alphaType) {
     SkBitmap tmp(bitmap);
     const SkImageInfo info = SkImageInfo::Make(tmp.width(), tmp.height(), colorType, alphaType);
 
     canvas->writePixels(info, tmp.getPixels(), tmp.rowBytes(), x, y);
+}
+
+void write_pixels(SkSurface* surface, const SkBitmap& src, int x, int y,
+                  SkColorType colorType, SkAlphaType alphaType) {
+    const SkImageInfo info = SkImageInfo::Make(src.width(), src.height(), colorType, alphaType);
+    surface->writePixels({info, src.getPixels(), src.rowBytes()}, x, y);
 }
 
 sk_sp<SkShader> create_checkerboard_shader(SkColor c1, SkColor c2, int size) {

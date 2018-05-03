@@ -8,6 +8,7 @@
 <translation id="1243314992276662751">Отпреми</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">ПРЕПОРУЧЕНЕ АПЛИКАЦИЈЕ</translation>
+<translation id="1368832886055348810">Слева надесно</translation>
 <translation id="1398853756734560583">Увећај</translation>
 <translation id="1413622004203049571">Онемогући обавештења од <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 минут и }one{# минут и }few{# минута и }other{# минута и }}</translation>
@@ -21,6 +22,7 @@
 <translation id="1812519734428420144">Оцена у звездицама: <ph name="RATING_SCORE" /></translation>
 <translation id="1830179671306812954">{HOURS,plural, =1{1 сат и }one{# сат и }few{# сата и }other{# сати и }}</translation>
 <translation id="1842960171412779397">изабери</translation>
+<translation id="1859234291848436338">Writing Direction (Смер писања)</translation>
 <translation id="1860796786778352021">Затвори обавештење</translation>
 <translation id="1871244248791675517">Ins</translation>
 <translation id="1884435127456172652"><ph name="NUMBER" />%</translation>
@@ -30,6 +32,7 @@
 <translation id="2168039046890040389">Страница нагоре</translation>
 <translation id="2190355936436201913">(празно)</translation>
 <translation id="219905428774326614">Покретач, све апликације</translation>
+<translation id="2267918077332197517">Блокирај сва обавештења са овог сајта</translation>
 <translation id="2289052229480071835">Додирните циљна поља за додир на екрану.</translation>
 <translation id="2295140143284145483">Анкета</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
@@ -50,7 +53,9 @@
 <translation id="3183922693828471536">Помери се овде</translation>
 <translation id="3234408098842461169">Стрелица надоле</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{1 дан}one{# дан}few{# дана}other{# дана}}</translation>
+<translation id="335581015389089642">Говор</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{Још 1 дан}one{Још # дан}few{Још # дана}other{Још # дана}}</translation>
+<translation id="3618849550573277856">Потражи „<ph name="LOOKUP_STRING" />“</translation>
 <translation id="364720409959344976">Избор директоријума за отпремање</translation>
 <translation id="3660179305079774227">Стрелица нагоре</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> GB/s</translation>
@@ -63,8 +68,8 @@
 <translation id="4202807286478387388">прескочи</translation>
 <translation id="4250229828105606438">Снимак екрана</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{Пре месец дана}one{Пре # месец}few{Пре # месеца}other{Пре # месеци}}</translation>
+<translation id="4289300219472526559">Почните да говорите</translation>
 <translation id="4316910396681052118">СВЕ АПЛИКАЦИЈЕ</translation>
-<translation id="4320177379694898372">Нема интернет везе</translation>
 <translation id="4588090240171750605">Помери надесно</translation>
 <translation id="4724120544754982507">Центар за обавештења, непрочитаних обавештења: <ph name="UNREAD_NOTIFICATION_COUNT" /></translation>
 <translation id="4730374152663651037">ЧЕСТО КОРИШЋЕНЕ</translation>
@@ -102,7 +107,9 @@
 <translation id="6351032674660237738">ПРЕДЛОЗИ АПЛИКАЦИЈА</translation>
 <translation id="6364916375976753737">Помери налево</translation>
 <translation id="6394627529324717982">Зарез</translation>
+<translation id="6397363302884558537">Престаните да говорите</translation>
 <translation id="6404817160109697034">{SECONDS,plural, =1{Пре 1 сек}one{Пре # сек}few{Пре # сек}other{Пре # сек}}</translation>
+<translation id="6430678249303439055">Блокирај сва обавештења из ове апликације</translation>
 <translation id="6483402905448010557">{SECONDS,plural, =1{Пре 1 секунду}one{Пре # секунду}few{Пре # секунде}other{Пре # секунди}}</translation>
 <translation id="654149438358937226">Блокирај сва обавештења</translation>
 <translation id="6567071839949112727">кликните на претходни елемент</translation>
@@ -119,6 +126,7 @@
 <translation id="6917971086528278418">{YEARS,plural, =1{Још 1 година}one{Још # година}few{Још # године}other{Још # година}}</translation>
 <translation id="6945221475159498467">Изабери</translation>
 <translation id="6965382102122355670">Потврди</translation>
+<translation id="6974053822202609517">Здесна налево</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">НАЈВЕРОВАТНИЈЕ</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -142,7 +150,6 @@
 <translation id="8328145009876646418">Лева ивица</translation>
 <translation id="8331626408530291785">Помери нагоре</translation>
 <translation id="8352146631962686268">{YEARS,plural, =1{1 година}one{# година}few{# године}other{# година}}</translation>
-<translation id="8371695176452482769">Почните да говорите</translation>
 <translation id="838869780401515933">изабери</translation>
 <translation id="8393700583063109961">Пошаљите поруку</translation>
 <translation id="8394908167088220973">Пуштање/паузирање медија</translation>
@@ -153,6 +160,7 @@
 <translation id="8725488761726303204">и још <ph name="NUMBER" /></translation>
 <translation id="8730621377337864115">Готово</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 с}one{# с}few{# с}other{# с}}</translation>
+<translation id="8798099450830957504">Подразумевано</translation>
 <translation id="8806053966018712535">Директоријум <ph name="FOLDER_NAME" /></translation>
 <translation id="883911313571074303">Додај напомену у слику</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KB</translation>

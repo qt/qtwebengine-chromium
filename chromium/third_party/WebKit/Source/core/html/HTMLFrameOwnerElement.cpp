@@ -35,9 +35,9 @@
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/Page.h"
-#include "core/probe/CoreProbes.h"
+#include "core/page/scrolling/RootScrollerController.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "platform/heap/HeapAllocator.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
@@ -106,12 +106,8 @@ void HTMLFrameOwnerElement::ClearContentFrame() {
   if (!content_frame_)
     return;
 
-  Frame* frame = content_frame_;
   DCHECK_EQ(content_frame_->Owner(), this);
   content_frame_ = nullptr;
-
-  if (frame->IsLocalFrame())
-    probe::frameDisconnected(ToLocalFrame(frame), this);
 
   for (ContainerNode* node = this; node; node = node->ParentOrShadowHostNode())
     node->DecrementConnectedSubframeCount();
@@ -273,6 +269,8 @@ void HTMLFrameOwnerElement::SetEmbeddedContentView(
     embedded_content_view_->AttachToLayout();
   }
 
+  GetDocument().GetRootScrollerController().DidUpdateIFrameFrameView(*this);
+
   if (AXObjectCache* cache = GetDocument().ExistingAXObjectCache())
     cache->ChildrenChanged(layout_embedded_content);
 }
@@ -330,6 +328,13 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
     child_load_type = kFrameLoadTypeReloadBypassingCache;
     request.SetCacheMode(mojom::FetchCacheMode::kBypassCache);
   }
+
+  // Plug-ins should not load via service workers as plug-ins may have their
+  // own origin checking logic that may get confused if service workers respond
+  // with resources from another origin.
+  // https://w3c.github.io/ServiceWorker/#implementer-concerns
+  if (IsPlugin())
+    request.SetSkipServiceWorker(true);
 
   child_frame->Loader().Load(FrameLoadRequest(&GetDocument(), request),
                              child_load_type);

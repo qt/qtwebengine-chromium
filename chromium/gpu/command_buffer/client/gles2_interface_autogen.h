@@ -744,6 +744,12 @@ virtual void GenSyncTokenCHROMIUM(GLbyte* sync_token) = 0;
 virtual void GenUnverifiedSyncTokenCHROMIUM(GLbyte* sync_token) = 0;
 virtual void VerifySyncTokensCHROMIUM(GLbyte** sync_tokens, GLsizei count) = 0;
 virtual void WaitSyncTokenCHROMIUM(const GLbyte* sync_token) = 0;
+virtual void UnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
+                                                GLuint dest_id,
+                                                GLint x,
+                                                GLint y,
+                                                GLsizei width,
+                                                GLsizei height) = 0;
 virtual void DrawBuffersEXT(GLsizei count, const GLenum* bufs) = 0;
 virtual void DiscardBackbufferCHROMIUM() = 0;
 virtual void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
@@ -919,7 +925,8 @@ virtual void BeginRasterCHROMIUM(GLuint texture_id,
                                  GLuint msaa_sample_count,
                                  GLboolean can_use_lcd_text,
                                  GLboolean use_distance_field_text,
-                                 GLint pixel_config) = 0;
+                                 GLint color_type,
+                                 GLuint color_space_transfer_cache_id) = 0;
 virtual void* MapRasterCHROMIUM(GLsizeiptr size) = 0;
 virtual void UnmapRasterCHROMIUM(GLsizeiptr written_size) = 0;
 virtual void EndRasterCHROMIUM() = 0;

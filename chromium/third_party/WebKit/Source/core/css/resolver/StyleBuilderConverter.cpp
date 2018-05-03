@@ -698,10 +698,10 @@ StyleSelfAlignmentData StyleBuilderConverter::ConvertSelfOrDefaultAlignmentData(
                CSSValueLast) {
       alignment_data.SetPosition(ItemPosition::kLastBaseline);
     } else {
-      alignment_data.SetPosition(
-          ToCSSIdentifierValue(pair.First()).ConvertTo<ItemPosition>());
       alignment_data.SetOverflow(
-          ToCSSIdentifierValue(pair.Second()).ConvertTo<OverflowAlignment>());
+          ToCSSIdentifierValue(pair.First()).ConvertTo<OverflowAlignment>());
+      alignment_data.SetPosition(
+          ToCSSIdentifierValue(pair.Second()).ConvertTo<ItemPosition>());
     }
   } else {
     alignment_data.SetPosition(
@@ -1001,6 +1001,15 @@ float StyleBuilderConverter::ConvertBorderWidth(StyleResolverState& state,
                         defaultMaximumForClamp<float>());
 }
 
+GapLength StyleBuilderConverter::ConvertGapLength(StyleResolverState& state,
+                                                  const CSSValue& value) {
+  if (value.IsIdentifierValue() &&
+      ToCSSIdentifierValue(value).GetValueID() == CSSValueNormal)
+    return GapLength();
+
+  return GapLength(ConvertLength(state, value));
+}
+
 Length StyleBuilderConverter::ConvertLength(const StyleResolverState& state,
                                             const CSSValue& value) {
   return ToCSSPrimitiveValue(value).ConvertToLength(
@@ -1271,6 +1280,7 @@ ShadowData StyleBuilderConverter::ConvertShadow(
         switch (value_id) {
           case CSSValueInvalid:
             NOTREACHED();
+            FALLTHROUGH;
           case CSSValueInternalQuirkInherit:
           case CSSValueWebkitLink:
           case CSSValueWebkitActivelink:
@@ -1557,7 +1567,7 @@ scoped_refptr<ScaleTransformOperation> StyleBuilderConverter::ConvertScale(
   const CSSValueList& list = ToCSSValueList(value);
   DCHECK_LE(list.length(), 3u);
   double sx = ToCSSPrimitiveValue(list.Item(0)).GetDoubleValue();
-  double sy = 1;
+  double sy = sx;
   double sz = 1;
   if (list.length() >= 2)
     sy = ToCSSPrimitiveValue(list.Item(1)).GetDoubleValue();

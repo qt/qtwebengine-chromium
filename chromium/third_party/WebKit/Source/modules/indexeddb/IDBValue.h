@@ -45,7 +45,6 @@ class MODULES_EXPORT IDBValue final {
   // Used by IDBValueUnwrapper tests.
   static std::unique_ptr<IDBValue> Create(
       scoped_refptr<SharedBuffer> unwrapped_data,
-      Vector<scoped_refptr<BlobDataHandle>>,
       Vector<WebBlobInfo>);
 
   ~IDBValue();
@@ -53,7 +52,6 @@ class MODULES_EXPORT IDBValue final {
   size_t DataSize() const { return data_ ? data_->size() : 0; }
 
   bool IsNull() const;
-  Vector<String> GetUUIDs() const;
   scoped_refptr<SerializedScriptValue> CreateSerializedValue() const;
   const Vector<WebBlobInfo>& BlobInfo() const { return blob_info_; }
   const IDBKey* PrimaryKey() const { return primary_key_.get(); }
@@ -98,14 +96,12 @@ class MODULES_EXPORT IDBValue final {
 
   IDBValue(const WebData&, const WebVector<WebBlobInfo>&);
   IDBValue(scoped_refptr<SharedBuffer> unwrapped_data,
-           Vector<scoped_refptr<BlobDataHandle>>,
            Vector<WebBlobInfo>);
 
   // Keep this private to prevent new refs because we manually bookkeep the
   // memory to V8.
   scoped_refptr<SharedBuffer> data_;
 
-  Vector<scoped_refptr<BlobDataHandle>> blob_data_;
   Vector<WebBlobInfo> blob_info_;
 
   std::unique_ptr<IDBKey> primary_key_;

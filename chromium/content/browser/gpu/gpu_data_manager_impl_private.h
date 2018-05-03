@@ -44,7 +44,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   bool GpuAccessAllowed(std::string* reason) const;
   void RequestCompleteGpuInfoIfNeeded();
   bool IsEssentialGpuInfoAvailable() const;
-  bool IsCompleteGpuInfoAvailable() const;
   bool IsGpuFeatureInfoAvailable() const;
   gpu::GpuFeatureStatus GetFeatureStatus(gpu::GpuFeatureType feature) const;
   void RequestVideoMemoryUsageStatsUpdate(
@@ -53,21 +52,13 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   void AddObserver(GpuDataManagerObserver* observer);
   void RemoveObserver(GpuDataManagerObserver* observer);
   void UnblockDomainFrom3DAPIs(const GURL& url);
-  void SetGLStrings(const std::string& gl_vendor,
-                    const std::string& gl_renderer,
-                    const std::string& gl_version);
   void DisableHardwareAcceleration();
   bool HardwareAccelerationEnabled() const;
-  void DisableSwiftShader();
-  void SetGpuInfo(const gpu::GPUInfo& gpu_info);
-
-  void Initialize();
+  void BlockSwiftShader();
 
   void UpdateGpuInfo(const gpu::GPUInfo& gpu_info);
   void UpdateGpuFeatureInfo(const gpu::GpuFeatureInfo& gpu_feature_info);
   gpu::GpuFeatureInfo GetGpuFeatureInfo() const;
-
-  void AppendRendererCommandLine(base::CommandLine* command_line) const;
 
   void AppendGpuCommandLine(base::CommandLine* command_line) const;
 
@@ -150,10 +141,11 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   explicit GpuDataManagerImplPrivate(GpuDataManagerImpl* owner);
 
-  void RunPostInitTasks();
-
   // Notify all observers whenever there is a GPU info update.
   void NotifyGpuInfoUpdate();
+
+  // Called when gpu process becomes blocked.
+  void OnGpuProcessBlocked();
 
   // Helper to extract the domain from a given URL.
   std::string GetDomainFromURL(const GURL& url) const;
@@ -166,6 +158,12 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   GpuDataManagerImpl::DomainBlockStatus Are3DAPIsBlockedAtTime(
       const GURL& url, base::Time at_time) const;
   int64_t GetBlockAllDomainsDurationInMs() const;
+
+  // This is platform specific. At the moment:
+  //   1) on MacOSX, if GL strings are missing, this returns true;
+  //   2) on Windows, if DxDiagnostics are missing, this returns true;
+  //   3) all other platforms, this returns false.
+  bool NeedsCompleteGpuInfoCollection() const;
 
   bool complete_gpu_info_already_requested_;
 
@@ -183,8 +181,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   // the --disable-gpu commandline switch.
   bool card_disabled_;
 
-  // SwiftShader force-disabled due to GPU crashes using SwiftShader.
-  bool swiftshader_disabled_;
+  // SwiftShader force-blocked due to GPU crashes using SwiftShader.
+  bool swiftshader_blocked_;
 
   // We disable histogram stuff in testing, especially in unit tests because
   // they cause random failures.
@@ -196,24 +194,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   GpuDataManagerImpl* owner_;
 
-  bool gpu_process_accessible_;
-
-  // True if Initialize() has been completed.
-  bool is_initialized_;
-
-  // True if all future Initialize calls should be ignored.
-  bool finalized_;
-
   // True if --single-process or --in-process-gpu is passed in.
   bool in_process_gpu_;
-
-  // If one tries to call a member before initialization then it is defered
-  // until Initialize() is completed.
-  std::vector<base::Closure> post_init_tasks_;
-
-#if defined(OS_ANDROID)
-  bool blacklist_accelerated_video_decode_ = false;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(GpuDataManagerImplPrivate);
 };

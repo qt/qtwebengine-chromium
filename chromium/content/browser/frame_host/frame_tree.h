@@ -17,7 +17,7 @@
 #include "base/macros.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/common/content_export.h"
-#include "services/service_manager/public/interfaces/interface_provider.mojom.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom.h"
 
 namespace blink {
 struct FramePolicy;
@@ -201,7 +201,8 @@ class CONTENT_EXPORT FrameTree {
   void FrameRemoved(FrameTreeNode* frame);
 
   // Updates the overall load progress and notifies the WebContents.
-  void UpdateLoadProgress();
+  // Set based on the main frame's progress only.
+  void UpdateLoadProgress(double progress);
 
   // Returns this FrameTree's total load progress.
   double load_progress() { return load_progress_; }

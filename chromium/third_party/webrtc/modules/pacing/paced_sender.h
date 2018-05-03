@@ -15,7 +15,7 @@
 
 #include "api/optional.h"
 #include "modules/pacing/pacer.h"
-#include "modules/pacing/packet_queue2.h"
+#include "modules/pacing/packet_queue_interface.h"
 #include "rtc_base/criticalsection.h"
 #include "rtc_base/thread_annotations.h"
 #include "typedefs.h"  // NOLINT(build/include)
@@ -69,7 +69,7 @@ class PacedSender : public Pacer {
   PacedSender(const Clock* clock,
               PacketSender* packet_sender,
               RtcEventLog* event_log,
-              std::unique_ptr<PacketQueue> packets);
+              std::unique_ptr<PacketQueueInterface> packets);
 
   ~PacedSender() override;
 
@@ -86,22 +86,15 @@ class PacedSender : public Pacer {
   // effect.
   void SetProbingEnabled(bool enabled);
 
-  // Sets the estimated capacity of the network. Must be called once before
-  // packets can be sent.
-  // |bitrate_bps| is our estimate of what we are allowed to send on average.
-  // We will pace out bursts of packets at a bitrate of
-  // |bitrate_bps| * kDefaultPaceMultiplier.
+  // Deprecated, SetPacingRates should be used instead.
   void SetEstimatedBitrate(uint32_t bitrate_bps) override;
-
-  // Sets the minimum send bitrate and maximum padding bitrate requested by send
-  // streams.
-  // |min_send_bitrate_bps| might be higher that the estimated available network
-  // bitrate and if so, the pacer will send with |min_send_bitrate_bps|.
-  // |max_padding_bitrate_bps| might be higher than the estimate available
-  // network bitrate and if so, the pacer will send padding packets to reach
-  // the min of the estimated available bitrate and |max_padding_bitrate_bps|.
+  // Deprecated, SetPacingRates should be used instead.
   void SetSendBitrateLimits(int min_send_bitrate_bps,
                             int max_padding_bitrate_bps);
+
+  // Sets the pacing rates. Must be called once before packets can be sent.
+  void SetPacingRates(uint32_t pacing_rate_bps,
+                      uint32_t padding_rate_bps) override;
 
   // Returns true if we send the packet now, else it will add the packet
   // information to the queue and call TimeToSendPacket when it's time to send.
@@ -131,12 +124,7 @@ class PacedSender : public Pacer {
   // packets in the queue, given the current size and bitrate, ignoring prio.
   virtual int64_t ExpectedQueueTimeMs() const;
 
-  // Returns time in milliseconds when the current application-limited region
-  // started or empty result if the sender is currently not application-limited.
-  //
-  // Application Limited Region (ALR) refers to operating in a state where the
-  // traffic on network is limited due to application not having enough
-  // traffic to meet the current channel capacity.
+  // Deprecated, alr detection will be moved out of the pacer.
   virtual rtc::Optional<int64_t> GetApplicationLimitedRegionStartTime() const;
 
   // Returns the number of milliseconds until the module want a worker thread
@@ -148,8 +136,8 @@ class PacedSender : public Pacer {
 
   // Called when the prober is associated with a process thread.
   void ProcessThreadAttached(ProcessThread* process_thread) override;
+  // Deprecated, SetPacingRates should be used instead.
   void SetPacingFactor(float pacing_factor);
-  float GetPacingFactor() const;
   void SetQueueTimeLimit(int limit_ms);
 
  private:
@@ -159,7 +147,7 @@ class PacedSender : public Pacer {
   void UpdateBudgetWithBytesSent(size_t bytes)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(critsect_);
 
-  bool SendPacket(const PacketQueue::Packet& packet,
+  bool SendPacket(const PacketQueueInterface::Packet& packet,
                   const PacedPacketInfo& cluster_info)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(critsect_);
   size_t SendPadding(size_t padding_needed, const PacedPacketInfo& cluster_info)
@@ -190,14 +178,23 @@ class PacedSender : public Pacer {
   uint32_t max_padding_bitrate_kbps_ RTC_GUARDED_BY(critsect_);
   uint32_t pacing_bitrate_kbps_ RTC_GUARDED_BY(critsect_);
 
-  int64_t time_last_update_us_ RTC_GUARDED_BY(critsect_);
+  int64_t time_last_process_us_ RTC_GUARDED_BY(critsect_);
+  int64_t last_send_time_us_ RTC_GUARDED_BY(critsect_);
   int64_t first_sent_packet_ms_ RTC_GUARDED_BY(critsect_);
 
-  const std::unique_ptr<PacketQueue> packets_ RTC_PT_GUARDED_BY(critsect_);
+  const std::unique_ptr<PacketQueueInterface> packets_
+      RTC_PT_GUARDED_BY(critsect_);
   uint64_t packet_counter_ RTC_GUARDED_BY(critsect_);
-  ProcessThread* process_thread_ = nullptr;
 
   float pacing_factor_ RTC_GUARDED_BY(critsect_);
+  // Lock to avoid race when attaching process thread. This can happen due to
+  // the Call class setting network state on SendSideCongestionController, which
+  // in turn calls Pause/Resume on Pacedsender, before actually starting the
+  // pacer process thread. If SendSideCongestionController is running on a task
+  // queue separate from the thread used by Call, this causes a race.
+  rtc::CriticalSection process_thread_lock_;
+  ProcessThread* process_thread_ RTC_GUARDED_BY(process_thread_lock_) = nullptr;
+
   int64_t queue_time_limit RTC_GUARDED_BY(critsect_);
   bool account_for_audio_ RTC_GUARDED_BY(critsect_);
 };

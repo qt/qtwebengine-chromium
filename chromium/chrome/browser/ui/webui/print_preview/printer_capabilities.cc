@@ -21,8 +21,8 @@
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/browser/ui/webui/print_preview/printer_handler.h"
-#include "chrome/common/cloud_print/cloud_print_cdd_conversion.h"
-#include "chrome/common/crash_keys.h"
+#include "components/crash/core/common/crash_keys.h"
+#include "components/printing/common/cloud_print_cdd_conversion.h"
 #include "content/public/browser/render_frame_host.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/print_backend_consts.h"
@@ -32,7 +32,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/grit/generated_resources.h"
+#include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #endif
 

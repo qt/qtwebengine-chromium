@@ -13,15 +13,15 @@ vars = {
   'chromium_git': 'https://chromium.googlesource.com',
   'pdfium_git': 'https://pdfium.googlesource.com',
 
-  'android_ndk_revision': 'd57523210239b867fa4fb9d05c2aacc3f1802fe0',
+  'android_ndk_revision': 'e951c37287c7d8cd915bf8d4149fd4a06d808b55',
   'binutils_revision': 'e146228c20af6af922887d0be2d3641cbffb33c5',
-  'build_revision': '097c79babc9b2ce40b61c3e33da1c6681acf837c',
-  'buildtools_revision': 'b36c7b60ed73919b157c7d23ec5fce2aa69ab05e',
+  'build_revision': '7bee8be1e0ed713aa9ddeb422a459fced9412c9f',
+  'buildtools_revision': 'f115f4786771afdfacb18a2299541b23e21f4792',
   'catapult_revision': 'd624b3ced2c81d4fb4ea98a8dbb4532272cc1e0a',
-  'clang_revision': 'ac1e5f78c39dc2a262af149404dd36c140eecdc1',
+  'clang_revision': '7e6931239f20219e3c993b7f8d864217bdbe925e',
   'cygwin_revision': 'c89e446b273697fadf3a10ff1007a97c0b7de6df',
   'depot_tools_revision': '2e8d8348b8574f06c26dbf3ef959b5df11ba5148',
-  'freetype_revision': '2c048a8a622e9f44f255aa3316026f124ac9ecbc',
+  'freetype_revision': '713d68ee9f47cc8df56e47fa2f54b191bb8c3186',
   'gmock_revision': '29763965ab52f24565299976b936d1265cb6a271',
   'gtest_revision': '8245545b6dc9c4703e6496d1efd19e975ad2b038',
   'icu_revision': 'e3b480d3be4446ea17011c0cdc9c4cd380a5c58f',
@@ -29,11 +29,11 @@ vars = {
   'jinja2_revision': 'd34383206fa42d52faa10bb9931d6d538f3a57e0',
   'jpeg_turbo_revision': '7260e4d8b8e1e40b17f03fafdf1cd83296900f76',
   'markupsafe_revision': '8f45f5cfa0009d2a70589bcda0349b8cb2b72783',
-  'pdfium_tests_revision': '3d6228da656a3974d72223a702e6804df494703e',
+  'pdfium_tests_revision': 'adcc738d124799800ab2f3eb7cf0dfbd301cd759',
   'skia_revision': '40ca2087ef0752d78fd2e0995471102fe96fe9fe',
   'tools_memory_revision': '427f10475e1a8d72424c29d00bf689122b738e5d',
   'trace_event_revision': '0e9a47d74970bee1bbfc063c47215406f8918699',
-  'v8_revision': '0c287882ea233f299a91f6b72b56d8faaecf52c0',
+  'v8_revision': '6353d168d0010be3933c39f122ecae26e0568e44',
   'yasm_source_revision': 'b98114e18d8b9b84586b10d24353ab8616d4c5fc',
   'zlib_revision': '91155b5d0737713fc7f0499cf0ba2c4f2af24014',
 }
@@ -237,20 +237,59 @@ hooks = [
     ],
   },
   {
-    # Downloads the current stable linux sysroot to build/linux/ if needed.
-    # This sysroot updates at about the same rate that the chrome build deps
-    # change.
-    'name': 'sysroot',
+    'name': 'sysroot_arm',
     'pattern': '.',
+    'condition': 'checkout_linux and checkout_arm',
     'action': ['python', 'pdfium/build/linux/sysroot_scripts/install-sysroot.py',
-               '--running-as-hook'],
+               '--arch=arm'],
+  },
+  {
+    'name': 'sysroot_arm64',
+    'pattern': '.',
+    'condition': 'checkout_linux and checkout_arm64',
+    'action': ['python', 'pdfium/build/linux/sysroot_scripts/install-sysroot.py',
+               '--arch=arm64'],
+  },
+  {
+    'name': 'sysroot_x86',
+    'pattern': '.',
+    'condition': 'checkout_linux and (checkout_x86 or checkout_x64)',
+    'action': ['python', 'pdfium/build/linux/sysroot_scripts/install-sysroot.py',
+               '--arch=x86'],
+  },
+  {
+    'name': 'sysroot_mips',
+    'pattern': '.',
+    'condition': 'checkout_linux and checkout_mips',
+    'action': ['python', 'pdfium/build/linux/sysroot_scripts/install-sysroot.py',
+               '--arch=mips'],
+  },
+  {
+    'name': 'sysroot_x64',
+    'pattern': '.',
+    'condition': 'checkout_linux and checkout_x64',
+    'action': ['python', 'pdfium/build/linux/sysroot_scripts/install-sysroot.py',
+               '--arch=x64'],
+  },
+  {
+    # Case-insensitivity for the Win SDK. Must run before win_toolchain below.
+    'name': 'ciopfs_linux',
+    'pattern': '.',
+    'condition': 'checkout_win and host_os == "linux"',
+    'action': [ 'python',
+                'pdfium/third_party/depot_tools/download_from_google_storage.py',
+                '--no_resume',
+                '--no_auth',
+                '--bucket', 'chromium-browser-clang/ciopfs',
+                '-s', 'pdfium/build/ciopfs.sha1',
+    ]
   },
   {
     # Update the Windows toolchain if necessary.
     'name': 'win_toolchain',
     'pattern': '.',
     'condition': 'checkout_win',
-    'action': ['vpython', 'pdfium/build/vs_toolchain.py', 'update', '--force'],
+    'action': ['python', 'pdfium/build/vs_toolchain.py', 'update', '--force'],
   },
   {
     # Update the Mac toolchain if necessary.

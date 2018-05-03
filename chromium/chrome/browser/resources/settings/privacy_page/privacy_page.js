@@ -80,14 +80,6 @@ Polymer({
     showClearBrowsingDataDialog_: Boolean,
 
     /** @private */
-    tabsInCbd_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('tabsInCbd');
-      }
-    },
-
-    /** @private */
     showDoNotTrackDialog_: {
       type: Boolean,
       value: false,
@@ -125,6 +117,15 @@ Polymer({
       type: Boolean,
       value: function() {
         return loadTimeData.getBoolean('enableClipboardContentSetting');
+      }
+    },
+
+    /** @private */
+    enableSensorsContentSetting_: {
+      type: Boolean,
+      readOnly: true,
+      value: function() {
+        return loadTimeData.getBoolean('enableSensorsContentSetting');
       }
     },
 
@@ -282,7 +283,7 @@ Polymer({
 
   /** @private */
   onDialogClosed_: function() {
-    settings.navigateToPreviousRoute();
+    settings.navigateTo(settings.routes.CLEAR_BROWSER_DATA.parent);
     cr.ui.focusWithoutInk(assert(this.$.clearBrowsingDataTrigger));
   },
 
@@ -337,16 +338,21 @@ Polymer({
   // </if>
 
   /**
-   * @param {boolean} enabled Whether reporting is enabled or not.
+   * @param {!SberPrefState} sberPrefState SBER enabled and managed state.
    * @private
    */
-  setSafeBrowsingExtendedReporting_: function(enabled) {
+  setSafeBrowsingExtendedReporting_: function(sberPrefState) {
     // Ignore the next change because it will happen when we set the pref.
-    this.safeBrowsingExtendedReportingPref_ = {
+    const pref = {
       key: '',
       type: chrome.settingsPrivate.PrefType.BOOLEAN,
-      value: enabled,
+      value: sberPrefState.enabled,
     };
+    if (sberPrefState.managed) {
+      pref.enforcement = chrome.settingsPrivate.Enforcement.ENFORCED;
+      pref.controlledBy = chrome.settingsPrivate.ControlledBy.USER_POLICY;
+    }
+    this.safeBrowsingExtendedReportingPref_ = pref;
   },
 
   /**

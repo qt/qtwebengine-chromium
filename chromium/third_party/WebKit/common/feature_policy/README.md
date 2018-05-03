@@ -4,7 +4,7 @@
 Feature policy (see [spec](https://wicg.github.io/feature-policy/)) is a
 mechanism that allows developers to selectively enable and disable various
 [browser features and
-APIs](https://cs.chromium.org/chromium/src/third_party/WebKit/common/feature_policy/feature_policy_feature.h)
+APIs](https://cs.chromium.org/chromium/src/third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom)
 (e.g, "vibrate", "fullscreen", "usb", etc.). A feature policy can be defined
 via a HTTP header and/or an iframe "allow" attribute.
 
@@ -44,18 +44,24 @@ A step-to-step guide with examples.
 
 ##### Shipping features behind a flag
 There are currently two runtime-enabled flags: `FeaturePolicy` (status:
-stable) and `FeaturePolicyExperiementalFeatures` (staus: experimental).
+stable) and `FeaturePolicyExperimentalFeatures` (status: experimental).
 If the additional feature is unshipped, or if the correct behaviour with feature
 policy is undetermined, consider shipping the feature behind a flag (i.e.,
 `FeaturePolicyExperimentalFeatures`).
 
 ##### Define new feature
 1. Feature policy features are defined in
-`third_party/WebKit/common/feature_policy/feature_policy_feature.h`. Add the new feature
+`third_party/WebKit/public/common/feature_policy/feature_policy_feature.h`. Add the new feature
 enum with a brief decription about what the feature does in the comment, right
 above `LAST_FEATURE`
 
-2. Update `third_party/WebKit/Source/platform/feature_policy/FeaturePolicy.cpp`:
+2. Append the new feature enum with a brief description as well in
+`third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom`
+
+3. Update `third_party/WebKit/public/mojom/feature_policy/feature_policy.mojom_traits.h`
+to include the new feature
+
+4. Update `third_party/WebKit/Source/platform/feature_policy/FeaturePolicy.cpp`:
 Add your `("feature-name", FeatureEnumValue)` mapping to
   `GetDefaultFeatureNameMap()` (note: "feature-name" is the string web
   developers will be using to define the policy in the HTTP header and iframe

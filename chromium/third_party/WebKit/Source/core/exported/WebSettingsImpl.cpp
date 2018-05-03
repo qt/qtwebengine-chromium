@@ -71,6 +71,10 @@ void WebSettingsImpl::SetFixedFontFamily(const WebString& font,
     settings_->NotifyGenericFontFamilyChange();
 }
 
+void WebSettingsImpl::SetForceMainWorldInitialization(bool enabled) {
+  settings_->SetForceMainWorldInitialization(enabled);
+}
+
 void WebSettingsImpl::SetForcePreloadNoneForMediaElements(bool enabled) {
   settings_->SetForcePreloadNoneForMediaElements(enabled);
 }
@@ -258,12 +262,6 @@ void WebSettingsImpl::SetLoadWithOverviewMode(bool enabled) {
 
 void WebSettingsImpl::SetShouldReuseGlobalForUnownedMainFrame(bool enabled) {
   settings_->SetShouldReuseGlobalForUnownedMainFrame(enabled);
-}
-
-void WebSettingsImpl::SetProgressBarCompletion(
-    ProgressBarCompletion progress_bar_completion) {
-  settings_->SetProgressBarCompletion(
-      static_cast<blink::ProgressBarCompletion>(progress_bar_completion));
 }
 
 void WebSettingsImpl::SetSavePreviousDocumentResources(
@@ -619,6 +617,10 @@ void WebSettingsImpl::SetShouldRespectImageOrientation(bool enabled) {
   settings_->SetShouldRespectImageOrientation(enabled);
 }
 
+void WebSettingsImpl::SetPictureInPictureEnabled(bool enabled) {
+  settings_->SetPictureInPictureEnabled(enabled);
+}
+
 void WebSettingsImpl::SetMediaPlaybackGestureWhitelistScope(
     const WebString& scope) {
   settings_->SetMediaPlaybackGestureWhitelistScope(scope);
@@ -632,8 +634,8 @@ void WebSettingsImpl::SetEmbeddedMediaExperienceEnabled(bool enabled) {
   settings_->SetEmbeddedMediaExperienceEnabled(enabled);
 }
 
-void WebSettingsImpl::SetPagePopupsSuppressed(bool suppressed) {
-  settings_->SetPagePopupsSuppressed(suppressed);
+void WebSettingsImpl::SetImmersiveModeEnabled(bool enabled) {
+  settings_->SetImmersiveModeEnabled(enabled);
 }
 
 void WebSettingsImpl::SetViewportEnabled(bool enabled) {

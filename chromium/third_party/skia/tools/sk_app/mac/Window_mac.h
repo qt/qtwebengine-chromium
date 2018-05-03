@@ -19,10 +19,11 @@ namespace sk_app {
 class Window_mac : public Window {
 public:
     Window_mac()
-        : INHERITED()
-        , fWindow(nullptr)
-        , fWindowID(0)
-        , fMSAASampleCount(0) {}
+            : INHERITED()
+            , fWindow(nullptr)
+            , fWindowID(0)
+            , fGLContext(nullptr)
+            , fMSAASampleCount(1) {}
     ~Window_mac() override { this->closeWindow(); }
 
     bool initWindow();
@@ -51,8 +52,9 @@ private:
 
     static SkTDynamicHash<Window_mac, Uint32> gWindowMap;
 
-    SDL_Window*  fWindow;
-    Uint32       fWindowID;
+    SDL_Window*   fWindow;
+    Uint32        fWindowID;
+    SDL_GLContext fGLContext;
 
     int          fMSAASampleCount;
 

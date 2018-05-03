@@ -27,17 +27,7 @@
 
 namespace blink {
 
-struct IntrinsicSizingInfo {
-  STACK_ALLOCATED();
-  IntrinsicSizingInfo() : has_width(true), has_height(true) {}
-
-  FloatSize size;
-  FloatSize aspect_ratio;
-  bool has_width;
-  bool has_height;
-
-  void Transpose();
-};
+struct IntrinsicSizingInfo;
 
 // LayoutReplaced is the base class for a replaced element as defined by CSS:
 //
@@ -146,7 +136,7 @@ class CORE_EXPORT LayoutReplaced : public LayoutBox {
   // CSS properties like 'zoom' or 'image-orientation'.
   virtual void IntrinsicSizeChanged();
 
-  PositionWithAffinity PositionForPoint(const LayoutPoint&) override;
+  PositionWithAffinity PositionForPoint(const LayoutPoint&) const override;
 
   bool IsOfType(LayoutObjectType type) const override {
     return type == kLayoutObjectLayoutReplaced || LayoutBox::IsOfType(type);

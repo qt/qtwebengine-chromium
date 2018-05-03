@@ -8,6 +8,8 @@
 #ifndef SkSafeMath_DEFINED
 #define SkSafeMath_DEFINED
 
+#include "SkTypes.h"
+
 // SkSafeMath always check that a series of operations do not overflow.
 // This must be correct for all platforms, because this is a check for safety at runtime.
 
@@ -48,9 +50,20 @@ public:
         return add(x, alignment - 1) & ~(alignment - 1);
     }
 
+    template <typename T> T castTo(size_t value) {
+        if (!SkTFitsIn<T>(value)) {
+            fOK = false;
+        }
+        return static_cast<T>(value);
+    }
+
     // These saturate to their results
     static size_t Add(size_t x, size_t y);
     static size_t Mul(size_t x, size_t y);
+    static size_t Align4(size_t x) {
+        SkSafeMath safe;
+        return safe.alignUp(x, 4);
+    }
 
 private:
     uint32_t mul32(uint32_t x, uint32_t y) {

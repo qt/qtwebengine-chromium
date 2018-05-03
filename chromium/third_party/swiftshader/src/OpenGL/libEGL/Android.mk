@@ -5,6 +5,10 @@ COMMON_CFLAGS := \
 	-std=c++11 \
 	-DEGLAPI= \
 	-DEGL_EGLEXT_PROTOTYPES \
+	-Wall \
+	-Werror \
+	-Wno-format \
+	-Wno-unused-function \
 	-Wno-unused-parameter \
 	-Wno-implicit-exception-spec-mismatch \
 	-Wno-overloaded-virtual \
@@ -68,14 +72,10 @@ LOCAL_MODULE := libEGL_swiftshader_debug
 ifdef TARGET_2ND_ARCH
 ifeq ($(TARGET_TRANSLATE_2ND_ARCH),true)
 LOCAL_MULTILIB := first
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/lib/egl
-else
-LOCAL_MODULE_PATH_32 := $(TARGET_OUT_VENDOR)/lib/egl
-LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64/egl
 endif
-else
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/lib/egl
 endif
+LOCAL_MODULE_RELATIVE_PATH := egl
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE_TAGS := optional
 LOCAL_CLANG := true
 LOCAL_SRC_FILES := $(COMMON_SRC_FILES)
@@ -92,14 +92,10 @@ LOCAL_MODULE := libEGL_swiftshader
 ifdef TARGET_2ND_ARCH
 ifeq ($(TARGET_TRANSLATE_2ND_ARCH),true)
 LOCAL_MULTILIB := first
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/lib/egl
-else
-LOCAL_MODULE_PATH_32 := $(TARGET_OUT_VENDOR)/lib/egl
-LOCAL_MODULE_PATH_64 := $(TARGET_OUT_VENDOR)/lib64/egl
 endif
-else
-LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/lib/egl
 endif
+LOCAL_MODULE_RELATIVE_PATH := egl
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE_TAGS := optional
 LOCAL_CLANG := true
 LOCAL_SRC_FILES := $(COMMON_SRC_FILES)

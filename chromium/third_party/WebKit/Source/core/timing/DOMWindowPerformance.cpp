@@ -6,7 +6,7 @@
 
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 
 namespace blink {
 
@@ -25,29 +25,27 @@ void DOMWindowPerformance::TraceWrappers(
 }
 
 // static
-const char* DOMWindowPerformance::SupplementName() {
-  return "DOMWindowPerformance";
-}
+const char DOMWindowPerformance::kSupplementName[] = "DOMWindowPerformance";
 
 // static
 DOMWindowPerformance& DOMWindowPerformance::From(LocalDOMWindow& window) {
-  DOMWindowPerformance* supplement = static_cast<DOMWindowPerformance*>(
-      Supplement<LocalDOMWindow>::From(window, SupplementName()));
+  DOMWindowPerformance* supplement =
+      Supplement<LocalDOMWindow>::From<DOMWindowPerformance>(window);
   if (!supplement) {
     supplement = new DOMWindowPerformance(window);
-    ProvideTo(window, SupplementName(), supplement);
+    ProvideTo(window, supplement);
   }
   return *supplement;
 }
 
 // static
-Performance* DOMWindowPerformance::performance(LocalDOMWindow& window) {
+WindowPerformance* DOMWindowPerformance::performance(LocalDOMWindow& window) {
   return From(window).performance();
 }
 
-Performance* DOMWindowPerformance::performance() {
+WindowPerformance* DOMWindowPerformance::performance() {
   if (!performance_)
-    performance_ = Performance::Create(GetSupplementable());
+    performance_ = WindowPerformance::Create(GetSupplementable());
   return performance_.Get();
 }
 

@@ -52,11 +52,10 @@ NavigatorVR* NavigatorVR::From(Document& document) {
 }
 
 NavigatorVR& NavigatorVR::From(Navigator& navigator) {
-  NavigatorVR* supplement = static_cast<NavigatorVR*>(
-      Supplement<Navigator>::From(navigator, SupplementName()));
+  NavigatorVR* supplement = Supplement<Navigator>::From<NavigatorVR>(navigator);
   if (!supplement) {
     supplement = new NavigatorVR(navigator);
-    ProvideTo(navigator, SupplementName(), supplement);
+    ProvideTo(navigator, supplement);
   }
   return *supplement;
 }
@@ -123,8 +122,8 @@ ScriptPromise NavigatorVR::getVRDisplays(ScriptState* script_state) {
         script_state, DOMException::Create(kInvalidStateError,
                                            kNotAssociatedWithDocumentMessage));
   }
-  if (IsSupportedInFeaturePolicy(FeaturePolicyFeature::kWebVr)) {
-    if (!frame->IsFeatureEnabled(FeaturePolicyFeature::kWebVr)) {
+  if (IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kWebVr)) {
+    if (!frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kWebVr)) {
       return ScriptPromise::RejectWithDOMException(
           script_state,
           DOMException::Create(kSecurityError, kFeaturePolicyBlockedMessage));
@@ -198,9 +197,7 @@ NavigatorVR::NavigatorVR(Navigator& navigator)
 
 NavigatorVR::~NavigatorVR() = default;
 
-const char* NavigatorVR::SupplementName() {
-  return "NavigatorVR";
-}
+const char NavigatorVR::kSupplementName[] = "NavigatorVR";
 
 void NavigatorVR::EnqueueVREvent(VRDisplayEvent* event) {
   if (!GetSupplementable()->GetFrame())

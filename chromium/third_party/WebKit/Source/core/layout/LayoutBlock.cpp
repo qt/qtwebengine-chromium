@@ -51,6 +51,7 @@
 #include "core/layout/api/LineLayoutItem.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/page/Page.h"
+#include "core/page/scrolling/RootScrollerController.h"
 #include "core/paint/BlockPaintInvalidator.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/ObjectPaintInvalidator.h"
@@ -185,7 +186,7 @@ void LayoutBlock::StyleWillChange(StyleDifference diff,
       // Remove our fixed positioned descendants from their current containing
       // block.
       // They will be inserted into our positioned objects list during layout.
-      if (LayoutBlock* cb = ContainerForFixedPosition())
+      if (LayoutBlock* cb = ContainingBlockForFixedPosition())
         cb->RemovePositionedObjects(this, kNewContainingBlock);
     }
   }
@@ -312,11 +313,14 @@ void LayoutBlock::AddChildBeforeDescendant(LayoutObject* new_child,
       || before_descendant_container->IsLayoutFullScreen() ||
       before_descendant_container->IsLayoutFullScreenPlaceholder()) {
     // Insert the child into the anonymous block box instead of here.
-    if (new_child->IsInline() || new_child->IsFloatingOrOutOfFlowPositioned() ||
-        before_descendant->Parent()->SlowFirstChild() != before_descendant)
+    if (new_child->IsInline() ||
+        (new_child->IsFloatingOrOutOfFlowPositioned() && !IsFlexibleBox() &&
+         !IsLayoutGrid()) ||
+        before_descendant->Parent()->SlowFirstChild() != before_descendant) {
       before_descendant_container->AddChild(new_child, before_descendant);
-    else
+    } else {
       AddChild(new_child, before_descendant->Parent());
+    }
     return;
   }
 
@@ -351,7 +355,8 @@ void LayoutBlock::AddChild(LayoutObject* new_child,
   // here.
   DCHECK(!ChildrenInline());
 
-  if (new_child->IsInline() || new_child->IsFloatingOrOutOfFlowPositioned()) {
+  if (new_child->IsInline() || (new_child->IsFloatingOrOutOfFlowPositioned() &&
+                                !IsFlexibleBox() && !IsLayoutGrid())) {
     // If we're inserting an inline child but all of our children are blocks,
     // then we have to make sure it is put into an anomyous block box. We try to
     // use an existing anonymous box if possible, otherwise a new one is created
@@ -409,6 +414,10 @@ void LayoutBlock::RemoveLeftoverAnonymousBlock(LayoutBlock* child) {
 
 void LayoutBlock::UpdateAfterLayout() {
   InvalidateStickyConstraints();
+
+  if (RuntimeEnabledFeatures::ImplicitRootScrollerEnabled() && GetNode())
+    GetDocument().GetRootScrollerController().ConsiderForImplicit(*GetNode());
+
   LayoutBox::UpdateAfterLayout();
 }
 
@@ -1179,7 +1188,7 @@ Position LayoutBlock::PositionForBox(InlineBox* box, bool start) const {
       start ? text_box->Start() : text_box->Start() + text_box->Len());
 }
 
-static inline bool IsEditingBoundary(LayoutObject* ancestor,
+static inline bool IsEditingBoundary(const LayoutObject* ancestor,
                                      LineLayoutBox child) {
   DCHECK(!ancestor || ancestor->NonPseudoNode());
   DCHECK(child);
@@ -1195,7 +1204,7 @@ static inline bool IsEditingBoundary(LayoutObject* ancestor,
 // prevent crossing editable boundaries. This would require many tests.
 PositionWithAffinity LayoutBlock::PositionForPointRespectingEditingBoundaries(
     LineLayoutBox child,
-    const LayoutPoint& point_in_parent_coordinates) {
+    const LayoutPoint& point_in_parent_coordinates) const {
   LayoutPoint child_location = child.Location();
   if (child.IsInFlowPositioned())
     child_location += child.OffsetForInFlowPosition();
@@ -1206,14 +1215,14 @@ PositionWithAffinity LayoutBlock::PositionForPointRespectingEditingBoundaries(
       ToLayoutPoint(point_in_parent_coordinates - child_location));
 
   // If this is an anonymous layoutObject, we just recur normally
-  Node* child_node = child.NonPseudoNode();
+  const Node* child_node = child.NonPseudoNode();
   if (!child_node)
     return child.PositionForPoint(point_in_child_coordinates);
 
   // Otherwise, first make sure that the editability of the parent and child
   // agree. If they don't agree, then we return a visible position just before
   // or after the child
-  LayoutObject* ancestor = this;
+  const LayoutObject* ancestor = this;
   while (ancestor && !ancestor->NonPseudoNode())
     ancestor = ancestor->Parent();
 
@@ -1235,7 +1244,7 @@ PositionWithAffinity LayoutBlock::PositionForPointRespectingEditingBoundaries(
 }
 
 PositionWithAffinity LayoutBlock::PositionForPointIfOutsideAtomicInlineLevel(
-    const LayoutPoint& point) {
+    const LayoutPoint& point) const {
   DCHECK(IsAtomicInlineLevel());
   // FIXME: This seems wrong when the object's writing-mode doesn't match the
   // line's writing-mode.
@@ -1261,7 +1270,8 @@ static inline bool IsChildHitTestCandidate(LayoutBox* box) {
          !box->IsOutOfFlowPositioned() && !box->IsLayoutFlowThread();
 }
 
-PositionWithAffinity LayoutBlock::PositionForPoint(const LayoutPoint& point) {
+PositionWithAffinity LayoutBlock::PositionForPoint(
+    const LayoutPoint& point) const {
   if (IsTable())
     return LayoutBox::PositionForPoint(point);
 
@@ -1455,17 +1465,17 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
       child->SetPreferredLogicalWidthsDirty();
     }
 
-    scoped_refptr<ComputedStyle> child_style = child->MutableStyle();
+    const ComputedStyle& child_style = child->StyleRef();
     if (child->IsFloating() ||
         (child->IsBox() && ToLayoutBox(child)->AvoidsFloats())) {
       LayoutUnit float_total_width = float_left_width + float_right_width;
-      if (child_style->Clear() == EClear::kBoth ||
-          child_style->Clear() == EClear::kLeft) {
+      if (child_style.Clear() == EClear::kBoth ||
+          child_style.Clear() == EClear::kLeft) {
         max_logical_width = std::max(float_total_width, max_logical_width);
         float_left_width = LayoutUnit();
       }
-      if (child_style->Clear() == EClear::kBoth ||
-          child_style->Clear() == EClear::kRight) {
+      if (child_style.Clear() == EClear::kBoth ||
+          child_style.Clear() == EClear::kRight) {
         max_logical_width = std::max(float_total_width, max_logical_width);
         float_right_width = LayoutUnit();
       }
@@ -1475,8 +1485,8 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
     // (variable).
     // Auto and percentage margins simply become 0 when computing min/max width.
     // Fixed margins can be added in as is.
-    Length start_margin_length = child_style->MarginStartUsing(style_to_use);
-    Length end_margin_length = child_style->MarginEndUsing(style_to_use);
+    Length start_margin_length = child_style.MarginStartUsing(style_to_use);
+    Length end_margin_length = child_style.MarginEndUsing(style_to_use);
     LayoutUnit margin;
     LayoutUnit margin_start;
     LayoutUnit margin_end;
@@ -1530,7 +1540,7 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
     }
 
     if (child->IsFloating()) {
-      if (child_style->Floating() == EFloat::kLeft)
+      if (child_style.Floating() == EFloat::kLeft)
         float_left_width += w;
       else
         float_right_width += w;

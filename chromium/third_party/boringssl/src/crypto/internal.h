@@ -116,7 +116,14 @@
 #include <assert.h>
 #include <string.h>
 
-#if !defined(__cplusplus)
+#if defined(__GNUC__) && \
+    (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__) < 40800
+// |alignas| and |alignof| were added in C11. GCC added support in version 4.8.
+// Testing for __STDC_VERSION__/__cplusplus doesn't work because 4.7 already
+// reports support for C11.
+#define alignas(x) __attribute__ ((aligned (x)))
+#define alignof(x) __alignof__ (x)
+#elif !defined(__cplusplus)
 #if defined(_MSC_VER)
 #define alignas(x) __declspec(align(x))
 #define alignof __alignof
@@ -164,6 +171,20 @@ typedef __uint128_t uint128_t;
 #endif
 
 #define OPENSSL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+
+// Have a generic fall-through for different versions of C/C++.
+#if defined(__cplusplus) && __cplusplus >= 201703L
+#define OPENSSL_FALLTHROUGH [[fallthrough]]
+#elif defined(__cplusplus) && __cplusplus >= 201103L && defined(__clang__)
+#define OPENSSL_FALLTHROUGH [[clang::fallthrough]]
+#elif defined(__cplusplus) && __cplusplus >= 201103L && defined(__GNUC__) && \
+    __GNUC__ >= 7
+#define OPENSSL_FALLTHROUGH [[gnu::fallthrough]]
+#elif defined(__GNUC__) && __GNUC__ >= 7 // gcc 7
+#define OPENSSL_FALLTHROUGH __attribute__ ((fallthrough))
+#else // C++11 on gcc 6, and all other cases
+#define OPENSSL_FALLTHROUGH
+#endif
 
 // buffers_alias returns one if |a| and |b| alias and zero otherwise.
 static inline int buffers_alias(const uint8_t *a, size_t a_len,

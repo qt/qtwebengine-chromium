@@ -10,7 +10,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/Frame.h"
-#include "device/usb/public/interfaces/device.mojom-blink.h"
+#include "device/usb/public/mojom/device.mojom-blink.h"
 #include "modules/EventTargetModules.h"
 #include "modules/webusb/USBConnectionEvent.h"
 #include "modules/webusb/USBDevice.h"
@@ -82,8 +82,8 @@ ScriptPromise USB::getDevices(ScriptState* script_state) {
         script_state, DOMException::Create(kNotSupportedError));
   }
 
-  if (IsSupportedInFeaturePolicy(FeaturePolicyFeature::kUsb)) {
-    if (!frame->IsFeatureEnabled(FeaturePolicyFeature::kUsb)) {
+  if (IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kUsb)) {
+    if (!frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kUsb)) {
       return ScriptPromise::RejectWithDOMException(
           script_state,
           DOMException::Create(kSecurityError, kFeaturePolicyBlocked));
@@ -110,8 +110,8 @@ ScriptPromise USB::requestDevice(ScriptState* script_state,
         script_state, DOMException::Create(kNotSupportedError));
   }
 
-  if (IsSupportedInFeaturePolicy(FeaturePolicyFeature::kUsb)) {
-    if (!frame->IsFeatureEnabled(FeaturePolicyFeature::kUsb)) {
+  if (IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kUsb)) {
+    if (!frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kUsb)) {
       return ScriptPromise::RejectWithDOMException(
           script_state,
           DOMException::Create(kSecurityError, kFeaturePolicyBlocked));
@@ -254,8 +254,8 @@ void USB::AddedEventListener(const AtomicString& event_type,
   if (!frame)
     return;
 
-  if (IsSupportedInFeaturePolicy(FeaturePolicyFeature::kUsb)) {
-    if (frame->IsFeatureEnabled(FeaturePolicyFeature::kUsb))
+  if (IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kUsb)) {
+    if (frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kUsb))
       EnsureDeviceManagerConnection();
   } else if (frame->IsMainFrame()) {
     EnsureDeviceManagerConnection();

@@ -99,16 +99,16 @@ void SVGImageElement::CollectStyleForPresentationAttribute(
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == width_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &width_->CssValue());
+                                            width_->CssValue());
   } else if (property == height_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &height_->CssValue());
+                                            height_->CssValue());
   } else if (property == x_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &x_->CssValue());
+                                            x_->CssValue());
   } else if (property == y_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
-                                            &y_->CssValue());
+                                            y_->CssValue());
   } else {
     SVGGraphicsElement::CollectStyleForPresentationAttribute(name, value,
                                                              style);
@@ -131,7 +131,7 @@ void SVGImageElement::SvgAttributeChanged(const QualifiedName& attr_name) {
       UpdateRelativeLengthsInformation();
     }
 
-    LayoutObject* object = this->GetLayoutObject();
+    LayoutObject* object = GetLayoutObject();
     if (!object)
       return;
 
@@ -139,7 +139,7 @@ void SVGImageElement::SvgAttributeChanged(const QualifiedName& attr_name) {
     // viewport didn't change, however since we don't have the computed
     // style yet we can't use updateBoundingBox/updateImageContainerSize.
     // See http://crbug.com/466200.
-    MarkForLayoutAndParentResourceInvalidation(object);
+    MarkForLayoutAndParentResourceInvalidation(*object);
     return;
   }
 
@@ -197,14 +197,6 @@ Node::InsertionNotificationRequest SVGImageElement::InsertedInto(
     GetImageLoader().UpdateFromElement(ImageLoader::kUpdateNormal);
 
   return SVGGraphicsElement::InsertedInto(root_parent);
-}
-
-FloatSize SVGImageElement::SourceDefaultObjectSize() {
-  if (GetLayoutObject())
-    return ToLayoutSVGImage(GetLayoutObject())->ObjectBoundingBox().Size();
-  SVGLengthContext length_context(this);
-  return FloatSize(width_->CurrentValue()->Value(length_context),
-                   height_->CurrentValue()->Value(length_context));
 }
 
 const AtomicString SVGImageElement::ImageSourceURL() const {

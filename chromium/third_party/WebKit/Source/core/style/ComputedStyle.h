@@ -123,7 +123,7 @@ class WebkitTextStrokeColor;
 // In addition to storing the computed value of every CSS property,
 // ComputedStyle also contains various internal style information. Examples
 // include cached_pseudo_styles_ (for storing pseudo element styles), unique_
-// (for style sharing) and has_simple_underline_ (cached indicator flag of
+// (for style caching) and has_simple_underline_ (cached indicator flag of
 // text-decoration). These are stored on ComputedStyle for two reasons:
 //
 //  1) They share the same lifetime as ComputedStyle, so it is convenient to
@@ -283,7 +283,8 @@ class ComputedStyle : public ComputedStyleBase,
   StyleContentAlignmentData ResolvedJustifyContent(
       const StyleContentAlignmentData& normal_behaviour) const;
 
-  StyleDifference VisualInvalidationDiff(const ComputedStyle&) const;
+  StyleDifference VisualInvalidationDiff(const Document&,
+                                         const ComputedStyle&) const;
 
   void InheritFrom(const ComputedStyle& inherit_parent,
                    IsAtShadowBoundary = kNotAtShadowBoundary);
@@ -517,16 +518,6 @@ class ComputedStyle : public ComputedStyleBase,
   void SetHasAutoColumnCount() {
     SetHasAutoColumnCountInternal(true);
     SetColumnCountInternal(ComputedStyleInitialValues::InitialColumnCount());
-  }
-
-  // column-gap (aka -webkit-column-gap)
-  void SetColumnGap(float f) {
-    SetHasNormalColumnGapInternal(false);
-    SetColumnGapInternal(f);
-  }
-  void SetHasNormalColumnGap() {
-    SetHasNormalColumnGapInternal(true);
-    SetColumnGapInternal(0);
   }
 
   // column-rule-color (aka -webkit-column-rule-color)
@@ -1859,6 +1850,11 @@ class ComputedStyle : public ComputedStyleBase,
     return IsDisplayFlexibleBox(Display()) || IsDisplayGridBox(Display());
   }
   bool IsDisplayFlexibleBox() const { return IsDisplayFlexibleBox(Display()); }
+  bool IsDisplayLayoutCustomBox() const {
+    return IsDisplayLayoutCustomBox(Display());
+  }
+
+  bool IsDisplayTableType() const { return IsDisplayTableType(Display()); }
 
   // Isolation utility functions.
   bool HasIsolation() const { return Isolation() != EIsolation::kAuto; }
@@ -2178,6 +2174,8 @@ class ComputedStyle : public ComputedStyleBase,
            BoxShadow();
   }
 
+  LayoutRectOutsets BoxDecorationOutsets() const;
+
   // Background utility functions.
   FillLayer& AccessBackgroundLayers() { return MutableBackgroundInternal(); }
   const FillLayer& BackgroundLayers() const { return BackgroundInternal(); }
@@ -2276,12 +2274,18 @@ class ComputedStyle : public ComputedStyleBase,
     return display == EDisplay::kGrid || display == EDisplay::kInlineGrid;
   }
 
+  static bool IsDisplayLayoutCustomBox(EDisplay display) {
+    return display == EDisplay::kLayoutCustom ||
+           display == EDisplay::kInlineLayoutCustom;
+  }
+
   static bool IsDisplayReplacedType(EDisplay display) {
     return display == EDisplay::kInlineBlock ||
            display == EDisplay::kWebkitInlineBox ||
            display == EDisplay::kInlineFlex ||
            display == EDisplay::kInlineTable ||
-           display == EDisplay::kInlineGrid;
+           display == EDisplay::kInlineGrid ||
+           display == EDisplay::kInlineLayoutCustom;
   }
 
   static bool IsDisplayInlineType(EDisplay display) {
@@ -2447,7 +2451,12 @@ class ComputedStyle : public ComputedStyleBase,
                                             const StyleDifference&) const;
   bool DiffNeedsFullLayoutAndPaintInvalidation(
       const ComputedStyle& other) const;
-  bool DiffNeedsFullLayout(const ComputedStyle& other) const;
+  bool DiffNeedsFullLayout(const Document&, const ComputedStyle& other) const;
+  bool DiffNeedsFullLayoutForLayoutCustom(const Document&,
+                                          const ComputedStyle& other) const;
+  bool DiffNeedsFullLayoutForLayoutCustomChild(
+      const Document&,
+      const ComputedStyle& other) const;
   bool DiffNeedsPaintInvalidationSubtree(const ComputedStyle& other) const;
   bool DiffNeedsPaintInvalidationObject(const ComputedStyle& other) const;
   bool DiffNeedsPaintInvalidationObjectForPaintImage(
@@ -2456,6 +2465,11 @@ class ComputedStyle : public ComputedStyleBase,
   bool DiffNeedsVisualRectUpdate(const ComputedStyle& other) const;
   CORE_EXPORT void UpdatePropertySpecificDifferences(const ComputedStyle& other,
                                                      StyleDifference&) const;
+
+  bool PropertiesEqual(const Vector<CSSPropertyID>& properties,
+                       const ComputedStyle& other) const;
+  bool CustomPropertiesEqual(const Vector<AtomicString>& properties,
+                             const ComputedStyle& other) const;
 
   static bool ShadowListHasCurrentColor(const ShadowList*);
 
@@ -2502,6 +2516,27 @@ class ComputedStyle : public ComputedStyleBase,
   FRIEND_TEST_ALL_PREFIXES(
       ComputedStyleTest,
       UpdatePropertySpecificDifferencesRespectsTransformAnimation);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsTransforom);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsOpacity);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsFilter);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsBackdropFilter);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsInlineTransform);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsBackfaceVisibility);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsWillChange);
 };
 
 inline bool ComputedStyle::SetZoom(float f) {

@@ -12,6 +12,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -25,6 +26,7 @@
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/display/types/display_constants.h"
+#include "ui/events/base_event_utils.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/path.h"
@@ -36,6 +38,7 @@
 #include "ui/keyboard/keyboard_ui.h"
 #include "ui/keyboard/keyboard_util.h"
 #include "ui/keyboard/notification_manager.h"
+#include "ui/keyboard/queued_container_type.h"
 #include "ui/wm/core/window_animations.h"
 
 #if defined(OS_CHROMEOS)
@@ -50,6 +53,13 @@ constexpr int kHideKeyboardDelayMs = 100;
 // Reports an error histogram if the keyboard state is lingering in an
 // intermediate state for more than 5 seconds.
 constexpr int kReportLingeringStateDelayMs = 5000;
+
+// Delay threshold after the keyboard enters the WILL_HIDE state. If text focus
+// is regained during this threshold, the keyboard will show again, even if it
+// is an asynchronous event. This is for the benefit of things like login flow
+// where the password field may get text focus after an animation that plays
+// after the user enters their username.
+constexpr int kTransientBlurThresholdMs = 3500;
 
 // State transition diagram (document linked from crbug.com/719905)
 bool isAllowedStateTransition(keyboard::KeyboardControllerState from,
@@ -202,12 +212,11 @@ KeyboardController::KeyboardController(std::unique_ptr<KeyboardUI> ui,
       show_on_content_update_(false),
       keyboard_locked_(false),
       state_(KeyboardControllerState::UNKNOWN),
-      enqueued_container_type_(ContainerType::FULL_WIDTH),
       weak_factory_report_lingering_state_(this),
       weak_factory_will_hide_(this) {
   ui_->GetInputMethod()->AddObserver(this);
   ui_->SetController(this);
-  SetContainerBehaviorInternal(enqueued_container_type_);
+  SetContainerBehaviorInternal(ContainerType::FULL_WIDTH);
   ChangeState(KeyboardControllerState::INITIAL);
 }
 
@@ -385,11 +394,8 @@ void KeyboardController::HideKeyboard(HideReason reason) {
 }
 
 void KeyboardController::HideAnimationFinished() {
-  if (state_ != KeyboardControllerState::HIDDEN)
-    return;
-
-  if (enqueued_container_type_ != container_behavior_->GetType()) {
-    SetContainerBehaviorInternal(enqueued_container_type_);
+  if (state_ == KeyboardControllerState::HIDDEN && queued_container_type_) {
+    SetContainerBehaviorInternal(queued_container_type_->container_type());
     ShowKeyboard(false /* lock */);
   }
 }
@@ -498,15 +504,34 @@ void KeyboardController::OnTextInputStateChanged(
         return;
     }
   } else {
-    // Abort a pending keyboard hide.
-    if (WillHideKeyboard())
-      ChangeState(KeyboardControllerState::SHOWN);
+    switch (state_) {
+      case KeyboardControllerState::WILL_HIDE:
+        // Abort a pending keyboard hide.
+        ChangeState(KeyboardControllerState::SHOWN);
+        return;
+      case KeyboardControllerState::HIDDEN:
+        if (focused)
+          ShowKeyboardIfWithinTransientBlurThreshold();
+        return;
+      default:
+        break;
+    }
     // Do not explicitly show the Virtual keyboard unless it is in the process
-    // of hiding. Instead, the virtual keyboard is shown in response to a user
-    // gesture (mouse or touch) that is received while an element has input
-    // focus. Showing the keyboard requires an explicit call to
-    // OnShowImeIfNeeded.
+    // of hiding or the hide duration was very short (transient blur). Instead,
+    // the virtual keyboard is shown in response to a user gesture (mouse or
+    // touch) that is received while an element has input focus. Showing the
+    // keyboard requires an explicit call to OnShowImeIfNeeded.
   }
+}
+
+void KeyboardController::ShowKeyboardIfWithinTransientBlurThreshold() {
+  static const base::TimeDelta kTransientBlurThreshold =
+      base::TimeDelta::FromMilliseconds(kTransientBlurThresholdMs);
+
+  const base::Time now = base::Time::Now();
+  const base::TimeDelta time_since_last_blur = now - time_of_last_blur_;
+  if (time_since_last_blur < kTransientBlurThreshold)
+    ShowKeyboard(false);
 }
 
 void KeyboardController::OnShowImeIfNeeded() {
@@ -624,6 +649,10 @@ void KeyboardController::PopulateKeyboardContent(int64_t display_id,
 
   container_behavior_->DoShowingAnimation(container_.get(), &settings);
 
+  // the queued container behavior will notify JS to change layout when it
+  // gets destroyed.
+  queued_container_type_ = nullptr;
+
   ChangeState(KeyboardControllerState::SHOWN);
   NotifyKeyboardBoundsChangingAndEnsureCaretInWorkArea();
 }
@@ -678,6 +707,8 @@ void KeyboardController::ChangeState(KeyboardControllerState state) {
   if (state_ == state)
     return;
 
+  KeyboardControllerState original_state = state_;
+
   state_ = state;
 
   if (state != KeyboardControllerState::WILL_HIDE)
@@ -691,11 +722,16 @@ void KeyboardController::ChangeState(KeyboardControllerState state) {
   switch (state_) {
     case KeyboardControllerState::LOADING_EXTENSION:
     case KeyboardControllerState::WILL_HIDE:
+      if (state_ == KeyboardControllerState::WILL_HIDE &&
+          original_state == KeyboardControllerState::SHOWN) {
+        time_of_last_blur_ = base::Time::Now();
+      }
       base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
           FROM_HERE,
           base::BindOnce(&KeyboardController::ReportLingeringState,
                          weak_factory_report_lingering_state_.GetWeakPtr()),
           base::TimeDelta::FromMilliseconds(kReportLingeringStateDelayMs));
+
       break;
     default:
       // Do nothing
@@ -737,18 +773,31 @@ bool KeyboardController::IsOverscrollAllowed() const {
 }
 
 void KeyboardController::HandlePointerEvent(const ui::LocatedEvent& event) {
-  container_behavior_->HandlePointerEvent(event);
+  container_behavior_->HandlePointerEvent(
+      event, container_->GetRootWindow()->bounds());
 }
 
-void KeyboardController::SetContainerType(const ContainerType type) {
-  if (container_behavior_->GetType() == type)
-    return;
 
-  enqueued_container_type_ = type;
+void KeyboardController::SetContainerType(
+    const ContainerType type,
+    base::OnceCallback<void(bool)> callback) {
+  if (container_behavior_->GetType() == type) {
+    std::move(callback).Run(false);
+    return;
+  }
+
   if (state_ == KeyboardControllerState::SHOWN) {
+    // Keyboard is already shown. Hiding the keyboard at first then switching
+    // container type.
+    queued_container_type_ =
+        std::make_unique<QueuedContainerType>(this, type, std::move(callback));
     HideKeyboard(HIDE_REASON_AUTOMATIC);
   } else {
+    // Keyboard is hidden. Switching the container type immediately and invoking
+    // the passed callback now.
     SetContainerBehaviorInternal(type);
+    DCHECK(GetActiveContainerType() == type);
+    std::move(callback).Run(true /* change_successful */);
   }
 }
 

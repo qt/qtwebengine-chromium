@@ -17,16 +17,17 @@
 
 TEST(FMCallExpressionTest, more_than_32_arguments) {
   // Use sign as it has 3 object parameters at positions 0, 5, and 6.
-  auto exp = pdfium::MakeUnique<CXFA_FMIdentifierExpression>(0, L"sign");
+  auto exp = pdfium::MakeUnique<CXFA_FMIdentifierExpression>(L"sign");
 
   std::vector<std::unique_ptr<CXFA_FMSimpleExpression>> args;
   for (size_t i = 0; i < 50; i++)
-    args.push_back(pdfium::MakeUnique<CXFA_FMSimpleExpression>(0, TOKnan));
+    args.push_back(pdfium::MakeUnique<CXFA_FMNullExpression>());
 
   CXFA_FMToJavaScriptDepth::Reset();
-  CXFA_FMCallExpression callExp(0, std::move(exp), std::move(args), true);
+  CXFA_FMCallExpression callExp(std::move(exp), std::move(args), true);
+
   CFX_WideTextBuf js;
-  callExp.ToJavaScript(js);
+  callExp.ToJavaScript(js, ReturnType::kInfered);
 
   // Generate the result javascript string.
   WideString result = L"sign(";
@@ -37,9 +38,9 @@ TEST(FMCallExpressionTest, more_than_32_arguments) {
     result += L"pfm_rt.get_";
     // Object positions for sign() method.
     if (i == 0 || i == 5 || i == 6)
-      result += L"jsobj()";
+      result += L"jsobj(null)";
     else
-      result += L"val()";
+      result += L"val(null)";
   }
   result += L")";
 
@@ -49,21 +50,22 @@ TEST(FMCallExpressionTest, more_than_32_arguments) {
 TEST(FMStringExpressionTest, Empty) {
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf accumulator;
-  CXFA_FMStringExpression(1, WideStringView()).ToJavaScript(accumulator);
+  CXFA_FMStringExpression(L"").ToJavaScript(accumulator, ReturnType::kInfered);
   EXPECT_EQ(L"", accumulator.AsStringView());
 }
 
 TEST(FMStringExpressionTest, Short) {
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf accumulator;
-  CXFA_FMStringExpression(1, L"a").ToJavaScript(accumulator);
+  CXFA_FMStringExpression(L"a").ToJavaScript(accumulator, ReturnType::kInfered);
   EXPECT_EQ(L"a", accumulator.AsStringView());
 }
 
 TEST(FMStringExpressionTest, Medium) {
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf accumulator;
-  CXFA_FMStringExpression(1, L".abcd.").ToJavaScript(accumulator);
+  CXFA_FMStringExpression(L".abcd.").ToJavaScript(accumulator,
+                                                  ReturnType::kInfered);
   EXPECT_EQ(L"\"abcd\"", accumulator.AsStringView());
 }
 
@@ -71,14 +73,15 @@ TEST(FMStringExpressionTest, Long) {
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf accumulator;
   std::vector<WideStringView::UnsignedType> vec(140000, L'A');
-  CXFA_FMStringExpression(1, WideStringView(vec)).ToJavaScript(accumulator);
+  CXFA_FMStringExpression(WideStringView(vec))
+      .ToJavaScript(accumulator, ReturnType::kInfered);
   EXPECT_EQ(140000u, accumulator.GetLength());
 }
 
 TEST(FMStringExpressionTest, Quoted) {
   CXFA_FMToJavaScriptDepth::Reset();
   CFX_WideTextBuf accumulator;
-  CXFA_FMStringExpression(1, L".Simon says \"\"run\"\".")
-      .ToJavaScript(accumulator);
+  CXFA_FMStringExpression(L".Simon says \"\"run\"\".")
+      .ToJavaScript(accumulator, ReturnType::kInfered);
   EXPECT_EQ(L"\"Simon says \\\"run\\\"\"", accumulator.AsStringView());
 }

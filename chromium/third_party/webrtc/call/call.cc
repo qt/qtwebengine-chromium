@@ -35,6 +35,7 @@
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "logging/rtc_event_log/rtc_stream_config.h"
 #include "modules/bitrate_controller/include/bitrate_controller.h"
+#include "modules/congestion_controller/include/network_changed_observer.h"
 #include "modules/congestion_controller/include/receive_side_congestion_controller.h"
 #include "modules/rtp_rtcp/include/flexfec_receiver.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
@@ -42,6 +43,7 @@
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/utility/include/process_thread.h"
+#include "modules/video_coding/fec_controller_default.h"
 #include "rtc_base/basictypes.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/constructormagic.h"
@@ -162,7 +164,7 @@ namespace internal {
 class Call : public webrtc::Call,
              public PacketReceiver,
              public RecoveredPacketReceiver,
-             public SendSideCongestionController::Observer,
+             public NetworkChangedObserver,
              public BitrateAllocator::LimitObserver {
  public:
   Call(const Call::Config& config,
@@ -184,6 +186,10 @@ class Call : public webrtc::Call,
   webrtc::VideoSendStream* CreateVideoSendStream(
       webrtc::VideoSendStream::Config config,
       VideoEncoderConfig encoder_config) override;
+  webrtc::VideoSendStream* CreateVideoSendStream(
+      webrtc::VideoSendStream::Config config,
+      VideoEncoderConfig encoder_config,
+      std::unique_ptr<FecController> fec_controller) override;
   void DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) override;
 
   webrtc::VideoReceiveStream* CreateVideoReceiveStream(
@@ -196,6 +202,8 @@ class Call : public webrtc::Call,
   void DestroyFlexfecReceiveStream(
       FlexfecReceiveStream* receive_stream) override;
 
+  RtpTransportControllerSendInterface* GetTransportControllerSend() override;
+
   Stats GetStats() const override;
 
   // Implements PacketReceiver.
@@ -206,12 +214,6 @@ class Call : public webrtc::Call,
   // Implements RecoveredPacketReceiver.
   void OnRecoveredPacket(const uint8_t* packet, size_t length) override;
 
-  void SetBitrateConfig(
-      const webrtc::Call::Config::BitrateConfig& bitrate_config) override;
-
-  void SetBitrateConfigMask(
-      const webrtc::Call::Config::BitrateConfigMask& bitrate_config) override;
-
   void SetBitrateAllocationStrategy(
       std::unique_ptr<rtc::BitrateAllocationStrategy>
           bitrate_allocation_strategy) override;
@@ -220,9 +222,6 @@ class Call : public webrtc::Call,
 
   void OnTransportOverheadChanged(MediaType media,
                                   int transport_overhead_per_packet) override;
-
-  void OnNetworkRouteChanged(const std::string& transport_name,
-                             const rtc::NetworkRoute& network_route) override;
 
   void OnSentPacket(const rtc::SentPacket& sent_packet) override;
 
@@ -255,15 +254,10 @@ class Call : public webrtc::Call,
   void UpdateHistograms();
   void UpdateAggregateNetworkState();
 
-  // Applies update to the BitrateConfig cached in |config_|, restarting
-  // bandwidth estimation from |new_start| if set.
-  void UpdateCurrentBitrateConfig(const rtc::Optional<int>& new_start);
-
   Clock* const clock_;
 
   const int num_cpu_cores_;
   const std::unique_ptr<ProcessThread> module_process_thread_;
-  const std::unique_ptr<ProcessThread> pacer_thread_;
   const std::unique_ptr<CallStats> call_stats_;
   const std::unique_ptr<BitrateAllocator> bitrate_allocator_;
   Call::Config config_;
@@ -354,8 +348,6 @@ class Call : public webrtc::Call,
       RTC_GUARDED_BY(&bitrate_crit_);
   AvgCounter pacer_bitrate_kbps_counter_ RTC_GUARDED_BY(&bitrate_crit_);
 
-  std::map<std::string, rtc::NetworkRoute> network_routes_;
-
   std::unique_ptr<RtpTransportControllerSendInterface> transport_send_;
   ReceiveSideCongestionController receive_side_cc_;
   const std::unique_ptr<SendDelayStats> video_send_delay_stats_;
@@ -365,14 +357,6 @@ class Call : public webrtc::Call,
   // |worker_queue| is defined last to ensure all pending tasks are cancelled
   // and deleted before any other members.
   rtc::TaskQueue worker_queue_;
-
-  // The config mask set by SetBitrateConfigMask.
-  // 0 <= min <= start <= max
-  Config::BitrateConfigMask bitrate_config_mask_;
-
-  // The config set by SetBitrateConfig.
-  // min >= 0, start != 0, max == -1 || max > 0
-  Config::BitrateConfig base_bitrate_config_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(Call);
 };
@@ -391,15 +375,26 @@ std::string Call::Stats::ToString(int64_t time_ms) const {
 }
 
 Call* Call::Create(const Call::Config& config) {
-  return new internal::Call(config,
-                            rtc::MakeUnique<RtpTransportControllerSend>(
-                                Clock::GetRealTimeClock(), config.event_log));
+  return new internal::Call(
+      config,
+      rtc::MakeUnique<RtpTransportControllerSend>(
+          Clock::GetRealTimeClock(), config.event_log, config.bitrate_config));
 }
 
 Call* Call::Create(
     const Call::Config& config,
     std::unique_ptr<RtpTransportControllerSendInterface> transport_send) {
   return new internal::Call(config, std::move(transport_send));
+}
+
+// This method here to avoid subclasses has to implement this method.
+// Call perf test will use Internal::Call::CreateVideoSendStream() to inject
+// FecController.
+VideoSendStream* Call::CreateVideoSendStream(
+    VideoSendStream::Config config,
+    VideoEncoderConfig encoder_config,
+    std::unique_ptr<FecController> fec_controller) {
+  return nullptr;
 }
 
 namespace internal {
@@ -409,7 +404,6 @@ Call::Call(const Call::Config& config,
     : clock_(Clock::GetRealTimeClock()),
       num_cpu_cores_(CpuInfo::DetectNumberOfCores()),
       module_process_thread_(ProcessThread::Create("ModuleProcessThread")),
-      pacer_thread_(ProcessThread::Create("PacerThread")),
       call_stats_(new CallStats(clock_)),
       bitrate_allocator_(new BitrateAllocator(this)),
       config_(config),
@@ -429,38 +423,18 @@ Call::Call(const Call::Config& config,
       receive_side_cc_(clock_, transport_send->packet_router()),
       video_send_delay_stats_(new SendDelayStats(clock_)),
       start_ms_(clock_->TimeInMilliseconds()),
-      worker_queue_("call_worker_queue"),
-      base_bitrate_config_(config.bitrate_config) {
+      worker_queue_("call_worker_queue") {
   RTC_DCHECK(config.event_log != nullptr);
-  RTC_DCHECK_GE(config.bitrate_config.min_bitrate_bps, 0);
-  RTC_DCHECK_GE(config.bitrate_config.start_bitrate_bps,
-                config.bitrate_config.min_bitrate_bps);
-  if (config.bitrate_config.max_bitrate_bps != -1) {
-    RTC_DCHECK_GE(config.bitrate_config.max_bitrate_bps,
-                  config.bitrate_config.start_bitrate_bps);
-  }
-  transport_send->send_side_cc()->RegisterNetworkObserver(this);
+  transport_send->RegisterNetworkObserver(this);
   transport_send_ = std::move(transport_send);
-  transport_send_->send_side_cc()->SignalNetworkState(kNetworkDown);
-  transport_send_->send_side_cc()->SetBweBitrates(
-      config_.bitrate_config.min_bitrate_bps,
-      config_.bitrate_config.start_bitrate_bps,
-      config_.bitrate_config.max_bitrate_bps);
+
   call_stats_->RegisterStatsObserver(&receive_side_cc_);
-  call_stats_->RegisterStatsObserver(transport_send_->send_side_cc());
+  call_stats_->RegisterStatsObserver(transport_send_->GetCallStatsObserver());
 
-  // We have to attach the pacer to the pacer thread before starting the
-  // module process thread to avoid a race accessing the process thread
-  // both from the process thread and the pacer thread.
-  pacer_thread_->RegisterModule(transport_send_->pacer(), RTC_FROM_HERE);
-  pacer_thread_->RegisterModule(
+  module_process_thread_->RegisterModule(
       receive_side_cc_.GetRemoteBitrateEstimator(true), RTC_FROM_HERE);
-  pacer_thread_->Start();
-
   module_process_thread_->RegisterModule(call_stats_.get(), RTC_FROM_HERE);
   module_process_thread_->RegisterModule(&receive_side_cc_, RTC_FROM_HERE);
-  module_process_thread_->RegisterModule(transport_send_->send_side_cc(),
-                                         RTC_FROM_HERE);
   module_process_thread_->Start();
 }
 
@@ -473,23 +447,15 @@ Call::~Call() {
   RTC_CHECK(audio_receive_streams_.empty());
   RTC_CHECK(video_receive_streams_.empty());
 
-  // The send-side congestion controller must be de-registered prior to
-  // the pacer thread being stopped to avoid a race when accessing the
-  // pacer thread object on the module process thread at the same time as
-  // the pacer thread is stopped.
-  module_process_thread_->DeRegisterModule(transport_send_->send_side_cc());
-  pacer_thread_->Stop();
-  pacer_thread_->DeRegisterModule(transport_send_->pacer());
-  pacer_thread_->DeRegisterModule(
+  module_process_thread_->DeRegisterModule(
       receive_side_cc_.GetRemoteBitrateEstimator(true));
   module_process_thread_->DeRegisterModule(&receive_side_cc_);
   module_process_thread_->DeRegisterModule(call_stats_.get());
   module_process_thread_->Stop();
   call_stats_->DeregisterStatsObserver(&receive_side_cc_);
-  call_stats_->DeregisterStatsObserver(transport_send_->send_side_cc());
+  call_stats_->DeregisterStatsObserver(transport_send_->GetCallStatsObserver());
 
-  int64_t first_sent_packet_ms =
-      transport_send_->send_side_cc()->GetFirstPacketTimeMs();
+  int64_t first_sent_packet_ms = transport_send_->GetFirstPacketTimeMs();
   // Only update histograms after process threads have been shut down, so that
   // they won't try to concurrently update stats.
   {
@@ -711,9 +677,11 @@ void Call::DestroyAudioReceiveStream(
   delete audio_receive_stream;
 }
 
+// This method can be used for Call tests with external fec controller factory.
 webrtc::VideoSendStream* Call::CreateVideoSendStream(
     webrtc::VideoSendStream::Config config,
-    VideoEncoderConfig encoder_config) {
+    VideoEncoderConfig encoder_config,
+    std::unique_ptr<FecController> fec_controller) {
   TRACE_EVENT0("webrtc", "Call::CreateVideoSendStream");
   RTC_DCHECK_CALLED_SEQUENTIALLY(&configuration_sequence_checker_);
 
@@ -728,12 +696,13 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
   // the call has already started.
   // Copy ssrcs from |config| since |config| is moved.
   std::vector<uint32_t> ssrcs = config.rtp.ssrcs;
+
   VideoSendStream* send_stream = new VideoSendStream(
       num_cpu_cores_, module_process_thread_.get(), &worker_queue_,
       call_stats_.get(), transport_send_.get(), bitrate_allocator_.get(),
       video_send_delay_stats_.get(), event_log_, std::move(config),
       std::move(encoder_config), suspended_video_send_ssrcs_,
-      suspended_video_payload_states_);
+      suspended_video_payload_states_, std::move(fec_controller));
 
   {
     WriteLockScoped write_lock(*send_crit_);
@@ -747,6 +716,17 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
   UpdateAggregateNetworkState();
 
   return send_stream;
+}
+
+webrtc::VideoSendStream* Call::CreateVideoSendStream(
+    webrtc::VideoSendStream::Config config,
+    VideoEncoderConfig encoder_config) {
+  std::unique_ptr<FecController> fec_controller =
+      config_.fec_controller_factory
+          ? config_.fec_controller_factory->CreateFecController()
+          : rtc::MakeUnique<FecControllerDefault>(Clock::GetRealTimeClock());
+  return CreateVideoSendStream(std::move(config), std::move(encoder_config),
+                               std::move(fec_controller));
 }
 
 void Call::DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) {
@@ -902,6 +882,10 @@ void Call::DestroyFlexfecReceiveStream(FlexfecReceiveStream* receive_stream) {
   delete receive_stream;
 }
 
+RtpTransportControllerSendInterface* Call::GetTransportControllerSend() {
+  return transport_send_.get();
+}
+
 Call::Stats Call::GetStats() const {
   // TODO(solenberg): Some test cases in EndToEndTest use this from a different
   // thread. Re-enable once that is fixed.
@@ -909,102 +893,20 @@ Call::Stats Call::GetStats() const {
   Stats stats;
   // Fetch available send/receive bitrates.
   uint32_t send_bandwidth = 0;
-  transport_send_->send_side_cc()->AvailableBandwidth(&send_bandwidth);
+  transport_send_->AvailableBandwidth(&send_bandwidth);
   std::vector<unsigned int> ssrcs;
   uint32_t recv_bandwidth = 0;
   receive_side_cc_.GetRemoteBitrateEstimator(false)->LatestEstimate(
       &ssrcs, &recv_bandwidth);
   stats.send_bandwidth_bps = send_bandwidth;
   stats.recv_bandwidth_bps = recv_bandwidth;
-  stats.pacer_delay_ms =
-      transport_send_->send_side_cc()->GetPacerQueuingDelayMs();
+  stats.pacer_delay_ms = transport_send_->GetPacerQueuingDelayMs();
   stats.rtt_ms = call_stats_->rtcp_rtt_stats()->LastProcessedRtt();
   {
     rtc::CritScope cs(&bitrate_crit_);
     stats.max_padding_bitrate_bps = configured_max_padding_bitrate_bps_;
   }
   return stats;
-}
-
-void Call::SetBitrateConfig(
-    const webrtc::Call::Config::BitrateConfig& bitrate_config) {
-  TRACE_EVENT0("webrtc", "Call::SetBitrateConfig");
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&configuration_sequence_checker_);
-  RTC_DCHECK_GE(bitrate_config.min_bitrate_bps, 0);
-  RTC_DCHECK_NE(bitrate_config.start_bitrate_bps, 0);
-  if (bitrate_config.max_bitrate_bps != -1) {
-    RTC_DCHECK_GT(bitrate_config.max_bitrate_bps, 0);
-  }
-
-  rtc::Optional<int> new_start;
-  // Only update the "start" bitrate if it's set, and different from the old
-  // value. In practice, this value comes from the x-google-start-bitrate codec
-  // parameter in SDP, and setting the same remote description twice shouldn't
-  // restart bandwidth estimation.
-  if (bitrate_config.start_bitrate_bps != -1 &&
-      bitrate_config.start_bitrate_bps !=
-          base_bitrate_config_.start_bitrate_bps) {
-    new_start.emplace(bitrate_config.start_bitrate_bps);
-  }
-  base_bitrate_config_ = bitrate_config;
-  UpdateCurrentBitrateConfig(new_start);
-}
-
-void Call::SetBitrateConfigMask(
-    const webrtc::Call::Config::BitrateConfigMask& mask) {
-  TRACE_EVENT0("webrtc", "Call::SetBitrateConfigMask");
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&configuration_sequence_checker_);
-
-  bitrate_config_mask_ = mask;
-  UpdateCurrentBitrateConfig(mask.start_bitrate_bps);
-}
-
-void Call::UpdateCurrentBitrateConfig(const rtc::Optional<int>& new_start) {
-  Config::BitrateConfig updated;
-  updated.min_bitrate_bps =
-      std::max(bitrate_config_mask_.min_bitrate_bps.value_or(0),
-               base_bitrate_config_.min_bitrate_bps);
-
-  updated.max_bitrate_bps =
-      MinPositive(bitrate_config_mask_.max_bitrate_bps.value_or(-1),
-                  base_bitrate_config_.max_bitrate_bps);
-
-  // If the combined min ends up greater than the combined max, the max takes
-  // priority.
-  if (updated.max_bitrate_bps != -1 &&
-      updated.min_bitrate_bps > updated.max_bitrate_bps) {
-    updated.min_bitrate_bps = updated.max_bitrate_bps;
-  }
-
-  // If there is nothing to update (min/max unchanged, no new bandwidth
-  // estimation start value), return early.
-  if (updated.min_bitrate_bps == config_.bitrate_config.min_bitrate_bps &&
-      updated.max_bitrate_bps == config_.bitrate_config.max_bitrate_bps &&
-      !new_start) {
-    RTC_LOG(LS_VERBOSE) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
-                        << "nothing to update";
-    return;
-  }
-
-  if (new_start) {
-    // Clamp start by min and max.
-    updated.start_bitrate_bps = MinPositive(
-        std::max(*new_start, updated.min_bitrate_bps), updated.max_bitrate_bps);
-  } else {
-    updated.start_bitrate_bps = -1;
-  }
-
-  RTC_LOG(INFO) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
-                << "calling SetBweBitrates with args ("
-                << updated.min_bitrate_bps << ", " << updated.start_bitrate_bps
-                << ", " << updated.max_bitrate_bps << ")";
-  transport_send_->send_side_cc()->SetBweBitrates(updated.min_bitrate_bps,
-                                                  updated.start_bitrate_bps,
-                                                  updated.max_bitrate_bps);
-  if (!new_start) {
-    updated.start_bitrate_bps = config_.bitrate_config.start_bitrate_bps;
-  }
-  config_.bitrate_config = updated;
 }
 
 void Call::SetBitrateAllocationStrategy(
@@ -1085,45 +987,6 @@ void Call::OnTransportOverheadChanged(MediaType media,
   }
 }
 
-// TODO(honghaiz): Add tests for this method.
-void Call::OnNetworkRouteChanged(const std::string& transport_name,
-                                 const rtc::NetworkRoute& network_route) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&configuration_sequence_checker_);
-  // Check if the network route is connected.
-  if (!network_route.connected) {
-    RTC_LOG(LS_INFO) << "Transport " << transport_name << " is disconnected";
-    // TODO(honghaiz): Perhaps handle this in SignalChannelNetworkState and
-    // consider merging these two methods.
-    return;
-  }
-
-  // Check whether the network route has changed on each transport.
-  auto result =
-      network_routes_.insert(std::make_pair(transport_name, network_route));
-  auto kv = result.first;
-  bool inserted = result.second;
-  if (inserted) {
-    // No need to reset BWE if this is the first time the network connects.
-    return;
-  }
-  if (kv->second != network_route) {
-    kv->second = network_route;
-    RTC_LOG(LS_INFO)
-        << "Network route changed on transport " << transport_name
-        << ": new local network id " << network_route.local_network_id
-        << " new remote network id " << network_route.remote_network_id
-        << " Reset bitrates to min: " << config_.bitrate_config.min_bitrate_bps
-        << " bps, start: " << config_.bitrate_config.start_bitrate_bps
-        << " bps,  max: " << config_.bitrate_config.start_bitrate_bps
-        << " bps.";
-    RTC_DCHECK_GT(config_.bitrate_config.start_bitrate_bps, 0);
-    transport_send_->send_side_cc()->OnNetworkRouteChanged(
-        network_route, config_.bitrate_config.start_bitrate_bps,
-        config_.bitrate_config.min_bitrate_bps,
-        config_.bitrate_config.max_bitrate_bps);
-  }
-}
-
 void Call::UpdateAggregateNetworkState() {
   RTC_DCHECK_CALLED_SEQUENTIALLY(&configuration_sequence_checker_);
 
@@ -1153,13 +1016,13 @@ void Call::UpdateAggregateNetworkState() {
   RTC_LOG(LS_INFO) << "UpdateAggregateNetworkState: aggregate_state="
                    << (aggregate_state == kNetworkUp ? "up" : "down");
 
-  transport_send_->send_side_cc()->SignalNetworkState(aggregate_state);
+  transport_send_->OnNetworkAvailability(aggregate_state == kNetworkUp);
 }
 
 void Call::OnSentPacket(const rtc::SentPacket& sent_packet) {
   video_send_delay_stats_->OnSentPacket(sent_packet.packet_id,
                                         clock_->TimeInMilliseconds());
-  transport_send_->send_side_cc()->OnSentPacket(sent_packet);
+  transport_send_->OnSentPacket(sent_packet);
 }
 
 void Call::OnNetworkChanged(uint32_t target_bitrate_bps,

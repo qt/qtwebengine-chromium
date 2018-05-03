@@ -18,6 +18,7 @@
 namespace cc {
 class LayerTreeHost;
 class ProxyMain;
+class RenderFrameMetadataObserver;
 
 // This class aggregates all the interactions that the main side of the
 // compositor needs to have with the impl side.
@@ -55,13 +56,13 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
                                  bool hold_commit_for_activation);
   void SetURLForUkm(const GURL& url);
   void ClearHistoryOnNavigation();
+  void SetRenderFrameObserver(
+      std::unique_ptr<RenderFrameMetadataObserver> observer);
 
   void MainFrameWillHappenOnImplForTesting(CompletionEvent* completion,
                                            bool* main_frame_will_happen);
 
   void RequestBeginMainFrameNotExpected(bool new_state) override;
-
-  NOINLINE void DumpForBeginMainFrameHang();
 
  private:
   // The members of this struct should be accessed on the impl thread only when
@@ -106,7 +107,7 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
       uint32_t flags) override;
 
   // SchedulerClient implementation
-  void WillBeginImplFrame(const viz::BeginFrameArgs& args) override;
+  bool WillBeginImplFrame(const viz::BeginFrameArgs& args) override;
   void DidFinishImplFrame() override;
   void DidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ScheduledActionSendBeginMainFrame(
@@ -125,6 +126,8 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
   size_t CompositedAnimationsCount() const override;
   size_t MainThreadAnimationsCount() const override;
   size_t MainThreadCompositableAnimationsCount() const override;
+  bool CurrentFrameHadRAF() const override;
+  bool NextFrameHasPendingRAF() const override;
 
   DrawResult DrawInternal(bool forced_draw);
 

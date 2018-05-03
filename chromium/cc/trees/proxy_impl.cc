@@ -10,8 +10,6 @@
 #include <string>
 
 #include "base/auto_reset.h"
-#include "base/debug/alias.h"
-#include "base/debug/dump_without_crashing.h"
 #include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
@@ -24,6 +22,7 @@
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/mutator_host.h"
 #include "cc/trees/proxy_main.h"
+#include "cc/trees/render_frame_metadata_observer.h"
 #include "cc/trees/task_runner_provider.h"
 #include "components/viz/common/frame_sinks/delay_based_time_source.h"
 #include "components/viz/common/gpu/context_provider.h"
@@ -241,31 +240,6 @@ void ProxyImpl::RequestBeginMainFrameNotExpected(bool new_state) {
   scheduler_->SetMainThreadWantsBeginMainFrameNotExpected(new_state);
 }
 
-// TODO(sunnyps): Remove this code once crbug.com/668892 is fixed.
-NOINLINE void ProxyImpl::DumpForBeginMainFrameHang() {
-  DCHECK(IsImplThread());
-  DCHECK(scheduler_);
-
-  auto state = std::make_unique<base::trace_event::TracedValue>();
-
-  state->SetBoolean("commit_completion_waits_for_activation",
-                    commit_completion_waits_for_activation_);
-  state->SetBoolean("commit_completion_event", !!commit_completion_event_);
-  state->SetBoolean("activation_completion_event",
-                    !!activation_completion_event_);
-
-  state->BeginDictionary("scheduler_state");
-  scheduler_->AsValueInto(state.get());
-  state->EndDictionary();
-
-  state->BeginDictionary("tile_manager_state");
-  host_impl_->tile_manager()->ActivationStateAsValueInto(state.get());
-  state->EndDictionary();
-
-  DEBUG_ALIAS_FOR_CSTR(stack_string, state->ToString().c_str(), 50000);
-  base::debug::DumpWithoutCrashing();
-}
-
 void ProxyImpl::NotifyReadyToCommitOnImpl(
     CompletionEvent* completion,
     LayerTreeHost* layer_tree_host,
@@ -398,6 +372,14 @@ size_t ProxyImpl::MainThreadCompositableAnimationsCount() const {
   return host_impl_->mutator_host()->MainThreadCompositableAnimationsCount();
 }
 
+bool ProxyImpl::CurrentFrameHadRAF() const {
+  return host_impl_->mutator_host()->CurrentFrameHadRAF();
+}
+
+bool ProxyImpl::NextFrameHasPendingRAF() const {
+  return host_impl_->mutator_host()->NextFrameHasPendingRAF();
+}
+
 bool ProxyImpl::IsInsideDraw() {
   return inside_draw_;
 }
@@ -512,9 +494,9 @@ void ProxyImpl::DidPresentCompositorFrameOnImplThread(
                                 refresh, flags));
 }
 
-void ProxyImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
+bool ProxyImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
   DCHECK(IsImplThread());
-  host_impl_->WillBeginImplFrame(args);
+  return host_impl_->WillBeginImplFrame(args);
 }
 
 void ProxyImpl::DidFinishImplFrame() {
@@ -637,8 +619,7 @@ void ProxyImpl::ScheduledActionPrepareTiles() {
 void ProxyImpl::ScheduledActionInvalidateLayerTreeFrameSink() {
   TRACE_EVENT0("cc", "ProxyImpl::ScheduledActionInvalidateLayerTreeFrameSink");
   DCHECK(IsImplThread());
-  DCHECK(host_impl_->layer_tree_frame_sink());
-  host_impl_->layer_tree_frame_sink()->Invalidate();
+  host_impl_->InvalidateLayerTreeFrameSink();
 }
 
 void ProxyImpl::ScheduledActionPerformImplSideInvalidation() {
@@ -755,6 +736,11 @@ void ProxyImpl::ClearHistoryOnNavigation() {
   DCHECK(IsImplThread());
   DCHECK(IsMainThreadBlocked());
   scheduler_->ClearHistoryOnNavigation();
+}
+
+void ProxyImpl::SetRenderFrameObserver(
+    std::unique_ptr<RenderFrameMetadataObserver> observer) {
+  host_impl_->SetRenderFrameObserver(std::move(observer));
 }
 
 }  // namespace cc

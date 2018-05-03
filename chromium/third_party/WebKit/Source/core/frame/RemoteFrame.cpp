@@ -74,8 +74,6 @@ void RemoteFrame::Navigate(const FrameLoadRequest& passed_request) {
   FrameLoader::UpgradeInsecureRequest(frame_request.GetResourceRequest(),
                                       frame_request.OriginDocument());
 
-  frame_request.GetResourceRequest().SetHasUserGesture(
-      Frame::HasTransientUserActivation(this));
   Client()->Navigate(frame_request.GetResourceRequest(),
                      frame_request.ReplacesCurrentItem());
 }
@@ -114,6 +112,11 @@ void RemoteFrame::Detach(FrameDetachType type) {
 bool RemoteFrame::PrepareForCommit() {
   DetachChildren();
   return !!GetPage();
+}
+
+void RemoteFrame::CheckCompleted() {
+  // Notify the client so that the corresponding LocalFrame can do the check.
+  Client()->CheckCompleted();
 }
 
 RemoteSecurityContext* RemoteFrame::GetSecurityContext() const {

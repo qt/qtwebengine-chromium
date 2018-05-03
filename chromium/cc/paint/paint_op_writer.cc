@@ -13,6 +13,8 @@
 #include "cc/paint/paint_typeface_transfer_cache_entry.h"
 #include "cc/paint/transfer_cache_serialize_helper.h"
 #include "third_party/skia/include/core/SkTextBlob.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/skia_util.h"
 
 namespace cc {
 namespace {
@@ -187,8 +189,7 @@ void PaintOpWriter::Write(const PaintFlags& flags) {
 void PaintOpWriter::Write(const DrawImage& image) {
   if (enable_security_constraints_) {
     SkBitmap bm;
-    if (!image.paint_image().GetSkImage()->asLegacyBitmap(
-            &bm, SkImage::LegacyBitmapMode::kRO_LegacyBitmapMode)) {
+    if (!image.paint_image().GetSkImage()->asLegacyBitmap(&bm)) {
       Write(static_cast<uint8_t>(PaintOp::SerializedImageType::kNoImage));
       return;
     }
@@ -207,6 +208,9 @@ void PaintOpWriter::Write(const DrawImage& image) {
   Write(
       static_cast<uint8_t>(PaintOp::SerializedImageType::kTransferCacheEntry));
   auto decoded_image = image_provider_->GetDecodedDrawImage(image);
+  DCHECK(!decoded_image.decoded_image().image())
+      << "Use transfer cache for image serialization";
+
   base::Optional<uint32_t> id =
       decoded_image.decoded_image().transfer_cache_entry_id();
 
@@ -282,7 +286,15 @@ void PaintOpWriter::Write(const PaintShader* shader) {
   Write(shader->image_);
   if (shader->record_) {
     Write(true);
-    Write(shader->record_.get());
+    base::Optional<gfx::Rect> playback_rect;
+    base::Optional<gfx::SizeF> post_scale;
+    if (shader->tile_scale()) {
+      playback_rect.emplace(
+          gfx::ToEnclosingRect(gfx::SkRectToRectF(shader->tile())));
+      post_scale.emplace(*shader->tile_scale());
+    }
+    Write(shader->record_.get(), std::move(playback_rect),
+          std::move(post_scale));
   } else {
     Write(false);
   }
@@ -597,7 +609,10 @@ void PaintOpWriter::Write(const LightingSpotPaintFilter& filter) {
   Write(filter.input().get());
 }
 
-void PaintOpWriter::Write(const PaintRecord* record) {
+void PaintOpWriter::Write(const PaintRecord* record,
+                          base::Optional<gfx::Rect> playback_rect,
+                          base::Optional<gfx::SizeF> post_scale) {
+  DCHECK_EQ(playback_rect.has_value(), post_scale.has_value());
   // We need to record how many bytes we will serialize, but we don't know this
   // information until we do the serialization. So, skip the amount needed
   // before writing.
@@ -622,7 +637,12 @@ void PaintOpWriter::Write(const PaintRecord* record) {
 
   SimpleBufferSerializer serializer(memory_, remaining_bytes_, image_provider_,
                                     transfer_cache_);
-  serializer.Serialize(record);
+  if (playback_rect) {
+    serializer.Serialize(record, *playback_rect, *post_scale);
+  } else {
+    serializer.Serialize(record);
+  }
+
   if (!serializer.valid()) {
     valid_ = false;
     return;

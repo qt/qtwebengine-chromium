@@ -87,7 +87,6 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
       mTransformFeedback(0),
       mCurrentTransformFeedback(nullptr),
       mQueries(),
-      mCurrentQueries(),
       mPrevDrawContext(0),
       mUnpackAlignment(4),
       mUnpackRowLength(0),
@@ -190,7 +189,8 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
 
     for (GLenum queryType : QueryTypes)
     {
-        mQueries[queryType] = 0;
+        mQueries[queryType]                = nullptr;
+        mTemporaryPausedQueries[queryType] = nullptr;
     }
 
     // Initialize point sprite state for desktop GL
@@ -361,22 +361,6 @@ void StateManagerGL::deleteTransformFeedback(GLuint transformFeedback)
         }
 
         mFunctions->deleteTransformFeedbacks(1, &transformFeedback);
-    }
-}
-
-void StateManagerGL::deleteQuery(GLuint query)
-{
-    if (query != 0)
-    {
-        for (auto &activeQuery : mQueries)
-        {
-            GLuint activeQueryID = activeQuery.second;
-            if (activeQueryID == query)
-            {
-                GLenum type = activeQuery.first;
-                endQuery(type, query);
-            }
-        }
     }
 }
 
@@ -606,25 +590,44 @@ void StateManagerGL::setPixelPackBuffer(const gl::Buffer *pixelBuffer)
 
 void StateManagerGL::bindFramebuffer(GLenum type, GLuint framebuffer)
 {
-    if (type == GL_FRAMEBUFFER)
+    switch (type)
     {
-        if (mFramebuffers[angle::FramebufferBindingRead] != framebuffer ||
-            mFramebuffers[angle::FramebufferBindingDraw] != framebuffer)
-        {
-            mFramebuffers[angle::FramebufferBindingRead] = framebuffer;
-            mFramebuffers[angle::FramebufferBindingDraw] = framebuffer;
-            mFunctions->bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        }
-    }
-    else
-    {
-        angle::FramebufferBinding binding = angle::EnumToFramebufferBinding(type);
+        case GL_FRAMEBUFFER:
+            if (mFramebuffers[angle::FramebufferBindingRead] != framebuffer ||
+                mFramebuffers[angle::FramebufferBindingDraw] != framebuffer)
+            {
+                mFramebuffers[angle::FramebufferBindingRead] = framebuffer;
+                mFramebuffers[angle::FramebufferBindingDraw] = framebuffer;
+                mFunctions->bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 
-        if (mFramebuffers[binding] != framebuffer)
-        {
-            mFramebuffers[binding] = framebuffer;
-            mFunctions->bindFramebuffer(type, framebuffer);
-        }
+                mLocalDirtyBits.set(gl::State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
+                mLocalDirtyBits.set(gl::State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
+            }
+            break;
+
+        case GL_READ_FRAMEBUFFER:
+            if (mFramebuffers[angle::FramebufferBindingRead] != framebuffer)
+            {
+                mFramebuffers[angle::FramebufferBindingRead] = framebuffer;
+                mFunctions->bindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+
+                mLocalDirtyBits.set(gl::State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
+            }
+            break;
+
+        case GL_DRAW_FRAMEBUFFER:
+            if (mFramebuffers[angle::FramebufferBindingDraw] != framebuffer)
+            {
+                mFramebuffers[angle::FramebufferBindingDraw] = framebuffer;
+                mFunctions->bindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+
+                mLocalDirtyBits.set(gl::State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
+            }
+            break;
+
+        default:
+            UNREACHABLE();
+            break;
     }
 }
 
@@ -664,32 +667,23 @@ void StateManagerGL::onTransformFeedbackStateChange()
     mLocalDirtyBits.set(gl::State::DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING);
 }
 
-void StateManagerGL::beginQuery(GLenum type, GLuint query)
+void StateManagerGL::beginQuery(GLenum type, QueryGL *queryObject, GLuint queryId)
 {
     // Make sure this is a valid query type and there is no current active query of this type
     ASSERT(mQueries.find(type) != mQueries.end());
-    ASSERT(mQueries[type] == 0);
-    ASSERT(query != 0);
+    ASSERT(mQueries[type] == nullptr);
+    ASSERT(queryId != 0);
 
-    mQueries[type] = query;
-    mFunctions->beginQuery(type, query);
+    mQueries[type] = queryObject;
+    mFunctions->beginQuery(type, queryId);
 }
 
-void StateManagerGL::endQuery(GLenum type, GLuint query)
+void StateManagerGL::endQuery(GLenum type, QueryGL *queryObject, GLuint queryId)
 {
-    ASSERT(mQueries[type] == query);
-    mQueries[type] = 0;
+    ASSERT(queryObject != nullptr);
+    ASSERT(mQueries[type] == queryObject);
+    mQueries[type] = nullptr;
     mFunctions->endQuery(type);
-}
-
-void StateManagerGL::onBeginQuery(QueryGL *query)
-{
-    mCurrentQueries.insert(query);
-}
-
-void StateManagerGL::onDeleteQueryObject(QueryGL *query)
-{
-    mCurrentQueries.erase(query);
 }
 
 gl::Error StateManagerGL::setDrawArraysState(const gl::Context *context,
@@ -775,43 +769,60 @@ void StateManagerGL::pauseTransformFeedback()
 
 gl::Error StateManagerGL::pauseAllQueries()
 {
-    for (QueryGL *prevQuery : mCurrentQueries)
+    for (auto &prevQuery : mQueries)
     {
-        ANGLE_TRY(prevQuery->pause());
+        if (prevQuery.second)
+        {
+            ANGLE_TRY(prevQuery.second->pause());
+            mTemporaryPausedQueries[prevQuery.first] = prevQuery.second;
+            prevQuery.second                         = nullptr;
+        }
     }
     return gl::NoError();
 }
 
 gl::Error StateManagerGL::pauseQuery(GLenum type)
 {
-    for (QueryGL *prevQuery : mCurrentQueries)
+    ASSERT(mQueries.find(type) != mQueries.end());
+    ASSERT(mTemporaryPausedQueries.find(type) == mQueries.end());
+    QueryGL *prevQuery = mQueries[type];
+    if (prevQuery)
     {
-        if (prevQuery->getType() == type)
-        {
-            ANGLE_TRY(prevQuery->pause());
-        }
+        ANGLE_TRY(prevQuery->pause());
+        mTemporaryPausedQueries[type] = prevQuery;
+        mQueries[type]                = nullptr;
     }
+
     return gl::NoError();
 }
 
 gl::Error StateManagerGL::resumeAllQueries()
 {
-    for (QueryGL *prevQuery : mCurrentQueries)
+    for (auto &pausedQuery : mTemporaryPausedQueries)
     {
-        ANGLE_TRY(prevQuery->resume());
+        if (pausedQuery.second)
+        {
+            ASSERT(mQueries[pausedQuery.first] == nullptr);
+            ANGLE_TRY(pausedQuery.second->resume());
+            pausedQuery.second = nullptr;
+        }
     }
+
     return gl::NoError();
 }
 
 gl::Error StateManagerGL::resumeQuery(GLenum type)
 {
-    for (QueryGL *prevQuery : mCurrentQueries)
+    ASSERT(mQueries.find(type) != mQueries.end());
+    ASSERT(mTemporaryPausedQueries.find(type) != mTemporaryPausedQueries.end());
+
+    QueryGL *pausedQuery = mTemporaryPausedQueries[type];
+    if (pausedQuery)
     {
-        if (prevQuery->getType() == type)
-        {
-            ANGLE_TRY(prevQuery->resume());
-        }
+        ANGLE_TRY(pausedQuery->resume());
+        mTemporaryPausedQueries[type] = nullptr;
     }
+
     return gl::NoError();
 }
 
@@ -819,28 +830,38 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::Context *context)
 {
     const gl::State &glState = context->getGLState();
 
+#if defined(ANGLE_ENABLE_ASSERTS)
+    // Temporarily pausing queries during context switch is not supported
+    for (auto &pausedQuery : mTemporaryPausedQueries)
+    {
+        ASSERT(pausedQuery.second == nullptr);
+    }
+#endif
+
     // If the context has changed, pause the previous context's queries
     auto contextID = context->getContextState().getContextID();
     if (contextID != mPrevDrawContext)
     {
-        ANGLE_TRY(pauseAllQueries());
-    }
-    mCurrentQueries.clear();
-    onTransformFeedbackStateChange();
-    mPrevDrawContext           = contextID;
-
-    // Set the current query state
-    for (GLenum queryType : QueryTypes)
-    {
-        gl::Query *query = glState.getActiveQuery(queryType);
-        if (query != nullptr)
+        for (auto &currentQuery : mQueries)
         {
-            QueryGL *queryGL = GetImplAs<QueryGL>(query);
-            ANGLE_TRY(queryGL->resume());
+            // Pause any old query object
+            if (currentQuery.second)
+            {
+                ANGLE_TRY(currentQuery.second->pause());
+                currentQuery.second = nullptr;
+            }
 
-            mCurrentQueries.insert(queryGL);
+            // Check if this new context needs to resume a query
+            gl::Query *newQuery = glState.getActiveQuery(currentQuery.first);
+            if (newQuery != nullptr)
+            {
+                QueryGL *queryGL = GetImplAs<QueryGL>(newQuery);
+                ANGLE_TRY(queryGL->resume());
+            }
         }
     }
+    onTransformFeedbackStateChange();
+    mPrevDrawContext = contextID;
 
     // Seamless cubemaps are required for ES3 and higher contexts. It should be the cheapest to set
     // this state here since MakeCurrent is expected to be called less frequently than draw calls.
@@ -1016,21 +1037,21 @@ void StateManagerGL::updateProgramStorageBufferBindings(const gl::Context *conte
 
 gl::Error StateManagerGL::setGenericDrawState(const gl::Context *context)
 {
-    const gl::State &glState = context->getGLState();
-    const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(glState.getVertexArray());
-    bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
-
     setGenericShaderState(context);
-
-    gl::Framebuffer *framebuffer = glState.getDrawFramebuffer();
-    FramebufferGL *framebufferGL = GetImplAs<FramebufferGL>(framebuffer);
-    bindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferGL->getFramebufferID());
 
     if (context->getExtensions().webglCompatibility)
     {
+        const gl::State &glState     = context->getGLState();
+        FramebufferGL *framebufferGL = GetImplAs<FramebufferGL>(glState.getDrawFramebuffer());
         auto activeOutputs = glState.getProgram()->getState().getActiveOutputVariables();
-        framebufferGL->maskOutInactiveOutputDrawBuffers(activeOutputs);
+        framebufferGL->maskOutInactiveOutputDrawBuffers(GL_DRAW_FRAMEBUFFER, activeOutputs);
     }
+
+    ASSERT(
+        mFramebuffers[angle::FramebufferBindingDraw] ==
+        GetImplAs<FramebufferGL>(context->getGLState().getDrawFramebuffer())->getFramebufferID());
+    ASSERT(mVAO ==
+           GetImplAs<VertexArrayGL>(context->getGLState().getVertexArray())->getVertexArrayID());
 
     return gl::NoError();
 }
@@ -1910,24 +1931,34 @@ void StateManagerGL::syncState(const gl::Context *context, const gl::State::Dirt
                 // TODO(jmadill): implement this
                 break;
             case gl::State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING:
-                // TODO(jmadill): implement this
+            {
+                gl::Framebuffer *framebuffer = state.getReadFramebuffer();
+                FramebufferGL *framebufferGL = GetImplAs<FramebufferGL>(framebuffer);
+                bindFramebuffer(GL_READ_FRAMEBUFFER, framebufferGL->getFramebufferID());
                 break;
+            }
             case gl::State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING:
             {
-                // TODO(jmadill): implement this
-                updateMultiviewBaseViewLayerIndexUniform(
-                    state.getProgram(),
-                    state.getDrawFramebuffer()->getImplementation()->getState());
+                gl::Framebuffer *framebuffer = state.getDrawFramebuffer();
+                FramebufferGL *framebufferGL = GetImplAs<FramebufferGL>(framebuffer);
+                bindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferGL->getFramebufferID());
+
+                const gl::Program *program = state.getProgram();
+                updateMultiviewBaseViewLayerIndexUniform(program, framebufferGL->getState());
                 break;
             }
             case gl::State::DIRTY_BIT_RENDERBUFFER_BINDING:
                 // TODO(jmadill): implement this
                 break;
             case gl::State::DIRTY_BIT_VERTEX_ARRAY_BINDING:
-                // TODO(jmadill): implement this
+            {
+                const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(state.getVertexArray());
+                bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
+
                 propagateNumViewsToVAO(state.getProgram(),
                                        GetImplAs<VertexArrayGL>(state.getVertexArray()));
                 break;
+            }
             case gl::State::DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING:
                 updateDrawIndirectBufferBinding(context);
                 break;

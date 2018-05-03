@@ -105,6 +105,7 @@
 <translation id="5537725057119320332">Przesyłaj</translation>
 <translation id="5546461542133609677">wyłącz wyciszenie</translation>
 <translation id="561939826962581046">time</translation>
+<translation id="5630795885300617244">Kliknij dwukrotnie z lewej lub prawej, by przewinąć o 10 s</translation>
 <translation id="5641012560118721995">wstrzymaj odtwarzanie</translation>
 <translation id="5643186887447432888">przycisk</translation>
 <translation id="5677946354068040947">więcej opcji</translation>
@@ -123,6 +124,7 @@
 <translation id="6404546809543547843">pasek czasu odtwarzania dźwięku</translation>
 <translation id="648732519525291180">selektor godziny</translation>
 <translation id="6550675742724504774">Opcje</translation>
+<translation id="6564313821541007458">Teraz pracuję w trybie Obraz w obrazie</translation>
 <translation id="658823671542763450">przejdź do pełnego ekranu</translation>
 <translation id="663493177488814956">kanał</translation>
 <translation id="6637586476836377253">dziennik</translation>
@@ -168,12 +170,12 @@
 <translation id="8444882422881193423">Liczba plików: <ph name="NUMBER_OF_FILES" /></translation>
 <translation id="8451268428117625855">Wybierz plik.</translation>
 <translation id="8461852803063341183">przycisk opcji</translation>
-<translation id="8511325616783751178">przycisk listy</translation>
 <translation id="8534579021159131403">Minuty</translation>
 <translation id="8541249477527128034">sterowanie multimediami</translation>
 <translation id="8583702881314752957">lista definicji</translation>
 <translation id="8597182159515967513">nagłówek</translation>
 <translation id="8613126697340063924">sterowanie zdalnym odtwarzaniem</translation>
+<translation id="8741316211671074806">Obraz w obrazie</translation>
 <translation id="8750798805984357768">Wybierz jedną z opcji.</translation>
 <translation id="8785498733064193001">rozpocznij odtwarzanie</translation>
 <translation id="8845239796550121995">Przesyłam na telewizor</translation>
@@ -189,7 +191,6 @@
 <translation id="9132465097189459683">Inny...</translation>
 <translation id="9138385573473225930">alert</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, początek <ph name="WEEK_START_DATE" /></translation>
-<translation id="916607977885256133">Obraz w obrazie</translation>
 <translation id="947831847158436616">komórka</translation>
 <translation id="966787709310836684">menu</translation>
 </translationbundle>

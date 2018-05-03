@@ -59,12 +59,10 @@ void EmbeddedWorkerInstanceClientImpl::StartWorker(
                "EmbeddedWorkerInstanceClientImpl::StartWorker");
   service_manager::mojom::InterfaceProviderPtr interface_provider(
       std::move(params->provider_info->interface_provider));
-  const bool use_script_streaming =
-      ServiceWorkerUtils::IsScriptStreamingEnabled() &&
-      params->installed_scripts_info;
   auto client = std::make_unique<ServiceWorkerContextClient>(
       params->embedded_worker_id, params->service_worker_version_id,
-      params->scope, params->script_url, use_script_streaming,
+      params->scope, params->script_url,
+      !params->installed_scripts_info.is_null(),
       std::move(params->dispatcher_request),
       std::move(params->controller_request),
       std::move(params->service_worker_host), std::move(params->instance_host),
@@ -134,8 +132,7 @@ EmbeddedWorkerInstanceClientImpl::StartWorkerContext(
   // |installed_scripts_info| is null if scripts should be served by net layer,
   // when the worker is not installed, or the worker is launched for checking
   // the update.
-  if (ServiceWorkerUtils::IsScriptStreamingEnabled() &&
-      params->installed_scripts_info) {
+  if (params->installed_scripts_info) {
     manager = WebServiceWorkerInstalledScriptsManagerImpl::Create(
         std::move(params->installed_scripts_info), io_thread_runner_);
   }
@@ -154,8 +151,7 @@ EmbeddedWorkerInstanceClientImpl::StartWorkerContext(
       params->wait_for_debugger
           ? blink::WebEmbeddedWorkerStartData::kWaitForDebugger
           : blink::WebEmbeddedWorkerStartData::kDontWaitForDebugger;
-  start_data.devtools_frame_token =
-      blink::WebString::FromUTF8(params->devtools_worker_token.ToString());
+  start_data.devtools_worker_token = params->devtools_worker_token;
   start_data.v8_cache_options =
       static_cast<blink::WebSettings::V8CacheOptions>(params->v8_cache_options);
   start_data.pause_after_download_mode =

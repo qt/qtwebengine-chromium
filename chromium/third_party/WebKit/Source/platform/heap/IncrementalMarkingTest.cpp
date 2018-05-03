@@ -9,9 +9,9 @@
 #include "platform/heap/GarbageCollected.h"
 #include "platform/heap/Heap.h"
 #include "platform/heap/HeapAllocator.h"
+#include "platform/heap/HeapFlags.h"
 #include "platform/heap/HeapTerminatedArray.h"
 #include "platform/heap/HeapTerminatedArrayBuilder.h"
-#include "platform/heap/IncrementalMarkingFlag.h"
 #include "platform/heap/Member.h"
 #include "platform/heap/ThreadState.h"
 #include "platform/heap/TraceTraits.h"
@@ -31,16 +31,16 @@ class IncrementalMarkingScope {
         heap_(thread_state_->Heap()),
         marking_stack_(heap_.MarkingStack()) {
     EXPECT_TRUE(marking_stack_->IsEmpty());
-    marking_stack_->Commit();
+    heap_.CommitCallbackStacks();
     heap_.EnableIncrementalMarkingBarrier();
     thread_state->current_gc_data_.visitor =
-        Visitor::Create(thread_state, Visitor::kGlobalMarking);
+        MarkingVisitor::Create(thread_state, MarkingVisitor::kGlobalMarking);
   }
 
   ~IncrementalMarkingScope() {
     EXPECT_TRUE(marking_stack_->IsEmpty());
     heap_.DisableIncrementalMarkingBarrier();
-    marking_stack_->Decommit();
+    heap_.DecommitCallbackStacks();
   }
 
   CallbackStack* marking_stack() const { return marking_stack_; }
@@ -64,6 +64,10 @@ class ExpectWriteBarrierFires : public IncrementalMarkingScope {
       : IncrementalMarkingScope(thread_state), objects_(objects) {
     EXPECT_TRUE(marking_stack_->IsEmpty());
     for (T* object : objects_) {
+      // Ensure that the object is in the normal arena so we can ignore backing
+      // objects on the marking stack.
+      CHECK(ThreadHeap::IsNormalArenaIndex(
+          PageFromObject(object)->Arena()->ArenaIndex()));
       headers_.push_back(HeapObjectHeader::FromPayload(object));
       EXPECT_FALSE(headers_.back()->IsMarked());
     }
@@ -80,6 +84,10 @@ class ExpectWriteBarrierFires : public IncrementalMarkingScope {
     while (!marking_stack_->IsEmpty()) {
       CallbackStack::Item* item = marking_stack_->Pop();
       T* obj = reinterpret_cast<T*>(item->Object());
+      // Ignore the backing object.
+      if (!ThreadHeap::IsNormalArenaIndex(
+              PageFromObject(obj)->Arena()->ArenaIndex()))
+        continue;
       auto pos = std::find(objects_.begin(), objects_.end(), obj);
       // The following check makes sure that there are no unexpected objects on
       // the marking stack. If it fails then the write barrier fired for an
@@ -817,22 +825,26 @@ void SwapNoBarrier() {
 
 TEST(IncrementalMarkingTest, HeapHashSetInsert) {
   Insert<HeapHashSet<Member<Object>>>();
-  InsertNoBarrier<HeapHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Insert<HeapHashSet<WeakMember<Object>>>();
 }
 
 TEST(IncrementalMarkingTest, HeapHashSetCopy) {
   Copy<HeapHashSet<Member<Object>>>();
-  CopyNoBarrier<HeapHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Copy<HeapHashSet<WeakMember<Object>>>();
 }
 
 TEST(IncrementalMarkingTest, HeapHashSetMove) {
   Move<HeapHashSet<Member<Object>>>();
-  MoveNoBarrier<HeapHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Move<HeapHashSet<WeakMember<Object>>>();
 }
 
 TEST(IncrementalMarkingTest, HeapHashSetSwap) {
   Swap<HeapHashSet<Member<Object>>>();
-  SwapNoBarrier<HeapHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Swap<HeapHashSet<WeakMember<Object>>>();
 }
 
 class StrongWeakPair : public std::pair<Member<Object>, WeakMember<Object>> {
@@ -857,9 +869,9 @@ class StrongWeakPair : public std::pair<Member<Object>, WeakMember<Object>> {
   // TraceInCollection will be called for weak processing.
   template <typename VisitorDispatcher>
   bool TraceInCollection(VisitorDispatcher visitor,
-                         WTF::ShouldWeakPointersBeMarkedStrongly strongify) {
+                         WTF::WeakHandlingFlag weakness) {
     visitor->Trace(first);
-    if (strongify == WTF::kWeakPointersActStrong) {
+    if (weakness == WTF::kNoWeakHandling) {
       visitor->Trace(second);
     }
     return false;
@@ -874,8 +886,7 @@ namespace WTF {
 template <>
 struct HashTraits<blink::incremental_marking_test::StrongWeakPair>
     : SimpleClassHashTraits<blink::incremental_marking_test::StrongWeakPair> {
-  static const WTF::WeakHandlingFlag kWeakHandlingFlag =
-      WTF::kWeakHandlingInCollections;
+  static const WTF::WeakHandlingFlag kWeakHandlingFlag = WTF::kWeakHandling;
 
   template <typename U = void>
   struct IsTraceableInCollection {
@@ -904,8 +915,8 @@ struct HashTraits<blink::incremental_marking_test::StrongWeakPair>
   static bool TraceInCollection(
       VisitorDispatcher visitor,
       blink::incremental_marking_test::StrongWeakPair& t,
-      WTF::ShouldWeakPointersBeMarkedStrongly strongify) {
-    return t.TraceInCollection(visitor, strongify);
+      WTF::WeakHandlingFlag weakness) {
+    return t.TraceInCollection(visitor, weakness);
   }
 };
 
@@ -960,22 +971,26 @@ TEST(IncrementalMarkingTest, HeapLinkedHashSetStrongWeakPair) {
 
 TEST(IncrementalMarkingTest, HeapLinkedHashSetInsert) {
   Insert<HeapLinkedHashSet<Member<Object>>>();
-  InsertNoBarrier<HeapLinkedHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Insert<HeapLinkedHashSet<WeakMember<Object>>>();
 }
 
 TEST(IncrementalMarkingTest, HeapLinkedHashSetCopy) {
   Copy<HeapLinkedHashSet<Member<Object>>>();
-  CopyNoBarrier<HeapLinkedHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Copy<HeapLinkedHashSet<WeakMember<Object>>>();
 }
 
 TEST(IncrementalMarkingTest, HeapLinkedHashSetMove) {
   Move<HeapLinkedHashSet<Member<Object>>>();
-  MoveNoBarrier<HeapLinkedHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Move<HeapLinkedHashSet<WeakMember<Object>>>();
 }
 
 TEST(IncrementalMarkingTest, HeapLinkedHashSetSwap) {
   Swap<HeapLinkedHashSet<Member<Object>>>();
-  SwapNoBarrier<HeapLinkedHashSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Move<HeapLinkedHashSet<WeakMember<Object>>>();
 }
 
 // =============================================================================
@@ -986,7 +1001,8 @@ TEST(IncrementalMarkingTest, HeapLinkedHashSetSwap) {
 
 TEST(IncrementalMarkingTest, HeapHashCountedSetInsert) {
   Insert<HeapHashCountedSet<Member<Object>>>();
-  InsertNoBarrier<HeapHashCountedSet<WeakMember<Object>>>();
+  // Weak references are strongified for the current cycle.
+  Insert<HeapHashCountedSet<WeakMember<Object>>>();
 }
 
 TEST(IncrementalMarkingTest, HeapHashCountedSetSwap) {
@@ -1012,8 +1028,9 @@ TEST(IncrementalMarkingTest, HeapHashCountedSetSwap) {
     HeapHashCountedSet<WeakMember<Object>> container2;
     container2.insert(obj2);
     {
-      ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                              {obj1, obj2});
+      // Weak references are strongified for the current cycle.
+      ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
+                                            {obj1, obj2});
       container1.swap(container2);
     }
   }
@@ -1084,8 +1101,8 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertWeakMember) {
   Object* obj2 = Object::Create();
   HeapHashMap<WeakMember<Object>, WeakMember<Object>> map;
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                            {obj1, obj2});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, obj2);
   }
 }
@@ -1095,7 +1112,8 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertMemberWeakMember) {
   Object* obj2 = Object::Create();
   HeapHashMap<Member<Object>, WeakMember<Object>> map;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, obj2);
   }
 }
@@ -1105,7 +1123,8 @@ TEST(IncrementalMarkingTest, HeapHashMapInsertWeakMemberMember) {
   Object* obj2 = Object::Create();
   HeapHashMap<WeakMember<Object>, Member<Object>> map;
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj2});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     map.insert(obj1, obj2);
   }
 }
@@ -1184,8 +1203,8 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyWeakMemberWeakMember) {
   HeapHashMap<WeakMember<Object>, WeakMember<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                            {obj1, obj2});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     EXPECT_TRUE(map1.Contains(obj1));
     HeapHashMap<WeakMember<Object>, WeakMember<Object>> map2(map1);
     EXPECT_TRUE(map1.Contains(obj1));
@@ -1199,7 +1218,8 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyMemberWeakMember) {
   HeapHashMap<Member<Object>, WeakMember<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     EXPECT_TRUE(map1.Contains(obj1));
     HeapHashMap<Member<Object>, WeakMember<Object>> map2(map1);
     EXPECT_TRUE(map1.Contains(obj1));
@@ -1213,7 +1233,8 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyWeakMemberMember) {
   HeapHashMap<WeakMember<Object>, Member<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj2});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     EXPECT_TRUE(map1.Contains(obj1));
     HeapHashMap<WeakMember<Object>, Member<Object>> map2(map1);
     EXPECT_TRUE(map1.Contains(obj1));
@@ -1238,8 +1259,8 @@ TEST(IncrementalMarkingTest, HeapHashMapMoveWeakMember) {
   HeapHashMap<WeakMember<Object>, WeakMember<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                            {obj1, obj2});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     HeapHashMap<WeakMember<Object>, WeakMember<Object>> map2(std::move(map1));
   }
 }
@@ -1250,7 +1271,8 @@ TEST(IncrementalMarkingTest, HeapHashMapMoveMemberWeakMember) {
   HeapHashMap<Member<Object>, WeakMember<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     HeapHashMap<Member<Object>, WeakMember<Object>> map2(std::move(map1));
   }
 }
@@ -1261,7 +1283,8 @@ TEST(IncrementalMarkingTest, HeapHashMapMoveWeakMemberMember) {
   HeapHashMap<WeakMember<Object>, Member<Object>> map1;
   map1.insert(obj1, obj2);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj2});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj2});
     HeapHashMap<WeakMember<Object>, Member<Object>> map2(std::move(map1));
   }
 }
@@ -1292,8 +1315,9 @@ TEST(IncrementalMarkingTest, HeapHashMapSwapWeakMemberWeakMember) {
   HeapHashMap<WeakMember<Object>, WeakMember<Object>> map2;
   map2.insert(obj3, obj4);
   {
-    ExpectNoWriteBarrierFires<Object> scope(ThreadState::Current(),
-                                            {obj1, obj2, obj3, obj4});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
+                                          {obj1, obj2, obj3, obj4});
     std::swap(map1, map2);
   }
 }
@@ -1308,7 +1332,9 @@ TEST(IncrementalMarkingTest, HeapHashMapSwapMemberWeakMember) {
   HeapHashMap<Member<Object>, WeakMember<Object>> map2;
   map2.insert(obj3, obj4);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj1, obj3});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
+                                          {obj1, obj2, obj3, obj4});
     std::swap(map1, map2);
   }
 }
@@ -1323,7 +1349,9 @@ TEST(IncrementalMarkingTest, HeapHashMapSwapWeakMemberMember) {
   HeapHashMap<WeakMember<Object>, Member<Object>> map2;
   map2.insert(obj3, obj4);
   {
-    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj2, obj4});
+    // Weak references are strongified for the current cycle.
+    ExpectWriteBarrierFires<Object> scope(ThreadState::Current(),
+                                          {obj1, obj2, obj3, obj4});
     std::swap(map1, map2);
   }
 }
@@ -1380,6 +1408,42 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyValuesToVectorMember) {
     ExpectWriteBarrierFires<Object> scope(ThreadState::Current(), {obj2});
     CopyValuesToVector(map, vec);
   }
+}
+
+TEST(IncrementalMarkingTest, WeakHashMapPromptlyFreeDisabled) {
+  ThreadState* state = ThreadState::Current();
+  state->SetGCState(ThreadState::kIncrementalMarkingStartScheduled);
+  state->SetGCState(ThreadState::kIncrementalMarkingStepScheduled);
+  Persistent<Object> obj1 = Object::Create();
+  NormalPageArena* arena = static_cast<NormalPageArena*>(
+      ThreadState::Current()->Heap().Arena(BlinkGC::kHashTableArenaIndex));
+  CHECK(arena);
+  {
+    size_t before = arena->promptly_freed_size();
+    // Create two maps so we don't promptly free at the allocation point.
+    HeapHashMap<WeakMember<Object>, Member<Object>> weak_map1;
+    HeapHashMap<WeakMember<Object>, Member<Object>> weak_map2;
+    weak_map1.insert(obj1, obj1);
+    weak_map2.insert(obj1, obj1);
+    weak_map1.clear();
+    size_t after = arena->promptly_freed_size();
+    // Weak hash table backings should not be promptly freed.
+    EXPECT_EQ(after, before);
+  }
+  {
+    size_t before = arena->promptly_freed_size();
+    // Create two maps so we don't promptly free at the allocation point.
+    HeapHashMap<Member<Object>, Member<Object>> map1;
+    HeapHashMap<Member<Object>, Member<Object>> map2;
+    map1.insert(obj1, obj1);
+    map2.insert(obj1, obj1);
+    map1.clear();
+    size_t after = arena->promptly_freed_size();
+    // Non-weak hash table backings should be promptly freed.
+    EXPECT_GT(after, before);
+  }
+  state->SetGCState(ThreadState::kIncrementalMarkingFinalizeScheduled);
+  state->SetGCState(ThreadState::kNoGCScheduled);
 }
 
 }  // namespace incremental_marking_test

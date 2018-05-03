@@ -104,9 +104,11 @@
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "third_party/WebKit/public/platform/WebKeyboardEvent.h"
 #include "third_party/WebKit/public/platform/WebMouseEvent.h"
+#include "third_party/WebKit/public/platform/WebPointerEvent.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebTouchEvent.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -812,7 +814,7 @@ void PepperPluginInstanceImpl::PassCommittedTextureToTextureLayer() {
     return;
 
   std::unique_ptr<viz::SingleReleaseCallback> callback(
-      viz::SingleReleaseCallback::Create(base::Bind(
+      viz::SingleReleaseCallback::Create(base::BindOnce(
           &PepperPluginInstanceImpl::FinishedConsumingCommittedTexture,
           weak_factory_.GetWeakPtr(), committed_texture_,
           committed_texture_graphics_3d_)));
@@ -2303,6 +2305,11 @@ void PepperPluginInstanceImpl::SimulateInputEvent(
        it != events.end(); ++it) {
     widget->HandleInputEvent(blink::WebCoalescedInputEvent(*it->get()));
   }
+  if (input_event.event_type == PP_INPUTEVENT_TYPE_TOUCHSTART ||
+      input_event.event_type == PP_INPUTEVENT_TYPE_TOUCHMOVE ||
+      input_event.event_type == PP_INPUTEVENT_TYPE_TOUCHEND ||
+      input_event.event_type == PP_INPUTEVENT_TYPE_TOUCHCANCEL)
+    widget->DispatchBufferedTouchEvents();
 }
 
 bool PepperPluginInstanceImpl::SimulateIMEEvent(

@@ -139,6 +139,8 @@ namespace
 			return GL_UNSIGNED_INT_SAMPLER_2D;
 		case EbtSamplerCube:
 			return GL_SAMPLER_CUBE;
+		case EbtSampler2DRect:
+			return GL_SAMPLER_2D_RECT_ARB;
 		case EbtISamplerCube:
 			return GL_INT_SAMPLER_CUBE;
 		case EbtUSamplerCube:
@@ -283,8 +285,8 @@ namespace glsl
 	{
 	}
 
-	BlockLayoutEncoder::BlockLayoutEncoder(bool rowMajor)
-		: mCurrentOffset(0), isRowMajor(rowMajor)
+	BlockLayoutEncoder::BlockLayoutEncoder()
+		: mCurrentOffset(0)
 	{
 	}
 
@@ -293,20 +295,15 @@ namespace glsl
 		int arrayStride;
 		int matrixStride;
 
-		bool isVariableRowMajor = isRowMajor;
-		TLayoutMatrixPacking matrixPacking = type.getLayoutQualifier().matrixPacking;
-		if(matrixPacking != EmpUnspecified)
-		{
-			isVariableRowMajor = (matrixPacking == EmpRowMajor);
-		}
-		getBlockLayoutInfo(type, type.getArraySize(), isVariableRowMajor, &arrayStride, &matrixStride);
+		bool isRowMajor = type.getLayoutQualifier().matrixPacking == EmpRowMajor;
+		getBlockLayoutInfo(type, type.getArraySize(), isRowMajor, &arrayStride, &matrixStride);
 
 		const BlockMemberInfo memberInfo(static_cast<int>(mCurrentOffset * BytesPerComponent),
 		                                 static_cast<int>(arrayStride * BytesPerComponent),
 		                                 static_cast<int>(matrixStride * BytesPerComponent),
-		                                 (matrixStride > 0) && isVariableRowMajor);
+		                                 (matrixStride > 0) && isRowMajor);
 
-		advanceOffset(type, type.getArraySize(), isVariableRowMajor, arrayStride, matrixStride);
+		advanceOffset(type, type.getArraySize(), isRowMajor, arrayStride, matrixStride);
 
 		return memberInfo;
 	}
@@ -328,7 +325,7 @@ namespace glsl
 		mCurrentOffset = sw::align(mCurrentOffset, ComponentsPerRegister);
 	}
 
-	Std140BlockEncoder::Std140BlockEncoder(bool rowMajor) : BlockLayoutEncoder(rowMajor)
+	Std140BlockEncoder::Std140BlockEncoder() : BlockLayoutEncoder()
 	{
 	}
 
@@ -424,11 +421,11 @@ namespace glsl
 	{
 		TString name = TFunction::unmangleName(nodeName);
 
-		if(name == "texture2D" || name == "textureCube" || name == "texture" || name == "texture3D")
+		if(name == "texture2D" || name == "textureCube" || name == "texture" || name == "texture3D" || name == "texture2DRect")
 		{
 			method = IMPLICIT;
 		}
-		else if(name == "texture2DProj" || name == "textureProj")
+		else if(name == "texture2DProj" || name == "textureProj" || name == "texture2DRectProj")
 		{
 			method = IMPLICIT;
 			proj = true;
@@ -675,6 +672,9 @@ namespace glsl
 			{
 				declareVarying(symbol, -1);
 			}
+			break;
+		case EvqFragmentOut:
+			declareFragmentOutput(symbol);
 			break;
 		default:
 			break;
@@ -1505,6 +1505,23 @@ namespace glsl
 						Instruction *mov = emitCast(result, arrayIndex, argi, 0);
 						mov->dst.mask = (0xF << swizzle) & 0xF;
 						mov->src[0].swizzle = readSwizzle(argi, size) << (swizzle * 2);
+
+						component += size;
+					}
+					else if(!result->isMatrix()) // Construct a non matrix from a matrix
+					{
+						Instruction *mov = emitCast(result, arrayIndex, argi, 0);
+						mov->dst.mask = (0xF << swizzle) & 0xF;
+						mov->src[0].swizzle = readSwizzle(argi, size) << (swizzle * 2);
+
+						// At most one more instruction when constructing a vec3 from a mat2 or a vec4 from a mat2/mat3
+						if(result->getNominalSize() > size)
+						{
+							Instruction *mov = emitCast(result, arrayIndex, argi, 1);
+							mov->dst.mask = (0xF << (swizzle + size)) & 0xF;
+							// mat2: xxxy (0x40), mat3: xxxx (0x00)
+							mov->src[0].swizzle = ((size == 2) ? 0x40 : 0x00) << (swizzle * 2);
+						}
 
 						component += size;
 					}
@@ -2359,7 +2376,7 @@ namespace glsl
 					arg = &unpackedUniform;
 					index = 0;
 				}
-				else if((srcBlock->matrixPacking() == EmpRowMajor) && memberType.isMatrix())
+				else if((memberType.getLayoutQualifier().matrixPacking == EmpRowMajor) && memberType.isMatrix())
 				{
 					int numCols = memberType.getNominalSize();
 					int numRows = memberType.getSecondarySize();
@@ -3148,6 +3165,61 @@ namespace glsl
 		}
 	}
 
+	void OutputASM::declareFragmentOutput(TIntermTyped *fragmentOutput)
+	{
+		int requestedLocation = fragmentOutput->getType().getLayoutQualifier().location;
+		int registerCount = fragmentOutput->totalRegisterCount();
+		if(requestedLocation < 0)
+		{
+			ASSERT(requestedLocation == -1); // All other negative values would have been prevented in TParseContext::parseLayoutQualifier
+			return; // No requested location
+		}
+		else if((requestedLocation + registerCount) > sw::RENDERTARGETS)
+		{
+			mContext.error(fragmentOutput->getLine(), "Fragment output location larger or equal to MAX_DRAW_BUFFERS", "fragment shader");
+		}
+		else
+		{
+			int currentIndex = lookup(fragmentOutputs, fragmentOutput);
+			if(requestedLocation != currentIndex)
+			{
+				if(currentIndex != -1)
+				{
+					mContext.error(fragmentOutput->getLine(), "Multiple locations for fragment output", "fragment shader");
+				}
+				else
+				{
+					if(fragmentOutputs.size() <= (size_t)requestedLocation)
+					{
+						while(fragmentOutputs.size() < (size_t)requestedLocation)
+						{
+							fragmentOutputs.push_back(nullptr);
+						}
+						for(int i = 0; i < registerCount; i++)
+						{
+							fragmentOutputs.push_back(fragmentOutput);
+						}
+					}
+					else
+					{
+						for(int i = 0; i < registerCount; i++)
+						{
+							if(!fragmentOutputs[requestedLocation + i])
+							{
+								fragmentOutputs[requestedLocation + i] = fragmentOutput;
+							}
+							else
+							{
+								mContext.error(fragmentOutput->getLine(), "Fragment output location aliasing", "fragment shader");
+								return;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	int OutputASM::uniformRegister(TIntermTyped *uniform)
 	{
 		const TType &type = uniform->getType();
@@ -3515,7 +3587,7 @@ namespace glsl
 			const BlockMemberInfo blockInfo = encoder ? encoder->encodeType(type) : BlockMemberInfo::getDefaultBlockInfo();
 			if(blockId >= 0)
 			{
-				blockDefinitions[blockId][registerIndex] = TypedMemberInfo(blockInfo, type);
+				blockDefinitions[blockId].insert(BlockDefinitionIndexMap::value_type(registerIndex, TypedMemberInfo(blockInfo, type)));
 				shaderObject->activeUniformBlocks[blockId].fields.push_back(activeUniforms.size());
 			}
 			int fieldRegisterIndex = encoder ? shaderObject->activeUniformBlocks[blockId].registerIndex + BlockLayoutEncoder::getBlockRegister(blockInfo) : registerIndex;
@@ -3546,7 +3618,7 @@ namespace glsl
 			                                           block->blockStorage(), isRowMajor, registerIndex, blockId));
 			blockDefinitions.push_back(BlockDefinitionIndexMap());
 
-			Std140BlockEncoder currentBlockEncoder(isRowMajor);
+			Std140BlockEncoder currentBlockEncoder;
 			currentBlockEncoder.enterAggregateType();
 			for(const auto &field : fields)
 			{

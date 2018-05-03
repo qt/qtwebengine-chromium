@@ -15,7 +15,7 @@
   <template>
     <style include="settings-shared iron-flex">
       .container {
-        @apply(--settings-list-frame-padding);
+        @apply --settings-list-frame-padding;
         display: flex;
         flex-direction: column;
         min-height: 10px;
@@ -27,7 +27,7 @@
       }
 
       paper-spinner-lite {
-        @apply(--cr-icon-height-width);
+        @apply --cr-icon-height-width;
       }
 
       #onOff {
@@ -39,7 +39,7 @@
       }
     </style>
 
-    <div class="settings-box first" actionable on-tap="onEnableTap_">
+    <div class="settings-box first" actionable on-click="onEnableTap_">
       <div id="onOff" class="start" on$="[[bluetoothToggleState]]">
         [[getOnOffString_(bluetoothToggleState,
           '$i18nPolymer{deviceOn}', '$i18nPolymer{deviceOff}')]]
@@ -48,7 +48,7 @@
           checked="{{bluetoothToggleState}}"
           disabled$="[[!isToggleEnabled_(adapterState, stateChangeInProgress)]]"
           aria-label="$i18n{bluetoothToggleA11yLabel}"
-          on-tap="stopTap_">
+          on-click="stopTap_">
       </paper-toggle-button>
     </div>
 

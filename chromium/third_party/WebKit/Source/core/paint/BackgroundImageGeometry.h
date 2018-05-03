@@ -109,7 +109,16 @@ class BackgroundImageGeometry {
                                            const LayoutBox&);
 
   LayoutRectOutsets ComputeDestRectAdjustment(const FillLayer&,
-                                              PaintPhase) const;
+                                              PaintPhase,
+                                              LayoutRect&,
+                                              LayoutRect&) const;
+  void ComputePositioningArea(const LayoutBoxModelObject*,
+                              PaintPhase,
+                              GlobalPaintFlags,
+                              const FillLayer&,
+                              const LayoutRect&,
+                              LayoutRect&,
+                              LayoutPoint&);
 
   const LayoutBoxModelObject& box_;
   const LayoutBoxModelObject& positioning_box_;
@@ -123,6 +132,7 @@ class BackgroundImageGeometry {
   LayoutSize repeat_spacing_;
   bool has_non_local_geometry_;
   bool coordinate_offset_by_paint_rect_;
+  bool painting_table_cell_;
   bool cell_using_container_background_;
 };
 

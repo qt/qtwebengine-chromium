@@ -11,7 +11,7 @@
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_configurator.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_io_data.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_metrics.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_util.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_util.h"
 #include "components/data_reduction_proxy/core/common/lofi_decider.h"
 #include "components/data_use_measurement/core/data_use.h"
 #include "components/data_use_measurement/core/data_use_ascriber.h"
@@ -109,15 +109,11 @@ void DataReductionProxyDataUseObserver::OnPageResourceLoad(
     return;
 
   int64_t network_bytes = request.GetTotalReceivedBytes();
-  DataReductionProxyRequestType request_type = GetDataReductionProxyRequestType(
-      request, data_reduction_proxy_io_data_->configurator()->GetProxyConfig(),
-      *data_reduction_proxy_io_data_->config());
 
   // Estimate how many bytes would have been used if the DataReductionProxy was
   // not used, and record the data usage.
   int64_t original_bytes = util::EstimateOriginalReceivedBytes(
-      request, request_type == VIA_DATA_REDUCTION_PROXY,
-      data_reduction_proxy_io_data_->lofi_decider());
+      request, data_reduction_proxy_io_data_->lofi_decider());
 
   if (data_use->traffic_type() ==
           data_use_measurement::DataUse::TrafficType::USER_TRAFFIC &&
@@ -158,19 +154,26 @@ void DataReductionProxyDataUseObserver::OnPageDidFinishLoad(
     // Report estimated data savings for NOSCRIPT if applicable.
     if (previews_user_data->committed_previews_type() ==
         previews::PreviewsType::NOSCRIPT) {
-      int inflated_bytes =
-          (data_use->total_bytes_received() *
-           previews::params::NoScriptPreviewsInflationPercent()) /
-              100 +
-          previews::params::NoScriptPreviewsInflationBytes();
+      int inflation_percent =
+          previews::params::NoScriptPreviewsInflationPercent();
+      int inflation_bytes = previews::params::NoScriptPreviewsInflationBytes();
+      if (previews_user_data->data_savings_inflation_percent() != 0) {
+        // Use specific inflation percent rather than default.
+        inflation_percent =
+            previews_user_data->data_savings_inflation_percent();
+        inflation_bytes = 0;
+      }
+      int total_inflated_bytes =
+          (data_use->total_bytes_received() * inflation_percent) / 100 +
+          inflation_bytes;
       // Report for overall usage.
       DCHECK(data_use->url().SchemeIs(url::kHttpsScheme));
       data_reduction_proxy_io_data_->UpdateContentLengths(
-          0, inflated_bytes, data_reduction_proxy_io_data_->IsEnabled(), HTTPS,
-          std::string());
+          0, total_inflated_bytes, data_reduction_proxy_io_data_->IsEnabled(),
+          HTTPS, std::string());
       // Report for host usage.
       data_reduction_proxy_io_data_->UpdateDataUseForHost(
-          0, inflated_bytes, data_use->url().HostNoBrackets());
+          0, total_inflated_bytes, data_use->url().HostNoBrackets());
     }
   }
 }

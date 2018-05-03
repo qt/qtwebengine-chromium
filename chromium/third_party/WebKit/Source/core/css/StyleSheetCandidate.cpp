@@ -62,12 +62,6 @@ Document* StyleSheetCandidate::ImportedDocument() const {
   return ToHTMLLinkElement(GetNode()).import();
 }
 
-bool StyleSheetCandidate::IsAlternate() const {
-  if (!IsElement())
-    return false;
-  return ToElement(GetNode()).getAttribute(relAttr).Contains("alternate");
-}
-
 bool StyleSheetCandidate::IsEnabledViaScript() const {
   return IsHTMLLink() && ToHTMLLinkElement(GetNode()).IsEnabledViaScript();
 }
@@ -82,22 +76,7 @@ bool StyleSheetCandidate::CanBeActivated(
   StyleSheet* sheet = this->Sheet();
   if (!sheet || sheet->disabled() || !sheet->IsCSSStyleSheet())
     return false;
-
-  if (sheet->ownerNode() && sheet->ownerNode()->IsInShadowTree()) {
-    if (IsCSSStyle())
-      return true;
-    if (IsHTMLLink() && !IsImport())
-      return !IsAlternate();
-  }
-
-  const AtomicString& title = this->Title();
-  if (!IsEnabledViaScript() && !title.IsEmpty() &&
-      title != current_preferrable_name)
-    return false;
-  if (IsAlternate() && title.IsEmpty())
-    return false;
-
-  return true;
+  return ToCSSStyleSheet(Sheet())->CanBeActivated(current_preferrable_name);
 }
 
 StyleSheetCandidate::Type StyleSheetCandidate::TypeOf(Node& node) {

@@ -5,6 +5,7 @@
 #ifndef Modulator_h
 #define Modulator_h
 
+#include "base/single_thread_task_runner.h"
 #include "bindings/core/v8/ScriptModule.h"
 #include "core/CoreExport.h"
 #include "core/script/ModuleImportMeta.h"
@@ -31,7 +32,6 @@ class ScriptPromiseResolver;
 class ScriptState;
 class ScriptValue;
 class SecurityOrigin;
-class WebTaskRunner;
 
 // A SingleModuleClient is notified when single module script node (node as in a
 // module tree graph) load is complete and its corresponding entry is created in
@@ -85,7 +85,7 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   void TraceWrappers(const ScriptWrappableVisitor*) const override {}
 
   virtual ScriptModuleResolver* GetScriptModuleResolver() = 0;
-  virtual WebTaskRunner* TaskRunner() = 0;
+  virtual base::SingleThreadTaskRunner* TaskRunner() = 0;
   virtual ReferrerPolicy GetReferrerPolicy() = 0;
 
   // Returns the security origin of the "fetch client settings object".

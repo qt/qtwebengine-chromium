@@ -34,6 +34,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/system/fallthrough.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 #include "system_wrappers/include/timestamp_extrapolator.h"
@@ -253,7 +254,7 @@ int32_t RtpVideoStreamReceiver::OnReceivedPayloadData(
     switch (tracker_.CopyAndFixBitstream(&packet)) {
       case video_coding::H264SpsPpsTracker::kRequestKeyframe:
         keyframe_request_sender_->RequestKeyFrame();
-        FALLTHROUGH();
+        RTC_FALLTHROUGH();
       case video_coding::H264SpsPpsTracker::kDrop:
         return 0;
       case video_coding::H264SpsPpsTracker::kInsert:
@@ -394,7 +395,7 @@ void RtpVideoStreamReceiver::OnReceivedFrame(
 }
 
 void RtpVideoStreamReceiver::OnCompleteFrame(
-    std::unique_ptr<video_coding::FrameObject> frame) {
+    std::unique_ptr<video_coding::EncodedFrame> frame) {
   {
     rtc::CritScope lock(&last_seq_num_cs_);
     video_coding::RtpFrameObject* rtp_frame =
@@ -586,6 +587,10 @@ void RtpVideoStreamReceiver::FrameDecoded(int64_t picture_id) {
 void RtpVideoStreamReceiver::SignalNetworkState(NetworkState state) {
   rtp_rtcp_->SetRTCPStatus(state == kNetworkUp ? config_.rtp.rtcp_mode
                                                : RtcpMode::kOff);
+}
+
+int RtpVideoStreamReceiver::GetUniqueFramesSeen() const {
+  return packet_buffer_->GetUniqueFramesSeen();
 }
 
 void RtpVideoStreamReceiver::StartReceive() {

@@ -123,14 +123,10 @@ static bool DragTypeIsValid(DragSourceAction action) {
 
 static WebMouseEvent CreateMouseEvent(DragData* drag_data) {
   WebMouseEvent result(
-      WebInputEvent::kMouseMove,
-      WebFloatPoint(drag_data->ClientPosition().X(),
-                    drag_data->ClientPosition().Y()),
-      WebFloatPoint(drag_data->GlobalPosition().X(),
-                    drag_data->GlobalPosition().Y()),
-      WebPointerProperties::Button::kLeft, 0,
+      WebInputEvent::kMouseMove, drag_data->ClientPosition(),
+      drag_data->GlobalPosition(), WebPointerProperties::Button::kLeft, 0,
       static_cast<WebInputEvent::Modifiers>(drag_data->GetModifiers()),
-      CurrentTimeTicks().InSeconds());
+      CurrentTimeTicksInSeconds());
   // TODO(dtapuska): Really we should chnage DragData to store the viewport
   // coordinates and scale.
   result.SetFrameScale(1);
@@ -298,6 +294,8 @@ void DragController::PerformDrag(DragData* drag_data, LocalFrame& local_root) {
       // origin rather than the origin of the dragged data URL?
       resource_request.SetRequestorOrigin(
           SecurityOrigin::Create(KURL(drag_data->AsURL())));
+      resource_request.SetHasUserGesture(Frame::HasTransientUserActivation(
+          document_under_mouse_ ? document_under_mouse_->GetFrame() : nullptr));
       page_->MainFrame()->Navigate(FrameLoadRequest(nullptr, resource_request));
     }
 
@@ -525,8 +523,9 @@ DispatchEventResult DragController::DispatchTextInputEventFor(
   const PositionWithAffinity& caret_position =
       page_->GetDragCaret().CaretPosition();
   DCHECK(caret_position.IsConnected()) << caret_position;
-  Element* target =
-      inner_frame->GetEditor().FindEventTargetFrom(CreateVisibleSelection(
+  Element* target = FindEventTargetFrom(
+      *inner_frame,
+      CreateVisibleSelection(
           SelectionInDOMTree::Builder().Collapse(caret_position).Build()));
   return target->DispatchEvent(
       TextEvent::CreateForDrop(inner_frame->DomWindow(), text));
@@ -645,7 +644,10 @@ bool DragController::ConcludeEditDrag(DragData* drag_data) {
               : InsertMode::kSimple;
 
       if (!inner_frame->GetEditor().DeleteSelectionAfterDraggingWithEvents(
-              inner_frame->GetEditor().FindEventTargetFromSelection(),
+              FindEventTargetFrom(
+                  *inner_frame,
+                  inner_frame->Selection()
+                      .ComputeVisibleSelectionInDOMTreeDeprecated()),
               delete_mode, drag_caret.Base()))
         return false;
 
@@ -1007,8 +1009,9 @@ static IntPoint DragLocationForDHTMLDrag(const IntPoint& mouse_dragged_point,
 }
 
 FloatRect DragController::ClippedSelection(const LocalFrame& frame) {
+  DCHECK(frame.View());
   return DataTransfer::ClipByVisualViewport(
-      FloatRect(frame.Selection().UnclippedBounds()), frame);
+      FloatRect(frame.Selection().AbsoluteUnclippedBounds()), frame);
 }
 
 static IntPoint DragLocationForSelectionDrag(const LocalFrame& frame) {
@@ -1050,7 +1053,7 @@ static std::unique_ptr<DragImage> DragImageForImage(
   if (image->IsSVGImage()) {
     KURL url = element->GetDocument().CompleteURL(element->ImageSourceURL());
     svg_image = SVGImageForContainer::Create(
-        ToSVGImage(image), LayoutSize(image_element_size_in_pixels), 1, url);
+        ToSVGImage(image), FloatSize(image_element_size_in_pixels), 1, url);
     image = svg_image.get();
   }
 

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/flat_set.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
@@ -35,6 +36,7 @@
 #include "ui/events/devices/x11/device_list_cache_x11.h"
 #include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/keyboard_hook.h"
 #include "ui/events/null_event_targeter.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/x11/x11_event_source.h"
@@ -337,6 +339,7 @@ void DesktopWindowTreeHostX11::OnFocusEvent(bool focus_in,
         //    (FocusOut with NotifyNonlinearVirtual)
         // |has_pointer_focus_| should be false before and after this event.
         has_pointer_focus_ = false;
+        break;
       default:
         break;
     }
@@ -1290,6 +1293,23 @@ void DesktopWindowTreeHostX11::ReleaseCapture() {
   }
 }
 
+bool DesktopWindowTreeHostX11::CaptureSystemKeyEventsImpl(
+    base::Optional<base::flat_set<int>> key_codes) {
+  // Only one KeyboardHook should be active at a time, otherwise there will be
+  // problems with event routing (i.e. which Hook takes precedence) and
+  // destruction ordering.
+  DCHECK(!keyboard_hook_);
+  keyboard_hook_ = ui::KeyboardHook::Create(
+      std::move(key_codes),
+      base::BindRepeating(&DesktopWindowTreeHostX11::DispatchKeyEvent,
+                          base::Unretained(this)));
+  return keyboard_hook_ != nullptr;
+}
+
+void DesktopWindowTreeHostX11::ReleaseSystemKeyEventCapture() {
+  keyboard_hook_.reset();
+}
+
 void DesktopWindowTreeHostX11::SetCursorNative(gfx::NativeCursor cursor) {
   XDefineCursor(xdisplay_, xwindow_, cursor.platform());
 }
@@ -1758,7 +1778,11 @@ void DesktopWindowTreeHostX11::DispatchMouseEvent(ui::MouseEvent* event) {
   } else {
     // Another DesktopWindowTreeHostX11 has installed itself as
     // capture. Translate the event's location and dispatch to the other.
-    ConvertEventToDifferentHost(event, g_current_capture);
+    DCHECK_EQ(ui::GetScaleFactorForNativeView(window()),
+              ui::GetScaleFactorForNativeView(g_current_capture->window()));
+    ConvertEventLocationToTargetWindowLocation(
+        g_current_capture->GetLocationOnScreenInPixels(),
+        GetLocationOnScreenInPixels(), event->AsLocatedEvent());
     g_current_capture->SendEventToSink(event);
   }
 }
@@ -1766,7 +1790,11 @@ void DesktopWindowTreeHostX11::DispatchMouseEvent(ui::MouseEvent* event) {
 void DesktopWindowTreeHostX11::DispatchTouchEvent(ui::TouchEvent* event) {
   if (g_current_capture && g_current_capture != this &&
       event->type() == ui::ET_TOUCH_PRESSED) {
-    ConvertEventToDifferentHost(event, g_current_capture);
+    DCHECK_EQ(ui::GetScaleFactorForNativeView(window()),
+              ui::GetScaleFactorForNativeView(g_current_capture->window()));
+    ConvertEventLocationToTargetWindowLocation(
+        g_current_capture->GetLocationOnScreenInPixels(),
+        GetLocationOnScreenInPixels(), event->AsLocatedEvent());
     g_current_capture->SendEventToSink(event);
   } else {
     SendEventToSink(event);
@@ -1776,20 +1804,6 @@ void DesktopWindowTreeHostX11::DispatchTouchEvent(ui::TouchEvent* event) {
 void DesktopWindowTreeHostX11::DispatchKeyEvent(ui::KeyEvent* event) {
   if (native_widget_delegate_->AsWidget()->IsActive())
     SendEventToSink(event);
-}
-
-void DesktopWindowTreeHostX11::ConvertEventToDifferentHost(
-    ui::LocatedEvent* located_event,
-    DesktopWindowTreeHostX11* host) {
-  DCHECK_NE(this, host);
-  DCHECK_EQ(ui::GetScaleFactorForNativeView(window()),
-            ui::GetScaleFactorForNativeView(host->window()));
-  gfx::Vector2d offset =
-      GetLocationOnScreenInPixels() - host->GetLocationOnScreenInPixels();
-  gfx::PointF location_in_pixel_in_host =
-      located_event->location_f() + gfx::Vector2dF(offset);
-  located_event->set_location_f(location_in_pixel_in_host);
-  located_event->set_root_location_f(location_in_pixel_in_host);
 }
 
 void DesktopWindowTreeHostX11::ResetWindowRegion() {
@@ -2006,9 +2020,9 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       }
       break;
     }
-    case FocusIn:
-    case FocusOut:
-      OnFocusEvent(xev->type == FocusIn, event->xfocus.mode,
+    case x11::FocusIn:
+    case x11::FocusOut:
+      OnFocusEvent(xev->type == x11::FocusIn, event->xfocus.mode,
                    event->xfocus.detail);
       break;
     case ConfigureNotify: {
@@ -2071,7 +2085,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
           num_coalesced = ui::CoalescePendingMotionEvents(xev, &last_event);
           if (num_coalesced > 0)
             xev = &last_event;
-          // fallthrough
+          FALLTHROUGH;
         case ui::ET_TOUCH_PRESSED:
         case ui::ET_TOUCH_RELEASED: {
           ui::TouchEvent touchev(xev);
@@ -2092,7 +2106,15 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
               xev = &last_event;
           }
           ui::MouseEvent mouseev(xev);
-          DispatchMouseEvent(&mouseev);
+          // If after CoalescePendingMotionEvents the type of xev is resolved to
+          // UNKNOWN, don't dispatch the event.
+          // TODO(804418): investigate why ColescePendingMotionEvents can
+          // include mouse wheel events as well. Investigation showed that
+          // events on Linux are checked with cmt-device path, and can include
+          // DT_CMT_SCROLL_ data. See more discussion in
+          // https://crrev.com/c/853953
+          if (mouseev.type() != ui::ET_UNKNOWN)
+            DispatchMouseEvent(&mouseev);
           break;
         }
         case ui::ET_MOUSEWHEEL: {

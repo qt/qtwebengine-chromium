@@ -50,6 +50,7 @@
 #include "ppapi/cpp/var_dictionary.h"
 #include "printing/pdf_transform.h"
 #include "printing/units.h"
+#include "third_party/pdfium/public/cpp/fpdf_deleters.h"
 #include "third_party/pdfium/public/fpdf_annot.h"
 #include "third_party/pdfium/public/fpdf_attachment.h"
 #include "third_party/pdfium/public/fpdf_catalog.h"
@@ -669,6 +670,34 @@ pp::MouseInputEvent NormalizeMouseEvent(pp::Instance* instance,
   return normalized_event;
 }
 
+// These values are intended for the JS to handle, and it doesn't have access
+// to the PDFDEST_VIEW_* defines.
+std::string ConvertViewIntToViewString(unsigned long view_int) {
+  switch (view_int) {
+    case PDFDEST_VIEW_XYZ:
+      return "XYZ";
+    case PDFDEST_VIEW_FIT:
+      return "Fit";
+    case PDFDEST_VIEW_FITH:
+      return "FitH";
+    case PDFDEST_VIEW_FITV:
+      return "FitV";
+    case PDFDEST_VIEW_FITR:
+      return "FitR";
+    case PDFDEST_VIEW_FITB:
+      return "FitB";
+    case PDFDEST_VIEW_FITBH:
+      return "FitBH";
+    case PDFDEST_VIEW_FITBV:
+      return "FitBV";
+    case PDFDEST_VIEW_UNKNOWN_MODE:
+      return "";
+    default:
+      NOTREACHED();
+      return "";
+  }
+}
+
 }  // namespace
 
 bool InitializeSDK() {
@@ -852,14 +881,7 @@ void PDFiumEngine::Form_DisplayCaret(FPDF_FORMFILLINFO* param,
                                      double left,
                                      double top,
                                      double right,
-                                     double bottom) {
-  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
-  engine->client_->UpdateCursor(PP_CURSORTYPE_IBEAM);
-  std::vector<pp::Rect> tickmarks;
-  pp::Rect rect(left, top, right, bottom);
-  tickmarks.push_back(rect);
-  engine->client_->UpdateTickMarks(tickmarks);
-}
+                                     double bottom) {}
 
 void PDFiumEngine::Form_SetCurrentPage(FPDF_FORMFILLINFO* param,
                                        FPDF_DOCUMENT document,
@@ -1405,6 +1427,7 @@ bool PDFiumEngine::HandleEvent(const pp::InputEvent& event) {
       // TODO(dsinclair): This should allow a little bit of movement (up to the
       // touch radii) to account for finger jiggle.
       KillTouchTimer(next_touch_timer_id_);
+      break;
     default:
       break;
   }
@@ -1460,9 +1483,6 @@ FPDF_DOCUMENT PDFiumEngine::CreateSinglePageRasterPdf(
 
   const pp::Size& bitmap_size(page_to_print->rect().size());
 
-  FPDF_PAGE temp_page =
-      FPDFPage_New(temp_doc, 0, source_page_width, source_page_height);
-
   pp::ImageData image =
       pp::ImageData(client_->GetPluginInstance(),
                     PP_IMAGEDATAFORMAT_BGRA_PREMUL, bitmap_size, false);
@@ -1505,22 +1525,27 @@ FPDF_DOCUMENT PDFiumEngine::CreateSinglePageRasterPdf(
     SkPixmap src(info, bitmap_data, FPDFBitmap_GetStride(bitmap));
     encoded = gfx::JPEGCodec::Encode(src, kQuality, &compressed_bitmap_data);
   }
-  if (encoded) {
-    FPDF_FILEACCESS file_access = {};
-    file_access.m_FileLen =
-        static_cast<unsigned long>(compressed_bitmap_data.size());
-    file_access.m_GetBlock = &GetBlockForJpeg;
-    file_access.m_Param = &compressed_bitmap_data;
 
-    FPDFImageObj_LoadJpegFileInline(&temp_page, 1, temp_img, &file_access);
-  } else {
-    FPDFImageObj_SetBitmap(&temp_page, 1, temp_img, bitmap);
+  {
+    std::unique_ptr<void, FPDFPageDeleter> temp_page_holder(
+        FPDFPage_New(temp_doc, 0, source_page_width, source_page_height));
+    FPDF_PAGE temp_page = temp_page_holder.get();
+    if (encoded) {
+      FPDF_FILEACCESS file_access = {};
+      file_access.m_FileLen =
+          static_cast<unsigned long>(compressed_bitmap_data.size());
+      file_access.m_GetBlock = &GetBlockForJpeg;
+      file_access.m_Param = &compressed_bitmap_data;
+
+      FPDFImageObj_LoadJpegFileInline(&temp_page, 1, temp_img, &file_access);
+    } else {
+      FPDFImageObj_SetBitmap(&temp_page, 1, temp_img, bitmap);
+    }
+
+    FPDFImageObj_SetMatrix(temp_img, ratio_x, 0, 0, ratio_y, 0, 0);
+    FPDFPage_InsertObject(temp_page, temp_img);
+    FPDFPage_GenerateContent(temp_page);
   }
-
-  FPDFImageObj_SetMatrix(temp_img, ratio_x, 0, 0, ratio_y, 0, 0);
-  FPDFPage_InsertObject(temp_page, temp_img);
-  FPDFPage_GenerateContent(temp_page);
-  FPDF_ClosePage(temp_page);
 
   page_to_print->ClosePrintPage();
   FPDFBitmap_Destroy(bitmap);
@@ -1557,7 +1582,8 @@ pp::Buffer_Dev PDFiumEngine::PrintPagesAsRasterPDF(
     double source_page_height = FPDF_GetPageHeight(pdf_page);
     source_page_sizes.push_back(
         std::make_pair(source_page_width, source_page_height));
-
+    // For computing size in pixels, use a square dpi since the source PDF page
+    // has square DPI.
     int width_in_pixels =
         ConvertUnit(source_page_width, kPointsPerInch, print_settings.dpi);
     int height_in_pixels =
@@ -2070,6 +2096,19 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
           case FPDF_FORMFIELD_TEXTFIELD:
             cursor = PP_CURSORTYPE_IBEAM;
             break;
+#if defined(PDF_ENABLE_XFA)
+          case FPDF_FORMFIELD_XFA_CHECKBOX:
+          case FPDF_FORMFIELD_XFA_COMBOBOX:
+          case FPDF_FORMFIELD_XFA_IMAGEFIELD:
+          case FPDF_FORMFIELD_XFA_LISTBOX:
+          case FPDF_FORMFIELD_XFA_PUSHBUTTON:
+          case FPDF_FORMFIELD_XFA_SIGNATURE:
+            cursor = PP_CURSORTYPE_HAND;
+            break;
+          case FPDF_FORMFIELD_XFA_TEXTFIELD:
+            cursor = PP_CURSORTYPE_IBEAM;
+            break;
+#endif
           default:
             cursor = PP_CURSORTYPE_POINTER;
             break;
@@ -2412,14 +2451,14 @@ bool PDFiumEngine::SelectFindResult(bool forward) {
   size_t new_index;
   const size_t last_index = find_results_.size() - 1;
 
-  if (resume_find_index_.valid()) {
-    new_index = resume_find_index_.GetIndex();
-    resume_find_index_.Invalidate();
-  } else if (current_find_index_.valid()) {
-    size_t current_index = current_find_index_.GetIndex();
+  if (resume_find_index_) {
+    new_index = resume_find_index_.value();
+    resume_find_index_.reset();
+  } else if (current_find_index_) {
+    size_t current_index = current_find_index_.value();
     if ((forward && current_index >= last_index) ||
         (!forward && current_index == 0)) {
-      current_find_index_.Invalidate();
+      current_find_index_.reset();
       client_->NotifySelectedFindResultChanged(-1);
       client_->NotifyNumberOfFindResultsChanged(find_results_.size(), true);
       return true;
@@ -2429,19 +2468,19 @@ bool PDFiumEngine::SelectFindResult(bool forward) {
   } else {
     new_index = forward ? 0 : last_index;
   }
-  current_find_index_.SetIndex(new_index);
+  current_find_index_ = new_index;
 
   // Update the selection before telling the client to scroll, since it could
   // paint then.
   selection_.clear();
-  selection_.push_back(find_results_[current_find_index_.GetIndex()]);
+  selection_.push_back(find_results_[current_find_index_.value()]);
 
   // If the result is not in view, scroll to it.
   pp::Rect bounding_rect;
   pp::Rect visible_rect = GetVisibleRect();
   // Use zoom of 1.0 since |visible_rect| is without zoom.
   const std::vector<pp::Rect>& rects =
-      find_results_[current_find_index_.GetIndex()].GetScreenRects(
+      find_results_[current_find_index_.value()].GetScreenRects(
           pp::Point(), 1.0, current_rotation_);
   for (const auto& rect : rects)
     bounding_rect = bounding_rect.Union(rect);
@@ -2460,22 +2499,23 @@ bool PDFiumEngine::SelectFindResult(bool forward) {
     }
   }
 
-  client_->NotifySelectedFindResultChanged(current_find_index_.GetIndex());
+  client_->NotifySelectedFindResultChanged(current_find_index_.value());
   client_->NotifyNumberOfFindResultsChanged(find_results_.size(), true);
   return true;
 }
 
 void PDFiumEngine::StopFind() {
   SelectionChangeInvalidator selection_invalidator(this);
-
   selection_.clear();
   selecting_ = false;
+
   find_results_.clear();
   next_page_to_search_ = -1;
   last_page_to_search_ = -1;
   last_character_index_to_search_ = -1;
-  current_find_index_.Invalidate();
+  current_find_index_.reset();
   current_find_text_.clear();
+
   UpdateTickMarks();
   find_factory_.CancelAll();
 }
@@ -2646,15 +2686,14 @@ pp::VarDictionary PDFiumEngine::TraverseBookmarks(FPDF_BOOKMARK bookmark,
   FPDF_DEST dest = FPDFBookmark_GetDest(doc_, bookmark);
   // Some bookmarks don't have a page to select.
   if (dest) {
-    unsigned long page_index = FPDFDest_GetPageIndex(doc_, dest);
-    if (page_index < pages_.size() &&
-        base::IsValueInRangeForNumericType<int32_t>(page_index)) {
-      dict.Set(pp::Var("page"), pp::Var(static_cast<int32_t>(page_index)));
+    int page_index = FPDFDest_GetDestPageIndex(doc_, dest);
+    if (PageIndexInBounds(page_index)) {
+      dict.Set(pp::Var("page"), pp::Var(page_index));
 
-      base::Optional<std::pair<float, float>> xy =
+      base::Optional<gfx::PointF> xy =
           pages_[page_index]->GetPageXYTarget(dest);
       if (xy)
-        dict.Set(pp::Var("y"), pp::Var(static_cast<int>(xy.value().second)));
+        dict.Set(pp::Var("y"), pp::Var(static_cast<int>(xy.value().y())));
     }
   } else {
     // Extract URI for bookmarks linking to an external page.
@@ -2693,7 +2732,8 @@ pp::VarDictionary PDFiumEngine::TraverseBookmarks(FPDF_BOOKMARK bookmark,
   return dict;
 }
 
-int PDFiumEngine::GetNamedDestinationPage(const std::string& destination) {
+base::Optional<PDFEngine::NamedDestination> PDFiumEngine::GetNamedDestination(
+    const std::string& destination) {
   // Look for the destination.
   FPDF_DEST dest = FPDF_GetNamedDestByName(doc_, destination.c_str());
   if (!dest) {
@@ -2705,12 +2745,25 @@ int PDFiumEngine::GetNamedDestinationPage(const std::string& destination) {
     if (bookmark)
       dest = FPDFBookmark_GetDest(doc_, bookmark);
   }
-  return dest ? FPDFDest_GetPageIndex(doc_, dest) : -1;
+
+  if (!dest)
+    return {};
+
+  int page = FPDFDest_GetDestPageIndex(doc_, dest);
+  if (page < 0)
+    return {};
+
+  PDFEngine::NamedDestination result;
+  result.page = page;
+  unsigned long view_int =
+      FPDFDest_GetView(dest, &result.num_params, result.params);
+  result.view = ConvertViewIntToViewString(view_int);
+  return result;
 }
 
-std::pair<int, int> PDFiumEngine::TransformPagePoint(
-    int page_index,
-    std::pair<int, int> page_xy) {
+gfx::PointF PDFiumEngine::TransformPagePoint(int page_index,
+                                             const gfx::PointF& page_xy) {
+  DCHECK(PageIndexInBounds(page_index));
   return pages_[page_index]->TransformPageToScreenXY(page_xy);
 }
 
@@ -2883,7 +2936,10 @@ void PDFiumEngine::AppendBlankPages(int num_pages) {
         ConvertUnitDouble(page_rect.width(), kPixelsPerInch, kPointsPerInch);
     double height_in_points =
         ConvertUnitDouble(page_rect.height(), kPixelsPerInch, kPointsPerInch);
-    FPDFPage_New(doc_, i, width_in_points, height_in_points);
+    // Add a new page to the document, but delete the FPDF_PAGE object.
+    FPDF_PAGE temp_page =
+        FPDFPage_New(doc_, i, width_in_points, height_in_points);
+    FPDF_ClosePage(temp_page);
     pages_.push_back(std::make_unique<PDFiumPage>(this, i, page_rect, true));
   }
 
@@ -3666,29 +3722,6 @@ bool PDFiumEngine::MouseDownState::Matches(
   return true;
 }
 
-PDFiumEngine::FindTextIndex::FindTextIndex() : valid_(false), index_(0) {}
-
-PDFiumEngine::FindTextIndex::~FindTextIndex() = default;
-
-void PDFiumEngine::FindTextIndex::Invalidate() {
-  valid_ = false;
-}
-
-size_t PDFiumEngine::FindTextIndex::GetIndex() const {
-  DCHECK(valid_);
-  return index_;
-}
-
-void PDFiumEngine::FindTextIndex::SetIndex(size_t index) {
-  valid_ = true;
-  index_ = index;
-}
-
-size_t PDFiumEngine::FindTextIndex::IncrementIndex() {
-  DCHECK(valid_);
-  return ++index_;
-}
-
 void PDFiumEngine::DeviceToPage(int page_index,
                                 float device_x,
                                 float device_y,
@@ -3706,7 +3739,10 @@ void PDFiumEngine::DeviceToPage(int page_index,
 }
 
 int PDFiumEngine::GetVisiblePageIndex(FPDF_PAGE page) {
-  for (int page_index : visible_pages_) {
+  // Copy visible_pages_ since it can change as a result of loading the page in
+  // GetPage(). See https://crbug.com/822091.
+  std::vector<int> visible_pages_copy(visible_pages_);
+  for (int page_index : visible_pages_copy) {
     if (pages_[page_index]->GetPage() == page)
       return page_index;
   }
@@ -3911,10 +3947,7 @@ void PDFiumEngine::RotateInternal() {
   // Store the current find index so that we can resume finding at that
   // particular index after we have recomputed the find results.
   std::string current_find_text = current_find_text_;
-  if (current_find_index_.valid())
-    resume_find_index_.SetIndex(current_find_index_.GetIndex());
-  else
-    resume_find_index_.Invalidate();
+  resume_find_index_ = current_find_index_;
 
   // Save the current page.
   int most_visible_page = most_visible_page_;
@@ -4375,10 +4408,12 @@ base::LazyInstance<PDFiumEngineExports>::Leaky g_pdf_engine_exports =
 int CalculatePosition(FPDF_PAGE page,
                       const PDFiumEngineExports::RenderingSettings& settings,
                       pp::Rect* dest) {
-  int page_width = static_cast<int>(ConvertUnitDouble(
-      FPDF_GetPageWidth(page), kPointsPerInch, settings.dpi_x));
-  int page_height = static_cast<int>(ConvertUnitDouble(
-      FPDF_GetPageHeight(page), kPointsPerInch, settings.dpi_y));
+  // settings.bounds is in terms of the max DPI. Convert page sizes to match.
+  int dpi = std::max(settings.dpi_x, settings.dpi_y);
+  int page_width = static_cast<int>(
+      ConvertUnitDouble(FPDF_GetPageWidth(page), kPointsPerInch, dpi));
+  int page_height = static_cast<int>(
+      ConvertUnitDouble(FPDF_GetPageHeight(page), kPointsPerInch, dpi));
 
   // Start by assuming that we will draw exactly to the bounds rect
   // specified.
@@ -4425,9 +4460,16 @@ int CalculatePosition(FPDF_PAGE page,
     dest->set_height(page_height);
   }
 
+  // Scale the bounds to device units if DPI is rectangular.
+  if (settings.dpi_x != settings.dpi_y) {
+    dest->set_width(dest->width() * settings.dpi_x / dpi);
+    dest->set_height(dest->height() * settings.dpi_y / dpi);
+  }
+
   if (settings.center_in_bounds) {
-    pp::Point offset((settings.bounds.width() - dest->width()) / 2,
-                     (settings.bounds.height() - dest->height()) / 2);
+    pp::Point offset(
+        (settings.bounds.width() * settings.dpi_x / dpi - dest->width()) / 2,
+        (settings.bounds.height() * settings.dpi_y / dpi - dest->height()) / 2);
     dest->Offset(offset);
   }
   return rotate;

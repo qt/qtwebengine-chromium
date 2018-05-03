@@ -121,14 +121,14 @@ void BlinkInitializer::RegisterInterfaces(
     service_manager::BinderRegistry& registry) {
   ModulesInitializer::RegisterInterfaces(registry);
   WebThread* main_thread = Platform::Current()->MainThread();
-  // GetSingleThreadTaskRunner() uses GetWebTaskRunner() internally.
+  // GetSingleThreadTaskRunner() uses GetTaskRunner() internally.
   // crbug.com/781664
-  if (!main_thread || !main_thread->GetWebTaskRunner())
+  if (!main_thread || !main_thread->GetTaskRunner())
     return;
 
   registry.AddInterface(
       ConvertToBaseCallback(CrossThreadBind(&OomInterventionImpl::Create)),
-      main_thread->GetSingleThreadTaskRunner());
+      main_thread->GetTaskRunner());
 }
 
 void BlinkInitializer::InitLocalFrame(LocalFrame& frame) const {

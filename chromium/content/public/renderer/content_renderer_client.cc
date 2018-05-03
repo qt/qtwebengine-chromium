@@ -89,6 +89,9 @@ ContentRendererClient::OverrideSpeechSynthesizer(
   return nullptr;
 }
 
+void ContentRendererClient::PostCompositorThreadCreated(
+    base::SingleThreadTaskRunner* compositor_thread_task_runner) {}
+
 bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
   return true;
 }
@@ -254,7 +257,6 @@ bool ContentRendererClient::AllowIdleMediaSuspend() {
 
 bool ContentRendererClient::OverrideLegacySymantecCertConsoleMessage(
     const GURL& url,
-    base::Time cert_expiration,
     std::string* console_messsage) {
   return false;
 }

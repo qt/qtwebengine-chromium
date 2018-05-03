@@ -13,11 +13,10 @@
 #include "SkSerialProcs.h"
 #include "SkDrawLooper.h"
 #include "SkImageFilter.h"
-#include "SkMaskFilter.h"
+#include "SkMaskFilterBase.h"
 #include "SkPath.h"
 #include "SkPathEffect.h"
 #include "SkPicture.h"
-#include "SkRasterizer.h"
 #include "SkReadBuffer.h"
 #include "SkReader32.h"
 #include "SkRefCnt.h"
@@ -77,6 +76,7 @@ public:
         k2PtConicalNoFlip_Version          = 58,
         kRemovePictureImageFilterLocalSpace = 59,
         kRemoveHeaderFlags_Version         = 60,
+        kTwoColorDrawShadow_Version        = 61,
     };
 
     /**
@@ -116,6 +116,14 @@ public:
     uint32_t readUInt();
     int32_t read32();
 
+    template <typename T> T read32LE(T max) {
+        uint32_t value = this->readUInt();
+        if (!this->validate(value <= static_cast<uint32_t>(max))) {
+            value = 0;
+        }
+        return static_cast<T>(value);
+    }
+
     // peek
     uint8_t peekByte();
 
@@ -134,7 +142,7 @@ public:
     void readRegion(SkRegion* region);
 
     void readPath(SkPath* path);
-    virtual void readPaint(SkPaint* paint) { paint->unflatten(*this); }
+    virtual bool readPaint(SkPaint* paint) { return paint->unflatten(*this); }
 
     SkFlattenable* readFlattenable(SkFlattenable::Type);
     template <typename T> sk_sp<T> readFlattenable() {
@@ -143,9 +151,8 @@ public:
     sk_sp<SkColorFilter> readColorFilter() { return this->readFlattenable<SkColorFilter>(); }
     sk_sp<SkDrawLooper> readDrawLooper() { return this->readFlattenable<SkDrawLooper>(); }
     sk_sp<SkImageFilter> readImageFilter() { return this->readFlattenable<SkImageFilter>(); }
-    sk_sp<SkMaskFilter> readMaskFilter() { return this->readFlattenable<SkMaskFilter>(); }
+    sk_sp<SkMaskFilter> readMaskFilter() { return this->readFlattenable<SkMaskFilterBase>(); }
     sk_sp<SkPathEffect> readPathEffect() { return this->readFlattenable<SkPathEffect>(); }
-    sk_sp<SkRasterizer> readRasterizer() { return this->readFlattenable<SkRasterizer>(); }
     sk_sp<SkShader> readShader() { return this->readFlattenable<SkShaderBase>(); }
 
     // Reads SkAlign4(bytes), but will only copy bytes into the buffer.

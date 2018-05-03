@@ -100,7 +100,7 @@ HTMLSelectElement::HTMLSelectElement(Document& document)
 
 HTMLSelectElement* HTMLSelectElement::Create(Document& document) {
   HTMLSelectElement* select = new HTMLSelectElement(document);
-  select->EnsureUserAgentShadowRootV1();
+  select->EnsureUserAgentShadowRoot();
   return select;
 }
 
@@ -422,9 +422,7 @@ void HTMLSelectElement::setLength(unsigned new_len,
 
   if (diff < 0) {  // Add dummy elements.
     do {
-      AppendChild(
-          GetDocument().createElement(optionTag, kCreatedByCreateElement),
-          exception_state);
+      AppendChild(HTMLOptionElement::Create(GetDocument()), exception_state);
       if (exception_state.HadException())
         break;
     } while (++diff);
@@ -911,7 +909,7 @@ void HTMLSelectElement::ScrollToOptionTask() {
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
   if (!GetLayoutObject() || !GetLayoutObject()->IsListBox())
     return;
-  LayoutRect bounds = option->BoundingBox();
+  LayoutRect bounds = option->BoundingBoxForScrollIntoView();
   ToLayoutListBox(GetLayoutObject())->ScrollToRect(bounds);
 }
 
@@ -924,6 +922,13 @@ void HTMLSelectElement::OptionSelectionStateChanged(HTMLOptionElement* option,
     SelectOption(nullptr, IsMultiple() ? 0 : kDeselectOtherOptions);
   else
     SelectOption(NextSelectableOption(nullptr), kDeselectOtherOptions);
+
+  if (GetDocument().IsActive()) {
+    GetDocument()
+        .GetPage()
+        ->GetChromeClient()
+        .DidChangeSelectionInSelectControl(*this);
+  }
 }
 
 void HTMLSelectElement::OptionInserted(HTMLOptionElement& option,

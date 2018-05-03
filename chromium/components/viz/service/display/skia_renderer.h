@@ -8,6 +8,7 @@
 #include "base/macros.h"
 #include "cc/cc_export.h"
 #include "components/viz/service/display/direct_renderer.h"
+#include "components/viz/service/display/sync_query_collection.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/vulkan/features.h"
 #include "ui/latency/latency_info.h"
@@ -51,7 +52,7 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
       const RenderPassRequirements& requirements) override;
   bool IsRenderPassResourceAllocated(
       const RenderPassId& render_pass_id) const override;
-  gfx::Size GetRenderPassTextureSize(
+  gfx::Size GetRenderPassBackingPixelSize(
       const RenderPassId& render_pass_id) override;
   void BindFramebufferToOutputSurface() override;
   void BindFramebufferToTexture(const RenderPassId render_pass_id) override;
@@ -74,7 +75,6 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
   void ClearCanvas(SkColor color);
   void ClearFramebuffer();
   void SetClipRect(const gfx::Rect& rect);
-  bool IsSoftwareResource(ResourceId resource_id) const;
 
   void DrawDebugBorderQuad(const DebugBorderDrawQuad* quad);
   void DrawPictureQuad(const PictureDrawQuad* quad);
@@ -101,11 +101,17 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
 
   // A map from RenderPass id to the texture used to draw the RenderPass from.
   struct RenderPassBacking {
-    uint32_t gl_id;
-    gfx::Size size;
+    sk_sp<SkSurface> render_pass_surface;
     bool mipmap;
-    ResourceFormat format;
     gfx::ColorSpace color_space;
+    RenderPassBacking(GrContext* gr_context,
+                      const gfx::Size& size,
+                      bool mipmap,
+                      bool capability_bgra8888,
+                      const gfx::ColorSpace& color_space);
+    ~RenderPassBacking();
+    RenderPassBacking(RenderPassBacking&&);
+    RenderPassBacking& operator=(RenderPassBacking&&);
   };
   base::flat_map<RenderPassId, RenderPassBacking> render_pass_backings_;
 
@@ -123,6 +129,7 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
   SkCanvas* current_canvas_ = nullptr;
   SkPaint current_paint_;
 
+  base::Optional<SyncQueryCollection> sync_queries_;
   bool use_swap_with_bounds_ = false;
 
   gfx::Rect swap_buffer_rect_;

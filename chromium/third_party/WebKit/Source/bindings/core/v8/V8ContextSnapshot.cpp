@@ -168,8 +168,8 @@ bool V8ContextSnapshot::InstallConditionalFeatures(
     v8::Local<v8::Object> prototype = interface->Get(context, prototype_str)
                                           .ToLocalChecked()
                                           .As<v8::Object>();
-    V8Window::install_runtime_enabled_features_function_(
-        isolate, world, window_wrapper, prototype, interface);
+    V8Window::InstallRuntimeEnabledFeatures(isolate, world, window_wrapper,
+                                            prototype, interface);
     type->InstallConditionalFeatures(context, world, window_wrapper, prototype,
                                      interface,
                                      type->domTemplate(isolate, world));
@@ -405,7 +405,7 @@ void V8ContextSnapshot::EnsureInterfaceTemplatesForWorld(
     const WrapperTypeInfo* wrapper_type_info =
         snapshot_interface.wrapper_type_info;
     v8::Local<v8::FunctionTemplate> interface_template =
-        v8::FunctionTemplate::FromSnapshot(isolate, index_offset + i)
+        isolate->GetDataFromSnapshotOnce<v8::FunctionTemplate>(index_offset + i)
             .ToLocalChecked();
     snapshot_interface.install_function(isolate, world, interface_template);
     CHECK(!interface_template.IsEmpty());
@@ -466,7 +466,7 @@ void V8ContextSnapshot::TakeSnapshotForWorld(v8::SnapshotCreator* creator,
   }
 
   for (auto& interface_template : interface_templates) {
-    creator->AddTemplate(interface_template);
+    creator->AddData(interface_template);
   }
   creator->AddContext(context, SerializeInternalField);
 

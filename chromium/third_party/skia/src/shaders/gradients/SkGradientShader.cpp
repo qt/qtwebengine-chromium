@@ -279,6 +279,7 @@ bool SkGradientShaderBase::onAppendStages(const StageRec& rec) const {
     SkRasterPipeline* p = rec.fPipeline;
     SkArenaAlloc* alloc = rec.fAlloc;
     SkColorSpace* dstCS = rec.fDstCS;
+    SkJumper_DecalTileCtx* decal_ctx = nullptr;
 
     SkMatrix matrix;
     if (!this->computeTotalInverse(rec.fCTM, rec.fLocalM, &matrix)) {
@@ -295,6 +296,12 @@ bool SkGradientShaderBase::onAppendStages(const StageRec& rec) const {
     switch(fTileMode) {
         case kMirror_TileMode: p->append(SkRasterPipeline::mirror_x_1); break;
         case kRepeat_TileMode: p->append(SkRasterPipeline::repeat_x_1); break;
+        case kDecal_TileMode:
+            decal_ctx = alloc->make<SkJumper_DecalTileCtx>();
+            decal_ctx->limit_x = SkBits2Float(SkFloat2Bits(1.0f) + 1);
+            // reuse mask + limit_x stage, or create a custom decal_1 that just stores the mask
+            p->append(SkRasterPipeline::decal_x, decal_ctx);
+            // fall-through to clamp
         case kClamp_TileMode:
             if (!fOrigPos) {
                 // We clamp only when the stops are evenly spaced.
@@ -303,6 +310,7 @@ bool SkGradientShaderBase::onAppendStages(const StageRec& rec) const {
                 // which is the only stage that will correctly handle unclamped t.
                 p->append(SkRasterPipeline::clamp_x_1);
             }
+            break;
     }
 
     const bool premulGrad = fGradFlags & SkGradientShader::kInterpolateColorsInPremul_Flag;
@@ -393,6 +401,10 @@ bool SkGradientShaderBase::onAppendStages(const StageRec& rec) const {
         }
     }
 
+    if (decal_ctx) {
+        p->append(SkRasterPipeline::check_decal_mask, decal_ctx);
+    }
+
     if (!premulGrad && !this->colorsAreOpaque()) {
         p->append(SkRasterPipeline::premul);
     }
@@ -404,7 +416,14 @@ bool SkGradientShaderBase::onAppendStages(const StageRec& rec) const {
 
 
 bool SkGradientShaderBase::isOpaque() const {
-    return fColorsAreOpaque;
+    return fColorsAreOpaque && (this->getTileMode() != SkShader::kDecal_TileMode);
+}
+
+bool SkGradientShaderBase::onIsRasterPipelineOnly(const SkMatrix& ctm) const {
+    if (this->getTileMode() == SkShader::kDecal_TileMode) {
+        return true;
+    }
+    return this->INHERITED::onIsRasterPipelineOnly(ctm);
 }
 
 static unsigned rounded_divide(unsigned numer, unsigned denom) {
@@ -591,6 +610,7 @@ void SkGradientShaderBase::getGradientTableBitmap(SkBitmap* bitmap,
 
         bitmap->allocPixels(info);
         this->initLinearBitmap(bitmap, bitmapType);
+        bitmap->setImmutable();
         gCache->add(storage.get(), size, *bitmap);
     }
 }
@@ -639,7 +659,7 @@ void SkGradientShaderBase::toString(SkString* str) const {
     }
 
     static const char* gTileModeName[SkShader::kTileModeCount] = {
-        "clamp", "repeat", "mirror"
+        "clamp", "repeat", "mirror", "decal",
     };
 
     str->append(" ");
@@ -1275,7 +1295,7 @@ GrGradientEffect::GrGradientEffect(ClassID classID, const CreateArgs& args, bool
         GrTextureStripAtlas::Desc desc;
         desc.fWidth  = bitmap.width();
         desc.fHeight = 32;
-        desc.fRowHeight = bitmap.height();
+        desc.fRowHeight = bitmap.height(); // always 1 here
         desc.fContext = args.fContext;
         desc.fConfig = SkImageInfo2GrPixelConfig(bitmap.info(), *args.fContext->caps());
         fAtlas = GrTextureStripAtlas::GetAtlas(desc);
@@ -1297,11 +1317,18 @@ GrGradientEffect::GrGradientEffect(ClassID classID, const CreateArgs& args, bool
             // and the proxy is:
             //   exact fit, power of two in both dimensions
             // Only the x-tileMode is unknown. However, given all the other knowns we know
-            // that GrMakeCachedBitmapProxy is sufficient (i.e., it won't need to be
+            // that GrMakeCachedImageProxy is sufficient (i.e., it won't need to be
             // extracted to a subset or mipmapped).
-            sk_sp<GrTextureProxy> proxy = GrMakeCachedBitmapProxy(
+
+            SkASSERT(bitmap.isImmutable());
+            sk_sp<SkImage> srcImage = SkImage::MakeFromBitmap(bitmap);
+            if (!srcImage) {
+                return;
+            }
+
+            sk_sp<GrTextureProxy> proxy = GrMakeCachedImageProxy(
                                                      args.fContext->contextPriv().proxyProvider(),
-                                                     bitmap);
+                                                     std::move(srcImage));
             if (!proxy) {
                 SkDebugf("Gradient won't draw. Could not create texture.");
                 return;

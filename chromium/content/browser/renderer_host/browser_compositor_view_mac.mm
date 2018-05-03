@@ -15,9 +15,9 @@
 #include "components/viz/common/features.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/renderer_host/compositor_resize_lock.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/context_factory.h"
-#include "media/base/video_frame.h"
 #include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
 #include "ui/base/layout.h"
@@ -28,13 +28,15 @@ namespace content {
 
 namespace {
 
-// Set when no browser compositors should remain alive.
-bool g_has_shut_down = false;
-
-// The number of placeholder objects allocated. If this reaches zero, then
-// the RecyclableCompositorMac being held on to for recycling,
-// |g_spare_recyclable_compositors|, will be freed.
-uint32_t g_browser_compositor_count = 0;
+// Weak pointers to all BrowserCompositorMac instances, used to
+// - Determine if a spare RecyclableCompositorMac should be kept around (one
+//   should be only if there exists at least one BrowserCompositorMac).
+// - Force all ui::Compositors to be destroyed at shut-down (because the NSView
+//   signals to shut down will come in very late, long after things that the
+//   ui::Compositor depend on have been destroyed).
+//   https://crbug.com/805726
+base::LazyInstance<std::set<BrowserCompositorMac*>>::Leaky
+    g_browser_compositors;
 
 // A spare RecyclableCompositorMac kept around for recycling.
 base::LazyInstance<base::circular_deque<
@@ -46,7 +48,7 @@ void ReleaseSpareCompositors() {
   while (g_spare_recyclable_compositors.Get().size() > 1)
     g_spare_recyclable_compositors.Get().pop_front();
 
-  if (!g_browser_compositor_count)
+  if (g_browser_compositors.Get().empty())
     g_spare_recyclable_compositors.Get().clear();
 }
 
@@ -68,10 +70,6 @@ class RecyclableCompositorMac : public ui::CompositorObserver {
 
   // Delete a compositor, or allow it to be recycled.
   static void Recycle(std::unique_ptr<RecyclableCompositorMac> compositor);
-
-  // Indicate that the recyclable compositor should be destroyed, and no future
-  // compositors should be recycled.
-  static void DisableRecyclingForShutdown();
 
   ui::Compositor* compositor() { return &compositor_; }
   ui::AcceleratedWidgetMac* accelerated_widget_mac() {
@@ -153,13 +151,8 @@ std::unique_ptr<RecyclableCompositorMac> RecyclableCompositorMac::Create() {
 // static
 void RecyclableCompositorMac::Recycle(
     std::unique_ptr<RecyclableCompositorMac> compositor) {
-  DCHECK(compositor);
   content::ImageTransportFactory::GetInstance()
       ->SetCompositorSuspendedForRecycle(compositor->compositor(), true);
-
-  // It is an error to have a browser compositor continue to exist after
-  // shutdown.
-  CHECK(!g_has_shut_down);
 
   // Make this RecyclableCompositorMac recyclable for future instances.
   g_spare_recyclable_compositors.Get().push_back(std::move(compositor));
@@ -182,15 +175,16 @@ BrowserCompositorMac::BrowserCompositorMac(
     const viz::FrameSinkId& frame_sink_id)
     : client_(client),
       accelerated_widget_mac_ns_view_(accelerated_widget_mac_ns_view),
-      enable_viz_(
-          base::FeatureList::IsEnabled(features::kVizDisplayCompositor)),
       weak_factory_(this) {
-  g_browser_compositor_count += 1;
+  g_browser_compositors.Get().insert(this);
 
   root_layer_.reset(new ui::Layer(ui::LAYER_SOLID_COLOR));
   delegated_frame_host_.reset(new DelegatedFrameHost(
       frame_sink_id, this, features::IsSurfaceSynchronizationEnabled(),
-      enable_viz_));
+      base::FeatureList::IsEnabled(features::kVizDisplayCompositor),
+      true /* should_register_frame_sink_id */));
+
+  dfh_display_ = display::Screen::GetScreen()->GetDisplayNearestView(nil);
 
   SetRenderWidgetHostIsHidden(render_widget_host_is_hidden);
   SetNSViewAttachedToWindow(ns_view_attached_to_window);
@@ -205,12 +199,12 @@ BrowserCompositorMac::~BrowserCompositorMac() {
   delegated_frame_host_.reset();
   root_layer_.reset();
 
-  DCHECK_GT(g_browser_compositor_count, 0u);
-  g_browser_compositor_count -= 1;
+  size_t num_erased = g_browser_compositors.Get().erase(this);
+  DCHECK_EQ(1u, num_erased);
 
   // If there are no compositors allocated, destroy the recyclable
   // RecyclableCompositorMac.
-  if (!g_browser_compositor_count)
+  if (g_browser_compositors.Get().empty())
     g_spare_recyclable_compositors.Get().clear();
 }
 
@@ -238,62 +232,6 @@ void BrowserCompositorMac::ClearCompositorFrame() {
     delegated_frame_host_->ClearDelegatedFrame();
 }
 
-void BrowserCompositorMac::CopyCompleted(
-    base::WeakPtr<BrowserCompositorMac> browser_compositor,
-    const ReadbackRequestCallback& callback,
-    const SkBitmap& bitmap,
-    ReadbackResponse response) {
-  callback.Run(bitmap, response);
-  if (browser_compositor) {
-    browser_compositor->outstanding_copy_count_ -= 1;
-    browser_compositor->UpdateState();
-  }
-}
-
-void BrowserCompositorMac::CopyFromCompositingSurface(
-    const gfx::Rect& src_subrect,
-    const gfx::Size& dst_size,
-    const ReadbackRequestCallback& callback,
-    SkColorType preferred_color_type) {
-  DCHECK(delegated_frame_host_);
-  DCHECK(state_ == HasAttachedCompositor);
-  outstanding_copy_count_ += 1;
-
-  auto callback_with_decrement =
-      base::Bind(&BrowserCompositorMac::CopyCompleted,
-                 weak_factory_.GetWeakPtr(), callback);
-  delegated_frame_host_->CopyFromCompositingSurface(
-      src_subrect, dst_size, callback_with_decrement, preferred_color_type);
-}
-
-void BrowserCompositorMac::CopyToVideoFrameCompleted(
-    base::WeakPtr<BrowserCompositorMac> browser_compositor,
-    const base::Callback<void(const gfx::Rect&, bool)>& callback,
-    const gfx::Rect& rect,
-    bool result) {
-  callback.Run(rect, result);
-  if (browser_compositor) {
-    browser_compositor->outstanding_copy_count_ -= 1;
-    browser_compositor->UpdateState();
-  }
-}
-
-void BrowserCompositorMac::CopyFromCompositingSurfaceToVideoFrame(
-    const gfx::Rect& src_subrect,
-    scoped_refptr<media::VideoFrame> target,
-    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
-  DCHECK(delegated_frame_host_);
-  DCHECK(state_ == HasAttachedCompositor);
-  outstanding_copy_count_ += 1;
-
-  auto callback_with_decrement =
-      base::Bind(&BrowserCompositorMac::CopyToVideoFrameCompleted,
-                 weak_factory_.GetWeakPtr(), callback);
-
-  delegated_frame_host_->CopyFromCompositingSurfaceToVideoFrame(
-      src_subrect, std::move(target), callback_with_decrement);
-}
-
 viz::FrameSinkId BrowserCompositorMac::GetRootFrameSinkId() {
   if (recyclable_compositor_->compositor())
     return recyclable_compositor_->compositor()->frame_sink_id();
@@ -307,23 +245,6 @@ void BrowserCompositorMac::DidCreateNewRendererCompositorFrameSink(
       renderer_compositor_frame_sink_);
 }
 
-void BrowserCompositorMac::SubmitCompositorFrame(
-    const viz::LocalSurfaceId& local_surface_id,
-    viz::CompositorFrame frame) {
-  // Compute the frame size based on the root render pass rect size.
-  viz::RenderPass* root_pass = frame.render_pass_list.back().get();
-  float scale_factor = frame.metadata.device_scale_factor;
-  gfx::Size pixel_size = root_pass->output_rect.size();
-  gfx::Size dip_size = gfx::ConvertSizeToDIP(scale_factor, pixel_size);
-  root_layer_->SetBounds(gfx::Rect(dip_size));
-  if (recyclable_compositor_) {
-    recyclable_compositor_->compositor()->SetScaleAndSize(
-        scale_factor, pixel_size, compositor_surface_id_);
-  }
-  delegated_frame_host_->SubmitCompositorFrame(local_surface_id,
-                                               std::move(frame), nullptr);
-}
-
 void BrowserCompositorMac::OnDidNotProduceFrame(const viz::BeginFrameAck& ack) {
   delegated_frame_host_->DidNotProduceFrame(ack);
 }
@@ -335,53 +256,54 @@ void BrowserCompositorMac::SetBackgroundColor(SkColor background_color) {
   }
 }
 
-void BrowserCompositorMac::SetDisplayColorSpace(
-    const gfx::ColorSpace& color_space) {
-  if (recyclable_compositor_)
-    recyclable_compositor_->compositor()->SetDisplayColorSpace(color_space);
-}
+bool BrowserCompositorMac::UpdateNSViewAndDisplay() {
+  NSView* ns_view =
+      accelerated_widget_mac_ns_view_->AcceleratedWidgetGetNSView();
+  display::Display new_display =
+      display::Screen::GetScreen()->GetDisplayNearestView(ns_view);
+  gfx::Size new_size_dip([ns_view bounds].size);
+  if (new_size_dip == dfh_size_dip_ && new_display == dfh_display_)
+    return false;
 
-void BrowserCompositorMac::WasResized() {
-  // In non-viz, the ui::Compositor is resized in sync with frames coming from
-  // the renderer. In viz, the ui::Compositor can only resize in sync with the
-  // NSView.
-  if (!enable_viz_) {
-    GetDelegatedFrameHost()->WasResized();
-    return;
+  bool needs_new_surface_id =
+      new_size_dip != dfh_size_dip_ ||
+      new_display.device_scale_factor() != dfh_display_.device_scale_factor();
+
+  dfh_display_ = new_display;
+  dfh_size_dip_ = new_size_dip;
+  dfh_size_pixels_ = gfx::ConvertSizeToPixel(dfh_display_.device_scale_factor(),
+                                             dfh_size_dip_);
+
+  if (needs_new_surface_id) {
+    dfh_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
+    if (recyclable_compositor_)
+      recyclable_compositor_->Suspend();
+    GetDelegatedFrameHost()->WasResized(
+        dfh_surface_id_, dfh_size_dip_,
+        cc::DeadlinePolicy::UseExistingDeadline());
   }
 
-  if (!recyclable_compositor_)
-    return;
-
-  gfx::Size dip_size;
-  float scale_factor = 1.f;
-  GetViewProperties(&dip_size, &scale_factor, nullptr);
-  gfx::Size pixel_size = gfx::ConvertSizeToPixel(scale_factor, dip_size);
-
-  gfx::Size old_pixel_size = recyclable_compositor_->compositor()->size();
-  float old_scale_factor =
-      recyclable_compositor_->compositor()->device_scale_factor();
-
-  if (pixel_size == old_pixel_size && scale_factor == old_scale_factor)
-    return;
-
-  delegated_frame_host_surface_id_ =
-      parent_local_surface_id_allocator_.GenerateId();
-  compositor_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
-
-  root_layer_->SetBounds(gfx::Rect(dip_size));
-  recyclable_compositor_->compositor()->SetScaleAndSize(
-      scale_factor, pixel_size, compositor_surface_id_);
-
-  GetDelegatedFrameHost()->WasResized();
-}
-
-bool BrowserCompositorMac::HasFrameOfSize(const gfx::Size& desired_size) {
   if (recyclable_compositor_) {
-    return recyclable_compositor_->accelerated_widget_mac()->HasFrameOfSize(
-        desired_size);
+    recyclable_compositor_->compositor()->SetDisplayColorSpace(
+        dfh_display_.color_space());
   }
-  return false;
+  return true;
+}
+
+void BrowserCompositorMac::UpdateForAutoResize(const gfx::Size& new_size_dip) {
+  if (new_size_dip == dfh_size_dip_)
+    return;
+
+  dfh_size_dip_ = new_size_dip;
+  dfh_size_pixels_ = gfx::ConvertSizeToPixel(dfh_display_.device_scale_factor(),
+                                             dfh_size_dip_);
+  dfh_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
+
+  if (recyclable_compositor_)
+    recyclable_compositor_->Suspend();
+  GetDelegatedFrameHost()->WasResized(
+      dfh_surface_id_, dfh_size_dip_,
+      cc::DeadlinePolicy::UseExistingDeadline());
 }
 
 void BrowserCompositorMac::UpdateVSyncParameters(
@@ -404,7 +326,7 @@ void BrowserCompositorMac::SetNSViewAttachedToWindow(bool attached) {
 }
 
 void BrowserCompositorMac::UpdateState() {
-  if (!render_widget_host_is_hidden_ || outstanding_copy_count_ > 0)
+  if (!render_widget_host_is_hidden_)
     TransitionToState(HasAttachedCompositor);
   else if (ns_view_attached_to_window_)
     TransitionToState(HasDetachedCompositor);
@@ -418,6 +340,8 @@ void BrowserCompositorMac::TransitionToState(State new_state) {
     recyclable_compositor_ = RecyclableCompositorMac::Create();
     recyclable_compositor_->compositor()->SetRootLayer(root_layer_.get());
     recyclable_compositor_->compositor()->SetBackgroundColor(background_color_);
+    recyclable_compositor_->compositor()->SetDisplayColorSpace(
+        dfh_display_.color_space());
     recyclable_compositor_->accelerated_widget_mac()->SetNSView(
         accelerated_widget_mac_ns_view_);
     state_ = HasDetachedCompositor;
@@ -425,21 +349,29 @@ void BrowserCompositorMac::TransitionToState(State new_state) {
 
   // Transition HasDetachedCompositor -> HasAttachedCompositor.
   if (state_ == HasDetachedCompositor && new_state == HasAttachedCompositor) {
-    gfx::Size dip_size;
-    float scale_factor = 1.f;
-    gfx::ColorSpace color_space;
-    GetViewProperties(&dip_size, &scale_factor, &color_space);
-    gfx::Size pixel_size = gfx::ConvertSizeToPixel(scale_factor, dip_size);
-
     delegated_frame_host_->SetCompositor(recyclable_compositor_->compositor());
-    delegated_frame_host_->WasShown(ui::LatencyInfo());
-    // Unsuspend the browser compositor after showing the delegated frame host.
-    // If there is not a saved delegated frame, then the delegated frame host
-    // will keep the compositor locked until a delegated frame is swapped.
-    recyclable_compositor_->compositor()->SetDisplayColorSpace(color_space);
-    recyclable_compositor_->compositor()->SetScaleAndSize(
-        scale_factor, pixel_size, compositor_surface_id_);
-    recyclable_compositor_->Unsuspend();
+    delegated_frame_host_->WasShown(dfh_surface_id_, dfh_size_dip_,
+                                    ui::LatencyInfo());
+
+    // If there exists a saved frame ready to display, unsuspend the compositor
+    // now (if one is not ready, the compositor will unsuspend on first surface
+    // activation).
+    if (delegated_frame_host_->HasSavedFrame()) {
+      if (compositor_scale_factor_ != dfh_display_.device_scale_factor() ||
+          compositor_size_pixels_ != dfh_size_pixels_) {
+        compositor_scale_factor_ = dfh_display_.device_scale_factor();
+        compositor_size_pixels_ = dfh_size_pixels_;
+        compositor_surface_id_ =
+            parent_local_surface_id_allocator_.GenerateId();
+        root_layer_->SetBounds(gfx::Rect(gfx::ConvertSizeToDIP(
+            compositor_scale_factor_, compositor_size_pixels_)));
+        recyclable_compositor_->compositor()->SetScaleAndSize(
+            compositor_scale_factor_, compositor_size_pixels_,
+            compositor_surface_id_);
+      }
+      recyclable_compositor_->Unsuspend();
+    }
+
     state_ = HasAttachedCompositor;
   }
 
@@ -458,37 +390,28 @@ void BrowserCompositorMac::TransitionToState(State new_state) {
   // Transition HasDetachedCompositor -> HasNoCompositor.
   if (state_ == HasDetachedCompositor && new_state == HasNoCompositor) {
     recyclable_compositor_->accelerated_widget_mac()->ResetNSView();
+    compositor_scale_factor_ = 1.f;
+    compositor_size_pixels_ = gfx::Size();
+    compositor_surface_id_ = viz::LocalSurfaceId();
     recyclable_compositor_->compositor()->SetScaleAndSize(
-        1.0, gfx::Size(0, 0), viz::LocalSurfaceId());
+        compositor_scale_factor_, compositor_size_pixels_,
+        compositor_surface_id_);
     recyclable_compositor_->compositor()->SetRootLayer(nullptr);
     RecyclableCompositorMac::Recycle(std::move(recyclable_compositor_));
     state_ = HasNoCompositor;
   }
 }
 
-void BrowserCompositorMac::GetViewProperties(
-    gfx::Size* bounds_in_dip,
-    float* scale_factor,
-    gfx::ColorSpace* color_space) const {
-  NSView* ns_view =
-      accelerated_widget_mac_ns_view_->AcceleratedWidgetGetNSView();
-  if (bounds_in_dip) {
-    NSSize dip_ns_size = [ns_view bounds].size;
-    *bounds_in_dip = gfx::Size(dip_ns_size.width, dip_ns_size.height);
-  }
-  if (scale_factor || color_space) {
-    display::Display display =
-        display::Screen::GetScreen()->GetDisplayNearestView(ns_view);
-    if (scale_factor)
-      *scale_factor = display.device_scale_factor();
-    if (color_space)
-      *color_space = display.color_space();
-  }
-}
-
 // static
 void BrowserCompositorMac::DisableRecyclingForShutdown() {
-  g_has_shut_down = true;
+  // Ensure that the client has destroyed its BrowserCompositorViewMac before
+  // it dependencies are destroyed.
+  // https://crbug.com/805726
+  while (!g_browser_compositors.Get().empty()) {
+    BrowserCompositorMac* browser_compositor =
+        *g_browser_compositors.Get().begin();
+    browser_compositor->client_->DestroyCompositorForShutdown();
+  }
   g_spare_recyclable_compositors.Get().clear();
 }
 
@@ -508,26 +431,11 @@ ui::Layer* BrowserCompositorMac::DelegatedFrameHostGetLayer() const {
 }
 
 bool BrowserCompositorMac::DelegatedFrameHostIsVisible() const {
-  return state_ == HasAttachedCompositor;
+  return state_ == HasAttachedCompositor || state_ == HasDetachedCompositor;
 }
 
 SkColor BrowserCompositorMac::DelegatedFrameHostGetGutterColor() const {
   return client_->BrowserCompositorMacGetGutterColor();
-}
-
-gfx::Size BrowserCompositorMac::DelegatedFrameHostDesiredSizeInDIP() const {
-  gfx::Size dip_size;
-  GetViewProperties(&dip_size, nullptr, nullptr);
-  if (enable_viz_) {
-    if (recyclable_compositor_) {
-      const gfx::Size& pixel_size =
-          recyclable_compositor_->compositor()->size();
-      float scale_factor =
-          recyclable_compositor_->compositor()->device_scale_factor();
-      dip_size = gfx::ConvertSizeToDIP(scale_factor, pixel_size);
-    }
-  }
-  return dip_size;
 }
 
 bool BrowserCompositorMac::DelegatedFrameCanCreateResizeLock() const {
@@ -535,14 +443,44 @@ bool BrowserCompositorMac::DelegatedFrameCanCreateResizeLock() const {
   return false;
 }
 
-viz::LocalSurfaceId BrowserCompositorMac::GetLocalSurfaceId() const {
-  return delegated_frame_host_surface_id_;
-}
-
 std::unique_ptr<CompositorResizeLock>
 BrowserCompositorMac::DelegatedFrameHostCreateResizeLock() {
   NOTREACHED();
   return nullptr;
+}
+
+void BrowserCompositorMac::OnFirstSurfaceActivation(
+    const viz::SurfaceInfo& surface_info) {
+  if (!recyclable_compositor_)
+    return;
+
+  recyclable_compositor_->Unsuspend();
+
+  // Resize the compositor to match the current frame size, if needed.
+  if (compositor_size_pixels_ == surface_info.size_in_pixels() &&
+      compositor_scale_factor_ == surface_info.device_scale_factor()) {
+    return;
+  }
+  compositor_size_pixels_ = surface_info.size_in_pixels();
+  compositor_scale_factor_ = surface_info.device_scale_factor();
+  compositor_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
+  root_layer_->SetBounds(gfx::Rect(gfx::ConvertSizeToDIP(
+      compositor_scale_factor_, compositor_size_pixels_)));
+  recyclable_compositor_->compositor()->SetScaleAndSize(
+      compositor_scale_factor_, compositor_size_pixels_,
+      compositor_surface_id_);
+
+  // Disable screen updates until the frame of the new size appears (because the
+  // content is drawn in the GPU process, it may change before we want it to).
+  if (repaint_state_ == RepaintState::Paused) {
+    bool compositor_is_nsview_size =
+        compositor_size_pixels_ == dfh_size_pixels_ &&
+        compositor_scale_factor_ == dfh_display_.device_scale_factor();
+    if (compositor_is_nsview_size || repaint_auto_resize_enabled_) {
+      NSDisableScreenUpdates();
+      repaint_state_ = RepaintState::ScreenUpdatesDisabled;
+    }
+  }
 }
 
 void BrowserCompositorMac::OnBeginFrame(base::TimeTicks frame_time) {
@@ -562,6 +500,46 @@ ui::Compositor* BrowserCompositorMac::CompositorForTesting() const {
   if (recyclable_compositor_)
     return recyclable_compositor_->compositor();
   return nullptr;
+}
+
+void BrowserCompositorMac::DidNavigate() {
+  dfh_surface_id_ = parent_local_surface_id_allocator_.GenerateId();
+  delegated_frame_host_->WasResized(dfh_surface_id_, dfh_size_dip_,
+                                    cc::DeadlinePolicy::UseExistingDeadline());
+  delegated_frame_host_->DidNavigate();
+}
+
+void BrowserCompositorMac::DidReceiveFirstFrameAfterNavigation() {
+  client_->DidReceiveFirstFrameAfterNavigation();
+}
+
+void BrowserCompositorMac::BeginPauseForFrame(bool auto_resize_enabled) {
+  repaint_auto_resize_enabled_ = auto_resize_enabled;
+  repaint_state_ = RepaintState::Paused;
+}
+
+void BrowserCompositorMac::EndPauseForFrame() {
+  if (repaint_state_ == RepaintState::ScreenUpdatesDisabled)
+    NSEnableScreenUpdates();
+  repaint_state_ = RepaintState::None;
+}
+
+bool BrowserCompositorMac::ShouldContinueToPauseForFrame() const {
+  // The renderer won't produce a frame if its frame sink hasn't been created
+  // yet.
+  if (!renderer_compositor_frame_sink_)
+    return false;
+
+  if (!recyclable_compositor_)
+    return false;
+
+  return !recyclable_compositor_->accelerated_widget_mac()->HasFrameOfSize(
+      dfh_size_dip_);
+}
+
+void BrowserCompositorMac::GetRendererScreenInfo(
+    ScreenInfo* screen_info) const {
+  DisplayUtil::DisplayToScreenInfo(screen_info, dfh_display_);
 }
 
 }  // namespace content

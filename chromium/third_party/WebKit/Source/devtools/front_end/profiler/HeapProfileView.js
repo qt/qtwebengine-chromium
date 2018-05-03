@@ -14,7 +14,7 @@ Profiler.HeapProfileView = class extends Profiler.ProfileView {
     this._profileHeader = profileHeader;
     this.profile = new Profiler.SamplingHeapProfileModel(profileHeader._profile || profileHeader.protocolProfile());
     this.adjustedTotal = this.profile.total;
-    var views = [
+    const views = [
       Profiler.ProfileView.ViewTypes.Flame, Profiler.ProfileView.ViewTypes.Heavy, Profiler.ProfileView.ViewTypes.Tree
     ];
     this.initialize(new Profiler.HeapProfileView.NodeFormatter(this), views);
@@ -47,11 +47,10 @@ Profiler.HeapProfileView = class extends Profiler.ProfileView {
 /**
  * @unrestricted
  */
-Profiler.SamplingHeapProfileType = class extends Profiler.ProfileType {
-  constructor() {
-    super(Profiler.SamplingHeapProfileType.TypeId, Common.UIString('Record allocation profile'));
+Profiler.SamplingHeapProfileTypeBase = class extends Profiler.ProfileType {
+  constructor(typeId, description) {
+    super(typeId, description);
     this._recording = false;
-    Profiler.SamplingHeapProfileType.instance = this;
   }
 
   /**
@@ -87,7 +86,7 @@ Profiler.SamplingHeapProfileType = class extends Profiler.ProfileType {
    * @return {boolean}
    */
   buttonClicked() {
-    var wasRecording = this._recording;
+    const wasRecording = this._recording;
     if (wasRecording)
       this.stopRecordingProfile();
     else
@@ -95,25 +94,17 @@ Profiler.SamplingHeapProfileType = class extends Profiler.ProfileType {
     return !wasRecording;
   }
 
-  get treeItemTitle() {
-    return Common.UIString('ALLOCATION PROFILES');
-  }
-
-  get description() {
-    return Common.UIString('Allocation profiles show memory allocations from your JavaScript functions.');
-  }
-
   startRecordingProfile() {
-    var heapProfilerModel = UI.context.flavor(SDK.HeapProfilerModel);
+    const heapProfilerModel = UI.context.flavor(SDK.HeapProfilerModel);
     if (this.profileBeingRecorded() || !heapProfilerModel)
       return;
-    var profile = new Profiler.SamplingHeapProfileHeader(heapProfilerModel, this);
+    const profile = new Profiler.SamplingHeapProfileHeader(heapProfilerModel, this);
     this.setProfileBeingRecorded(profile);
     SDK.targetManager.suspendAllTargets();
     this.addProfile(profile);
     profile.updateStatus(Common.UIString('Recording\u2026'));
     this._recording = true;
-    heapProfilerModel.startSampling();
+    this._startSampling();
   }
 
   async stopRecordingProfile() {
@@ -121,8 +112,9 @@ Profiler.SamplingHeapProfileType = class extends Profiler.ProfileType {
     if (!this.profileBeingRecorded() || !this.profileBeingRecorded()._heapProfilerModel)
       return;
 
-    var profile = await this.profileBeingRecorded()._heapProfilerModel.stopSampling();
-    var recordedProfile = this.profileBeingRecorded();
+    this.profileBeingRecorded().updateStatus(Common.UIString('Stopping\u2026'));
+    const profile = await this._stopSampling();
+    const recordedProfile = this.profileBeingRecorded();
     if (recordedProfile) {
       console.assert(profile);
       recordedProfile.setProtocolProfile(profile);
@@ -149,6 +141,53 @@ Profiler.SamplingHeapProfileType = class extends Profiler.ProfileType {
   profileBeingRecordedRemoved() {
     this.stopRecordingProfile();
   }
+
+  _startSampling() {
+    throw 'Not implemented';
+  }
+
+  /**
+   * return {!Promise<!Protocol.HeapProfiler.SamplingHeapProfile>}
+   */
+  _stopSampling() {
+    throw 'Not implemented';
+  }
+};
+
+
+/**
+ * @unrestricted
+ */
+Profiler.SamplingHeapProfileType = class extends Profiler.SamplingHeapProfileTypeBase {
+  constructor() {
+    super(Profiler.SamplingHeapProfileType.TypeId, ls`Allocation sampling`);
+    Profiler.SamplingHeapProfileType.instance = this;
+  }
+
+  get treeItemTitle() {
+    return ls`SAMPLING PROFILES`;
+  }
+
+  get description() {
+    return ls`Record memory allocations using sampling method.
+              This profile type has minimal performance overhead and can be used for long running operations.
+              It provides good approximation of allocations broken down by JavaScript execution stack.`;
+  }
+
+  /**
+   * @override
+   */
+  _startSampling() {
+    this.profileBeingRecorded()._heapProfilerModel.startSampling();
+  }
+
+  /**
+   * @override
+   * return {!Promise<!Protocol.HeapProfiler.SamplingHeapProfile>}
+   */
+  _stopSampling() {
+    return this.profileBeingRecorded()._heapProfilerModel.stopSampling();
+  }
 };
 
 Profiler.SamplingHeapProfileType.TypeId = 'SamplingHeap';
@@ -156,10 +195,112 @@ Profiler.SamplingHeapProfileType.TypeId = 'SamplingHeap';
 /**
  * @unrestricted
  */
+Profiler.SamplingNativeHeapProfileType = class extends Profiler.SamplingHeapProfileTypeBase {
+  constructor() {
+    super(Profiler.SamplingNativeHeapProfileType.TypeId, ls`Native memory allocation sampling`);
+    Profiler.SamplingNativeHeapProfileType.instance = this;
+  }
+
+  get treeItemTitle() {
+    return ls`NATIVE SAMPLING PROFILES`;
+  }
+
+  get description() {
+    return ls`Allocation profiles show sampled native memory allocations from the renderer process.`;
+  }
+
+  /**
+   * @override
+   */
+  _startSampling() {
+    this.profileBeingRecorded()._heapProfilerModel.startNativeSampling();
+  }
+
+  /**
+   * @override
+   * return {!Promise<!Protocol.HeapProfiler.SamplingHeapProfile>}
+   */
+  _stopSampling() {
+    return this.profileBeingRecorded()._heapProfilerModel.stopNativeSampling();
+  }
+};
+
+Profiler.SamplingNativeHeapProfileType.TypeId = 'SamplingNativeHeapRecording';
+
+/**
+ * @unrestricted
+ */
+Profiler.SamplingNativeHeapSnapshotType = class extends Profiler.SamplingHeapProfileTypeBase {
+  constructor() {
+    super(Profiler.SamplingNativeHeapSnapshotType.TypeId, ls`Native memory allocation snapshot`);
+    Profiler.SamplingNativeHeapSnapshotType.instance = this;
+  }
+
+  /**
+   * @override
+   * @return {boolean}
+   */
+  isInstantProfile() {
+    return true;
+  }
+
+  get treeItemTitle() {
+    return ls`NATIVE SNAPSHOTS`;
+  }
+
+  get description() {
+    return ls`Native memory snapshots show sampled native allocations in the renderer process since start up.
+              Chrome has to be started with --sampling-heap-profiler flag.
+              Check flags at chrome://flags`;
+  }
+
+  /**
+   * @override
+   * @return {boolean}
+   */
+  buttonClicked() {
+    this._takeSnapshot();
+    return false;
+  }
+
+  /**
+   * @return {!Promise}
+   */
+  async _takeSnapshot() {
+    if (this.profileBeingRecorded())
+      return;
+    const heapProfilerModel = UI.context.flavor(SDK.HeapProfilerModel);
+    if (!heapProfilerModel)
+      return;
+
+    const profile = new Profiler.SamplingHeapProfileHeader(
+        heapProfilerModel, this, Common.UIString('Snapshot %d', this.nextProfileUid()));
+    this.setProfileBeingRecorded(profile);
+    this.addProfile(profile);
+    profile.updateStatus(Common.UIString('Snapshotting\u2026'));
+
+    const protocolProfile = await heapProfilerModel.takeNativeSnapshot();
+    const recordedProfile = this.profileBeingRecorded();
+    if (recordedProfile) {
+      console.assert(protocolProfile);
+      recordedProfile.setProtocolProfile(protocolProfile);
+      recordedProfile.updateStatus('');
+      this.setProfileBeingRecorded(null);
+    }
+
+    this.dispatchEventToListeners(Profiler.ProfileType.Events.ProfileComplete, recordedProfile);
+  }
+};
+
+Profiler.SamplingNativeHeapSnapshotType.TypeId = 'SamplingNativeHeapSnapshot';
+
+/**
+ * @unrestricted
+ */
 Profiler.SamplingHeapProfileHeader = class extends Profiler.WritableProfileHeader {
   /**
    * @param {?SDK.HeapProfilerModel} heapProfilerModel
-   * @param {!Profiler.SamplingHeapProfileType} type
+   * @param {!Profiler.SamplingHeapProfileTypeBase} type
    * @param {string=} title
    */
   constructor(heapProfilerModel, type, title) {
@@ -193,14 +334,14 @@ Profiler.SamplingHeapProfileNode = class extends SDK.ProfileNode {
    * @param {!Protocol.HeapProfiler.SamplingHeapProfileNode} node
    */
   constructor(node) {
-    var callFrame = node.callFrame || /** @type {!Protocol.Runtime.CallFrame} */ ({
-                      // Backward compatibility for old CpuProfileNode format.
-                      functionName: node['functionName'],
-                      scriptId: node['scriptId'],
-                      url: node['url'],
-                      lineNumber: node['lineNumber'] - 1,
-                      columnNumber: node['columnNumber'] - 1
-                    });
+    const callFrame = node.callFrame || /** @type {!Protocol.Runtime.CallFrame} */ ({
+                        // Backward compatibility for old CpuProfileNode format.
+                        functionName: node['functionName'],
+                        scriptId: node['scriptId'],
+                        url: node['url'],
+                        lineNumber: node['lineNumber'] - 1,
+                        columnNumber: node['columnNumber'] - 1
+                      });
     super(callFrame);
     this.self = node.selfSize;
   }
@@ -222,12 +363,12 @@ Profiler.SamplingHeapProfileModel = class extends SDK.ProfileTreeModel {
      * @return {!Profiler.SamplingHeapProfileNode}
      */
     function translateProfileTree(root) {
-      var resultRoot = new Profiler.SamplingHeapProfileNode(root);
-      var targetNodeStack = [resultRoot];
-      var sourceNodeStack = [root];
+      const resultRoot = new Profiler.SamplingHeapProfileNode(root);
+      const targetNodeStack = [resultRoot];
+      const sourceNodeStack = [root];
       while (sourceNodeStack.length) {
-        var sourceNode = sourceNodeStack.pop();
-        var parentNode = targetNodeStack.pop();
+        const sourceNode = sourceNodeStack.pop();
+        const parentNode = targetNodeStack.pop();
         parentNode.children = sourceNode.children.map(child => new Profiler.SamplingHeapProfileNode(child));
         sourceNodeStack.push.apply(sourceNodeStack, sourceNode.children);
         targetNodeStack.push.apply(targetNodeStack, parentNode.children);
@@ -274,7 +415,7 @@ Profiler.HeapProfileView.NodeFormatter = class {
    * @return {?Element}
    */
   linkifyNode(node) {
-    var heapProfilerModel = this._profileView._profileHeader._heapProfilerModel;
+    const heapProfilerModel = this._profileView._profileHeader._heapProfilerModel;
     return this._profileView.linkifier().maybeLinkifyConsoleCallFrame(
         heapProfilerModel ? heapProfilerModel.target() : null, node.profileNode.callFrame, 'profile-node-file');
   }
@@ -332,22 +473,22 @@ Profiler.HeapFlameChartDataProvider = class extends Profiler.ProfileFlameChartDa
     function nodesCount(node) {
       return node.children.reduce((count, node) => count + nodesCount(node), 1);
     }
-    var count = nodesCount(this._profile.root);
+    const count = nodesCount(this._profile.root);
     /** @type {!Array<!SDK.ProfileNode>} */
-    var entryNodes = new Array(count);
-    var entryLevels = new Uint16Array(count);
-    var entryTotalTimes = new Float32Array(count);
-    var entryStartTimes = new Float64Array(count);
-    var depth = 0;
-    var maxDepth = 0;
-    var position = 0;
-    var index = 0;
+    const entryNodes = new Array(count);
+    const entryLevels = new Uint16Array(count);
+    const entryTotalTimes = new Float32Array(count);
+    const entryStartTimes = new Float64Array(count);
+    let depth = 0;
+    let maxDepth = 0;
+    let position = 0;
+    let index = 0;
 
     /**
      * @param {!SDK.ProfileNode} node
      */
     function addNode(node) {
-      var start = position;
+      const start = position;
       entryNodes[index] = node;
       entryLevels[index] = depth;
       entryTotalTimes[index] = node.total;
@@ -374,10 +515,10 @@ Profiler.HeapFlameChartDataProvider = class extends Profiler.ProfileFlameChartDa
    * @return {?Element}
    */
   prepareHighlightedEntryInfo(entryIndex) {
-    var node = this._entryNodes[entryIndex];
+    const node = this._entryNodes[entryIndex];
     if (!node)
       return null;
-    var entryInfo = [];
+    const entryInfo = [];
     /**
      * @param {string} title
      * @param {string} value
@@ -388,8 +529,8 @@ Profiler.HeapFlameChartDataProvider = class extends Profiler.ProfileFlameChartDa
     pushEntryInfoRow(Common.UIString('Name'), UI.beautifyFunctionName(node.functionName));
     pushEntryInfoRow(Common.UIString('Self size'), Number.bytesToString(node.self));
     pushEntryInfoRow(Common.UIString('Total size'), Number.bytesToString(node.total));
-    var linkifier = new Components.Linkifier();
-    var link = linkifier.maybeLinkifyConsoleCallFrame(
+    const linkifier = new Components.Linkifier();
+    const link = linkifier.maybeLinkifyConsoleCallFrame(
         this._heapProfilerModel ? this._heapProfilerModel.target() : null, node.callFrame);
     if (link)
       pushEntryInfoRow(Common.UIString('URL'), link.textContent);

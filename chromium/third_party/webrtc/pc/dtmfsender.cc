@@ -41,11 +41,13 @@ static const char kDtmfValidTones[] = ",0123456789*#ABCDabcd";
 static const char kDtmfTonesTable[] = ",0123456789*#ABCD";
 // The duration cannot be more than 6000ms or less than 40ms. The gap between
 // tones must be at least 50 ms.
+// Source for values: W3C WEBRTC specification.
+// https://w3c.github.io/webrtc-pc/#dom-rtcdtmfsender-insertdtmf
 static const int kDtmfDefaultDurationMs = 100;
 static const int kDtmfMinDurationMs = 40;
 static const int kDtmfMaxDurationMs = 6000;
 static const int kDtmfDefaultGapMs = 50;
-static const int kDtmfMinGapMs = 50;
+static const int kDtmfMinGapMs = 30;
 
 // Get DTMF code from the DTMF event character.
 bool GetDtmfCode(char tone, int* code) {
@@ -120,9 +122,10 @@ bool DtmfSender::InsertDtmf(const std::string& tones, int duration,
       inter_tone_gap < kDtmfMinGapMs) {
     RTC_LOG(LS_ERROR)
         << "InsertDtmf is called with invalid duration or tones gap. "
-        << "The duration cannot be more than " << kDtmfMaxDurationMs
-        << "ms or less than " << kDtmfMinDurationMs << "ms. "
-        << "The gap between tones must be at least " << kDtmfMinGapMs << "ms.";
+           "The duration cannot be more than "
+        << kDtmfMaxDurationMs << "ms or less than " << kDtmfMinDurationMs
+        << "ms. The gap between tones must be at least "
+        << kDtmfMinGapMs << "ms.";
     return false;
   }
 

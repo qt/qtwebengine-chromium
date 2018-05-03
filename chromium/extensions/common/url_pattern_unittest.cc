@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "base/strings/stringprintf.h"
 #include "extensions/common/constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -22,7 +23,7 @@ static const int kAllSchemes =
     URLPattern::SCHEME_FILE | URLPattern::SCHEME_FTP |
     URLPattern::SCHEME_CHROMEUI | URLPattern::SCHEME_EXTENSION |
     URLPattern::SCHEME_FILESYSTEM | URLPattern::SCHEME_WS |
-    URLPattern::SCHEME_WSS;
+    URLPattern::SCHEME_WSS | URLPattern::SCHEME_DATA;
 
 TEST(ExtensionURLPatternTest, ParseInvalid) {
   const struct {
@@ -36,6 +37,7 @@ TEST(ExtensionURLPatternTest, ParseInvalid) {
       {"http://", URLPattern::PARSE_ERROR_EMPTY_HOST},
       {"http:///", URLPattern::PARSE_ERROR_EMPTY_HOST},
       {"http:// /", URLPattern::PARSE_ERROR_EMPTY_HOST},
+      {"http://:1234/", URLPattern::PARSE_ERROR_EMPTY_HOST},
       {"http://*foo/bar", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD},
       {"http://foo.*.bar/baz", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD},
       {"http://fo.*.ba:123/baz", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD},
@@ -70,8 +72,9 @@ TEST(ExtensionURLPatternTest, Ports) {
       {"http://foo:1234/bar", URLPattern::PARSE_SUCCESS, "1234"},
       {"http://*.foo:1234/", URLPattern::PARSE_SUCCESS, "1234"},
       {"http://*.foo:1234/bar", URLPattern::PARSE_SUCCESS, "1234"},
-      {"http://:1234/", URLPattern::PARSE_SUCCESS, "1234"},
       {"http://foo:/", URLPattern::PARSE_ERROR_INVALID_PORT, "*"},
+      {"http://*:1234/", URLPattern::PARSE_SUCCESS, "1234"},
+      {"http://*:*/", URLPattern::PARSE_SUCCESS, "*"},
       {"http://foo:*/", URLPattern::PARSE_SUCCESS, "*"},
       {"http://*.foo:/", URLPattern::PARSE_ERROR_INVALID_PORT, "*"},
       {"http://foo:com/", URLPattern::PARSE_ERROR_INVALID_PORT, "*"},
@@ -188,7 +191,8 @@ TEST(ExtensionURLPatternTest, Match7) {
   // allowed, but useless
   EXPECT_EQ(URLPattern::PARSE_SUCCESS, pattern.Parse("http://*.0.0.1/*"));
   EXPECT_EQ("http", pattern.scheme());
-  EXPECT_EQ("0.0.1", pattern.host());
+  // Canonicalization forces 0.0.1 to 0.0.0.1.
+  EXPECT_EQ("0.0.0.1", pattern.host());
   EXPECT_TRUE(pattern.match_subdomains());
   EXPECT_TRUE(pattern.match_effective_tld());
   EXPECT_FALSE(pattern.match_all_urls());
@@ -487,19 +491,19 @@ TEST(URLPatternTest, EffectiveTldWildcard) {
 static const struct GetAsStringPatterns {
   const char* pattern;
 } kGetAsStringTestCases[] = {
-  { "http://www/" },
-  { "http://*/*" },
-  { "chrome://*/*" },
-  { "chrome://newtab/" },
-  { "about:*" },
-  { "about:blank" },
-  { "chrome-extension://*/*" },
-  { "chrome-extension://FTW/" },
-  { "data:*" },
-  { "data:monkey" },
-  { "javascript:*" },
-  { "javascript:atemyhomework" },
-  { "http://www.example.com:8080/foo" },
+    {"http://www/"},
+    {"http://*/*"},
+    {"chrome://*/*"},
+    {"chrome://newtab/"},
+    {"about:*"},
+    {"about:blank"},
+    {"chrome-extension://*/*"},
+    {"chrome-extension://ftw/"},
+    {"data:*"},
+    {"data:monkey"},
+    {"javascript:*"},
+    {"javascript:atemyhomework"},
+    {"http://www.example.com:8080/foo"},
 };
 
 TEST(ExtensionURLPatternTest, GetAsString) {
@@ -589,7 +593,7 @@ TEST(ExtensionURLPatternTest, ConvertToExplicitSchemes) {
       URLPattern::SCHEME_FTP,
       "http://google.com/monkey").ConvertToExplicitSchemes());
 
-  ASSERT_EQ(9u, all_urls.size());
+  ASSERT_EQ(10u, all_urls.size());
   ASSERT_EQ(2u, all_schemes.size());
   ASSERT_EQ(1u, monkey.size());
 
@@ -602,6 +606,7 @@ TEST(ExtensionURLPatternTest, ConvertToExplicitSchemes) {
   EXPECT_EQ("filesystem://*/*", all_urls[6].GetAsString());
   EXPECT_EQ("ws://*/*", all_urls[7].GetAsString());
   EXPECT_EQ("wss://*/*", all_urls[8].GetAsString());
+  EXPECT_EQ("data:/*", all_urls[9].GetAsString());
 
   EXPECT_EQ("http://google.com/foo", all_schemes[0].GetAsString());
   EXPECT_EQ("https://google.com/foo", all_schemes[1].GetAsString());
@@ -927,6 +932,98 @@ TEST(ExtensionURLPatternTest, TrailingDotDomain) {
                                     "*://example.com./*");
   EXPECT_TRUE(trailing_pattern.MatchesURL(normal_domain));
   EXPECT_TRUE(trailing_pattern.MatchesURL(trailing_dot_domain));
+}
+
+TEST(ExtensionURLPatternTest, MatchesEffectiveTLD) {
+  namespace rcd = net::registry_controlled_domains;
+
+  constexpr struct {
+    const char* pattern;
+    bool matches_public_tld;
+    bool matches_public_or_private_tld;
+  } tests[] = {
+      // <all_urls> obviously implies all hosts.
+      {"*://*/*", true, true},
+      {"*://*:*/*", true, true},
+      {"<all_urls>", true, true},
+
+      // Matching a single scheme effectively all hosts.
+      {"http://*/*", true, true},
+      {"https://*/*", true, true},
+
+      // Specifying a path under any origin is effectively all hosts.
+      {"*://*/maps", true, true},
+
+      // Matching a given (e)TLD is effectively all hosts.
+      {"https://*.com/*", true, true},
+      {"*://*.co.uk/*", true, true},
+
+      // Matching an arbitrary domain with a given path or port is effectively
+      // all hosts.
+      {"*://*.com/maps", true, true},
+      {"http://*.com:80/*", true, true},
+
+      // Typically, we don't include private registries (like appspot.com) as
+      // matching an eTLD - there's legitimate reasons to want to always run on
+      // *.appspot.com, and we shouldn't say that it's close enough to every
+      // site. However, we should correctly report that it's a TLD wildcard
+      // pattern if we include private registries.
+      {"*://*.appspot.com/*", false, true},
+
+      // Unrecognized TLD-like domains should not be treated as matching an
+      // effective TLD.
+      {"*://*.notatld/*", false, false},
+
+      // All example.com sites is clearly not all hosts, or a TLD wildcard.
+      {"*://*.example.com/*", false, false},
+  };
+
+  for (const auto& test : tests) {
+    const URLPattern pattern(URLPattern::SCHEME_ALL, test.pattern);
+    EXPECT_EQ(test.matches_public_tld,
+              pattern.MatchesEffectiveTld(rcd::EXCLUDE_PRIVATE_REGISTRIES))
+        << test.pattern;
+    EXPECT_EQ(test.matches_public_or_private_tld,
+              pattern.MatchesEffectiveTld(rcd::INCLUDE_PRIVATE_REGISTRIES))
+        << test.pattern;
+  }
+}
+
+// Test that URLPattern properly canonicalizes uncanonicalized hosts.
+TEST(ExtensionURLPatternTest, UncanonicalizedUrl) {
+  {
+    // Simple case: canonicalization should lowercase the host. This is
+    // important, since gOoGle.com would never be matched in practice.
+    const URLPattern pattern(URLPattern::SCHEME_ALL, "*://*.gOoGle.com/*");
+    EXPECT_TRUE(pattern.MatchesURL(GURL("https://google.com")));
+    EXPECT_TRUE(pattern.MatchesURL(GURL("https://maps.google.com")));
+    EXPECT_FALSE(pattern.MatchesURL(GURL("https://example.com")));
+    EXPECT_EQ("*://*.google.com/*", pattern.GetAsString());
+  }
+
+  {
+    // Trickier case: internationalization with UTF8 characters (the first 'g'
+    // isn't actually a 'g').
+    const URLPattern pattern(URLPattern::SCHEME_ALL, "https://*.ɡoogle.com/*");
+    constexpr char kCanonicalizedHost[] = "xn--oogle-qmc.com";
+    EXPECT_EQ(kCanonicalizedHost, pattern.host());
+    EXPECT_EQ(base::StringPrintf("https://*.%s/*", kCanonicalizedHost),
+              pattern.GetAsString());
+    EXPECT_FALSE(pattern.MatchesURL(GURL("https://google.com")));
+    // The pattern should match the canonicalized host, and the original
+    // UTF8 version.
+    EXPECT_TRUE(pattern.MatchesURL(
+        GURL(base::StringPrintf("https://%s/", kCanonicalizedHost))));
+    EXPECT_TRUE(pattern.MatchesHost("ɡoogle.com"));
+  }
+
+  {
+    // Sometimes, canonicalization can fail (such as here, where we have invalid
+    // unicode characters). In that case, URLPattern parsing should also fail.
+    URLPattern pattern(URLPattern::SCHEME_ALL);
+    EXPECT_EQ(URLPattern::PARSE_ERROR_INVALID_HOST,
+              pattern.Parse("https://\xef\xb7\x90zyx.com/*"));
+  }
 }
 
 }  // namespace

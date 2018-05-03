@@ -14,8 +14,8 @@
 namespace blink {
 
 std::unique_ptr<WebThreadSupportingGC> WebThreadSupportingGC::Create(
-    const char* name) {
-  return WTF::WrapUnique(new WebThreadSupportingGC(name, nullptr));
+    const WebThreadCreationParams& params) {
+  return WTF::WrapUnique(new WebThreadSupportingGC(&params, nullptr));
 }
 
 std::unique_ptr<WebThreadSupportingGC> WebThreadSupportingGC::CreateForThread(
@@ -23,11 +23,12 @@ std::unique_ptr<WebThreadSupportingGC> WebThreadSupportingGC::CreateForThread(
   return WTF::WrapUnique(new WebThreadSupportingGC(nullptr, thread));
 }
 
-WebThreadSupportingGC::WebThreadSupportingGC(const char* name,
-                                             WebThread* thread)
+WebThreadSupportingGC::WebThreadSupportingGC(
+    const WebThreadCreationParams* params,
+    WebThread* thread)
     : thread_(thread) {
   DCHECK(IsMainThread());
-  DCHECK(!name || !thread);
+  DCHECK(!params || !thread);
 #if DCHECK_IS_ON()
   // We call this regardless of whether an existing thread is given or not,
   // as it means that blink is going to run with more than one thread.
@@ -35,7 +36,10 @@ WebThreadSupportingGC::WebThreadSupportingGC(const char* name,
 #endif
   if (!thread_) {
     // If |thread| is not given, create a new one and own it.
-    owning_thread_ = Platform::Current()->CreateThread(name);
+    // TODO(scheduler-dev): AnimationWorklet can pass nullptr as WebThread*
+    // reference when a test doesn't have a compositor thread.
+    owning_thread_ = Platform::Current()->CreateThread(
+        params ? *params : WebThreadCreationParams(WebThreadType::kTestThread));
     thread_ = owning_thread_.get();
   }
   MemoryCoordinator::RegisterThread(thread_);

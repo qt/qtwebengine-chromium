@@ -14,29 +14,51 @@
 
 namespace webrtc {
 namespace test {
+namespace {
+const size_t kTimestamp = 12345;
+}  // namespace
 
-TEST(StatsTest, TestEmptyObject) {
+TEST(StatsTest, AddFrame) {
   Stats stats;
-  stats.PrintSummary();  // Should not crash.
+  FrameStatistics* frame_stat = stats.AddFrame(kTimestamp, 0);
+  EXPECT_EQ(0ull, frame_stat->frame_number);
+  EXPECT_EQ(kTimestamp, frame_stat->rtp_timestamp);
+  EXPECT_EQ(1u, stats.Size(0));
 }
 
-TEST(StatsTest, AddSingleFrame) {
+TEST(StatsTest, GetFrame) {
   Stats stats;
-  FrameStatistic* frame_stat = stats.AddFrame();
-  EXPECT_EQ(0, frame_stat->frame_number);
-  EXPECT_EQ(1u, stats.size());
+  stats.AddFrame(kTimestamp, 0);
+  FrameStatistics* frame_stat = stats.GetFrame(0u, 0);
+  EXPECT_EQ(0u, frame_stat->frame_number);
+  EXPECT_EQ(kTimestamp, frame_stat->rtp_timestamp);
 }
 
-TEST(StatsTest, AddMultipleFrames) {
+TEST(StatsTest, AddFrames) {
   Stats stats;
-  const int kNumFrames = 1000;
-  for (int i = 0; i < kNumFrames; ++i) {
-    FrameStatistic* frame_stat = stats.AddFrame();
+  const size_t kNumFrames = 1000;
+  for (size_t i = 0; i < kNumFrames; ++i) {
+    FrameStatistics* frame_stat = stats.AddFrame(kTimestamp + i, 0);
     EXPECT_EQ(i, frame_stat->frame_number);
+    EXPECT_EQ(kTimestamp + i, frame_stat->rtp_timestamp);
   }
-  EXPECT_EQ(kNumFrames, static_cast<int>(stats.size()));
+  EXPECT_EQ(kNumFrames, stats.Size(0));
+  // Get frame.
+  size_t i = 22;
+  FrameStatistics* frame_stat = stats.GetFrameWithTimestamp(kTimestamp + i, 0);
+  EXPECT_EQ(i, frame_stat->frame_number);
+  EXPECT_EQ(kTimestamp + i, frame_stat->rtp_timestamp);
+}
 
-  stats.PrintSummary();  // Should not crash.
+TEST(StatsTest, AddFrameLayering) {
+  Stats stats;
+  for (size_t i = 0; i < 3; ++i) {
+    stats.AddFrame(kTimestamp + i, i);
+    FrameStatistics* frame_stat = stats.GetFrame(0u, i);
+    EXPECT_EQ(0u, frame_stat->frame_number);
+    EXPECT_EQ(kTimestamp, frame_stat->rtp_timestamp - i);
+    EXPECT_EQ(1u, stats.Size(i));
+  }
 }
 
 }  // namespace test

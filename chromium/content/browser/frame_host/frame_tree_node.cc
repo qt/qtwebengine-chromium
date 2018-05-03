@@ -24,7 +24,7 @@
 #include "content/common/frame_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/browser_side_navigation_policy.h"
-#include "third_party/WebKit/common/sandbox_flags.h"
+#include "third_party/WebKit/public/common/frame/sandbox_flags.h"
 
 namespace content {
 
@@ -40,7 +40,6 @@ base::LazyInstance<FrameTreeNodeIdMap>::DestructorAtExit
 // These values indicate the loading progress status. The minimum progress
 // value matches what Blink's ProgressTracker has traditionally used for a
 // minimum progress value.
-const double kLoadingProgressNotStarted = 0.0;
 const double kLoadingProgressMinimum = 0.1;
 const double kLoadingProgressDone = 1.0;
 
@@ -164,7 +163,6 @@ FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
       is_created_by_script_(is_created_by_script),
       devtools_frame_token_(devtools_frame_token),
       frame_owner_properties_(frame_owner_properties),
-      loading_progress_(kLoadingProgressNotStarted),
       blame_context_(frame_tree_node_id_, parent) {
   std::pair<FrameTreeNodeIdMap::iterator, bool> result =
       g_frame_tree_node_id_map.Get().insert(
@@ -276,11 +274,9 @@ void FrameTreeNode::ResetForNavigation() {
   replication_state_.accumulated_csp_headers.clear();
   render_manager_.OnDidResetContentSecurityPolicy();
 
-  // Clear the declared feature policy for the frame.
-  replication_state_.feature_policy_header.clear();
-
-  // Clear any CSP-set sandbox flags in the frame.
-  UpdateActiveSandboxFlags(blink::WebSandboxFlags::kNone);
+  // Clear any CSP-set sandbox flags, and the declared feature policy for the
+  // frame.
+  UpdateFramePolicyHeaders(blink::WebSandboxFlags::kNone, {});
 }
 
 void FrameTreeNode::SetOpener(FrameTreeNode* opener) {
@@ -316,7 +312,7 @@ void FrameTreeNode::SetOriginalOpener(FrameTreeNode* opener) {
 }
 
 void FrameTreeNode::SetCurrentURL(const GURL& url) {
-  if (!has_committed_real_load_ && url != url::kAboutBlankURL)
+  if (!has_committed_real_load_ && !url.IsAboutBlank())
     has_committed_real_load_ = true;
   current_frame_host()->SetLastCommittedUrl(url);
   blame_context_.TakeSnapshot();
@@ -368,11 +364,6 @@ void FrameTreeNode::SetFrameName(const std::string& name,
   render_manager_.OnDidUpdateName(name, unique_name);
   replication_state_.name = name;
   replication_state_.unique_name = unique_name;
-}
-
-void FrameTreeNode::SetFeaturePolicyHeader(
-    const blink::ParsedFeaturePolicy& parsed_header) {
-  replication_state_.feature_policy_header = parsed_header;
 }
 
 void FrameTreeNode::AddContentSecurityPolicies(
@@ -461,8 +452,16 @@ bool FrameTreeNode::CommitPendingFramePolicy() {
   if (did_change_container_policy)
     replication_state_.frame_policy.container_policy =
         pending_frame_policy_.container_policy;
-  UpdateActiveSandboxFlags(pending_frame_policy_.sandbox_flags);
+  UpdateFramePolicyHeaders(pending_frame_policy_.sandbox_flags,
+                           replication_state_.feature_policy_header);
   return did_change_flags || did_change_container_policy;
+}
+
+void FrameTreeNode::TransferNavigationRequestOwnership(
+    RenderFrameHostImpl* render_frame_host) {
+  RenderFrameDevToolsAgentHost::OnResetNavigationRequest(
+      navigation_request_.get());
+  render_frame_host->SetNavigationRequest(std::move(navigation_request_));
 }
 
 void FrameTreeNode::CreatedNavigationRequest(
@@ -542,14 +541,6 @@ void FrameTreeNode::ResetNavigationRequest(bool keep_state,
   }
 }
 
-bool FrameTreeNode::has_started_loading() const {
-  return loading_progress_ != kLoadingProgressNotStarted;
-}
-
-void FrameTreeNode::reset_loading_progress() {
-  loading_progress_ = kLoadingProgressNotStarted;
-}
-
 void FrameTreeNode::DidStartLoading(bool to_different_document,
                                     bool was_previously_loading) {
   // Any main frame load to a new document should reset the load progress since
@@ -591,8 +582,10 @@ void FrameTreeNode::DidStopLoading() {
 }
 
 void FrameTreeNode::DidChangeLoadProgress(double load_progress) {
-  loading_progress_ = load_progress;
-  frame_tree_->UpdateLoadProgress();
+  DCHECK_GE(load_progress, kLoadingProgressMinimum);
+  DCHECK_LE(load_progress, kLoadingProgressDone);
+  if (IsMainFrame())
+    frame_tree_->UpdateLoadProgress(load_progress);
 }
 
 bool FrameTreeNode::StopLoading() {
@@ -674,17 +667,25 @@ FrameTreeNode* FrameTreeNode::GetSibling(int relative_offset) const {
   return nullptr;
 }
 
-void FrameTreeNode::UpdateActiveSandboxFlags(
-    blink::WebSandboxFlags sandbox_flags) {
+void FrameTreeNode::UpdateFramePolicyHeaders(
+    blink::WebSandboxFlags sandbox_flags,
+    const blink::ParsedFeaturePolicy& parsed_header) {
+  bool changed = false;
+  if (replication_state_.feature_policy_header != parsed_header) {
+    replication_state_.feature_policy_header = parsed_header;
+    changed = true;
+  }
   // TODO(iclelland): Kill the renderer if sandbox flags is not a subset of the
   // currently effective sandbox flags from the frame. https://crbug.com/740556
-  blink::WebSandboxFlags original_flags =
-      replication_state_.active_sandbox_flags;
-  replication_state_.active_sandbox_flags =
+  blink::WebSandboxFlags updated_flags =
       sandbox_flags | effective_frame_policy().sandbox_flags;
-  // Notify any proxies if the flags have been changed.
-  if (replication_state_.active_sandbox_flags != original_flags)
-    render_manager()->OnDidSetActiveSandboxFlags();
+  if (replication_state_.active_sandbox_flags != updated_flags) {
+    replication_state_.active_sandbox_flags = updated_flags;
+    changed = true;
+  }
+  // Notify any proxies if the policies have been changed.
+  if (changed)
+    render_manager()->OnDidSetFramePolicyHeaders();
 }
 
 }  // namespace content

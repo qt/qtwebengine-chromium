@@ -10,7 +10,6 @@
 
 #include "SkBitmap.h"
 #include "SkBitmapCache.h"
-#include "SkColorSpace_Base.h"
 #include "SkData.h"
 #include "SkImageGenerator.h"
 #include "SkImagePriv.h"
@@ -268,9 +267,8 @@ struct CacheCaps {
 
 #if SK_SUPPORT_GPU
     bool supportsHalfFloat() const {
-        return !fCaps ||
-            (fCaps->isConfigTexturable(kRGBA_half_GrPixelConfig) &&
-             fCaps->isConfigRenderable(kRGBA_half_GrPixelConfig, false));
+        return !fCaps || (fCaps->isConfigTexturable(kRGBA_half_GrPixelConfig) &&
+                          fCaps->isConfigRenderable(kRGBA_half_GrPixelConfig));
     }
 
     bool supportsSRGB() const {
@@ -703,12 +701,13 @@ static void set_key_on_proxy(GrProxyProvider* proxyProvider,
                              const GrUniqueKey& key) {
     if (key.isValid()) {
         SkASSERT(proxy->origin() == kTopLeft_GrSurfaceOrigin);
-        if (originalProxy) {
+        if (originalProxy && originalProxy->getUniqueKey().isValid()) {
+            SkASSERT(originalProxy->getUniqueKey() == key);
             SkASSERT(GrMipMapped::kYes == proxy->mipMapped() &&
                      GrMipMapped::kNo == originalProxy->mipMapped());
-            // If we had an originalProxy, that means there already is a proxy in the cache which
-            // matches the key, but it does not have mip levels and we require them. Thus we must
-            // remove the unique key from that proxy.
+            // If we had an originalProxy with a valid key, that means there already is a proxy in
+            // the cache which matches the key, but it does not have mip levels and we require them.
+            // Thus we must remove the unique key from that proxy.
             proxyProvider->removeUniqueKeyFromProxy(key, originalProxy);
         }
         proxyProvider->assignUniqueKeyToProxy(key, proxy);
@@ -832,7 +831,7 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(GrContext* ctx,
     SkBitmap bitmap;
     if (!proxy && this->lockAsBitmap(&bitmap, chint, format, genPixelsInfo, behavior)) {
         if (willBeMipped) {
-            proxy = GrGenerateMipMapsAndUploadToTextureProxy(proxyProvider, bitmap, dstColorSpace);
+            proxy = proxyProvider->createMipMapProxyFromBitmap(bitmap, dstColorSpace);
         }
         if (!proxy) {
             proxy = GrUploadBitmapToTextureProxy(proxyProvider, bitmap, dstColorSpace);

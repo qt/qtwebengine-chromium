@@ -1,3 +1,10 @@
+/*
+ * Copyright 2018 Google Inc.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
 // This controls the range of values added to color channels
 layout(key) in int rangeType;
 
@@ -23,7 +30,6 @@ layout(key) in int rangeType;
             case kUnknown_GrPixelConfig:
             case kAlpha_half_GrPixelConfig:
             case kAlpha_half_as_Red_GrPixelConfig:
-            case kRGBA_8888_sint_GrPixelConfig:
             case kRGBA_float_GrPixelConfig:
             case kRG_float_GrPixelConfig:
             case kRGBA_half_GrPixelConfig:

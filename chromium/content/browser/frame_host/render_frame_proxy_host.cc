@@ -113,9 +113,13 @@ RenderFrameProxyHost::~RenderFrameProxyHost() {
       RenderFrameProxyHostID(GetProcess()->GetID(), routing_id_));
 }
 
-void RenderFrameProxyHost::SetChildRWHView(RenderWidgetHostView* view) {
+void RenderFrameProxyHost::SetChildRWHView(
+    RenderWidgetHostView* view,
+    const gfx::Size* initial_frame_size) {
   cross_process_frame_connector_->SetView(
       static_cast<RenderWidgetHostViewChildFrame*>(view));
+  if (initial_frame_size)
+    cross_process_frame_connector_->SetLocalFrameSize(*initial_frame_size);
 }
 
 RenderViewHostImpl* RenderFrameProxyHost::GetRenderViewHost() {
@@ -145,10 +149,13 @@ bool RenderFrameProxyHost::OnMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP(RenderFrameProxyHost, msg)
     IPC_MESSAGE_HANDLER(FrameHostMsg_Detach, OnDetach)
     IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_CheckCompleted, OnCheckCompleted)
     IPC_MESSAGE_HANDLER(FrameHostMsg_RouteMessageEvent, OnRouteMessageEvent)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeOpener, OnDidChangeOpener)
     IPC_MESSAGE_HANDLER(FrameHostMsg_AdvanceFocus, OnAdvanceFocus)
     IPC_MESSAGE_HANDLER(FrameHostMsg_FrameFocused, OnFrameFocused)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_PrintCrossProcessSubframe,
+                        OnPrintCrossProcessSubframe)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -198,7 +205,8 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
       ->GetRenderViewHost(site_instance_.get())->GetRoutingID();
   GetProcess()->GetRendererInterface()->CreateFrameProxy(
       routing_id_, view_routing_id, opener_routing_id, parent_routing_id,
-      frame_tree_node_->current_replication_state());
+      frame_tree_node_->current_replication_state(),
+      frame_tree_node_->devtools_frame_token());
 
   render_frame_proxy_created_ = true;
 
@@ -300,6 +308,11 @@ void RenderFrameProxyHost::OnOpenURL(
       params.suggested_filename);
 }
 
+void RenderFrameProxyHost::OnCheckCompleted() {
+  RenderFrameHostImpl* target_rfh = frame_tree_node()->current_frame_host();
+  target_rfh->Send(new FrameMsg_CheckCompleted(target_rfh->GetRoutingID()));
+}
+
 void RenderFrameProxyHost::OnRouteMessageEvent(
     const FrameMsg_PostMessage_Params& params) {
   RenderFrameHostImpl* target_rfh = frame_tree_node()->current_frame_host();
@@ -385,6 +398,12 @@ void RenderFrameProxyHost::OnAdvanceFocus(blink::WebFocusType type,
 void RenderFrameProxyHost::OnFrameFocused() {
   frame_tree_node_->current_frame_host()->delegate()->SetFocusedFrame(
       frame_tree_node_, GetSiteInstance());
+}
+
+void RenderFrameProxyHost::OnPrintCrossProcessSubframe(const gfx::Rect& rect,
+                                                       int document_cookie) {
+  RenderFrameHostImpl* rfh = frame_tree_node_->current_frame_host();
+  rfh->delegate()->PrintCrossProcessSubframe(rect, document_cookie, rfh);
 }
 
 }  // namespace content

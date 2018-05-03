@@ -11,6 +11,7 @@
 #include "compiler/translator/FindMain.h"
 #include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/IntermTraverse.h"
+#include "compiler/translator/StaticType.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/util.h"
 
@@ -102,8 +103,10 @@ void AddArrayZeroInitForLoop(const TIntermTyped *initializedNode,
                              TSymbolTable *symbolTable)
 {
     ASSERT(initializedNode->isArray());
-    TVariable *indexVariable = CreateTempVariable(
-        symbolTable, TType(EbtInt, highPrecisionSupported ? EbpHigh : EbpMedium, EvqTemporary));
+    const TType *mediumpIndexType = StaticType::Get<EbtInt, EbpMedium, EvqTemporary, 1, 1>();
+    const TType *highpIndexType   = StaticType::Get<EbtInt, EbpHigh, EvqTemporary, 1, 1>();
+    TVariable *indexVariable =
+        CreateTempVariable(symbolTable, highPrecisionSupported ? highpIndexType : mediumpIndexType);
 
     TIntermSymbol *indexSymbolNode = CreateTempSymbolNode(indexVariable);
     TIntermDeclaration *indexInit =
@@ -165,17 +168,15 @@ void InsertInitCode(TIntermSequence *mainBody,
 {
     for (const auto &var : variables)
     {
-        TString name = TString(var.name.c_str());
-        size_t pos   = name.find_last_of('[');
-        if (pos != TString::npos)
-        {
-            name = name.substr(0, pos);
-        }
+        // Note that tempVariableName will reference a short-lived char array here - that's fine
+        // since we're only using it to find symbols.
+        ImmutableString tempVariableName(var.name.c_str(), var.name.length());
 
         TIntermTyped *initializedSymbol = nullptr;
         if (var.isBuiltIn())
         {
-            initializedSymbol = ReferenceBuiltInVariable(name, *symbolTable, shaderVersion);
+            initializedSymbol =
+                ReferenceBuiltInVariable(tempVariableName, *symbolTable, shaderVersion);
             if (initializedSymbol->getQualifier() == EvqFragData &&
                 !IsExtensionEnabled(extensionBehavior, TExtension::EXT_draw_buffers))
             {
@@ -191,7 +192,7 @@ void InsertInitCode(TIntermSequence *mainBody,
         }
         else
         {
-            initializedSymbol = ReferenceGlobalVariable(name, *symbolTable);
+            initializedSymbol = ReferenceGlobalVariable(tempVariableName, *symbolTable);
         }
         ASSERT(initializedSymbol != nullptr);
 

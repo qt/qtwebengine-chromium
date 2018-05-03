@@ -33,17 +33,16 @@
 namespace blink {
 
 inline SVGScriptElement::SVGScriptElement(Document& document,
-                                          bool was_inserted_by_parser,
-                                          bool already_started)
+                                          const CreateElementFlags flags)
     : SVGElement(SVGNames::scriptTag, document),
       SVGURIReference(this),
-      loader_(InitializeScriptLoader(was_inserted_by_parser,
-                                     already_started,
+      loader_(InitializeScriptLoader(flags.IsCreatedByParser(),
+                                     flags.WasAlreadyStarted(),
                                      false)) {}
 
 SVGScriptElement* SVGScriptElement::Create(Document& document,
-                                           bool inserted_by_parser) {
-  return new SVGScriptElement(document, inserted_by_parser, false);
+                                           const CreateElementFlags flags) {
+  return new SVGScriptElement(document, flags);
 }
 
 void SVGScriptElement::ParseAttribute(
@@ -147,8 +146,12 @@ Document& SVGScriptElement::GetDocument() const {
   return Node::GetDocument();
 }
 
-Element* SVGScriptElement::CloneElementWithoutAttributesAndChildren() {
-  return new SVGScriptElement(GetDocument(), false, loader_->AlreadyStarted());
+Element* SVGScriptElement::CloneWithoutAttributesAndChildren(
+    Document& factory) const {
+  CreateElementFlags flags =
+      CreateElementFlags::ByCloneNode().SetAlreadyStarted(
+          loader_->AlreadyStarted());
+  return factory.CreateElement(TagQName(), flags, IsValue());
 }
 
 void SVGScriptElement::DispatchLoadEvent() {

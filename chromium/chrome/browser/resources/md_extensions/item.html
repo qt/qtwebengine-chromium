@@ -60,7 +60,7 @@
       }
 
       #card {
-        @apply(--shadow-elevation-2dp);
+        @apply --shadow-elevation-2dp;
         background: white;
         border-radius: 2px;
         display: flex;
@@ -90,7 +90,7 @@
       }
 
       #name-and-version {
-        @apply(--cr-primary-text);
+        @apply --cr-primary-text;
         margin-bottom: 4px;
       }
 
@@ -106,6 +106,13 @@
         color: var(--google-red-700);
         flex: 1;
         margin-bottom: 8px;
+      }
+
+      #error-icon {
+        --iron-icon-fill-color: var(--google-red-700);
+        -webkit-margin-end: 4px;
+        height: 18px;
+        width: 18px;
       }
 
       #description,
@@ -177,7 +184,7 @@
 
       paper-tooltip {
         --paper-tooltip: {
-          @apply(--cr-tooltip);
+          @apply --cr-tooltip;
           min-width: 0;
         };
       }
@@ -255,28 +262,29 @@
             [[data.description]]
           </div>
           <template is="dom-if" if="[[hasWarnings_(data.*)]]">
-            <div id="warnings" >
-              <div id="runtime-warnings" aria-describedby="a11yAssociation"
+            <div id="warnings">
+              <iron-icon id="error-icon" icon="error"></iron-icon>
+              <span id="runtime-warnings" aria-describedby="a11yAssociation"
                   hidden$="[[!data.runtimeWarnings.length]]">
                 <template is="dom-repeat" items="[[data.runtimeWarnings]]">
                   [[item]]
                 </template>
-              </div>
-              <div id="suspicious-warning" aria-describedby="a11yAssociation"
+              </span>
+              <span id="suspicious-warning" aria-describedby="a11yAssociation"
                   hidden$="[[!data.disableReasons.suspiciousInstall]]">
                 $i18n{itemSuspiciousInstall}
                 <a target="_blank" id="learn-more-link"
                     href="$i18n{suspiciousInstallHelpUrl}">
                   $i18n{learnMore}
                 </a>
-              </div>
-              <div id="corrupted-warning" aria-describedby="a11yAssociation"
+              </span>
+              <span id="corrupted-warning" aria-describedby="a11yAssociation"
                   hidden$="[[!data.disableReasons.corruptInstall]]">
                 $i18n{itemCorruptInstall}
-              </div>
-              <div id="blacklisted-warning"><!-- No whitespace
+              </span>
+              <span id="blacklisted-warning"><!-- No whitespace
                 -->[[data.blacklistText]]<!-- so we can use :empty in css.
-             --></div>
+             --></span>
             </div>
           </template>
           <template is="dom-if" if="[[inDevMode]]">
@@ -292,12 +300,12 @@
                   </span>
                   <a class="clippable-flex-text" is="action-link"
                       title="[[computeFirstInspectTitle_(data.views)]]"
-                      on-tap="onInspectTap_">
+                      on-click="onInspectTap_">
                     [[computeFirstInspectLabel_(data.views)]]
                   </a>
                   <a is="action-link"
                       hidden$="[[computeExtraViewsHidden_(data.views)]]"
-                      on-tap="onExtraInspectTap_">
+                      on-click="onExtraInspectTap_">
                     [[computeExtraInspectLabel_(data.views)]]
                   </a>
                 </div>
@@ -308,17 +316,17 @@
       </div>
       <div id="button-strip" class="layout horizontal center">
         <div class="layout flex horizontal center">
-          <paper-button id="details-button" on-tap="onDetailsTap_"
+          <paper-button id="details-button" on-click="onDetailsTap_"
               aria-describedby="a11yAssociation">
             $i18n{itemDetails}
           </paper-button>
-          <paper-button id="remove-button" on-tap="onRemoveTap_"
+          <paper-button id="remove-button" on-click="onRemoveTap_"
               aria-describedby="a11yAssociation"
               hidden="[[isControlled_(data.controlledInfo)]]">
             $i18n{itemRemove}
           </paper-button>
           <template is="dom-if" if="[[shouldShowErrorsButton_(data.*)]]">
-            <paper-button id="errors-button" on-tap="onErrorsTap_"
+            <paper-button id="errors-button" on-click="onErrorsTap_"
                 aria-describedby="a11yAssociation">
               $i18n{itemErrors}
             </paper-button>
@@ -327,22 +335,22 @@
         <template is="dom-if" if="[[!computeDevReloadButtonHidden_(data.*)]]">
           <button id="dev-reload-button" is="paper-icon-button-light"
               aria-label="$i18n{itemReload}" aria-describedby="a11yAssociation"
-              class="icon-refresh no-overlap" on-tap="onReloadTap_">
+              class="icon-refresh no-overlap" on-click="onReloadTap_">
           </button>
         </template>
         <template is="dom-if" if="[[data.disableReasons.corruptInstall]]">
           <paper-button id="repair-button" class="action-button"
-              aria-describedby="a11yAssociation" on-tap="onRepairTap_">
+              aria-describedby="a11yAssociation" on-click="onRepairTap_">
             $i18n{itemRepair}
           </paper-button>
         </template>
         <template is="dom-if" if="[[isTerminated_(data.state)]]">
-          <paper-button id="terminated-reload-button" on-tap="onReloadTap_"
+          <paper-button id="terminated-reload-button" on-click="onReloadTap_"
               aria-describedby="a11yAssociation" class="action-button">
             $i18n{itemReload}
           </paper-button>
         </template>
-        <cr-toggle id="enable-toggle" class="action-button"
+        <cr-toggle id="enable-toggle"
             aria-label$="[[appOrExtension(
                 data.type,
                 '$i18nPolymer{appEnabled}',

@@ -26,6 +26,8 @@ namespace autofill {
 
 const base::Feature kAutofillAlwaysFillAddresses{
     "AlwaysFillAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kAutofillAutoDismissableUpstreamBubble{
+    "AutofillAutoDismissableUpstreamBubble", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreateDataForTest{
     "AutofillCreateDataForTest", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardAssist{
@@ -46,9 +48,8 @@ const base::Feature kAutofillDeleteDisusedCreditCards{
     "AutofillDeleteDisusedCreditCards", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillExpandedPopupViews{
     "AutofillExpandedPopupViews", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kAutofillOfferLocalSaveIfServerCardManuallyEntered{
-    "AutofillOfferLocalSaveIfServerCardManuallyEntered",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillPreferServerNamePredictions{
+    "AutofillPreferServerNamePredictions", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillRationalizeFieldTypePredictions{
     "AutofillRationalizeFieldTypePredictions",
     base::FEATURE_ENABLED_BY_DEFAULT};
@@ -58,9 +59,6 @@ const base::Feature kAutofillSuppressDisusedAddresses{
     "AutofillSuppressDisusedAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kAutofillSuppressDisusedCreditCards{
     "AutofillSuppressDisusedCreditCards", base::FEATURE_ENABLED_BY_DEFAULT};
-const base::Feature kAutofillToolkitViewsCreditCardDialogsMac{
-    "AutofillToolkitViewsCreditCardDialogsMac",
-    base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamAllowAllEmailDomains{
     "AutofillUpstreamAllowAllEmailDomains", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamRequestCvcIfMissing{
@@ -84,7 +82,7 @@ const char kAutofillCreditCardLastUsedDateShowExpirationDateKey[] =
 
 #if defined(OS_MACOSX)
 const base::Feature kCreditCardAutofillTouchBar{
-    "CreditCardAutofillTouchBar", base::FEATURE_DISABLED_BY_DEFAULT};
+    "CreditCardAutofillTouchBar", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_MACOSX)
 
 namespace {
@@ -123,6 +121,10 @@ bool IsAutofillCreditCardAssistEnabled() {
 
 bool IsAutofillCreditCardPopupLayoutExperimentEnabled() {
   return base::FeatureList::IsEnabled(kAutofillCreditCardPopupLayout);
+}
+
+bool IsAutofillAutoDismissableUpstreamBubbleExperimentEnabled() {
+  return base::FeatureList::IsEnabled(kAutofillAutoDismissableUpstreamBubble);
 }
 
 bool IsAutofillCreditCardLastUsedDateDisplayExperimentEnabled() {
@@ -271,11 +273,6 @@ bool IsCreditCardUploadEnabled(const PrefService* pref_service,
   }
 
   return !group_name.empty() && group_name != "Disabled";
-}
-
-bool IsAutofillOfferLocalSaveIfServerCardManuallyEnteredExperimentEnabled() {
-  return base::FeatureList::IsEnabled(
-      kAutofillOfferLocalSaveIfServerCardManuallyEntered);
 }
 
 bool IsAutofillSendBillingCustomerNumberExperimentEnabled() {

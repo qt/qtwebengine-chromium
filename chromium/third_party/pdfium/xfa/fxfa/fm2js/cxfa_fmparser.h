@@ -18,7 +18,7 @@ class CXFA_FMParser {
   explicit CXFA_FMParser(const WideStringView& wsFormcalc);
   ~CXFA_FMParser();
 
-  std::unique_ptr<CXFA_FMFunctionDefinition> Parse();
+  std::unique_ptr<CXFA_FMAST> Parse();
   bool HasError() const;
 
   void SetMaxParseDepthForTest(unsigned long max_depth) {
@@ -30,12 +30,11 @@ class CXFA_FMParser {
   bool CheckThenNext(XFA_FM_TOKEN op);
   bool IncrementParseDepthAndCheck();
 
-  std::vector<std::unique_ptr<CXFA_FMExpression>> ParseTopExpression();
+  std::vector<std::unique_ptr<CXFA_FMExpression>> ParseExpressionList();
   std::unique_ptr<CXFA_FMExpression> ParseFunction();
   std::unique_ptr<CXFA_FMExpression> ParseExpression();
-  std::unique_ptr<CXFA_FMExpression> ParseVarExpression();
+  std::unique_ptr<CXFA_FMExpression> ParseDeclarationExpression();
   std::unique_ptr<CXFA_FMExpression> ParseExpExpression();
-  std::unique_ptr<CXFA_FMExpression> ParseBlockExpression();
   std::unique_ptr<CXFA_FMExpression> ParseIfExpression();
   std::unique_ptr<CXFA_FMExpression> ParseWhileExpression();
   std::unique_ptr<CXFA_FMExpression> ParseForExpression();
@@ -43,7 +42,6 @@ class CXFA_FMParser {
   std::unique_ptr<CXFA_FMExpression> ParseDoExpression();
   std::unique_ptr<CXFA_FMSimpleExpression> ParseParenExpression();
   std::unique_ptr<CXFA_FMSimpleExpression> ParseSimpleExpression();
-  std::unique_ptr<CXFA_FMSimpleExpression> ParseSubassignmentInForExpression();
   std::unique_ptr<CXFA_FMSimpleExpression> ParseLogicalOrExpression();
   std::unique_ptr<CXFA_FMSimpleExpression> ParseLogicalAndExpression();
   std::unique_ptr<CXFA_FMSimpleExpression> ParseEqualityExpression();
@@ -55,9 +53,10 @@ class CXFA_FMParser {
   std::unique_ptr<CXFA_FMSimpleExpression> ParsePostExpression(
       std::unique_ptr<CXFA_FMSimpleExpression> e);
   std::unique_ptr<CXFA_FMSimpleExpression> ParseIndexExpression();
+  std::unique_ptr<CXFA_FMSimpleExpression> ParseLiteral();
 
   std::unique_ptr<CXFA_FMLexer> m_lexer;
-  std::unique_ptr<CXFA_FMToken> m_token;
+  CXFA_FMToken m_token;
   bool m_error;
   unsigned long m_parse_depth;
   unsigned long m_max_parse_depth;

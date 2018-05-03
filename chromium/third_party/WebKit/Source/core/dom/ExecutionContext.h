@@ -32,6 +32,7 @@
 
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/single_thread_task_runner.h"
 #include "core/CoreExport.h"
 #include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ContextLifecycleObserver.h"
@@ -55,6 +56,7 @@ class DOMTimerCoordinator;
 class ErrorEvent;
 class EventQueue;
 class EventTarget;
+class InterfaceInvalidator;
 class LocalDOMWindow;
 class PausableObject;
 class PublicURLManager;
@@ -203,7 +205,10 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
     return nullptr;
   }
 
-  virtual scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType) = 0;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
+      TaskType) = 0;
+
+  InterfaceInvalidator* GetInterfaceInvalidator() { return invalidator_.get(); }
 
  protected:
   ExecutionContext();
@@ -229,6 +234,9 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   int window_interaction_tokens_;
 
   ReferrerPolicy referrer_policy_;
+
+  std::unique_ptr<InterfaceInvalidator> invalidator_;
+
   DISALLOW_COPY_AND_ASSIGN(ExecutionContext);
 };
 

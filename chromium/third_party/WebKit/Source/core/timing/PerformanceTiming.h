@@ -35,6 +35,7 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
+#include "platform/wtf/Time.h"
 
 namespace blink {
 
@@ -129,8 +130,8 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
 
   void Trace(blink::Visitor*) override;
 
-  unsigned long long MonotonicTimeToIntegerMilliseconds(double) const;
-  double IntegerMillisecondsToMonotonicTime(unsigned long long) const;
+  unsigned long long MonotonicTimeToIntegerMilliseconds(TimeTicks) const;
+  TimeTicks IntegerMillisecondsToMonotonicTime(unsigned long long) const;
 
  private:
   explicit PerformanceTiming(LocalFrame*);

@@ -340,7 +340,8 @@ NodeRareData& Node::EnsureRareData() {
 
   DCHECK(data_.rare_data_);
   SetFlag(kHasRareDataFlag);
-  ScriptWrappableVisitor::WriteBarrier(RareData());
+  ScriptWrappableMarkingVisitor::WriteBarrier(RareData());
+  ThreadState::Current()->Heap().WriteBarrier(RareData());
   return *RareData();
 }
 
@@ -605,7 +606,24 @@ void Node::remove() {
   remove(ASSERT_NO_EXCEPTION);
 }
 
-Node* Node::cloneNode(bool deep) {
+Node* Node::cloneNode(bool deep, ExceptionState& exception_state) const {
+  // https://dom.spec.whatwg.org/#dom-node-clonenode
+
+  // 1. If context object is a shadow root, then throw a
+  // "NotSupportedError" DOMException.
+  if (IsShadowRoot()) {
+    exception_state.ThrowDOMException(kNotSupportedError,
+                                      "ShadowRoot nodes are not clonable.");
+    return nullptr;
+  }
+
+  // 2. Return a clone of the context object, with the clone children
+  // flag set if deep is true.
+  return Clone(GetDocument(),
+               deep ? CloneChildrenFlag::kClone : CloneChildrenFlag::kSkip);
+}
+
+Node* Node::cloneNode(bool deep) const {
   return cloneNode(deep, ASSERT_NO_EXCEPTION);
 }
 
@@ -663,6 +681,9 @@ void Node::SetLayoutObject(LayoutObject* layout_object) {
 
 void Node::SetNonAttachedStyle(
     scoped_refptr<ComputedStyle> non_attached_style) {
+  // We don't set non-attached style for text nodes.
+  DCHECK(IsElementNode());
+
   NodeRenderingData* node_layout_data =
       HasRareData() ? data_.rare_data_->GetNodeRenderingData()
                     : data_.node_layout_data_;
@@ -676,6 +697,10 @@ void Node::SetNonAttachedStyle(
 
   if (!non_attached_style)
     return;
+
+  // Ensure we don't unnecessarily set non-attached style for elements which are
+  // not part of the flat tree and consequently won't be attached.
+  DCHECK(LayoutTreeBuilderTraversal::Parent(*this));
 
   // Swap the NodeRenderingData to point to a new NodeRenderingData instead of
   // the static SharedEmptyData instance.
@@ -700,15 +725,14 @@ LayoutRect Node::BoundingBox() const {
   return LayoutRect();
 }
 
-#ifndef NDEBUG
-inline static ShadowRoot* OldestShadowRootFor(const Node* node) {
-  if (!node->IsElementNode())
-    return nullptr;
-  if (ElementShadow* shadow = ToElement(node)->Shadow())
-    return &shadow->OldestShadowRoot();
-  return nullptr;
+LayoutRect Node::BoundingBoxForScrollIntoView() const {
+  if (GetLayoutObject()) {
+    return LayoutRect(
+        GetLayoutObject()->AbsoluteBoundingBoxRectForScrollIntoView());
+  }
+
+  return LayoutRect();
 }
-#endif
 
 Node& Node::ShadowIncludingRoot() const {
   if (isConnected())
@@ -785,8 +809,7 @@ void Node::RecalcDistribution() {
       child->RecalcDistribution();
   }
 
-  for (ShadowRoot* root = YoungestShadowRoot(); root;
-       root = root->OlderShadowRoot()) {
+  if (ShadowRoot* root = GetShadowRoot()) {
     if (root->ChildNeedsDistributionRecalc())
       root->RecalcDistribution();
   }
@@ -837,10 +860,9 @@ static ContainerNode* GetReattachParent(Node& node) {
   if (node.IsPseudoElement())
     return node.ParentOrShadowHostNode();
   if (node.IsChildOfV1ShadowHost()) {
-    HTMLSlotElement* slot =
-        RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()
-            ? node.AssignedSlot()
-            : node.FinalDestinationSlot();
+    HTMLSlotElement* slot = RuntimeEnabledFeatures::SlotInFlatTreeEnabled()
+                                ? node.AssignedSlot()
+                                : node.FinalDestinationSlot();
     if (slot)
       return slot;
   }
@@ -998,7 +1020,7 @@ bool Node::IsShadowIncludingInclusiveAncestorOf(const Node* node) const {
     return false;
 
   bool has_children = IsContainerNode() && ToContainerNode(this)->HasChildren();
-  bool has_shadow = IsElementNode() && ToElement(this)->Shadow();
+  bool has_shadow = IsShadowHost(this);
   if (!has_children && !has_shadow)
     return false;
 
@@ -1086,7 +1108,6 @@ void Node::AttachLayoutTree(AttachContext& context) {
 
   ClearNeedsStyleRecalc();
   ClearNeedsReattachLayoutTree();
-  SetNonAttachedStyle(nullptr);
 
   if (AXObjectCache* cache = GetDocument().GetOrCreateAXObjectCache())
     cache->UpdateCacheAfterNodeIsAttached(this);
@@ -1126,10 +1147,11 @@ bool Node::CanStartSelection() const {
     const ComputedStyle& style = GetLayoutObject()->StyleRef();
     if (style.UserSelect() == EUserSelect::kNone)
       return false;
-    // We allow selections to begin within |user-select: text| sub trees
+    // We allow selections to begin within |user-select: text/all| sub trees
     // but not if the element is draggable.
     if (style.UserDrag() != EUserDrag::kElement &&
-        style.UserSelect() == EUserSelect::kText)
+        (style.UserSelect() == EUserSelect::kText ||
+         style.UserSelect() == EUserSelect::kAll))
       return true;
   }
   ContainerNode* parent = FlatTreeTraversal::Parent(*this);
@@ -1153,15 +1175,14 @@ bool Node::IsStyledElement() const {
 
 bool Node::CanParticipateInFlatTree() const {
   // TODO(hayato): Return false for pseudo elements.
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
+  if (RuntimeEnabledFeatures::SlotInFlatTreeEnabled()) {
     return !IsShadowRoot() && !IsActiveV0InsertionPoint(*this);
   }
   return !IsShadowRoot() && !IsActiveSlotOrActiveV0InsertionPoint();
 }
 
 bool Node::IsActiveSlotOrActiveV0InsertionPoint() const {
-  return (IsHTMLSlotElement(*this) &&
-          ToHTMLSlotElement(*this).SupportsAssignment()) ||
+  return ToHTMLSlotElementIfSupportsAssignmentOrNull(*this) ||
          IsActiveV0InsertionPoint(*this);
 }
 
@@ -1620,13 +1641,6 @@ unsigned short Node::compareDocumentPosition(
         if (!child1->IsShadowRoot())
           return Node::kDocumentPositionPreceding | connection;
 
-        for (const ShadowRoot* child = ToShadowRoot(child2)->OlderShadowRoot();
-             child; child = child->OlderShadowRoot()) {
-          if (child == child1) {
-            return Node::kDocumentPositionFollowing | connection;
-          }
-        }
-
         return Node::kDocumentPositionPreceding | connection;
       }
 
@@ -1684,38 +1698,20 @@ String Node::DebugNodeName() const {
 
 static void DumpAttributeDesc(const Node& node,
                               const QualifiedName& name,
-                              std::ostream& ostream) {
+                              StringBuilder& builder) {
   if (!node.IsElementNode())
     return;
   const AtomicString& value = ToElement(node).getAttribute(name);
   if (value.IsEmpty())
     return;
-  ostream << ' ' << name.ToString().Utf8().data() << '=' << value;
+  builder.Append(' ');
+  builder.Append(name.ToString());
+  builder.Append("=");
+  builder.Append(String(value).EncodeForDebugging());
 }
 
 std::ostream& operator<<(std::ostream& ostream, const Node& node) {
-  if (node.getNodeType() == Node::kProcessingInstructionNode)
-    return ostream << "?" << node.nodeName().Utf8().data();
-  if (node.IsShadowRoot()) {
-    // nodeName of ShadowRoot is #document-fragment.  It's confused with
-    // DocumentFragment.
-    return ostream << "#shadow-root(" << ToShadowRoot(node).GetType() << ")";
-  }
-  if (node.IsDocumentTypeNode())
-    return ostream << "DOCTYPE " << node.nodeName().Utf8().data();
-
-  // We avoid to print "" by utf8().data().
-  ostream << node.nodeName().Utf8().data();
-  if (node.IsTextNode())
-    return ostream << " " << node.nodeValue();
-  DumpAttributeDesc(node, HTMLNames::idAttr, ostream);
-  DumpAttributeDesc(node, HTMLNames::classAttr, ostream);
-  DumpAttributeDesc(node, HTMLNames::styleAttr, ostream);
-  if (HasEditableStyle(node))
-    ostream << " (editable)";
-  if (node.GetDocument().FocusedElement() == &node)
-    ostream << " (focused)";
-  return ostream;
+  return ostream << node.ToString().Utf8().data();
 }
 
 std::ostream& operator<<(std::ostream& ostream, const Node* node) {
@@ -1724,15 +1720,38 @@ std::ostream& operator<<(std::ostream& ostream, const Node* node) {
   return ostream << *node;
 }
 
-#ifndef NDEBUG
-
 String Node::ToString() const {
-  // TODO(tkent): We implemented toString() with operator<<.  We should
-  // implement operator<< with toString() instead.
-  std::stringstream stream;
-  stream << *this;
-  return String(stream.str().c_str());
+  if (getNodeType() == Node::kProcessingInstructionNode)
+    return "?" + nodeName();
+  if (IsShadowRoot()) {
+    // nodeName of ShadowRoot is #document-fragment.  It's confused with
+    // DocumentFragment.
+    std::stringstream shadow_root_type;
+    shadow_root_type << ToShadowRoot(this)->GetType();
+    String shadow_root_type_str(shadow_root_type.str().c_str());
+    return "#shadow-root(" + shadow_root_type_str + ")";
+  }
+  if (IsDocumentTypeNode())
+    return "DOCTYPE " + nodeName();
+
+  StringBuilder builder;
+  builder.Append(nodeName());
+  if (IsTextNode()) {
+    builder.Append(" ");
+    builder.Append(nodeValue().EncodeForDebugging());
+    return builder.ToString();
+  }
+  DumpAttributeDesc(*this, HTMLNames::idAttr, builder);
+  DumpAttributeDesc(*this, HTMLNames::classAttr, builder);
+  DumpAttributeDesc(*this, HTMLNames::styleAttr, builder);
+  if (HasEditableStyle(*this))
+    builder.Append(" (editable)");
+  if (GetDocument().FocusedElement() == this)
+    builder.Append(" (focused)");
+  return builder.ToString();
 }
+
+#ifndef NDEBUG
 
 String Node::ToTreeStringForThis() const {
   return ToMarkedTreeString(this, "*");
@@ -1752,12 +1771,7 @@ void Node::PrintNodePathTo(std::ostream& stream) const {
   for (unsigned index = chain.size(); index > 0; --index) {
     const Node* node = chain[index - 1];
     if (node->IsShadowRoot()) {
-      int count = 0;
-      for (const ShadowRoot* shadow_root =
-               ToShadowRoot(node)->OlderShadowRoot();
-           shadow_root; shadow_root = shadow_root->OlderShadowRoot())
-        ++count;
-      stream << "/#shadow-root[" << count << "]";
+      stream << "/#shadow-root";
       continue;
     }
 
@@ -1836,13 +1850,8 @@ static void AppendMarkedTree(const String& base_indent,
                          marked_node2, marked_label2, builder);
     }
 
-    if (node.IsShadowRoot()) {
-      if (ShadowRoot* younger_shadow_root =
-              ToShadowRoot(node).YoungerShadowRoot())
-        AppendMarkedTree(indent.ToString(), younger_shadow_root, marked_node1,
-                         marked_label1, marked_node2, marked_label2, builder);
-    } else if (ShadowRoot* oldest_shadow_root = OldestShadowRootFor(&node)) {
-      AppendMarkedTree(indent.ToString(), oldest_shadow_root, marked_node1,
+    if (ShadowRoot* shadow_root = node.GetShadowRoot()) {
+      AppendMarkedTree(indent.ToString(), shadow_root, marked_node1,
                        marked_label1, marked_node2, marked_label2, builder);
     }
   }
@@ -1922,19 +1931,12 @@ static void PrintSubTreeAcrossFrame(const Node* node,
   if (node == marked_node)
     stream << "*";
   stream << indent.Utf8().data() << *node << "\n";
-  if (node->IsShadowRoot()) {
-    if (ShadowRoot* younger_shadow_root =
-            ToShadowRoot(node)->YoungerShadowRoot())
-      PrintSubTreeAcrossFrame(younger_shadow_root, marked_node, indent + "\t",
-                              stream);
-  } else {
-    if (node->IsFrameOwnerElement())
-      PrintSubTreeAcrossFrame(ToHTMLFrameOwnerElement(node)->contentDocument(),
-                              marked_node, indent + "\t", stream);
-    if (ShadowRoot* oldest_shadow_root = OldestShadowRootFor(node))
-      PrintSubTreeAcrossFrame(oldest_shadow_root, marked_node, indent + "\t",
-                              stream);
+  if (node->IsFrameOwnerElement()) {
+    PrintSubTreeAcrossFrame(ToHTMLFrameOwnerElement(node)->contentDocument(),
+                            marked_node, indent + "\t", stream);
   }
+  if (ShadowRoot* shadow_root = node->GetShadowRoot())
+    PrintSubTreeAcrossFrame(shadow_root, marked_node, indent + "\t", stream);
   for (const Node* child = node->firstChild(); child;
        child = child->nextSibling())
     PrintSubTreeAcrossFrame(child, marked_node, indent + "\t", stream);
@@ -2053,8 +2055,7 @@ void Node::RemoveAllEventListenersRecursively() {
   ScriptForbiddenScope forbid_script_during_raw_iteration;
   for (Node& node : NodeTraversal::StartsAt(*this)) {
     node.RemoveAllEventListeners();
-    for (ShadowRoot* root = node.YoungestShadowRoot(); root;
-         root = root->OlderShadowRoot())
+    if (ShadowRoot* root = node.GetShadowRoot())
       root->RemoveAllEventListenersRecursively();
   }
 }
@@ -2677,15 +2678,13 @@ void Node::CheckSlotChange(SlotChangeType slot_change_type) {
       slot->DidSlotChange(slot_change_type);
   } else if (IsInV1ShadowTree()) {
     // Checking for fallback content if the node is in a v1 shadow tree.
-    Element* parent = parentElement();
-    if (parent && IsHTMLSlotElement(parent)) {
-      HTMLSlotElement& parent_slot = ToHTMLSlotElement(*parent);
-      DCHECK(parent_slot.SupportsAssignment());
+    if (auto* parent_slot = ToHTMLSlotElementOrNull(parentElement())) {
+      DCHECK(parent_slot->SupportsAssignment());
       // The parent_slot's assigned nodes might not be calculated because they
       // are lazy evaluated later at UpdateDistribution() so we have to check it
       // here.
-      if (!parent_slot.HasAssignedNodesSlow())
-        parent_slot.DidSlotChange(slot_change_type);
+      if (!parent_slot->HasAssignedNodesSlow())
+        parent_slot->DidSlotChange(slot_change_type);
     }
   }
 }

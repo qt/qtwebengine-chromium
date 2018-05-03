@@ -9,6 +9,7 @@
 #include "net/base/escape.h"
 #include "public/platform/Platform.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "third_party/WebKit/Source/platform/blob/BlobData.h"
 #include "third_party/WebKit/Source/platform/clipboard/ClipboardMimeTypes.h"
 #include "third_party/WebKit/Source/platform/wtf/text/StringUTF8Adaptor.h"
 #include "third_party/WebKit/public/platform/WebDragData.h"
@@ -53,7 +54,6 @@ DragData BuildDragData(const WebDragData& web_drag_data) {
   return result;
 };
 
-#if !defined(OS_MACOSX)
 String EscapeForHTML(const String& str) {
   std::string output =
       net::EscapeForHTML(StringUTF8Adaptor(str).AsStringPiece());
@@ -74,7 +74,6 @@ WTF::String URLToImageMarkup(const WebURL& url, const WTF::String& title) {
   markup.append("/>");
   return markup;
 }
-#endif
 
 String EnsureNotNullWTFString(const WebString& string) {
   String result = string;
@@ -160,13 +159,11 @@ WebBlobInfo WebClipboardImpl::ReadImage(mojom::ClipboardBuffer buffer) {
   if (!IsValidBufferType(buffer))
     return WebBlobInfo();
 
-  WTF::String blob_uuid;
-  WTF::String type;
-  int64_t size = -1;
-  clipboard_->ReadImage(buffer, &blob_uuid, &type, &size);
-  if (size < 0)
+  scoped_refptr<BlobDataHandle> blob;
+  clipboard_->ReadImage(buffer, &blob);
+  if (!blob)
     return WebBlobInfo();
-  return WebBlobInfo(blob_uuid, type, size);
+  return blob;
 }
 
 WebString WebClipboardImpl::ReadCustomData(mojom::ClipboardBuffer buffer,
@@ -208,17 +205,13 @@ void WebClipboardImpl::WriteImage(const WebImage& image,
   if (url.IsValid() && !url.IsEmpty()) {
     clipboard_->WriteBookmark(mojom::ClipboardBuffer::kStandard,
                               url.GetString(), EnsureNotNullWTFString(title));
-#if !defined(OS_MACOSX)
+
     // When writing the image, we also write the image markup so that pasting
     // into rich text editors, such as Gmail, reveals the image. We also don't
     // want to call writeText(), since some applications (WordPad) don't pick
     // the image if there is also a text format on the clipboard.
-    // We also don't want to write HTML on a Mac, since Mail.app prefers to use
-    // the image markup over attaching the actual image. See
-    // http://crbug.com/33016 for details.
     clipboard_->WriteHtml(mojom::ClipboardBuffer::kStandard,
                           URLToImageMarkup(url, title), KURL());
-#endif
   }
   clipboard_->CommitWrite(mojom::ClipboardBuffer::kStandard);
 }

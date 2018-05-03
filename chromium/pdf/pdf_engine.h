@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "base/optional.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
@@ -30,6 +31,7 @@
 #include "ppapi/cpp/url_loader.h"
 #include "ppapi/cpp/var_array.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/gfx/geometry/point_f.h"
 
 #if defined(OS_WIN)
 typedef void (*PDFEnsureTypefaceCharactersAccessible)(const LOGFONT* font,
@@ -67,6 +69,26 @@ class PDFEngine {
     kXFAFull = 2,
     kXFAForeground = 3,
     kCount = 4,
+  };
+
+  // Maximum number of parameters a nameddest view can contain.
+  static constexpr size_t kMaxViewParams = 4;
+
+  // Named destination in a document.
+  struct NamedDestination {
+    // 0-based page number.
+    unsigned long page;
+
+    // View fit type (see table 8.2 "Destination syntax" on page 582 of PDF
+    // Reference 1.7). Empty string if not present.
+    std::string view;
+
+    // Number of parameters for the view.
+    unsigned long num_params;
+
+    // Parameters for the view. Their meaning depends on the |view| and their
+    // number is defined by |num_params| but is at most |kMaxViewParams|.
+    float params[kMaxViewParams];
   };
 
   // Features in a document that are relevant to measure.
@@ -299,12 +321,12 @@ class PDFEngine {
   virtual void SelectAll() = 0;
   // Gets the number of pages in the document.
   virtual int GetNumberOfPages() = 0;
-  // Gets the 0-based page number of |destination|, or -1 if it does not exist.
-  virtual int GetNamedDestinationPage(const std::string& destination) = 0;
+  // Gets the named destination by name.
+  virtual base::Optional<PDFEngine::NamedDestination> GetNamedDestination(
+      const std::string& destination) = 0;
   // Transforms an (x, y) point in page coordinates to screen coordinates.
-  virtual std::pair<int, int> TransformPagePoint(
-      int page_index,
-      std::pair<int, int> page_xy) = 0;
+  virtual gfx::PointF TransformPagePoint(int page_index,
+                                         const gfx::PointF& page_xy) = 0;
   // Gets the index of the most visible page, or -1 if none are visible.
   virtual int GetMostVisiblePage() = 0;
   // Gets the rectangle of the page including shadow.

@@ -9,6 +9,7 @@
 #endif
 
 #include "compiler/translator/Types.h"
+#include "compiler/translator/ImmutableString.h"
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/SymbolTable.h"
@@ -210,7 +211,7 @@ TType::TType(const TStructure *userDef)
 {
 }
 
-TType::TType(TInterfaceBlock *interfaceBlockIn,
+TType::TType(const TInterfaceBlock *interfaceBlockIn,
              TQualifier qualifierIn,
              TLayoutQualifier layoutQualifierIn)
     : type(EbtInterfaceBlock),
@@ -479,10 +480,16 @@ bool TType::canReplaceWithConstantUnion() const
 const char *TType::buildMangledName() const
 {
     TString mangledName;
+
     if (isMatrix())
-        mangledName += 'm';
-    else if (isVector())
-        mangledName += 'v';
+    {
+        mangledName += static_cast<char>('0' + getCols());
+        mangledName += static_cast<char>('0' + getRows());
+    }
+    else if (getNominalSize() > 1)
+    {
+        mangledName += static_cast<char>('0' + getNominalSize());
+    }
 
     const char *basicMangledName = GetBasicMangledName(type);
     if (basicMangledName != nullptr)
@@ -498,30 +505,19 @@ const char *TType::buildMangledName() const
                 mangledName += "struct-";
                 if (mStructure->symbolType() != SymbolType::Empty)
                 {
-                    mangledName += mStructure->name();
+                    mangledName += mStructure->name().data();
                 }
                 mangledName += mStructure->mangledFieldList();
                 break;
             case EbtInterfaceBlock:
                 mangledName += "iblock-";
-                mangledName += mInterfaceBlock->name();
+                mangledName += mInterfaceBlock->name().data();
                 mangledName += mInterfaceBlock->mangledFieldList();
                 break;
             default:
                 UNREACHABLE();
                 break;
         }
-    }
-
-    if (isMatrix())
-    {
-        mangledName += static_cast<char>('0' + getCols());
-        mangledName += static_cast<char>('x');
-        mangledName += static_cast<char>('0' + getRows());
-    }
-    else
-    {
-        mangledName += static_cast<char>('0' + getNominalSize());
     }
 
     if (mArraySizes)
@@ -539,10 +535,7 @@ const char *TType::buildMangledName() const
     mangledName += ';';
 
     // Copy string contents into a pool-allocated buffer, so we never need to call delete.
-    size_t requiredSize = mangledName.size() + 1;
-    char *buffer = reinterpret_cast<char *>(GetGlobalPoolAllocator()->allocate(requiredSize));
-    memcpy(buffer, mangledName.c_str(), requiredSize);
-    return buffer;
+    return AllocatePoolCharArray(mangledName.c_str(), mangledName.size());
 }
 
 size_t TType::getObjectSize() const
@@ -757,7 +750,7 @@ void TType::toArrayElementType()
     }
 }
 
-void TType::setInterfaceBlock(TInterfaceBlock *interfaceBlockIn)
+void TType::setInterfaceBlock(const TInterfaceBlock *interfaceBlockIn)
 {
     if (mInterfaceBlock != interfaceBlockIn)
     {
@@ -781,12 +774,17 @@ void TType::realize()
     getMangledName();
 }
 
+bool TType::isRealized() const
+{
+    return mMangledName != nullptr;
+}
+
 void TType::invalidateMangledName()
 {
     mMangledName = nullptr;
 }
 
-void TType::createSamplerSymbols(const TString &namePrefix,
+void TType::createSamplerSymbols(const ImmutableString &namePrefix,
                                  const TString &apiNamePrefix,
                                  TVector<const TVariable *> *outputSymbols,
                                  TMap<const TVariable *, TString> *outputSymbolsToAPINames,
@@ -800,26 +798,26 @@ void TType::createSamplerSymbols(const TString &namePrefix,
             elementType.toArrayElementType();
             for (unsigned int arrayIndex = 0u; arrayIndex < getOutermostArraySize(); ++arrayIndex)
             {
-                TStringStream elementName;
+                std::stringstream elementName;
                 elementName << namePrefix << "_" << arrayIndex;
                 TStringStream elementApiName;
                 elementApiName << apiNamePrefix << "[" << arrayIndex << "]";
-                elementType.createSamplerSymbols(elementName.str(), elementApiName.str(),
-                                                 outputSymbols, outputSymbolsToAPINames,
-                                                 symbolTable);
+                elementType.createSamplerSymbols(ImmutableString(elementName.str()),
+                                                 elementApiName.str(), outputSymbols,
+                                                 outputSymbolsToAPINames, symbolTable);
             }
         }
         else
         {
-            mStructure->createSamplerSymbols(namePrefix, apiNamePrefix, outputSymbols,
+            mStructure->createSamplerSymbols(namePrefix.data(), apiNamePrefix, outputSymbols,
                                              outputSymbolsToAPINames, symbolTable);
         }
         return;
     }
 
     ASSERT(IsSampler(type));
-    TVariable *variable   = new TVariable(symbolTable, NewPoolTString(namePrefix.c_str()), *this,
-                                        SymbolType::AngleInternal);
+    TVariable *variable =
+        new TVariable(symbolTable, namePrefix, new TType(*this), SymbolType::AngleInternal);
     outputSymbols->push_back(variable);
     if (outputSymbolsToAPINames)
     {

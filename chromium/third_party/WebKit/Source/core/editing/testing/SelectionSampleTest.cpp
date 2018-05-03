@@ -4,6 +4,7 @@
 
 #include "core/editing/testing/SelectionSample.h"
 
+#include "core/dom/ElementShadow.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/editing/SelectionTemplate.h"
 #include "core/editing/testing/EditingTestBase.h"
@@ -31,7 +32,8 @@ TEST_F(SelectionSampleTest, GetSelectionTextFlatTree) {
   GetDocument().body()->UpdateDistribution();
   EXPECT_EQ(
       "<p>"
-      "    ze^ro <b slot=\"one\">one</b> <b slot=\"two\">tw|o</b> three  "
+      "    ze^ro <slot name=\"one\"><b slot=\"one\">one</b></slot> <slot "
+      "name=\"two\"><b slot=\"two\">tw|o</b></slot> three  "
       "</p>",
       SelectionSample::GetSelectionTextInFlatTree(
           *GetDocument().body(), ConvertToSelectionInFlatTree(selection)));
@@ -239,7 +241,7 @@ TEST_F(SelectionSampleTest, SerializeVoidElement) {
 }
 
 TEST_F(SelectionSampleTest, SerializeVoidElementBR) {
-  Element* const br = GetDocument().createElement("br");
+  Element* const br = GetDocument().CreateRawElement(HTMLNames::brTag);
   br->appendChild(GetDocument().createTextNode("abc"));
   GetDocument().body()->appendChild(br);
   EXPECT_EQ(

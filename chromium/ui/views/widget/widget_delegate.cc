@@ -74,8 +74,8 @@ ui::ModalType WidgetDelegate::GetModalType() const {
   return ui::MODAL_TYPE_NONE;
 }
 
-ui::AXRole WidgetDelegate::GetAccessibleWindowRole() const {
-  return ui::AX_ROLE_WINDOW;
+ax::mojom::Role WidgetDelegate::GetAccessibleWindowRole() const {
+  return ax::mojom::Role::kWindow;
 }
 
 base::string16 WidgetDelegate::GetAccessibleWindowTitle() const {
@@ -92,14 +92,6 @@ bool WidgetDelegate::ShouldShowWindowTitle() const {
 
 bool WidgetDelegate::ShouldShowCloseButton() const {
   return true;
-}
-
-bool WidgetDelegate::ShouldHandleSystemCommands() const {
-  const Widget* widget = GetWidget();
-  if (!widget)
-    return false;
-
-  return widget->non_client_view() != NULL;
 }
 
 gfx::ImageSkia WidgetDelegate::GetWindowAppIcon() {

@@ -23,11 +23,9 @@ class SkStream;
 
 namespace Json { class Value; }
 
-namespace sksg { class RenderNode;  }
+namespace sksg { class Scene;  }
 
 namespace skottie {
-
-class AnimatorBase;
 
 class ResourceProvider : public SkNoncopyable {
 public:
@@ -36,13 +34,12 @@ public:
     virtual std::unique_ptr<SkStream> openStream(const char resource[]) const = 0;
 };
 
-class Animation : public SkNoncopyable {
+class Animation : public SkRefCnt {
 public:
-    static std::unique_ptr<Animation> Make(SkStream*, const ResourceProvider&);
-    static std::unique_ptr<Animation> MakeFromFile(const char path[],
-                                                   const ResourceProvider* = nullptr);
+    static sk_sp<Animation> Make(SkStream*, const ResourceProvider&);
+    static sk_sp<Animation> MakeFromFile(const char path[], const ResourceProvider* = nullptr);
 
-    ~Animation();
+    ~Animation() override;
 
     void render(SkCanvas*, const SkRect* dst = nullptr) const;
 
@@ -54,25 +51,22 @@ public:
          SkScalar   inPoint() const { return fInPoint;   }
          SkScalar  outPoint() const { return fOutPoint;  }
 
-    void setShowInval(bool show) { fShowInval = show; }
+    void setShowInval(bool show);
 
 private:
     Animation(const ResourceProvider&,
               SkString ver, const SkSize& size, SkScalar fps,
               const Json::Value&);
 
-    SkString                                fVersion;
-    SkSize                                  fSize;
-    SkScalar                                fFrameRate,
-                                            fInPoint,
-                                            fOutPoint;
+    SkString                     fVersion;
+    SkSize                       fSize;
+    SkScalar                     fFrameRate,
+                                 fInPoint,
+                                 fOutPoint;
 
-    sk_sp<sksg::RenderNode>                 fDom;
-    SkTArray<std::unique_ptr<AnimatorBase>> fAnimators;
+    std::unique_ptr<sksg::Scene> fScene;
 
-    bool                    fShowInval = false;
-
-    typedef SkNoncopyable INHERITED;
+    typedef SkRefCnt INHERITED;
 };
 
 } // namespace skottie

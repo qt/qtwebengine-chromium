@@ -35,7 +35,7 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceLoader.h"
 #include "platform/wtf/Time.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-blink.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
 
 namespace blink {
 
@@ -119,7 +119,8 @@ void FontResource::SetRevalidatingRequest(const ResourceRequest& request) {
   Resource::SetRevalidatingRequest(request);
 }
 
-void FontResource::StartLoadLimitTimers(WebTaskRunner* task_runner) {
+void FontResource::StartLoadLimitTimers(
+    base::SingleThreadTaskRunner* task_runner) {
   DCHECK(IsLoading());
   DCHECK_EQ(load_limit_state_, kLoadNotStarted);
   load_limit_state_ = kUnderLimit;

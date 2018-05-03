@@ -19,14 +19,13 @@ namespace content {
 // static
 void DevToolsAgentHost::StartRemoteDebuggingServer(
     std::unique_ptr<DevToolsSocketFactory> server_socket_factory,
-    const std::string& frontend_url,
     const base::FilePath& active_port_output_directory,
     const base::FilePath& debug_frontend_dir) {
   DevToolsManager* manager = DevToolsManager::GetInstance();
   if (!manager->delegate())
     return;
   manager->SetHttpHandler(std::make_unique<DevToolsHttpHandler>(
-      manager->delegate(), std::move(server_socket_factory), frontend_url,
+      manager->delegate(), std::move(server_socket_factory),
       active_port_output_directory, debug_frontend_dir));
 }
 
@@ -40,6 +39,12 @@ void DevToolsAgentHost::StartRemoteDebuggingPipeHandler() {
 void DevToolsAgentHost::StopRemoteDebuggingServer() {
   DevToolsManager* manager = DevToolsManager::GetInstance();
   manager->SetHttpHandler(nullptr);
+}
+
+// static
+void DevToolsAgentHost::StopRemoteDebuggingPipeHandler() {
+  DevToolsManager* manager = DevToolsManager::GetInstance();
+  manager->SetPipeHandler(nullptr);
 }
 
 // static

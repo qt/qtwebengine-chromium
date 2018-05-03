@@ -37,6 +37,18 @@ WebRtcSetRemoteDescriptionObserver::States::operator=(States&& other) {
   return *this;
 }
 
+void WebRtcSetRemoteDescriptionObserver::States::CheckInvariants() const {
+  // Invariants:
+  // - All receiver states have a stream ref
+  // - All receiver states refer to streams that are non-null.
+  for (auto& receiver_state : receiver_states) {
+    for (auto& stream_ref : receiver_state.stream_refs) {
+      CHECK(stream_ref);
+      CHECK(!stream_ref->adapter().web_stream().IsNull());
+    }
+  }
+}
+
 WebRtcSetRemoteDescriptionObserver::WebRtcSetRemoteDescriptionObserver() {}
 
 WebRtcSetRemoteDescriptionObserver::~WebRtcSetRemoteDescriptionObserver() {}
@@ -68,7 +80,7 @@ WebRtcSetRemoteDescriptionObserverHandler::
 
 void WebRtcSetRemoteDescriptionObserverHandler::OnSetRemoteDescriptionComplete(
     webrtc::RTCError error) {
-  DCHECK(!main_thread_->BelongsToCurrentThread());
+  CHECK(!main_thread_->BelongsToCurrentThread());
 
   webrtc::RTCErrorOr<WebRtcSetRemoteDescriptionObserver::States>
       states_or_error;
@@ -94,14 +106,14 @@ void WebRtcSetRemoteDescriptionObserverHandler::OnSetRemoteDescriptionComplete(
   main_thread_->PostTask(
       FROM_HERE, base::BindOnce(&WebRtcSetRemoteDescriptionObserverHandler::
                                     OnSetRemoteDescriptionCompleteOnMainThread,
-                                this, base::Passed(&states_or_error)));
+                                this, std::move(states_or_error)));
 }
 
 void WebRtcSetRemoteDescriptionObserverHandler::
     OnSetRemoteDescriptionCompleteOnMainThread(
         webrtc::RTCErrorOr<WebRtcSetRemoteDescriptionObserver::States>
             states_or_error) {
-  DCHECK(main_thread_->BelongsToCurrentThread());
+  CHECK(main_thread_->BelongsToCurrentThread());
   observer_->OnSetRemoteDescriptionComplete(std::move(states_or_error));
 }
 

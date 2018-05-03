@@ -26,6 +26,7 @@
 #define HTMLScriptElement_h
 
 #include "core/CoreExport.h"
+#include "core/dom/CreateElementFlags.h"
 #include "core/html/HTMLElement.h"
 #include "core/script/ScriptElementBase.h"
 #include "core/script/ScriptLoader.h"
@@ -38,10 +39,7 @@ class CORE_EXPORT HTMLScriptElement final : public HTMLElement,
   USING_GARBAGE_COLLECTED_MIXIN(HTMLScriptElement);
 
  public:
-  static HTMLScriptElement* Create(Document&,
-                                   bool was_inserted_by_parser,
-                                   bool already_started = false,
-                                   bool created_during_document_write = false);
+  static HTMLScriptElement* Create(Document&, const CreateElementFlags);
 
   String text() { return TextFromChildren(); }
   void setText(const String&);
@@ -60,10 +58,7 @@ class CORE_EXPORT HTMLScriptElement final : public HTMLElement,
   void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
-  HTMLScriptElement(Document&,
-                    bool was_inserted_by_parser,
-                    bool already_started,
-                    bool created_during_document_write);
+  HTMLScriptElement(Document&, const CreateElementFlags);
 
   void ParseAttribute(const AttributeModificationParams&) override;
   InsertionNotificationRequest InsertedInto(ContainerNode*) override;
@@ -104,7 +99,7 @@ class CORE_EXPORT HTMLScriptElement final : public HTMLElement,
   void SetScriptElementForBinding(
       HTMLScriptElementOrSVGScriptElement&) override;
 
-  Element* CloneElementWithoutAttributesAndChildren() override;
+  Element* CloneWithoutAttributesAndChildren(Document&) const override;
 
   TraceWrapperMember<ScriptLoader> loader_;
 };

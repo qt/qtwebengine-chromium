@@ -484,6 +484,8 @@ void HTMLFormElement::ScheduleFormSubmission(FormSubmission* submission) {
   } else {
     FrameLoadRequest frame_load_request =
         submission->CreateFrameLoadRequest(&GetDocument());
+    frame_load_request.GetResourceRequest().SetHasUserGesture(
+        Frame::HasTransientUserActivation(GetDocument().GetFrame()));
     ToRemoteFrame(target_frame)->Navigate(frame_load_request);
   }
 }
@@ -653,12 +655,16 @@ bool HTMLFormElement::NoValidate() const {
   return FastHasAttribute(novalidateAttr);
 }
 
-// FIXME: This function should be removed because it does not do the same thing
-// as the JavaScript binding for action, which treats action as a URL attribute.
-// Last time I (Darin Adler) removed this, someone added it back, so I am
-// leaving it in for now.
-const AtomicString& HTMLFormElement::Action() const {
-  return getAttribute(actionAttr);
+String HTMLFormElement::action() const {
+  Document& document = GetDocument();
+  KURL action_url = document.CompleteURL(attributes_.Action().IsEmpty()
+                                             ? document.Url().GetString()
+                                             : attributes_.Action());
+  return action_url.GetString();
+}
+
+void HTMLFormElement::setAction(const AtomicString& value) {
+  setAttribute(actionAttr, value);
 }
 
 void HTMLFormElement::setEnctype(const AtomicString& value) {
@@ -789,10 +795,10 @@ void HTMLFormElement::FinishParsingChildren() {
   did_finish_parsing_children_ = true;
 }
 
-void HTMLFormElement::CopyNonAttributePropertiesFromElement(
-    const Element& source) {
-  was_demoted_ = static_cast<const HTMLFormElement&>(source).was_demoted_;
-  HTMLElement::CopyNonAttributePropertiesFromElement(source);
+void HTMLFormElement::CloneNonAttributePropertiesFrom(const Element& source,
+                                                      CloneChildrenFlag flag) {
+  was_demoted_ = ToHTMLFormElement(source).was_demoted_;
+  HTMLElement::CloneNonAttributePropertiesFrom(source, flag);
 }
 
 void HTMLFormElement::AnonymousNamedGetter(

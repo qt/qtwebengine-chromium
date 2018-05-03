@@ -25,6 +25,7 @@
 #define Resource_h
 
 #include <memory>
+#include "base/single_thread_task_runner.h"
 #include "platform/MemoryCoordinator.h"
 #include "platform/PlatformExport.h"
 #include "platform/SharedBuffer.h"
@@ -32,6 +33,7 @@
 #include "platform/WebTaskRunner.h"
 #include "platform/instrumentation/tracing/web_process_memory_dump.h"
 #include "platform/loader/SubresourceIntegrity.h"
+#include "platform/loader/cors/CORSStatus.h"
 #include "platform/loader/fetch/CachedMetadataHandler.h"
 #include "platform/loader/fetch/IntegrityMetadata.h"
 #include "platform/loader/fetch/ResourceError.h"
@@ -50,7 +52,6 @@
 #include "platform/wtf/text/AtomicString.h"
 #include "platform/wtf/text/TextEncoding.h"
 #include "platform/wtf/text/WTFString.h"
-#include "public/platform/CORSStatus.h"
 #include "public/platform/WebDataConsumerHandle.h"
 #include "public/platform/WebScopedVirtualTimePauser.h"
 
@@ -108,7 +109,8 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   virtual WTF::TextEncoding Encoding() const { return WTF::TextEncoding(); }
   virtual void AppendData(const char*, size_t);
-  virtual void FinishAsError(const ResourceError&, WebTaskRunner*);
+  virtual void FinishAsError(const ResourceError&,
+                             base::SingleThreadTaskRunner*);
 
   void SetLinkPreload(bool is_link_preload) { link_preload_ = is_link_preload; }
   bool IsLinkPreload() const { return link_preload_; }
@@ -152,8 +154,9 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   // If this Resource is already finished when AddClient is called, the
   // ResourceClient will be notified asynchronously by a task scheduled
-  // on the given WebTaskRunner. Otherwise, the given WebTaskRunner is unused.
-  void AddClient(ResourceClient*, WebTaskRunner*);
+  // on the given base::SingleThreadTaskRunner. Otherwise, the given
+  // base::SingleThreadTaskRunner is unused.
+  void AddClient(ResourceClient*, base::SingleThreadTaskRunner*);
   void RemoveClient(ResourceClient*);
   // Once called, this resource will not be canceled until load finishes
   // even if associated with no client.
@@ -161,8 +164,10 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   // If this Resource is already finished when AddFinishObserver is called, the
   // ResourceFinishObserver will be notified asynchronously by a task scheduled
-  // on the given WebTaskRunner. Otherwise, the given WebTaskRunner is unused.
-  void AddFinishObserver(ResourceFinishObserver*, WebTaskRunner*);
+  // on the given base::SingleThreadTaskRunner. Otherwise, the given
+  // base::SingleThreadTaskRunner is unused.
+  void AddFinishObserver(ResourceFinishObserver*,
+                         base::SingleThreadTaskRunner*);
   void RemoveFinishObserver(ResourceFinishObserver*);
 
   bool IsUnusedPreload() const { return is_unused_preload_; }
@@ -205,7 +210,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   // Computes the status of an object after loading. Updates the expire date on
   // the cache entry file
-  virtual void Finish(double finish_time, WebTaskRunner*);
+  virtual void Finish(double finish_time, base::SingleThreadTaskRunner*);
   void FinishForTest() { Finish(0.0, nullptr); }
 
   bool PassesAccessControlCheck(const SecurityOrigin&) const;
@@ -251,7 +256,8 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   void MarkAsPreload();
   // Returns true if |this| resource is matched with the given parameters.
-  virtual bool MatchPreload(const FetchParameters&, WebTaskRunner*);
+  virtual bool MatchPreload(const FetchParameters&,
+                            base::SingleThreadTaskRunner*);
 
   bool CanReuseRedirectChain() const;
   bool MustRevalidateDueToCacheHeaders() const;
@@ -286,6 +292,10 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   }
   String CacheIdentifier() const { return cache_identifier_; }
 
+  void SetSourceOrigin(scoped_refptr<const SecurityOrigin> source_origin) {
+    source_origin_ = source_origin;
+  }
+
   virtual void DidSendData(unsigned long long /* bytesSent */,
                            unsigned long long /* totalBytesToBeSent */) {}
   virtual void DidDownloadData(int) {}
@@ -302,7 +312,9 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
     response_.SetDecodedBodyLength(value);
   }
 
-  virtual bool CanReuse(const FetchParameters&) const;
+  virtual bool CanReuse(
+      const FetchParameters&,
+      scoped_refptr<const SecurityOrigin> new_source_origin) const;
 
   // If cache-aware loading is activated, this callback is called when the first
   // disk-cache-only request failed due to cache miss. After this callback,
@@ -438,13 +450,38 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   void OnPurgeMemory() override;
 
   void CheckResourceIntegrity();
-  void TriggerNotificationForFinishObservers(WebTaskRunner*);
+  void TriggerNotificationForFinishObservers(base::SingleThreadTaskRunner*);
 
   Type type_;
   ResourceStatus status_;
+
+  // A SecurityOrigin representing the origin from which the loading of the
+  // Resource was initiated. This is calculated and set by ResourceFetcher at
+  // the beginning of the loading.
+  //
+  // Unlike |security_origin| on |options_|, which:
+  // - holds a SecurityOrigin to override the FetchContext's SecurityOrigin
+  //   (in case of e.g. that the script initiated the loading is in an isolated
+  //   world)
+  // - may be modified during redirect as required by the CORS protocol
+  // this variable is stable after the loading has started.
+  //
+  // Used and should be used only for isolating resources for different origins
+  // in the MemoryCache.
+  //
+  // TODO(crbug.com/811669): Merge with some of the other SecurityOrigin
+  // variables.
+  scoped_refptr<const SecurityOrigin> source_origin_;
+
   CORSStatus cors_status_;
 
   Member<CachedMetadataHandlerImpl> cache_handler_;
+
+  // Holds the SecurityOrigin obtained from the associated FetchContext.
+  // ResourceFetcher sets this at the beginning of loading. The override by
+  // specifying a SecurityOrigin in ResourceLoaderOptions doesn't affect this.
+  //
+  // TODO(crbug.com/811669): Merge this with |source_origin_|.
   scoped_refptr<const SecurityOrigin> fetcher_security_origin_;
 
   Optional<ResourceError> error_;

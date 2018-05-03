@@ -529,6 +529,13 @@ bool ValidateES3TexImage3DParameters(Context *context,
         return false;
     }
 
+    if (IsETC2EACFormat(format) && target != GL_TEXTURE_2D_ARRAY)
+    {
+        // ES 3.1, Section 8.7, page 169.
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), InternalFormatRequiresTexture2DArray);
+        return false;
+    }
+
     return ValidateES3TexImageParametersBase(context, target, level, internalformat, isCompressed,
                                              isSubImage, xoffset, yoffset, zoffset, width, height,
                                              depth, border, format, type, bufSize, pixels);
@@ -1224,6 +1231,12 @@ bool ValidateInvalidateSubFramebuffer(Context *context,
                                       GLsizei width,
                                       GLsizei height)
 {
+    if (width < 0 || height < 0)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), NegativeSize);
+        return false;
+    }
+
     return ValidateInvalidateFramebuffer(context, target, numAttachments, attachments);
 }
 
@@ -1267,6 +1280,12 @@ bool ValidateDrawRangeElements(Context *context,
     if (!ValidateDrawElementsCommon(context, mode, count, type, indices, 0))
     {
         return false;
+    }
+
+    // Skip range checks for no-op calls.
+    if (count <= 0)
+    {
+        return true;
     }
 
     // Use the parameter buffer to retrieve and cache the index range.
@@ -2026,16 +2045,22 @@ bool ValidateCompressedTexSubImage3D(Context *context,
         return false;
     }
 
+    if (!ValidateES3TexImage3DParameters(context, target, level, GL_NONE, true, true, xoffset,
+                                         yoffset, zoffset, width, height, depth, 0, format, GL_NONE,
+                                         -1, data))
+    {
+        return false;
+    }
+
     if (!data)
     {
         context->handleError(InvalidValue());
         return false;
     }
 
-    return ValidateES3TexImage3DParameters(context, target, level, GL_NONE, true, true, xoffset,
-                                           yoffset, zoffset, width, height, depth, 0, format,
-                                           GL_NONE, -1, data);
+    return true;
 }
+
 bool ValidateCompressedTexSubImage3DRobustANGLE(Context *context,
                                                 GLenum target,
                                                 GLint level,
@@ -2619,13 +2644,17 @@ bool ValidateRenderbufferStorageMultisample(ValidationContext *context,
     }
 
     // The ES3 spec(section 4.4.2) states that the internal format must be sized and not an integer
-    // format if samples is greater than zero.
+    // format if samples is greater than zero. In ES3.1(section 9.2.5), it can support integer
+    // multisample renderbuffer, but the samples should not be greater than MAX_INTEGER_SAMPLES.
     const gl::InternalFormat &formatInfo = gl::GetSizedInternalFormatInfo(internalformat);
-    if ((formatInfo.componentType == GL_UNSIGNED_INT || formatInfo.componentType == GL_INT) &&
-        samples > 0)
+    if ((formatInfo.componentType == GL_UNSIGNED_INT || formatInfo.componentType == GL_INT))
     {
-        context->handleError(InvalidOperation());
-        return false;
+        if ((samples > 0 && context->getClientVersion() == ES_3_0) ||
+            static_cast<GLuint>(samples) > context->getCaps().maxIntegerSamples)
+        {
+            context->handleError(InvalidOperation());
+            return false;
+        }
     }
 
     // The behavior is different than the ANGLE version, which would generate a GL_OUT_OF_MEMORY.

@@ -45,7 +45,6 @@
 
 namespace blink {
 class WebScrollbarLayer;
-class WebLayer;
 }
 
 namespace blink {
@@ -139,8 +138,6 @@ class CORE_EXPORT VisualViewport final
   // if page scale factor is left unchanged.
   bool MagnifyScaleAroundAnchor(float magnify_delta, const FloatPoint& anchor);
 
-  void SetScrollLayerOnScrollbars(WebLayer*) const;
-
   // The portion of the unzoomed frame visible in the visual viewport,
   // in partial CSS pixels. Relative to the main frame.
   FloatRect VisibleRect() const;
@@ -216,7 +213,7 @@ class CORE_EXPORT VisualViewport final
   CompositorAnimationTimeline* GetCompositorAnimationTimeline() const override;
   IntRect VisibleContentRect(
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
-  scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const final;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() const final;
 
   // VisualViewport scrolling may involve pinch zoom and gets routed through
   // WebViewImpl explicitly rather than via ScrollingCoordinator::DidScroll

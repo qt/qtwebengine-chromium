@@ -58,6 +58,7 @@ struct NGInlineBoxState {
   // is set.
   bool has_start_edge = false;
   bool has_end_edge = false;
+  NGBoxStrut padding;
   // |CreateBoxFragment()| needs margin, border+padding, and the sum of them.
   LayoutUnit margin_inline_start;
   LayoutUnit margin_inline_end;
@@ -78,20 +79,16 @@ struct NGInlineBoxState {
   }
 
   // Compute text metrics for a box. All text in a box share the same
-  // metrics.  When line_height_quirk is set, text metrics won't
-  // influence box height until ActivateTextMetrics() is called.
+  // metrics.
+  // The computed metrics is included into the line height of the current box.
   void ComputeTextMetrics(const ComputedStyle& style,
-                          FontBaseline baseline_type,
-                          bool line_height_quirk);
+                          FontBaseline baseline_type);
+  void EnsureTextMetrics(const ComputedStyle&, FontBaseline);
+
   void AccumulateUsedFonts(const ShapeResult*, FontBaseline);
 
-  // Activate text metrics.  Used by the line height quirk when the
-  // box gets text content or has border, padding or margin in the
-  // inline layout direction.
-  void ActivateTextMetrics() { metrics.Unite(text_metrics); }
-
   // Create a box fragment for this box.
-  void SetNeedsBoxFragment(bool when_empty);
+  void SetNeedsBoxFragment();
   void SetLineRightForBoxFragment(const NGInlineItem&,
                                   const NGInlineItemResult&);
 
@@ -180,6 +177,7 @@ class CORE_EXPORT NGInlineLayoutStateStack {
 
     bool has_line_left_edge = false;
     bool has_line_right_edge = false;
+    NGBoxStrut padding;
     // |CreateBoxFragment()| needs margin, border+padding, and the sum of them.
     LayoutUnit margin_line_left;
     LayoutUnit margin_line_right;

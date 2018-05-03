@@ -17,7 +17,6 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
-#include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_checker.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -61,13 +60,13 @@ CrxComponent::~CrxComponent() {
 // the UpdateClient instance exceeds the life time of its inner members,
 // including any thread objects that might execute callbacks bound to it.
 UpdateClientImpl::UpdateClientImpl(
-    const scoped_refptr<Configurator>& config,
-    std::unique_ptr<PingManager> ping_manager,
+    scoped_refptr<Configurator> config,
+    scoped_refptr<PingManager> ping_manager,
     UpdateChecker::Factory update_checker_factory,
     CrxDownloader::Factory crx_downloader_factory)
     : is_stopped_(false),
       config_(config),
-      ping_manager_(std::move(ping_manager)),
+      ping_manager_(ping_manager),
       update_engine_(std::make_unique<UpdateEngine>(
           config,
           update_checker_factory,
@@ -240,9 +239,9 @@ void UpdateClientImpl::SendUninstallPing(const std::string& id,
 }
 
 scoped_refptr<UpdateClient> UpdateClientFactory(
-    const scoped_refptr<Configurator>& config) {
+    scoped_refptr<Configurator> config) {
   return base::MakeRefCounted<UpdateClientImpl>(
-      config, std::make_unique<PingManager>(config), &UpdateChecker::Create,
+      config, base::MakeRefCounted<PingManager>(config), &UpdateChecker::Create,
       &CrxDownloader::Create);
 }
 

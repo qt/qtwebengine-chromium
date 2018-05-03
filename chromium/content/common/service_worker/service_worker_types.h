@@ -10,21 +10,20 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/request_context_type.h"
-#include "content/public/common/service_worker_modes.h"
-#include "services/network/public/interfaces/fetch_api.mojom.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_client.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_state.mojom.h"
-#include "third_party/WebKit/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "services/network/public/mojom/fetch_api.mojom.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_client.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_state.mojom.h"
 #include "third_party/WebKit/public/platform/modules/fetch/fetch_api_request.mojom.h"
 #include "url/gurl.h"
 
@@ -50,8 +49,9 @@ extern const char kServiceWorkerGetRegistrationsErrorPrefix[];
 extern const char kFetchScriptError[];
 
 // Constants for invalid identifiers.
-static const int64_t kInvalidServiceWorkerResourceId = -1;
 static const int kInvalidEmbeddedWorkerThreadId = -1;
+static const int kInvalidServiceWorkerProviderId = -1;
+static const int64_t kInvalidServiceWorkerResourceId = -1;
 
 // The HTTP cache is bypassed for Service Worker scripts if the last network
 // fetch occurred over 24 hours ago.
@@ -69,7 +69,10 @@ using ServiceWorkerHeaderMap =
 
 using ServiceWorkerHeaderList = std::vector<std::string>;
 
-// To dispatch fetch request from browser to child process.
+// Roughly corresponds to Fetch API's Request type. This struct is no longer
+// used by the core Service Worker API. Background Fetch and Cache Storage APIs
+// use it.
+// TODO(falken): Move this out of service_worker_types.h and rename it.
 struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   ServiceWorkerFetchRequest();
   ServiceWorkerFetchRequest(const GURL& url,
@@ -94,9 +97,6 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   GURL url;
   std::string method;
   ServiceWorkerHeaderMap headers;
-  std::string blob_uuid;
-  uint64_t blob_size = 0;
-  scoped_refptr<storage::BlobHandle> blob;
   Referrer referrer;
   network::mojom::FetchCredentialsMode credentials_mode =
       network::mojom::FetchCredentialsMode::kOmit;
@@ -108,10 +108,18 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   bool keepalive = false;
   std::string client_id;
   bool is_reload = false;
-  ServiceWorkerFetchType fetch_type = ServiceWorkerFetchType::FETCH;
 };
 
-// Represents a response to a fetch.
+// Roughly corresponds to the Fetch API's Response type. This struct has several
+// users:
+// - Service Worker API: The renderer sends the browser this type to
+// represent the response a service worker provided to FetchEvent#respondWith.
+// - Background Fetch API: Uses this type to represent responses to background
+// fetches.
+// - Cache Storage API: Uses this type to represent responses to requests.
+// Note that the Fetch API does not use this type; it uses ResourceResponse
+// instead.
+// TODO(falken): Can everyone just use ResourceResponse?
 struct CONTENT_EXPORT ServiceWorkerResponse {
   ServiceWorkerResponse();
   ServiceWorkerResponse(
@@ -144,7 +152,6 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   // ServiceWorkerFetchResponseCallback.
   std::string blob_uuid;
   uint64_t blob_size;
-  // |blob| is only used when features::kMojoBlobs is enabled.
   scoped_refptr<storage::BlobHandle> blob;
   blink::mojom::ServiceWorkerResponseError error;
   base::Time response_time;

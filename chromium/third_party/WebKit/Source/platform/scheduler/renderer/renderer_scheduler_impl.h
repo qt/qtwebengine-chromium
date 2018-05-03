@@ -110,12 +110,16 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   static const int kMinExpectedQueueingTimeBucket = 1;
   // The highest bucket for fine-grained Expected Queueing Time reporting, in
   // microseconds.
-  static const int kMaxExpectedQueueingTimeBucket = 4 * 1000 * 1000;
+  static const int kMaxExpectedQueueingTimeBucket = 30 * 1000 * 1000;
   // The number of buckets for fine-grained Expected Queueing Time reporting.
   static const int kNumberExpectedQueueingTimeBuckets = 50;
 
-  explicit RendererSchedulerImpl(
-      std::unique_ptr<TaskQueueManager> task_queue_manager);
+  // If |initial_virtual_time| is specified then the scheduler will be created
+  // with virtual time enabled and paused with base::Time will be overridden to
+  // start at |initial_virtual_time|.
+  RendererSchedulerImpl(std::unique_ptr<TaskQueueManager> task_queue_manager,
+                        base::Optional<base::Time> initial_virtual_time);
+
   ~RendererSchedulerImpl() override;
 
   // RendererScheduler implementation:
@@ -160,7 +164,8 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   bool MainThreadSeemsUnresponsive(
       base::TimeDelta main_thread_responsiveness_threshold) override;
   void SetRendererProcessType(RendererProcessType type) override;
-  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser() override;
+  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
+      WebScopedVirtualTimePauser::VirtualTaskDuration duration) override;
 
   // AutoAdvancingVirtualTimeDomain::Observer implementation:
   void OnVirtualTimeAdvanced() override;
@@ -171,7 +176,6 @@ class PLATFORM_EXPORT RendererSchedulerImpl
       bool has_visible_render_widget_with_touch_handler) override;
 
   // SchedulerHelper::Observer implementation:
-  void OnTriedToExecuteBlockedTask() override;
   void OnBeginNestedRunLoop() override;
   void OnExitNestedRunLoop() override;
 
@@ -184,8 +188,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   scoped_refptr<MainThreadTaskQueue> DefaultTaskQueue();
   scoped_refptr<MainThreadTaskQueue> CompositorTaskQueue();
-  scoped_refptr<MainThreadTaskQueue> LoadingTaskQueue();
-  scoped_refptr<MainThreadTaskQueue> TimerTaskQueue();
+  scoped_refptr<MainThreadTaskQueue> InputTaskQueue();
   scoped_refptr<MainThreadTaskQueue> V8TaskQueue();
 
   // Returns a new task queue created with given params.
@@ -194,7 +197,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   // Returns a new loading task queue. This queue is intended for tasks related
   // to resource dispatch, foreground HTML parsing, etc...
-  // Note: Tasks posted to kFrameLoading_kControl queues must execute quickly.
+  // Note: Tasks posted to kFrameLoadingControl queues must execute quickly.
   scoped_refptr<MainThreadTaskQueue> NewLoadingTaskQueue(
       MainThreadTaskQueue::QueueType queue_type);
 
@@ -215,10 +218,13 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   using VirtualTimePolicy = WebViewScheduler::VirtualTimePolicy;
   using VirtualTimeObserver = WebViewScheduler::VirtualTimeObserver;
 
+  using BaseTimeOverridePolicy =
+      AutoAdvancingVirtualTimeDomain::BaseTimeOverridePolicy;
+
   // Tells the scheduler that all TaskQueues should use virtual time. Returns
   // the TimeTicks that virtual time offsets will be relative to.
-  base::TimeTicks EnableVirtualTime();
-  bool IsVirualTimeEnabled() const;
+  base::TimeTicks EnableVirtualTime(BaseTimeOverridePolicy policy);
+  bool IsVirtualTimeEnabled() const;
 
   // Migrates all task queues to real time.
   void DisableVirtualTimeForTesting();
@@ -226,6 +232,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // Returns true if virtual time is not paused.
   bool VirtualTimeAllowedToAdvance() const;
   void SetVirtualTimePolicy(VirtualTimePolicy virtual_time_policy);
+  void SetInitialVirtualTimeOffset(base::TimeDelta offset);
   void SetMaxVirtualTimeTaskStarvationCount(int max_task_starvation_count);
   void AddVirtualTimeObserver(VirtualTimeObserver*);
   void RemoveVirtualTimeObserver(VirtualTimeObserver*);
@@ -306,7 +313,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // Use *TaskQueue internally.
   scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
-  scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> InputTaskRunner() override;
 
  private:
   friend class RenderWidgetSchedulingState;
@@ -589,6 +596,12 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // TaskQueueThrottler.
   void VirtualTimeResumed();
 
+  // Indicates that scheduler has been shutdown.
+  // It should be accessed only on the main thread, but couldn't be a member
+  // of MainThreadOnly struct because last might be destructed before we
+  // have to check this flag during scheduler's destruction.
+  bool was_shutdown_ = false;
+
   // This controller should be initialized before any TraceableVariables
   // because they require one to initialize themselves.
   TraceableVariableController tracing_controller_;
@@ -601,9 +614,11 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   const scoped_refptr<MainThreadTaskQueue> control_task_queue_;
   const scoped_refptr<MainThreadTaskQueue> compositor_task_queue_;
+  const scoped_refptr<MainThreadTaskQueue> input_task_queue_;
   scoped_refptr<MainThreadTaskQueue> virtual_time_control_task_queue_;
   std::unique_ptr<TaskQueue::QueueEnabledVoter>
       compositor_task_queue_enabled_voter_;
+  std::unique_ptr<TaskQueue::QueueEnabledVoter> input_task_queue_enabled_voter_;
 
   using TaskQueueVoterMap =
       std::map<scoped_refptr<MainThreadTaskQueue>,
@@ -611,8 +626,6 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   TaskQueueVoterMap task_runners_;
 
-  scoped_refptr<MainThreadTaskQueue> default_loading_task_queue_;
-  scoped_refptr<MainThreadTaskQueue> default_timer_task_queue_;
   scoped_refptr<MainThreadTaskQueue> v8_task_queue_;
   scoped_refptr<MainThreadTaskQueue> ipc_task_queue_;
 
@@ -663,14 +676,13 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     TraceableState<v8::RAILMode, kTracingCategoryNameInfo>
         rail_mode_for_tracing;  // Don't use except for tracing.
     TraceableState<bool, kTracingCategoryNameDebug> renderer_hidden;
-    TraceableState<bool, kTracingCategoryNameDefault> renderer_backgrounded;
+    TraceableState<bool, kTracingCategoryNameTopLevel> renderer_backgrounded;
     TraceableState<bool, kTracingCategoryNameDefault>
         keep_active_fetch_or_worker;
     TraceableState<bool, kTracingCategoryNameInfo>
         stopping_when_backgrounded_enabled;
     TraceableState<bool, kTracingCategoryNameInfo>
         stopped_when_backgrounded;
-    TraceableState<bool, kTracingCategoryNameInfo> was_shutdown;
     TraceableCounter<base::TimeDelta, kTracingCategoryNameInfo>
         loading_task_estimated_cost;
     TraceableCounter<base::TimeDelta, kTracingCategoryNameInfo>
@@ -690,7 +702,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
         begin_frame_not_expected_soon;
     TraceableState<bool, kTracingCategoryNameDebug> in_idle_period_for_testing;
     TraceableState<bool, kTracingCategoryNameInfo> use_virtual_time;
-    TraceableState<bool, kTracingCategoryNameDefault> is_audio_playing;
+    TraceableState<bool, kTracingCategoryNameTopLevel> is_audio_playing;
     TraceableState<bool, kTracingCategoryNameDebug>
         compositor_will_send_main_frame_not_expected;
     TraceableState<bool, kTracingCategoryNameDebug> has_navigated;
@@ -702,13 +714,18 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     RAILModeObserver* rail_mode_observer;                 // Not owned.
     WakeUpBudgetPool* wake_up_budget_pool;                // Not owned.
     RendererMetricsHelper metrics_helper;
-    TraceableState<RendererProcessType, kTracingCategoryNameDefault>
+    TraceableState<RendererProcessType, kTracingCategoryNameTopLevel>
         process_type;
     TraceableState<base::Optional<TaskDescriptionForTracing>,
                    kTracingCategoryNameInfo>
         task_description_for_tracing;  // Don't use except for tracing.
     base::ObserverList<VirtualTimeObserver> virtual_time_observers;
-    base::TimeTicks initial_virtual_time;
+    base::Time initial_virtual_time;
+    base::TimeTicks initial_virtual_time_ticks;
+
+    // This is used for cross origin navigations to account for virtual time
+    // advancing in the previous renderer.
+    base::TimeDelta initial_virtual_time_offset;
     VirtualTimePolicy virtual_time_policy;
 
     // In VirtualTimePolicy::kDeterministicLoading virtual time is only allowed

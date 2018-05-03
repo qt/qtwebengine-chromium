@@ -14,6 +14,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/reload_type.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/resource_type.h"
 #include "ipc/ipc_listener.h"
@@ -33,6 +34,7 @@ namespace content {
 class NavigationEntry;
 class NavigationHandle;
 class RenderFrameHost;
+class RenderProcessHost;
 class RenderViewHost;
 class RenderWidgetHost;
 class WebContents;
@@ -128,9 +130,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener {
   virtual void RenderViewHostChanged(RenderViewHost* old_host,
                                      RenderViewHost* new_host) {}
 
-  // This method is invoked when the process for the current main
-  // RenderFrameHost becomes unresponsive.
-  virtual void OnRendererUnresponsive(RenderWidgetHost* render_widget_host) {}
+  // This method is invoked when a process in the WebContents becomes
+  // unresponsive.
+  virtual void OnRendererUnresponsive(RenderProcessHost* render_process_host) {}
 
   // Navigation ----------------------------------------------------------------
 
@@ -208,9 +210,11 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener {
 
   // Document load events ------------------------------------------------------
 
-  // These two methods correspond to the points in time when the spinner of the
-  // tab starts and stops spinning.
+  // These three methods correspond to the points in time when a document starts
+  // loading for the first time (initiates outgoing requests), when incoming
+  // data subsequently starts arriving, and when it finishes loading.
   virtual void DidStartLoading() {}
+  virtual void DidReceiveResponse() {}
   virtual void DidStopLoading() {}
 
   // This method is invoked once the window.document object of the main frame
@@ -274,8 +278,13 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener {
   // This normally happens as a result of a new navigation. It will be
   // followed by a NavigationEntryCommitted() call for the new page that
   // caused the pruning. It could also be a result of removing an item from
-  // the list to fix up after interstitials.
+  // the list to delete history or fix up after interstitials.
   virtual void NavigationListPruned(const PrunedDetails& pruned_details) {}
+
+  // Invoked when NavigationEntries have been deleted because of a history
+  // deletion. Observers should ensure that they remove all traces of the
+  // deleted entries.
+  virtual void NavigationEntriesDeleted() {}
 
   // Invoked when a NavigationEntry has changed.
   //
@@ -322,9 +331,8 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener {
   // configured to ignore UI events, and an UI event took place.
   virtual void DidGetIgnoredUIEvent() {}
 
-  // These methods are invoked every time the WebContents changes visibility.
-  virtual void WasShown() {}
-  virtual void WasHidden() {}
+  // Invoked every time the WebContents changes visibility.
+  virtual void OnVisibilityChanged(Visibility visibility) {}
 
   // Invoked when the main frame changes size.
   virtual void MainFrameWasResized(bool width_changed) {}

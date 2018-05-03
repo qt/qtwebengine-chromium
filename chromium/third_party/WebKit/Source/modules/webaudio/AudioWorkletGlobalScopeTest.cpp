@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "bindings/core/v8/ScriptModule.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/ScriptValue.h"
@@ -47,9 +48,6 @@ namespace {
 
 static const size_t kRenderQuantumFrames = 128;
 
-// This is a typical sample rate.
-static const float kTestingSampleRate = 44100;
-
 }  // namespace
 
 class AudioWorkletGlobalScopeTest : public PageTestBase {
@@ -72,9 +70,11 @@ class AudioWorkletGlobalScopeTest : public PageTestBase {
             document->Url(), document->UserAgent(),
             nullptr /* content_security_policy_parsed_headers */,
             document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-            nullptr /* worker_clients */, document->AddressSpace(),
+            document->IsSecureContext(), nullptr /* worker_clients */,
+            document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
-            nullptr /* worker_settings */, kV8CacheOptionsDefault),
+            base::UnguessableToken::Create(), nullptr /* worker_settings */,
+            kV8CacheOptionsDefault),
         WTF::nullopt, WorkerInspectorProxy::PauseOnWorkerStart::kDontPause,
         ParentFrameTaskRunners::Create());
     return thread;
@@ -179,11 +179,13 @@ class AudioWorkletGlobalScopeTest : public PageTestBase {
     EXPECT_EQ(definition->GetName(), "testProcessor");
     EXPECT_TRUE(definition->ConstructorLocal(isolate)->IsFunction());
     EXPECT_TRUE(definition->ProcessLocal(isolate)->IsFunction());
-
     MessageChannel* channel = MessageChannel::Create(thread->GlobalScope());
     MessagePortChannel dummy_port_channel = channel->port2()->Disentangle();
-    AudioWorkletProcessor* processor = global_scope->CreateProcessor(
-        "testProcessor", kTestingSampleRate, dummy_port_channel);
+
+    AudioWorkletProcessor* processor =
+        global_scope->CreateProcessor("testProcessor",
+                                      dummy_port_channel,
+                                      SerializedScriptValue::NullValue());
     EXPECT_TRUE(processor);
     EXPECT_EQ(processor->Name(), "testProcessor");
     v8::Local<v8::Value> processor_value =
@@ -280,8 +282,10 @@ class AudioWorkletGlobalScopeTest : public PageTestBase {
 
     MessageChannel* channel = MessageChannel::Create(thread->GlobalScope());
     MessagePortChannel dummy_port_channel = channel->port2()->Disentangle();
-    AudioWorkletProcessor* processor = global_scope->CreateProcessor(
-        "testProcessor", kTestingSampleRate, dummy_port_channel);
+    AudioWorkletProcessor* processor =
+        global_scope->CreateProcessor("testProcessor",
+                                      dummy_port_channel,
+                                      SerializedScriptValue::NullValue());
     EXPECT_TRUE(processor);
 
     Vector<AudioBus*> input_buses;
@@ -304,7 +308,7 @@ class AudioWorkletGlobalScopeTest : public PageTestBase {
 
     // Then invoke the process() method to perform JS buffer manipulation. The
     // output buffer should contain a constant value of 2.
-    processor->Process(&input_buses, &output_buses, &param_data_map, 0.0);
+    processor->Process(&input_buses, &output_buses, &param_data_map);
     for (unsigned i = 0; i < output_channel->length(); ++i) {
       EXPECT_EQ(output_channel->Data()[i], 2);
     }

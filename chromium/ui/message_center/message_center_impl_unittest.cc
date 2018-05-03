@@ -23,9 +23,9 @@
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_types.h"
 #include "ui/message_center/notification_blocker.h"
-#include "ui/message_center/notification_types.h"
-#include "ui/message_center/notifier_id.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
+#include "ui/message_center/public/cpp/notification_types.h"
+#include "ui/message_center/public/cpp/notifier_id.h"
 
 using base::UTF8ToUTF16;
 
@@ -73,8 +73,7 @@ class RemoveObserver : public MessageCenterObserver {
 
 }  // anonymous namespace
 
-class MessageCenterImplTest : public testing::Test,
-                              public MessageCenterObserver {
+class MessageCenterImplTest : public testing::Test {
  public:
   MessageCenterImplTest() {}
 
@@ -118,14 +117,13 @@ class MessageCenterImplTest : public testing::Test,
   }
 
   Notification* CreateNotification(const std::string& id,
-                                   message_center::NotificationType type) {
+                                   NotificationType type) {
     return CreateNotificationWithNotifierId(id, "app1", type);
   }
 
-  Notification* CreateNotificationWithNotifierId(
-      const std::string& id,
-      const std::string& notifier_id,
-      message_center::NotificationType type) {
+  Notification* CreateNotificationWithNotifierId(const std::string& id,
+                                                 const std::string& notifier_id,
+                                                 NotificationType type) {
     RichNotificationData optional_fields;
     optional_fields.buttons.push_back(ButtonInfo(UTF8ToUTF16("foo")));
     optional_fields.buttons.push_back(ButtonInfo(UTF8ToUTF16("foo")));
@@ -163,7 +161,7 @@ class ToggledNotificationBlocker : public NotificationBlocker {
 
   // NotificationBlocker overrides:
   bool ShouldShowNotificationAsPopup(
-      const message_center::Notification& notification) const override {
+      const Notification& notification) const override {
     return notifications_enabled_;
   }
 
@@ -403,8 +401,7 @@ TEST_F(MessageCenterImplTest, NotificationBlocker) {
   EXPECT_EQ(2u, message_center()->GetVisibleNotifications().size());
 
   // "id1" is displayed as a pop-up so that it will be closed when blocked.
-  message_center()->DisplayedNotification("id1",
-                                          message_center::DISPLAY_SOURCE_POPUP);
+  message_center()->DisplayedNotification("id1", DISPLAY_SOURCE_POPUP);
 
   // Block all notifications. All popups are gone and message center should be
   // hidden.
@@ -452,8 +449,7 @@ TEST_F(MessageCenterImplTest, NotificationsDuringBlocked) {
   EXPECT_EQ(1u, message_center()->GetVisibleNotifications().size());
 
   // "id1" is displayed as a pop-up so that it will be closed when blocked.
-  message_center()->DisplayedNotification("id1",
-                                          message_center::DISPLAY_SOURCE_POPUP);
+  message_center()->DisplayedNotification("id1", DISPLAY_SOURCE_POPUP);
 
   // Create a notification during blocked. Still no popups.
   blocker.SetNotificationsEnabled(false);
@@ -493,8 +489,7 @@ TEST_F(MessageCenterImplTest, NotificationBlockerAllowsPopups) {
                        notifier_id2, RichNotificationData(), NULL)));
 
   // "id1" is displayed as a pop-up so that it will be closed when blocked.
-  message_center()->DisplayedNotification("id1",
-                                          message_center::DISPLAY_SOURCE_POPUP);
+  message_center()->DisplayedNotification("id1", DISPLAY_SOURCE_POPUP);
 
   // "id1" is closed but "id2" is still visible as a popup.
   blocker.SetNotificationsEnabled(false);
@@ -785,37 +780,6 @@ TEST_F(MessageCenterImplTest, RemoveWhileMessageCenterVisible) {
   // Then update a notification; the update should have propagated.
   message_center()->RemoveNotification(id, false);
   EXPECT_FALSE(message_center()->FindVisibleNotificationById(id));
-}
-
-TEST_F(MessageCenterImplTest, RemoveWhileIteratingObserver) {
-  std::string id("id1");
-  CheckObserver check1(message_center(), id);
-  CheckObserver check2(message_center(), id);
-  RemoveObserver remove(message_center(), id);
-
-  // Prepare a notification
-  std::unique_ptr<Notification> notification(CreateSimpleNotification(id));
-  message_center()->AddNotification(std::move(notification));
-  EXPECT_TRUE(message_center()->FindVisibleNotificationById(id));
-
-  // Install the test handlers
-  message_center()->AddObserver(&check1);
-  message_center()->AddObserver(&remove);
-  message_center()->AddObserver(&check2);
-
-  // Update the notification. The notification will be removed in the observer,
-  // but the actual removal will be done at the end of the iteration.
-  // Notification keeps alive during iteration. This is checked by
-  // CheckObserver.
-  notification.reset(CreateSimpleNotification(id));
-  message_center()->UpdateNotification(id, std::move(notification));
-
-  // Notification is removed correctly.
-  EXPECT_FALSE(message_center()->FindVisibleNotificationById(id));
-
-  message_center()->RemoveObserver(&check1);
-  message_center()->RemoveObserver(&remove);
-  message_center()->RemoveObserver(&check2);
 }
 
 }  // namespace internal

@@ -69,7 +69,7 @@ struct NameValueStringConstraint {
 // be deleted from the files mentioned.
 // TODO(hta): remove comments before https://crbug.com/543997 is closed.
 
-// From content/renderer/media/media_stream_video_source.cc
+// From content/renderer/media/stream/media_stream_video_source.cc
 const char kMinAspectRatio[] = "minAspectRatio";
 const char kMaxAspectRatio[] = "maxAspectRatio";
 const char kMaxWidth[] = "maxWidth";
@@ -88,7 +88,7 @@ const char kMediaStreamRenderToAssociatedSink[] =
 // RenderToAssociatedSink will be going away in M50-M60 some time.
 const char kMediaStreamAudioHotword[] = "googHotword";
 // TODO(hta): googHotword should go away. https://crbug.com/577627
-// From content/renderer/media/media_stream_audio_processor_options.cc
+// From content/renderer/media/stream/media_stream_audio_processor_options.cc
 const char kEchoCancellation[] = "echoCancellation";
 const char kDisableLocalEcho[] = "disableLocalEcho";
 const char kGoogEchoCancellation[] = "googEchoCancellation";
@@ -381,6 +381,14 @@ static void ParseOldStyleNames(
     } else if (constraint.name_.Equals(kUseRtpMux)) {
       result.goog_use_rtp_mux.SetExact(ToBoolean(constraint.value_));
     } else if (constraint.name_.Equals(kEnableDtlsSrtp)) {
+      bool value = ToBoolean(constraint.value_);
+      if (value) {
+        UseCounter::Count(context,
+                          WebFeature::kRTCConstraintEnableDtlsSrtpTrue);
+      } else {
+        UseCounter::Count(context,
+                          WebFeature::kRTCConstraintEnableDtlsSrtpFalse);
+      }
       result.enable_dtls_srtp.SetExact(ToBoolean(constraint.value_));
     } else if (constraint.name_.Equals(kEnableRtpDataChannels)) {
       result.enable_rtp_data_channels.SetExact(ToBoolean(constraint.value_));

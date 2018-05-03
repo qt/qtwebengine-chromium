@@ -36,7 +36,8 @@ enum RecoveryEventType {
   RECOVERY_FAILED_VIRTUAL_TABLE_INIT,
 
   // System SQLite doesn't support vtable.
-  RECOVERY_FAILED_VIRTUAL_TABLE_SYSTEM_SQLITE,
+  // This is deprecated. Chrome doesn't support using the system SQLite anymore.
+  DEPRECATED_RECOVERY_FAILED_VIRTUAL_TABLE_SYSTEM_SQLITE,
 
   // Failed attempting to enable writable_schema.
   RECOVERY_FAILED_WRITABLE_SCHEMA,
@@ -141,12 +142,6 @@ void RecordRecoveryEvent(RecoveryEventType recovery_event) {
 }  // namespace
 
 // static
-bool Recovery::FullRecoverySupported() {
-  // TODO(shess): See comment in Init().
-  return true;
-}
-
-// static
 std::unique_ptr<Recovery> Recovery::Begin(Connection* connection,
                                           const base::FilePath& db_path) {
   // Recovery is likely to be used in error handling.  Since recovery changes
@@ -244,7 +239,7 @@ bool Recovery::Init(const base::FilePath& db_path) {
   }
 
   // Enable the recover virtual table for this connection.
-  int rc = recoverVtableInit(recover_db_.db_);
+  int rc = chrome_sqlite3_recoverVtableInit(recover_db_.db_);
   if (rc != SQLITE_OK) {
     RecordRecoveryEvent(RECOVERY_FAILED_VIRTUAL_TABLE_INIT);
     LOG(ERROR) << "Failed to initialize recover module: "

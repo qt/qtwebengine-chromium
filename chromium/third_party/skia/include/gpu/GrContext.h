@@ -9,7 +9,6 @@
 #define GrContext_DEFINED
 
 #include "GrCaps.h"
-#include "GrColor.h"
 #include "SkMatrix.h"
 #include "SkPathEffect.h"
 #include "SkTypes.h"
@@ -18,6 +17,7 @@
 #include "GrContextOptions.h"
 
 class GrAtlasGlyphCache;
+class GrBackendFormat;
 class GrBackendSemaphore;
 class GrContextPriv;
 class GrContextThreadSafeProxy;
@@ -37,17 +37,18 @@ class GrResourceCache;
 class GrResourceProvider;
 class GrSamplerState;
 class GrSurfaceProxy;
+class GrSwizzle;
 class GrTextBlobCache;
 class GrTextContext;
 class GrTextureProxy;
 class GrVertexBuffer;
 struct GrVkBackendContext;
-class GrSwizzle;
-class SkTraceMemoryDump;
 
 class SkImage;
+class SkSurfaceCharacterization;
 class SkSurfaceProps;
 class SkTaskGroup;
+class SkTraceMemoryDump;
 
 class SK_API GrContext : public SkRefCnt {
 public:
@@ -115,7 +116,7 @@ public:
     }
 
     /**
-     * Abandons all GPU resources and assumes the underlying backend 3D API context is not longer
+     * Abandons all GPU resources and assumes the underlying backend 3D API context is no longer
      * usable. Call this if you have lost the associated GPU context, and thus internal texture,
      * buffer, etc. references/IDs are now invalid. Calling this ensures that the destructors of the
      * GrContext and any of its created resource objects will not make backend 3D API calls. Content
@@ -217,17 +218,24 @@ public:
     const GrCaps* caps() const { return fCaps.get(); }
 
     /**
-     * Returns the recommended sample count for a render target when using this
-     * context.
-     *
-     * @param  config the configuration of the render target.
-     * @param  dpi the display density in dots per inch.
-     *
-     * @return sample count that should be perform well and have good enough
-     *         rendering quality for the display. Alternatively returns 0 if
-     *         MSAA is not supported or recommended to be used by default.
+     * Can a SkImage be created with the given color type.
      */
-    int getRecommendedSampleCount(GrPixelConfig config, SkScalar dpi) const;
+    bool colorTypeSupportedAsImage(SkColorType) const;
+
+    /**
+     * Can a SkSurface be created with the given color type. To check whether MSAA is supported
+     * use maxSurfaceSampleCountForColorType().
+     */
+    bool colorTypeSupportedAsSurface(SkColorType colorType) const {
+        return this->maxSurfaceSampleCountForColorType(colorType) > 0;
+    }
+
+    /**
+     * Gets the maximum supported sample count for a color type. 1 is returned if only non-MSAA
+     * rendering is supported for the color type. 0 is returned if rendering to this color type
+     * is not supported at all.
+     */
+    int maxSurfaceSampleCountForColorType(SkColorType) const;
 
     /*
      * Create a new render target context backed by a deferred-style
@@ -239,7 +247,7 @@ public:
                                                  int width, int height,
                                                  GrPixelConfig config,
                                                  sk_sp<SkColorSpace> colorSpace,
-                                                 int sampleCnt = 0,
+                                                 int sampleCnt = 1,
                                                  GrMipMapped = GrMipMapped::kNo,
                                                  GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
                                                  const SkSurfaceProps* surfaceProps = nullptr,
@@ -255,7 +263,7 @@ public:
                                                  int width, int height,
                                                  GrPixelConfig config,
                                                  sk_sp<SkColorSpace> colorSpace,
-                                                 int sampleCnt = 0,
+                                                 int sampleCnt = 1,
                                                  GrMipMapped = GrMipMapped::kNo,
                                                  GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
                                                  const SkSurfaceProps* surfaceProps = nullptr,
@@ -300,10 +308,6 @@ public:
 
     ///////////////////////////////////////////////////////////////////////////
     // Functions intended for internal use only.
-    GrGpu* getGpu() { return fGpu.get(); }
-    const GrGpu* getGpu() const { return fGpu.get(); }
-    GrAtlasGlyphCache* getAtlasGlyphCache() { return fAtlasGlyphCache; }
-    GrTextBlobCache* getTextBlobCache() { return fTextBlobCache.get(); }
     bool abandoned() const;
 
     /** Reset GPU stats */
@@ -336,7 +340,7 @@ public:
     /** Get pointer to atlas texture for given mask format. Note that this wraps an
         actively mutating texture in an SkImage. This could yield unexpected results
         if it gets cached or used more generally. */
-    sk_sp<SkImage> getFontAtlasImage_ForTesting(GrMaskFormat format);
+    sk_sp<SkImage> getFontAtlasImage_ForTesting(GrMaskFormat format, unsigned int index = 0);
 
     GrAuditTrail* getAuditTrail() { return &fAuditTrail; }
 
@@ -348,6 +352,10 @@ public:
     // Provides access to functions that aren't part of the public API.
     GrContextPriv contextPriv();
     const GrContextPriv contextPriv() const;
+
+protected:
+    GrContext(GrContextThreadSafeProxy*);
+    GrContext(GrBackend);
 
 private:
     sk_sp<GrGpu>                            fGpu;
@@ -362,6 +370,7 @@ private:
     std::unique_ptr<GrTextBlobCache>        fTextBlobCache;
 
     bool                                    fDisableGpuYUVConversion;
+    bool                                    fSharpenMipmappedTextures;
     bool                                    fDidTestPMConversions;
     // true if the PM/UPM conversion succeeded; false otherwise
     bool                                    fPMUPMConversionsRoundTrip;
@@ -393,9 +402,7 @@ private:
     // TODO: have the GrClipStackClip use renderTargetContexts and rm this friending
     friend class GrContextPriv;
 
-    GrContext(GrBackend); // init must be called after the constructor.
-    GrContext(GrContextThreadSafeProxy*);
-    bool init(const GrContextOptions&);
+    bool init(const GrContextOptions&); // init must be called after either constructor.
 
     /**
      * These functions create premul <-> unpremul effects. If the second argument is 'true', they
@@ -429,6 +436,41 @@ private:
 class GrContextThreadSafeProxy : public SkRefCnt {
 public:
     bool matches(GrContext* context) const { return context->uniqueID() == fContextUniqueID; }
+
+    /**
+     *  Create a surface characterization for a DDL that will be replayed into the GrContext
+     *  that created this proxy. On failure the resulting characterization will be invalid (i.e.,
+     *  "!c.isValid()").
+     *
+     *  @param cacheMaxResourceBytes The max resource bytes limit that will be in effect when the
+     *                               DDL created with this characterization is replayed.
+     *                               Note: the contract here is that the DDL will be created as
+     *                               if it had a full 'cacheMaxResourceBytes' to use. If replayed
+     *                               into a GrContext that already has locked GPU memory, the
+     *                               replay can exceed the budget. To rephrase, all resource
+     *                               allocation decisions are made at record time and at playback
+     *                               time the budget limits will be ignored.
+     *  @param ii                    The image info specifying properties of the SkSurface that
+     *                               the DDL created with this characterization will be replayed
+     *                               into.
+     *                               Note: Ganesh doesn't make use of the SkImageInfo's alphaType
+     *  @param backendFormat         Information about the format of the GPU surface that will
+     *                               back the SkSurface upon replay
+     *  @param sampleCount           The sample count of the SkSurface that the DDL created with
+     *                               this characterization will be replayed into
+     *  @param origin                The origin of the SkSurface that the DDL created with this
+     *                               characterization will be replayed into
+     *  @param surfaceProps          The surface properties of the SkSurface that the DDL created
+     *                               with this characterization will be replayed into
+     *  @param isMipMapped           Will the surface the DDL will be replayed into have space
+     *                               allocated for mipmaps?
+     */
+    SkSurfaceCharacterization createCharacterization(
+                                  size_t cacheMaxResourceBytes,
+                                  const SkImageInfo& ii, const GrBackendFormat& backendFormat,
+                                  int sampleCount, GrSurfaceOrigin origin,
+                                  const SkSurfaceProps& surfaceProps,
+                                  bool isMipMapped);
 
 private:
     // DDL TODO: need to add unit tests for backend & maybe options

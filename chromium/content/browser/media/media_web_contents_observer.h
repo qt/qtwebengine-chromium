@@ -15,11 +15,15 @@
 #include "content/browser/media/session/media_session_controllers_manager.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "services/device/public/interfaces/wake_lock.mojom.h"
+#include "services/device/public/mojom/wake_lock.mojom.h"
 
 #if defined(OS_ANDROID)
 #include "ui/android/view_android.h"
 #endif  // OS_ANDROID
+
+namespace blink {
+enum class WebFullscreenVideoStatus;
+}  // namespace blink
 
 namespace media {
 enum class MediaContentType;
@@ -50,6 +54,11 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   // It should only be called while the WebContents is fullscreen.
   bool HasActiveEffectivelyFullscreenVideo() const;
 
+  // Called by WebContentsImpl to know if Picture-in-Picture can be triggered
+  // for the current active effectively fullscreen player.
+  // It should only be called while the WebContents is fullscreen.
+  bool IsPictureInPictureAllowedForFullscreenVideo() const;
+
   // Gets the MediaPlayerId of the fullscreen video if it exists.
   const base::Optional<MediaPlayerId>& GetFullscreenVideoMediaPlayerId() const;
 
@@ -58,8 +67,7 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
   bool OnMessageReceived(const IPC::Message& message,
                          RenderFrameHost* render_frame_host) override;
-  void WasShown() override;
-  void WasHidden() override;
+  void OnVisibilityChanged(content::Visibility visibility) override;
 
   // TODO(zqzhang): this method is temporarily in MediaWebContentsObserver as
   // the effectively fullscreen video code is also here. We need to consider
@@ -91,9 +99,10 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
                       bool has_audio,
                       bool is_remote,
                       media::MediaContentType media_content_type);
-  void OnMediaEffectivelyFullscreenChanged(RenderFrameHost* render_frame_host,
-                                           int delegate_id,
-                                           bool is_fullscreen);
+  void OnMediaEffectivelyFullscreenChanged(
+      RenderFrameHost* render_frame_host,
+      int delegate_id,
+      blink::WebFullscreenVideoStatus fullscreen_status);
   void OnMediaSizeChanged(RenderFrameHost* render_frame_host,
                           int delegate_id,
                           const gfx::Size& size);
@@ -137,8 +146,9 @@ class CONTENT_EXPORT MediaWebContentsObserver : public WebContentsObserver {
   device::mojom::WakeLockPtr audio_wake_lock_;
   device::mojom::WakeLockPtr video_wake_lock_;
   base::Optional<MediaPlayerId> fullscreen_player_;
-  bool has_audio_wake_lock_for_testing_;
-  bool has_video_wake_lock_for_testing_;
+  base::Optional<bool> picture_in_picture_allowed_in_fullscreen_;
+  bool has_audio_wake_lock_for_testing_ = false;
+  bool has_video_wake_lock_for_testing_ = false;
 
   MediaSessionControllersManager session_controllers_manager_;
 

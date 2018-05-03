@@ -9,6 +9,7 @@
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioParamMap.h"
 #include "modules/webaudio/AudioWorkletNodeOptions.h"
+#include "modules/webaudio/AudioWorkletProcessorErrorState.h"
 #include "platform/wtf/Threading.h"
 
 namespace blink {
@@ -19,13 +20,7 @@ class BaseAudioContext;
 class CrossThreadAudioParamInfo;
 class ExceptionState;
 class MessagePort;
-
-enum class AudioWorkletProcessorState {
-  kPending,
-  kRunning,
-  kStopped,
-  kError,
-};
+class ScriptState;
 
 // AudioWorkletNode is a user-facing interface of custom audio processor in
 // Web Audio API. The integration of WebAudio renderer is done via
@@ -65,7 +60,7 @@ class AudioWorkletHandler final : public AudioHandler {
   // the user-supplied |process()| method returns false.
   void FinishProcessorOnRenderThread();
 
-  void NotifyProcessorStateChange(AudioWorkletProcessorState);
+  void NotifyProcessorError(AudioWorkletProcessorErrorState);
 
  private:
   AudioWorkletHandler(
@@ -86,7 +81,7 @@ class AudioWorkletHandler final : public AudioHandler {
   HashMap<String, std::unique_ptr<AudioFloatArray>> param_value_map_;
 
   // A reference to the main thread task runner.
-  scoped_refptr<WebTaskRunner> task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 };
 
 class AudioWorkletNode final : public AudioNode,
@@ -95,7 +90,8 @@ class AudioWorkletNode final : public AudioNode,
   USING_GARBAGE_COLLECTED_MIXIN(AudioWorkletNode);
 
  public:
-  static AudioWorkletNode* Create(BaseAudioContext*,
+  static AudioWorkletNode* Create(ScriptState*,
+                                  BaseAudioContext*,
                                   const String& name,
                                   const AudioWorkletNodeOptions&,
                                   ExceptionState&);
@@ -105,13 +101,12 @@ class AudioWorkletNode final : public AudioNode,
   // ActiveScriptWrappable
   bool HasPendingActivity() const final;
 
-  void SetProcessorState(AudioWorkletProcessorState);
-
   // IDL
   AudioParamMap* parameters() const;
   MessagePort* port() const;
-  String processorState() const;
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(processorstatechange);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(processorerror);
+
+  void FireProcessorError();
 
   virtual void Trace(blink::Visitor*);
 
@@ -124,7 +119,6 @@ class AudioWorkletNode final : public AudioNode,
 
   Member<AudioParamMap> parameter_map_;
   Member<MessagePort> node_port_;
-  AudioWorkletProcessorState processor_state_;
 };
 
 }  // namespace blink

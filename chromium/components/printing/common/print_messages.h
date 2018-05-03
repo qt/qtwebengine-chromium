@@ -28,9 +28,6 @@
 #include "ui/gfx/ipc/skia/gfx_skia_param_traits.h"
 #include "ui/gfx/native_widget_types.h"
 
-// Force multiple inclusion of the param traits file to generate all methods.
-#undef COMPONENTS_PRINTING_COMMON_PRINTING_PARAM_TRAITS_MACROS_H_
-
 #ifndef INTERNAL_COMPONENTS_PRINTING_COMMON_PRINT_MESSAGES_H_
 #define INTERNAL_COMPONENTS_PRINTING_COMMON_PRINT_MESSAGES_H_
 
@@ -47,7 +44,7 @@ struct PrintMsg_Print_Params {
   gfx::Rect printable_area;
   int margin_top;
   int margin_left;
-  double dpi;
+  gfx::Size dpi;
   double scale_factor;
   bool rasterize_pdf;
   int document_cookie;
@@ -65,6 +62,7 @@ struct PrintMsg_Print_Params {
   base::string16 footer_template;
   bool should_print_backgrounds;
   printing::SkiaDocumentType printed_doc_type;
+  bool prefer_css_page_size;
 };
 
 struct PrintMsg_PrintPages_Params {
@@ -77,6 +75,14 @@ struct PrintMsg_PrintPages_Params {
 
   PrintMsg_Print_Params params;
   std::vector<int> pages;
+};
+
+struct PrintMsg_PrintFrame_Params {
+  PrintMsg_PrintFrame_Params();
+  ~PrintMsg_PrintFrame_Params();
+
+  gfx::Rect printable_area;
+  int document_cookie;
 };
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
@@ -115,7 +121,7 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
   // in pixels according to dpi.
   IPC_STRUCT_TRAITS_MEMBER(page_size)
 
-  // In pixels according to dpi_x and dpi_y.
+  // In pixels according to dpi.
   IPC_STRUCT_TRAITS_MEMBER(content_size)
 
   // Physical printable area of the page in pixels according to dpi.
@@ -127,7 +133,7 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
   // The x-offset of the printable area, in pixels according to dpi.
   IPC_STRUCT_TRAITS_MEMBER(margin_left)
 
-  // Specifies dots per inch.
+  // Specifies dots per inch in the x and y direction.
   IPC_STRUCT_TRAITS_MEMBER(dpi)
 
   // Specifies the scale factor in percent
@@ -182,6 +188,9 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
 
   // The document type of printed page(s) from render.
   IPC_STRUCT_TRAITS_MEMBER(printed_doc_type)
+
+  // True if page size defined by css should be preferred.
+  IPC_STRUCT_TRAITS_MEMBER(prefer_css_page_size)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(printing::PageRange)
@@ -230,14 +239,36 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_PrintPages_Params)
   IPC_STRUCT_TRAITS_MEMBER(pages)
 IPC_STRUCT_TRAITS_END()
 
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
-// Parameters to describe a rendered document.
-IPC_STRUCT_BEGIN(PrintHostMsg_DidPreviewDocument_Params)
+IPC_STRUCT_TRAITS_BEGIN(PrintMsg_PrintFrame_Params)
+  // Physical printable area of the page in pixels according to dpi.
+  IPC_STRUCT_TRAITS_MEMBER(printable_area)
+
+  // Cookie that is unique for each print request.
+  // It is used to associate the printed frame with its original print request.
+  IPC_STRUCT_TRAITS_MEMBER(document_cookie)
+IPC_STRUCT_TRAITS_END()
+
+// Holds the printed content information.
+// The printed content is in shared memory, and passed by its handle
+// and data size.
+// A map on out-of-process subframe contents is also included so the printed
+// content can be composited as needed.
+IPC_STRUCT_BEGIN(PrintHostMsg_DidPrintContent_Params)
   // A shared memory handle to metafile data.
   IPC_STRUCT_MEMBER(base::SharedMemoryHandle, metafile_data_handle)
 
   // Size of metafile data.
   IPC_STRUCT_MEMBER(uint32_t, data_size)
+
+  // Content id to render frame proxy id mapping for out-of-process subframes.
+  IPC_STRUCT_MEMBER(printing::ContentToProxyIdMap, subframe_content_info)
+IPC_STRUCT_END()
+
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+// Parameters to describe a rendered document.
+IPC_STRUCT_BEGIN(PrintHostMsg_DidPreviewDocument_Params)
+  // Document's content including metafile data and subframe info.
+  IPC_STRUCT_MEMBER(PrintHostMsg_DidPrintContent_Params, content)
 
   // Cookie for the document to ensure correctness.
   IPC_STRUCT_MEMBER(int, document_cookie)
@@ -254,17 +285,17 @@ IPC_STRUCT_END()
 
 // Parameters to describe a rendered preview page.
 IPC_STRUCT_BEGIN(PrintHostMsg_DidPreviewPage_Params)
-  // A shared memory handle to metafile data for a draft document of the page.
-  IPC_STRUCT_MEMBER(base::SharedMemoryHandle, metafile_data_handle)
-
-  // Size of metafile data.
-  IPC_STRUCT_MEMBER(uint32_t, data_size)
+  // Page's content including metafile data and subframe info.
+  IPC_STRUCT_MEMBER(PrintHostMsg_DidPrintContent_Params, content)
 
   // |page_number| is zero-based and should not be negative.
   IPC_STRUCT_MEMBER(int, page_number)
 
   // The id of the preview request.
   IPC_STRUCT_MEMBER(int, preview_request_id)
+
+  // Cookie for the document to ensure correctness.
+  IPC_STRUCT_MEMBER(int, document_cookie)
 IPC_STRUCT_END()
 
 // Parameters sent along with the page count.
@@ -277,20 +308,13 @@ IPC_STRUCT_BEGIN(PrintHostMsg_DidGetPreviewPageCount_Params)
 
   // The id of the preview request.
   IPC_STRUCT_MEMBER(int, preview_request_id)
-
-  // Indicates whether the existing preview data needs to be cleared or not.
-  IPC_STRUCT_MEMBER(bool, clear_preview_data)
 IPC_STRUCT_END()
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
 
 // Parameters to describe a rendered page.
 IPC_STRUCT_BEGIN(PrintHostMsg_DidPrintDocument_Params)
-  // A shared memory handle to the PDF data. This data can be quite large so a
-  // memory map needs to be used.
-  IPC_STRUCT_MEMBER(base::SharedMemoryHandle, metafile_data_handle)
-
-  // Size of the metafile data.
-  IPC_STRUCT_MEMBER(uint32_t, data_size)
+  // Document's content including metafile data and subframe info.
+  IPC_STRUCT_MEMBER(PrintHostMsg_DidPrintContent_Params, content)
 
   // Cookie for the document to ensure correctness.
   IPC_STRUCT_MEMBER(int, document_cookie)
@@ -339,6 +363,9 @@ IPC_MESSAGE_ROUTED0(PrintMsg_PrintPages)
 IPC_MESSAGE_ROUTED0(PrintMsg_PrintForSystemDialog)
 #endif
 
+// Print content of an out-of-process subframe.
+IPC_MESSAGE_ROUTED1(PrintMsg_PrintFrameContent, PrintMsg_PrintFrame_Params)
+
 // Tells the RenderFrame that printing is done so it can clean up.
 IPC_MESSAGE_ROUTED1(PrintMsg_PrintingDone,
                     bool /* success */)
@@ -377,6 +404,12 @@ IPC_MESSAGE_ROUTED0(PrintHostMsg_DidShowPrintDialog)
 // this message is already valid in the browser process.
 IPC_MESSAGE_ROUTED1(PrintHostMsg_DidPrintDocument,
                     PrintHostMsg_DidPrintDocument_Params /* page content */)
+
+// Sends back to the browser the rendered subframe content that was
+// requested by a PrintMsg_PrintFrameContent message.
+IPC_MESSAGE_ROUTED2(PrintHostMsg_DidPrintFrameContent,
+                    int /* rendered document cookie */,
+                    PrintHostMsg_DidPrintContent_Params)
 
 // The renderer wants to know the default print settings.
 IPC_SYNC_MESSAGE_ROUTED0_1(PrintHostMsg_GetDefaultPrintSettings,

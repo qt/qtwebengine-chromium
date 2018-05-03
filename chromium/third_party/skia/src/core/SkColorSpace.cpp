@@ -6,7 +6,6 @@
  */
 
 #include "SkColorSpace.h"
-#include "SkColorSpace_Base.h"
 #include "SkColorSpace_XYZ.h"
 #include "SkColorSpacePriv.h"
 #include "SkPoint3.h"
@@ -336,8 +335,8 @@ size_t SkColorSpace::writeToMemory(void* memory) const {
     // Start by trying the serialization fast path.  If we haven't saved ICC profile data,
     // we must have a profile that we can serialize easily.
     if (!this->onProfileData()) {
-        // Profile data is mandatory for A2B0 color spaces.
-        SkASSERT(SkColorSpace_Base::Type::kA2B != as_CSB(this)->type());
+        // Profile data is mandatory for A2B0 color spaces, so we must be XYZ.
+        SkASSERT(this->toXYZD50());
         // If we have a named profile, only write the enum.
         const SkGammaNamed gammaNamed = this->gammaNamed();
         if (this == srgb()) {
@@ -575,7 +574,7 @@ SkColorSpaceTransferFn SkColorSpaceTransferFn::invert() const {
     // find inverse for the other segment (if possible)
     if (transfer_fn_almost_equal(0.f, fA) || transfer_fn_almost_equal(0.f, fG)) {
         // otherwise assume it should be 1 as it is the top segment
-        // as you can't invert the constant functions y = b^g + c, or y = 1 + c
+        // as you can't invert the constant functions y = b^g + e, or y = 1 + e
         inv.fG = 1.f;
         inv.fE = 1.f;
     } else {

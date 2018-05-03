@@ -25,8 +25,8 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
  public:
   ParallelDownloadJob(
       DownloadItemImpl* download_item,
-      std::unique_ptr<DownloadRequestHandleInterface> request_handle,
-      const DownloadCreateInfo& create_info);
+      std::unique_ptr<download::DownloadRequestHandleInterface> request_handle,
+      const download::DownloadCreateInfo& create_info);
   ~ParallelDownloadJob() override;
 
   // DownloadJobImpl implementation.
@@ -39,7 +39,7 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
   // DownloadJobImpl implementation.
   void OnDownloadFileInitialized(
       const DownloadFile::InitializeCallback& callback,
-      DownloadInterruptReason result) override;
+      download::DownloadInterruptReason result) override;
 
   // Virtual for testing.
   virtual int GetParallelRequestCount() const;
@@ -57,9 +57,9 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
   friend class ParallelDownloadJobTest;
 
   // DownloadWorker::Delegate implementation.
-  void OnByteStreamReady(
+  void OnInputStreamReady(
       DownloadWorker* worker,
-      std::unique_ptr<ByteStreamReader> stream_reader) override;
+      std::unique_ptr<DownloadManager::InputStream> input_stream) override;
 
   // Build parallel requests after a delay, to effectively measure the single
   // stream bandwidth.
@@ -71,9 +71,12 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
 
   // Build one http request for each slice from the second slice.
   // The first slice represents the original request.
-  void ForkSubRequests(const DownloadItem::ReceivedSlices& slices_to_download);
+  void ForkSubRequests(
+      const download::DownloadItem::ReceivedSlices& slices_to_download);
 
-  // Create one range request, virtual for testing.
+  // Create one range request, virtual for testing. Range request will start
+  // from |offset| to |length|. Range request will be half open, e.g.
+  // "Range:50-" if |length| is 0.
   virtual void CreateRequest(int64_t offset, int64_t length);
 
   // Information about the initial request when download is started.
@@ -82,7 +85,7 @@ class CONTENT_EXPORT ParallelDownloadJob : public DownloadJobImpl,
   // A snapshot of received slices when creating the parallel download job.
   // Download item's received slices may be different from this snapshot when
   // |BuildParallelRequests| is called.
-  DownloadItem::ReceivedSlices initial_received_slices_;
+  download::DownloadItem::ReceivedSlices initial_received_slices_;
 
   // The length of the response body of the original request.
   // Used to estimate the remaining size of the content when the initial

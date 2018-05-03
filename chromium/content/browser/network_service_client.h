@@ -7,7 +7,8 @@
 
 #include "base/macros.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/network/public/interfaces/network_service.mojom.h"
+#include "services/network/public/mojom/network_service.mojom.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -18,6 +19,20 @@ class NetworkServiceClient : public network::mojom::NetworkServiceClient {
   ~NetworkServiceClient() override;
 
   // network::mojom::NetworkServiceClient implementation:
+  void OnAuthRequired(
+      uint32_t process_id,
+      uint32_t routing_id,
+      const GURL& url,
+      bool first_auth_attempt,
+      const scoped_refptr<net::AuthChallengeInfo>& auth_info,
+      network::mojom::NetworkServiceClient::OnAuthRequiredCallback callback)
+      override;
+  void OnCertificateRequested(
+      uint32_t process_id,
+      uint32_t routing_id,
+      const scoped_refptr<net::SSLCertRequestInfo>& cert_info,
+      network::mojom::NetworkServiceClient::OnCertificateRequestedCallback
+          callback) override;
   void OnSSLCertificateError(int32_t resource_type,
                              const GURL& url,
                              uint32_t process_id,

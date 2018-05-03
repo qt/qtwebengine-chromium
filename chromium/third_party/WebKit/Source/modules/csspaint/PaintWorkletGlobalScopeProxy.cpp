@@ -33,9 +33,10 @@ PaintWorkletGlobalScopeProxy::PaintWorkletGlobalScopeProxy(
       document->Url(), document->UserAgent(),
       document->GetContentSecurityPolicy()->Headers().get(),
       document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-      nullptr /* worker_clients */, document->AddressSpace(),
-      OriginTrialContext::GetTokens(document).get(),
-      nullptr /* worker_settings */, kV8CacheOptionsDefault);
+      document->IsSecureContext(), nullptr /* worker_clients */,
+      document->AddressSpace(), OriginTrialContext::GetTokens(document).get(),
+      base::UnguessableToken::Create(), nullptr /* worker_settings */,
+      kV8CacheOptionsDefault);
   global_scope_ = PaintWorkletGlobalScope::Create(
       frame, std::move(creation_params), *reporting_proxy_,
       pending_generator_registry, global_scope_number);
@@ -45,7 +46,7 @@ void PaintWorkletGlobalScopeProxy::FetchAndInvokeScript(
     const KURL& module_url_record,
     WorkletModuleResponsesMap* module_responses_map,
     network::mojom::FetchCredentialsMode credentials_mode,
-    scoped_refptr<WebTaskRunner> outside_settings_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
     WorkletPendingTasks* pending_tasks) {
   DCHECK(IsMainThread());
   global_scope_->FetchAndInvokeScript(

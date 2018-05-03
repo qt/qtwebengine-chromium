@@ -15,10 +15,16 @@ service_manifest("manifest") {
 
 source_set("lib") {
   sources = [
+    "debug_recording.cc",
+    "debug_recording.h",
     "in_process_audio_manager_accessor.cc",
     "in_process_audio_manager_accessor.h",
+    "output_stream.cc",
+    "output_stream.h",
     "service.cc",
     "service.h",
+    "service_factory.cc",
+    "service_factory.h",
     "system_info.cc",
     "system_info.h",
   ]
@@ -26,7 +32,7 @@ source_set("lib") {
   public_deps = [
     "//base",
     "//media",
-    "//services/audio/public/interfaces",
+    "//services/audio/public/mojom",
     "//services/service_manager/public/cpp",
   ]
 }
@@ -35,18 +41,26 @@ source_set("tests") {
   testonly = true
 
   sources = [
+    "debug_recording_unittest.cc",
+    "output_stream_unittest.cc",
     "test/audio_system_to_service_adapter_test.cc",
+    "test/debug_recording_session_unittest.cc",
     "test/in_process_service_test.cc",
+    "test/mock_log.cc",
+    "test/mock_log.h",
   ]
 
   deps = [
     ":lib",
     "//base/test:test_support",
     "//media:test_support",
+    "//mojo/edk/system:system",
     "//services/audio/public/cpp",
-    "//services/audio/public/interfaces",
+    "//services/audio/public/cpp:test_support",
+    "//services/audio/public/mojom",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/cpp:service_test_support",
+    "//services/service_manager/public/cpp/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]

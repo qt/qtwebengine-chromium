@@ -10,6 +10,7 @@
 
 #include "rtc_base/flags.h"
 #include "rtc_base/logging.h"
+#include "system_wrappers/include/field_trial_default.h"
 #include "system_wrappers/include/metrics_default.h"
 #include "test/field_trial.h"
 #include "test/gmock.h"
@@ -35,7 +36,12 @@ DEFINE_bool(
 #else
 
 DEFINE_string(
-    chartjson_result_file,
+    isolated_script_test_output,
+    "",
+    "Intentionally ignored flag intended for Chromium.");
+
+DEFINE_string(
+    isolated_script_test_perf_output,
     "",
     "Path where the perf results should be stored in the JSON format described "
     "by "
@@ -70,8 +76,10 @@ int main(int argc, char* argv[]) {
   }
 
   webrtc::test::SetExecutablePath(argv[0]);
-  std::string fieldtrials = FLAG_force_fieldtrials;
-  webrtc::test::InitFieldTrialsFromString(fieldtrials);
+  webrtc::test::ValidateFieldTrialsStringOrDie(FLAG_force_fieldtrials);
+  // InitFieldTrialsFromString stores the char*, so the char array must outlive
+  // the application.
+  webrtc::field_trial::InitFieldTrialsFromString(FLAG_force_fieldtrials);
   webrtc::metrics::Enable();
 
 
@@ -87,7 +95,7 @@ int main(int argc, char* argv[]) {
 
   int exit_code = RUN_ALL_TESTS();
 
-  std::string chartjson_result_file = FLAG_chartjson_result_file;
+  std::string chartjson_result_file = FLAG_isolated_script_test_perf_output;
   if (!chartjson_result_file.empty()) {
     webrtc::test::WritePerfResults(chartjson_result_file);
   }

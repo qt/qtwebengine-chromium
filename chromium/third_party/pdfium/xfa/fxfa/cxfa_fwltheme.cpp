@@ -133,7 +133,7 @@ void CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
 
   m_pTextOut->SetStyles(pParams->m_dwTTOStyles);
   m_pTextOut->SetAlignment(pParams->m_iTTOAlign);
-  m_pTextOut->SetFont(pNode->GetWidgetAcc()->GetFDEFont(pWidget->GetDoc()));
+  m_pTextOut->SetFont(pNode->GetFDEFont(pWidget->GetDoc()));
   m_pTextOut->SetFontSize(pNode->GetFontSize());
   m_pTextOut->SetTextColor(pNode->GetTextColor());
   CFX_Matrix mtPart = pParams->m_matrix;
@@ -147,18 +147,17 @@ void CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
 }
 
 CFX_RectF CXFA_FWLTheme::GetUIMargin(CFWL_ThemePart* pThemePart) const {
-  CFX_RectF rect;
   CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pThemePart->m_pWidget);
   if (!pWidget)
-    return rect;
+    return CFX_RectF();
 
   CXFA_LayoutItem* pItem = pWidget;
-  CXFA_WidgetAcc* pWidgetAcc = pWidget->GetNode()->GetWidgetAcc();
-  rect = pWidgetAcc->GetUIMargin();
-  CXFA_Para* para = pWidgetAcc->GetNode()->GetParaIfExists();
+  CXFA_Node* pNode = pWidget->GetNode();
+  CFX_RectF rect = pNode->GetUIMargin();
+  CXFA_Para* para = pNode->GetParaIfExists();
   if (para) {
     rect.left += para->GetMarginLeft();
-    if (pWidgetAcc->IsMultiLine())
+    if (pNode->IsMultiLine())
       rect.width += para->GetMarginRight();
   }
   if (!pItem->GetPrev()) {
@@ -190,7 +189,7 @@ float CXFA_FWLTheme::GetFontSize(CFWL_ThemePart* pThemePart) const {
 RetainPtr<CFGAS_GEFont> CXFA_FWLTheme::GetFont(
     CFWL_ThemePart* pThemePart) const {
   if (CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pThemePart->m_pWidget))
-    return pWidget->GetNode()->GetWidgetAcc()->GetFDEFont(pWidget->GetDoc());
+    return pWidget->GetNode()->GetFDEFont(pWidget->GetDoc());
   return GetTheme(pThemePart->m_pWidget)->GetFont();
 }
 
@@ -241,7 +240,7 @@ void CXFA_FWLTheme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
     return;
 
   CXFA_Node* pNode = pWidget->GetNode();
-  m_pTextOut->SetFont(pNode->GetWidgetAcc()->GetFDEFont(pWidget->GetDoc()));
+  m_pTextOut->SetFont(pNode->GetFDEFont(pWidget->GetDoc()));
   m_pTextOut->SetFontSize(pNode->GetFontSize());
   m_pTextOut->SetTextColor(pNode->GetTextColor());
   if (!pParams)

@@ -118,10 +118,11 @@ void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
             }
         }
     }
+    fMaxPreferredRenderTargetSize = fMaxRenderTargetSize;
     fMaxTextureSize = fMaxRenderTargetSize;
 
     // Init sample counts. All devices support 1 (i.e. 0 in skia).
-    fSampleCounts.push(0);
+    fSampleCounts.push(1);
     for (auto sampleCnt : {2, 4, 8}) {
         if ([device supportsTextureSampleCount:sampleCnt]) {
             fSampleCounts.push(sampleCnt);
@@ -162,24 +163,31 @@ void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
 
     fFenceSyncSupport = true;   // always available in Metal
     fCrossContextTextureSupport = false;
-
-    fMaxColorSampleCount = 4; // minimum required by spec
-    fMaxStencilSampleCount = 4; // minimum required by spec
 }
 
-int GrMtlCaps::getSampleCount(int requestedCount, GrPixelConfig config) const {
-    int count = fSampleCounts.count();
-    SkASSERT(count > 0); // We always add 0 as a valid sample count
-    if (!this->isConfigRenderable(config, true)) {
-        return 0;
-    }
 
-    for (int i = 0; i < count; ++i) {
-        if (fSampleCounts[i] >= requestedCount) {
-            return fSampleCounts[i];
-        }
+int GrMtlCaps::maxRenderTargetSampleCount(GrPixelConfig config) const {
+    if (fConfigTable[config].fFlags & ConfigInfo::kMSAA_Flag) {
+        return fSampleCounts[fSampleCounts.count() - 1];
+    } else if (fConfigTable[config].fFlags & ConfigInfo::kRenderable_Flag) {
+        return 1;
     }
-    return fSampleCounts[count-1];
+    return 0;
+}
+
+int GrMtlCaps::getRenderTargetSampleCount(int requestedCount, GrPixelConfig config) const {
+    requestedCount = SkTMax(requestedCount, 1);
+    if (fConfigTable[config].fFlags & ConfigInfo::kMSAA_Flag) {
+        int count = fSampleCounts.count();
+        for (int i = 0; i < count; ++i) {
+            if (fSampleCounts[i] >= requestedCount) {
+                return fSampleCounts[i];
+            }
+        }
+    } else if (fConfigTable[config].fFlags & ConfigInfo::kRenderable_Flag) {
+        return 1 == requestedCount ? 1 : 0;
+    }
+    return 0;
 }
 
 void GrMtlCaps::initShaderCaps() {
@@ -281,10 +289,6 @@ void GrMtlCaps::initConfigTable() {
     // SBGRA_8888 uses BGRA8Unorm_sRGB
     info = &fConfigTable[kSBGRA_8888_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
-
-    // RGBA_8888_sint uses RGBA8Sint
-    info = &fConfigTable[kRGBA_8888_sint_GrPixelConfig];
-    info->fFlags = ConfigInfo::kMSAA_Flag;
 
     // RGBA_float uses RGBA32Float
     info = &fConfigTable[kRGBA_float_GrPixelConfig];

@@ -102,12 +102,15 @@ V4L2VideoEncodeAccelerator::OutputRecord::OutputRecord()
 
 V4L2VideoEncodeAccelerator::OutputRecord::~OutputRecord() {}
 
-V4L2VideoEncodeAccelerator::ImageProcessorInputRecord::
-    ImageProcessorInputRecord()
-    : force_keyframe(false) {}
+V4L2VideoEncodeAccelerator::InputFrameInfo::InputFrameInfo()
+    : InputFrameInfo(nullptr, false) {}
 
-V4L2VideoEncodeAccelerator::ImageProcessorInputRecord::
-    ~ImageProcessorInputRecord() {}
+V4L2VideoEncodeAccelerator::InputFrameInfo::InputFrameInfo(
+    scoped_refptr<VideoFrame> frame,
+    bool force_keyframe)
+    : frame(frame), force_keyframe(force_keyframe) {}
+
+V4L2VideoEncodeAccelerator::InputFrameInfo::~InputFrameInfo() {}
 
 V4L2VideoEncodeAccelerator::V4L2VideoEncodeAccelerator(
     const scoped_refptr<V4L2Device>& device)
@@ -286,10 +289,7 @@ void V4L2VideoEncodeAccelerator::Encode(const scoped_refptr<VideoFrame>& frame,
         NOTIFY_ERROR(kPlatformFailureError);
       }
     } else {
-      ImageProcessorInputRecord record;
-      record.frame = frame;
-      record.force_keyframe = force_keyframe;
-      image_processor_input_queue_.push(record);
+      image_processor_input_queue_.emplace(frame, force_keyframe);
     }
   } else {
     encoder_thread_.task_runner()->PostTask(
@@ -360,10 +360,39 @@ void V4L2VideoEncodeAccelerator::Destroy() {
     DestroyTask();
   }
 
+  // If a flush is pending, notify client that it did not finish.
+  if (flush_callback_)
+    std::move(flush_callback_).Run(false);
+
   // Set to kError state just in case.
   encoder_state_ = kError;
 
   delete this;
+}
+
+void V4L2VideoEncodeAccelerator::Flush(FlushCallback flush_callback) {
+  VLOGF(2);
+  DCHECK(child_task_runner_->BelongsToCurrentThread());
+
+  encoder_thread_.task_runner()->PostTask(
+      FROM_HERE, base::Bind(&V4L2VideoEncodeAccelerator::FlushTask,
+                            base::Unretained(this), base::Passed(&flush_callback)));
+}
+
+void V4L2VideoEncodeAccelerator::FlushTask(FlushCallback flush_callback) {
+  DCHECK(encoder_thread_.task_runner()->BelongsToCurrentThread());
+
+  if (flush_callback_ || encoder_state_ != kEncoding) {
+    VLOGF(1) << "Flush failed: there is a pending flush, "
+             << "or VEA is not in kEncoding state";
+    NOTIFY_ERROR(kIllegalStateError);
+    child_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(std::move(flush_callback), false));
+    return;
+  }
+  flush_callback_ = std::move(flush_callback);
+  // Push a null frame to indicate Flush.
+  EncodeTask(nullptr, false);
 }
 
 VideoEncodeAccelerator::SupportedProfiles
@@ -414,9 +443,9 @@ void V4L2VideoEncodeAccelerator::ReuseImageProcessorOutputBuffer(
   DVLOGF(4) << "output_buffer_index=" << output_buffer_index;
   free_image_processor_output_buffers_.push_back(output_buffer_index);
   if (!image_processor_input_queue_.empty()) {
-    ImageProcessorInputRecord record = image_processor_input_queue_.front();
+    InputFrameInfo frame_info = image_processor_input_queue_.front();
     image_processor_input_queue_.pop();
-    Encode(record.frame, record.force_keyframe);
+    Encode(frame_info.frame, frame_info.force_keyframe);
   }
 }
 
@@ -502,26 +531,8 @@ void V4L2VideoEncodeAccelerator::EncodeTask(
     return;
   }
 
-  encoder_input_queue_.push(frame);
+  encoder_input_queue_.emplace(frame, force_keyframe);
   Enqueue();
-
-  if (force_keyframe) {
-    // TODO(posciak): this presently makes for slightly imprecise encoding
-    // parameters updates.  To precisely align the parameter updates with the
-    // incoming input frame, we should queue the parameters together with the
-    // frame onto encoder_input_queue_ and apply them when the input is about
-    // to be queued to the codec.
-    std::vector<struct v4l2_ext_control> ctrls;
-    struct v4l2_ext_control ctrl;
-    memset(&ctrl, 0, sizeof(ctrl));
-    ctrl.id = V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME;
-    ctrls.push_back(ctrl);
-    if (!SetExtCtrls(ctrls)) {
-      VLOGF(1) << "Failed requesting keyframe";
-      NOTIFY_ERROR(kPlatformFailureError);
-      return;
-    }
-  }
 }
 
 void V4L2VideoEncodeAccelerator::UseOutputBitstreamBufferTask(
@@ -607,8 +618,34 @@ void V4L2VideoEncodeAccelerator::Enqueue() {
 
   // Enqueue all the inputs we can.
   const int old_inputs_queued = input_buffer_queued_count_;
-  // while (!ready_input_buffers_.empty()) {
   while (!encoder_input_queue_.empty() && !free_input_buffers_.empty()) {
+    // A null frame indicates a flush.
+    if (encoder_input_queue_.front().frame == nullptr) {
+      DVLOGF(3) << "All input frames needed to be flushed are enqueued.";
+      encoder_input_queue_.pop();
+
+      // If we are not streaming, the device is not running and there is no need
+      // to call V4L2_ENC_CMD_STOP to request a flush. This also means there is
+      // nothing left to process, so we can return flush success back to the
+      // client.
+      if (!input_streamon_) {
+        child_task_runner_->PostTask(
+            FROM_HERE, base::BindOnce(std::move(flush_callback_), true));
+        return;
+      }
+      struct v4l2_encoder_cmd cmd;
+      memset(&cmd, 0, sizeof(cmd));
+      cmd.cmd = V4L2_ENC_CMD_STOP;
+      if (device_->Ioctl(VIDIOC_ENCODER_CMD, &cmd) != 0) {
+        VPLOGF(1) << "ioctl() failed: VIDIOC_ENCODER_CMD";
+        NOTIFY_ERROR(kPlatformFailureError);
+        child_task_runner_->PostTask(
+            FROM_HERE, base::BindOnce(std::move(flush_callback_), false));
+        return;
+      }
+      encoder_state_ = kFlushing;
+      break;
+    }
     if (!EnqueueInputRecord())
       return;
   }
@@ -721,6 +758,19 @@ void V4L2VideoEncodeAccelerator::Dequeue() {
                                   dqbuf.timestamp.tv_usec +
                                   dqbuf.timestamp.tv_sec *
                                       base::Time::kMicrosecondsPerSecond)));
+    if ((encoder_state_ == kFlushing) && (dqbuf.flags & V4L2_BUF_FLAG_LAST)) {
+      // Notify client that flush has finished successfully. The flush callback
+      // should be called after notifying the last buffer is ready.
+      DVLOGF(3) << "Flush completed. Start the encoder again.";
+      encoder_state_ = kEncoding;
+      child_task_runner_->PostTask(
+          FROM_HERE, base::BindOnce(std::move(flush_callback_), true));
+      // Start the encoder again.
+      struct v4l2_encoder_cmd cmd;
+      memset(&cmd, 0, sizeof(cmd));
+      cmd.cmd = V4L2_ENC_CMD_START;
+      IOCTL_OR_ERROR_RETURN(VIDIOC_ENCODER_CMD, &cmd);
+    }
 
     output_record.at_device = false;
     free_output_buffers_.push_back(dqbuf.index);
@@ -734,7 +784,21 @@ bool V4L2VideoEncodeAccelerator::EnqueueInputRecord() {
   DCHECK(!encoder_input_queue_.empty());
 
   // Enqueue an input (VIDEO_OUTPUT) buffer.
-  scoped_refptr<VideoFrame> frame = encoder_input_queue_.front();
+  InputFrameInfo frame_info = encoder_input_queue_.front();
+  if (frame_info.force_keyframe) {
+    std::vector<struct v4l2_ext_control> ctrls;
+    struct v4l2_ext_control ctrl;
+    memset(&ctrl, 0, sizeof(ctrl));
+    ctrl.id = V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME;
+    ctrls.push_back(ctrl);
+    if (!SetExtCtrls(ctrls)) {
+      VLOGF(1) << "Failed requesting keyframe";
+      NOTIFY_ERROR(kPlatformFailureError);
+      return false;
+    }
+  }
+
+  scoped_refptr<VideoFrame> frame = frame_info.frame;
   const int index = free_input_buffers_.back();
   InputRecord& input_record = input_buffer_map_[index];
   DCHECK(!input_record.at_device);

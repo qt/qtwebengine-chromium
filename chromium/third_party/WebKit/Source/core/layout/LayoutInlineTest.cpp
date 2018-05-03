@@ -18,12 +18,9 @@ class LayoutInlineTest : public RenderingTest {};
 class ParameterizedLayoutInlineTest
     : public ::testing::WithParamInterface<bool>,
       private ScopedLayoutNGForTest,
-      private ScopedLayoutNGPaintFragmentsForTest,
       public LayoutInlineTest {
  public:
-  ParameterizedLayoutInlineTest()
-      : ScopedLayoutNGForTest(GetParam()),
-        ScopedLayoutNGPaintFragmentsForTest(GetParam()) {}
+  ParameterizedLayoutInlineTest() : ScopedLayoutNGForTest(GetParam()) {}
 
  protected:
   bool LayoutNGEnabled() const { return GetParam(); }
@@ -54,10 +51,8 @@ TEST_P(ParameterizedLayoutInlineTest, LinesBoundingBox) {
   EXPECT_EQ(
       LayoutRect(LayoutPoint(745, 0), LayoutSize(39, 26)),
       ToLayoutInline(GetLayoutObjectByElementId("rtl1"))->LinesBoundingBox());
-  // TODO(layout-dev): |kRtl2Width| should be 143 even if |LayoutNGEnabled()|.
-  const int kRtl2Width = LayoutNGEnabled() ? 260 : 143;
   EXPECT_EQ(
-      LayoutRect(LayoutPoint(641, 0), LayoutSize(kRtl2Width, 13)),
+      LayoutRect(LayoutPoint(641, 0), LayoutSize(143, 13)),
       ToLayoutInline(GetLayoutObjectByElementId("rtl2"))->LinesBoundingBox());
   EXPECT_EQ(LayoutRect(LayoutPoint(0, 0), LayoutSize(26, 39)),
             ToLayoutInline(GetLayoutObjectByElementId("vertical"))

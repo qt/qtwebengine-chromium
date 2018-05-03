@@ -25,14 +25,13 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/gpu/gpu_process_host.h"
-#include "content/browser/mus_util.h"
 #include "content/browser/service_manager/common_browser_interfaces.h"
 #include "content/browser/utility_process_host_impl.h"
 #include "content/browser/wake_lock/wake_lock_context_host.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
 #include "content/grit/content_resources.h"
-#include "content/network/network_service_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/gpu_service_registry.h"
 #include "content/public/browser/network_service_instance.h"
@@ -42,37 +41,44 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
-#include "device/geolocation/geolocation_provider.h"
+#include "media/audio/audio_manager.h"
+#include "media/media_features.h"
 #include "media/mojo/features.h"
 #include "media/mojo/interfaces/constants.mojom.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/incoming_broker_client_invitation.h"
+#include "services/audio/public/mojom/constants.mojom.h"
+#include "services/audio/service_factory.h"
 #include "services/catalog/manifest_provider.h"
 #include "services/catalog/public/cpp/manifest_parsing_util.h"
-#include "services/catalog/public/interfaces/constants.mojom.h"
-#include "services/data_decoder/public/interfaces/constants.mojom.h"
+#include "services/catalog/public/mojom/constants.mojom.h"
+#include "services/data_decoder/public/mojom/constants.mojom.h"
 #include "services/device/device_service.h"
-#include "services/device/public/interfaces/constants.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
 #include "services/metrics/metrics_mojo_service.h"
-#include "services/metrics/public/interfaces/constants.mojom.h"
-#include "services/network/public/interfaces/network_service_test.mojom.h"
+#include "services/metrics/public/mojom/constants.mojom.h"
+#include "services/network/network_service.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/public/mojom/network_service_test.mojom.h"
 #include "services/resource_coordinator/public/cpp/resource_coordinator_features.h"
-#include "services/resource_coordinator/public/interfaces/service_constants.mojom.h"
+#include "services/resource_coordinator/public/mojom/service_constants.mojom.h"
 #include "services/resource_coordinator/resource_coordinator_service.h"
 #include "services/service_manager/connect_params.h"
 #include "services/service_manager/embedder/manifest_utils.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/service.h"
-#include "services/service_manager/public/interfaces/service.mojom.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "services/service_manager/runner/host/service_process_launcher.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "services/service_manager/service_manager.h"
-#include "services/shape_detection/public/interfaces/constants.mojom.h"
-#include "services/video_capture/public/cpp/constants.h"
-#include "services/video_capture/public/interfaces/constants.mojom.h"
+#include "services/shape_detection/public/mojom/constants.mojom.h"
+#include "services/tracing/public/mojom/constants.mojom.h"
+#include "services/tracing/tracing_service.h"
+#include "services/video_capture/public/mojom/constants.mojom.h"
+#include "services/video_capture/service_impl.h"
 #include "services/viz/public/interfaces/constants.mojom.h"
-#include "ui/base/ui_base_switches_util.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_features.h"
 
 #if defined(OS_ANDROID)
@@ -286,7 +292,7 @@ std::unique_ptr<service_manager::Service> CreateEmbeddedUIService(
   params.resource_runner = task_runner;
   params.image_cursors_set_weak_ptr = image_cursors_set_weak_ptr;
   params.memory_manager = memory_manager;
-  params.should_host_viz = switches::IsMusHostingViz();
+  params.should_host_viz = base::FeatureList::IsEnabled(features::kMash);
   return std::make_unique<ui::Service>(params);
 }
 
@@ -296,10 +302,10 @@ void RegisterUIServiceInProcessIfNecessary(
   if (!BrowserMainLoop::GetInstance())
     return;
   // Do not embed the UI service when running in mash.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch("mash"))
+  if (base::FeatureList::IsEnabled(features::kMash))
     return;
-  // Do not embed the UI service if not running with --mus.
-  if (!IsUsingMus())
+  // Do not embed the UI service if not running with mus.
+  if (!features::IsMusEnabled())
     return;
 
   service_manager::EmbeddedServiceInfo info;
@@ -319,7 +325,7 @@ std::unique_ptr<service_manager::Service> CreateNetworkService() {
   auto registry = std::make_unique<service_manager::BinderRegistry>();
   registry->AddInterface(base::BindRepeating(
       [](network::mojom::NetworkServiceTestRequest request) {}));
-  return std::make_unique<NetworkServiceImpl>(std::move(registry));
+  return std::make_unique<network::NetworkService>(std::move(registry));
 }
 
 }  // namespace
@@ -337,8 +343,8 @@ class ServiceManagerContext::InProcessServiceManagerContext
         ->PostTask(
             FROM_HERE,
             base::BindOnce(&InProcessServiceManagerContext::StartOnIOThread,
-                           this, base::Passed(&manifest_provider),
-                           base::Passed(&packaged_services_service_info)));
+                           this, std::move(manifest_provider),
+                           std::move(packaged_services_service_info)));
   }
 
   void ShutDown() {
@@ -498,15 +504,6 @@ ServiceManagerContext::ServiceManagerContext() {
   packaged_services_connection_->AddEmbeddedService(device::mojom::kServiceName,
                                                     device_info);
 
-  // Pipe embedder-supplied API key & URL request context producer through to
-  // GeolocationProvider.
-  // TODO(amoylan): Remove these once GeolocationProvider hangs off
-  // DeviceService (https://crbug.com/709301).
-  device::GeolocationProvider::SetRequestContextProducer(
-      base::BindRepeating(&GetGeolocationRequestContextFromContentClient));
-  device::GeolocationProvider::SetApiKey(
-      GetContentClient()->browser()->GetGeolocationApiKey());
-
   if (base::FeatureList::IsEnabled(features::kGlobalResourceCoordinator)) {
     service_manager::EmbeddedServiceInfo resource_coordinator_info;
     resource_coordinator_info.factory =
@@ -517,9 +514,43 @@ ServiceManagerContext::ServiceManagerContext() {
 
   {
     service_manager::EmbeddedServiceInfo info;
+    info.factory = base::Bind(&tracing::TracingService::Create);
+    packaged_services_connection_->AddEmbeddedService(
+        tracing::mojom::kServiceName, info);
+  }
+
+  if (features::IsVideoCaptureServiceEnabledForBrowserProcess()) {
+    service_manager::EmbeddedServiceInfo video_capture_info;
+    video_capture_info.factory =
+        base::BindRepeating(&video_capture::ServiceImpl::Create);
+    video_capture_info.task_runner =
+#if defined(OS_WIN)
+        base::CreateCOMSTATaskRunnerWithTraits(
+#else
+        base::CreateSingleThreadTaskRunnerWithTraits(
+#endif
+            base::TaskTraits(base::MayBlock(), base::TaskPriority::BACKGROUND));
+    packaged_services_connection_->AddEmbeddedService(
+        video_capture::mojom::kServiceName, video_capture_info);
+  }
+
+  {
+    service_manager::EmbeddedServiceInfo info;
     info.factory = base::BindRepeating(&metrics::CreateMetricsService);
     packaged_services_connection_->AddEmbeddedService(
         metrics::mojom::kMetricsServiceName, info);
+  }
+
+  if (BrowserMainLoop* bml = BrowserMainLoop::GetInstance()) {
+    service_manager::EmbeddedServiceInfo info;
+    info.factory = base::BindRepeating(
+        [](BrowserMainLoop* bml) -> std::unique_ptr<service_manager::Service> {
+          return audio::CreateEmbeddedService(bml->audio_manager());
+        },
+        bml);
+    info.task_runner = bml->audio_service_runner();
+    packaged_services_connection_->AddEmbeddedService(
+        audio::mojom::kServiceName, info);
   }
 
   ContentBrowserClient::StaticServiceMap services;
@@ -546,7 +577,7 @@ ServiceManagerContext::ServiceManagerContext() {
       base::ASCIIToUTF16("Data Decoder Service");
 
   bool network_service_enabled =
-      base::FeatureList::IsEnabled(features::kNetworkService);
+      base::FeatureList::IsEnabled(network::features::kNetworkService);
   bool network_service_in_process =
       base::FeatureList::IsEnabled(features::kNetworkServiceInProcess) ||
       base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -569,7 +600,7 @@ ServiceManagerContext::ServiceManagerContext() {
     GetNetworkService();
   }
 
-  if (base::FeatureList::IsEnabled(video_capture::kMojoVideoCapture)) {
+  if (features::IsVideoCaptureServiceEnabledForOutOfProcess()) {
     out_of_process_services[video_capture::mojom::kServiceName] =
         base::ASCIIToUTF16("Video Capture Service");
   }
@@ -579,7 +610,7 @@ ServiceManagerContext::ServiceManagerContext() {
       base::ASCIIToUTF16("Media Service");
 #endif
 
-#if BUILDFLAG(ENABLE_STANDALONE_CDM_SERVICE)
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
   out_of_process_services[media::mojom::kCdmServiceName] =
       base::ASCIIToUTF16("Content Decryption Module Service");
 #endif
@@ -641,10 +672,12 @@ service_manager::Connector* ServiceManagerContext::GetConnectorForIOThread() {
 }
 
 // static
-std::map<std::string, base::WeakPtr<UtilityProcessHost>>*
-ServiceManagerContext::GetProcessGroupsForTesting() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  return &g_active_process_groups.Get();
+bool ServiceManagerContext::HasValidProcessForProcessGroup(
+    const std::string& process_group_name) {
+  auto iter = g_active_process_groups.Get().find(process_group_name);
+  if (iter == g_active_process_groups.Get().end() || !iter->second)
+    return false;
+  return iter->second->GetData().handle != base::kNullProcessHandle;
 }
 
 }  // namespace content

@@ -74,11 +74,9 @@ static void InvalidateStyleForAllLinksRecursively(
       ToElement(node).PseudoStateChanged(CSSSelector::kPseudoWebkitAnyLink);
       ToElement(node).PseudoStateChanged(CSSSelector::kPseudoAnyLink);
     }
-    if (IsShadowHost(&node)) {
-      for (ShadowRoot* root = node.YoungestShadowRoot(); root;
-           root = root->OlderShadowRoot())
-        InvalidateStyleForAllLinksRecursively(*root,
-                                              invalidate_visited_link_hashes);
+    if (ShadowRoot* root = node.GetShadowRoot()) {
+      InvalidateStyleForAllLinksRecursively(*root,
+                                            invalidate_visited_link_hashes);
     }
   }
 }
@@ -99,10 +97,8 @@ static void InvalidateStyleForLinkRecursively(Node& root_node,
       ToElement(node).PseudoStateChanged(CSSSelector::kPseudoWebkitAnyLink);
       ToElement(node).PseudoStateChanged(CSSSelector::kPseudoAnyLink);
     }
-    if (IsShadowHost(&node))
-      for (ShadowRoot* root = node.YoungestShadowRoot(); root;
-           root = root->OlderShadowRoot())
-        InvalidateStyleForLinkRecursively(*root, link_hash);
+    if (ShadowRoot* root = node.GetShadowRoot())
+      InvalidateStyleForLinkRecursively(*root, link_hash);
   }
 }
 

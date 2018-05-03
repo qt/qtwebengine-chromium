@@ -24,8 +24,8 @@
 #include "services/device/public/cpp/generic_sensor/sensor_reading.h"
 #include "services/device/public/cpp/generic_sensor/sensor_reading_shared_buffer_reader.h"
 #include "services/device/public/cpp/generic_sensor/sensor_traits.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/sensor_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/sensor_provider.mojom.h"
 #include "third_party/WebKit/public/platform/modules/device_orientation/WebDeviceMotionListener.h"
 #include "third_party/WebKit/public/platform/modules/device_orientation/WebDeviceOrientationListener.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
@@ -138,7 +138,8 @@ class CONTENT_EXPORT DeviceSensorEventPump
     }
 
     // Mojo callback for SensorProvider::GetSensor().
-    void OnSensorCreated(device::mojom::SensorInitParamsPtr params) {
+    void OnSensorCreated(device::mojom::SensorCreationResult result,
+                         device::mojom::SensorInitParamsPtr params) {
       // |sensor_state| can be SensorState::SHOULD_SUSPEND if Stop() is called
       // before OnSensorCreated() is called.
       DCHECK(sensor_state == SensorState::INITIALIZING ||
@@ -149,6 +150,7 @@ class CONTENT_EXPORT DeviceSensorEventPump
         event_pump->DidStartIfPossible();
         return;
       }
+      DCHECK_EQ(device::mojom::SensorCreationResult::SUCCESS, result);
 
       constexpr size_t kReadBufferSize =
           sizeof(device::SensorReadingSharedBuffer);
@@ -181,12 +183,12 @@ class CONTENT_EXPORT DeviceSensorEventPump
           std::min(static_cast<double>(kDefaultPumpFrequencyHz),
                    params->maximum_frequency));
 
-      sensor.set_connection_error_handler(
-          base::Bind(&SensorEntry::HandleSensorError, base::Unretained(this)));
+      sensor.set_connection_error_handler(base::BindOnce(
+          &SensorEntry::HandleSensorError, base::Unretained(this)));
       sensor->ConfigureReadingChangeNotifications(false /* disabled */);
       sensor->AddConfiguration(
-          default_config, base::Bind(&SensorEntry::OnSensorAddConfiguration,
-                                     base::Unretained(this)));
+          default_config, base::BindOnce(&SensorEntry::OnSensorAddConfiguration,
+                                         base::Unretained(this)));
     }
 
     // Mojo callback for Sensor::AddConfiguration().
@@ -236,9 +238,9 @@ class CONTENT_EXPORT DeviceSensorEventPump
     void Start(device::mojom::SensorProvider* sensor_provider) {
       if (sensor_state == SensorState::NOT_INITIALIZED) {
         sensor_state = SensorState::INITIALIZING;
-        sensor_provider->GetSensor(
-            type,
-            base::Bind(&SensorEntry::OnSensorCreated, base::Unretained(this)));
+        sensor_provider->GetSensor(type,
+                                   base::BindOnce(&SensorEntry::OnSensorCreated,
+                                                  base::Unretained(this)));
       } else if (sensor_state == SensorState::SUSPENDED) {
         sensor->Resume();
         sensor_state = SensorState::ACTIVE;

@@ -51,13 +51,13 @@ readonly HAS_ARCH_ARM64=${HAS_ARCH_ARM64:=0}
 readonly HAS_ARCH_MIPS=${HAS_ARCH_MIPS:=0}
 readonly HAS_ARCH_MIPS64EL=${HAS_ARCH_MIPS64EL:=0}
 
-readonly REQUIRED_TOOLS="curl gunzip"
+readonly REQUIRED_TOOLS="curl xzcat"
 
 ######################################################################
 # Package Config
 ######################################################################
 
-readonly PACKAGES_EXT=gz
+readonly PACKAGES_EXT=xz
 readonly RELEASE_FILE="Release"
 readonly RELEASE_FILE_GPG="Release.gpg"
 
@@ -106,7 +106,7 @@ DownloadOrCopy() {
     # instances of sysroot-creator.sh from trying to write to the same file.
     # --create-dirs is added in case there are slashes in the filename, as can
     # happen with the "debian/security" release class.
-    curl "$1" --create-dirs -o "${2}.partial.$$"
+    curl -L "$1" --create-dirs -o "${2}.partial.$$"
     mv "${2}.partial.$$" $2
   else
     SubBanner "copying from $1"
@@ -187,11 +187,11 @@ CreateTarBall() {
   tar -I "xz -9 -T0" -cf ${TARBALL} -C ${INSTALL_ROOT} .
 }
 
-ExtractPackageGz() {
+ExtractPackageXz() {
   local src_file="$1"
   local dst_file="$2"
   local repo="$3"
-  gunzip -c "${src_file}" | egrep '^(Package:|Filename:|SHA256:) ' |
+  xzcat "${src_file}" | egrep '^(Package:|Filename:|SHA256:) ' |
     sed "s|Filename: |Filename: ${repo}|" > "${dst_file}"
 }
 
@@ -210,7 +210,7 @@ GeneratePackageListDist() {
 
   DownloadOrCopy "${package_list_arch}" "${package_list}"
   VerifyPackageListing "${package_file_arch}" "${package_list}" ${repo} ${dist}
-  ExtractPackageGz "${package_list}" "${TMP_PACKAGE_LIST}" ${repo}
+  ExtractPackageXz "${package_list}" "${TMP_PACKAGE_LIST}" ${repo}
 }
 
 GeneratePackageListCommon() {
@@ -303,6 +303,17 @@ HacksAndPatchesCommon() {
     "${INSTALL_ROOT}/lib/${arch}-${os}/libdbus-1.so.3"
   cp "${SCRIPT_DIR}/libdbus-1-3-symbols" \
     "${INSTALL_ROOT}/debian/libdbus-1-3/DEBIAN/symbols"
+
+  # Glibc 2.27 introduced some new optimizations to several math functions, but
+  # it will be a while before it makes it into all supported distros.  Luckily,
+  # glibc maintains ABI compatibility with previous versions, so the old symbols
+  # are still there.
+  # TODO(thomasanderson): Remove this once glibc 2.27 is available on all
+  # supported distros.
+  local math_h="${INSTALL_ROOT}/usr/include/math.h"
+  local libm_so="${INSTALL_ROOT}/lib/${arch}-${os}/libm.so.6"
+  nm -D --defined-only --with-symbol-versions "${libm_so}" | \
+    "${SCRIPT_DIR}/find_incompatible_glibc_symbols.py" >> "${math_h}"
 
   # This is for chrome's ./build/linux/pkg-config-wrapper
   # which overwrites PKG_CONFIG_LIBDIR internally
@@ -716,7 +727,7 @@ CheckForDebianGPGKeyring() {
 #
 # VerifyPackageListing
 #
-#     Verifies the downloaded Packages.bz2 file has the right checksums.
+#     Verifies the downloaded Packages.xz file has the right checksums.
 #
 VerifyPackageListing() {
   local file_path="$1"

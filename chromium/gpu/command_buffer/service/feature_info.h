@@ -93,6 +93,8 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool ext_texture_norm16 = false;
     bool chromium_image_ycbcr_420v = false;
     bool chromium_image_ycbcr_422 = false;
+    bool chromium_image_xr30 = false;
+    bool chromium_image_xb30 = false;
     bool emulate_primitive_restart_fixed_index = false;
     bool ext_render_buffer_format_bgra8888 = false;
     bool ext_multisample_compatibility = false;
@@ -124,6 +126,7 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool chromium_texture_storage_image = false;
     bool ext_window_rectangles = false;
     bool chromium_gpu_fence = false;
+    bool unpremultiply_and_dither_copy = false;
   };
 
   FeatureInfo();
@@ -134,6 +137,7 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
 
   // Initializes the feature information. Needs a current GL context.
   void Initialize(ContextType context_type,
+                  bool is_passthrough_cmd_decoder,
                   const DisallowedFeatures& disallowed_features);
 
   // Helper that defaults to no disallowed features and a GLES2 context.
@@ -214,6 +218,7 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   DisallowedFeatures disallowed_features_;
 
   ContextType context_type_ = CONTEXT_TYPE_OPENGLES2;
+  bool is_passthrough_cmd_decoder_ = false;
 
   // The set of extensions returned by glGetString(GL_EXTENSIONS);
   gl::ExtensionSet extensions_;

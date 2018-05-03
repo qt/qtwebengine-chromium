@@ -52,6 +52,8 @@
 #include "core/input_type_names.h"
 #include "core/layout/LayoutBox.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/page/ChromeClient.h"
+#include "core/page/Page.h"
 #include "platform/Histogram.h"
 #include "platform/SerializedResource.h"
 #include "platform/SharedBuffer.h"
@@ -192,7 +194,13 @@ bool MHTMLFrameSerializerDelegate::ShouldIgnorePopupOverlayElement(
   // viewport.
   LocalDOMWindow* window = element.GetDocument().domWindow();
   DCHECK(window);
-  LayoutPoint center_point(window->innerWidth() / 2, window->innerHeight() / 2);
+  int center_x = window->innerWidth() / 2;
+  int center_y = window->innerHeight() / 2;
+  if (Page* page = element.GetDocument().GetPage()) {
+    center_x = page->GetChromeClient().WindowToViewportScalar(center_x);
+    center_y = page->GetChromeClient().WindowToViewportScalar(center_y);
+  }
+  LayoutPoint center_point(center_x, center_y);
   if (!box->FrameRect().Contains(center_point))
     return false;
 
@@ -350,14 +358,13 @@ void MHTMLFrameSerializerDelegate::GetCustomAttributesForImageElement(
 
 std::pair<Node*, Element*> MHTMLFrameSerializerDelegate::GetAuxiliaryDOMTree(
     const Element& element) const {
-  const ElementShadow* shadow = element.Shadow();
-  if (!shadow)
+  ShadowRoot* shadow_root = element.GetShadowRoot();
+  if (!shadow_root)
     return std::pair<Node*, Element*>();
-  ShadowRoot& shadow_root = shadow->OldestShadowRoot();
 
   String shadow_mode;
-  switch (shadow_root.GetType()) {
-    case ShadowRootType::kUserAgentV1:
+  switch (shadow_root->GetType()) {
+    case ShadowRootType::kUserAgent:
       // No need to serialize.
       return std::pair<Node*, Element*>();
     case ShadowRootType::V0:
@@ -378,8 +385,8 @@ std::pair<Node*, Element*> MHTMLFrameSerializerDelegate::GetAuxiliaryDOMTree(
   template_element->setAttribute(
       QualifiedName(g_null_atom, kShadowModeAttributeName, g_null_atom),
       AtomicString(shadow_mode));
-  if (shadow_root.GetType() != ShadowRootType::V0 &&
-      shadow_root.delegatesFocus()) {
+  if (shadow_root->GetType() != ShadowRootType::V0 &&
+      shadow_root->delegatesFocus()) {
     template_element->setAttribute(
         QualifiedName(g_null_atom, kShadowDelegatesFocusAttributeName,
                       g_null_atom),
@@ -387,7 +394,7 @@ std::pair<Node*, Element*> MHTMLFrameSerializerDelegate::GetAuxiliaryDOMTree(
   }
   shadow_template_elements_.insert(template_element);
 
-  return std::pair<Node*, Element*>(&shadow_root, template_element);
+  return std::pair<Node*, Element*>(shadow_root, template_element);
 }
 
 bool CacheControlNoStoreHeaderPresent(

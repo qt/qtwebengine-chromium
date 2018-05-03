@@ -37,7 +37,7 @@
 #include "chromeos/printing/printer_configuration.h"
 #include "components/user_manager/user_manager.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/notification.h"
+#include "ui/message_center/public/cpp/notification.h"
 #endif
 
 namespace extensions {
@@ -396,6 +396,10 @@ AutotestPrivateGetVisibleNotificationsFunction::Run() {
   DVLOG(1) << "AutotestPrivateGetVisibleNotificationsFunction";
   std::unique_ptr<base::ListValue> values(new base::ListValue);
 #if defined(OS_CHROMEOS)
+  // TODO(estade): we can't rely on the message center being available in the
+  // browser process (in mash). Make autotests that use it fail loudly. See
+  // crbug.com/804570
+  CHECK(message_center::MessageCenter::Get());
   for (auto* notification :
        message_center::MessageCenter::Get()->GetVisibleNotifications()) {
     auto result = std::make_unique<base::DictionaryValue>();

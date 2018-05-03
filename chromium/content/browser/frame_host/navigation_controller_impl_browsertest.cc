@@ -24,9 +24,12 @@
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
+#include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
 #include "content/common/page_state_serialization.h"
 #include "content/public/browser/navigation_controller.h"
@@ -40,11 +43,12 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/public/common/screen_info.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
-#include "content/public/test/controllable_http_response.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -52,6 +56,7 @@
 #include "content/test/content_browser_test_utils_internal.h"
 #include "content/test/did_commit_provisional_load_interceptor.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/url_request/url_request_failed_job.h"
@@ -1424,15 +1429,24 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, ReloadWithUrlAnchor) {
 
   std::string script =
       "domAutomationController.send(document.getElementById('div').scrollTop)";
-  int value = 0;
-  EXPECT_TRUE(ExecuteScriptAndExtractInt(shell(), script, &value));
-  EXPECT_EQ(100, value);
+  double value = 0;
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), script, &value));
+
+  double expected = 100;
+  if (IsUseZoomForDSFEnabled()) {
+    float device_scale_factor = shell()
+                                    ->web_contents()
+                                    ->GetRenderWidgetHostView()
+                                    ->GetDeviceScaleFactor();
+    expected = floor(device_scale_factor * expected) / device_scale_factor;
+  }
+  EXPECT_FLOAT_EQ(expected, value);
 
   // Reload.
   ReloadBlockUntilNavigationsComplete(shell(), 1);
 
-  EXPECT_TRUE(ExecuteScriptAndExtractInt(shell(), script, &value));
-  EXPECT_EQ(100, value);
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), script, &value));
+  EXPECT_FLOAT_EQ(expected, value);
 }
 
 // Verify that reloading a page with url anchor and scroll scrolls to correct
@@ -1450,24 +1464,39 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "domAutomationController.send(document.getElementById('div').scrollTop)";
   std::string get_window_scroll_y =
       "domAutomationController.send(window.scrollY)";
-  int div_scroll_top = 0;
-  int window_scroll_y = 0;
-  EXPECT_TRUE(
-      ExecuteScriptAndExtractInt(shell(), get_div_scroll_top, &div_scroll_top));
-  EXPECT_TRUE(ExecuteScriptAndExtractInt(shell(), get_window_scroll_y,
-                                         &window_scroll_y));
-  EXPECT_EQ(100, div_scroll_top);
-  EXPECT_EQ(10, window_scroll_y);
+  double div_scroll_top = 0;
+  double window_scroll_y = 0;
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_div_scroll_top,
+                                            &div_scroll_top));
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_window_scroll_y,
+                                            &window_scroll_y));
+
+  double expected_div_scroll_top = 100;
+  double expected_window_scroll_y = 10;
+  if (IsUseZoomForDSFEnabled()) {
+    float device_scale_factor = shell()
+                                    ->web_contents()
+                                    ->GetRenderWidgetHostView()
+                                    ->GetDeviceScaleFactor();
+    expected_div_scroll_top =
+        floor(device_scale_factor * expected_div_scroll_top) /
+        device_scale_factor;
+    expected_window_scroll_y =
+        floor(device_scale_factor * expected_window_scroll_y) /
+        device_scale_factor;
+  }
+  EXPECT_FLOAT_EQ(expected_div_scroll_top, div_scroll_top);
+  EXPECT_FLOAT_EQ(expected_window_scroll_y, window_scroll_y);
 
   // Reload.
   ReloadBlockUntilNavigationsComplete(shell(), 1);
 
-  EXPECT_TRUE(
-      ExecuteScriptAndExtractInt(shell(), get_div_scroll_top, &div_scroll_top));
-  EXPECT_TRUE(ExecuteScriptAndExtractInt(shell(), get_window_scroll_y,
-                                         &window_scroll_y));
-  EXPECT_EQ(100, div_scroll_top);
-  EXPECT_EQ(10, window_scroll_y);
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_div_scroll_top,
+                                            &div_scroll_top));
+  EXPECT_TRUE(ExecuteScriptAndExtractDouble(shell(), get_window_scroll_y,
+                                            &window_scroll_y));
+  EXPECT_FLOAT_EQ(expected_div_scroll_top, div_scroll_top);
+  EXPECT_FLOAT_EQ(expected_window_scroll_y, window_scroll_y);
 }
 
 // Verify that empty GURL navigations are not classified as SAME_PAGE.
@@ -6694,47 +6723,18 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(2, web_contents->GetController().GetLastCommittedEntryIndex());
   EXPECT_TRUE(trigger.did_trigger_history_navigation());
 
-  if (IsBrowserSideNavigationEnabled()) {
-    // With browser-side-navigation, the history navigation is dropped.
-    EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
-    EXPECT_EQ(2, web_contents->GetController().GetLastCommittedEntryIndex());
-    EXPECT_EQ(3, web_contents->GetController().GetEntryCount());
+  // Wait for the back navigation to commit as well.
+  history_commit_observer.Wait();
+  EXPECT_EQ(start_url, web_contents->GetLastCommittedURL());
+  EXPECT_EQ(0, web_contents->GetController().GetLastCommittedEntryIndex());
+  EXPECT_EQ(3, web_contents->GetController().GetEntryCount());
 
-    // Verify the expected origin through JavaScript. It also has the additional
-    // verification of the process also being still alive.
-    std::string origin;
-    EXPECT_TRUE(ExecuteScriptAndExtractString(
-        web_contents, "domAutomationController.send(document.origin)",
-        &origin));
-    EXPECT_EQ(cross_origin_url.GetOrigin().spec(), origin + "/");
-
-    // Navigate back again.
-    web_contents->GetController().GoBack();
-    EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
-    EXPECT_EQ(1, web_contents->GetController().GetLastCommittedEntryIndex());
-    EXPECT_EQ(3, web_contents->GetController().GetEntryCount());
-
-    // Verify the expected origin through JavaScript. It also has the additional
-    // verification of the process also being still alive.
-    EXPECT_TRUE(ExecuteScriptAndExtractString(
-        web_contents, "domAutomationController.send(document.origin)",
-        &origin));
-    EXPECT_EQ(same_document_url.GetOrigin().spec(), origin + "/");
-  } else {
-    // Wait for the back navigation to commit as well.
-    history_commit_observer.Wait();
-    EXPECT_EQ(start_url, web_contents->GetLastCommittedURL());
-    EXPECT_EQ(0, web_contents->GetController().GetLastCommittedEntryIndex());
-    EXPECT_EQ(3, web_contents->GetController().GetEntryCount());
-
-    // Verify the expected origin through JavaScript. It also has the additional
-    // verification of the process also being still alive.
-    std::string origin;
-    EXPECT_TRUE(ExecuteScriptAndExtractString(
-        web_contents, "domAutomationController.send(document.origin)",
-        &origin));
-    EXPECT_EQ(start_url.GetOrigin().spec(), origin + "/");
-  }
+  // Verify the expected origin through JavaScript. It also has the additional
+  // verification of the process also being still alive.
+  std::string origin;
+  EXPECT_TRUE(ExecuteScriptAndExtractString(
+      web_contents, "domAutomationController.send(document.origin)", &origin));
+  EXPECT_EQ(start_url.GetOrigin().spec(), origin + "/");
 }
 
 // Test that verifies that Referer and Origin http headers are correctly sent
@@ -7181,7 +7181,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  EXPECT_FALSE(main_frame->navigation_handle());
+  EXPECT_FALSE(main_frame->GetNavigationHandle());
   EXPECT_FALSE(root->navigation_request());
 
   // Start navigating to the second page.
@@ -7193,13 +7193,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_TRUE(manager.WaitForRequestStart());
 
   // This should create a NavigationHandle.
-  NavigationHandleImpl* handle = main_frame->navigation_handle();
   NavigationRequest* request = root->navigation_request();
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_TRUE(request);
-  } else {
-    EXPECT_TRUE(handle);
-  }
+  EXPECT_TRUE(request);
 
   // The current page does a PushState.
   NavigationHandleCommitObserver push_state_observer(shell()->web_contents(),
@@ -7217,13 +7212,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_TRUE(push_state_observer.was_renderer_initiated());
 
   // This shouldn't affect the ongoing navigation.
-  if (IsBrowserSideNavigationEnabled()) {
-    EXPECT_TRUE(root->navigation_request());
-    EXPECT_EQ(request, root->navigation_request());
-  } else {
-    EXPECT_TRUE(main_frame->navigation_handle());
-    EXPECT_EQ(handle, main_frame->navigation_handle());
-  }
+  EXPECT_TRUE(root->navigation_request());
+  EXPECT_EQ(request, root->navigation_request());
 
   // Let the navigation finish. It should commit successfully.
   manager.WaitForNavigationFinished();
@@ -7295,10 +7285,6 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, StopDuringLoad) {
   GURL slow_url = embedded_test_server()->GetURL("/slow?60");
   shell()->LoadURL(slow_url);
   shell()->web_contents()->Stop();
-
-  // For non-PlzNavigate case, this happens asynchronously.
-  if (!IsBrowserSideNavigationEnabled())
-    same_tab_observer.Wait();
 
   const NavigationController& controller =
       shell()->web_contents()->GetController();
@@ -7826,6 +7812,120 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(0U, entry->root_node()->children[0]->children.size());
 }
 
+class NavigationControllerControllableResponseBrowserTest
+    : public ContentBrowserTest {
+ protected:
+  void SetUpOnMainThread() override {
+    host_resolver()->AddRule("*", "127.0.0.1");
+    content::SetupCrossSiteRedirector(embedded_test_server());
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(NavigationControllerControllableResponseBrowserTest,
+                       ReloadDisablePreviewReloadsOriginalRequestURL) {
+  const std::string kOriginalPath = "/original.html";
+  const std::string kRedirectPath = "/redirect.html";
+  net::test_server::ControllableHttpResponse original_response1(
+      embedded_test_server(), kOriginalPath);
+  net::test_server::ControllableHttpResponse original_response2(
+      embedded_test_server(), kOriginalPath);
+  net::test_server::ControllableHttpResponse redirect_response1(
+      embedded_test_server(), kRedirectPath);
+  net::test_server::ControllableHttpResponse redirect_response2(
+      embedded_test_server(), kRedirectPath);
+
+  EXPECT_TRUE(embedded_test_server()->Start());
+
+  const GURL kOriginalURL =
+      embedded_test_server()->GetURL("a.com", kOriginalPath);
+  const GURL kRedirectURL =
+      embedded_test_server()->GetURL("b.com", kRedirectPath);
+  const GURL kReloadRedirectURL =
+      embedded_test_server()->GetURL("c.com", kRedirectPath);
+
+  // First navigate to the initial URL. This page will have a cross-site
+  // redirect to a 2nd domain.
+  shell()->LoadURL(kOriginalURL);
+  original_response1.WaitForRequest();
+  original_response1.Send(
+      "HTTP/1.1 302 FOUND\r\n"
+      "Location: " +
+      kRedirectURL.spec() +
+      "\r\n"
+      "\r\n");
+  original_response1.Done();
+  redirect_response1.WaitForRequest();
+  redirect_response1.Send(
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Type: text/html; charset=utf-8\r\n"
+      "\r\n");
+  redirect_response1.Send(
+      "<html>"
+      "<body></body>"
+      "</html>");
+  redirect_response1.Done();
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  EXPECT_EQ(kRedirectURL, shell()->web_contents()->GetVisibleURL());
+
+  if (content::AreAllSitesIsolatedForTesting()) {
+    RenderFrameHostImpl* rfh =
+        static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
+    EXPECT_EQ(GURL("http://b.com"), rfh->GetSiteInstance()->GetSiteURL());
+  }
+
+  // Now simulate a 'Show original' reload via ReloadType::DISABLE_PREVIEWS.
+  // This reload will have a cross-site redirect to a 3rd domain.
+  TestNavigationManager reload(shell()->web_contents(), kOriginalURL);
+  shell()->web_contents()->GetController().Reload(ReloadType::DISABLE_PREVIEWS,
+                                                  false);
+  EXPECT_TRUE(reload.WaitForRequestStart());
+
+  // Verify reload is using the original request URL and no previews allowed.
+  EXPECT_EQ(kOriginalURL, reload.GetNavigationHandle()->GetURL());
+  NavigationRequest* navigation_request =
+      static_cast<WebContentsImpl*>(shell()->web_contents())
+          ->GetFrameTree()
+          ->root()
+          ->navigation_request();
+  CHECK(navigation_request);
+  EXPECT_EQ(content::PREVIEWS_NO_TRANSFORM,
+            navigation_request->common_params().previews_state);
+
+  reload.ResumeNavigation();
+  original_response2.WaitForRequest();
+  original_response2.Send(
+      "HTTP/1.1 302 FOUND\r\n"
+      "Location: " +
+      kReloadRedirectURL.spec() +
+      "\r\n"
+      "\r\n");
+  original_response2.Done();
+  redirect_response2.WaitForRequest();
+
+  // Verify now using new redirect URL.
+  EXPECT_EQ(kReloadRedirectURL, reload.GetNavigationHandle()->GetURL());
+
+  redirect_response2.Send(
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Type: text/html; charset=utf-8\r\n"
+      "\r\n");
+  redirect_response2.Send(
+      "<html>"
+      "<body></body>"
+      "</html>");
+  redirect_response2.Done();
+  EXPECT_TRUE(reload.WaitForResponse());
+  reload.WaitForNavigationFinished();
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  EXPECT_EQ(kReloadRedirectURL, shell()->web_contents()->GetVisibleURL());
+
+  if (content::AreAllSitesIsolatedForTesting()) {
+    RenderFrameHostImpl* rfh =
+        static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
+    EXPECT_EQ(GURL("http://c.com"), rfh->GetSiteInstance()->GetSiteURL());
+  }
+}
+
 // This test reproduces issue 769645. It happens when the user reloads the page
 // and an "unload" event triggers a back navigation. If the reload navigation
 // has reached the ReadyToCommit stage but has not committed, the back
@@ -7833,9 +7933,10 @@ IN_PROC_BROWSER_TEST_F(
 // See https://crbug.com/769645.
 // See https://crbug.com/773683.
 IN_PROC_BROWSER_TEST_F(ContentBrowserTest, HistoryBackInUnloadCancelsReload) {
-  ControllableHttpResponse response_1(embedded_test_server(), "/main_document");
-  ControllableHttpResponse response_2(embedded_test_server(),
-                                      "/main_document?attribute=1");
+  net::test_server::ControllableHttpResponse response_1(embedded_test_server(),
+                                                        "/main_document");
+  net::test_server::ControllableHttpResponse response_2(
+      embedded_test_server(), "/main_document?attribute=1");
 
   EXPECT_TRUE(embedded_test_server()->Start());
 

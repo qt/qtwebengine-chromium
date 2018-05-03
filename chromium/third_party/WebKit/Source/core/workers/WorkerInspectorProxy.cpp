@@ -14,7 +14,6 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
 #include "platform/CrossThreadFunctional.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/weborigin/KURL.h"
 
@@ -45,8 +44,10 @@ WorkerInspectorProxy* WorkerInspectorProxy::Create() {
 WorkerInspectorProxy::~WorkerInspectorProxy() = default;
 
 const String& WorkerInspectorProxy::InspectorId() {
-  if (inspector_id_.IsEmpty())
-    inspector_id_ = "dedicated:" + IdentifiersFactory::CreateIdentifier();
+  if (inspector_id_.IsEmpty() && worker_thread_) {
+    inspector_id_ = IdentifiersFactory::IdFromToken(
+        worker_thread_->GetDevToolsWorkerToken());
+  }
   return inspector_id_;
 }
 
@@ -93,27 +94,16 @@ void WorkerInspectorProxy::DispatchMessageFromWorker(int session_id,
     it->value->DispatchMessageFromWorker(this, session_id, message);
 }
 
-void WorkerInspectorProxy::AddConsoleMessageFromWorker(
-    MessageLevel level,
-    const String& message,
-    std::unique_ptr<SourceLocation> location) {
-  execution_context_->AddConsoleMessage(ConsoleMessage::CreateFromWorker(
-      level, message, std::move(location), inspector_id_));
-}
-
-static void ConnectToWorkerGlobalScopeInspectorTask(
-    WorkerThread* worker_thread,
-    int session_id,
-    const String& parent_instrumentation_token) {
+static void ConnectToWorkerGlobalScopeInspectorTask(WorkerThread* worker_thread,
+                                                    int session_id) {
   if (WorkerInspectorController* inspector =
           worker_thread->GetWorkerInspectorController()) {
-    inspector->ConnectFrontend(session_id, parent_instrumentation_token);
+    inspector->ConnectFrontend(session_id);
   }
 }
 
 void WorkerInspectorProxy::ConnectToInspector(
     int session_id,
-    const String& parent_instrumentation_token,
     WorkerInspectorProxy::PageInspector* page_inspector) {
   if (!worker_thread_)
     return;
@@ -121,8 +111,7 @@ void WorkerInspectorProxy::ConnectToInspector(
   page_inspectors_.insert(session_id, page_inspector);
   worker_thread_->AppendDebuggerTask(
       CrossThreadBind(ConnectToWorkerGlobalScopeInspectorTask,
-                      CrossThreadUnretained(worker_thread_), session_id,
-                      parent_instrumentation_token));
+                      CrossThreadUnretained(worker_thread_), session_id));
 }
 
 static void DisconnectFromWorkerGlobalScopeInspectorTask(
@@ -162,17 +151,6 @@ void WorkerInspectorProxy::SendMessageToInspector(int session_id,
         CrossThreadBind(DispatchOnInspectorBackendTask, session_id, message,
                         CrossThreadUnretained(worker_thread_)));
   }
-}
-
-void WorkerInspectorProxy::WriteTimelineStartedEvent(
-    const String& tracing_session_id) {
-  if (!worker_thread_)
-    return;
-  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
-                       "TracingSessionIdForWorker", TRACE_EVENT_SCOPE_THREAD,
-                       "data",
-                       InspectorTracingSessionIdForWorkerEvent::Data(
-                           tracing_session_id, InspectorId(), worker_thread_));
 }
 
 void WorkerInspectorProxy::Trace(blink::Visitor* visitor) {

@@ -35,10 +35,12 @@
 #include "platform/PlatformChromeClient.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
+#include "platform/scheduler/child/web_scheduler.h"
 #include "platform/scroll/MainThreadScrollingReason.h"
 #include "platform/scroll/ProgrammaticScrollAnimator.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/scroll/SmoothScrollSequencer.h"
+#include "public/platform/Platform.h"
 
 static const int kPixelsPerLineStep = 40;
 static const float kMinFractionToStepWhenPaging = 0.875f;
@@ -75,7 +77,9 @@ ScrollBehavior ScrollableArea::DetermineScrollBehavior(
 }
 
 ScrollableArea::ScrollableArea()
-    : scrollbar_overlay_color_theme_(kScrollbarOverlayColorThemeDark),
+    : autosize_vertical_scrollbar_mode_(kScrollbarAuto),
+      autosize_horizontal_scrollbar_mode_(kScrollbarAuto),
+      scrollbar_overlay_color_theme_(kScrollbarOverlayColorThemeDark),
       scroll_origin_changed_(false),
       horizontal_scrollbar_needs_paint_invalidation_(false),
       vertical_scrollbar_needs_paint_invalidation_(false),
@@ -304,6 +308,11 @@ void ScrollableArea::ScrollOffsetChanged(const ScrollOffset& offset,
 
   // Tell the derived class to scroll its contents.
   UpdateScrollOffset(truncated_offset, scroll_type);
+
+  // If the layout object has been detached as a result of updating the scroll
+  // this object will be cleaned up shortly.
+  if (HasBeenDisposed())
+    return;
 
   // Tell the scrollbars to update their thumb postions.
   // If the scrollbar does not have its own layer, it must always be
@@ -581,6 +590,11 @@ bool ScrollableArea::ScrollbarsHidden() const {
 }
 
 void ScrollableArea::SetScrollbarsHidden(bool hidden) {
+  // If scrollable area has been disposed, we can not get the page scrollbar
+  // theme setting. Should early return here.
+  if (HasBeenDisposed())
+    return;
+
   if (scrollbars_hidden_ == static_cast<unsigned>(hidden))
     return;
 
@@ -613,7 +627,8 @@ void ScrollableArea::ShowOverlayScrollbars() {
     return;
 
   if (!fade_overlay_scrollbars_timer_) {
-    fade_overlay_scrollbars_timer_.reset(new Timer<ScrollableArea>(
+    fade_overlay_scrollbars_timer_.reset(new TaskRunnerTimer<ScrollableArea>(
+        Platform::Current()->MainThread()->Scheduler()->CompositorTaskRunner(),
         this, &ScrollableArea::FadeOverlayScrollbarsTimerFired));
   }
 
@@ -689,6 +704,13 @@ void ScrollableArea::DidScroll(const gfx::ScrollOffset& offset) {
   ScrollOffset new_offset = ScrollOffset(offset.x() - ScrollOrigin().X(),
                                          offset.y() - ScrollOrigin().Y());
   SetScrollOffset(new_offset, kCompositorScroll);
+}
+
+void ScrollableArea::SetAutosizeScrollbarModes(ScrollbarMode vertical,
+                                               ScrollbarMode horizontal) {
+  DCHECK_EQ(vertical == kScrollbarAuto, horizontal == kScrollbarAuto);
+  autosize_vertical_scrollbar_mode_ = vertical;
+  autosize_horizontal_scrollbar_mode_ = horizontal;
 }
 
 void ScrollableArea::Trace(blink::Visitor* visitor) {

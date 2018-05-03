@@ -19,6 +19,7 @@
 #include "net/base/upload_data_stream.h"
 #include "net/log/net_log_with_source.h"
 #include "net/url_request/url_request.h"
+#include "services/network/public/cpp/resource_response.h"
 
 namespace keys = extension_web_request_api_constants;
 
@@ -62,6 +63,23 @@ class NetLogLogger : public WebRequestInfo::Logger {
   net::URLRequest* const request_;
 
   DISALLOW_COPY_AND_ASSIGN(NetLogLogger);
+};
+
+// TODO(https://crbug.com/721414): Need a real implementation here to support
+// the Network Service case. For now this is only to prevent crashing.
+class NetworkServiceLogger : public WebRequestInfo::Logger {
+ public:
+  NetworkServiceLogger() = default;
+  ~NetworkServiceLogger() override = default;
+
+  // WebRequestInfo::Logger:
+  void LogEvent(net::NetLogEventType event_type,
+                const std::string& extension_id) override {}
+  void LogBlockedBy(const std::string& blocker_info) override {}
+  void LogUnblocked() override {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NetworkServiceLogger);
 };
 
 std::unique_ptr<base::DictionaryValue> ExtractRequestBodyData(
@@ -150,15 +168,73 @@ WebRequestInfo::WebRequestInfo(net::URLRequest* url_request)
   ExtensionNavigationUIData* navigation_ui_data =
       browser_client ? browser_client->GetExtensionNavigationUIData(url_request)
                      : nullptr;
-  if (navigation_ui_data) {
+  if (navigation_ui_data)
     is_browser_side_navigation = true;
+
+  InitializeWebViewAndFrameData(navigation_ui_data);
+}
+
+WebRequestInfo::WebRequestInfo(
+    uint64_t request_id,
+    int render_process_id,
+    int render_frame_id,
+    std::unique_ptr<ExtensionNavigationUIData> navigation_ui_data,
+    int32_t routing_id,
+    const network::ResourceRequest& request)
+    : id(request_id),
+      url(request.url),
+      site_for_cookies(request.site_for_cookies),
+      render_process_id(render_process_id),
+      routing_id(routing_id),
+      frame_id(render_frame_id),
+      method(request.method),
+      is_browser_side_navigation(!!navigation_ui_data),
+      initiator(request.request_initiator),
+      type(static_cast<content::ResourceType>(request.resource_type)),
+      extra_request_headers(request.headers),
+      logger(std::make_unique<NetworkServiceLogger>()) {
+  if (url.SchemeIsWSOrWSS())
+    web_request_type = WebRequestResourceType::WEB_SOCKET;
+  else
+    web_request_type = ToWebRequestResourceType(type.value());
+
+  InitializeWebViewAndFrameData(navigation_ui_data.get());
+
+  // TODO(https://crbug.com/721414): For this constructor (i.e. the Network
+  // Service case), we are still missing information for |is_async|,
+  // |request_body_data|, and |is_pac_request|.
+}
+
+WebRequestInfo::~WebRequestInfo() = default;
+
+void WebRequestInfo::AddResponseInfoFromURLRequest(
+    net::URLRequest* url_request) {
+  response_code = url_request->GetResponseCode();
+  response_headers = url_request->response_headers();
+  response_ip = url_request->GetSocketAddress().host();
+  response_from_cache = url_request->was_cached();
+}
+
+void WebRequestInfo::AddResponseInfoFromResourceResponse(
+    const network::ResourceResponseHead& response) {
+  response_headers = response.headers;
+  if (response_headers)
+    response_code = response_headers->response_code();
+  response_ip = response.socket_address.host();
+
+  // TODO(https://crbug.com/721414): We have no apparent source for this
+  // information yet in the Network Service case. Should indicate whether or not
+  // the response data came from cache.
+  response_from_cache = false;
+}
+
+void WebRequestInfo::InitializeWebViewAndFrameData(
+    const ExtensionNavigationUIData* navigation_ui_data) {
+  if (navigation_ui_data) {
     is_web_view = navigation_ui_data->is_web_view();
     web_view_instance_id = navigation_ui_data->web_view_instance_id();
     web_view_rules_registry_id =
         navigation_ui_data->web_view_rules_registry_id();
-
-    // PlzNavigate: if this request corresponds to a navigation, we always have
-    // FrameData available from the ExtensionNavigationUIData. Use that.
     frame_data = navigation_ui_data->frame_data();
   } else if (frame_id >= 0) {
     // Grab any WebView-related information if relevant.
@@ -171,24 +247,14 @@ WebRequestInfo::WebRequestInfo(net::URLRequest* url_request)
       web_view_embedder_process_id = web_view_info.embedder_process_id;
     }
 
-    // For subresource loads or non-browser-side navigation requests, attempt to
-    // resolve the FrameData immediately anyway using cached information.
+    // For subresource loads we attempt to resolve the FrameData immediately
+    // anyway using cached information.
     ExtensionApiFrameIdMap::FrameData data;
     bool was_cached = ExtensionApiFrameIdMap::Get()->GetCachedFrameDataOnIO(
         render_process_id, frame_id, &data);
     if (was_cached)
       frame_data = data;
   }
-}
-
-WebRequestInfo::~WebRequestInfo() = default;
-
-void WebRequestInfo::AddResponseInfoFromURLRequest(
-    net::URLRequest* url_request) {
-  response_code = url_request->GetResponseCode();
-  response_headers = url_request->response_headers();
-  response_ip = url_request->GetSocketAddress().host();
-  response_from_cache = url_request->was_cached();
 }
 
 }  // namespace extensions

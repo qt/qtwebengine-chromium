@@ -139,7 +139,7 @@ WebGL2RenderingContextBase::WebGL2RenderingContextBase(
     CanvasRenderingContextHost* host,
     std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
     bool using_gpu_compositing,
-    const CanvasContextCreationAttributes& requested_attributes)
+    const CanvasContextCreationAttributesCore& requested_attributes)
     : WebGLRenderingContextBase(host,
                                 std::move(context_provider),
                                 using_gpu_compositing,
@@ -869,6 +869,7 @@ void WebGL2RenderingContextBase::RenderbufferStorageImpl(
                           "for integer formats, samples > 0");
         return;
       }
+      FALLTHROUGH;
     case GL_R8:
     case GL_RG8:
     case GL_RGB8:
@@ -5442,9 +5443,9 @@ ScriptValue WebGL2RenderingContextBase::getFramebufferAttachmentParameter(
   if (!framebuffer_binding) {
     // We can use creationAttributes() because in WebGL 2, they are required to
     // be honored.
-    bool has_depth = CreationAttributes().depth();
-    bool has_stencil = CreationAttributes().stencil();
-    bool has_alpha = CreationAttributes().alpha();
+    bool has_depth = CreationAttributes().depth;
+    bool has_stencil = CreationAttributes().stencil;
+    bool has_alpha = CreationAttributes().alpha;
     bool missing_image = (attachment == GL_DEPTH && !has_depth) ||
                          (attachment == GL_STENCIL && !has_stencil);
     if (missing_image) {
@@ -5533,6 +5534,7 @@ ScriptValue WebGL2RenderingContextBase::getFramebufferAttachmentParameter(
     case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
       if (!attachment_object->IsTexture())
         break;
+      FALLTHROUGH;
     case GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE:
     case GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE:
     case GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE:
@@ -5551,6 +5553,7 @@ ScriptValue WebGL2RenderingContextBase::getFramebufferAttachmentParameter(
             "COMPONENT_TYPE can't be queried for DEPTH_STENCIL_ATTACHMENT");
         return ScriptValue::CreateNull(script_state);
       }
+      FALLTHROUGH;
     case GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING: {
       GLint value = 0;
       ContextGL()->GetFramebufferAttachmentParameteriv(target, attachment,

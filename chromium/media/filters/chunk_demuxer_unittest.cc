@@ -2545,6 +2545,12 @@ TEST_P(ChunkDemuxerTest, RemoveId) {
 // Test that removing an ID immediately after adding it does not interfere with
 // quota for new IDs in the future.
 TEST_P(ChunkDemuxerTest, RemoveAndAddId) {
+  demuxer_->Initialize(
+      &host_,
+      base::BindRepeating(&ChunkDemuxerTest::DemuxerInitialized,
+                          base::Unretained(this)),
+      true);
+
   std::string audio_id_1 = "audio1";
   ASSERT_TRUE(AddId(audio_id_1, HAS_AUDIO) == ChunkDemuxer::kOk);
   demuxer_->RemoveId(audio_id_1);
@@ -3104,6 +3110,11 @@ TEST_P(ChunkDemuxerTest, DifferentStreamTimecodesOutOfRange) {
 }
 
 TEST_P(ChunkDemuxerTest, CodecPrefixMatching) {
+  demuxer_->Initialize(
+      &host_,
+      base::BindRepeating(&ChunkDemuxerTest::DemuxerInitialized,
+                          base::Unretained(this)),
+      true);
   ChunkDemuxer::Status expected = ChunkDemuxer::kNotSupported;
 
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
@@ -3132,6 +3143,12 @@ TEST_P(ChunkDemuxerTest, CodecIDsThatAreNotRFC6381Compliant) {
     "mp4a.40.02",
     "mp4a.40.05"
   };
+
+  demuxer_->Initialize(
+      &host_,
+      base::BindRepeating(&ChunkDemuxerTest::DemuxerInitialized,
+                          base::Unretained(this)),
+      true);
 
   for (size_t i = 0; i < arraysize(codec_ids); ++i) {
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
@@ -4886,8 +4903,57 @@ TEST_P(ChunkDemuxerTest, SequenceModeSingleTrackNoWarning) {
 }
 
 TEST_P(ChunkDemuxerTest, Mp4Vp9CodecSupport) {
+  demuxer_->Initialize(
+      &host_,
+      base::BindRepeating(&ChunkDemuxerTest::DemuxerInitialized,
+                          base::Unretained(this)),
+      true);
   ChunkDemuxer::Status expected = ChunkDemuxer::kOk;
   EXPECT_EQ(AddId("source_id", "video/mp4", "vp09.00.10.08"), expected);
+}
+
+TEST_P(ChunkDemuxerTest, UnmarkEOSRetainsParseErrorState_BeforeInit) {
+  InSequence s;
+  // Trigger a (fatal) parse error prior to successfully reaching source init.
+  EXPECT_CALL(*this, DemuxerOpened());
+  EXPECT_MEDIA_LOG(StreamParsingFailed());
+  demuxer_->Initialize(
+      &host_, CreateInitDoneCB(kNoTimestamp, CHUNK_DEMUXER_ERROR_APPEND_FAILED),
+      true);
+
+  ASSERT_EQ(AddId(kSourceId, HAS_AUDIO | HAS_VIDEO), ChunkDemuxer::kOk);
+  AppendGarbage();
+
+  // Simulate SourceBuffer Append Error algorithm.
+  demuxer_->ResetParserState(kSourceId, append_window_start_for_next_append_,
+                             append_window_end_for_next_append_,
+                             &timestamp_offset_map_[kSourceId]);
+  demuxer_->MarkEndOfStream(CHUNK_DEMUXER_ERROR_EOS_STATUS_DECODE_ERROR);
+
+  // UnmarkEndOfStream and verify that attempted append of an initialization
+  // segment still fails.
+  demuxer_->UnmarkEndOfStream();
+  ASSERT_FALSE(AppendInitSegment(HAS_AUDIO | HAS_VIDEO));
+}
+
+TEST_P(ChunkDemuxerTest, UnmarkEOSRetainsParseErrorState_AfterInit) {
+  InSequence s;
+  // Trigger a (fatal) parse error after successfully reaching source init.
+  InitDemuxer(HAS_AUDIO | HAS_VIDEO);
+  EXPECT_MEDIA_LOG(StreamParsingFailed());
+  EXPECT_CALL(host_, OnDemuxerError(CHUNK_DEMUXER_ERROR_APPEND_FAILED));
+  AppendGarbage();
+
+  // Simulate SourceBuffer Append Error algorithm.
+  demuxer_->ResetParserState(kSourceId, append_window_start_for_next_append_,
+                             append_window_end_for_next_append_,
+                             &timestamp_offset_map_[kSourceId]);
+  demuxer_->MarkEndOfStream(CHUNK_DEMUXER_ERROR_EOS_STATUS_DECODE_ERROR);
+
+  // UnmarkEndOfStream and verify that attempted append of another
+  // initialization segment still fails.
+  demuxer_->UnmarkEndOfStream();
+  ASSERT_FALSE(AppendInitSegment(HAS_AUDIO | HAS_VIDEO));
 }
 
 // TODO(servolk): Add a unit test with multiple audio/video tracks using the

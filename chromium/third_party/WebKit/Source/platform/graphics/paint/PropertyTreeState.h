@@ -15,7 +15,7 @@
 namespace blink {
 
 // A complete set of paint properties including those that are inherited from
-// other objects.  RefPtrs are used to guard against use-after-free bugs.
+// other objects.
 class PLATFORM_EXPORT PropertyTreeState {
   USING_FAST_MALLOC(PropertyTreeState);
 
@@ -27,22 +27,16 @@ class PLATFORM_EXPORT PropertyTreeState {
 
   bool HasDirectCompositingReasons() const;
 
-  const TransformPaintPropertyNode* Transform() const {
-    return transform_.get();
-  }
-  void SetTransform(scoped_refptr<const TransformPaintPropertyNode> node) {
-    transform_ = std::move(node);
+  const TransformPaintPropertyNode* Transform() const { return transform_; }
+  void SetTransform(const TransformPaintPropertyNode* node) {
+    transform_ = node;
   }
 
-  const ClipPaintPropertyNode* Clip() const { return clip_.get(); }
-  void SetClip(scoped_refptr<const ClipPaintPropertyNode> node) {
-    clip_ = std::move(node);
-  }
+  const ClipPaintPropertyNode* Clip() const { return clip_; }
+  void SetClip(const ClipPaintPropertyNode* node) { clip_ = node; }
 
-  const EffectPaintPropertyNode* Effect() const { return effect_.get(); }
-  void SetEffect(scoped_refptr<const EffectPaintPropertyNode> node) {
-    effect_ = std::move(node);
-  }
+  const EffectPaintPropertyNode* Effect() const { return effect_; }
+  void SetEffect(const EffectPaintPropertyNode* node) { effect_ = node; }
 
   static const PropertyTreeState& Root();
 
@@ -58,15 +52,16 @@ class PLATFORM_EXPORT PropertyTreeState {
     Effect()->ClearChangedToRoot();
   }
 
+  String ToString() const;
 #if DCHECK_IS_ON()
   // Dumps the tree from this state up to the root as a string.
   String ToTreeString() const;
 #endif
 
  private:
-  scoped_refptr<const TransformPaintPropertyNode> transform_;
-  scoped_refptr<const ClipPaintPropertyNode> clip_;
-  scoped_refptr<const EffectPaintPropertyNode> effect_;
+  const TransformPaintPropertyNode* transform_;
+  const ClipPaintPropertyNode* clip_;
+  const EffectPaintPropertyNode* effect_;
 };
 
 inline bool operator==(const PropertyTreeState& a, const PropertyTreeState& b) {
@@ -74,50 +69,9 @@ inline bool operator==(const PropertyTreeState& a, const PropertyTreeState& b) {
          a.Effect() == b.Effect();
 }
 
-#if DCHECK_IS_ON()
-
-template <typename PropertyTreeNode>
-class PropertyTreeStatePrinter {
- public:
-  String PathAsString(const PropertyTreeNode* last_node) {
-    const PropertyTreeNode* node = last_node;
-    while (!node->IsRoot()) {
-      AddPropertyNode(node, "");
-      node = node->Parent();
-    }
-    AddPropertyNode(node, "root");
-
-    StringBuilder string_builder;
-    AddAllPropertyNodes(string_builder, node);
-    return string_builder.ToString();
-  }
-
-  void AddPropertyNode(const PropertyTreeNode* node, String debug_info) {
-    node_to_debug_string_.Set(node, debug_info);
-  }
-
-  void AddAllPropertyNodes(StringBuilder& string_builder,
-                           const PropertyTreeNode* node,
-                           unsigned indent = 0) {
-    DCHECK(node);
-    for (unsigned i = 0; i < indent; i++)
-      string_builder.Append(' ');
-    if (node_to_debug_string_.Contains(node))
-      string_builder.Append(node_to_debug_string_.at(node));
-    string_builder.Append(String::Format(" %p ", node));
-    string_builder.Append(node->ToString());
-    string_builder.Append("\n");
-
-    for (const auto* child_node : node_to_debug_string_.Keys()) {
-      if (child_node->Parent() == node)
-        AddAllPropertyNodes(string_builder, child_node, indent + 2);
-    }
-  }
-
-  HashMap<const PropertyTreeNode*, String> node_to_debug_string_;
-};
-
-#endif
+inline bool operator!=(const PropertyTreeState& a, const PropertyTreeState& b) {
+  return !(a == b);
+}
 
 }  // namespace blink
 

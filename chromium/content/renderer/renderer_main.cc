@@ -14,6 +14,8 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/pending_task.h"
 #include "base/run_loop.h"
+#include "base/sampling_heap_profiler/sampling_heap_profiler.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
@@ -82,11 +84,6 @@ static void HandleRendererErrorTestParameters(
     WaitForDebugger("Renderer");
 }
 
-#if defined(USE_OZONE)
-base::LazyInstance<std::unique_ptr<gfx::ClientNativePixmapFactory>>::
-    DestructorAtExit g_pixmap_factory = LAZY_INSTANCE_INITIALIZER;
-#endif
-
 }  // namespace
 
 // mainline routine for running as the Renderer process
@@ -99,7 +96,19 @@ int RendererMain(const MainFunctionParams& parameters) {
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventRendererProcessSortIndex);
 
-  const base::CommandLine& parsed_command_line = parameters.command_line;
+  const base::CommandLine& command_line = parameters.command_line;
+
+  if (command_line.HasSwitch(switches::kSamplingHeapProfiler)) {
+    base::SamplingHeapProfiler* profiler =
+        base::SamplingHeapProfiler::GetInstance();
+    unsigned sampling_interval = 0;
+    bool parsed = base::StringToUint(
+        command_line.GetSwitchValueASCII(switches::kSamplingHeapProfiler),
+        &sampling_interval);
+    if (parsed && sampling_interval > 0)
+      profiler->SetSamplingInterval(sampling_interval * 1024);
+    profiler->Start();
+  }
 
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool;
@@ -110,9 +119,9 @@ int RendererMain(const MainFunctionParams& parameters) {
   // locale (at login time for Chrome OS), we have to set the ICU default
   // locale for renderer process here.
   // ICU locale will be used for fallback font selection etc.
-  if (parsed_command_line.HasSwitch(switches::kLang)) {
+  if (command_line.HasSwitch(switches::kLang)) {
     const std::string locale =
-        parsed_command_line.GetSwitchValueASCII(switches::kLang);
+        command_line.GetSwitchValueASCII(switches::kLang);
     base::i18n::SetICUDefaultLocale(locale);
   }
 #endif
@@ -140,15 +149,14 @@ int RendererMain(const MainFunctionParams& parameters) {
 #endif
 
 #if defined(USE_OZONE)
-  g_pixmap_factory.Get() = ui::CreateClientNativePixmapFactoryOzone();
-  gfx::ClientNativePixmapFactory::SetInstance(g_pixmap_factory.Get().get());
+  ui::CreateClientNativePixmapFactoryOzone();
 #endif
 
   // This function allows pausing execution using the --renderer-startup-dialog
   // flag allowing us to attach a debugger.
   // Do not move this function down since that would mean we can't easily debug
   // whatever occurs before it.
-  HandleRendererErrorTestParameters(parsed_command_line);
+  HandleRendererErrorTestParameters(command_line);
 
   RendererMainPlatformDelegate platform(parameters);
 #if defined(OS_MACOSX)
@@ -165,15 +173,24 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
 
-  bool no_sandbox = parsed_command_line.HasSwitch(switches::kNoSandbox);
+  bool no_sandbox = command_line.HasSwitch(switches::kNoSandbox);
 
 #if defined(OS_ANDROID)
   // If we have any pending LibraryLoader histograms, record them.
   base::android::RecordLibraryLoaderRendererHistograms();
 #endif
 
+  base::Optional<base::Time> initial_virtual_time;
+  if (command_line.HasSwitch(switches::kInitialVirtualTime)) {
+    double initial_time;
+    if (base::StringToDouble(
+            command_line.GetSwitchValueASCII(switches::kInitialVirtualTime),
+            &initial_time)) {
+      initial_virtual_time = base::Time::FromDoubleT(initial_time);
+    }
+  }
   std::unique_ptr<blink::scheduler::RendererScheduler> renderer_scheduler(
-      blink::scheduler::RendererScheduler::Create());
+      blink::scheduler::RendererScheduler::Create(initial_virtual_time));
 
   // PlatformInitialize uses FieldTrials, so this must happen later.
   platform.PlatformInitialize();

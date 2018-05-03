@@ -248,6 +248,8 @@ class MockFramerVisitor : public QuicFramerVisitorInterface {
   MOCK_METHOD1(OnPacketHeader, bool(const QuicPacketHeader& header));
   MOCK_METHOD1(OnStreamFrame, bool(const QuicStreamFrame& frame));
   MOCK_METHOD1(OnAckFrame, bool(const QuicAckFrame& frame));
+  MOCK_METHOD2(OnAckFrameStart, bool(QuicPacketNumber, QuicTime::Delta));
+  MOCK_METHOD3(OnAckRange, bool(QuicPacketNumber, QuicPacketNumber, bool));
   MOCK_METHOD1(OnStopWaitingFrame, bool(const QuicStopWaitingFrame& frame));
   MOCK_METHOD1(OnPaddingFrame, bool(const QuicPaddingFrame& frame));
   MOCK_METHOD1(OnPingFrame, bool(const QuicPingFrame& frame));
@@ -279,6 +281,11 @@ class NoOpFramerVisitor : public QuicFramerVisitorInterface {
   bool OnPacketHeader(const QuicPacketHeader& header) override;
   bool OnStreamFrame(const QuicStreamFrame& frame) override;
   bool OnAckFrame(const QuicAckFrame& frame) override;
+  bool OnAckFrameStart(QuicPacketNumber largest_acked,
+                       QuicTime::Delta ack_delay_time) override;
+  bool OnAckRange(QuicPacketNumber start,
+                  QuicPacketNumber end,
+                  bool last_range) override;
   bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) override;
   bool OnPaddingFrame(const QuicPaddingFrame& frame) override;
   bool OnPingFrame(const QuicPingFrame& frame) override;
@@ -310,19 +317,20 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD0(OnWriteBlocked, void());
   MOCK_METHOD0(OnCanWrite, void());
   MOCK_METHOD1(OnCongestionWindowChange, void(QuicTime now));
-  MOCK_METHOD1(OnConnectionMigration, void(PeerAddressChangeType type));
+  MOCK_METHOD1(OnConnectionMigration, void(AddressChangeType type));
   MOCK_METHOD0(OnPathDegrading, void());
   MOCK_CONST_METHOD0(WillingAndAbleToWrite, bool());
   MOCK_CONST_METHOD0(HasPendingHandshake, bool());
   MOCK_CONST_METHOD0(HasOpenDynamicStreams, bool());
   MOCK_METHOD1(OnSuccessfulVersionNegotiation,
-               void(const QuicTransportVersion& version));
+               void(const ParsedQuicVersion& version));
   MOCK_METHOD2(OnConnectivityProbeReceived,
                void(const QuicSocketAddress& self_address,
                     const QuicSocketAddress& peer_address));
   MOCK_METHOD0(OnConfigNegotiated, void());
   MOCK_METHOD0(PostProcessAfterData, void());
   MOCK_METHOD0(OnAckNeedsRetransmittableFrame, void());
+  MOCK_METHOD0(SendPing, void());
   MOCK_CONST_METHOD0(AllowSelfAddressChange, bool());
 
  private:
@@ -443,6 +451,9 @@ class MockQuicConnection : public QuicConnection {
                void(const CachedNetworkParameters&, bool));
   MOCK_METHOD1(SetMaxPacingRate, void(QuicBandwidth));
 
+  MOCK_METHOD2(OnStreamReset, void(QuicStreamId, QuicRstStreamErrorCode));
+  MOCK_METHOD1(SendControlFrame, bool(const QuicFrame& frame));
+
   MOCK_METHOD1(OnError, void(QuicFramer* framer));
   void QuicConnection_OnError(QuicFramer* framer) {
     QuicConnection::OnError(framer);
@@ -456,6 +467,9 @@ class MockQuicConnection : public QuicConnection {
 
   bool OnProtocolVersionMismatch(ParsedQuicVersion version) override;
 
+  bool ReallySendControlFrame(const QuicFrame& frame) {
+    return QuicConnection::SendControlFrame(frame);
+  }
   void ReallySendGoAway(QuicErrorCode error,
                         QuicStreamId last_good_stream_id,
                         const std::string& reason) {
@@ -618,6 +632,8 @@ class MockQuicSpdySession : public QuicSpdySession {
                     QuicStreamId promised_stream_id,
                     size_t frame_len,
                     const QuicHeaderList& header_list));
+  MOCK_METHOD2(OnPriorityFrame, void(QuicStreamId id, SpdyPriority priority));
+
   // Methods taking non-copyable types like SpdyHeaderBlock by value cannot be
   // mocked directly.
   size_t WriteHeaders(QuicStreamId id,
@@ -941,9 +957,13 @@ class MockSessionNotifier : public SessionNotifierInterface {
   MockSessionNotifier();
   ~MockSessionNotifier() override;
 
-  MOCK_METHOD2(OnFrameAcked, void(const QuicFrame&, QuicTime::Delta));
+  MOCK_METHOD2(OnFrameAcked, bool(const QuicFrame&, QuicTime::Delta));
   MOCK_METHOD1(OnStreamFrameRetransmitted, void(const QuicStreamFrame&));
   MOCK_METHOD1(OnFrameLost, void(const QuicFrame&));
+  MOCK_METHOD2(RetransmitFrames,
+               void(const QuicFrames&, TransmissionType type));
+  MOCK_CONST_METHOD1(IsFrameOutstanding, bool(const QuicFrame&));
+  MOCK_CONST_METHOD0(HasPendingCryptoData, bool());
 };
 
 // Creates a client session for testing.

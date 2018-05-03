@@ -20,6 +20,7 @@
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "platform/Histogram.h"
 #include "platform/heap/Handle.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Assertions.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebSecurityOrigin.h"
@@ -123,12 +124,16 @@ ScriptPromise ServiceWorkerRegistrationNotifications::getNotifications(
       std::make_unique<CallbackPromiseAdapter<NotificationArray, void>>(
           resolver);
 
-  WebNotificationManager* notification_manager =
-      Platform::Current()->GetWebNotificationManager();
-  DCHECK(notification_manager);
+  if (RuntimeEnabledFeatures::NotificationsWithMojoEnabled()) {
+    // TODO(https://crbug.com/796991): Implement this via mojo.
+  } else {
+    WebNotificationManager* notification_manager =
+        Platform::Current()->GetWebNotificationManager();
+    DCHECK(notification_manager);
 
-  notification_manager->GetNotifications(
-      options.tag(), registration.WebRegistration(), std::move(callbacks));
+    notification_manager->GetNotifications(
+        options.tag(), registration.WebRegistration(), std::move(callbacks));
+  }
   return promise;
 }
 
@@ -145,22 +150,20 @@ void ServiceWorkerRegistrationNotifications::Trace(blink::Visitor* visitor) {
   ContextLifecycleObserver::Trace(visitor);
 }
 
-const char* ServiceWorkerRegistrationNotifications::SupplementName() {
-  return "ServiceWorkerRegistrationNotifications";
-}
+const char ServiceWorkerRegistrationNotifications::kSupplementName[] =
+    "ServiceWorkerRegistrationNotifications";
 
 ServiceWorkerRegistrationNotifications&
 ServiceWorkerRegistrationNotifications::From(
     ExecutionContext* execution_context,
     ServiceWorkerRegistration& registration) {
   ServiceWorkerRegistrationNotifications* supplement =
-      static_cast<ServiceWorkerRegistrationNotifications*>(
-          Supplement<ServiceWorkerRegistration>::From(registration,
-                                                      SupplementName()));
+      Supplement<ServiceWorkerRegistration>::From<
+          ServiceWorkerRegistrationNotifications>(registration);
   if (!supplement) {
     supplement = new ServiceWorkerRegistrationNotifications(execution_context,
                                                             &registration);
-    ProvideTo(registration, SupplementName(), supplement);
+    ProvideTo(registration, supplement);
   }
   return *supplement;
 }
@@ -185,13 +188,20 @@ void ServiceWorkerRegistrationNotifications::DidLoadResources(
     NotificationResourcesLoader* loader) {
   DCHECK(loaders_.Contains(loader));
 
-  WebNotificationManager* notification_manager =
-      Platform::Current()->GetWebNotificationManager();
-  DCHECK(notification_manager);
+  if (RuntimeEnabledFeatures::NotificationsWithMojoEnabled()) {
+    NotificationManager::From(GetExecutionContext())
+        ->DisplayPersistentNotification(registration_->WebRegistration(), data,
+                                        loader->GetResources(),
+                                        std::move(callbacks));
+  } else {
+    WebNotificationManager* notification_manager =
+        Platform::Current()->GetWebNotificationManager();
+    DCHECK(notification_manager);
 
-  notification_manager->ShowPersistent(
-      WebSecurityOrigin(origin.get()), data, loader->GetResources(),
-      registration_->WebRegistration(), std::move(callbacks));
+    notification_manager->ShowPersistent(
+        WebSecurityOrigin(origin.get()), data, loader->GetResources(),
+        registration_->WebRegistration(), std::move(callbacks));
+  }
   loaders_.erase(loader);
 }
 

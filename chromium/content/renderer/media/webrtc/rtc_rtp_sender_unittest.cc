@@ -10,8 +10,9 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "build/build_config.h"
 #include "content/child/child_process.h"
-#include "content/renderer/media/media_stream_audio_source.h"
+#include "content/renderer/media/stream/media_stream_audio_source.h"
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_adapter_map.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_track_adapter_map.h"
@@ -124,6 +125,13 @@ TEST_F(RTCRtpSenderTest, CreateSenderWithNullTrack) {
   EXPECT_TRUE(sender_->Track().IsNull());
 }
 
+// This test is flaky on Android and Linux.
+// See crbug.com/800465 for detail.
+#if defined(OS_ANDROID) || defined(OS_LINUX)
+#define MAYBE_ReplaceTrackSetsTrack DISABLED_ReplaceTrackSetsTrack
+#else
+#define MAYBE_ReplaceTrackSetsTrack ReplaceTrackSetsTrack
+#endif
 TEST_F(RTCRtpSenderTest, ReplaceTrackSetsTrack) {
   auto web_track1 = CreateWebTrack("track1");
   sender_ = CreateSender(web_track1);
@@ -136,7 +144,14 @@ TEST_F(RTCRtpSenderTest, ReplaceTrackSetsTrack) {
   EXPECT_EQ(web_track2.UniqueId(), sender_->Track().UniqueId());
 }
 
-TEST_F(RTCRtpSenderTest, ReplaceTrackWithNullTrack) {
+// This test is flaky on Android and Linux.
+// See crbug.com/803597 for detail.
+#if defined(OS_ANDROID) || defined(OS_LINUX)
+#define MAYBE_ReplaceTrackWithNullTrack DISABLED_ReplaceTrackWithNullTrack
+#else
+#define MAYBE_ReplaceTrackWithNullTrack ReplaceTrackWithNullTrack
+#endif
+TEST_F(RTCRtpSenderTest, MAYBE_ReplaceTrackWithNullTrack) {
   auto web_track = CreateWebTrack("track_id");
   sender_ = CreateSender(web_track);
 

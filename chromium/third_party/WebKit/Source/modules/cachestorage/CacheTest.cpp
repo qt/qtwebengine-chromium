@@ -32,7 +32,7 @@
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/modules/cache_storage/cache_storage.mojom-blink.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerCache.h"
-#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
+#include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using blink::mojom::CacheStorageError;
@@ -710,11 +710,11 @@ TEST_F(CacheStorageTest, Add) {
   fetcher->SetExpectedFetchUrl(&url);
 
   Request* request = NewRequestFromUrl(url);
-  Response* response =
-      Response::Create(GetScriptState(),
-                       new BodyStreamBuffer(GetScriptState(),
-                                            new FormDataBytesConsumer(content)),
-                       content_type, ResponseInit(), exception_state);
+  Response* response = Response::Create(
+      GetScriptState(),
+      new BodyStreamBuffer(GetScriptState(), new FormDataBytesConsumer(content),
+                           nullptr),
+      content_type, ResponseInit(), exception_state);
   fetcher->SetResponse(response);
 
   WebVector<WebServiceWorkerCache::BatchOperation> expected_put_operations(

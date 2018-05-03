@@ -338,7 +338,7 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
     case CSSSelector::kShadowDeepAsDescendant:
       Deprecation::CountDeprecation(context.element->GetDocument(),
                                     WebFeature::kCSSDeepCombinator);
-    // fall through
+      FALLTHROUGH;
     case CSSSelector::kDescendant:
       if (context.selector->RelationIsAffectedByPseudoContent()) {
         for (Element* element = context.element; element;
@@ -504,6 +504,8 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
     }
 
     case CSSSelector::kShadowSlot: {
+      if (ToHTMLSlotElementIfSupportsAssignmentOrNull(*context.element))
+        return kSelectorFailsCompletely;
       const HTMLSlotElement* slot = FindSlotElementInScope(context);
       if (!slot)
         return kSelectorFailsCompletely;
@@ -878,21 +880,6 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     }
     case CSSSelector::kPseudoTarget:
       return element == element.GetDocument().CssTarget();
-    case CSSSelector::kPseudoMatches: {
-      if (!RuntimeEnabledFeatures::CSSMatchesEnabled())
-        return false;
-      UseCounter::Count(context.element->GetDocument(),
-                        WebFeature::kCSSSelectorPseudoMatches);
-      SelectorCheckingContext sub_context(context);
-      sub_context.is_sub_selector = true;
-      DCHECK(selector.SelectorList());
-      for (sub_context.selector = selector.SelectorList()->First();
-           sub_context.selector; sub_context.selector = CSSSelectorList::Next(
-                                     *sub_context.selector)) {
-        if (Match(sub_context))
-          return true;
-      }
-    } break;
     case CSSSelector::kPseudoAny: {
       SelectorCheckingContext sub_context(context);
       sub_context.is_sub_selector = true;
@@ -908,13 +895,7 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
       return element.IsFormControlElement() &&
              ToHTMLFormControlElement(element).IsAutofilled();
     case CSSSelector::kPseudoAnyLink:
-      UseCounter::Count(context.element->GetDocument(),
-                        WebFeature::kCSSSelectorPseudoAnyLink);
-      return element.IsLink();
     case CSSSelector::kPseudoWebkitAnyLink:
-      UseCounter::Count(context.element->GetDocument(),
-                        WebFeature::kCSSSelectorPseudoWebkitAnyLink);
-    // Fall through
     case CSSSelector::kPseudoLink:
       return element.IsLink();
     case CSSSelector::kPseudoVisited:
@@ -1117,6 +1098,7 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     case CSSSelector::kPseudoCornerPresent:
       return false;
     case CSSSelector::kPseudoUnknown:
+    case CSSSelector::kPseudoMatches:
     default:
       NOTREACHED();
       break;
@@ -1199,7 +1181,7 @@ bool SelectorChecker::CheckPseudoHost(const SelectorCheckingContext& context,
   const ContainerNode* shadow_host = context.scope->OwnerShadowHost();
   if (!shadow_host || shadow_host != element)
     return false;
-  DCHECK(element.Shadow());
+  DCHECK(IsShadowHost(element));
 
   // For the case with no parameters, i.e. just :host.
   if (!selector.SelectorList())

@@ -51,6 +51,8 @@ void MaterialDesignController::Initialize() {
     SetMode(MATERIAL_NORMAL);
   } else if (switch_value == switches::kTopChromeMDMaterialHybrid) {
     SetMode(MATERIAL_HYBRID);
+  } else if (switch_value == switches::kTopChromeMDMaterialTouchOptimized) {
+    SetMode(MATERIAL_TOUCH_OPTIMIZED);
   } else if (switch_value == switches::kTopChromeMDMaterialAuto) {
 #if defined(OS_WIN)
     // TODO(girard): add support for switching between modes when
@@ -78,6 +80,11 @@ MaterialDesignController::Mode MaterialDesignController::GetMode() {
 // static
 bool MaterialDesignController::IsSecondaryUiMaterial() {
   return base::FeatureList::IsEnabled(features::kSecondaryUiMd);
+}
+
+// static
+bool MaterialDesignController::IsTouchOptimizedUiEnabled() {
+  return GetMode() == MATERIAL_TOUCH_OPTIMIZED;
 }
 
 // static

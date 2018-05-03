@@ -8,12 +8,9 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
-#include "base/sys_info.h"
 #include "gpu/config/gpu_blacklist.h"
 #include "gpu/config/gpu_crash_keys.h"
 #include "gpu/config/gpu_driver_bug_list.h"
@@ -25,21 +22,15 @@
 #include "ui/gl/extension_set.h"
 #include "ui/gl/gl_switches.h"
 
+#if defined(OS_ANDROID)
+#include "base/no_destructor.h"
+#include "base/synchronization/lock.h"
+#include "ui/gl/init/gl_factory.h"
+#endif  // OS_ANDROID
+
 namespace gpu {
 
 namespace {
-
-// |str| is in the format of "0x040a;0x10de;...;hex32_N".
-void StringToIds(const std::string& str, std::vector<uint32_t>* list) {
-  DCHECK(list);
-  for (const base::StringPiece& piece : base::SplitStringPiece(
-           str, ";", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL)) {
-    uint32_t id = 0;
-    bool succeed = base::HexStringToUInt(piece, &id);
-    DCHECK(succeed);
-    list->push_back(id);
-  }
-}
 
 GpuFeatureStatus GetGpuRasterizationFeatureStatus(
     const std::set<int>& blacklisted_features,
@@ -64,7 +55,7 @@ GpuFeatureStatus GetWebGLFeatureStatus(
     const std::set<int>& blacklisted_features,
     bool use_swift_shader) {
   if (use_swift_shader)
-    return kGpuFeatureStatusSoftware;
+    return kGpuFeatureStatusEnabled;
   if (blacklisted_features.count(GPU_FEATURE_TYPE_ACCELERATED_WEBGL))
     return kGpuFeatureStatusBlacklisted;
   return kGpuFeatureStatusEnabled;
@@ -74,7 +65,7 @@ GpuFeatureStatus GetWebGL2FeatureStatus(
     const std::set<int>& blacklisted_features,
     bool use_swift_shader) {
   if (use_swift_shader)
-    return kGpuFeatureStatusSoftware;
+    return kGpuFeatureStatusEnabled;
   if (blacklisted_features.count(GPU_FEATURE_TYPE_ACCELERATED_WEBGL2))
     return kGpuFeatureStatusBlacklisted;
   return kGpuFeatureStatusEnabled;
@@ -183,93 +174,6 @@ GpuFeatureInfo* g_gpu_feature_info_cache = nullptr;
 
 }  // namespace anonymous
 
-void ParseSecondaryGpuDevicesFromCommandLine(
-    const base::CommandLine& command_line,
-    GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-
-  const char* secondary_vendor_switch_key = switches::kGpuSecondaryVendorIDs;
-  const char* secondary_device_switch_key = switches::kGpuSecondaryDeviceIDs;
-
-  if (!command_line.HasSwitch(secondary_vendor_switch_key) ||
-      !command_line.HasSwitch(secondary_device_switch_key)) {
-    return;
-  }
-
-  std::vector<uint32_t> vendor_ids;
-  std::vector<uint32_t> device_ids;
-  StringToIds(command_line.GetSwitchValueASCII(secondary_vendor_switch_key),
-              &vendor_ids);
-  StringToIds(command_line.GetSwitchValueASCII(secondary_device_switch_key),
-              &device_ids);
-
-  DCHECK(vendor_ids.size() == device_ids.size());
-  gpu_info->secondary_gpus.clear();
-  for (size_t i = 0; i < vendor_ids.size() && i < device_ids.size(); ++i) {
-    gpu::GPUInfo::GPUDevice secondary_device;
-    secondary_device.active = false;
-    secondary_device.vendor_id = vendor_ids[i];
-    secondary_device.device_id = device_ids[i];
-    gpu_info->secondary_gpus.push_back(secondary_device);
-  }
-}
-
-void GetGpuInfoFromCommandLine(const base::CommandLine& command_line,
-                               GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-
-  if (!command_line.HasSwitch(switches::kGpuVendorID) ||
-      !command_line.HasSwitch(switches::kGpuDeviceID) ||
-      !command_line.HasSwitch(switches::kGpuDriverVersion))
-    return;
-  bool success = base::HexStringToUInt(
-      command_line.GetSwitchValueASCII(switches::kGpuVendorID),
-      &gpu_info->gpu.vendor_id);
-  DCHECK(success);
-  success = base::HexStringToUInt(
-      command_line.GetSwitchValueASCII(switches::kGpuDeviceID),
-      &gpu_info->gpu.device_id);
-  DCHECK(success);
-  gpu_info->driver_vendor =
-      command_line.GetSwitchValueASCII(switches::kGpuDriverVendor);
-  gpu_info->driver_version =
-      command_line.GetSwitchValueASCII(switches::kGpuDriverVersion);
-  gpu_info->driver_date =
-      command_line.GetSwitchValueASCII(switches::kGpuDriverDate);
-  gpu::ParseSecondaryGpuDevicesFromCommandLine(command_line, gpu_info);
-
-  // Set active gpu device.
-  if (command_line.HasSwitch(switches::kGpuActiveVendorID) &&
-      command_line.HasSwitch(switches::kGpuActiveDeviceID)) {
-    uint32_t active_vendor_id = 0;
-    uint32_t active_device_id = 0;
-    success = base::HexStringToUInt(
-        command_line.GetSwitchValueASCII(switches::kGpuActiveVendorID),
-        &active_vendor_id);
-    DCHECK(success);
-    success = base::HexStringToUInt(
-        command_line.GetSwitchValueASCII(switches::kGpuActiveDeviceID),
-        &active_device_id);
-    DCHECK(success);
-    if (gpu_info->gpu.vendor_id == active_vendor_id &&
-        gpu_info->gpu.device_id == active_device_id) {
-      gpu_info->gpu.active = true;
-    } else {
-      for (size_t i = 0; i < gpu_info->secondary_gpus.size(); ++i) {
-        if (gpu_info->secondary_gpus[i].vendor_id == active_vendor_id &&
-            gpu_info->secondary_gpus[i].device_id == active_device_id) {
-          gpu_info->secondary_gpus[i].active = true;
-          break;
-        }
-      }
-    }
-  }
-
-  if (command_line.HasSwitch(switches::kAMDSwitchable)) {
-    gpu_info->amd_switchable = true;
-  }
-}
-
 GpuFeatureInfo ComputeGpuFeatureInfoWithHardwareAccelerationDisabled() {
   GpuFeatureInfo gpu_feature_info;
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS] =
@@ -290,6 +194,34 @@ GpuFeatureInfo ComputeGpuFeatureInfoWithHardwareAccelerationDisabled() {
       kGpuFeatureStatusDisabled;
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
       kGpuFeatureStatusSoftware;
+#if DCHECK_IS_ON()
+  for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
+    DCHECK_NE(kGpuFeatureStatusUndefined, gpu_feature_info.status_values[ii]);
+  }
+#endif
+  return gpu_feature_info;
+}
+
+GpuFeatureInfo ComputeGpuFeatureInfoWithNoGpuProcess() {
+  GpuFeatureInfo gpu_feature_info;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS] =
+      kGpuFeatureStatusSoftware;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_GPU_COMPOSITING] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_FLASH3D] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_FLASH_STAGE3D] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_GPU_RASTERIZATION] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
+      kGpuFeatureStatusDisabled;
 #if DCHECK_IS_ON()
   for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
     DCHECK_NE(kGpuFeatureStatusUndefined, gpu_feature_info.status_values[ii]);
@@ -330,7 +262,9 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
                                      bool ignore_gpu_blacklist,
                                      bool disable_gpu_driver_bug_workarounds,
                                      bool log_gpu_control_list_decisions,
-                                     base::CommandLine* command_line) {
+                                     base::CommandLine* command_line,
+                                     bool* needs_more_info) {
+  DCHECK(!needs_more_info || !(*needs_more_info));
   bool use_swift_shader = false;
   bool use_swift_shader_for_webgl = false;
   if (command_line->HasSwitch(switches::kUseGL)) {
@@ -345,7 +279,8 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
 
   GpuFeatureInfo gpu_feature_info;
   std::set<int> blacklisted_features;
-  if (!ignore_gpu_blacklist) {
+  if (!ignore_gpu_blacklist &&
+      !command_line->HasSwitch(switches::kUseGpuInTests)) {
     std::unique_ptr<GpuBlacklist> list(GpuBlacklist::Create());
     if (log_gpu_control_list_decisions)
       list->EnableControlListLogging("gpu_blacklist");
@@ -359,6 +294,9 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
     blacklisted_features = list->MakeDecision(
         GpuControlList::kOsAny, std::string(), gpu_info, target_test_group);
     gpu_feature_info.applied_gpu_blacklist_entries = list->GetActiveEntries();
+    if (needs_more_info) {
+      *needs_more_info = list->needs_more_info();
+    }
   }
 
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_GPU_RASTERIZATION] =
@@ -498,5 +436,49 @@ bool PopGpuFeatureInfoCache(GpuFeatureInfo* gpu_feature_info) {
   g_gpu_feature_info_cache = nullptr;
   return true;
 }
+
+#if defined(OS_ANDROID)
+bool InitializeGLThreadSafe(base::CommandLine* command_line,
+                            bool ignore_gpu_blacklist,
+                            bool disable_gpu_driver_bug_workarounds,
+                            bool log_gpu_control_list_decisions,
+                            GPUInfo* out_gpu_info,
+                            GpuFeatureInfo* out_gpu_feature_info) {
+  static base::NoDestructor<base::Lock> gl_bindings_initialization_lock;
+  base::AutoLock auto_lock(*gl_bindings_initialization_lock);
+  DCHECK(command_line);
+  DCHECK(out_gpu_info && out_gpu_feature_info);
+  bool gpu_info_cached = PopGPUInfoCache(out_gpu_info);
+  bool gpu_feature_info_cached = PopGpuFeatureInfoCache(out_gpu_feature_info);
+  DCHECK_EQ(gpu_info_cached, gpu_feature_info_cached);
+  if (gpu_info_cached) {
+    // GL bindings have already been initialized in another thread.
+    DCHECK_NE(gl::kGLImplementationNone, gl::GetGLImplementation());
+    return true;
+  }
+  if (gl::GetGLImplementation() == gl::kGLImplementationNone) {
+    // Some tests initialize bindings by themselves.
+    if (!gl::init::InitializeGLNoExtensionsOneOff()) {
+      VLOG(1) << "gl::init::InitializeGLNoExtensionsOneOff failed";
+      return false;
+    }
+  }
+  CollectContextGraphicsInfo(out_gpu_info);
+  *out_gpu_feature_info = ComputeGpuFeatureInfo(
+      *out_gpu_info, ignore_gpu_blacklist, disable_gpu_driver_bug_workarounds,
+      log_gpu_control_list_decisions, command_line, nullptr);
+  if (!out_gpu_feature_info->disabled_extensions.empty()) {
+    gl::init::SetDisabledExtensionsPlatform(
+        out_gpu_feature_info->disabled_extensions);
+  }
+  if (!gl::init::InitializeExtensionSettingsOneOffPlatform()) {
+    VLOG(1) << "gl::init::InitializeExtensionSettingsOneOffPlatform failed";
+    return false;
+  }
+  CacheGPUInfo(*out_gpu_info);
+  CacheGpuFeatureInfo(*out_gpu_feature_info);
+  return true;
+}
+#endif  // OS_ANDROID
 
 }  // namespace gpu

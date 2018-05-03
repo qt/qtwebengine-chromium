@@ -167,6 +167,10 @@ int DateFromTime(double t) {
 
 }  // namespace
 
+void JSDestructor(v8::Local<v8::Object> obj) {
+  CFXJS_Engine::SetObjectPrivate(obj, nullptr);
+}
+
 double JS_GetDateTime() {
   if (!FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS))
     return 0;
@@ -232,7 +236,7 @@ double JS_DateParse(const WideString& str) {
       v8::Local<v8::Function> funC = v8::Local<v8::Function>::Cast(v);
       const int argc = 1;
       v8::Local<v8::Value> timeStr =
-          CJS_Runtime::CurrentRuntimeFromIsolate(pIsolate)->NewString(
+          CJS_Runtime::RuntimeFromIsolateCurrentContext(pIsolate)->NewString(
               str.AsStringView());
       v8::Local<v8::Value> argv[argc] = {timeStr};
       v = funC->Call(context, context->Global(), argc, argv).ToLocalChecked();

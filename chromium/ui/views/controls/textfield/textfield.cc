@@ -38,6 +38,7 @@
 #include "ui/gfx/selection_bound.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/strings/grit/ui_strings.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/focus_ring.h"
 #include "ui/views/controls/focusable_border.h"
@@ -45,6 +46,7 @@
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
+#include "ui/views/controls/views_text_services_context_menu.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/layout/layout_provider.h"
 #include "ui/views/native_cursor.h"
@@ -268,9 +270,9 @@ Textfield::Textfield()
       background_color_(SK_ColorWHITE),
       selection_text_color_(SK_ColorWHITE),
       selection_background_color_(SK_ColorBLUE),
-      placeholder_text_color_(kDefaultPlaceholderTextColor),
       placeholder_text_draw_flags_(gfx::Canvas::DefaultCanvasTextAlignment()),
       invalid_(false),
+      label_ax_id_(0),
       text_input_type_(ui::TEXT_INPUT_TYPE_TEXT),
       text_input_flags_(0),
       performing_user_action_(false),
@@ -317,6 +319,11 @@ Textfield::~Textfield() {
   }
 }
 
+void Textfield::SetAssociatedLabel(Label* label) {
+  label_ax_id_ = label->GetViewAccessibility().GetUniqueId().Get();
+  accessible_name_ = label->text();
+}
+
 void Textfield::SetReadOnly(bool read_only) {
   // Update read-only without changing the focusable state (or active, etc.).
   read_only_ = read_only;
@@ -345,7 +352,7 @@ void Textfield::SetText(const base::string16& new_text) {
   UpdateCursorViewPosition();
   UpdateCursorVisibility();
   SchedulePaint();
-  NotifyAccessibilityEvent(ui::AX_EVENT_VALUE_CHANGED, true);
+  NotifyAccessibilityEvent(ax::mojom::Event::kValueChanged, true);
 }
 
 void Textfield::AppendText(const base::string16& new_text) {
@@ -354,7 +361,7 @@ void Textfield::AppendText(const base::string16& new_text) {
   model_->Append(new_text);
   OnCaretBoundsChanged();
   SchedulePaint();
-  NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_CHANGED, true);
+  NotifyAccessibilityEvent(ax::mojom::Event::kTextChanged, true);
 }
 
 void Textfield::InsertOrReplaceText(const base::string16& new_text) {
@@ -614,9 +621,11 @@ void Textfield::SetBorder(std::unique_ptr<Border> b) {
 }
 
 gfx::NativeCursor Textfield::GetCursor(const ui::MouseEvent& event) {
+  bool platform_arrow = PlatformStyle::kTextfieldUsesDragCursorWhenDraggable;
   bool in_selection = GetRenderText()->IsPointInSelection(event.location());
   bool drag_event = event.type() == ui::ET_MOUSE_DRAGGED;
-  bool text_cursor = !initiating_drag_ && (drag_event || !in_selection);
+  bool text_cursor =
+      !initiating_drag_ && (drag_event || !in_selection || !platform_arrow);
   return text_cursor ? GetNativeIBeamCursor() : gfx::kNullCursor;
 }
 
@@ -935,37 +944,40 @@ void Textfield::OnDragDone() {
 }
 
 void Textfield::GetAccessibleNodeData(ui::AXNodeData* node_data) {
-  node_data->role = ui::AX_ROLE_TEXT_FIELD;
+  node_data->role = ax::mojom::Role::kTextField;
+  if (label_ax_id_) {
+    node_data->AddIntListAttribute(ax::mojom::IntListAttribute::kLabelledbyIds,
+                                   {label_ax_id_});
+  }
+
   node_data->SetName(accessible_name_);
   // Editable state indicates support of editable interface, and is always set
   // for a textfield, even if disabled or readonly.
-  node_data->AddState(ui::AX_STATE_EDITABLE);
+  node_data->AddState(ax::mojom::State::kEditable);
   if (enabled()) {
-    node_data->AddIntAttribute(ui::AX_ATTR_DEFAULT_ACTION_VERB,
-                               ui::AX_DEFAULT_ACTION_VERB_ACTIVATE);
+    node_data->SetDefaultActionVerb(ax::mojom::DefaultActionVerb::kActivate);
     // Only readonly if enabled. Don't overwrite the disabled restriction.
-    if (read_only()) {
-      node_data->AddIntAttribute(ui::AX_ATTR_RESTRICTION,
-                                 ui::AX_RESTRICTION_READ_ONLY);
-    }
+    if (read_only())
+      node_data->SetRestriction(ax::mojom::Restriction::kReadOnly);
   }
   if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD) {
-    node_data->AddState(ui::AX_STATE_PROTECTED);
+    node_data->AddState(ax::mojom::State::kProtected);
     node_data->SetValue(base::string16(
         text().size(), gfx::RenderText::kPasswordReplacementChar));
   } else {
     node_data->SetValue(text());
   }
-  node_data->AddStringAttribute(ui::AX_ATTR_PLACEHOLDER,
+  node_data->AddStringAttribute(ax::mojom::StringAttribute::kPlaceholder,
                                 base::UTF16ToUTF8(GetPlaceholderText()));
 
   const gfx::Range range = GetSelectedRange();
-  node_data->AddIntAttribute(ui::AX_ATTR_TEXT_SEL_START, range.start());
-  node_data->AddIntAttribute(ui::AX_ATTR_TEXT_SEL_END, range.end());
+  node_data->AddIntAttribute(ax::mojom::IntAttribute::kTextSelStart,
+                             range.start());
+  node_data->AddIntAttribute(ax::mojom::IntAttribute::kTextSelEnd, range.end());
 }
 
 bool Textfield::HandleAccessibleAction(const ui::AXActionData& action_data) {
-  if (action_data.action == ui::AX_ACTION_SET_SELECTION) {
+  if (action_data.action == ax::mojom::Action::kSetSelection) {
     if (action_data.anchor_node_id != action_data.focus_node_id)
       return false;
     // TODO(nektar): Check that the focus_node_id matches the ID of this node.
@@ -977,11 +989,11 @@ bool Textfield::HandleAccessibleAction(const ui::AXActionData& action_data) {
   if (read_only())
     return View::HandleAccessibleAction(action_data);
 
-  if (action_data.action == ui::AX_ACTION_SET_VALUE) {
+  if (action_data.action == ax::mojom::Action::kSetValue) {
     SetText(action_data.value);
     ClearSelection();
     return true;
-  } else if (action_data.action == ui::AX_ACTION_REPLACE_SELECTED_TEXT) {
+  } else if (action_data.action == ax::mojom::Action::kReplaceSelectedText) {
     InsertOrReplaceText(action_data.value);
     ClearSelection();
     return true;
@@ -1688,7 +1700,7 @@ void Textfield::ExecuteTextEditCommand(ui::TextEditCommand command) {
     case ui::TextEditCommand::DELETE_TO_END_OF_LINE:
     case ui::TextEditCommand::DELETE_TO_END_OF_PARAGRAPH:
       add_to_kill_buffer = text_input_type_ != ui::TEXT_INPUT_TYPE_PASSWORD;
-    // Fall through.
+      FALLTHROUGH;
     case ui::TextEditCommand::DELETE_WORD_BACKWARD:
     case ui::TextEditCommand::DELETE_WORD_FORWARD:
       if (HasSelection())
@@ -1872,6 +1884,10 @@ void Textfield::ExecuteTextEditCommand(ui::TextEditCommand command) {
   OnAfterUserAction();
 }
 
+void Textfield::OffsetDoubleClickWord(int offset) {
+  selection_controller_.OffsetDoubleClickWord(offset);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Textfield, private:
 
@@ -1984,7 +2000,7 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
   if (text_changed) {
     if (controller_)
       controller_->ContentsChanged(this, text());
-    NotifyAccessibilityEvent(ui::AX_EVENT_VALUE_CHANGED, true);
+    NotifyAccessibilityEvent(ax::mojom::Event::kValueChanged, true);
   }
   if (cursor_changed) {
     UpdateCursorViewPosition();
@@ -2036,9 +2052,10 @@ void Textfield::PaintTextAndCursor(gfx::Canvas* canvas) {
         GetPlaceholderText(),
         placeholder_font_list_.has_value() ? placeholder_font_list_.value()
                                            : GetFontList(),
-        ui::MaterialDesignController::IsSecondaryUiMaterial()
-            ? SkColorSetA(GetTextColor(), 0x83)
-            : placeholder_text_color_,
+        placeholder_text_color_.value_or(
+            ui::MaterialDesignController::IsSecondaryUiMaterial()
+                ? SkColorSetA(GetTextColor(), 0x83)
+                : kDefaultPlaceholderTextColor),
         render_text->display_rect(), placeholder_text_draw_flags);
   }
 
@@ -2063,7 +2080,7 @@ void Textfield::OnCaretBoundsChanged() {
     GetInputMethod()->OnCaretBoundsChanged(this);
   if (touch_selection_controller_)
     touch_selection_controller_->SelectionChanged();
-  NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_SELECTION_CHANGED, true);
+  NotifyAccessibilityEvent(ax::mojom::Event::kTextSelectionChanged, true);
 }
 
 void Textfield::OnBeforeUserAction() {
@@ -2125,7 +2142,11 @@ void Textfield::UpdateContextMenu() {
     // IsCommandIdEnabled() as appropriate, for the commands added.
     if (controller_)
       controller_->UpdateContextMenu(context_menu_contents_.get());
+
+    text_services_context_menu_ = ViewsTextServicesContextMenu::Create(
+        context_menu_contents_.get(), this);
   }
+
   context_menu_runner_.reset(
       new MenuRunner(context_menu_contents_.get(),
                      MenuRunner::HAS_MNEMONICS | MenuRunner::CONTEXT_MENU));

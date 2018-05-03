@@ -16,8 +16,10 @@
 #include "core/dom/Node.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/QualifiedName.h"
+#include "core/dom/ShadowRoot.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/forms/HTMLInputElement.h"
@@ -153,6 +155,7 @@ int InspectorDOMSnapshotAgent::VisitNode(Node* node,
     case Node::kAttributeNode:
     case Node::kCommentNode:
     case Node::kCdataSectionNode:
+    case Node::kDocumentFragmentNode:
       node_value = node->nodeValue();
       break;
     default:
@@ -259,6 +262,10 @@ int InspectorDOMSnapshotAgent::VisitNode(Node* node,
       value->setPseudoElementIndexes(
           VisitPseudoElements(element, include_event_listeners));
     }
+
+    HTMLImageElement* image_element = ToHTMLImageElementOrNull(node);
+    if (image_element)
+      value->setCurrentSourceURL(image_element->currentSrc());
   } else if (node->IsDocumentNode()) {
     Document* document = ToDocument(node);
     value->setDocumentURL(InspectorDOMAgent::DocumentURLString(document));
@@ -272,6 +279,9 @@ int InspectorDOMSnapshotAgent::VisitNode(Node* node,
     DocumentType* doc_type = ToDocumentType(node);
     value->setPublicId(doc_type->publicId());
     value->setSystemId(doc_type->systemId());
+  } else if (node->IsInShadowTree()) {
+    value->setShadowRootType(
+        InspectorDOMAgent::GetShadowRootType(node->ContainingShadowRoot()));
   }
 
   if (node->IsContainerNode()) {

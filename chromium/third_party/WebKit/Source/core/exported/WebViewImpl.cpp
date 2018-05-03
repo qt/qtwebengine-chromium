@@ -113,7 +113,7 @@
 #include "core/paint/PaintLayer.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "core/timing/DOMWindowPerformance.h"
-#include "core/timing/Performance.h"
+#include "core/timing/WindowPerformance.h"
 #include "platform/ContextMenu.h"
 #include "platform/ContextMenuItem.h"
 #include "platform/Cursor.h"
@@ -173,7 +173,7 @@
 #include "public/web/WebSelection.h"
 #include "public/web/WebViewClient.h"
 #include "public/web/WebWindowFeatures.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 #if defined(WTF_USE_DEFAULT_RENDER_THEME)
 #include "core/layout/LayoutThemeDefault.h"
@@ -948,13 +948,13 @@ void WebViewImpl::RequestBeginMainFrameNotExpected(bool new_state) {
   }
 }
 
-void WebViewImpl::SetPageStopped(bool stopped) {
+void WebViewImpl::SetPageFrozen(bool frozen) {
   if (!GetPage())
     return;
-  GetPage()->SetLifecycleState(stopped ? PageLifecycleState::kStopped
-                                       : GetPage()->IsPageVisible()
-                                             ? PageLifecycleState::kActive
-                                             : PageLifecycleState::kHidden);
+  GetPage()->SetLifecycleState(frozen ? PageLifecycleState::kFrozen
+                                      : GetPage()->IsPageVisible()
+                                            ? PageLifecycleState::kActive
+                                            : PageLifecycleState::kHidden);
 }
 
 WebInputEventResult WebViewImpl::HandleKeyEvent(const WebKeyboardEvent& event) {
@@ -1102,7 +1102,7 @@ WebRect WebViewImpl::ComputeBlockBound(const WebPoint& point_in_root_frame,
     return WebRect();
 
   // Use the point-based hit test to find the node.
-  LayoutPoint point = MainFrameImpl()->GetFrameView()->RootFrameToContents(
+  LayoutPoint point = MainFrameImpl()->GetFrameView()->RootFrameToAbsolute(
       LayoutPoint(point_in_root_frame));
   HitTestRequest::HitTestRequestType hit_type =
       HitTestRequest::kReadOnly | HitTestRequest::kActive |
@@ -1125,9 +1125,9 @@ WebRect WebViewImpl::ComputeBlockBound(const WebPoint& point_in_root_frame,
 
   // Return the bounding box in the root frame's coordinate space.
   if (node) {
-    IntRect point_in_root_frame = node->Node::PixelSnappedBoundingBox();
+    IntRect absolute_rect = node->GetLayoutObject()->AbsoluteBoundingBoxRect();
     LocalFrame* frame = node->GetDocument().GetFrame();
-    return frame->View()->ContentsToRootFrame(point_in_root_frame);
+    return frame->View()->AbsoluteToRootFrame(absolute_rect);
   }
   return WebRect();
 }
@@ -1142,7 +1142,7 @@ WebRect WebViewImpl::WidenRectWithinPageBounds(const WebRect& source,
     // only because all of the callers don't support OOPIFs and exit early if
     // the main frame is not local.
     DCHECK(MainFrame()->IsWebLocalFrame());
-    max_size = MainFrame()->ToWebLocalFrame()->ContentsSize();
+    max_size = MainFrame()->ToWebLocalFrame()->DocumentSize();
     scroll_offset = MainFrame()->ToWebLocalFrame()->GetScrollOffset();
   }
   int left_margin = target_margin;
@@ -1246,7 +1246,7 @@ void WebViewImpl::ComputeScaleAndScrollForBlockRect(
   scroll.y = rect.y;
 
   scale = ClampPageScaleFactorToLimits(scale);
-  scroll = MainFrameImpl()->GetFrameView()->RootFrameToContents(scroll);
+  scroll = MainFrameImpl()->GetFrameView()->RootFrameToDocument(scroll);
   scroll =
       GetPage()->GetVisualViewport().ClampDocumentOffsetAtScale(scroll, scale);
 }
@@ -1392,7 +1392,7 @@ void WebViewImpl::AnimateDoubleTapZoom(const IntPoint& point_in_root_frame) {
   if (should_zoom_out) {
     scale = MinimumPageScaleFactor();
     IntPoint target_position =
-        MainFrameImpl()->GetFrameView()->RootFrameToContents(
+        MainFrameImpl()->GetFrameView()->RootFrameToDocument(
             point_in_root_frame);
     is_animating = StartPageScaleAnimation(
         target_position, true, scale, doubleTapZoomAnimationDurationInSeconds);
@@ -1607,6 +1607,8 @@ void WebViewImpl::Close() {
     page_.Clear();
   }
 
+  scheduler_.reset();
+
   // Reset the delegate to prevent notifications being sent as we're being
   // deleted.
   client_ = nullptr;
@@ -1726,12 +1728,12 @@ void WebViewImpl::ResizeViewWhileAnchored(float top_controls_height,
     // TextAutosizer are updated.
     TextAutosizer::DeferUpdatePageInfo defer_update_page_info(GetPage());
     LocalFrameView* frame_view = MainFrameImpl()->GetFrameView();
-    IntRect old_rect = frame_view->FrameRect();
+    IntSize old_size = frame_view->Size();
     UpdateICBAndResizeViewport();
-    IntRect new_rect = frame_view->FrameRect();
+    IntSize new_size = frame_view->Size();
     frame_view->MarkViewportConstrainedObjectsForLayout(
-        old_rect.Width() != new_rect.Width(),
-        old_rect.Height() != new_rect.Height());
+        old_size.Width() != new_size.Width(),
+        old_size.Height() != new_size.Height());
   }
 
   fullscreen_controller_->UpdateSize();
@@ -1899,6 +1901,11 @@ void WebViewImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
   }
 }
 
+void WebViewImpl::UpdateAllLifecyclePhasesAndCompositeForTesting() {
+  if (layer_tree_view_)
+    layer_tree_view_->SynchronouslyCompositeNoRasterForTesting();
+}
+
 void WebViewImpl::Paint(WebCanvas* canvas, const WebRect& rect) {
   // This should only be used when compositing is not being used for this
   // WebView, and it is painting into the recording of its parent.
@@ -1979,11 +1986,6 @@ WebInputEventResult WebViewImpl::DispatchBufferedTouchEvents() {
 
 WebInputEventResult WebViewImpl::HandleInputEvent(
     const WebCoalescedInputEvent& coalesced_event) {
-  return HandleInputEventIncludingTouch(coalesced_event);
-}
-
-WebInputEventResult WebViewImpl::HandleInputEventInternal(
-    const WebCoalescedInputEvent& coalesced_event) {
   const WebInputEvent& input_event = coalesced_event.Event();
   // TODO(dcheng): The fact that this is getting called when there is no local
   // main frame is problematic and probably indicates a bug in the input event
@@ -1998,8 +2000,10 @@ WebInputEventResult WebViewImpl::HandleInputEventInternal(
   TRACE_EVENT1("input,rail", "WebViewImpl::handleInputEvent", "type",
                WebInputEvent::GetName(input_event.GetType()));
 
-  // If a drag-and-drop operation is in progress, ignore input events.
-  if (MainFrameImpl()->FrameWidget()->DoingDragAndDrop())
+  // If a drag-and-drop operation is in progress, ignore input events except
+  // PointerCancel.
+  if (MainFrameImpl()->FrameWidget()->DoingDragAndDrop() &&
+      input_event.GetType() != WebInputEvent::kPointerCancel)
     return WebInputEventResult::kHandledSuppressed;
 
   if (dev_tools_emulator_->HandleInputEvent(input_event))
@@ -2044,7 +2048,7 @@ WebInputEventResult WebViewImpl::HandleInputEventInternal(
         InteractiveDetector::From(main_frame_document));
     if (interactive_detector) {
       interactive_detector->OnInvalidatingInputEvent(
-          input_event.TimeStampSeconds());
+          TimeTicksFromSeconds(input_event.TimeStampSeconds()));
     }
   }
 
@@ -2153,9 +2157,10 @@ void WebViewImpl::MouseCaptureLost() {
 }
 
 void WebViewImpl::SetFocus(bool enable) {
+  if (enable)
+    page_->GetFocusController().SetActive(true);
   page_->GetFocusController().SetFocused(enable);
   if (enable) {
-    page_->GetFocusController().SetActive(true);
     LocalFrame* focused_frame = page_->GetFocusController().FocusedFrame();
     if (focused_frame) {
       Element* element = focused_frame->GetDocument()->FocusedElement();
@@ -2297,40 +2302,6 @@ void WebViewImpl::DidLosePointerLock() {
     MainFrameImpl()->FrameWidget()->DidLosePointerLock();
 }
 
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-bool WebViewImpl::GetCompositionCharacterBounds(WebVector<WebRect>& bounds) {
-  WebInputMethodController* controller = GetActiveWebInputMethodController();
-  if (!controller)
-    return false;
-
-  WebRange range = controller->CompositionRange();
-  if (range.IsEmpty())
-    return false;
-
-  WebLocalFrame* frame = FocusedFrame();
-
-  // Only consider frames whose local root is the main frame. For other
-  // local frames which have different local roots, the corresponding
-  // WebFrameWidget will handle this task.
-  if (frame->LocalRoot() != MainFrameImpl())
-    return false;
-
-  size_t character_count = range.length();
-  size_t offset = range.StartOffset();
-  WebVector<WebRect> result(character_count);
-  WebRect webrect;
-  for (size_t i = 0; i < character_count; ++i) {
-    if (!frame->FirstRectForCharacterRange(offset + i, 1, webrect)) {
-      DLOG(ERROR) << "Could not retrieve character rectangle at " << i;
-      return false;
-    }
-    result[i] = webrect;
-  }
-  bounds.Swap(result);
-  return true;
-}
-
 // WebView --------------------------------------------------------------------
 
 WebSettingsImpl* WebViewImpl::SettingsImpl() {
@@ -2468,7 +2439,7 @@ bool WebViewImpl::ScrollFocusedEditableElementIntoView() {
     LayoutObject* layout_object = element->GetLayoutObject();
     if (!layout_object)
       return false;
-    layout_object->ScrollRectToVisible(element->BoundingBox(),
+    layout_object->ScrollRectToVisible(element->BoundingBoxForScrollIntoView(),
                                        WebScrollIntoViewParams());
     return true;
   }
@@ -2784,9 +2755,6 @@ void WebViewImpl::SetDeviceScaleFactor(float scale_factor) {
     return;
 
   GetPage()->SetDeviceScaleFactorDeprecated(scale_factor);
-
-  if (layer_tree_view_)
-    UpdateLayerTreeDeviceScaleFactor();
 }
 
 void WebViewImpl::SetZoomFactorForDeviceScaleFactor(
@@ -3031,6 +2999,13 @@ WebSize WebViewImpl::ContentsPreferredMinimumSize() {
   int width_scaled = document->GetLayoutView()
                          ->MinPreferredLogicalWidth()
                          .Round();  // Already accounts for zoom.
+  if (Scrollbar* scrollbar =
+          MainFrameImpl()->GetFrameView()->VerticalScrollbar()) {
+    DCHECK(!RuntimeEnabledFeatures::RootLayerScrollingEnabled());
+    // For RLS, this occurs in LayoutBlock::ComputeIntrinsicLogicalWidths.
+    if (!scrollbar->IsOverlayScrollbar())
+      width_scaled += scrollbar->ScrollbarThickness();
+  }
   int height_scaled =
       document->documentElement()->GetLayoutBox()->ScrollHeight().Round();
   return IntSize(width_scaled, height_scaled);
@@ -3207,8 +3182,6 @@ void WebViewImpl::SetCompositorDeviceScaleFactorOverride(
     SetZoomLevel(ZoomLevel());
     return;
   }
-  if (GetPage() && layer_tree_view_)
-    UpdateLayerTreeDeviceScaleFactor();
 }
 
 void WebViewImpl::SetDeviceEmulationTransform(
@@ -3397,7 +3370,7 @@ void WebViewImpl::ResizeAfterLayout() {
 
   if (should_auto_resize_) {
     LocalFrameView* view = MainFrameImpl()->GetFrame()->View();
-    WebSize frame_size = view->FrameRect().Size();
+    WebSize frame_size = view->Size();
     if (frame_size != size_) {
       size_ = frame_size;
 
@@ -3572,11 +3545,6 @@ void WebViewImpl::RegisterViewportLayersWithCompositor() {
           : nullptr;
 
   VisualViewport& visual_viewport = GetPage()->GetVisualViewport();
-
-  // TODO(bokan): This was moved here from when registerViewportLayers was a
-  // part of VisualViewport and maybe doesn't belong here. See comment inside
-  // the mehtod.
-  visual_viewport.SetScrollLayerOnScrollbars(layout_viewport_scroll_web_layer);
 
   WebLayerTreeView::ViewportLayers viewport_layers;
   viewport_layers.overscroll_elasticity =
@@ -3792,16 +3760,6 @@ void WebViewImpl::UpdateLayerTreeBackgroundColor() {
   if (!layer_tree_view_)
     return;
   layer_tree_view_->SetBackgroundColor(BackgroundColor());
-}
-
-void WebViewImpl::UpdateLayerTreeDeviceScaleFactor() {
-  DCHECK(GetPage());
-  DCHECK(layer_tree_view_);
-
-  float device_scale_factor = compositor_device_scale_factor_override_
-                                  ? compositor_device_scale_factor_override_
-                                  : GetPage()->DeviceScaleFactorDeprecated();
-  layer_tree_view_->SetDeviceScaleFactor(device_scale_factor);
 }
 
 void WebViewImpl::UpdateDeviceEmulationTransform() {

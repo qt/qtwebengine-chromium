@@ -1,6 +1,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//extensions/features/features.gni")
 import("//testing/test.gni")
 import("//tools/grit/grit_rule.gni")
@@ -52,11 +53,11 @@ grit("extensions_renderer_resources") {
   deps = [
     "//extensions/common:mojo_js",
     "//extensions/common/api:mojom_js",
-    "//services/device/public/interfaces:interfaces_js",
+    "//services/device/public/mojom:mojom_js",
   ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "browser/api/declarative/test_rules_registry.cc",
@@ -71,6 +72,8 @@ static_library("test_support") {
     "browser/api_unittest.h",
     "browser/app_window/test_app_window_contents.cc",
     "browser/app_window/test_app_window_contents.h",
+    "browser/content_verifier/test_utils.cc",
+    "browser/content_verifier/test_utils.h",
     "browser/extension_error_test_util.cc",
     "browser/extension_error_test_util.h",
     "browser/extensions_test.cc",
@@ -111,12 +114,16 @@ static_library("test_support") {
     "test/extension_test_message_listener.h",
     "test/extension_test_notification_observer.cc",
     "test/extension_test_notification_observer.h",
+    "test/logging_timer.cc",
+    "test/logging_timer.h",
     "test/result_catcher.cc",
     "test/result_catcher.h",
     "test/test_content_browser_client.cc",
     "test/test_content_browser_client.h",
     "test/test_content_utility_client.cc",
     "test/test_content_utility_client.h",
+    "test/test_extension_dir.cc",
+    "test/test_extension_dir.h",
     "test/test_extensions_client.cc",
     "test/test_extensions_client.h",
     "test/test_permission_message_provider.cc",
@@ -193,6 +200,7 @@ repack("shell_and_test_pak") {
 test("extensions_unittests") {
   sources = [
     "test/extensions_unittests_main.cc",
+    "test/logging_timer_unittest.cc",
   ]
 
   data = [

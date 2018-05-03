@@ -55,12 +55,6 @@ void HttpEquiv::Process(Document& document,
       ProcessHttpEquivContentSecurityPolicy(document, equiv, content);
     else
       document.GetContentSecurityPolicy()->ReportMetaOutsideHead(content);
-  } else if (EqualIgnoringASCIICase(equiv, "suborigin")) {
-    document.AddConsoleMessage(ConsoleMessage::Create(
-        kSecurityMessageSource, kErrorMessageLevel,
-        "Error with Suborigin header: Suborigin header with value '" + content +
-            "' was delivered via a <meta> element and not an HTTP header, "
-            "which is disallowed. The Suborigin has been ignored."));
   } else if (EqualIgnoringASCIICase(equiv, HTTPNames::Origin_Trial)) {
     if (in_document_head_element)
       OriginTrialContext::FromOrCreate(&document)->AddToken(content);
@@ -95,7 +89,7 @@ void HttpEquiv::ProcessHttpEquivAcceptCH(Document& document,
   UseCounter::Count(document, WebFeature::kClientHintsMetaAcceptCH);
   FrameClientHintsPreferencesContext hints_context(document.GetFrame());
   document.GetClientHintsPreferences().UpdateFromAcceptClientHintsHeader(
-      content, &hints_context);
+      content, document.Url(), &hints_context);
 }
 
 void HttpEquiv::ProcessHttpEquivDefaultStyle(Document& document,

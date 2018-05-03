@@ -32,22 +32,17 @@ static const uint32_t texture_source_formats[] = { DRM_FORMAT_R8, DRM_FORMAT_YVU
 
 static int mediatek_init(struct driver *drv)
 {
-	int ret;
-	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-				   &LINEAR_METADATA, BO_USE_RENDER_MASK);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+			     &LINEAR_METADATA, BO_USE_RENDER_MASK);
 
-	ret = drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
-				   &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
-	if (ret)
-		return ret;
+	drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
+			     &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
 
 	return drv_modify_linear_combinations(drv);
 }
 
 static int mediatek_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
-			      uint32_t flags)
+			      uint64_t use_flags)
 {
 	int ret;
 	size_t plane;
@@ -78,7 +73,7 @@ static int mediatek_bo_create(struct bo *bo, uint32_t width, uint32_t height, ui
 	return 0;
 }
 
-static void *mediatek_bo_map(struct bo *bo, struct map_info *data, size_t plane, int prot)
+static void *mediatek_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
 {
 	int ret;
 	struct drm_mtk_gem_map_off gem_map;
@@ -93,37 +88,55 @@ static void *mediatek_bo_map(struct bo *bo, struct map_info *data, size_t plane,
 		return MAP_FAILED;
 	}
 
-	void *addr = mmap(0, bo->total_size, prot, MAP_SHARED, bo->drv->fd, gem_map.offset);
+	void *addr = mmap(0, bo->total_size, drv_get_prot(map_flags), MAP_SHARED, bo->drv->fd,
+			  gem_map.offset);
 
-	data->length = bo->total_size;
+	vma->length = bo->total_size;
 
-	if (bo->flags & BO_USE_RENDERSCRIPT) {
+	if (bo->use_flags & BO_USE_RENDERSCRIPT) {
 		priv = calloc(1, sizeof(*priv));
 		priv->cached_addr = calloc(1, bo->total_size);
 		priv->gem_addr = addr;
-		memcpy(priv->cached_addr, priv->gem_addr, bo->total_size);
-		data->priv = priv;
+		vma->priv = priv;
 		addr = priv->cached_addr;
 	}
 
 	return addr;
 }
 
-static int mediatek_bo_unmap(struct bo *bo, struct map_info *data)
+static int mediatek_bo_unmap(struct bo *bo, struct vma *vma)
 {
-	if (data->priv) {
-		struct mediatek_private_map_data *priv = data->priv;
-		memcpy(priv->gem_addr, priv->cached_addr, bo->total_size);
-		data->addr = priv->gem_addr;
+	if (vma->priv) {
+		struct mediatek_private_map_data *priv = vma->priv;
+		vma->addr = priv->gem_addr;
 		free(priv->cached_addr);
 		free(priv);
-		data->priv = NULL;
+		vma->priv = NULL;
 	}
 
-	return munmap(data->addr, data->length);
+	return munmap(vma->addr, vma->length);
 }
 
-static uint32_t mediatek_resolve_format(uint32_t format, uint64_t usage)
+static int mediatek_bo_invalidate(struct bo *bo, struct mapping *mapping)
+{
+	if (mapping->vma->priv) {
+		struct mediatek_private_map_data *priv = mapping->vma->priv;
+		memcpy(priv->cached_addr, priv->gem_addr, bo->total_size);
+	}
+
+	return 0;
+}
+
+static int mediatek_bo_flush(struct bo *bo, struct mapping *mapping)
+{
+	struct mediatek_private_map_data *priv = mapping->vma->priv;
+	if (priv && (mapping->vma->map_flags & BO_MAP_WRITE))
+		memcpy(priv->gem_addr, priv->cached_addr, bo->total_size);
+
+	return 0;
+}
+
+static uint32_t mediatek_resolve_format(uint32_t format, uint64_t use_flags)
 {
 	switch (format) {
 	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
@@ -136,7 +149,7 @@ static uint32_t mediatek_resolve_format(uint32_t format, uint64_t usage)
 	}
 }
 
-struct backend backend_mediatek = {
+const struct backend backend_mediatek = {
 	.name = "mediatek",
 	.init = mediatek_init,
 	.bo_create = mediatek_bo_create,
@@ -144,6 +157,8 @@ struct backend backend_mediatek = {
 	.bo_import = drv_prime_bo_import,
 	.bo_map = mediatek_bo_map,
 	.bo_unmap = mediatek_bo_unmap,
+	.bo_invalidate = mediatek_bo_invalidate,
+	.bo_flush = mediatek_bo_flush,
 	.resolve_format = mediatek_resolve_format,
 };
 

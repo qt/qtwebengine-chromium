@@ -28,6 +28,7 @@
 #include "core/style/ComputedStyle.h"
 #include "core/svg/SVGGradientElement.h"
 #include "core/svg/SVGPatternElement.h"
+#include "core/svg/SVGResource.h"
 #include "core/svg/SVGTreeScopeResources.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg_names.h"
@@ -157,12 +158,14 @@ template <typename ContainerType>
 ContainerType* AttachToResource(SVGTreeScopeResources& tree_scope_resources,
                                 const AtomicString& id,
                                 SVGElement& element) {
-  if (LayoutSVGResourceContainer* container =
-          tree_scope_resources.ResourceById(id)) {
+  SVGResource* resource = tree_scope_resources.ResourceForId(id);
+  if (!resource)
+    return nullptr;
+  if (LayoutSVGResourceContainer* container = resource->ResourceContainer()) {
     if (IsResourceOfType<ContainerType>(container))
       return static_cast<ContainerType*>(container);
   }
-  tree_scope_resources.AddPendingResource(id, element);
+  resource->AddWatch(element);
   return nullptr;
 }
 }
@@ -181,11 +184,9 @@ static inline SVGResources& EnsureResources(
 }
 
 std::unique_ptr<SVGResources> SVGResources::BuildResources(
-    const LayoutObject* object,
+    const LayoutObject& object,
     const ComputedStyle& computed_style) {
-  DCHECK(object);
-
-  Node* node = object->GetNode();
+  Node* node = object.GetNode();
   DCHECK(node);
   SECURITY_DCHECK(node->IsSVGElement());
 
@@ -202,7 +203,7 @@ std::unique_ptr<SVGResources> SVGResources::BuildResources(
 
   std::unique_ptr<SVGResources> resources;
   if (ClipperFilterMaskerTags().Contains(tag_name)) {
-    if (computed_style.ClipPath() && !object->IsSVGRoot()) {
+    if (computed_style.ClipPath() && !object.IsSVGRoot()) {
       ClipPathOperation* clip_path_operation = computed_style.ClipPath();
       if (clip_path_operation->GetType() == ClipPathOperation::REFERENCE) {
         const ReferenceClipPathOperation& clip_path_reference =
@@ -215,7 +216,7 @@ std::unique_ptr<SVGResources> SVGResources::BuildResources(
       }
     }
 
-    if (computed_style.HasFilter() && !object->IsSVGRoot()) {
+    if (computed_style.HasFilter() && !object.IsSVGRoot()) {
       const FilterOperations& filter_operations = computed_style.Filter();
       if (filter_operations.size() == 1) {
         const FilterOperation& filter_operation = *filter_operations.at(0);
@@ -279,6 +280,22 @@ std::unique_ptr<SVGResources> SVGResources::BuildResources(
                                                        : std::move(resources);
 }
 
+void SVGResources::RemoveUnreferencedResources(const LayoutObject& object) {
+  SVGTreeScopeResources& tree_scope_resources =
+      ToSVGElement(*object.GetNode())
+          .TreeScopeForIdResolution()
+          .EnsureSVGTreeScopedResources();
+  tree_scope_resources.RemoveUnreferencedResources();
+}
+
+void SVGResources::RemoveWatchesForElement(Element& element) {
+  SECURITY_DCHECK(element.IsSVGElement());
+  SVGElement& svg_element = ToSVGElement(element);
+  SVGTreeScopeResources& tree_scope_resources =
+      svg_element.TreeScopeForIdResolution().EnsureSVGTreeScopedResources();
+  tree_scope_resources.RemoveWatchesForElement(svg_element);
+}
+
 void SVGResources::LayoutIfNeeded() {
   if (clipper_filter_masker_data_) {
     if (LayoutSVGResourceClipper* clipper =
@@ -310,20 +327,24 @@ void SVGResources::LayoutIfNeeded() {
     linked_resource_->LayoutIfNeeded();
 }
 
-void SVGResources::RemoveClientFromCacheAffectingObjectBounds(
-    LayoutObject* object,
-    bool mark_for_invalidation) const {
+unsigned SVGResources::RemoveClientFromCacheAffectingObjectBounds(
+    LayoutObject& client) const {
   if (!clipper_filter_masker_data_)
-    return;
+    return 0;
+  unsigned invalidation_flags = 0;
   if (LayoutSVGResourceClipper* clipper = clipper_filter_masker_data_->clipper)
-    clipper->RemoveClientFromCache(object, mark_for_invalidation);
-  if (LayoutSVGResourceFilter* filter = clipper_filter_masker_data_->filter)
-    filter->RemoveClientFromCache(object, mark_for_invalidation);
+    clipper->RemoveClientFromCache(client);
+  if (LayoutSVGResourceFilter* filter = clipper_filter_masker_data_->filter) {
+    if (filter->RemoveClientFromCache(client))
+      invalidation_flags |= LayoutSVGResourceContainer::kPaintInvalidation;
+  }
   if (LayoutSVGResourceMasker* masker = clipper_filter_masker_data_->masker)
-    masker->RemoveClientFromCache(object, mark_for_invalidation);
+    masker->RemoveClientFromCache(client);
+  return invalidation_flags |
+         LayoutSVGResourceContainer::kBoundariesInvalidation;
 }
 
-void SVGResources::RemoveClientFromCache(LayoutObject* object,
+void SVGResources::RemoveClientFromCache(LayoutObject& client,
                                          bool mark_for_invalidation) const {
   if (!HasResourceData())
     return;
@@ -332,31 +353,40 @@ void SVGResources::RemoveClientFromCache(LayoutObject* object,
     DCHECK(!clipper_filter_masker_data_);
     DCHECK(!marker_data_);
     DCHECK(!fill_stroke_data_);
-    linked_resource_->RemoveClientFromCache(object, mark_for_invalidation);
+    linked_resource_->RemoveClientFromCache(client);
+    if (mark_for_invalidation) {
+      // The only linked resources are gradients and patterns, i.e
+      // always a paint server.
+      LayoutSVGResourceContainer::MarkClientForInvalidation(
+          client, LayoutSVGResourceContainer::kPaintInvalidation);
+    }
     return;
   }
 
-  RemoveClientFromCacheAffectingObjectBounds(object, mark_for_invalidation);
+  unsigned invalidation_flags =
+      RemoveClientFromCacheAffectingObjectBounds(client);
 
   if (marker_data_) {
-    if (marker_data_->marker_start)
-      marker_data_->marker_start->RemoveClientFromCache(object,
-                                                        mark_for_invalidation);
-    if (marker_data_->marker_mid)
-      marker_data_->marker_mid->RemoveClientFromCache(object,
-                                                      mark_for_invalidation);
-    if (marker_data_->marker_end)
-      marker_data_->marker_end->RemoveClientFromCache(object,
-                                                      mark_for_invalidation);
+    if (LayoutSVGResourceMarker* marker = marker_data_->marker_start)
+      marker->RemoveClientFromCache(client);
+    if (LayoutSVGResourceMarker* marker = marker_data_->marker_mid)
+      marker->RemoveClientFromCache(client);
+    if (LayoutSVGResourceMarker* marker = marker_data_->marker_end)
+      marker->RemoveClientFromCache(client);
+    invalidation_flags |= LayoutSVGResourceContainer::kBoundariesInvalidation;
   }
 
   if (fill_stroke_data_) {
-    if (fill_stroke_data_->fill)
-      fill_stroke_data_->fill->RemoveClientFromCache(object,
-                                                     mark_for_invalidation);
-    if (fill_stroke_data_->stroke)
-      fill_stroke_data_->stroke->RemoveClientFromCache(object,
-                                                       mark_for_invalidation);
+    if (LayoutSVGResourcePaintServer* fill = fill_stroke_data_->fill)
+      fill->RemoveClientFromCache(client);
+    if (LayoutSVGResourcePaintServer* stroke = fill_stroke_data_->stroke)
+      stroke->RemoveClientFromCache(client);
+    invalidation_flags |= LayoutSVGResourceContainer::kPaintInvalidation;
+  }
+
+  if (mark_for_invalidation) {
+    LayoutSVGResourceContainer::MarkClientForInvalidation(client,
+                                                          invalidation_flags);
   }
 }
 

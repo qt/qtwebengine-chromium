@@ -16,7 +16,7 @@ service("video_capture") {
     ":lib",
     "//mojo/public/cpp/system",
     "//services/video_capture/public/cpp",
-    "//services/video_capture/public/interfaces",
+    "//services/video_capture/public/mojom",
   ]
 }
 
@@ -56,8 +56,8 @@ source_set("lib") {
     "//mojo/common:common_base",
     "//services/service_manager/public/cpp",
     "//services/video_capture/public/cpp",
-    "//services/video_capture/public/interfaces",
-    "//services/video_capture/public/interfaces:constants",
+    "//services/video_capture/public/mojom",
+    "//services/video_capture/public/mojom:constants",
     "//services/video_capture/public/uma",
   ]
 }
@@ -66,6 +66,7 @@ source_set("tests") {
   testonly = true
 
   sources = [
+    "device_media_to_mojo_adapter_unittest.cc",
     "test/device_factory_provider_connectortest.cc",
     "test/device_factory_provider_test.cc",
     "test/device_factory_provider_test.h",
@@ -76,6 +77,8 @@ source_set("tests") {
     "test/fake_device_test.cc",
     "test/fake_device_test.h",
     "test/fake_device_unittest.cc",
+    "test/mock_device.cc",
+    "test/mock_device.h",
     "test/mock_device_factory.cc",
     "test/mock_device_factory.h",
     "test/mock_device_test.cc",
@@ -92,7 +95,7 @@ source_set("tests") {
     ":lib",
     ":video_capture",
     "//base/test:test_support",
-    "//media/capture/mojo:capture_types",
+    "//media/capture/mojo:video_capture",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/cpp:service_test_support",
     "//services/service_manager/public/cpp/test:test_support",

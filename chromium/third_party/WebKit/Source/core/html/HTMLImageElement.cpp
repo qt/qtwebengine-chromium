@@ -107,8 +107,8 @@ HTMLImageElement* HTMLImageElement::Create(Document& document) {
 }
 
 HTMLImageElement* HTMLImageElement::Create(Document& document,
-                                           bool created_by_parser) {
-  return new HTMLImageElement(document, created_by_parser);
+                                           const CreateElementFlags flags) {
+  return new HTMLImageElement(document, flags.IsCreatedByParser());
 }
 
 HTMLImageElement::~HTMLImageElement() = default;
@@ -789,7 +789,7 @@ void HTMLImageElement::SetLayoutDisposition(
   } else {
     if (layout_disposition_ == LayoutDisposition::kFallbackContent) {
       EventDispatchForbiddenScope::AllowUserAgentEvents allow_events;
-      EnsureUserAgentShadowRootV1();
+      EnsureUserAgentShadowRoot();
     }
     LazyReattachIfAttached();
   }
@@ -817,9 +817,5 @@ void HTMLImageElement::AssociateWith(HTMLFormElement* form) {
     form_->DidAssociateByParser();
   }
 };
-
-FloatSize HTMLImageElement::SourceDefaultObjectSize() {
-  return FloatSize(width(), height());
-}
 
 }  // namespace blink

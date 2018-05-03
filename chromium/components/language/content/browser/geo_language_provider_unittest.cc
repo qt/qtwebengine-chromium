@@ -11,12 +11,12 @@
 #include "base/macros.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "base/timer/timer.h"
-#include "device/geolocation/public/interfaces/geolocation.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/public_ip_address_geolocation_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/geolocation.mojom.h"
+#include "services/device/public/mojom/public_ip_address_geolocation_provider.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "services/service_manager/public/interfaces/connector.mojom.h"
+#include "services/service_manager/public/mojom/connector.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -93,7 +93,7 @@ class GeoLanguageProviderTest : public testing::Test {
     connector_ = service_manager::Connector::Create(&request);
     service_manager::Connector::TestApi test_api(connector_.get());
     test_api.OverrideBinderForTesting(
-        device::mojom::kServiceName,
+        service_manager::Identity(device::mojom::kServiceName),
         device::mojom::PublicIpAddressGeolocationProvider::Name_,
         base::BindRepeating(&MockIpGeoLocationProvider::Bind,
                             base::Unretained(&mock_ip_geo_location_provider_)));

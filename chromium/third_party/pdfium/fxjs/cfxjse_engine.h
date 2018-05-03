@@ -11,8 +11,9 @@
 #include <memory>
 #include <vector>
 
+#include "fxjs/cfx_v8.h"
 #include "fxjs/cfxjse_formcalc_context.h"
-#include "fxjs/cjs_v8.h"
+#include "v8/include/v8.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_script.h"
@@ -20,10 +21,11 @@
 
 #define XFA_RESOLVENODE_TagName 0x0002
 
-class CXFA_List;
 class CFXJSE_ResolveProcessor;
+class CFXJS_Engine;
+class CXFA_List;
 
-class CFXJSE_Engine : public CJS_V8 {
+class CFXJSE_Engine : public CFX_V8 {
  public:
   static CXFA_Object* ToObject(const v8::FunctionCallbackInfo<v8::Value>& info);
   static CXFA_Object* ToObject(CFXJSE_Value* pValue, CFXJSE_Class* pClass);
@@ -49,7 +51,7 @@ class CFXJSE_Engine : public CJS_V8 {
                                       const ByteStringView& szPropName,
                                       bool bQueryIn);
 
-  explicit CFXJSE_Engine(CXFA_Document* pDocument, v8::Isolate* pIsolate);
+  CFXJSE_Engine(CXFA_Document* pDocument, CFXJS_Engine* fxjs_engine);
   ~CFXJSE_Engine() override;
 
   void SetEventParam(CXFA_EventParam param) { m_eventParam = param; }
@@ -82,6 +84,10 @@ class CFXJSE_Engine : public CJS_V8 {
   CXFA_Script::Type GetType();
   std::vector<CXFA_Node*>* GetUpObjectArray() { return &m_upObjectArray; }
   CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
+
+  CXFA_Object* ToXFAObject(v8::Local<v8::Value> obj);
+  v8::Local<v8::Value> NewXFAObject(CXFA_Object* obj,
+                                    v8::Global<v8::FunctionTemplate>& tmpl);
 
  private:
   CFXJSE_Context* CreateVariablesContext(CXFA_Node* pScriptNode,

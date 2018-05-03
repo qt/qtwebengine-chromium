@@ -10,24 +10,26 @@
 
 namespace blink {
 
-{# TODO(yukishiino): Remove |method.is_custom| once we support the author
-   function\'s return value. #}
-{% for method in methods if not method.is_custom %}
+{% for method in methods %}
 
-{% set return_success = 'return' if method.cpp_type == 'void' else 'return true' %}
-{% set return_failure = 'return' if method.cpp_type == 'void' else 'return false' %}
-
-{{method.cpp_type}} {{v8_class}}::{{method.name}}({{method.argument_declarations | join(', ')}}) {
+v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_declarations | join(', ')}}) {
   // This function implements "call a user object's operation".
   // https://heycam.github.io/webidl/#call-a-user-objects-operation
 
-  {# TODO(yukishiino): Add |ScriptWrappable* callback_this_value| as the first
-     argument of the IDL operations. The callsites must pass callback_this_value
-     explicitly. #}
-  ScriptWrappable* callback_this_value = nullptr;
-
   if (!IsCallbackFunctionRunnable(CallbackRelevantScriptState())) {
-    {{return_success}};
+    // Wrapper-tracing for the callback function makes the function object and
+    // its creation context alive. Thus it's safe to use the creation context
+    // of the callback function here.
+    v8::HandleScope handle_scope(GetIsolate());
+    CHECK(!CallbackObject().IsEmpty());
+    v8::Context::Scope context_scope(CallbackObject()->CreationContext());
+    V8ThrowException::ThrowError(
+        GetIsolate(),
+        ExceptionMessages::FailedToExecute(
+            "{{method.name}}",
+            "{{cpp_class}}",
+            "The provided callback is no longer runnable."));
+    return v8::Nothing<{{method.cpp_type}}>();
   }
 
   // step 7. Prepare to run script with relevant settings.
@@ -37,13 +39,16 @@ namespace blink {
   {# TODO(yukishiino): Callback interface type value must make the incumbent
      environment alive, i.e. the reference to v8::Context must be strong. #}
   if (IncumbentScriptState()->GetContext().IsEmpty()) {
-    {{return_success}};
+    V8ThrowException::ThrowError(
+        GetIsolate(),
+        ExceptionMessages::FailedToExecute(
+            "{{method.name}}",
+            "{{cpp_class}}",
+            "The provided callback is no longer runnable."));
+    return v8::Nothing<{{method.cpp_type}}>();
   }
   v8::Context::BackupIncumbentScope backup_incumbent_scope(
       IncumbentScriptState()->GetContext());
-
-  v8::TryCatch try_catch(GetIsolate());
-  try_catch.SetVerbose(true);
 
   v8::Local<v8::Function> function;
   if (IsCallbackObjectCallable()) {
@@ -58,7 +63,7 @@ namespace blink {
     if (!CallbackObject()->Get(CallbackRelevantScriptState()->GetContext(),
                                V8String(GetIsolate(), "{{method.name}}"))
         .ToLocal(&value)) {
-      {{return_failure}};
+      return v8::Nothing<{{method.cpp_type}}>();
     }
     // step 10. If !IsCallable(X) is false, then set completion to a new
     //   Completion{[[Type]]: throw, [[Value]]: a newly created TypeError
@@ -70,7 +75,7 @@ namespace blink {
               "{{method.name}}",
               "{{cpp_class}}",
               "The provided callback is not callable."));
-      {{return_failure}};
+      return v8::Nothing<{{method.cpp_type}}>();
     }
   }
 
@@ -99,7 +104,7 @@ namespace blink {
                                    "{{method.name}}");
     if (!IsValidEnum({{argument.name}}, {{valid_enum_variables}}, WTF_ARRAY_LENGTH({{valid_enum_variables}}), "{{argument.enum_type}}", exception_state)) {
       NOTREACHED();
-      return false;
+      return v8::Nothing<{{method.cpp_type}}>();
     }
   }
 #endif
@@ -134,14 +139,13 @@ namespace blink {
           GetIsolate()).ToLocal(&call_result)) {
     // step 14. If callResult is an abrupt completion, set completion to
     //   callResult and jump to the step labeled return.
-    {{return_failure}};
+    return v8::Nothing<{{method.cpp_type}}>();
   }
 
   // step 15. Set completion to the result of converting callResult.[[Value]] to
   //   an IDL value of the same type as the operation's return type.
   {% if method.idl_type == 'void' %}
-  ALLOW_UNUSED_LOCAL(call_result);
-  return;
+  return v8::JustVoid();
   {% else %}
   {
     ExceptionState exception_state(GetIsolate(),
@@ -152,13 +156,56 @@ namespace blink {
     auto native_result =
         NativeValueTraits<{{idl_return_type}}>::NativeValue(
             GetIsolate(), call_result, exception_state);
-    ALLOW_UNUSED_LOCAL(native_result);
-    return !exception_state.HadException();
+    if (exception_state.HadException())
+      return v8::Nothing<{{method.cpp_type}}>();
+    else
+      return v8::Just<{{method.cpp_type}}>(native_result);
   }
   {% endif %}
 }
 
 {% endfor %}
+
+{% if methods|length == 1 and methods[0].idl_type == 'void' %}
+void {{v8_class}}::InvokeAndReportException({{methods[0].argument_declarations | join(', ')}}) {
+  v8::TryCatch try_catch(GetIsolate());
+  try_catch.SetVerbose(true);
+
+  v8::Maybe<void> maybe_result =
+      {{methods[0].name}}({{
+          (['callback_this_value'] +
+           (methods[0].arguments|map(attribute='name')|list)
+          )|join(', ')
+      }});
+  // An exception if any is killed with the v8::TryCatch above.
+  ALLOW_UNUSED_LOCAL(maybe_result);
+}
+{% endif %}
+
+{% for method in methods %}
+{{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
+v8::Maybe<{{method.cpp_type}}> V8PersistentCallbackInterface<{{v8_class}}>::{{method.name}}({{method.argument_declarations | join(', ')}}) {
+  return Proxy()->{{method.name}}(
+      {{
+         (['callback_this_value'] +
+          (method.arguments|map(attribute='name')|list)
+         )|join(', ')
+      }});
+}
+
+{% endfor %}
+
+{% if methods|length == 1 and methods[0].idl_type == 'void' %}
+{{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
+void V8PersistentCallbackInterface<{{v8_class}}>::InvokeAndReportException({{methods[0].argument_declarations | join(', ')}}) {
+  Proxy()->InvokeAndReportException(
+      {{
+         (['callback_this_value'] +
+          (methods[0].arguments|map(attribute='name')|list)
+         )|join(', ')
+      }});
+}
+{% endif %}
 
 }  // namespace blink
 

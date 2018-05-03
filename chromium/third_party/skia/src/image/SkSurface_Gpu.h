@@ -19,11 +19,15 @@ public:
     SkSurface_Gpu(sk_sp<SkGpuDevice>);
     ~SkSurface_Gpu() override;
 
+    // This is an internal-only factory
+    static sk_sp<SkSurface> MakeWrappedRenderTarget(GrContext*, sk_sp<GrRenderTargetContext>);
+
     GrBackendObject onGetTextureHandle(BackendHandleAccess) override;
     bool onGetRenderTargetHandle(GrBackendObject*, BackendHandleAccess) override;
     SkCanvas* onNewCanvas() override;
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
     sk_sp<SkImage> onNewImageSnapshot() override;
+    void onWritePixels(const SkPixmap&, int x, int y) override;
     void onCopyOnWrite(ContentChangeMode) override;
     void onDiscard() override;
     GrSemaphoresSubmitted onFlush(int numSemaphores,
@@ -31,7 +35,7 @@ public:
     bool onWait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) override;
     bool onCharacterize(SkSurfaceCharacterization*) const override;
     bool isCompatible(const SkSurfaceCharacterization&) const;
-    bool onDraw(SkDeferredDisplayList*) override;
+    bool onDraw(const SkDeferredDisplayList*) override;
 
     SkGpuDevice* getDevice() { return fDevice.get(); }
 

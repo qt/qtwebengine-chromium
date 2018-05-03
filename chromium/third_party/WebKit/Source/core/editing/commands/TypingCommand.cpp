@@ -41,6 +41,8 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/commands/BreakBlockquoteCommand.h"
 #include "core/editing/commands/DeleteSelectionCommand.h"
+#include "core/editing/commands/DeleteSelectionOptions.h"
+#include "core/editing/commands/EditingCommandsUtilities.h"
 #include "core/editing/commands/InsertIncrementalTextCommand.h"
 #include "core/editing/commands/InsertLineBreakCommand.h"
 #include "core/editing/commands/InsertParagraphSeparatorCommand.h"
@@ -117,7 +119,6 @@ PlainTextRange GetSelectionOffsets(const SelectionInDOMTree& selection) {
 
 SelectionInDOMTree CreateSelection(const size_t start,
                                    const size_t end,
-                                   const bool is_directional,
                                    Element* element) {
   const EphemeralRange& start_range =
       PlainTextRange(0, static_cast<int>(start)).CreateRange(*element);
@@ -132,7 +133,6 @@ SelectionInDOMTree CreateSelection(const size_t start,
   const SelectionInDOMTree& selection =
       SelectionInDOMTree::Builder()
           .SetBaseAndExtent(start_position, end_position)
-          .SetIsDirectional(is_directional)
           .Build();
   return selection;
 }
@@ -205,18 +205,17 @@ void TypingCommand::DeleteSelection(Document& document, Options options) {
 }
 
 void TypingCommand::DeleteSelectionIfRange(const VisibleSelection& selection,
-                                           EditingState* editing_state,
-                                           bool smart_delete,
-                                           bool merge_blocks_after_delete,
-                                           bool expand_for_special_elements,
-                                           bool sanitize_markup) {
+                                           EditingState* editing_state) {
   if (!selection.IsRange())
     return;
-  ApplyCommandToComposite(
-      DeleteSelectionCommand::Create(
-          selection, smart_delete, merge_blocks_after_delete,
-          expand_for_special_elements, sanitize_markup),
-      editing_state);
+  ApplyCommandToComposite(DeleteSelectionCommand::Create(
+                              selection, DeleteSelectionOptions::Builder()
+                                             .SetSmartDelete(smart_delete_)
+                                             .SetMergeBlocksAfterDelete(true)
+                                             .SetExpandForSpecialElements(true)
+                                             .SetSanitizeMarkup(true)
+                                             .Build()),
+                          editing_state);
 }
 
 void TypingCommand::DeleteKeyPressed(Document& document,
@@ -325,8 +324,8 @@ void TypingCommand::AdjustSelectionAfterIncrementalInsertion(
   }
 
   const size_t new_end = selection_start + text_length;
-  const SelectionInDOMTree& selection = CreateSelection(
-      new_end, new_end, EndingSelection().IsDirectional(), element);
+  const SelectionInDOMTree& selection =
+      CreateSelection(new_end, new_end, element);
   SetEndingSelection(SelectionForUndoStep::From(selection));
 }
 
@@ -406,8 +405,8 @@ void TypingCommand::InsertText(
     last_typing_command->input_type_ = input_type;
 
     EventQueueScope event_queue_scope;
-    last_typing_command->InsertText(new_text, options & kSelectInsertedText,
-                                    editing_state);
+    last_typing_command->InsertTextInternal(
+        new_text, options & kSelectInsertedText, editing_state);
     return;
   }
 
@@ -529,7 +528,7 @@ void TypingCommand::DoApply(EditingState* editing_state) {
       InsertParagraphSeparatorInQuotedContent(editing_state);
       return;
     case kInsertText:
-      InsertText(text_to_insert_, select_inserted_text_, editing_state);
+      InsertTextInternal(text_to_insert_, select_inserted_text_, editing_state);
       return;
   }
 
@@ -580,9 +579,9 @@ void TypingCommand::TypingAddedToOpenCommand(
   frame->GetEditor().AppliedEditing(this);
 }
 
-void TypingCommand::InsertText(const String& text,
-                               bool select_inserted_text,
-                               EditingState* editing_state) {
+void TypingCommand::InsertTextInternal(const String& text,
+                                       bool select_inserted_text,
+                                       EditingState* editing_state) {
   text_to_insert_ = text;
 
   if (text.IsEmpty()) {
@@ -743,7 +742,6 @@ bool TypingCommand::MakeEditableRootEmpty(EditingState* editing_state) {
   const SelectionInDOMTree& selection =
       SelectionInDOMTree::Builder()
           .Collapse(Position::FirstPositionInNode(*root))
-          .SetIsDirectional(EndingSelection().IsDirectional())
           .Build();
   SetEndingSelection(SelectionForUndoStep::From(selection));
 
@@ -869,7 +867,6 @@ void TypingCommand::DeleteKeyPressed(TextGranularity granularity,
         SelectionInDOMTree::Builder()
             .Collapse(Position::BeforeNode(*table))
             .Extend(EndingSelection().Start())
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build();
     SetEndingSelection(SelectionForUndoStep::From(selection));
     TypingAddedToOpenCommand(kDeleteKey);
@@ -928,7 +925,7 @@ void TypingCommand::DeleteKeyPressedInternal(
   if (frame->GetEditor().Behavior().ShouldUndoOfDeleteSelectText() &&
       opened_by_backward_delete_)
     SetStartingSelection(selection_after_undo);
-  DeleteSelectionIfRange(selection_to_delete, editing_state, smart_delete_);
+  DeleteSelectionIfRange(selection_to_delete, editing_state);
   if (editing_state->IsAborted())
     return;
   SetSmartDelete(false);
@@ -1009,7 +1006,6 @@ void TypingCommand::ForwardDeleteKeyPressed(TextGranularity granularity,
             .SetBaseAndExtentDeprecated(
                 EndingSelection().End(),
                 Position::AfterNode(*downstream_end.ComputeContainerNode()))
-            .SetIsDirectional(EndingSelection().IsDirectional())
             .Build();
     SetEndingSelection(SelectionForUndoStep::From(selection));
     TypingAddedToOpenCommand(kForwardDeleteKey);
@@ -1069,7 +1065,7 @@ void TypingCommand::ForwardDeleteKeyPressedInternal(
   // Make undo select what was deleted on Mac alone
   if (frame->GetEditor().Behavior().ShouldUndoOfDeleteSelectText())
     SetStartingSelection(selection_after_undo);
-  DeleteSelectionIfRange(selection_to_delete, editing_state, smart_delete_);
+  DeleteSelectionIfRange(selection_to_delete, editing_state);
   if (editing_state->IsAborted())
     return;
   SetSmartDelete(false);
@@ -1078,7 +1074,9 @@ void TypingCommand::ForwardDeleteKeyPressedInternal(
 
 void TypingCommand::DeleteSelection(bool smart_delete,
                                     EditingState* editing_state) {
-  if (!CompositeEditCommand::DeleteSelection(editing_state, smart_delete))
+  if (!CompositeEditCommand::DeleteSelection(
+          editing_state, smart_delete ? DeleteSelectionOptions::SmartDelete()
+                                      : DeleteSelectionOptions::NormalDelete()))
     return;
   TypingAddedToOpenCommand(kDeleteSelection);
 }

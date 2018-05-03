@@ -10,15 +10,18 @@ import("//testing/test.gni")
 declare_args() {
   # Enables incremental marking in Oilpan.
   enable_blink_heap_incremental_marking = false
+
+  # Enables heap verification.
+  enable_blink_heap_verification = false
 }
 
-buildflag_header("blink_heap_incremental_marking") {
-  header = "IncrementalMarkingFlag.h"
-
+buildflag_header("blink_heap_flags") {
+  header = "HeapFlags.h"
   header_dir = "blink/platform/heap"
 
   flags = [
     "BLINK_HEAP_INCREMENTAL_MARKING=$enable_blink_heap_incremental_marking",
+    "BLINK_HEAP_VERIFICATION=$enable_blink_heap_verification",
   ]
 }
 
@@ -46,6 +49,8 @@ blink_platform_sources("heap") {
     "HeapTerminatedArray.h",
     "HeapTerminatedArrayBuilder.h",
     "HeapTraits.h",
+    "MarkingVisitor.cpp",
+    "MarkingVisitor.h",
     "Member.h",
     "PageMemory.cpp",
     "PageMemory.h",
@@ -54,6 +59,8 @@ blink_platform_sources("heap") {
     "Persistent.h",
     "PersistentNode.cpp",
     "PersistentNode.h",
+    "ProcessHeap.cpp",
+    "ProcessHeap.h",
     "SafePoint.h",
     "SelfKeepAlive.h",
     "SparseHeapBitmap.cpp",
@@ -64,9 +71,7 @@ blink_platform_sources("heap") {
     "ThreadState.h",
     "ThreadingTraits.h",
     "TraceTraits.h",
-    "Visitor.cpp",
     "Visitor.h",
-    "VisitorImpl.h",
   ]
 
   deps = [

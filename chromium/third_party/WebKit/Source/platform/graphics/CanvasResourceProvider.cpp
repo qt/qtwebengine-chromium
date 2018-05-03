@@ -4,11 +4,13 @@
 
 #include "platform/graphics/CanvasResourceProvider.h"
 
+#include "cc/paint/decode_stashing_image_provider.h"
 #include "cc/paint/skia_paint_canvas.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
 #include "platform/graphics/AcceleratedStaticBitmapImage.h"
+#include "platform/graphics/CanvasHeuristicParameters.h"
 #include "platform/graphics/CanvasResource.h"
 #include "platform/graphics/StaticBitmapImage.h"
 #include "platform/graphics/gpu/SharedGpuContext.h"
@@ -302,6 +304,46 @@ std::unique_ptr<CanvasResourceProvider> CanvasResourceProvider::Create(
   return nullptr;
 }
 
+CanvasResourceProvider::CanvasImageProvider::CanvasImageProvider(
+    cc::ImageDecodeCache* cache,
+    const gfx::ColorSpace& target_color_space)
+    : playback_image_provider_(cache,
+                               target_color_space,
+                               cc::PlaybackImageProvider::Settings()) {}
+
+CanvasResourceProvider::CanvasImageProvider::~CanvasImageProvider() = default;
+
+cc::ImageProvider::ScopedDecodedDrawImage
+CanvasResourceProvider::CanvasImageProvider::GetDecodedDrawImage(
+    const cc::DrawImage& draw_image) {
+  auto scoped_decoded_image =
+      playback_image_provider_.GetDecodedDrawImage(draw_image);
+  if (!scoped_decoded_image.needs_unlock())
+    return scoped_decoded_image;
+
+  if (!scoped_decoded_image.decoded_image().is_budgeted()) {
+    // If we have exceeded the budget, ReleaseLockedImages any locked decodes.
+    ReleaseLockedImages();
+  }
+
+  // It is safe to use base::Unretained, since decodes acquired from a provider
+  // must not exceed the provider's lifetime.
+  auto decoded_draw_image = scoped_decoded_image.decoded_image();
+  return ScopedDecodedDrawImage(
+      decoded_draw_image,
+      base::BindOnce(&CanvasImageProvider::CanUnlockImage,
+                     base::Unretained(this), std::move(scoped_decoded_image)));
+}
+
+void CanvasResourceProvider::CanvasImageProvider::ReleaseLockedImages() {
+  locked_images_.clear();
+}
+
+void CanvasResourceProvider::CanvasImageProvider::CanUnlockImage(
+    ScopedDecodedDrawImage image) {
+  locked_images_.push_back(std::move(image));
+}
+
 CanvasResourceProvider::CanvasResourceProvider(
     const IntSize& size,
     const CanvasColorParams& color_params,
@@ -309,9 +351,16 @@ CanvasResourceProvider::CanvasResourceProvider(
     : weak_ptr_factory_(this),
       context_provider_wrapper_(std::move(context_provider_wrapper)),
       size_(size),
-      color_params_(color_params) {}
+      color_params_(color_params),
+      snapshot_paint_image_id_(cc::PaintImage::GetNextId()) {
+  if (context_provider_wrapper_)
+    context_provider_wrapper_->AddObserver(this);
+}
 
-CanvasResourceProvider::~CanvasResourceProvider() = default;
+CanvasResourceProvider::~CanvasResourceProvider() {
+  if (context_provider_wrapper_)
+    context_provider_wrapper_->RemoveObserver(this);
+}
 
 SkSurface* CanvasResourceProvider::GetSkSurface() const {
   if (!surface_) {
@@ -322,27 +371,76 @@ SkSurface* CanvasResourceProvider::GetSkSurface() const {
 
 PaintCanvas* CanvasResourceProvider::Canvas() {
   if (!canvas_) {
+    DCHECK(!canvas_image_provider_);
+
+    cc::ImageProvider* image_provider = nullptr;
+    if (ImageDecodeCache()) {
+      canvas_image_provider_.emplace(ImageDecodeCache(),
+                                     ColorParams().GetStorageGfxColorSpace());
+      image_provider = &*canvas_image_provider_;
+    }
+
+    cc::SkiaPaintCanvas::ContextFlushes context_flushes;
+    if (IsAccelerated()) {
+      context_flushes.enable =
+          CanvasHeuristicParameters::kEnableGrContextFlushes;
+      context_flushes.max_draws_before_flush =
+          CanvasHeuristicParameters::kMaxDrawsBeforeContextFlush;
+    }
     if (ColorParams().NeedsSkColorSpaceXformCanvas()) {
       canvas_ = std::make_unique<cc::SkiaPaintCanvas>(
-          GetSkSurface()->getCanvas(), ColorParams().GetSkColorSpace());
+          GetSkSurface()->getCanvas(), ColorParams().GetSkColorSpace(),
+          std::move(image_provider), context_flushes);
     } else {
-      canvas_ =
-          std::make_unique<cc::SkiaPaintCanvas>(GetSkSurface()->getCanvas());
+      canvas_ = std::make_unique<cc::SkiaPaintCanvas>(
+          GetSkSurface()->getCanvas(), std::move(image_provider),
+          context_flushes);
     }
   }
+
   return canvas_.get();
+}
+
+void CanvasResourceProvider::OnContextDestroyed() {
+  if (canvas_image_provider_) {
+    DCHECK(canvas_);
+    canvas_->reset_image_provider();
+    canvas_image_provider_.reset();
+  }
+}
+
+void CanvasResourceProvider::ReleaseLockedImages() {
+  if (canvas_image_provider_)
+    canvas_image_provider_->ReleaseLockedImages();
 }
 
 scoped_refptr<StaticBitmapImage> CanvasResourceProvider::Snapshot() {
   if (!IsValid())
     return nullptr;
-  scoped_refptr<StaticBitmapImage> image = StaticBitmapImage::Create(
-      GetSkSurface()->makeImageSnapshot(), ContextProviderWrapper());
-  if (IsAccelerated()) {
-    static_cast<AcceleratedStaticBitmapImage*>(image.get())
-        ->RetainOriginalSkImageForCopyOnWrite();
+
+  auto sk_image = GetSkSurface()->makeImageSnapshot();
+  auto last_snapshot_sk_image_id = snapshot_sk_image_id_;
+  snapshot_sk_image_id_ = sk_image->uniqueID();
+
+  if (ContextProviderWrapper()) {
+    return StaticBitmapImage::Create(std::move(sk_image),
+                                     ContextProviderWrapper());
   }
-  return image;
+
+  // Ensure that a new PaintImage::ContentId is used only when the underlying
+  // SkImage changes. This is necessary to ensure that the same image results
+  // in a cache hit in cc's ImageDecodeCache.
+  if (snapshot_paint_image_content_id_ == PaintImage::kInvalidContentId ||
+      last_snapshot_sk_image_id != snapshot_sk_image_id_) {
+    snapshot_paint_image_content_id_ = PaintImage::GetNextContentId();
+  }
+
+  auto paint_image =
+      PaintImageBuilder::WithDefault()
+          .set_id(snapshot_paint_image_id_)
+          .set_image(std::move(sk_image), snapshot_paint_image_content_id_)
+          .TakePaintImage();
+  return StaticBitmapImage::Create(std::move(paint_image));
 }
 
 gpu::gles2::GLES2Interface* CanvasResourceProvider::ContextGL() const {
@@ -419,6 +517,7 @@ void CanvasResourceProvider::ClearRecycledResources() {
 
 void CanvasResourceProvider::InvalidateSurface() {
   canvas_ = nullptr;
+  canvas_image_provider_.reset();
   xform_canvas_ = nullptr;
   surface_ = nullptr;
 }
@@ -431,6 +530,13 @@ scoped_refptr<CanvasResource> CanvasResourceProvider::CreateResource() {
   // Needs to be implemented in subclasses that use resource recycling.
   NOTREACHED();
   return nullptr;
+}
+
+cc::ImageDecodeCache* CanvasResourceProvider::ImageDecodeCache() {
+  // TODO(khushalsagar): Hook up a software cache.
+  if (!context_provider_wrapper_)
+    return nullptr;
+  return context_provider_wrapper_->ContextProvider()->ImageDecodeCache();
 }
 
 }  // namespace blink

@@ -40,7 +40,6 @@ schema_sources = [
   "downloads.idl",
   "downloads_internal.idl",
   "easy_unlock_private.idl",
-  "experience_sampling_private.json",
   "font_settings.json",
   "gcm.json",
   "history.json",
@@ -60,7 +59,6 @@ schema_sources = [
   "permissions.json",
   "preferences_private.json",
   "resources_private.idl",
-  "screenlock_private.idl",
   "sessions.json",
   "settings_private.idl",
   "signed_in_devices.idl",
@@ -111,6 +109,7 @@ if (is_chromeos) {
     "platform_keys.idl",
     "platform_keys_internal.idl",
     "quick_unlock_private.idl",
+    "screenlock_private.idl",
     "terminal_private.json",
     "users_private.idl",
     "wallpaper.json",
@@ -218,7 +217,7 @@ json_schema_api("api_registration") {
     "//components/sync",
     "//skia",
     "//third_party/metrics_proto",
-    "//ui/accessibility:ax_gen",
+    "//ui/accessibility:ax_enums_mojo",
   ]
   if (is_chromeos) {
     deps += [ "//components/drive:proto" ]

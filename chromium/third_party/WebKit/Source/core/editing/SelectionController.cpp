@@ -205,9 +205,10 @@ static PositionInFlatTree ComputeStartFromEndForExtendForward(
   // end of word/paragraph position. To get start of word/paragraph at |end|,
   // we pass previous position of |end|.
   return ComputeStartRespectingGranularity(
-      PreviousPositionOf(CreateVisiblePosition(end),
-                         kCannotCrossEditingBoundary)
-          .DeepEquivalent(),
+      PositionInFlatTreeWithAffinity(
+          PreviousPositionOf(CreateVisiblePosition(end),
+                             kCannotCrossEditingBoundary)
+              .DeepEquivalent()),
       granularity);
 }
 
@@ -528,10 +529,13 @@ void SelectionController::UpdateSelectionForMouseDrag(
                                          Selection().Granularity())
           : SelectionInFlatTree::Builder().Collapse(adjusted_position).Build();
 
+  const bool selection_is_directional =
+      should_extend_selection ? Selection().IsDirectional() : false;
   SetNonDirectionalSelectionIfNeeded(
       adjusted_selection,
       SetSelectionOptions::Builder()
           .SetGranularity(Selection().Granularity())
+          .SetIsDirectional(selection_is_directional)
           .Build(),
       kAdjustEndpointsAtBidiBoundary);
 }
@@ -836,6 +840,8 @@ static SelectionInFlatTree AdjustEndpointsAtBidiBoundary(
 
 // TODO(yosin): We should take |granularity| and |handleVisibility| from
 // |newSelection|.
+// We should rename this function to appropriate name because
+// set_selection_options has selection directional value in few cases.
 void SelectionController::SetNonDirectionalSelectionIfNeeded(
     const SelectionInFlatTree& passed_selection,
     const SetSelectionOptions& set_selection_options,
@@ -884,19 +890,27 @@ void SelectionController::SetNonDirectionalSelectionIfNeeded(
     original_base_in_flat_tree_ = PositionInFlatTreeWithAffinity();
   }
 
-  builder.SetIsDirectional(
+  const bool selection_is_directional =
       frame_->GetEditor().Behavior().ShouldConsiderSelectionAsDirectional() ||
-      new_selection.IsDirectional());
+      set_selection_options.IsDirectional();
   const SelectionInFlatTree& selection_in_flat_tree = builder.Build();
-  if (Selection().ComputeVisibleSelectionInFlatTree() ==
+
+  const bool selection_remains_the_same =
+      Selection().ComputeVisibleSelectionInFlatTree() ==
           CreateVisibleSelection(selection_in_flat_tree) &&
-      Selection().IsHandleVisible() == set_selection_options.ShouldShowHandle())
+      Selection().IsHandleVisible() ==
+          set_selection_options.ShouldShowHandle() &&
+      selection_is_directional == Selection().IsDirectional();
+
+  // If selection has not changed we do not clear editing style.
+  if (selection_remains_the_same)
     return;
   Selection().SetSelection(
       ConvertToSelectionInDOMTree(selection_in_flat_tree),
       SetSelectionOptions::Builder(set_selection_options)
           .SetShouldCloseTyping(true)
           .SetShouldClearTypingStyle(true)
+          .SetIsDirectional(selection_is_directional)
           .SetCursorAlignOnScroll(CursorAlignOnScroll::kIfNeeded)
           .Build());
 }

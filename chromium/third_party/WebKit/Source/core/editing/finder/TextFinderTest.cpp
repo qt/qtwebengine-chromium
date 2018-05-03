@@ -157,9 +157,10 @@ TEST_F(TextFinderTest, FindTextAutosizing) {
   bool wrap_within_frame = true;
 
   // Set viewport scale to 20 in order to simulate zoom-in
+  GetDocument().GetPage()->SetDefaultPageScaleLimits(1, 20);
+  GetDocument().GetPage()->SetPageScaleFactor(20);
   VisualViewport& visual_viewport =
       GetDocument().GetPage()->GetVisualViewport();
-  visual_viewport.SetScale(20);
 
   // Enforce autosizing
   GetDocument().GetSettings()->SetTextAutosizingEnabled(true);
@@ -318,6 +319,16 @@ TEST_F(TextFinderTest, ScopeTextMatchesSimple) {
 
   EXPECT_EQ(2, GetTextFinder().TotalMatchCount());
   WebVector<WebFloatRect> match_rects;
+  GetTextFinder().FindMatchRects(match_rects);
+  ASSERT_EQ(2u, match_rects.size());
+  EXPECT_EQ(FindInPageRect(text_node, 4, text_node, 10), match_rects[0]);
+  EXPECT_EQ(FindInPageRect(text_node, 14, text_node, 20), match_rects[1]);
+
+  // Modify the document size and ensure the cached match rects are recomputed
+  // to reflect the updated layout.
+  GetDocument().body()->setAttribute(HTMLNames::styleAttr, "margin: 2000px");
+  GetDocument().UpdateStyleAndLayout();
+
   GetTextFinder().FindMatchRects(match_rects);
   ASSERT_EQ(2u, match_rects.size());
   EXPECT_EQ(FindInPageRect(text_node, 4, text_node, 10), match_rects[0]);

@@ -11,7 +11,6 @@
 #include "base/trace_event/trace_log.h"
 #include "build/build_config.h"
 #include "content/child/child_process.h"
-#include "content/network/network_service_impl.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -21,18 +20,19 @@
 #include "content/utility/utility_thread_impl.h"
 #include "media/media_features.h"
 #include "services/data_decoder/data_decoder_service.h"
-#include "services/data_decoder/public/interfaces/constants.mojom.h"
-#include "services/service_manager/public/interfaces/service.mojom.h"
-#include "services/shape_detection/public/interfaces/constants.mojom.h"
+#include "services/data_decoder/public/mojom/constants.mojom.h"
+#include "services/network/network_service.h"
+#include "services/network/public/cpp/features.h"
+#include "services/service_manager/public/mojom/service.mojom.h"
+#include "services/shape_detection/public/mojom/constants.mojom.h"
 #include "services/shape_detection/shape_detection_service.h"
-#include "services/video_capture/public/interfaces/constants.mojom.h"
+#include "services/video_capture/public/mojom/constants.mojom.h"
 #include "services/video_capture/service_impl.h"
 #include "services/viz/public/interfaces/constants.mojom.h"
 #include "services/viz/service.h"
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
 #include "media/cdm/cdm_adapter_factory.h"           // nogncheck
-#include "media/mojo/features.h"                     // nogncheck
 #include "media/mojo/interfaces/constants.mojom.h"   // nogncheck
 #include "media/mojo/services/cdm_service.h"         // nogncheck
 #include "media/mojo/services/mojo_cdm_helper.h"     // nogncheck
@@ -48,32 +48,21 @@
 extern sandbox::TargetServices* g_utility_target_services;
 #endif
 
-namespace {
-
-std::unique_ptr<service_manager::Service> CreateVideoCaptureService() {
-  return std::make_unique<video_capture::ServiceImpl>();
-}
-
-}  // anonymous namespace
-
 namespace content {
 
 namespace {
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
-static_assert(BUILDFLAG(ENABLE_STANDALONE_CDM_SERVICE), "");
-static_assert(BUILDFLAG(ENABLE_MOJO_CDM), "");
-
 std::unique_ptr<media::CdmAuxiliaryHelper> CreateCdmHelper(
     service_manager::mojom::InterfaceProvider* interface_provider) {
   return std::make_unique<media::MojoCdmHelper>(interface_provider);
 }
 
-class CdmMojoMediaClient final : public media::MojoMediaClient {
+class ContentCdmServiceClient final : public media::CdmService::Client {
  public:
-  CdmMojoMediaClient() {}
-  ~CdmMojoMediaClient() override {}
+  ContentCdmServiceClient() {}
+  ~ContentCdmServiceClient() override {}
 
   void EnsureSandboxed() override {
 #if defined(OS_WIN)
@@ -100,7 +89,7 @@ class CdmMojoMediaClient final : public media::MojoMediaClient {
 
 std::unique_ptr<service_manager::Service> CreateCdmService() {
   return std::unique_ptr<service_manager::Service>(
-      new ::media::CdmService(std::make_unique<CdmMojoMediaClient>()));
+      new ::media::CdmService(std::make_unique<ContentCdmServiceClient>()));
 }
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
@@ -135,7 +124,8 @@ void UtilityServiceFactory::RegisterServices(ServiceMap* services) {
   GetContentClient()->utility()->RegisterServices(services);
 
   service_manager::EmbeddedServiceInfo video_capture_info;
-  video_capture_info.factory = base::Bind(&CreateVideoCaptureService);
+  video_capture_info.factory =
+      base::BindRepeating(&video_capture::ServiceImpl::Create);
   services->insert(
       std::make_pair(video_capture::mojom::kServiceName, video_capture_info));
 
@@ -160,7 +150,7 @@ void UtilityServiceFactory::RegisterServices(ServiceMap* services) {
   viz_info.factory = base::Bind(&CreateVizService);
   services->insert(std::make_pair(viz::mojom::kVizServiceName, viz_info));
 
-  if (base::FeatureList::IsEnabled(features::kNetworkService)) {
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     GetContentClient()->utility()->RegisterNetworkBinders(
         network_registry_.get());
     service_manager::EmbeddedServiceInfo network_info;
@@ -185,7 +175,8 @@ void UtilityServiceFactory::OnLoadFailed() {
 
 std::unique_ptr<service_manager::Service>
 UtilityServiceFactory::CreateNetworkService() {
-  return std::make_unique<NetworkServiceImpl>(std::move(network_registry_));
+  return std::make_unique<network::NetworkService>(
+      std::move(network_registry_));
 }
 
 }  // namespace content

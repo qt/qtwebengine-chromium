@@ -28,6 +28,7 @@
 #include "SkGr.h"
 #include "SkLatticeIter.h"
 #include "SkMatrixPriv.h"
+#include "SkRRectPriv.h"
 #include "SkShadowUtils.h"
 #include "SkSurfacePriv.h"
 #include "effects/GrRRectEffect.h"
@@ -48,7 +49,6 @@
 #include "ops/GrStencilPathOp.h"
 #include "ops/GrTextureOp.h"
 #include "text/GrAtlasTextContext.h"
-#include "text/GrStencilAndCoverTextContext.h"
 #include "text/GrTextUtils.h"
 
 class GrRenderTargetContext::TextTarget : public GrTextUtils::Target {
@@ -156,12 +156,14 @@ GrRenderTargetContext::GrRenderTargetContext(GrContext* context,
         , fOpList(sk_ref_sp(fRenderTargetProxy->getLastRenderTargetOpList()))
         , fSurfaceProps(SkSurfacePropsCopyOrDefault(surfaceProps))
         , fManagedOpList(managedOpList) {
-#ifdef SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
-    // MDB TODO: to ensure all resources still get allocated in the correct order in the hybrid
-    // world we need to get the correct opList here so that it, in turn, can grab and hold
-    // its rendertarget.
-    this->getRTOpList();
-#endif
+    GrResourceProvider* resourceProvider = context->contextPriv().resourceProvider();
+    if (resourceProvider && !resourceProvider->explicitlyAllocateGPUResources()) {
+        // MDB TODO: to ensure all resources still get allocated in the correct order in the hybrid
+        // world we need to get the correct opList here so that it, in turn, can grab and hold
+        // its rendertarget.
+        this->getRTOpList();
+    }
+
     fTextTarget.reset(new TextTarget(this));
     SkDEBUGCODE(this->validate();)
 }
@@ -943,7 +945,6 @@ static SkPoint3 map(const SkMatrix& m, const SkPoint3& pt) {
 }
 
 bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
-                                           GrColor color4ub,
                                            const SkMatrix& viewMatrix,
                                            const SkPath& path,
                                            const SkDrawShadowRec& rec) {
@@ -965,7 +966,7 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
     SkRRect rrect;
     SkRect rect;
     // we can only handle rects, circles, and rrects with circular corners
-    bool isRRect = path.isRRect(&rrect) && rrect.isSimpleCircular() &&
+    bool isRRect = path.isRRect(&rrect) && SkRRectPriv::IsSimpleCircular(rrect) &&
         rrect.radii(SkRRect::kUpperLeft_Corner).fX > SK_ScalarNearlyZero;
     if (!isRRect &&
         path.isOval(&rect) && SkScalarNearlyEqual(rect.width(), rect.height()) &&
@@ -998,11 +999,9 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
                        viewMatrix[SkMatrix::kMSkewX] * viewMatrix[SkMatrix::kMSkewX]);
 
     SkScalar occluderHeight = rec.fZPlaneParams.fZ;
-    GrColor4f color = GrColor4f::FromGrColor(color4ub);
     bool transparent = SkToBool(rec.fFlags & SkShadowFlags::kTransparentOccluder_ShadowFlag);
-    bool tonalColor = !SkToBool(rec.fFlags & SkShadowFlags::kDisableTonalColor_ShadowFlag);
 
-    if (rec.fAmbientAlpha > 0) {
+    if (SkColorGetA(rec.fAmbientColor) > 0) {
         SkScalar devSpaceInsetWidth = SkDrawShadowMetrics::AmbientBlurRadius(occluderHeight);
         const SkScalar umbraRecipAlpha = SkDrawShadowMetrics::AmbientRecipAlpha(occluderHeight);
         const SkScalar devSpaceAmbientBlur = devSpaceInsetWidth * umbraRecipAlpha;
@@ -1016,17 +1015,11 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
         if (rrect.isOval()) {
             ambientRRect = SkRRect::MakeOval(outsetRect);
         } else {
-            SkScalar outsetRad = rrect.getSimpleRadii().fX + ambientPathOutset;
+            SkScalar outsetRad = SkRRectPriv::GetSimpleRadii(rrect).fX + ambientPathOutset;
             ambientRRect = SkRRect::MakeRectXY(outsetRect, outsetRad, outsetRad);
         }
 
-        GrColor ambientColor;
-        if (tonalColor) {
-            // with tonal color, the color only applies to the spot shadow
-            ambientColor = GrColorPackRGBA(0, 0, 0, 255.999f*rec.fAmbientAlpha);
-        } else {
-            ambientColor = color.mulByScalar(rec.fAmbientAlpha).toGrColor();
-        }
+        GrColor ambientColor = SkColorToPremulGrColor(rec.fAmbientColor);
         if (transparent) {
             // set a large inset to force a fill
             devSpaceInsetWidth = ambientRRect.width();
@@ -1044,7 +1037,7 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
         this->addDrawOp(clip, std::move(op));
     }
 
-    if (rec.fSpotAlpha > 0) {
+    if (SkColorGetA(rec.fSpotColor) > 0) {
         SkScalar devSpaceSpotBlur;
         SkScalar spotScale;
         SkVector spotOffset;
@@ -1072,7 +1065,7 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
         SkMatrix shadowTransform;
         shadowTransform.setScaleTranslate(spotScale, spotScale, spotOffset.fX, spotOffset.fY);
         rrect.transform(shadowTransform, &spotShadowRRect);
-        SkScalar spotRadius = spotShadowRRect.getSimpleRadii().fX;
+        SkScalar spotRadius = SkRRectPriv::GetSimpleRadii(spotShadowRRect).fX;
 
         // Compute the insetWidth
         SkScalar blurOutset = srcSpaceSpotBlur;
@@ -1105,7 +1098,7 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
                                           SkTAbs(spotShadowRRect.rect().fBottom -
                                                  rrect.rect().fBottom)));
             } else {
-                SkScalar dr = spotRadius - rrect.getSimpleRadii().fX;
+                SkScalar dr = spotRadius - SkRRectPriv::GetSimpleRadii(rrect).fX;
                 SkPoint upperLeftOffset = SkPoint::Make(spotShadowRRect.rect().fLeft -
                                                         rrect.rect().fLeft + dr,
                                                         spotShadowRRect.rect().fTop -
@@ -1129,21 +1122,7 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
             spotShadowRRect = SkRRect::MakeRectXY(outsetRect, outsetRad, outsetRad);
         }
 
-        GrColor spotColor;
-        if (tonalColor) {
-            SkScalar colorScale;
-            SkScalar tonalAlpha;
-            SkShadowUtils::ComputeTonalColorParams(color.fRGBA[0], color.fRGBA[1],
-                                                   color.fRGBA[2], color.fRGBA[3]*rec.fSpotAlpha,
-                                                   &colorScale, &tonalAlpha);
-            color.fRGBA[0] *= colorScale;
-            color.fRGBA[1] *= colorScale;
-            color.fRGBA[2] *= colorScale;
-            color.fRGBA[3] = tonalAlpha;
-            spotColor = color.toGrColor();
-        } else {
-            spotColor = color.mulByScalar(rec.fSpotAlpha).toGrColor();
-        }
+        GrColor spotColor = SkColorToPremulGrColor(rec.fSpotColor);
 
         std::unique_ptr<GrDrawOp> op = GrShadowRRectOp::Make(spotColor, viewMatrix,
                                                              spotShadowRRect,
@@ -1175,7 +1154,8 @@ bool GrRenderTargetContext::drawFilledDRRect(const GrClip& clip,
         return false;
     }
 
-    if (GrAAType::kCoverage == aaType && inner->isCircle() && outer->isCircle()) {
+    if (GrAAType::kCoverage == aaType && SkRRectPriv::IsCircle(*inner)
+                                      && SkRRectPriv::IsCircle(*outer)) {
         auto outerR = outer->width() / 2.f;
         auto innerR = inner->width() / 2.f;
         auto cx = outer->getBounds().fLeft + outerR;
@@ -1838,10 +1818,8 @@ bool GrRenderTargetContext::setupDstProxy(GrRenderTargetProxy* rtProxy, const Gr
     }
 
     sk_sp<GrSurfaceContext> sContext = fContext->contextPriv().makeDeferredSurfaceContext(
-                                                                                desc,
-                                                                                GrMipMapped::kNo,
-                                                                                fit,
-                                                                                SkBudgeted::kYes);
+            desc, GrMipMapped::kNo, fit, SkBudgeted::kYes,
+            sk_ref_sp(this->colorSpaceInfo().colorSpace()));
     if (!sContext) {
         SkDebugf("setupDstTexture: surfaceContext creation failed.\n");
         return false;

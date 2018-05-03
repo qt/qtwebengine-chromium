@@ -11,7 +11,7 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 
 namespace base {
 class FilePath;
@@ -56,7 +56,9 @@ void SetExtensionProtocolTestHandler(ExtensionProtocolTestHandler* handler);
 // Creates a new network::mojom::URLLoaderFactory implementation suitable for
 // handling navigation requests to extension URLs.
 std::unique_ptr<network::mojom::URLLoaderFactory>
-CreateExtensionNavigationURLLoaderFactory(content::RenderFrameHost* frame_host);
+CreateExtensionNavigationURLLoaderFactory(
+    content::RenderFrameHost* frame_host,
+    scoped_refptr<extensions::InfoMap> extension_info_map);
 
 // Attempts to create a network::mojom::URLLoaderFactory implementation suitable
 // for handling subresource requests for extension URLs from |frame_host|. May
@@ -65,7 +67,8 @@ CreateExtensionNavigationURLLoaderFactory(content::RenderFrameHost* frame_host);
 std::unique_ptr<network::mojom::URLLoaderFactory>
 MaybeCreateExtensionSubresourceURLLoaderFactory(
     content::RenderFrameHost* frame_host,
-    const GURL& frame_url);
+    const GURL& frame_url,
+    scoped_refptr<extensions::InfoMap> extension_info_map);
 
 }  // namespace extensions
 

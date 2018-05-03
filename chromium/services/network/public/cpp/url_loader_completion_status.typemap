@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-mojom = "//services/network/public/interfaces/url_loader.mojom"
+mojom = "//services/network/public/mojom/url_loader.mojom"
 public_headers =
     [ "//services/network/public/cpp/url_loader_completion_status.h" ]
 traits_headers = [ "//services/network/public/cpp/network_param_ipc_traits.h" ]
@@ -10,7 +10,7 @@ deps = [
   "//net",
 ]
 public_deps = [
-  "//services/network/public/cpp:typemap_dependencies",
+  "//services/network/public/cpp:cpp_base",
 ]
 type_mappings = [
   "network.mojom.URLLoaderCompletionStatus=network::URLLoaderCompletionStatus",

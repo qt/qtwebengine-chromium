@@ -12,10 +12,10 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/test/scoped_task_environment.h"
 #include "content/child/child_process.h"
-#include "content/renderer/media/media_stream_audio_source.h"
-#include "content/renderer/media/media_stream_video_track.h"
-#include "content/renderer/media/mock_media_stream_video_sink.h"
-#include "content/renderer/media/mock_media_stream_video_source.h"
+#include "content/renderer/media/stream/media_stream_audio_source.h"
+#include "content/renderer/media/stream/media_stream_video_track.h"
+#include "content/renderer/media/stream/mock_media_stream_video_sink.h"
+#include "content/renderer/media/stream/mock_media_stream_video_source.h"
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
@@ -156,7 +156,7 @@ TEST_F(WebRtcMediaStreamTrackAdapterTest, RemoteAudioTrack) {
       FROM_HERE,
       base::BindOnce(
           &WebRtcMediaStreamTrackAdapterTest::CreateRemoteTrackAdapter,
-          base::Unretained(this), webrtc_track.get()));
+          base::Unretained(this), base::Unretained(webrtc_track.get())));
   RunMessageLoopsUntilIdle();
   DCHECK(track_adapter_);
   EXPECT_TRUE(track_adapter_->is_initialized());
@@ -180,7 +180,7 @@ TEST_F(WebRtcMediaStreamTrackAdapterTest, RemoteVideoTrack) {
       FROM_HERE,
       base::BindOnce(
           &WebRtcMediaStreamTrackAdapterTest::CreateRemoteTrackAdapter,
-          base::Unretained(this), webrtc_track.get()));
+          base::Unretained(this), base::Unretained(webrtc_track.get())));
   RunMessageLoopsUntilIdle();
   DCHECK(track_adapter_);
   EXPECT_TRUE(track_adapter_->is_initialized());

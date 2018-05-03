@@ -31,6 +31,10 @@ aggregate_vector_icons("omnibox_vector_icons") {
     "star.1x.icon",
     "star.icon",
     "tab.icon",
+    "touchable_bookmark.icon",
+    "touchable_clear.icon",
+    "touchable_page.icon",
+    "touchable_search.icon",
   ]
 }
 
@@ -64,7 +68,6 @@ static_library("browser") {
     "clipboard_url_provider.h",
     "contextual_suggestions_service.cc",
     "contextual_suggestions_service.h",
-    "features.h",
     "history_match.cc",
     "history_match.h",
     "history_provider.cc",
@@ -169,7 +172,6 @@ static_library("browser") {
     "//components/search",
     "//components/search_engines",
     "//components/sessions",
-    "//components/signin/core/browser",
     "//components/strings",
     "//components/sync",
     "//components/toolbar",
@@ -329,6 +331,7 @@ source_set("unit_tests") {
     "//components/search_engines",
     "//components/sessions",
     "//components/strings",
+    "//components/toolbar:test_support",
     "//components/url_formatter",
     "//components/variations",
     "//net:test_support",

@@ -219,7 +219,7 @@ void MediaCodecVideoDecoder::SetCdm(CdmContext* cdm_context,
   cdm_registration_id_ = media_drm_bridge_cdm_context_->RegisterPlayer(
       media::BindToCurrentLoop(base::Bind(&MediaCodecVideoDecoder::OnKeyAdded,
                                           weak_factory_.GetWeakPtr())),
-      base::Bind(&base::DoNothing));
+      base::DoNothing());
 
   media_drm_bridge_cdm_context_->SetMediaCryptoReadyCB(media::BindToCurrentLoop(
       base::Bind(&MediaCodecVideoDecoder::OnMediaCryptoReady,
@@ -357,8 +357,10 @@ void MediaCodecVideoDecoder::OnSurfaceDestroyed(AndroidOverlay* overlay) {
   }
 
   // Reset the target bundle if it is the one being destroyed.
-  if (target_surface_bundle_->overlay.get() == overlay)
+  if (target_surface_bundle_ &&
+      target_surface_bundle_->overlay.get() == overlay) {
     target_surface_bundle_ = surface_texture_bundle_;
+  }
 
   // Transition the codec away from the overlay if necessary.
   if (SurfaceTransitionPending())

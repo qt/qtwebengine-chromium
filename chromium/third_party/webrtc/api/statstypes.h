@@ -129,6 +129,10 @@ class StatsReport {
     kStatsValueNameSentPingResponses,
     kStatsValueNameRecvPingRequests,
     kStatsValueNameRecvPingResponses,
+    kStatsValueNameSentStunKeepaliveRequests,
+    kStatsValueNameRecvStunKeepaliveResponses,
+    kStatsValueNameStunKeepaliveRttTotal,
+    kStatsValueNameStunKeepaliveRttSquaredTotal,
 
     // Internal StatsValue names.
     kStatsValueNameAccelerateRate,
@@ -185,6 +189,7 @@ class StatsReport {
     kStatsValueNameFrameWidthReceived,
     kStatsValueNameFrameWidthSent,
     kStatsValueNameHasEnteredLowResolution,
+    kStatsValueNameHugeFramesSent,
     kStatsValueNameInitiator,
     kStatsValueNameInterframeDelayMaxMs,  // Max over last 10 seconds.
     kStatsValueNameIssuerId,
@@ -337,7 +342,7 @@ class StatsReport {
 
    private:
     rtc::ThreadChecker thread_checker_;
-    mutable int ref_count_ RTC_ACCESS_ON(thread_checker_) = 0;
+    mutable int ref_count_ RTC_GUARDED_BY(thread_checker_) = 0;
 
     const Type type_;
     // TODO(tommi): Use C++ 11 union and make value_ const.

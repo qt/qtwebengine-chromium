@@ -3,11 +3,10 @@ include_rules = [
     "+base/memory/scoped_refptr.h",
     "+base/unguessable_token.h",
     "+bindings/core",
-    "-bindings/modules",
     "+build/mac",
     "+build/win",
-    "+common",
     "+core",
+    "-bindings/modules",
     "+gpu/config/gpu_feature_info.h",
     "-inspector/v8",
     "+inspector/v8/public",
@@ -15,12 +14,16 @@ include_rules = [
     "+mojo/public/cpp/bindings",
     "+mojo/public/cpp/system",
     "+platform",
+    "+public/common",
+    "+public/mojom",
     "+public/platform",
     "+public/web",
     "+services/metrics/public",
-    "+services/network/public/interfaces",
+    "+services/network/public/cpp/features.h",
+    "+services/network/public/mojom",
     "+services/resource_coordinator/public/cpp/resource_coordinator_features.h",
     "+services/service_manager/public",
+    "+skia/public/interfaces/bitmap_skbitmap_struct_traits.h",
     "+third_party/skia/include",
     "+ui/gfx/geometry",
     "-web",
@@ -41,5 +44,10 @@ specific_include_rules = {
     ".*Test\.cpp" : [
         "+core/frame/WebLocalFrameImpl.h",
         "+core/frame/WebRemoteFrameImpl.h",
+        "+gin"
+    ],
+    # Allow LocalFrame.cpp to use WebLocalFrameImpl.h
+    "LocalFrame.cpp" : [
+        "+core/frame/WebLocalFrameImpl.h",
     ]
 }

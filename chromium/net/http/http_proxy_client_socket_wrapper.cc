@@ -17,6 +17,7 @@
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source.h"
 #include "net/log/net_log_source_type.h"
+#include "net/quic/chromium/quic_http_utils.h"
 #include "net/quic/chromium/quic_proxy_client_socket.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_tag.h"
@@ -48,6 +49,7 @@ HttpProxyClientSocketWrapper::HttpProxyClientSocketWrapper(
     HttpAuthHandlerFactory* http_auth_handler_factory,
     SpdySessionPool* spdy_session_pool,
     QuicStreamFactory* quic_stream_factory,
+    bool is_trusted_proxy,
     bool tunnel,
     const NetLogWithSource& net_log)
     : next_state_(STATE_NONE),
@@ -68,6 +70,7 @@ HttpProxyClientSocketWrapper::HttpProxyClientSocketWrapper(
       has_restarted_(false),
       tunnel_(tunnel),
       using_spdy_(false),
+      is_trusted_proxy_(is_trusted_proxy),
       quic_stream_request_(quic_stream_factory),
       http_auth_controller_(
           tunnel ? new HttpAuthController(
@@ -144,13 +147,13 @@ HttpProxyClientSocketWrapper::CreateConnectResponseStream() {
 }
 
 int HttpProxyClientSocketWrapper::RestartWithAuth(
-    const CompletionCallback& callback) {
+    CompletionOnceCallback callback) {
   DCHECK(!callback.is_null());
   DCHECK(connect_callback_.is_null());
   DCHECK(transport_socket_);
   DCHECK_EQ(STATE_NONE, next_state_);
 
-  connect_callback_ = callback;
+  connect_callback_ = std::move(callback);
   next_state_ = STATE_RESTART_WITH_AUTH;
   return DoLoop(OK);
 }
@@ -470,9 +473,11 @@ int HttpProxyClientSocketWrapper::DoSSLConnect() {
     SpdySessionKey key(ssl_params_->GetDirectConnectionParams()
                            ->destination()
                            .host_port_pair(),
-                       ProxyServer::Direct(), PRIVACY_MODE_DISABLED);
+                       ProxyServer::Direct(), PRIVACY_MODE_DISABLED,
+                       initial_socket_tag_);
     if (spdy_session_pool_->FindAvailableSession(
-            key, /* enable_ip_based_pooling = */ true, net_log_)) {
+            key, /* enable_ip_based_pooling = */ true,
+            /* is_websocket = */ false, net_log_)) {
       using_spdy_ = true;
       next_state_ = STATE_SPDY_PROXY_CREATE_STREAM;
       return OK;
@@ -583,10 +588,11 @@ int HttpProxyClientSocketWrapper::DoSpdyProxyCreateStream() {
   DCHECK(ssl_params_);
   SpdySessionKey key(
       ssl_params_->GetDirectConnectionParams()->destination().host_port_pair(),
-      ProxyServer::Direct(), PRIVACY_MODE_DISABLED);
+      ProxyServer::Direct(), PRIVACY_MODE_DISABLED, initial_socket_tag_);
   base::WeakPtr<SpdySession> spdy_session =
       spdy_session_pool_->FindAvailableSession(
-          key, /* enable_ip_based_pooling = */ true, net_log_);
+          key, /* enable_ip_based_pooling = */ true,
+          /* is_websocket = */ false, net_log_);
   // It's possible that a session to the proxy has recently been created
   if (spdy_session) {
     if (transport_socket_handle_.get()) {
@@ -597,17 +603,19 @@ int HttpProxyClientSocketWrapper::DoSpdyProxyCreateStream() {
   } else {
     // Create a session direct to the proxy itself
     spdy_session = spdy_session_pool_->CreateAvailableSessionFromSocket(
-        key, std::move(transport_socket_handle_), net_log_);
+        key, is_trusted_proxy_, std::move(transport_socket_handle_), net_log_);
     DCHECK(spdy_session);
   }
 
   next_state_ = STATE_SPDY_PROXY_CREATE_STREAM_COMPLETE;
+  // TODO(https://crbug.com/656607): Add proper annotation here.
   return spdy_stream_request_.StartRequest(
       SPDY_BIDIRECTIONAL_STREAM, spdy_session,
-      GURL("https://" + endpoint_.ToString()), priority_,
+      GURL("https://" + endpoint_.ToString()), priority_, initial_socket_tag_,
       spdy_session->net_log(),
       base::Bind(&HttpProxyClientSocketWrapper::OnIOComplete,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      NO_TRAFFIC_ANNOTATION_BUG_656607);
 }
 
 int HttpProxyClientSocketWrapper::DoSpdyProxyCreateStreamComplete(int result) {
@@ -632,7 +640,7 @@ int HttpProxyClientSocketWrapper::DoQuicProxyCreateSession() {
       ssl_params_->GetDirectConnectionParams()->destination().host_port_pair();
   return quic_stream_request_.Request(
       proxy_server, quic_version_, ssl_params_->privacy_mode(), priority_,
-      ssl_params_->ssl_config().GetCertVerifyFlags(),
+      initial_socket_tag_, ssl_params_->ssl_config().GetCertVerifyFlags(),
       GURL("https://" + proxy_server.ToString()), net_log_,
       &quic_net_error_details_,
       base::Bind(&HttpProxyClientSocketWrapper::OnIOComplete,
@@ -645,9 +653,12 @@ int HttpProxyClientSocketWrapper::DoQuicProxyCreateStream(int result) {
 
   next_state_ = STATE_QUIC_PROXY_CREATE_STREAM_COMPLETE;
   quic_session_ = quic_stream_request_.ReleaseSessionHandle();
+  // TODO(https://crbug.com/656607): Add proper annotation here.
   return quic_session_->RequestStream(
-      false, base::Bind(&HttpProxyClientSocketWrapper::OnIOComplete,
-                        base::Unretained(this)));
+      false,
+      base::Bind(&HttpProxyClientSocketWrapper::OnIOComplete,
+                 base::Unretained(this)),
+      NO_TRAFFIC_ANNOTATION_BUG_656607);
 }
 
 int HttpProxyClientSocketWrapper::DoQuicProxyCreateStreamComplete(int result) {
@@ -657,6 +668,10 @@ int HttpProxyClientSocketWrapper::DoQuicProxyCreateStreamComplete(int result) {
   next_state_ = STATE_HTTP_PROXY_CONNECT_COMPLETE;
   std::unique_ptr<QuicChromiumClientStream::Handle> quic_stream =
       quic_session_->ReleaseStream();
+
+  SpdyPriority spdy_priority = ConvertRequestPriorityToQuicPriority(priority_);
+  quic_stream->SetPriority(spdy_priority);
+
   transport_socket_.reset(new QuicProxyClientSocket(
       std::move(quic_stream), std::move(quic_session_), user_agent_, endpoint_,
       net_log_, http_auth_controller_.get()));
@@ -668,7 +683,7 @@ int HttpProxyClientSocketWrapper::DoRestartWithAuth() {
   DCHECK(transport_socket_);
 
   next_state_ = STATE_RESTART_WITH_AUTH_COMPLETE;
-  return transport_socket_->RestartWithAuth(base::Bind(
+  return transport_socket_->RestartWithAuth(base::BindOnce(
       &HttpProxyClientSocketWrapper::OnIOComplete, base::Unretained(this)));
 }
 
@@ -740,9 +755,9 @@ void HttpProxyClientSocketWrapper::ConnectTimeout() {
     }
   }
 
-  CompletionCallback callback = connect_callback_;
+  CompletionOnceCallback callback = std::move(connect_callback_);
   Disconnect();
-  callback.Run(ERR_CONNECTION_TIMED_OUT);
+  std::move(callback).Run(ERR_CONNECTION_TIMED_OUT);
 }
 
 const HostResolver::RequestInfo&

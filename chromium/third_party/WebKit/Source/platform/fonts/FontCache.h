@@ -154,7 +154,7 @@ class PLATFORM_EXPORT FontCache {
   unsigned short Generation();
   void Invalidate();
 
-  SkFontMgr* FontManager() { return font_manager_.get(); }
+  sk_sp<SkFontMgr> FontManager() { return font_manager_; }
   static void SetFontManager(sk_sp<SkFontMgr>);
 
 #if !defined(OS_MACOSX)
@@ -162,11 +162,14 @@ class PLATFORM_EXPORT FontCache {
 #else
   static const AtomicString& LegacySystemFontFamily();
 #endif
-#if defined(OS_LINUX) || defined(OS_ANDROID)
+
+#if !defined(OS_WIN) && !defined(OS_MACOSX)
   static void SetSystemFontFamily(const AtomicString&);
 #endif
 
 #if defined(OS_WIN)
+  // TODO(https://crbug.com/808221) System font style configuration is not
+  // related to FontCache. Move it somewhere else, e.g. to WebThemeEngine.
   static bool AntialiasedTextEnabled() { return antialiased_text_enabled_; }
   static bool LcdTextEnabled() { return lcd_text_enabled_; }
   static float DeviceScaleFactor() { return device_scale_factor_; }
@@ -200,7 +203,7 @@ class PLATFORM_EXPORT FontCache {
   static void SetUseSkiaFontFallback(bool use_skia_font_fallback) {
     use_skia_font_fallback_ = use_skia_font_fallback;
   }
-#endif
+#endif  // defined(OS_WIN)
 
   static void AcceptLanguagesChanged(const String&);
 
@@ -208,7 +211,9 @@ class PLATFORM_EXPORT FontCache {
   static AtomicString GetGenericFamilyNameForScript(
       const AtomicString& family_name,
       const FontDescription&);
-#else
+#endif  // defined(OS_ANDROID)
+
+#if defined(OS_LINUX)
   struct PlatformFallbackFont {
     String name;
     CString filename;
@@ -220,7 +225,8 @@ class PLATFORM_EXPORT FontCache {
   static void GetFontForCharacter(UChar32,
                                   const char* preferred_locale,
                                   PlatformFallbackFont*);
-#endif
+#endif  // defined(OS_LINUX)
+
   scoped_refptr<SimpleFontData> FontDataFromFontPlatformData(
       const FontPlatformData*,
       ShouldRetain = kRetain,
@@ -262,7 +268,7 @@ class PLATFORM_EXPORT FontCache {
       AlternateFontName = AlternateFontName::kAllowAlternate);
 #if !defined(OS_MACOSX)
   FontPlatformData* SystemFontPlatformData(const FontDescription&);
-#endif
+#endif  // !defined(OS_MACOSX)
 
   // These methods are implemented by each platform.
   std::unique_ptr<FontPlatformData> CreateFontPlatformData(
@@ -281,12 +287,12 @@ class PLATFORM_EXPORT FontCache {
                                const FontFaceCreationParams&,
                                CString& name);
 
-#if defined(OS_ANDROID) || defined(OS_LINUX)
+#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_FUCHSIA)
   static AtomicString GetFamilyNameForCharacter(SkFontMgr*,
                                                 UChar32,
                                                 const FontDescription&,
                                                 FontFallbackPriority);
-#endif
+#endif  // defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_FUCHSIA)
 
   scoped_refptr<SimpleFontData> FallbackOnStandardFontStyle(const FontDescription&,
                                                      UChar32);
@@ -312,7 +318,11 @@ class PLATFORM_EXPORT FontCache {
   static AtomicString* status_font_family_name_;
   static int32_t status_font_height_;
   static bool use_skia_font_fallback_;
-#endif
+
+  // Windows creates an SkFontMgr for unit testing automatically. This flag is
+  // to ensure it's not happening in the production from the crash log.
+  bool is_test_font_mgr_ = false;
+#endif  // defined(OS_WIN)
 
   unsigned short generation_ = 0;
   bool platform_init_ = false;

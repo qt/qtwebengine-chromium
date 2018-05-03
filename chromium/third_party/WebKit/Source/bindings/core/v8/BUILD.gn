@@ -23,10 +23,8 @@ bindings_core_generated_union_type_files = [
   "$bindings_core_v8_output_dir/boolean_or_byte_string_byte_string_record.h",
   "$bindings_core_v8_output_dir/byte_string_sequence_sequence_or_byte_string_byte_string_record.cc",
   "$bindings_core_v8_output_dir/byte_string_sequence_sequence_or_byte_string_byte_string_record.h",
-  "$bindings_core_v8_output_dir/composite_operation_or_composite_operation_sequence.cc",
-  "$bindings_core_v8_output_dir/composite_operation_or_composite_operation_sequence.h",
-  "$bindings_core_v8_output_dir/css_style_value_or_css_style_value_sequence.cc",
-  "$bindings_core_v8_output_dir/css_style_value_or_css_style_value_sequence.h",
+  "$bindings_core_v8_output_dir/composite_operation_or_composite_operation_or_null_sequence.cc",
+  "$bindings_core_v8_output_dir/composite_operation_or_composite_operation_or_null_sequence.h",
   "$bindings_core_v8_output_dir/css_style_value_or_string.cc",
   "$bindings_core_v8_output_dir/css_style_value_or_string.h",
   "$bindings_core_v8_output_dir/double_or_auto_keyword.cc",
@@ -66,6 +64,8 @@ bindings_core_generated_union_type_files = [
   "$bindings_core_v8_output_dir/node_list_or_element.h",
   "$bindings_core_v8_output_dir/html_collection_or_element.cc",
   "$bindings_core_v8_output_dir/html_collection_or_element.h",
+  "$bindings_core_v8_output_dir/media_list_or_string.cc",
+  "$bindings_core_v8_output_dir/media_list_or_string.h",
   "$bindings_core_v8_output_dir/node_or_string.cc",
   "$bindings_core_v8_output_dir/node_or_string.h",
   "$bindings_core_v8_output_dir/radio_node_list_or_element.cc",
@@ -142,8 +142,8 @@ generated_core_callback_function_files = [
   "$bindings_core_v8_output_dir/v8_reporting_observer_callback.h",
   "$bindings_core_v8_output_dir/v8_resize_observer_callback.cc",
   "$bindings_core_v8_output_dir/v8_resize_observer_callback.h",
-  "$bindings_core_v8_output_dir/v8_update_function.cc",
-  "$bindings_core_v8_output_dir/v8_update_function.h",
+  "$bindings_core_v8_output_dir/v8_scroll_state_callback.cc",
+  "$bindings_core_v8_output_dir/v8_scroll_state_callback.h",
   "$bindings_core_v8_output_dir/v8_void_function.cc",
   "$bindings_core_v8_output_dir/v8_void_function.h",
 ]
@@ -271,10 +271,8 @@ source_set("testing") {
             generated_core_testing_callback_function_files
 
   configs -= core_config_remove
-  configs += [
-    "//third_party/WebKit/Source:inside_blink",
-    "//third_party/WebKit/Source:config",
-  ]
+  configs += core_config_add + [ "//third_party/WebKit/Source:inside_blink" ] -
+             [ "//third_party/WebKit/Source/core:config" ]
 
   deps = [
     ":bindings_core_impl_generated",

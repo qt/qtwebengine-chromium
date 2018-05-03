@@ -29,7 +29,7 @@
  */
 
 #include "modules/serviceworkers/ServiceWorkerError.h"
-#include "third_party/WebKit/common/service_worker/service_worker_error_type.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom-blink.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ToV8ForCore.h"
@@ -124,7 +124,6 @@ ExceptionParams GetExceptionParams(const WebServiceWorkerError& web_error) {
 DOMException* ServiceWorkerError::Take(ScriptPromiseResolver*,
                                        const WebServiceWorkerError& web_error) {
   ExceptionParams params = GetExceptionParams(web_error);
-  DCHECK_NE(params.code, kUnknownError);
   return DOMException::Create(params.code, params.message);
 }
 

@@ -237,18 +237,17 @@ void CPDFSDK_InterForm::XfaSetValidationsEnabled(bool bEnabled) {
   m_bXfaValidationsEnabled = bEnabled;
 }
 
-void CPDFSDK_InterForm::SynchronizeField(CPDF_FormField* pFormField,
-                                         bool bSynchronizeElse) {
+void CPDFSDK_InterForm::SynchronizeField(CPDF_FormField* pFormField) {
   for (int i = 0, sz = pFormField->CountControls(); i < sz; i++) {
     CPDF_FormControl* pFormCtrl = pFormField->GetControl(i);
     if (CPDFSDK_Widget* pWidget = GetWidget(pFormCtrl))
-      pWidget->Synchronize(bSynchronizeElse);
+      pWidget->Synchronize(false);
   }
 }
 #endif  // PDF_ENABLE_XFA
 
 void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
-  if (!m_pFormFillEnv->IsJSInitiated())
+  if (!m_pFormFillEnv->IsJSPlatformPresent())
     return;
 
   if (m_bBusy)
@@ -261,7 +260,7 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
     return;
   }
 
-  IJS_Runtime* pRuntime = m_pFormFillEnv->GetJSRuntime();
+  IJS_Runtime* pRuntime = m_pFormFillEnv->GetIJSRuntime();
   int nSize = m_pInterForm->CountFieldsInCalculationOrder();
   for (int i = 0; i < nSize; i++) {
     CPDF_FormField* pField = m_pInterForm->GetFieldInCalculationOrder(i);
@@ -302,12 +301,12 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
 WideString CPDFSDK_InterForm::OnFormat(CPDF_FormField* pFormField,
                                        bool& bFormatted) {
   WideString sValue = pFormField->GetValue();
-  if (!m_pFormFillEnv->IsJSInitiated()) {
+  if (!m_pFormFillEnv->IsJSPlatformPresent()) {
     bFormatted = false;
     return sValue;
   }
 
-  IJS_Runtime* pRuntime = m_pFormFillEnv->GetJSRuntime();
+  IJS_Runtime* pRuntime = m_pFormFillEnv->GetIJSRuntime();
   if (pFormField->GetFieldType() == FormFieldType::kComboBox &&
       pFormField->CountSelectedItems() > 0) {
     int index = pFormField->GetSelectedIndex(0);
@@ -384,7 +383,7 @@ bool CPDFSDK_InterForm::OnKeyStrokeCommit(CPDF_FormField* pFormField,
   fa.bShift = false;
   fa.sValue = csValue;
   pActionHandler->DoAction_FieldJavaScript(
-      action, CPDF_AAction::KeyStroke, m_pFormFillEnv.Get(), pFormField, fa);
+      action, CPDF_AAction::KeyStroke, m_pFormFillEnv.Get(), pFormField, &fa);
   return fa.bRC;
 }
 
@@ -404,7 +403,7 @@ bool CPDFSDK_InterForm::OnValidate(CPDF_FormField* pFormField,
   fa.bShift = false;
   fa.sValue = csValue;
   pActionHandler->DoAction_FieldJavaScript(
-      action, CPDF_AAction::Validate, m_pFormFillEnv.Get(), pFormField, fa);
+      action, CPDF_AAction::Validate, m_pFormFillEnv.Get(), pFormField, &fa);
   return fa.bRC;
 }
 
@@ -531,7 +530,7 @@ bool CPDFSDK_InterForm::FDFToURLEncodedData(uint8_t*& pBuf, size_t& nBufSize) {
   }
 
   nBufSize = fdfEncodedData.tellp();
-  if (nBufSize == 0)
+  if (nBufSize <= 0)
     return false;
 
   pBuf = FX_Alloc(uint8_t, nBufSize);
@@ -608,20 +607,17 @@ bool CPDFSDK_InterForm::DoAction_ResetForm(const CPDF_Action& action) {
   return m_pInterForm->ResetForm(fields, !(dwFlags & 0x01), true);
 }
 
-bool CPDFSDK_InterForm::DoAction_ImportData(const CPDF_Action& action) {
-  return false;
-}
-
 std::vector<CPDF_FormField*> CPDFSDK_InterForm::GetFieldFromObjects(
     const std::vector<CPDF_Object*>& objects) const {
   std::vector<CPDF_FormField*> fields;
   for (CPDF_Object* pObject : objects) {
-    if (pObject && pObject->IsString()) {
-      WideString csName = pObject->GetUnicodeText();
-      CPDF_FormField* pField = m_pInterForm->GetField(0, csName);
-      if (pField)
-        fields.push_back(pField);
-    }
+    if (!pObject || !pObject->IsString())
+      continue;
+
+    WideString csName = pObject->GetUnicodeText();
+    CPDF_FormField* pField = m_pInterForm->GetField(0, csName);
+    if (pField)
+      fields.push_back(pField);
   }
   return fields;
 }
@@ -631,41 +627,37 @@ int CPDFSDK_InterForm::BeforeValueChange(CPDF_FormField* pField,
   FormFieldType fieldType = pField->GetFieldType();
   if (!IsFormFieldTypeComboOrText(fieldType))
     return 0;
-
   if (!OnKeyStrokeCommit(pField, csValue))
     return -1;
-
   if (!OnValidate(pField, csValue))
     return -1;
-
   return 1;
 }
 
 void CPDFSDK_InterForm::AfterValueChange(CPDF_FormField* pField) {
 #ifdef PDF_ENABLE_XFA
-  SynchronizeField(pField, false);
+  SynchronizeField(pField);
 #endif  // PDF_ENABLE_XFA
+
   FormFieldType fieldType = pField->GetFieldType();
-  if (IsFormFieldTypeComboOrText(fieldType)) {
-    OnCalculate(pField);
-    bool bFormatted = false;
-    WideString sValue = OnFormat(pField, bFormatted);
-    ResetFieldAppearance(pField, bFormatted ? &sValue : nullptr, true);
-    UpdateField(pField);
-  }
+  if (!IsFormFieldTypeComboOrText(fieldType))
+    return;
+
+  OnCalculate(pField);
+  bool bFormatted = false;
+  WideString sValue = OnFormat(pField, bFormatted);
+  ResetFieldAppearance(pField, bFormatted ? &sValue : nullptr, true);
+  UpdateField(pField);
 }
 
 int CPDFSDK_InterForm::BeforeSelectionChange(CPDF_FormField* pField,
                                              const WideString& csValue) {
   if (pField->GetFieldType() != FormFieldType::kListBox)
     return 0;
-
   if (!OnKeyStrokeCommit(pField, csValue))
     return -1;
-
   if (!OnValidate(pField, csValue))
     return -1;
-
   return 1;
 }
 

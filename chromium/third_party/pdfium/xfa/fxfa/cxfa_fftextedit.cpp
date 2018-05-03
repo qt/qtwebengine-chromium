@@ -19,6 +19,7 @@
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
+#include "xfa/fxfa/parser/cxfa_barcode.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_para.h"
 
@@ -57,8 +58,7 @@ bool CXFA_FFTextEdit::LoadWidget() {
   m_pNormalWidget->LockUpdate();
   UpdateWidgetProperty();
 
-  pFWLEdit->SetText(
-      m_pNode->GetWidgetAcc()->GetValue(XFA_VALUEPICTURE_Display));
+  pFWLEdit->SetText(m_pNode->GetValue(XFA_VALUEPICTURE_Display));
   m_pNormalWidget->UnlockUpdate();
   return CXFA_FFField::LoadWidget();
 }
@@ -72,13 +72,13 @@ void CXFA_FFTextEdit::UpdateWidgetProperty() {
   uint32_t dwExtendedStyle =
       FWL_STYLEEXT_EDT_ShowScrollbarFocus | FWL_STYLEEXT_EDT_OuterScrollbar;
   dwExtendedStyle |= UpdateUIProperty();
-  if (m_pNode->GetWidgetAcc()->IsMultiLine()) {
+  if (m_pNode->IsMultiLine()) {
     dwExtendedStyle |= FWL_STYLEEXT_EDT_MultiLine | FWL_STYLEEXT_EDT_WantReturn;
-    if (!m_pNode->GetWidgetAcc()->IsVerticalScrollPolicyOff()) {
+    if (!m_pNode->IsVerticalScrollPolicyOff()) {
       dwStyle |= FWL_WGTSTYLE_VScroll;
       dwExtendedStyle |= FWL_STYLEEXT_EDT_AutoVScroll;
     }
-  } else if (!m_pNode->GetWidgetAcc()->IsHorizontalScrollPolicyOff()) {
+  } else if (!m_pNode->IsHorizontalScrollPolicyOff()) {
     dwExtendedStyle |= FWL_STYLEEXT_EDT_AutoHScroll;
   }
   if (!m_pNode->IsOpenAccess() || !GetDoc()->GetXFADoc()->IsInteractive()) {
@@ -88,11 +88,11 @@ void CXFA_FFTextEdit::UpdateWidgetProperty() {
 
   XFA_Element eType;
   int32_t iMaxChars;
-  std::tie(eType, iMaxChars) = m_pNode->GetWidgetAcc()->GetMaxChars();
+  std::tie(eType, iMaxChars) = m_pNode->GetMaxChars();
   if (eType == XFA_Element::ExData)
     iMaxChars = 0;
 
-  Optional<int32_t> numCells = m_pNode->GetWidgetAcc()->GetNumberOfCells();
+  Optional<int32_t> numCells = m_pNode->GetNumberOfCells();
   if (!numCells) {
     pWidget->SetLimit(iMaxChars);
   } else if (*numCells == 0) {
@@ -184,8 +184,8 @@ bool CXFA_FFTextEdit::OnKillFocus(CXFA_FFWidget* pNewWidget) {
 
 bool CXFA_FFTextEdit::CommitData() {
   WideString wsText = static_cast<CFWL_Edit*>(m_pNormalWidget.get())->GetText();
-  if (m_pNode->GetWidgetAcc()->SetValue(XFA_VALUEPICTURE_Edit, wsText)) {
-    m_pNode->GetWidgetAcc()->UpdateUIDisplay(GetDoc()->GetDocView(), this);
+  if (m_pNode->SetValue(XFA_VALUEPICTURE_Edit, wsText)) {
+    m_pNode->UpdateUIDisplay(GetDoc()->GetDocView(), this);
     return true;
   }
   ValidateNumberField(wsText);
@@ -193,15 +193,14 @@ bool CXFA_FFTextEdit::CommitData() {
 }
 
 void CXFA_FFTextEdit::ValidateNumberField(const WideString& wsText) {
-  CXFA_WidgetAcc* pAcc = GetNode()->GetWidgetAcc();
-  if (!pAcc || pAcc->GetUIType() != XFA_Element::NumericEdit)
+  if (GetNode()->GetFFWidgetType() != XFA_FFWidgetType::kNumericEdit)
     return;
 
   IXFA_AppProvider* pAppProvider = GetApp()->GetAppProvider();
   if (!pAppProvider)
     return;
 
-  WideString wsSomField = pAcc->GetNode()->GetSOMExpression();
+  WideString wsSomField = GetNode()->GetSOMExpression();
   pAppProvider->MsgBox(WideString::Format(L"%ls can not contain %ls",
                                           wsText.c_str(), wsSomField.c_str()),
                        pAppProvider->GetAppTitle(), XFA_MBICON_Error,
@@ -260,27 +259,30 @@ bool CXFA_FFTextEdit::UpdateFWLData() {
     eType = XFA_VALUEPICTURE_Edit;
 
   bool bUpdate = false;
-  if (m_pNode->GetWidgetAcc()->GetUIType() == XFA_Element::TextEdit &&
-      !m_pNode->GetWidgetAcc()->GetNumberOfCells()) {
+  if (m_pNode->GetFFWidgetType() == XFA_FFWidgetType::kTextEdit &&
+      !m_pNode->GetNumberOfCells()) {
     XFA_Element elementType;
     int32_t iMaxChars;
-    std::tie(elementType, iMaxChars) = m_pNode->GetWidgetAcc()->GetMaxChars();
+    std::tie(elementType, iMaxChars) = m_pNode->GetMaxChars();
     if (elementType == XFA_Element::ExData)
       iMaxChars = eType == XFA_VALUEPICTURE_Edit ? iMaxChars : 0;
     if (pEdit->GetLimit() != iMaxChars) {
       pEdit->SetLimit(iMaxChars);
       bUpdate = true;
     }
-  } else if (m_pNode->GetWidgetAcc()->GetUIType() == XFA_Element::Barcode) {
+  } else if (m_pNode->GetFFWidgetType() == XFA_FFWidgetType::kBarcode) {
     int32_t nDataLen = 0;
-    if (eType == XFA_VALUEPICTURE_Edit)
-      nDataLen = m_pNode->GetBarcodeAttribute_DataLength().value_or(0);
+    if (eType == XFA_VALUEPICTURE_Edit) {
+      nDataLen = static_cast<CXFA_Barcode*>(m_pNode.Get())
+                     ->GetDataLength()
+                     .value_or(0);
+    }
 
     pEdit->SetLimit(nDataLen);
     bUpdate = true;
   }
 
-  WideString wsText = m_pNode->GetWidgetAcc()->GetValue(eType);
+  WideString wsText = m_pNode->GetValue(eType);
   WideString wsOldText = pEdit->GetText();
   if (wsText != wsOldText || (eType == XFA_VALUEPICTURE_Edit && bUpdate)) {
     pEdit->SetText(wsText);
@@ -299,10 +301,10 @@ void CXFA_FFTextEdit::OnTextChanged(CFWL_Widget* pWidget,
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Change;
   eParam.m_wsChange = wsChanged;
-  eParam.m_pTarget = m_pNode->GetWidgetAcc();
+  eParam.m_pTarget = m_pNode.Get();
   eParam.m_wsPrevText = wsPrevText;
   CFWL_Edit* pEdit = static_cast<CFWL_Edit*>(m_pNormalWidget.get());
-  if (m_pNode->GetWidgetAcc()->GetUIType() == XFA_Element::DateTimeEdit) {
+  if (m_pNode->GetFFWidgetType() == XFA_FFWidgetType::kDateTimeEdit) {
     CFWL_DateTimePicker* pDateTime = (CFWL_DateTimePicker*)pEdit;
     eParam.m_wsNewText = pDateTime->GetEditText();
     if (pDateTime->HasSelection()) {
@@ -321,13 +323,13 @@ void CXFA_FFTextEdit::OnTextChanged(CFWL_Widget* pWidget,
 void CXFA_FFTextEdit::OnTextFull(CFWL_Widget* pWidget) {
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Full;
-  eParam.m_pTarget = m_pNode->GetWidgetAcc();
+  eParam.m_pTarget = m_pNode.Get();
   m_pNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Full, &eParam);
 }
 
 bool CXFA_FFTextEdit::CheckWord(const ByteStringView& sWord) {
   return sWord.IsEmpty() ||
-         m_pNode->GetWidgetAcc()->GetUIType() != XFA_Element::TextEdit;
+         m_pNode->GetFFWidgetType() != XFA_FFWidgetType::kTextEdit;
 }
 
 void CXFA_FFTextEdit::OnProcessMessage(CFWL_Message* pMessage) {

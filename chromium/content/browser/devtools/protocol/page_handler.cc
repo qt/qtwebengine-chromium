@@ -27,12 +27,12 @@
 #include "content/browser/devtools/protocol/devtools_download_manager_helper.h"
 #include "content/browser/devtools/protocol/emulation_handler.h"
 #include "content/browser/frame_host/navigation_request.h"
+#include "content/browser/frame_host/navigator.h"
 #include "content/browser/manifest/manifest_manager_host.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
-#include "content/common/content_switches_internal.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -48,6 +48,7 @@
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/gfx/codec/jpeg_codec.h"
@@ -148,7 +149,7 @@ std::vector<PageHandler*> PageHandler::ForAgentHost(
       host, Page::Metainfo::domainName);
 }
 
-void PageHandler::SetRenderer(RenderProcessHost* process_host,
+void PageHandler::SetRenderer(int process_host_id,
                               RenderFrameHostImpl* frame_host) {
   if (host_ == frame_host)
     return;
@@ -286,6 +287,7 @@ Response PageHandler::Disable() {
   }
 
   download_manager_delegate_ = nullptr;
+  navigate_callbacks_.clear();
   return Response::FallThrough();
 }
 
@@ -323,6 +325,7 @@ Response PageHandler::Reload(Maybe<bool> bypassCache,
 void PageHandler::Navigate(const std::string& url,
                            Maybe<std::string> referrer,
                            Maybe<std::string> maybe_transition_type,
+                           Maybe<std::string> frame_id,
                            std::unique_ptr<NavigateCallback> callback) {
   GURL gurl(url);
   if (!gurl.is_valid()) {
@@ -330,8 +333,7 @@ void PageHandler::Navigate(const std::string& url,
     return;
   }
 
-  WebContentsImpl* web_contents = GetWebContents();
-  if (!web_contents) {
+  if (!host_) {
     callback->sendFailure(Response::InternalError());
     return;
   }
@@ -364,43 +366,64 @@ void PageHandler::Navigate(const std::string& url,
   else
     type = ui::PAGE_TRANSITION_TYPED;
 
-  web_contents->GetController().LoadURL(
-      gurl,
-      Referrer(GURL(referrer.fromMaybe("")), blink::kWebReferrerPolicyDefault),
-      type, std::string());
-  std::string frame_id =
-      web_contents->GetMainFrame()->GetDevToolsFrameToken().ToString();
-  if (navigate_callback_) {
-    std::string error_string = net::ErrorToString(net::ERR_ABORTED);
-    navigate_callback_->sendSuccess(frame_id, Maybe<std::string>(),
-                                    Maybe<std::string>(error_string));
+  FrameTreeNode* frame_tree_node = nullptr;
+  std::string out_frame_id = frame_id.fromMaybe(
+      host_->frame_tree_node()->devtools_frame_token().ToString());
+  FrameTreeNode* root = host_->frame_tree_node();
+  if (root->devtools_frame_token().ToString() == out_frame_id) {
+    frame_tree_node = root;
+  } else {
+    for (FrameTreeNode* node : root->frame_tree()->SubtreeNodes(root)) {
+      if (node->devtools_frame_token().ToString() == out_frame_id) {
+        frame_tree_node = node;
+        break;
+      }
+    }
   }
-  if (web_contents->GetMainFrame()->frame_tree_node()->navigation_request())
-    navigate_callback_ = std::move(callback);
-  else
-    callback->sendSuccess(frame_id, Maybe<std::string>(), Maybe<std::string>());
+
+  if (!frame_tree_node) {
+    callback->sendFailure(Response::Error("No frame with given id found"));
+    return;
+  }
+
+  NavigationController::LoadURLParams params(gurl);
+  params.referrer =
+      Referrer(GURL(referrer.fromMaybe("")), blink::kWebReferrerPolicyDefault);
+  params.transition_type = type;
+  params.frame_tree_node_id = frame_tree_node->frame_tree_node_id();
+  frame_tree_node->navigator()->GetController()->LoadURLWithParams(params);
+
+  base::UnguessableToken frame_token = frame_tree_node->devtools_frame_token();
+  auto navigate_callback = navigate_callbacks_.find(frame_token);
+  if (navigate_callback != navigate_callbacks_.end()) {
+    std::string error_string = net::ErrorToString(net::ERR_ABORTED);
+    navigate_callback->second->sendSuccess(out_frame_id, Maybe<std::string>(),
+                                           Maybe<std::string>(error_string));
+  }
+  if (frame_tree_node->navigation_request()) {
+    navigate_callbacks_[frame_token] = std::move(callback);
+  } else {
+    callback->sendSuccess(out_frame_id, Maybe<std::string>(),
+                          Maybe<std::string>());
+  }
 }
 
 void PageHandler::NavigationReset(NavigationRequest* navigation_request) {
-  if (!navigate_callback_)
+  auto navigate_callback = navigate_callbacks_.find(
+      navigation_request->frame_tree_node()->devtools_frame_token());
+  if (navigate_callback == navigate_callbacks_.end())
     return;
-  WebContentsImpl* web_contents = GetWebContents();
-  if (!web_contents) {
-    navigate_callback_->sendFailure(Response::InternalError());
-    return;
-  }
-
   std::string frame_id =
-      web_contents->GetMainFrame()->GetDevToolsFrameToken().ToString();
+      navigation_request->frame_tree_node()->devtools_frame_token().ToString();
   bool success = navigation_request->net_error() != net::OK;
   std::string error_string =
       net::ErrorToString(navigation_request->net_error());
-  navigate_callback_->sendSuccess(
+  navigate_callback->second->sendSuccess(
       frame_id,
       Maybe<std::string>(
           navigation_request->devtools_navigation_token().ToString()),
       success ? Maybe<std::string>(error_string) : Maybe<std::string>());
-  navigate_callback_.reset();
+  navigate_callbacks_.erase(navigate_callback);
 }
 
 static const char* TransitionTypeName(ui::PageTransition type) {
@@ -608,6 +631,7 @@ void PageHandler::PrintToPDF(Maybe<bool> landscape,
                              Maybe<bool> ignore_invalid_page_ranges,
                              Maybe<String> header_template,
                              Maybe<String> footer_template,
+                             Maybe<bool> prefer_css_page_size,
                              std::unique_ptr<PrintToPDFCallback> callback) {
   callback->sendFailure(Response::Error("PrintToPDF is not implemented"));
   return;
@@ -618,6 +642,9 @@ Response PageHandler::StartScreencast(Maybe<std::string> format,
                                       Maybe<int> max_width,
                                       Maybe<int> max_height,
                                       Maybe<int> every_nth_frame) {
+  WebContentsImpl* web_contents = GetWebContents();
+  if (!web_contents)
+    return Response::InternalError();
   RenderWidgetHostImpl* widget_host =
       host_ ? host_->GetRenderWidgetHost() : nullptr;
   if (!widget_host)
@@ -759,9 +786,10 @@ void PageHandler::GetAppManifest(
 }
 
 WebContentsImpl* PageHandler::GetWebContents() {
-  return host_ ?
-      static_cast<WebContentsImpl*>(WebContents::FromRenderFrameHost(host_)) :
-      nullptr;
+  return host_ && !host_->frame_tree_node()->parent()
+             ? static_cast<WebContentsImpl*>(
+                   WebContents::FromRenderFrameHost(host_))
+             : nullptr;
 }
 
 void PageHandler::NotifyScreencastVisibility(bool visible) {
@@ -771,7 +799,7 @@ void PageHandler::NotifyScreencastVisibility(bool visible) {
 }
 
 void PageHandler::InnerSwapCompositorFrame() {
-  if (!host_ || !host_->GetView())
+  if (!host_)
     return;
 
   if (frames_in_flight_ > kMaxScreencastFramesInFlight)
@@ -780,57 +808,63 @@ void PageHandler::InnerSwapCompositorFrame() {
   if (++frame_counter_ % capture_every_nth_frame_)
     return;
 
-  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
-      host_->GetView());
-  // TODO(vkuzkokov): do not use previous frame metadata.
-  // TODO(miu): RWHV to provide an API to provide actual rendering size.
-  // http://crbug.com/73362
-  viz::CompositorFrameMetadata& metadata = last_compositor_frame_metadata_;
+  RenderWidgetHostViewBase* const view =
+      static_cast<RenderWidgetHostViewBase*>(host_->GetView());
+  if (!view || !view->IsSurfaceAvailableForCopy())
+    return;
 
-  float css_to_dip = metadata.page_scale_factor;
-  if (IsUseZoomForDSFEnabled())
-    css_to_dip /= metadata.device_scale_factor;
-  gfx::SizeF viewport_size_dip =
-      gfx::ScaleSize(metadata.scrollable_viewport_size, css_to_dip);
-  gfx::SizeF screen_size_dip =
-      gfx::ScaleSize(gfx::SizeF(view->GetPhysicalBackingSize()),
-                     1 / metadata.device_scale_factor);
-
-  content::ScreenInfo screen_info;
-  GetWebContents()->GetView()->GetScreenInfo(&screen_info);
-  double device_scale_factor = screen_info.device_scale_factor;
+  // Determine the snapshot size that best-fits the Surface's content to the
+  // remote's requested image size.
+  const gfx::Size& surface_size = view->GetCompositorViewportPixelSize();
+  if (surface_size.IsEmpty())
+    return;  // Nothing to copy (and avoid divide-by-zero below).
   double scale = 1;
-
   if (screencast_max_width_ > 0) {
-    double max_width_dip = screencast_max_width_ / device_scale_factor;
-    scale = std::min(scale, max_width_dip / screen_size_dip.width());
+    scale = std::min(scale, static_cast<double>(screencast_max_width_) /
+                                surface_size.width());
   }
   if (screencast_max_height_ > 0) {
-    double max_height_dip = screencast_max_height_ / device_scale_factor;
-    scale = std::min(scale, max_height_dip / screen_size_dip.height());
+    scale = std::min(scale, static_cast<double>(screencast_max_height_) /
+                                surface_size.height());
   }
+  const gfx::Size snapshot_size =
+      gfx::ToRoundedSize(gfx::ScaleSize(gfx::SizeF(surface_size), scale));
+  if (snapshot_size.IsEmpty())
+    return;
 
-  if (scale <= 0)
-    scale = 0.1;
+  // Build the ScreencastFrameMetadata associated with this capture attempt.
+  const auto& metadata = last_compositor_frame_metadata_;
+  if (metadata.device_scale_factor == 0)
+    return;
+  const gfx::SizeF content_size_dip = gfx::ScaleSize(
+      gfx::SizeF(surface_size), 1 / metadata.device_scale_factor);
+  float top_offset_dip =
+      metadata.top_controls_height * metadata.top_controls_shown_ratio;
+  if (IsUseZoomForDSFEnabled())
+    top_offset_dip /= metadata.device_scale_factor;
+  std::unique_ptr<Page::ScreencastFrameMetadata> page_metadata =
+      Page::ScreencastFrameMetadata::Create()
+          .SetPageScaleFactor(metadata.page_scale_factor)
+          .SetOffsetTop(top_offset_dip)
+          .SetDeviceWidth(content_size_dip.width())
+          .SetDeviceHeight(content_size_dip.height())
+          .SetScrollOffsetX(metadata.root_scroll_offset.x())
+          .SetScrollOffsetY(metadata.root_scroll_offset.y())
+          .SetTimestamp(base::Time::Now().ToDoubleT())
+          .Build();
 
-  gfx::Size snapshot_size_dip(gfx::ToRoundedSize(
-      gfx::ScaleSize(viewport_size_dip, scale)));
-
-  if (snapshot_size_dip.width() > 0 && snapshot_size_dip.height() > 0) {
-    view->CopyFromSurface(
-        gfx::Rect(), snapshot_size_dip,
-        base::Bind(&PageHandler::ScreencastFrameCaptured,
-                   weak_factory_.GetWeakPtr(),
-                   base::Passed(last_compositor_frame_metadata_.Clone())),
-        kN32_SkColorType);
-    frames_in_flight_++;
-  }
+  // Request a copy of the surface as a scaled SkBitmap.
+  view->CopyFromSurface(
+      gfx::Rect(), snapshot_size,
+      base::BindOnce(&PageHandler::ScreencastFrameCaptured,
+                     weak_factory_.GetWeakPtr(), std::move(page_metadata)));
+  frames_in_flight_++;
 }
 
-void PageHandler::ScreencastFrameCaptured(viz::CompositorFrameMetadata metadata,
-                                          const SkBitmap& bitmap,
-                                          ReadbackResponse response) {
-  if (response != READBACK_SUCCESS) {
+void PageHandler::ScreencastFrameCaptured(
+    std::unique_ptr<Page::ScreencastFrameMetadata> page_metadata,
+    const SkBitmap& bitmap) {
+  if (bitmap.drawsNothing()) {
     if (capture_retry_count_) {
       --capture_retry_count_;
       base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
@@ -844,50 +878,21 @@ void PageHandler::ScreencastFrameCaptured(viz::CompositorFrameMetadata metadata,
   }
   base::PostTaskWithTraitsAndReplyWithResult(
       FROM_HERE, {base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-      base::Bind(&EncodeSkBitmap, bitmap, screencast_format_,
-                 screencast_quality_),
-      base::Bind(&PageHandler::ScreencastFrameEncoded,
-                 weak_factory_.GetWeakPtr(), base::Passed(&metadata),
-                 base::Time::Now()));
+      base::BindOnce(&EncodeSkBitmap, bitmap, screencast_format_,
+                     screencast_quality_),
+      base::BindOnce(&PageHandler::ScreencastFrameEncoded,
+                     weak_factory_.GetWeakPtr(), std::move(page_metadata)));
 }
 
-void PageHandler::ScreencastFrameEncoded(viz::CompositorFrameMetadata metadata,
-                                         const base::Time& timestamp,
-                                         const std::string& data) {
-  // Consider metadata empty in case it has no device scale factor.
-  if (metadata.device_scale_factor == 0 || !host_ || data.empty()) {
+void PageHandler::ScreencastFrameEncoded(
+    std::unique_ptr<Page::ScreencastFrameMetadata> page_metadata,
+    const std::string& data) {
+  if (data.empty()) {
     --frames_in_flight_;
-    return;
+    return;  // Encode failed.
   }
 
-  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
-      host_->GetView());
-  if (!view) {
-    --frames_in_flight_;
-    return;
-  }
-
-  gfx::SizeF screen_size_dip =
-      gfx::ScaleSize(gfx::SizeF(view->GetPhysicalBackingSize()),
-                     1 / metadata.device_scale_factor);
-  float css_to_dip = metadata.page_scale_factor;
-  float top_offset_dip =
-      metadata.top_controls_height * metadata.top_controls_shown_ratio;
-  if (IsUseZoomForDSFEnabled()) {
-    css_to_dip /= metadata.device_scale_factor;
-    top_offset_dip /= metadata.device_scale_factor;
-  }
-  std::unique_ptr<Page::ScreencastFrameMetadata> param_metadata =
-      Page::ScreencastFrameMetadata::Create()
-          .SetPageScaleFactor(css_to_dip)
-          .SetOffsetTop(top_offset_dip)
-          .SetDeviceWidth(screen_size_dip.width())
-          .SetDeviceHeight(screen_size_dip.height())
-          .SetScrollOffsetX(metadata.root_scroll_offset.x())
-          .SetScrollOffsetY(metadata.root_scroll_offset.y())
-          .SetTimestamp(timestamp.ToDoubleT())
-          .Build();
-  frontend_->ScreencastFrame(data, std::move(param_metadata), session_id_);
+  frontend_->ScreencastFrame(data, std::move(page_metadata), session_id_);
 }
 
 void PageHandler::ScreenshotCaptured(

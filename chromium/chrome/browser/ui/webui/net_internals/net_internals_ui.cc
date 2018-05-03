@@ -72,7 +72,7 @@
 #include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_entry.h"
 #include "net/log/net_log_util.h"
-#include "net/proxy/proxy_service.h"
+#include "net/proxy_resolution/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
@@ -84,6 +84,7 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
 #include "chromeos/network/onc/onc_certificate_importer_impl.h"
+#include "chromeos/network/onc/onc_parsed_certificates.h"
 #include "chromeos/network/onc/onc_utils.h"
 #endif
 
@@ -683,7 +684,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnGetNetInfo(
 void NetInternalsMessageHandler::IOThreadImpl::OnReloadProxySettings(
     const base::ListValue* list) {
   DCHECK(!list);
-  GetMainContext()->proxy_service()->ForceReloadProxyConfig();
+  GetMainContext()->proxy_resolution_service()->ForceReloadProxyConfig();
 
   // Cause the renderer to be notified of the new values.
   SendNetInfo(net::NET_INFO_PROXY_SETTINGS);
@@ -692,7 +693,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnReloadProxySettings(
 void NetInternalsMessageHandler::IOThreadImpl::OnClearBadProxies(
     const base::ListValue* list) {
   DCHECK(!list);
-  GetMainContext()->proxy_service()->ClearBadProxiesCache();
+  GetMainContext()->proxy_resolution_service()->ClearBadProxiesCache();
 
   // Cause the renderer to be notified of the new values.
   SendNetInfo(net::NET_INFO_BAD_PROXIES);
@@ -1020,11 +1021,10 @@ void NetInternalsMessageHandler::ImportONCFileToNSSDB(
   chromeos::onc::CertificateImporterImpl cert_importer(
       BrowserThread::GetTaskRunnerForThread(BrowserThread::IO), nssdb);
   cert_importer.ImportCertificates(
-      certificates,
+      std::make_unique<chromeos::onc::OncParsedCertificates>(certificates),
       onc_source,
       base::Bind(&NetInternalsMessageHandler::OnCertificatesImported,
-                 AsWeakPtr(),
-                 error));
+                 AsWeakPtr(), error));
 }
 
 void NetInternalsMessageHandler::OnCertificatesImported(
@@ -1133,9 +1133,9 @@ void NetInternalsMessageHandler::IOThreadImpl::OnSetCaptureMode(
 // can be called from ANY THREAD.
 void NetInternalsMessageHandler::IOThreadImpl::OnAddEntry(
     const net::NetLogEntry& entry) {
-  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::BindOnce(&IOThreadImpl::AddEntryToQueue, this,
-                                         base::Passed(entry.ToValue())));
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::BindOnce(&IOThreadImpl::AddEntryToQueue, this, entry.ToValue()));
 }
 
 // Note that this can be called from ANY THREAD.
@@ -1153,7 +1153,7 @@ void NetInternalsMessageHandler::IOThreadImpl::SendJavascriptCommand(
 
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::BindOnce(&IOThreadImpl::SendJavascriptCommand,
-                                         this, command, base::Passed(&arg)));
+                                         this, command, std::move(arg)));
 }
 
 void NetInternalsMessageHandler::IOThreadImpl::AddEntryToQueue(

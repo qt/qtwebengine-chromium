@@ -23,7 +23,6 @@
 #include "content/browser/loader/resource_controller.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
-#include "content/browser/loader/resource_scheduler.h"
 #include "content/public/browser/appcache_service.h"
 #include "content/public/browser/navigation_data.h"
 #include "content/public/browser/resource_context.h"
@@ -34,7 +33,6 @@
 #include "content/public/common/resource_type.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "content/public/test/test_url_loader_client.h"
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -46,7 +44,6 @@
 #include "net/http/http_response_info.h"
 #include "net/http/http_status_code.h"
 #include "net/http/http_util.h"
-#include "net/ssl/client_cert_store.h"
 #include "net/ssl/ssl_info.h"
 #include "net/test/url_request/url_request_mock_data_job.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -56,8 +53,10 @@
 #include "net/url_request/url_request_test_util.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/network/resource_scheduler.h"
+#include "services/network/test/test_url_loader_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/page_transition_types.h"
 
@@ -84,9 +83,9 @@ class DummyUploadDataStream : public net::UploadDataStream {
   DISALLOW_COPY_AND_ASSIGN(DummyUploadDataStream);
 };
 
-class FakeUploadProgressTracker : public UploadProgressTracker {
+class FakeUploadProgressTracker : public network::UploadProgressTracker {
  public:
-  using UploadProgressTracker::UploadProgressTracker;
+  using network::UploadProgressTracker::UploadProgressTracker;
 
   net::UploadProgress GetUploadProgress() const override {
     return upload_progress_;
@@ -133,13 +132,6 @@ class TestResourceDispatcherHostDelegate final
     ADD_FAILURE() << "DownloadStarting should not be called.";
   }
 
-  ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
-      net::AuthChallengeInfo* auth_info,
-      net::URLRequest* request) override {
-    ADD_FAILURE() << "CreateLoginDelegate should not be called.";
-    return nullptr;
-  }
-
   bool HandleExternalProtocol(
       const GURL& url,
       ResourceRequestInfo* resource_request_info) override {
@@ -148,7 +140,6 @@ class TestResourceDispatcherHostDelegate final
   }
 
   bool ShouldInterceptResourceAsStream(net::URLRequest* request,
-                                       const base::FilePath& plugin_path,
                                        const std::string& mime_type,
                                        GURL* origin,
                                        std::string* payload) override {
@@ -186,12 +177,6 @@ class TestResourceDispatcherHostDelegate final
 
   NavigationData* GetNavigationData(net::URLRequest* request) const override {
     ADD_FAILURE() << "GetNavigationData should not be called.";
-    return nullptr;
-  }
-
-  std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
-      ResourceContext* resource_context) override {
-    ADD_FAILURE() << "CreateClientCertStore should not be called.";
     return nullptr;
   }
 
@@ -261,9 +246,10 @@ class MojoAsyncResourceHandlerWithStubOperations
     has_received_bad_message_ = true;
   }
 
-  std::unique_ptr<UploadProgressTracker> CreateUploadProgressTracker(
+  std::unique_ptr<network::UploadProgressTracker> CreateUploadProgressTracker(
       const base::Location& from_here,
-      UploadProgressTracker::UploadProgressReportCallback callback) override {
+      network::UploadProgressTracker::UploadProgressReportCallback callback)
+      override {
     DCHECK(!upload_progress_tracker_);
 
     auto upload_progress_tracker = std::make_unique<FakeUploadProgressTracker>(
@@ -422,7 +408,7 @@ class MojoAsyncResourceHandlerTestBase {
   ResourceDispatcherHostImpl rdh_;
   network::mojom::URLLoaderFactoryPtr url_loader_factory_;
   network::mojom::URLLoaderPtr url_loader_proxy_;
-  TestURLLoaderClient url_loader_client_;
+  network::TestURLLoaderClient url_loader_client_;
   std::unique_ptr<TestBrowserContext> browser_context_;
   net::TestDelegate url_request_delegate_;
   std::unique_ptr<net::URLRequest> request_;
@@ -1035,7 +1021,7 @@ TEST_F(MojoAsyncResourceHandlerUploadTest, UploadProgressHandling) {
 TEST_F(MojoAsyncResourceHandlerTest, SetPriority) {
   constexpr int kIntraPriority = 5;
   ASSERT_TRUE(CallOnWillStartAndOnResponseStarted());
-  std::unique_ptr<ResourceThrottle> throttle =
+  auto throttle =
       ResourceDispatcherHostImpl::Get()->scheduler()->ScheduleRequest(
           kChildId, kRouteId, false, request_.get());
 

@@ -186,7 +186,11 @@ void TaskSchedulerImpl::Shutdown() {
 }
 
 void TaskSchedulerImpl::FlushForTesting() {
-  task_tracker_->Flush();
+  task_tracker_->FlushForTesting();
+}
+
+void TaskSchedulerImpl::FlushAsyncForTesting(OnceClosure flush_callback) {
+  task_tracker_->FlushAsyncForTesting(std::move(flush_callback));
 }
 
 void TaskSchedulerImpl::JoinForTesting() {
@@ -199,8 +203,6 @@ void TaskSchedulerImpl::JoinForTesting() {
   // https://crbug.com/771701.
   service_thread_.Stop();
   single_thread_task_runner_manager_.JoinForTesting();
-  for (const auto& worker_pool : worker_pools_)
-    worker_pool->DisallowWorkerCleanupForTesting();
   for (const auto& worker_pool : worker_pools_)
     worker_pool->JoinForTesting();
 #if DCHECK_IS_ON()

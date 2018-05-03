@@ -25,7 +25,7 @@
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_transaction.h"
 #include "net/log/net_log_with_source.h"
-#include "net/proxy/proxy_service.h"
+#include "net/proxy_resolution/proxy_service.h"
 #include "net/socket/connection_attempts.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_config_service.h"
@@ -232,13 +232,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // ERR_PROXY_HTTP_1_1_REQUIRED has to be handled.
   int HandleHttp11Required(int error);
 
-  // Called to possibly handle a client authentication error.
-  void HandleClientAuthError(int error);
-
-  // Called to possibly recover from an SSL handshake error.  Sets next_state_
+  // Called to possibly handle a client authentication error. Sets next_state_
   // and returns OK if recovering from the error.  Otherwise, the same error
   // code is returned.
-  int HandleSSLHandshakeError(int error);
+  int HandleSSLClientAuthError(int error);
 
   // Called to possibly recover from the given error.  Sets next_state_ and
   // returns OK if recovering from the error.  Otherwise, the same error code
@@ -255,6 +252,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Returns true if there have already been |kMaxRetryAttempts| retries for
   // HTTP2 or QUIC network errors, and no further retries should be attempted.
   bool HasExceededMaxRetries() const;
+
+  // Increments the number of restarts and returns true if the restart may
+  // proceed.
+  bool CheckMaxRestarts();
 
   // Resets the connection and the request headers for resend.  Called when
   // ShouldResendRequest() is true.
@@ -342,6 +343,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // True if we can send the request over early data.
   bool can_send_early_data_;
 
+  // True if |server_ssl_config_.client_cert| was looked up from the
+  // SSLClientAuthCache, rather than provided externally by the caller.
+  bool server_ssl_client_cert_was_cached_;
+
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
 
@@ -421,6 +426,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // behaved server may time those out and thus the number
   // of times we can retry a request on reused sockets is limited.
   size_t retry_attempts_;
+
+  // Number of times the transaction was restarted via a RestartWith* call.
+  size_t num_restarts_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };

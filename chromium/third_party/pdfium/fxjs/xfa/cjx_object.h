@@ -20,7 +20,7 @@
 #include "xfa/fxfa/fxfa_basic.h"
 
 class CFXJSE_Value;
-class CJS_V8;
+class CFX_V8;
 class CXFA_CalcData;
 class CXFA_Document;
 class CXFA_LayoutItem;
@@ -30,7 +30,7 @@ struct XFA_MAPMODULEDATA;
 
 typedef CJS_Return (*CJX_MethodCall)(
     CJX_Object* obj,
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params);
 struct CJX_MethodSpec {
   const char* pName;
@@ -67,7 +67,7 @@ class CJX_Object {
   size_t GetCalcRecursionCount() const { return calc_recursion_count_; }
 
   void SetLayoutItem(CXFA_LayoutItem* item) { layout_item_ = item; }
-  CXFA_LayoutItem* GetLayoutItem() const { return layout_item_.Get(); }
+  CXFA_LayoutItem* GetLayoutItem() const { return layout_item_; }
 
   bool HasMethod(const WideString& func) const;
   CJS_Return RunMethod(const WideString& func,
@@ -187,9 +187,10 @@ class CJX_Object {
                 bool bScriptModify);
   WideString GetCData(XFA_Attribute eAttr);
 
-  Optional<XFA_AttributeEnum> TryEnum(XFA_Attribute eAttr, bool bUseDefault);
+  Optional<XFA_AttributeEnum> TryEnum(XFA_Attribute eAttr,
+                                      bool bUseDefault) const;
   bool SetEnum(XFA_Attribute eAttr, XFA_AttributeEnum eValue, bool bNotify);
-  XFA_AttributeEnum GetEnum(XFA_Attribute eAttr);
+  XFA_AttributeEnum GetEnum(XFA_Attribute eAttr) const;
 
   Optional<bool> TryBoolean(XFA_Attribute eAttr, bool bUseDefault);
   bool SetBoolean(XFA_Attribute eAttr, bool bValue, bool bNotify);
@@ -242,7 +243,7 @@ class CJX_Object {
   void OnChanging(XFA_Attribute eAttr, bool bNotify);
   bool SetUserData(void* pKey,
                    void* pData,
-                   XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo);
+                   const XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo);
 
   // Returns a pointer to the XML node that needs to be updated with the new
   // attribute value. |nullptr| if no update is needed.
@@ -255,12 +256,12 @@ class CJX_Object {
   XFA_MAPMODULEDATA* CreateMapModuleData();
   XFA_MAPMODULEDATA* GetMapModuleData() const;
   void SetMapModuleValue(void* pKey, void* pValue);
-  bool GetMapModuleValue(void* pKey, void*& pValue);
+  bool GetMapModuleValue(void* pKey, void*& pValue) const;
   bool GetMapModuleString(void* pKey, WideStringView& wsValue);
   void SetMapModuleBuffer(void* pKey,
                           void* pValue,
                           int32_t iBytes,
-                          XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo);
+                          const XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo);
   bool GetMapModuleBuffer(void* pKey,
                           void*& pValue,
                           int32_t& iBytes,
@@ -271,7 +272,13 @@ class CJX_Object {
   void MoveBufferMapData(CXFA_Object* pDstModule);
 
   UnownedPtr<CXFA_Object> object_;
-  UnownedPtr<CXFA_LayoutItem> layout_item_;
+  // This is an UnownedPtr but, due to lifetime issues, can't be marked as such
+  // at this point. The CJX_Node is freed by its parent CXFA_Node. The CXFA_Node
+  // will be freed during CXFA_NodeHolder destruction (CXFA_Document
+  // destruction as the only implementation). This will happen after the
+  // CXFA_LayoutProcessor is destroyed in the CXFA_Document, leaving this as a
+  // bad unowned ptr.
+  CXFA_LayoutItem* layout_item_ = nullptr;
   std::unique_ptr<XFA_MAPMODULEDATA> map_module_data_;
   std::unique_ptr<CXFA_CalcData> calc_data_;
   std::map<ByteString, CJX_MethodCall> method_specs_;

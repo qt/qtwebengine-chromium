@@ -44,11 +44,6 @@ bool GpuDataManagerImpl::IsEssentialGpuInfoAvailable() const {
   return private_->IsEssentialGpuInfoAvailable();
 }
 
-bool GpuDataManagerImpl::IsCompleteGpuInfoAvailable() const {
-  base::AutoLock auto_lock(lock_);
-  return private_->IsCompleteGpuInfoAvailable();
-}
-
 bool GpuDataManagerImpl::IsGpuFeatureInfoAvailable() const {
   base::AutoLock auto_lock(lock_);
   return private_->IsGpuFeatureInfoAvailable();
@@ -84,21 +79,14 @@ void GpuDataManagerImpl::UnblockDomainFrom3DAPIs(const GURL& url) {
   private_->UnblockDomainFrom3DAPIs(url);
 }
 
-void GpuDataManagerImpl::SetGLStrings(const std::string& gl_vendor,
-                                      const std::string& gl_renderer,
-                                      const std::string& gl_version) {
-  base::AutoLock auto_lock(lock_);
-  private_->SetGLStrings(gl_vendor, gl_renderer, gl_version);
-}
-
 void GpuDataManagerImpl::DisableHardwareAcceleration() {
   base::AutoLock auto_lock(lock_);
   private_->DisableHardwareAcceleration();
 }
 
-void GpuDataManagerImpl::DisableSwiftShader() {
+void GpuDataManagerImpl::BlockSwiftShader() {
   base::AutoLock auto_lock(lock_);
-  private_->DisableSwiftShader();
+  private_->BlockSwiftShader();
 }
 
 bool GpuDataManagerImpl::HardwareAccelerationEnabled() const {
@@ -112,20 +100,10 @@ void GpuDataManagerImpl::GetDisabledExtensions(
   private_->GetDisabledExtensions(disabled_extensions);
 }
 
-void GpuDataManagerImpl::SetGpuInfo(const gpu::GPUInfo& gpu_info) {
-  base::AutoLock auto_lock(lock_);
-  private_->SetGpuInfo(gpu_info);
-}
-
 void GpuDataManagerImpl::GetDisabledWebGLExtensions(
     std::string* disabled_webgl_extensions) const {
   base::AutoLock auto_lock(lock_);
   private_->GetDisabledWebGLExtensions(disabled_webgl_extensions);
-}
-
-void GpuDataManagerImpl::Initialize() {
-  base::AutoLock auto_lock(lock_);
-  private_->Initialize();
 }
 
 void GpuDataManagerImpl::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
@@ -142,12 +120,6 @@ void GpuDataManagerImpl::UpdateGpuFeatureInfo(
 gpu::GpuFeatureInfo GpuDataManagerImpl::GetGpuFeatureInfo() const {
   base::AutoLock auto_lock(lock_);
   return private_->GetGpuFeatureInfo();
-}
-
-void GpuDataManagerImpl::AppendRendererCommandLine(
-    base::CommandLine* command_line) const {
-  base::AutoLock auto_lock(lock_);
-  private_->AppendRendererCommandLine(command_line);
 }
 
 void GpuDataManagerImpl::AppendGpuCommandLine(

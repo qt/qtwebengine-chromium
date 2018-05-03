@@ -28,6 +28,7 @@
 #include "core/CoreExport.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/OverflowModel.h"
+#include "core/layout/custom/CustomLayoutChild.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/wtf/Compiler.h"
 #include "platform/wtf/PtrUtil.h"
@@ -109,7 +110,7 @@ struct LayoutBoxRareData {
   // layout overflow rect after the last paint invalidation. They are valid if
   // m_hasPreviousContentBoxSizeAndLayoutOverflowRect is true.
   LayoutSize previous_content_box_size_;
-  LayoutRect previous_layout_overflow_rect_;
+  LayoutRect previous_physical_layout_overflow_rect_;
 
   // Used by LocalFrameView::ScrollIntoView. When the scroll is sequenced
   // rather than instantly performed, we need the pending_offset_to_scroll
@@ -117,6 +118,12 @@ struct LayoutBoxRareData {
   // TODO(sunyunjia): We should get rid of this variable and move the next
   // rect_to_scroll calculation into ScrollRectToVisible. crbug.com/741830
   LayoutSize pending_offset_to_scroll_;
+
+  // Used by CSSLayoutDefinition::Instance::Layout. Represents the script
+  // object for this box that web developers can query style, and perform
+  // layout upon. Only created if IsCustomItem() is true.
+  Persistent<CustomLayoutChild> layout_child_;
+
   DISALLOW_COPY_AND_ASSIGN(LayoutBoxRareData);
 };
 
@@ -459,6 +466,11 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   LayoutRect LayoutOverflowRect() const {
     return overflow_ ? overflow_->LayoutOverflowRect() : NoOverflowRect();
   }
+  LayoutRect PhysicalLayoutOverflowRect() const {
+    LayoutRect overflow_rect = LayoutOverflowRect();
+    FlipForWritingMode(overflow_rect);
+    return overflow_rect;
+  }
   IntRect PixelSnappedLayoutOverflowRect() const {
     return PixelSnappedIntRect(LayoutOverflowRect());
   }
@@ -660,6 +672,15 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   void UpdateLayout() override;
   void Paint(const PaintInfo&, const LayoutPoint&) const override;
+
+  virtual bool IsInSelfHitTestingPhase(HitTestAction hit_test_action) const {
+    return hit_test_action == kHitTestForeground;
+  }
+
+  bool HitTestAllPhases(HitTestResult&,
+                        const HitTestLocation& location_in_container,
+                        const LayoutPoint& accumulated_offset,
+                        HitTestFilter = kHitTestAll) final;
   bool NodeAtPoint(HitTestResult&,
                    const HitTestLocation& location_in_container,
                    const LayoutPoint& accumulated_offset,
@@ -1067,7 +1088,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   void LogicalExtentAfterUpdatingLogicalWidth(const LayoutUnit& logical_top,
                                               LogicalExtentComputedValues&);
 
-  PositionWithAffinity PositionForPoint(const LayoutPoint&) override;
+  PositionWithAffinity PositionForPoint(const LayoutPoint&) const override;
 
   void RemoveFloatingOrPositionedChildFromBlockLists();
 
@@ -1097,6 +1118,8 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   }
   void MarkOrthogonalWritingModeRoot();
   void UnmarkOrthogonalWritingModeRoot();
+
+  bool IsCustomItem() const;
 
   bool IsDeprecatedFlexItem() const {
     return !IsInline() && !IsFloatingOrOutOfFlowPositioned() && Parent() &&
@@ -1319,6 +1342,13 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   SnapAreaSet* SnapAreas() const;
   void ClearSnapAreas();
 
+  // CustomLayoutChild only exists if this LayoutBox is a IsCustomItem (aka. a
+  // child of a LayoutCustom). This is created/destroyed when this LayoutBox is
+  // inserted/removed from the layout tree.
+  CustomLayoutChild* GetCustomLayoutChild() const;
+  void AddCustomLayoutChildIfNeeded();
+  void ClearCustomLayoutChild();
+
   bool HitTestClippedOutByBorder(const HitTestLocation& location_in_container,
                                  const LayoutPoint& border_box_location) const;
 
@@ -1372,11 +1402,11 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
                ? rare_data_->previous_content_box_size_
                : PreviousSize();
   }
-  LayoutRect PreviousLayoutOverflowRect() const {
+  LayoutRect PreviousPhysicalLayoutOverflowRect() const {
     return rare_data_ &&
                    rare_data_
                        ->has_previous_content_box_size_and_layout_overflow_rect_
-               ? rare_data_->previous_layout_overflow_rect_
+               ? rare_data_->previous_physical_layout_overflow_rect_
                : LayoutRect(LayoutPoint(), PreviousSize());
   }
 
@@ -1580,10 +1610,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   void LocationChanged();
   void SizeChanged();
-
-  virtual bool IsInSelfHitTestingPhase(HitTestAction hit_test_action) const {
-    return hit_test_action == kHitTestForeground;
-  }
 
   void UpdateBackgroundAttachmentFixedStatusAfterStyleChange();
 

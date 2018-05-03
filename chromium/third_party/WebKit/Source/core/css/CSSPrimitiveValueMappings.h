@@ -47,6 +47,7 @@
 #include "platform/fonts/TextRenderingMode.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/TouchAction.h"
+#include "platform/scroll/ScrollCustomization.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextRun.h"
 #include "platform/text/WritingMode.h"
@@ -1511,6 +1512,34 @@ inline TouchAction CSSIdentifierValue::ConvertTo() const {
 }
 
 template <>
+inline ScrollCustomization::ScrollDirection CSSIdentifierValue::ConvertTo()
+    const {
+  switch (value_id_) {
+    case CSSValueNone:
+      return ScrollCustomization::kScrollDirectionNone;
+    case CSSValueAuto:
+      return ScrollCustomization::kScrollDirectionAuto;
+    case CSSValuePanLeft:
+      return ScrollCustomization::kScrollDirectionPanLeft;
+    case CSSValuePanRight:
+      return ScrollCustomization::kScrollDirectionPanRight;
+    case CSSValuePanX:
+      return ScrollCustomization::kScrollDirectionPanX;
+    case CSSValuePanUp:
+      return ScrollCustomization::kScrollDirectionPanUp;
+    case CSSValuePanDown:
+      return ScrollCustomization::kScrollDirectionPanDown;
+    case CSSValuePanY:
+      return ScrollCustomization::kScrollDirectionPanY;
+    default:
+      break;
+  }
+
+  NOTREACHED();
+  return ScrollCustomization::kScrollDirectionNone;
+}
+
+template <>
 inline CSSIdentifierValue::CSSIdentifierValue(CSSBoxType css_box)
     : CSSValue(kIdentifierClass) {
   switch (css_box) {
@@ -1554,6 +1583,9 @@ template <>
 inline CSSIdentifierValue::CSSIdentifierValue(ItemPosition item_position)
     : CSSValue(kIdentifierClass) {
   switch (item_position) {
+    case ItemPosition::kLegacy:
+      value_id_ = CSSValueLegacy;
+      break;
     case ItemPosition::kAuto:
       value_id_ = CSSValueAuto;
       break;
@@ -1602,6 +1634,8 @@ inline CSSIdentifierValue::CSSIdentifierValue(ItemPosition item_position)
 template <>
 inline ItemPosition CSSIdentifierValue::ConvertTo() const {
   switch (value_id_) {
+    case CSSValueLegacy:
+      return ItemPosition::kLegacy;
     case CSSValueAuto:
       return ItemPosition::kAuto;
     case CSSValueNormal:

@@ -157,17 +157,11 @@ class HttpProxyClientSocketPoolTest
       return NULL;
     return new SSLSocketParams(
         new TransportSocketParams(
-            HostPortPair(kHttpsProxyHost, 443),
-            false,
+            HostPortPair(kHttpsProxyHost, 443), false,
             OnHostResolutionCallback(),
             TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT),
-        NULL,
-        NULL,
-        HostPortPair(kHttpsProxyHost, 443),
-        SSLConfig(),
-        PRIVACY_MODE_DISABLED,
-        0,
-        false);
+        NULL, NULL, HostPortPair(kHttpsProxyHost, 443), SSLConfig(),
+        PRIVACY_MODE_DISABLED, 0);
   }
 
   // Returns the a correctly constructed HttpProxyParms
@@ -178,7 +172,8 @@ class HttpProxyClientSocketPoolTest
         QUIC_VERSION_UNSUPPORTED, std::string(),
         HostPortPair("www.google.com", tunnel ? 443 : 80),
         session_->http_auth_cache(), session_->http_auth_handler_factory(),
-        session_->spdy_session_pool(), session_->quic_stream_factory(), tunnel);
+        session_->spdy_session_pool(), session_->quic_stream_factory(),
+        /*is_trusted_proxy=*/false, tunnel);
   }
 
   scoped_refptr<HttpProxySocketParams> CreateTunnelParams() {
@@ -896,9 +891,9 @@ TEST_P(HttpProxyClientSocketPoolTest, Tag) {
   EXPECT_TRUE(handle_.is_initialized());
   ASSERT_TRUE(handle_.socket());
   EXPECT_TRUE(handle_.socket()->IsConnected());
-  EXPECT_EQ(socket_factory()->GetLastProducedSocket()->tag(), tag1);
+  EXPECT_EQ(socket_factory()->GetLastProducedTCPSocket()->tag(), tag1);
   EXPECT_TRUE(
-      socket_factory()->GetLastProducedSocket()->tagged_before_connected());
+      socket_factory()->GetLastProducedTCPSocket()->tagged_before_connected());
 
   // Verify reused socket is retagged properly.
   StreamSocket* socket = handle_.socket();
@@ -910,7 +905,7 @@ TEST_P(HttpProxyClientSocketPoolTest, Tag) {
   EXPECT_TRUE(handle_.socket());
   EXPECT_TRUE(handle_.socket()->IsConnected());
   EXPECT_EQ(handle_.socket(), socket);
-  EXPECT_EQ(socket_factory()->GetLastProducedSocket()->tag(), tag2);
+  EXPECT_EQ(socket_factory()->GetLastProducedTCPSocket()->tag(), tag2);
   handle_.socket()->Disconnect();
   handle_.Reset();
 }

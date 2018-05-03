@@ -62,7 +62,7 @@ PageOverlay::~PageOverlay() {
 }
 
 void PageOverlay::Update() {
-  if (!frame_impl_->FrameWidget()->IsAcceleratedCompositingActive())
+  if (!frame_impl_->LocalRootFrameWidget()->IsAcceleratedCompositingActive())
     return;
 
   LocalFrame* frame = frame_impl_->GetFrame();
@@ -70,7 +70,7 @@ void PageOverlay::Update() {
     return;
 
   if (!layer_) {
-    layer_ = GraphicsLayer::Create(this);
+    layer_ = GraphicsLayer::Create(*this);
     layer_->SetDrawsContent(true);
 
     // This is required for contents of overlay to stay in sync with the page
@@ -82,7 +82,8 @@ void PageOverlay::Update() {
       frame->GetPage()->GetVisualViewport().ContainerLayer()->AddChild(
           layer_.get());
     } else {
-      frame_impl_->FrameWidget()->RootGraphicsLayer()->AddChild(layer_.get());
+      frame_impl_->LocalRootFrameWidget()->RootGraphicsLayer()->AddChild(
+          layer_.get());
     }
 
     if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {

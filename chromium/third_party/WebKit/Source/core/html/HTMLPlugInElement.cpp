@@ -53,7 +53,7 @@
 #include "platform/network/mime/MIMETypeRegistry.h"
 #include "platform/plugins/PluginData.h"
 #include "public/platform/WebURLRequest.h"
-#include "services/network/public/interfaces/request_context_frame_type.mojom-blink.h"
+#include "services/network/public/mojom/request_context_frame_type.mojom-blink.h"
 
 namespace blink {
 
@@ -71,10 +71,36 @@ enum PluginRequestObjectResult {
 
 }  // anonymous namespace
 
+const Vector<String>& PluginParameters::Names() const {
+  return names_;
+}
+
+const Vector<String>& PluginParameters::Values() const {
+  return values_;
+}
+
+void PluginParameters::AppendAttribute(const Attribute& attribute) {
+  names_.push_back(attribute.LocalName().GetString());
+  values_.push_back(attribute.Value().GetString());
+}
+void PluginParameters::AppendNameWithValue(const String& name,
+                                           const String& value) {
+  names_.push_back(name);
+  values_.push_back(value);
+}
+
+int PluginParameters::FindStringInNames(const String& str) {
+  for (size_t i = 0; i < names_.size(); ++i) {
+    if (DeprecatedEqualIgnoringCase(names_[i], str))
+      return i;
+  }
+  return -1;
+}
+
 HTMLPlugInElement::HTMLPlugInElement(
     const QualifiedName& tag_name,
     Document& doc,
-    bool created_by_parser,
+    const CreateElementFlags flags,
     PreferPlugInsForImagesOption prefer_plug_ins_for_images_option)
     : HTMLFrameOwnerElement(tag_name, doc),
       is_delaying_load_event_(false),
@@ -82,7 +108,7 @@ HTMLPlugInElement::HTMLPlugInElement(
       // EmbeddedContentView updates until after all children are parsed. For
       // HTMLEmbedElement this delay is unnecessary, but it is simpler to make
       // both classes share the same codepath in this class.
-      needs_plugin_update_(!created_by_parser),
+      needs_plugin_update_(!flags.IsCreatedByParser()),
       should_prefer_plug_ins_for_images_(prefer_plug_ins_for_images_option ==
                                          kShouldPreferPlugInsForImages) {}
 
@@ -119,8 +145,7 @@ void HTMLPlugInElement::SetFocused(bool focused, WebFocusType focus_type) {
 }
 
 bool HTMLPlugInElement::RequestObjectInternal(
-    const Vector<String>& param_names,
-    const Vector<String>& param_values) {
+    const PluginParameters& plugin_params) {
   if (url_.IsEmpty() && service_type_.IsEmpty())
     return false;
 
@@ -146,8 +171,8 @@ bool HTMLPlugInElement::RequestObjectInternal(
   // it be handled as a plugin to show the broken plugin icon.
   bool use_fallback =
       object_type == ObjectContentType::kNone && HasFallbackContent();
-  return LoadPlugin(completed_url, service_type_, param_names, param_values,
-                    use_fallback, true);
+  return LoadPlugin(completed_url, service_type_, plugin_params, use_fallback,
+                    true);
 }
 
 bool HTMLPlugInElement::CanProcessDrag() const {
@@ -209,7 +234,7 @@ void HTMLPlugInElement::AttachLayoutTree(AttachContext& context) {
     context.previous_in_flow = layout_object;
 }
 
-void HTMLPlugInElement::IntrinsicDimensionsChanged() {
+void HTMLPlugInElement::IntrinsicSizingInfoChanged() {
   if (auto* layout_object = GetLayoutObject()) {
     layout_object->SetNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(
         LayoutInvalidationReason::kUnknown);
@@ -260,15 +285,11 @@ void HTMLPlugInElement::CreatePluginWithoutLayoutObject() {
   if (!AllowedToLoadObject(url, service_type_))
     return;
 
-  Vector<String> param_names;
-  Vector<String> param_values;
-
-  param_names.push_back("type");
-  param_values.push_back(service_type_);
+  PluginParameters plugin_params;
+  plugin_params.AppendNameWithValue("type", service_type_);
 
   bool use_fallback = false;
-  LoadPlugin(url, service_type_, param_names, param_values, use_fallback,
-             false);
+  LoadPlugin(url, service_type_, plugin_params, use_fallback, false);
 }
 
 bool HTMLPlugInElement::ShouldAccelerate() const {
@@ -285,7 +306,7 @@ ParsedFeaturePolicy HTMLPlugInElement::ConstructContainerPolicy(Vector<String>*,
   // https://fullscreen.spec.whatwg.org/#model
   ParsedFeaturePolicy container_policy;
   ParsedFeaturePolicyDeclaration whitelist;
-  whitelist.feature = FeaturePolicyFeature::kFullscreen;
+  whitelist.feature = mojom::FeaturePolicyFeature::kFullscreen;
   whitelist.matches_all_origins = false;
   container_policy.push_back(whitelist);
   return container_policy;
@@ -480,12 +501,12 @@ void HTMLPlugInElement::DisconnectContentFrame() {
   SetPersistedPlugin(nullptr);
 }
 
-bool HTMLPlugInElement::LayoutObjectIsFocusable() const {
+bool HTMLPlugInElement::IsFocusableStyle() const {
   if (HTMLFrameOwnerElement::SupportsFocus() &&
-      HTMLFrameOwnerElement::LayoutObjectIsFocusable())
+      HTMLFrameOwnerElement::IsFocusableStyle())
     return true;
 
-  if (UseFallbackContent() || !HTMLFrameOwnerElement::LayoutObjectIsFocusable())
+  if (UseFallbackContent() || !HTMLFrameOwnerElement::IsFocusableStyle())
     return false;
   return plugin_is_available_;
 }
@@ -550,9 +571,8 @@ bool HTMLPlugInElement::AllowedToLoadFrameURL(const String& url) {
                ContentFrame()->GetSecurityContext()->GetSecurityOrigin()));
 }
 
-bool HTMLPlugInElement::RequestObject(const Vector<String>& param_names,
-                                      const Vector<String>& param_values) {
-  bool result = RequestObjectInternal(param_names, param_values);
+bool HTMLPlugInElement::RequestObject(const PluginParameters& plugin_params) {
+  bool result = RequestObjectInternal(plugin_params);
 
   DEFINE_STATIC_LOCAL(
       EnumerationHistogram, result_histogram,
@@ -565,8 +585,7 @@ bool HTMLPlugInElement::RequestObject(const Vector<String>& param_names,
 
 bool HTMLPlugInElement::LoadPlugin(const KURL& url,
                                    const String& mime_type,
-                                   const Vector<String>& param_names,
-                                   const Vector<String>& param_values,
+                                   const PluginParameters& plugin_params,
                                    bool use_fallback,
                                    bool require_layout_object) {
   if (!AllowedToLoadPlugin(url, mime_type))
@@ -593,9 +612,9 @@ bool HTMLPlugInElement::LoadPlugin(const KURL& url,
     LocalFrameClient::DetachedPluginPolicy policy =
         require_layout_object ? LocalFrameClient::kFailOnDetachedPlugin
                               : LocalFrameClient::kAllowDetachedPlugin;
-    WebPluginContainerImpl* plugin =
-        frame->Client()->CreatePlugin(*this, url, param_names, param_values,
-                                      mime_type, load_manually, policy);
+    WebPluginContainerImpl* plugin = frame->Client()->CreatePlugin(
+        *this, url, plugin_params.Names(), plugin_params.Values(), mime_type,
+        load_manually, policy);
     if (!plugin) {
       if (layout_object && !layout_object->ShowsUnavailablePluginIndicator()) {
         plugin_is_available_ = false;

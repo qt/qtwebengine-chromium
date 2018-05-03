@@ -31,7 +31,13 @@ NET_EXPORT bool SpdyHeadersToHttpResponse(
 NET_EXPORT void CreateSpdyHeadersFromHttpRequest(
     const HttpRequestInfo& info,
     const HttpRequestHeaders& request_headers,
-    bool direct,
+    SpdyHeaderBlock* headers);
+
+// Create a SpdyHeaderBlock from HttpRequestInfo and HttpRequestHeaders for a
+// WebSockets over HTTP/2 request.
+NET_EXPORT void CreateSpdyHeadersFromHttpRequestForWebSocket(
+    const GURL& url,
+    const HttpRequestHeaders& request_headers,
     SpdyHeaderBlock* headers);
 
 // Create HttpRequestHeaders from SpdyHeaderBlock.

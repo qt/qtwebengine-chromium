@@ -14,8 +14,10 @@
 #include <unistd.h>
 #endif
 
+#if defined(WEBRTC_WIN)
 // Must be included first before openssl headers.
 #include "rtc_base/win32.h"  // NOLINT
+#endif  // WEBRTC_WIN
 
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
@@ -74,28 +76,33 @@ static long socket_ctrl(BIO* h, int cmd, long arg1, void* arg2);
 static int socket_new(BIO* h);
 static int socket_free(BIO* data);
 
-// TODO(davidben): This should be const once BoringSSL is assumed.
-static BIO_METHOD methods_socket = {
-    BIO_TYPE_BIO, "socket",   socket_write, socket_read, socket_puts, 0,
-    socket_ctrl,  socket_new, socket_free,  nullptr,
-};
-
-static BIO_METHOD* BIO_s_socket2() { return(&methods_socket); }
+static BIO_METHOD* BIO_socket_method() {
+  static BIO_METHOD* methods = [] {
+    BIO_METHOD* methods = BIO_meth_new(BIO_TYPE_BIO, "socket");
+    BIO_meth_set_write(methods, socket_write);
+    BIO_meth_set_read(methods, socket_read);
+    BIO_meth_set_puts(methods, socket_puts);
+    BIO_meth_set_ctrl(methods, socket_ctrl);
+    BIO_meth_set_create(methods, socket_new);
+    BIO_meth_set_destroy(methods, socket_free);
+    return methods;
+  }();
+  return methods;
+}
 
 static BIO* BIO_new_socket(rtc::AsyncSocket* socket) {
-  BIO* ret = BIO_new(BIO_s_socket2());
+  BIO* ret = BIO_new(BIO_socket_method());
   if (ret == nullptr) {
     return nullptr;
   }
-  ret->ptr = socket;
+  BIO_set_data(ret, socket);
   return ret;
 }
 
 static int socket_new(BIO* b) {
-  b->shutdown = 0;
-  b->init = 1;
-  b->num = 0; // 1 means socket closed
-  b->ptr = 0;
+  BIO_set_shutdown(b, 0);
+  BIO_set_init(b, 1);
+  BIO_set_data(b, 0);
   return 1;
 }
 
@@ -108,13 +115,11 @@ static int socket_free(BIO* b) {
 static int socket_read(BIO* b, char* out, int outl) {
   if (!out)
     return -1;
-  rtc::AsyncSocket* socket = static_cast<rtc::AsyncSocket*>(b->ptr);
+  rtc::AsyncSocket* socket = static_cast<rtc::AsyncSocket*>(BIO_get_data(b));
   BIO_clear_retry_flags(b);
   int result = socket->Recv(out, outl, nullptr);
   if (result > 0) {
     return result;
-  } else if (result == 0) {
-    b->num = 1;
   } else if (socket->IsBlocking()) {
     BIO_set_retry_read(b);
   }
@@ -124,7 +129,7 @@ static int socket_read(BIO* b, char* out, int outl) {
 static int socket_write(BIO* b, const char* in, int inl) {
   if (!in)
     return -1;
-  rtc::AsyncSocket* socket = static_cast<rtc::AsyncSocket*>(b->ptr);
+  rtc::AsyncSocket* socket = static_cast<rtc::AsyncSocket*>(BIO_get_data(b));
   BIO_clear_retry_flags(b);
   int result = socket->Send(in, inl);
   if (result > 0) {
@@ -143,8 +148,11 @@ static long socket_ctrl(BIO* b, int cmd, long num, void* ptr) {
   switch (cmd) {
   case BIO_CTRL_RESET:
     return 0;
-  case BIO_CTRL_EOF:
-    return b->num;
+  case BIO_CTRL_EOF: {
+    rtc::AsyncSocket* socket = static_cast<rtc::AsyncSocket*>(ptr);
+    // 1 means socket closed.
+    return (socket->GetState() == rtc::AsyncSocket::CS_CLOSED) ? 1 : 0;
+  }
   case BIO_CTRL_WPENDING:
   case BIO_CTRL_PENDING:
     return 0;
@@ -176,56 +184,11 @@ static void LogSslError() {
 
 namespace rtc {
 
-#ifndef OPENSSL_IS_BORINGSSL
-
-// This array will store all of the mutexes available to OpenSSL.
-static MUTEX_TYPE* mutex_buf = nullptr;
-
-static void locking_function(int mode, int n, const char * file, int line) {
-  if (mode & CRYPTO_LOCK) {
-    MUTEX_LOCK(mutex_buf[n]);
-  } else {
-    MUTEX_UNLOCK(mutex_buf[n]);
-  }
-}
-
-static unsigned long id_function() {  // NOLINT
-  // Use old-style C cast because THREAD_ID's type varies with the platform,
-  // in some cases requiring static_cast, and in others requiring
-  // reinterpret_cast.
-  return (unsigned long)THREAD_ID; // NOLINT
-}
-
-static CRYPTO_dynlock_value* dyn_create_function(const char* file, int line) {
-  CRYPTO_dynlock_value* value = new CRYPTO_dynlock_value;
-  if (!value)
-    return nullptr;
-  MUTEX_SETUP(value->mutex);
-  return value;
-}
-
-static void dyn_lock_function(int mode, CRYPTO_dynlock_value* l,
-                              const char* file, int line) {
-  if (mode & CRYPTO_LOCK) {
-    MUTEX_LOCK(l->mutex);
-  } else {
-    MUTEX_UNLOCK(l->mutex);
-  }
-}
-
-static void dyn_destroy_function(CRYPTO_dynlock_value* l,
-                                 const char* file, int line) {
-  MUTEX_CLEANUP(l->mutex);
-  delete l;
-}
-
-#endif  // #ifndef OPENSSL_IS_BORINGSSL
-
 VerificationCallback OpenSSLAdapter::custom_verify_callback_ = nullptr;
 
 bool OpenSSLAdapter::InitializeSSL(VerificationCallback callback) {
-  if (!InitializeSSLThread() || !SSL_library_init())
-      return false;
+  if (!SSL_library_init())
+    return false;
 #if !defined(ADDRESS_SANITIZER) || !defined(WEBRTC_MAC) || defined(WEBRTC_IOS)
   // Loading the error strings crashes mac_asan.  Omit this debugging aid there.
   SSL_load_error_strings();
@@ -237,41 +200,7 @@ bool OpenSSLAdapter::InitializeSSL(VerificationCallback callback) {
   return true;
 }
 
-bool OpenSSLAdapter::InitializeSSLThread() {
-  // BoringSSL is doing the locking internally, so the callbacks are not used
-  // in this case (and are no-ops anyways).
-#ifndef OPENSSL_IS_BORINGSSL
-  mutex_buf = new MUTEX_TYPE[CRYPTO_num_locks()];
-  if (!mutex_buf)
-    return false;
-  for (int i = 0; i < CRYPTO_num_locks(); ++i)
-    MUTEX_SETUP(mutex_buf[i]);
-
-  // we need to cast our id_function to return an unsigned long -- pthread_t is
-  // a pointer
-  CRYPTO_set_id_callback(id_function);
-  CRYPTO_set_locking_callback(locking_function);
-  CRYPTO_set_dynlock_create_callback(dyn_create_function);
-  CRYPTO_set_dynlock_lock_callback(dyn_lock_function);
-  CRYPTO_set_dynlock_destroy_callback(dyn_destroy_function);
-#endif  // #ifndef OPENSSL_IS_BORINGSSL
-  return true;
-}
-
 bool OpenSSLAdapter::CleanupSSL() {
-#ifndef OPENSSL_IS_BORINGSSL
-  if (!mutex_buf)
-    return false;
-  CRYPTO_set_id_callback(nullptr);
-  CRYPTO_set_locking_callback(nullptr);
-  CRYPTO_set_dynlock_create_callback(nullptr);
-  CRYPTO_set_dynlock_lock_callback(nullptr);
-  CRYPTO_set_dynlock_destroy_callback(nullptr);
-  for (int i = 0; i < CRYPTO_num_locks(); ++i)
-    MUTEX_CLEANUP(mutex_buf[i]);
-  delete [] mutex_buf;
-  mutex_buf = nullptr;
-#endif  // #ifndef OPENSSL_IS_BORINGSSL
   return true;
 }
 
@@ -437,9 +366,11 @@ int OpenSSLAdapter::BeginSSL() {
     }
   }
 
+#ifdef OPENSSL_IS_BORINGSSL
   // Set a couple common TLS extensions; even though we don't use them yet.
   SSL_enable_ocsp_stapling(ssl_);
   SSL_enable_signed_cert_timestamps(ssl_);
+#endif
 
   if (!alpn_protocols_.empty()) {
     std::string tls_alpn_string = TransformAlpnProtocols(alpn_protocols_);
@@ -582,7 +513,6 @@ int OpenSSLAdapter::DoSslWrite(const void* pv, size_t cb, int* error) {
       SetError(EWOULDBLOCK);
       break;
     case SSL_ERROR_ZERO_RETURN:
-      // RTC_LOG(LS_INFO) << " -- remote side closed";
       SetError(EWOULDBLOCK);
       // do we need to signal closure?
       break;
@@ -591,7 +521,6 @@ int OpenSSLAdapter::DoSslWrite(const void* pv, size_t cb, int* error) {
       Error("SSL_write", ret ? ret : -1, false);
       break;
     default:
-      RTC_LOG(LS_WARNING) << "Unknown error from SSL_write: " << *error;
       Error("SSL_write", ret ? ret : -1, false);
       break;
   }
@@ -604,8 +533,6 @@ int OpenSSLAdapter::DoSslWrite(const void* pv, size_t cb, int* error) {
 //
 
 int OpenSSLAdapter::Send(const void* pv, size_t cb) {
-  // RTC_LOG(LS_INFO) << "OpenSSLAdapter::Send(" << cb << ")";
-
   switch (state_) {
   case SSL_NONE:
     return AsyncSocketAdapter::Send(pv, cb);
@@ -686,7 +613,6 @@ int OpenSSLAdapter::SendTo(const void* pv,
 }
 
 int OpenSSLAdapter::Recv(void* pv, size_t cb, int64_t* timestamp) {
-  // RTC_LOG(LS_INFO) << "OpenSSLAdapter::Recv(" << cb << ")";
   switch (state_) {
 
   case SSL_NONE:
@@ -715,19 +641,15 @@ int OpenSSLAdapter::Recv(void* pv, size_t cb, int64_t* timestamp) {
   int error = SSL_get_error(ssl_, code);
   switch (error) {
     case SSL_ERROR_NONE:
-      // RTC_LOG(LS_INFO) << " -- success";
       return code;
     case SSL_ERROR_WANT_READ:
-      // RTC_LOG(LS_INFO) << " -- error want read";
       SetError(EWOULDBLOCK);
       break;
     case SSL_ERROR_WANT_WRITE:
-      // RTC_LOG(LS_INFO) << " -- error want write";
       ssl_read_needs_write_ = true;
       SetError(EWOULDBLOCK);
       break;
     case SSL_ERROR_ZERO_RETURN:
-      // RTC_LOG(LS_INFO) << " -- remote side closed";
       SetError(EWOULDBLOCK);
       // do we need to signal closure?
       break;
@@ -736,7 +658,6 @@ int OpenSSLAdapter::Recv(void* pv, size_t cb, int64_t* timestamp) {
       Error("SSL_read", (code ? code : -1), false);
       break;
     default:
-      RTC_LOG(LS_WARNING) << "Unknown error from SSL_read: " << error;
       Error("SSL_read", (code ? code : -1), false);
       break;
   }
@@ -804,8 +725,6 @@ void OpenSSLAdapter::OnConnectEvent(AsyncSocket* socket) {
 }
 
 void OpenSSLAdapter::OnReadEvent(AsyncSocket* socket) {
-  // RTC_LOG(LS_INFO) << "OpenSSLAdapter::OnReadEvent";
-
   if (state_ == SSL_NONE) {
     AsyncSocketAdapter::OnReadEvent(socket);
     return;
@@ -824,17 +743,13 @@ void OpenSSLAdapter::OnReadEvent(AsyncSocket* socket) {
   // Don't let ourselves go away during the callbacks
   //PRefPtr<OpenSSLAdapter> lock(this); // TODO: fix this
   if (ssl_write_needs_read_)  {
-    // RTC_LOG(LS_INFO) << " -- onStreamWriteable";
     AsyncSocketAdapter::OnWriteEvent(socket);
   }
 
-  // RTC_LOG(LS_INFO) << " -- onStreamReadable";
   AsyncSocketAdapter::OnReadEvent(socket);
 }
 
 void OpenSSLAdapter::OnWriteEvent(AsyncSocket* socket) {
-  // RTC_LOG(LS_INFO) << "OpenSSLAdapter::OnWriteEvent";
-
   if (state_ == SSL_NONE) {
     AsyncSocketAdapter::OnWriteEvent(socket);
     return;
@@ -854,7 +769,6 @@ void OpenSSLAdapter::OnWriteEvent(AsyncSocket* socket) {
   //PRefPtr<OpenSSLAdapter> lock(this); // TODO: fix this
 
   if (ssl_read_needs_write_)  {
-    // RTC_LOG(LS_INFO) << " -- onStreamReadable";
     AsyncSocketAdapter::OnReadEvent(socket);
   }
 
@@ -868,7 +782,6 @@ void OpenSSLAdapter::OnWriteEvent(AsyncSocket* socket) {
     }
   }
 
-  // RTC_LOG(LS_INFO) << " -- onStreamWriteable";
   AsyncSocketAdapter::OnWriteEvent(socket);
 }
 
@@ -892,18 +805,18 @@ bool OpenSSLAdapter::VerifyServerName(SSL* ssl, const char* host,
   // Logging certificates is extremely verbose. So it is disabled by default.
 #ifdef LOG_CERTIFICATES
   {
-    RTC_LOG(LS_INFO) << "Certificate from server:";
+    RTC_DLOG(LS_INFO) << "Certificate from server:";
     BIO* mem = BIO_new(BIO_s_mem());
     X509_print_ex(mem, certificate, XN_FLAG_SEP_CPLUS_SPC, X509_FLAG_NO_HEADER);
     BIO_write(mem, "\0", 1);
     char* buffer;
     BIO_get_mem_data(mem, &buffer);
-    RTC_LOG(LS_INFO) << buffer;
+    RTC_DLOG(LS_INFO) << buffer;
     BIO_free(mem);
 
     char* cipher_description =
         SSL_CIPHER_description(SSL_get_current_cipher(ssl), nullptr, 128);
-    RTC_LOG(LS_INFO) << "Cipher: " << cipher_description;
+    RTC_DLOG(LS_INFO) << "Cipher: " << cipher_description;
     OPENSSL_free(cipher_description);
   }
 #endif
@@ -912,7 +825,8 @@ bool OpenSSLAdapter::VerifyServerName(SSL* ssl, const char* host,
   GENERAL_NAMES* names = reinterpret_cast<GENERAL_NAMES*>(
       X509_get_ext_d2i(certificate, NID_subject_alt_name, nullptr, nullptr));
   if (names) {
-    for (size_t i = 0; i < sk_GENERAL_NAME_num(names); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(sk_GENERAL_NAME_num(names));
+         i++) {
       const GENERAL_NAME* name = sk_GENERAL_NAME_value(names, i);
       if (name->type != GEN_DNS)
         continue;
@@ -944,8 +858,8 @@ bool OpenSSLAdapter::VerifyServerName(SSL* ssl, const char* host,
 
   // This should only ever be turned on for debugging and development.
   if (!ok && ignore_bad_cert) {
-    RTC_LOG(LS_WARNING) << "TLS certificate check FAILED.  "
-                        << "Allowing connection anyway.";
+    RTC_DLOG(LS_WARNING) << "TLS certificate check FAILED.  "
+                         << "Allowing connection anyway.";
     ok = true;
   }
 
@@ -961,7 +875,7 @@ bool OpenSSLAdapter::SSLPostConnectionCheck(SSL* ssl, const char* host) {
   }
 
   if (!ok && ignore_bad_cert_) {
-    RTC_LOG(LS_INFO) << "Other TLS post connection checks failed.";
+    RTC_DLOG(LS_INFO) << "Other TLS post connection checks failed.";
     ok = true;
   }
 
@@ -981,17 +895,17 @@ void OpenSSLAdapter::SSLInfoCallback(const SSL* s, int where, int ret) {
     str = "SSL_accept";
   }
   if (where & SSL_CB_LOOP) {
-    RTC_LOG(LS_INFO) << str << ":" << SSL_state_string_long(s);
+    RTC_DLOG(LS_INFO) << str << ":" << SSL_state_string_long(s);
   } else if (where & SSL_CB_ALERT) {
     str = (where & SSL_CB_READ) ? "read" : "write";
-    RTC_LOG(LS_INFO) << "SSL3 alert " << str << ":"
-                     << SSL_alert_type_string_long(ret) << ":"
-                     << SSL_alert_desc_string_long(ret);
+    RTC_DLOG(LS_INFO) << "SSL3 alert " << str << ":"
+                      << SSL_alert_type_string_long(ret) << ":"
+                      << SSL_alert_desc_string_long(ret);
   } else if (where & SSL_CB_EXIT) {
     if (ret == 0) {
-      RTC_LOG(LS_INFO) << str << ":failed in " << SSL_state_string_long(s);
+      RTC_DLOG(LS_INFO) << str << ":failed in " << SSL_state_string_long(s);
     } else if (ret < 0) {
-      RTC_LOG(LS_INFO) << str << ":error in " << SSL_state_string_long(s);
+      RTC_DLOG(LS_INFO) << str << ":error in " << SSL_state_string_long(s);
     }
   }
 }
@@ -1006,13 +920,13 @@ int OpenSSLAdapter::SSLVerifyCallback(int ok, X509_STORE_CTX* store) {
     int depth = X509_STORE_CTX_get_error_depth(store);
     int err = X509_STORE_CTX_get_error(store);
 
-    RTC_LOG(LS_INFO) << "Error with certificate at depth: " << depth;
+    RTC_DLOG(LS_INFO) << "Error with certificate at depth: " << depth;
     X509_NAME_oneline(X509_get_issuer_name(cert), data, sizeof(data));
-    RTC_LOG(LS_INFO) << "  issuer  = " << data;
+    RTC_DLOG(LS_INFO) << "  issuer  = " << data;
     X509_NAME_oneline(X509_get_subject_name(cert), data, sizeof(data));
-    RTC_LOG(LS_INFO) << "  subject = " << data;
-    RTC_LOG(LS_INFO) << "  err     = " << err << ":"
-                     << X509_verify_cert_error_string(err);
+    RTC_DLOG(LS_INFO) << "  subject = " << data;
+    RTC_DLOG(LS_INFO) << "  err     = " << err << ":"
+                      << X509_verify_cert_error_string(err);
   }
 #endif
 
@@ -1036,7 +950,7 @@ int OpenSSLAdapter::SSLVerifyCallback(int ok, X509_STORE_CTX* store) {
 
   // Should only be used for debugging and development.
   if (!ok && stream->ignore_bad_cert_) {
-    RTC_LOG(LS_WARNING) << "Ignoring cert error while verifying cert chain";
+    RTC_DLOG(LS_WARNING) << "Ignoring cert error while verifying cert chain";
     ok = 1;
   }
 

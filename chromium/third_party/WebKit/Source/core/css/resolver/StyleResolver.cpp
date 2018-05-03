@@ -132,16 +132,13 @@ static CSSPropertyValueSet* RightToLeftDeclaration() {
 static void CollectScopedResolversForHostedShadowTrees(
     const Element& element,
     HeapVector<Member<ScopedStyleResolver>, 8>& resolvers) {
-  ElementShadow* shadow = element.Shadow();
-  if (!shadow)
+  ShadowRoot* root = element.GetShadowRoot();
+  if (!root)
     return;
 
   // Adding scoped resolver for active shadow roots for shadow host styling.
-  for (ShadowRoot* shadow_root = &shadow->YoungestShadowRoot(); shadow_root;
-       shadow_root = shadow_root->OlderShadowRoot()) {
-    if (ScopedStyleResolver* resolver = shadow_root->GetScopedStyleResolver())
-      resolvers.push_back(resolver);
-  }
+  if (ScopedStyleResolver* resolver = root->GetScopedStyleResolver())
+    resolvers.push_back(resolver);
 }
 
 StyleResolver::StyleResolver(Document& document) : document_(document) {
@@ -192,18 +189,15 @@ static inline ScopedStyleResolver* ScopedResolverFor(const Element& element) {
 
 static void MatchHostRules(const Element& element,
                            ElementRuleCollector& collector) {
-  ElementShadow* shadow = element.Shadow();
-  if (!shadow)
+  ShadowRoot* shadow_root = element.GetShadowRoot();
+  if (!shadow_root)
     return;
 
-  for (ShadowRoot* shadow_root = &shadow->OldestShadowRoot(); shadow_root;
-       shadow_root = shadow_root->YoungerShadowRoot()) {
-    if (ScopedStyleResolver* resolver = shadow_root->GetScopedStyleResolver()) {
-      collector.ClearMatchedRules();
-      resolver->CollectMatchingShadowHostRules(collector);
-      collector.SortAndTransferMatchedRules();
-      collector.FinishAddingAuthorRulesForTreeScope();
-    }
+  if (ScopedStyleResolver* resolver = shadow_root->GetScopedStyleResolver()) {
+    collector.ClearMatchedRules();
+    resolver->CollectMatchingShadowHostRules(collector);
+    collector.SortAndTransferMatchedRules();
+    collector.FinishAddingAuthorRulesForTreeScope();
   }
 }
 
@@ -627,10 +621,12 @@ scoped_refptr<ComputedStyle> StyleResolver::StyleForElement(
 
   // contenteditable attribute (implemented by -webkit-user-modify) should
   // be propagated from shadow host to distributed node.
-  if (state.DistributedToV0InsertionPoint()) {
+  if (state.DistributedToV0InsertionPoint() || element->AssignedSlot()) {
     if (Element* parent = element->parentElement()) {
-      if (ComputedStyle* style_of_shadow_host = parent->MutableComputedStyle())
+      if (const ComputedStyle* style_of_shadow_host =
+              parent->GetComputedStyle()) {
         state.Style()->SetUserModify(style_of_shadow_host->UserModify());
+      }
     }
   }
 
@@ -1294,7 +1290,6 @@ static inline bool IsValidCueStyleProperty(CSSPropertyID id) {
     case CSSPropertyTextDecorationSkipInk:
       return true;
     case CSSPropertyFontVariationSettings:
-      DCHECK(RuntimeEnabledFeatures::CSSVariableFontsEnabled());
       return true;
     default:
       break;
@@ -1305,7 +1300,7 @@ static inline bool IsValidCueStyleProperty(CSSPropertyID id) {
 static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
   switch (id) {
     // Valid ::first-letter properties listed in spec:
-    // http://www.w3.org/TR/css3-selectors/#application-in-css
+    // https://drafts.csswg.org/css-pseudo-4/#first-letter-styling
     case CSSPropertyBackgroundAttachment:
     case CSSPropertyBackgroundBlendMode:
     case CSSPropertyBackgroundClip:
@@ -1340,12 +1335,14 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyBorderTopRightRadius:
     case CSSPropertyBorderTopStyle:
     case CSSPropertyBorderTopWidth:
+    case CSSPropertyBoxShadow:
     case CSSPropertyColor:
     case CSSPropertyFloat:
-    case CSSPropertyFont:
     case CSSPropertyFontFamily:
+    case CSSPropertyFontFeatureSettings:
     case CSSPropertyFontKerning:
     case CSSPropertyFontSize:
+    case CSSPropertyFontSizeAdjust:
     case CSSPropertyFontStretch:
     case CSSPropertyFontStyle:
     case CSSPropertyFontVariant:
@@ -1353,6 +1350,7 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyFontVariantLigatures:
     case CSSPropertyFontVariantNumeric:
     case CSSPropertyFontVariantEastAsian:
+    case CSSPropertyFontVariationSettings:
     case CSSPropertyFontWeight:
     case CSSPropertyLetterSpacing:
     case CSSPropertyLineHeight:
@@ -1360,11 +1358,19 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyMarginLeft:
     case CSSPropertyMarginRight:
     case CSSPropertyMarginTop:
+    case CSSPropertyOpacity:
     case CSSPropertyPaddingBottom:
     case CSSPropertyPaddingLeft:
     case CSSPropertyPaddingRight:
     case CSSPropertyPaddingTop:
+    case CSSPropertyTextDecorationColor:
+    case CSSPropertyTextDecorationLine:
+    case CSSPropertyTextDecorationStyle:
+    case CSSPropertyTextDecorationSkipInk:
+    case CSSPropertyTextJustify:
+    case CSSPropertyTextShadow:
     case CSSPropertyTextTransform:
+    case CSSPropertyTextUnderlinePosition:
     case CSSPropertyVerticalAlign:
     case CSSPropertyWebkitBorderAfter:
     case CSSPropertyWebkitBorderAfterColor:
@@ -1397,21 +1403,10 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyWebkitMarginTopCollapse:
     case CSSPropertyWordSpacing:
       return true;
-    case CSSPropertyFontVariationSettings:
-      DCHECK(RuntimeEnabledFeatures::CSSVariableFontsEnabled());
-      return true;
-    case CSSPropertyTextDecorationColor:
-    case CSSPropertyTextDecorationLine:
-    case CSSPropertyTextDecorationStyle:
-    case CSSPropertyTextDecorationSkipInk:
-      return true;
 
-    // text-shadow added in text decoration spec:
-    // http://www.w3.org/TR/css-text-decor-3/#text-shadow-property
-    case CSSPropertyTextShadow:
-    // box-shadox added in CSS3 backgrounds spec:
-    // http://www.w3.org/TR/css3-background/#placement
-    case CSSPropertyBoxShadow:
+    // Not directly specified in spec, but variables should be supported nearly
+    // anywhere.
+    case CSSPropertyVariable:
     // Properties that we currently support outside of spec.
     case CSSPropertyVisibility:
       return true;
@@ -1678,7 +1673,7 @@ StyleResolver::CacheSuccess StyleResolver::ApplyMatchedCache(
     if (state.ParentStyle()->InheritedDataShared(
             *cached_matched_properties->parent_computed_style) &&
         !IsAtShadowBoundary(element) &&
-        (!state.DistributedToV0InsertionPoint() ||
+        (!state.DistributedToV0InsertionPoint() || element->AssignedSlot() ||
          state.Style()->UserModify() == EUserModify::kReadOnly)) {
       INCREMENT_STYLE_STATS_COUNTER(GetDocument().GetStyleEngine(),
                                     matched_property_cache_inherited_hit, 1);

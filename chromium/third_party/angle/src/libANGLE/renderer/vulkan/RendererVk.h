@@ -15,8 +15,8 @@
 
 #include "common/angleutils.h"
 #include "libANGLE/Caps.h"
-#include "libANGLE/renderer/vulkan/formatutilsvk.h"
-#include "libANGLE/renderer/vulkan/renderervk_utils.h"
+#include "libANGLE/renderer/vulkan/CommandGraph.h"
+#include "libANGLE/renderer/vulkan/vk_format_utils.h"
 
 namespace egl
 {
@@ -32,34 +32,6 @@ namespace vk
 {
 struct Format;
 }
-
-// TODO(jmadill): Add cache trimming.
-class RenderPassCache
-{
-  public:
-    RenderPassCache();
-    ~RenderPassCache();
-
-    void destroy(VkDevice device);
-
-    vk::Error getCompatibleRenderPass(VkDevice device,
-                                      Serial serial,
-                                      const vk::RenderPassDesc &desc,
-                                      vk::RenderPass **renderPassOut);
-    vk::Error getRenderPassWithOps(VkDevice device,
-                                   Serial serial,
-                                   const vk::RenderPassDesc &desc,
-                                   const vk::AttachmentOpsArray &attachmentOps,
-                                   vk::RenderPass **renderPassOut);
-
-  private:
-    // Use a two-layer caching scheme. The top level matches the "compatible" RenderPass elements.
-    // The second layer caches the attachment load/store ops and initial/final layout.
-    using InnerCache = std::unordered_map<vk::AttachmentOpsArray, vk::RenderPassAndSerial>;
-    using OuterCache = std::unordered_map<vk::RenderPassDesc, InnerCache>;
-
-    OuterCache mPayload;
-};
 
 class RendererVk : angle::NonCopyable
 {
@@ -90,12 +62,6 @@ class RendererVk : angle::NonCopyable
     const gl::TextureCapsMap &getNativeTextureCaps() const;
     const gl::Extensions &getNativeExtensions() const;
     const gl::Limitations &getNativeLimitations() const;
-
-    vk::Error createStagingImage(TextureDimension dimension,
-                                 const vk::Format &format,
-                                 const gl::Extents &extent,
-                                 vk::StagingUsage usage,
-                                 vk::StagingImage *imageOut);
 
     GlslangWrapper *getGlslangWrapper();
 
@@ -140,9 +106,14 @@ class RendererVk : angle::NonCopyable
                                    const vk::AttachmentOpsArray &ops,
                                    vk::RenderPass **renderPassOut);
 
+    vk::Error getPipeline(const ProgramVk *programVk,
+                          const vk::PipelineDesc &desc,
+                          const gl::AttributesMask &activeAttribLocationsMask,
+                          vk::PipelineAndSerial **pipelineOut);
+
     // This should only be called from ResourceVk.
     // TODO(jmadill): Keep in ContextVk to enable threaded rendering.
-    vk::CommandBufferNode *allocateCommandNode();
+    vk::CommandGraphNode *allocateCommandNode();
 
     const vk::PipelineLayout &getGraphicsPipelineLayout() const;
     const std::vector<vk::DescriptorSetLayout> &getGraphicsDescriptorSetLayouts() const;
@@ -153,15 +124,10 @@ class RendererVk : angle::NonCopyable
   private:
     vk::Error initializeDevice(uint32_t queueFamilyIndex);
     void ensureCapsInitialized() const;
-    void generateCaps(gl::Caps *outCaps,
-                      gl::TextureCapsMap *outTextureCaps,
-                      gl::Extensions *outExtensions,
-                      gl::Limitations *outLimitations) const;
     vk::Error submitFrame(const VkSubmitInfo &submitInfo, vk::CommandBuffer &&commandBatch);
     vk::Error checkInFlightCommands();
     void freeAllInFlightResources();
     vk::Error flushCommandGraph(const gl::Context *context, vk::CommandBuffer *commandBatch);
-    void resetCommandGraph();
     vk::Error initGraphicsPipelineLayout();
 
     mutable bool mCapsInitialized;
@@ -204,7 +170,10 @@ class RendererVk : angle::NonCopyable
     vk::FormatTable mFormatTable;
 
     RenderPassCache mRenderPassCache;
-    std::vector<vk::CommandBufferNode *> mOpenCommandGraph;
+    PipelineCache mPipelineCache;
+
+    // See CommandGraph.h for a desription of the Command Graph.
+    vk::CommandGraph mCommandGraph;
 
     // ANGLE uses a single pipeline layout for all GL programs. It is owned here in the Renderer.
     // See the design doc for an overview of the pipeline layout structure.

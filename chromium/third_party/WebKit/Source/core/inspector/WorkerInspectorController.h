@@ -57,8 +57,7 @@ class WorkerInspectorController final
 
   CoreProbeSink* GetProbeSink() const { return probe_sink_.Get(); }
 
-  void ConnectFrontend(int session_id,
-                       const String& parent_instrumentation_token);
+  void ConnectFrontend(int session_id);
   void DisconnectFrontend(int session_id);
   void DispatchMessageFromFrontend(int session_id, const String& message);
   void Dispose();
@@ -68,10 +67,11 @@ class WorkerInspectorController final
   WorkerInspectorController(WorkerThread*, WorkerThreadDebugger*);
 
   // InspectorSession::Client implementation.
-  void SendProtocolMessage(int session_id,
-                           int call_id,
-                           const String& response,
-                           const String& state) override;
+  void SendProtocolResponse(int session_id,
+                            int call_id,
+                            const String& response,
+                            const String& state) override;
+  void SendProtocolNotification(int session_id, const String& message) override;
 
   // WebThread::TaskObserver implementation.
   void WillProcessTask() override;

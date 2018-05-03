@@ -30,7 +30,7 @@ CJX_Tree::CJX_Tree(CXFA_Object* obj) : CJX_Object(obj) {
 CJX_Tree::~CJX_Tree() {}
 
 CJS_Return CJX_Tree::resolveNode(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -79,7 +79,7 @@ CJS_Return CJX_Tree::resolveNode(
 }
 
 CJS_Return CJX_Tree::resolveNodes(
-    CJS_V8* runtime,
+    CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
@@ -175,7 +175,13 @@ void CJX_Tree::index(CFXJSE_Value* pValue,
     ThrowInvalidPropertyException();
     return;
   }
-  pValue->SetInteger(ToNode(GetXFAObject())->GetNodeSameNameIndex());
+
+  CFXJSE_Engine* pScriptContext = GetDocument()->GetScriptContext();
+  if (!pScriptContext) {
+    pValue->SetInteger(-1);
+    return;
+  }
+  pValue->SetInteger(pScriptContext->GetIndexByName(ToNode(GetXFAObject())));
 }
 
 void CJX_Tree::classIndex(CFXJSE_Value* pValue,
@@ -185,7 +191,14 @@ void CJX_Tree::classIndex(CFXJSE_Value* pValue,
     ThrowInvalidPropertyException();
     return;
   }
-  pValue->SetInteger(ToNode(GetXFAObject())->GetNodeSameClassIndex());
+
+  CFXJSE_Engine* pScriptContext = GetDocument()->GetScriptContext();
+  if (!pScriptContext) {
+    pValue->SetInteger(-1);
+    return;
+  }
+  pValue->SetInteger(
+      pScriptContext->GetIndexByClassName(ToNode(GetXFAObject())));
 }
 
 void CJX_Tree::somExpression(CFXJSE_Value* pValue,

@@ -17,7 +17,7 @@
 #include "platform/testing/TestingPlatformSupport.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom-blink.h"
 
 using ::testing::Mock;
 
@@ -69,7 +69,7 @@ void OffscreenCanvasTest::SetUp() {
   DummyExceptionStateForTesting exception_state;
   offscreen_canvas_ = HTMLCanvasElementModule::transferControlToOffscreen(
       *canvas_element_, exception_state);
-  CanvasContextCreationAttributes attrs;
+  CanvasContextCreationAttributesCore attrs;
   context_ = static_cast<OffscreenCanvasRenderingContext2D*>(
       offscreen_canvas_->GetCanvasRenderingContext(&GetDocument(), String("2d"),
                                                    attrs));

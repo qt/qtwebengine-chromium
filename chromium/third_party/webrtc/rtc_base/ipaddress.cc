@@ -31,7 +31,10 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/nethelpers.h"
 #include "rtc_base/stringutils.h"
+
+#if defined(WEBRTC_WIN)
 #include "rtc_base/win32.h"
+#endif  // WEBRTC_WIN
 
 namespace rtc {
 
@@ -42,8 +45,10 @@ static const in6_addr k6To4Prefix = {{{0x20, 0x02, 0}}};
 static const in6_addr kTeredoPrefix = {{{0x20, 0x01, 0x00, 0x00}}};
 static const in6_addr kV4CompatibilityPrefix = {{{0}}};
 static const in6_addr k6BonePrefix = {{{0x3f, 0xfe, 0}}};
+static const in6_addr kPrivateNetworkPrefix = {{{0xFD}}};
 
-static bool IsPrivateV4(uint32_t ip);
+static bool IPIsHelper(const IPAddress& ip,
+                       const in6_addr& tomatch, int length);
 static in_addr ExtractMappedAddress(const in6_addr& addr);
 
 uint32_t IPAddress::v4AddressAsHostOrderInteger() const {
@@ -220,12 +225,27 @@ std::ostream& operator<<(std::ostream& os, const InterfaceAddress& ip) {
   return os;
 }
 
-bool IsPrivateV4(uint32_t ip_in_host_order) {
-  return ((ip_in_host_order >> 24) == 127) ||
-      ((ip_in_host_order >> 24) == 10) ||
+static bool IPIsPrivateNetworkV4(const IPAddress& ip) {
+  uint32_t ip_in_host_order = ip.v4AddressAsHostOrderInteger();
+  return ((ip_in_host_order >> 24) == 10) ||
       ((ip_in_host_order >> 20) == ((172 << 4) | 1)) ||
-      ((ip_in_host_order >> 16) == ((192 << 8) | 168)) ||
-      ((ip_in_host_order >> 16) == ((169 << 8) | 254));
+      ((ip_in_host_order >> 16) == ((192 << 8) | 168));
+}
+
+static bool IPIsPrivateNetworkV6(const IPAddress& ip) {
+  return IPIsHelper(ip, kPrivateNetworkPrefix, 8);
+}
+
+bool IPIsPrivateNetwork(const IPAddress& ip) {
+  switch (ip.family()) {
+    case AF_INET: {
+      return IPIsPrivateNetworkV4(ip);
+    }
+    case AF_INET6: {
+      return IPIsPrivateNetworkV6(ip);
+    }
+  }
+  return false;
 }
 
 in_addr ExtractMappedAddress(const in6_addr& in6) {
@@ -291,28 +311,29 @@ bool IPIsAny(const IPAddress& ip) {
   return false;
 }
 
+static bool IPIsLoopbackV4(const IPAddress& ip) {
+  uint32_t ip_in_host_order = ip.v4AddressAsHostOrderInteger();
+  return ((ip_in_host_order >> 24) == 127);
+}
+
+static bool IPIsLoopbackV6(const IPAddress& ip) {
+  return ip == IPAddress(in6addr_loopback);
+}
+
 bool IPIsLoopback(const IPAddress& ip) {
   switch (ip.family()) {
     case AF_INET: {
-      return (ip.v4AddressAsHostOrderInteger() >> 24) == 127;
+      return IPIsLoopbackV4(ip);
     }
     case AF_INET6: {
-      return ip == IPAddress(in6addr_loopback);
+      return IPIsLoopbackV6(ip);
     }
   }
   return false;
 }
 
 bool IPIsPrivate(const IPAddress& ip) {
-  switch (ip.family()) {
-    case AF_INET: {
-      return IsPrivateV4(ip.v4AddressAsHostOrderInteger());
-    }
-    case AF_INET6: {
-      return IPIsLinkLocal(ip) || IPIsLoopback(ip);
-    }
-  }
-  return false;
+  return IPIsLinkLocal(ip) || IPIsLoopback(ip) || IPIsPrivateNetwork(ip);
 }
 
 bool IPIsUnspec(const IPAddress& ip) {
@@ -440,10 +461,27 @@ bool IPIs6To4(const IPAddress& ip) {
   return IPIsHelper(ip, k6To4Prefix, 16);
 }
 
-bool IPIsLinkLocal(const IPAddress& ip) {
+static bool IPIsLinkLocalV4(const IPAddress& ip) {
+  uint32_t ip_in_host_order = ip.v4AddressAsHostOrderInteger();
+  return ((ip_in_host_order >> 16) == ((169 << 8) | 254));
+}
+
+static bool IPIsLinkLocalV6(const IPAddress& ip) {
   // Can't use the helper because the prefix is 10 bits.
   in6_addr addr = ip.ipv6_address();
-  return addr.s6_addr[0] == 0xFE && addr.s6_addr[1] == 0x80;
+  return (addr.s6_addr[0] == 0xFE) && ((addr.s6_addr[1] & 0xC0) == 0x80);
+}
+
+bool IPIsLinkLocal(const IPAddress& ip) {
+  switch (ip.family()) {
+    case AF_INET: {
+      return IPIsLinkLocalV4(ip);
+    }
+    case AF_INET6: {
+      return IPIsLinkLocalV6(ip);
+    }
+  }
+  return false;
 }
 
 // According to http://www.ietf.org/rfc/rfc2373.txt, Appendix A, page 19.  An

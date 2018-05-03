@@ -6,7 +6,7 @@
 
 #include <memory>
 
-#include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/values.h"
 #include "components/consent_auditor/pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -27,16 +27,32 @@ const char kLocalConsentConfirmationKey[] = "confirmation";
 const char kLocalConsentVersionKey[] = "version";
 const char kLocalConsentLocaleKey[] = "locale";
 
-UserEventSpecifics::UserConsent::ConsentStatus ToProtoEnum(
+UserEventSpecifics::UserConsent::Feature FeatureToProtoEnum(
+    consent_auditor::Feature feature) {
+  switch (feature) {
+    case consent_auditor::Feature::CHROME_SYNC:
+      return UserEventSpecifics::UserConsent::CHROME_SYNC;
+    case consent_auditor::Feature::PLAY_STORE:
+      return UserEventSpecifics::UserConsent::PLAY_STORE;
+    case consent_auditor::Feature::BACKUP_AND_RESTORE:
+      return UserEventSpecifics::UserConsent::BACKUP_AND_RESTORE;
+    case consent_auditor::Feature::GOOGLE_LOCATION_SERVICE:
+      return UserEventSpecifics::UserConsent::GOOGLE_LOCATION_SERVICE;
+  }
+  NOTREACHED();
+  return UserEventSpecifics::UserConsent::FEATURE_UNSPECIFIED;
+}
+
+UserEventSpecifics::UserConsent::ConsentStatus StatusToProtoEnum(
     consent_auditor::ConsentStatus status) {
   switch (status) {
-    case consent_auditor::ConsentStatus::REVOKED:
-      return UserEventSpecifics::UserConsent::REVOKED;
+    case consent_auditor::ConsentStatus::NOT_GIVEN:
+      return UserEventSpecifics::UserConsent::NOT_GIVEN;
     case consent_auditor::ConsentStatus::GIVEN:
       return UserEventSpecifics::UserConsent::GIVEN;
   }
   NOTREACHED();
-  return UserEventSpecifics::UserConsent::UNSPECIFIED;
+  return UserEventSpecifics::UserConsent::CONSENT_STATUS_UNSPECIFIED;
 }
 
 }  // namespace
@@ -65,45 +81,70 @@ void ConsentAuditor::RegisterProfilePrefs(PrefRegistrySimple* registry) {
 }
 
 void ConsentAuditor::RecordGaiaConsent(
-    const std::string& feature,
-    const std::vector<int>& consent_grd_ids,
-    const std::vector<std::string>& placeholder_replacements,
+    Feature feature,
+    const std::vector<int>& description_grd_ids,
+    int confirmation_grd_id,
     ConsentStatus status) {
   if (!base::FeatureList::IsEnabled(switches::kSyncUserConsentEvents))
     return;
+
+  DCHECK_LE(feature, consent_auditor::Feature::FEATURE_LAST);
+
+  switch (status) {
+    case ConsentStatus::GIVEN:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Privacy.ConsentAuditor.ConsentGiven.Feature", feature,
+          static_cast<int>(consent_auditor::Feature::FEATURE_LAST) + 1);
+      break;
+    case ConsentStatus::NOT_GIVEN:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Privacy.ConsentAuditor.ConsentNotGiven.Feature", feature,
+          static_cast<int>(consent_auditor::Feature::FEATURE_LAST) + 1);
+      break;
+  }
+
   std::unique_ptr<sync_pb::UserEventSpecifics> specifics = ConstructUserConsent(
-      feature, consent_grd_ids, placeholder_replacements, status);
-  // For real usage, UserEventSyncBridge should always be ready to receive
-  // events when a consent gets recorded.
-  // FakeUserEventService doesn't have a sync bridge.
-  // TODO(crbug.com/709094, crbug.com/761485): Remove this check when the store
-  // initializes synchronously and is instantly ready to receive data.
-  DCHECK(!user_event_service_->GetSyncBridge() ||
-         user_event_service_->GetSyncBridge()
-             ->change_processor()
-             ->IsTrackingMetadata());
+      feature, description_grd_ids, confirmation_grd_id, status);
+  // UserEventSyncBridge initializes asynchronously. Currently, instantiating
+  // UserEventService early in the Profile lifetime bootstraps
+  // the initialization so that it should be ready in practice, but this is
+  // not certain. Exit if it is not the case. Record a histogram to measure
+  // how often that happens.
+  // TODO(crbug.com/709094, crbug.com/761485): Remove this check and histogram
+  // when the store initializes synchronously and is instantly ready to receive
+  // data.
+  bool event_service_ready = !user_event_service_->GetSyncBridge() ||
+                             user_event_service_->GetSyncBridge()
+                                 ->change_processor()
+                                 ->IsTrackingMetadata();
+  UMA_HISTOGRAM_BOOLEAN("Privacy.ConsentAuditor.UserEventServiceReady",
+                        event_service_ready);
+  if (!event_service_ready) {
+    VLOG(1) << "Consent recording failed. The UserEventService has not been "
+               "initialized.";
+    return;
+  }
+
   user_event_service_->RecordUserEvent(std::move(specifics));
 }
 
 std::unique_ptr<sync_pb::UserEventSpecifics>
 ConsentAuditor::ConstructUserConsent(
-    const std::string& feature,
-    const std::vector<int>& consent_grd_ids,
-    const std::vector<std::string>& placeholder_replacements,
+    Feature feature,
+    const std::vector<int>& description_grd_ids,
+    int confirmation_grd_id,
     ConsentStatus status) {
-  auto specifics = base::MakeUnique<sync_pb::UserEventSpecifics>();
+  auto specifics = std::make_unique<sync_pb::UserEventSpecifics>();
   specifics->set_event_time_usec(
       base::Time::Now().since_origin().InMicroseconds());
   auto* consent = specifics->mutable_user_consent();
-  consent->set_feature(feature);
-  for (int id : consent_grd_ids) {
-    consent->add_consent_grd_ids(id);
+  consent->set_feature(FeatureToProtoEnum(feature));
+  for (int id : description_grd_ids) {
+    consent->add_description_grd_ids(id);
   }
-  for (const auto& string : placeholder_replacements) {
-    consent->add_placeholder_replacements(string);
-  }
+  consent->set_confirmation_grd_id(confirmation_grd_id);
   consent->set_locale(app_locale_);
-  consent->set_status(ToProtoEnum(status));
+  consent->set_status(StatusToProtoEnum(status));
   return specifics;
 }
 

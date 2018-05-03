@@ -13,12 +13,11 @@
 #include "base/time/time.h"
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
 #include "content/browser/service_worker/service_worker_database.h"
-#include "content/browser/service_worker/service_worker_installed_scripts_sender.h"
+#include "content/browser/service_worker/service_worker_installed_script_reader.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/service_worker_context.h"
-#include "content/public/common/service_worker_modes.h"
-#include "services/network/public/interfaces/fetch_api.mojom.h"
+#include "services/network/public/mojom/fetch_api.mojom.h"
 #include "ui/base/page_transition_types.h"
 
 class GURL;
@@ -262,9 +261,7 @@ class ServiceWorkerMetrics {
   // Counts the number of page loads controlled by a Service Worker.
   static void CountControlledPageLoad(Site site,
                                       const GURL& url,
-                                      bool is_main_frame_load,
-                                      ui::PageTransition page_transition,
-                                      size_t redirect_chain_length);
+                                      bool is_main_frame_load);
 
   // Records the result of trying to start a worker. |is_installed| indicates
   // whether the version has been installed.
@@ -274,7 +271,7 @@ class ServiceWorkerMetrics {
 
   // Records the result of sending installed scripts to the renderer.
   static void RecordInstalledScriptsSenderStatus(
-      ServiceWorkerInstalledScriptsSender::FinishedReason reason);
+      ServiceWorkerInstalledScriptReader::FinishedReason reason);
 
   // Records the time taken to successfully start a worker. |is_installed|
   // indicates whether the version has been installed.

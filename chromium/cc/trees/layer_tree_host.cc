@@ -50,6 +50,7 @@
 #include "cc/trees/mutator_host.h"
 #include "cc/trees/property_tree_builder.h"
 #include "cc/trees/proxy_main.h"
+#include "cc/trees/render_frame_metadata_observer.h"
 #include "cc/trees/scroll_node.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/swap_promise_manager.h"
@@ -226,10 +227,6 @@ const LayerTreeSettings& LayerTreeHost::GetSettings() const {
   return settings_;
 }
 
-void LayerTreeHost::SetFrameSinkId(const viz::FrameSinkId& frame_sink_id) {
-  surface_sequence_generator_.set_frame_sink_id(frame_sink_id);
-}
-
 void LayerTreeHost::QueueSwapPromise(
     std::unique_ptr<SwapPromise> swap_promise) {
   swap_promise_manager_.QueueSwapPromise(std::move(swap_promise));
@@ -241,10 +238,6 @@ void LayerTreeHost::QueueSwapPromise(
   // EarlyOut_NoUpdates).
   if (!inside_main_frame_)
     SetNeedsAnimate();
-}
-
-viz::SurfaceSequenceGenerator* LayerTreeHost::GetSurfaceSequenceGenerator() {
-  return &surface_sequence_generator_;
 }
 
 void LayerTreeHost::WillBeginMainFrame() {
@@ -320,7 +313,7 @@ void LayerTreeHost::FinishCommitOnImplThread(
   sync_tree->set_source_frame_number(SourceFrameNumber());
 
   // Set presentation token if any pending .
-  bool request_presentation_time = false;
+  bool request_presentation_time = settings_.always_request_presentation_time;
   if (!pending_presentation_time_callbacks_.empty()) {
     request_presentation_time = true;
     frame_to_presentation_time_callbacks_[SourceFrameNumber()] =
@@ -341,6 +334,7 @@ void LayerTreeHost::FinishCommitOnImplThread(
   // the |content_source_id_| on the sync tree.
   bool did_navigate = content_source_id_ != sync_tree->content_source_id();
   if (did_navigate) {
+    TRACE_EVENT0("cc,benchmark", "LayerTreeHost::DidNavigate");
     proxy_->ClearHistoryOnNavigation();
     host_impl->ClearImageCacheOnNavigation();
   }
@@ -377,7 +371,7 @@ void LayerTreeHost::FinishCommitOnImplThread(
     // This must happen after synchronizing property trees and after push
     // properties, which updates property tree indices, but before animation
     // host pushes properties as animation host push properties can change
-    // Animation::InEffect and we want the old InEffect value for updating
+    // KeyframeModel::InEffect and we want the old InEffect value for updating
     // property tree scrolling and animation.
     // TODO(pdr): Enforce this comment with DCHECKS and a lifecycle state.
     sync_tree->UpdatePropertyTreeAnimationFromMainThread();
@@ -640,13 +634,13 @@ void LayerTreeHost::LayoutAndUpdateLayers() {
   UpdateLayers();
 }
 
-void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
+void LayerTreeHost::Composite(base::TimeTicks frame_begin_time, bool raster) {
   DCHECK(IsSingleThreaded());
   // This function is only valid when not using the scheduler.
   DCHECK(!settings_.single_thread_proxy_scheduler);
   SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
-  proxy->CompositeImmediately(frame_begin_time);
+  proxy->CompositeImmediately(frame_begin_time, raster);
 }
 
 static int GetLayersUpdateTimeHistogramBucket(size_t numLayers) {
@@ -936,9 +930,9 @@ void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
 int LayerTreeHost::ScheduleMicroBenchmark(
     const std::string& benchmark_name,
     std::unique_ptr<base::Value> value,
-    const MicroBenchmark::DoneCallback& callback) {
-  return micro_benchmark_controller_.ScheduleRun(benchmark_name,
-                                                 std::move(value), callback);
+    MicroBenchmark::DoneCallback callback) {
+  return micro_benchmark_controller_.ScheduleRun(
+      benchmark_name, std::move(value), std::move(callback));
 }
 
 bool LayerTreeHost::SendMessageToMicroBenchmark(
@@ -949,6 +943,13 @@ bool LayerTreeHost::SendMessageToMicroBenchmark(
 
 void LayerTreeHost::SetLayerTreeMutator(
     std::unique_ptr<LayerTreeMutator> mutator) {
+  // The animation worklet system assumes that the mutator will never be called
+  // from the main thread, which will not be the case if we're running in
+  // single-threaded mode.
+  if (!task_runner_provider_->HasImplThread()) {
+    LOG(ERROR) << "LayerTreeMutator not supported in single-thread mode";
+    return;
+  }
   proxy_->SetMutator(std::move(mutator));
 }
 
@@ -1045,18 +1046,41 @@ void LayerTreeHost::SetEventListenerProperties(
   SetNeedsCommit();
 }
 
-void LayerTreeHost::SetViewportSize(
+void LayerTreeHost::SetViewportSizeAndScale(
     const gfx::Size& device_viewport_size,
+    float device_scale_factor,
     const viz::LocalSurfaceId& local_surface_id) {
+  DCHECK(!local_surface_id.is_valid() || !device_viewport_size.IsEmpty())
+      << "A valid LocalSurfaceId has been provided with an empty device "
+         "viewport size "
+      << local_surface_id;
+  // TODO(ccameron): Add CHECKs here for surface invariants violations.
   if (settings_.enable_surface_synchronization)
     SetLocalSurfaceId(local_surface_id);
-  if (device_viewport_size_ == device_viewport_size)
-    return;
 
-  device_viewport_size_ = device_viewport_size;
+  bool changed = false;
+  if (device_viewport_size_ != device_viewport_size) {
+    device_viewport_size_ = device_viewport_size;
+    changed = true;
+  }
+  if (settings_.use_painted_device_scale_factor) {
+    DCHECK_EQ(device_scale_factor_, 1.f);
+    if (painted_device_scale_factor_ != device_scale_factor) {
+      painted_device_scale_factor_ = device_scale_factor;
+      changed = true;
+    }
+  } else {
+    DCHECK_EQ(painted_device_scale_factor_, 1.f);
+    if (device_scale_factor_ != device_scale_factor) {
+      device_scale_factor_ = device_scale_factor;
+      changed = true;
+    }
+  }
 
-  SetPropertyTreesNeedRebuild();
-  SetNeedsCommit();
+  if (changed) {
+    SetPropertyTreesNeedRebuild();
+    SetNeedsCommit();
+  }
 }
 
 void LayerTreeHost::SetBrowserControlsHeight(float top_height,
@@ -1095,6 +1119,8 @@ void LayerTreeHost::SetPageScaleFactorAndLimits(float page_scale_factor,
       min_page_scale_factor_ == min_page_scale_factor &&
       max_page_scale_factor_ == max_page_scale_factor)
     return;
+  DCHECK_GE(page_scale_factor, min_page_scale_factor);
+  DCHECK_LE(page_scale_factor, max_page_scale_factor);
 
   page_scale_factor_ = page_scale_factor;
   min_page_scale_factor_ = min_page_scale_factor;
@@ -1117,34 +1143,17 @@ bool LayerTreeHost::HasPendingPageScaleAnimation() const {
   return !!pending_page_scale_animation_.get();
 }
 
-void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
-  if (device_scale_factor_ == device_scale_factor)
-    return;
-  device_scale_factor_ = device_scale_factor;
-
-  property_trees_.needs_rebuild = true;
-  SetNeedsCommit();
-}
-
 void LayerTreeHost::SetRecordingScaleFactor(float recording_scale_factor) {
   if (recording_scale_factor_ == recording_scale_factor)
     return;
   recording_scale_factor_ = recording_scale_factor;
 }
 
-void LayerTreeHost::SetPaintedDeviceScaleFactor(
-    float painted_device_scale_factor) {
-  if (painted_device_scale_factor_ == painted_device_scale_factor)
-    return;
-  painted_device_scale_factor_ = painted_device_scale_factor;
-
-  SetNeedsCommit();
-}
-
 void LayerTreeHost::SetRasterColorSpace(
     const gfx::ColorSpace& raster_color_space) {
   if (raster_color_space_ == raster_color_space)
     return;
+  raster_color_space_id_ = gfx::ColorSpace::GetNextId();
   raster_color_space_ = raster_color_space;
   LayerTreeHostCommon::CallFunctionForEveryLayer(
       this, [](Layer* layer) { layer->SetNeedsDisplay(); });
@@ -1347,7 +1356,7 @@ void LayerTreeHost::PushLayerTreePropertiesTo(LayerTreeImpl* tree_impl) {
 
   tree_impl->set_painted_device_scale_factor(painted_device_scale_factor_);
 
-  tree_impl->SetRasterColorSpace(raster_color_space_);
+  tree_impl->SetRasterColorSpace(raster_color_space_id_, raster_color_space_);
 
   tree_impl->set_content_source_id(content_source_id_);
 
@@ -1562,6 +1571,11 @@ void LayerTreeHost::RequestBeginMainFrameNotExpected(bool new_state) {
 
 void LayerTreeHost::SetURLForUkm(const GURL& url) {
   proxy_->SetURLForUkm(url);
+}
+
+void LayerTreeHost::SetRenderFrameObserver(
+    std::unique_ptr<RenderFrameMetadataObserver> observer) {
+  proxy_->SetRenderFrameObserver(std::move(observer));
 }
 
 }  // namespace cc

@@ -140,7 +140,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
       const ParsedQuicVersionVector& supported_versions);
 
   // Creates a connectivity probing packet.
-  std::unique_ptr<QuicEncryptedPacket> SerializeConnectivityProbingPacket();
+  OwningSerializedPacketPointer SerializeConnectivityProbingPacket();
 
   // Re-serializes frames with the original packet's packet number length.
   // Used for retransmitting packets to ensure they aren't too long.
@@ -180,6 +180,12 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   // Set maximum packet length in the creator immediately.  May not be called
   // when there are frames queued in the creator.
   void SetMaxPacketLength(QuicByteCount length);
+
+  // Set transmission type of next constructed packets.
+  void SetTransmissionType(TransmissionType type);
+
+  // Allow/Disallow setting transmission type of next constructed packets.
+  void SetCanSetTransmissionType(bool can_set_transmission_type);
 
   void set_debug_delegate(QuicPacketCreator::DebugDelegate* debug_delegate) {
     packet_creator_.set_debug_delegate(debug_delegate);

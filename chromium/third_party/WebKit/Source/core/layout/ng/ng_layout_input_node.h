@@ -22,6 +22,14 @@ struct MinMaxSize;
 struct NGLogicalSize;
 struct NGPhysicalSize;
 
+// Input to the min/max inline size calculation algorithm for child nodes. Child
+// nodes within the same formatting context need to know which floats are beside
+// them.
+struct MinMaxSizeInput {
+  LayoutUnit float_left_inline_size;
+  LayoutUnit float_right_inline_size;
+};
+
 // Represents the input to a layout algorithm for a given node. The layout
 // engine should use the style, node type to determine which type of layout
 // algorithm to use to produce fragments for this node.
@@ -46,7 +54,11 @@ class CORE_EXPORT NGLayoutInputNode {
   bool IsReplaced() const;
   bool IsAbsoluteContainer() const;
   bool IsFixedContainer() const;
+  bool IsBody() const;
+  bool IsDocumentElement() const;
   bool ShouldBeConsideredAsReplaced() const;
+  bool IsListItem() const;
+  bool IsListMarker() const;
 
   // If the node is a quirky container for margin collapsing, see:
   // https://html.spec.whatwg.org/#margin-collapsing-quirks
@@ -58,7 +70,7 @@ class CORE_EXPORT NGLayoutInputNode {
   // Performs layout on this input node, will return the layout result.
   scoped_refptr<NGLayoutResult> Layout(const NGConstraintSpace&, NGBreakToken*);
 
-  MinMaxSize ComputeMinMaxSize();
+  MinMaxSize ComputeMinMaxSize(const MinMaxSizeInput&);
 
   // Returns intrinsic sizing information for replaced elements.
   // ComputeReplacedSize can use it to compute actual replaced size.
@@ -84,7 +96,7 @@ class CORE_EXPORT NGLayoutInputNode {
 
   String ToString() const;
 
-  explicit operator bool() { return box_ != nullptr; }
+  explicit operator bool() const { return box_ != nullptr; }
 
   bool operator==(const NGLayoutInputNode& other) const {
     return box_ == other.box_;

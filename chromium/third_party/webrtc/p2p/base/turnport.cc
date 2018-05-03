@@ -976,15 +976,32 @@ void TurnPort::DispatchPacket(const char* data, size_t size,
   }
 }
 
-bool TurnPort::ScheduleRefresh(int lifetime) {
-  // Lifetime is in seconds; we schedule a refresh for one minute less.
+bool TurnPort::ScheduleRefresh(uint32_t lifetime) {
+  // Lifetime is in seconds, delay is in milliseconds.
+  int delay = 1 * 60 * 1000;
+
+  // Cutoff lifetime bigger than 1h.
+  constexpr uint32_t max_lifetime = 60 * 60;
+
   if (lifetime < 2 * 60) {
-    LOG_J(LS_WARNING, this) << "Received response with lifetime that was "
-                            << "too short, lifetime=" << lifetime;
-    return false;
+    // The RFC does not mention a lower limit on lifetime.
+    // So if server sends a value less than 2 minutes, we schedule a refresh
+    // for half lifetime.
+    LOG_J(LS_WARNING, this) << "Received response with short lifetime="
+                            << lifetime << " seconds.";
+    delay = (lifetime * 1000) / 2;
+  } else if (lifetime > max_lifetime) {
+    // Make 1 hour largest delay, and then sce
+    // we schedule a refresh for one minute less than max lifetime.
+    LOG_J(LS_WARNING, this) << "Received response with long lifetime="
+                            << lifetime << " seconds.";
+    delay = (max_lifetime - 60) * 1000;
+  } else {
+    // Normal case,
+    // we schedule a refresh for one minute less than requested lifetime.
+    delay = (lifetime - 60) * 1000;
   }
 
-  int delay = (lifetime - 60) * 1000;
   SendRequest(new TurnRefreshRequest(this), delay);
   LOG_J(LS_INFO, this) << "Scheduled refresh in " << delay << "ms.";
   return true;
@@ -1048,29 +1065,25 @@ void TurnPort::ResetNonce() {
   realm_.clear();
 }
 
-static bool MatchesIP(TurnEntry* e, rtc::IPAddress ipaddr) {
-  return e->address().ipaddr() == ipaddr;
-}
 bool TurnPort::HasPermission(const rtc::IPAddress& ipaddr) const {
   return (std::find_if(entries_.begin(), entries_.end(),
-      std::bind2nd(std::ptr_fun(MatchesIP), ipaddr)) != entries_.end());
+                       [&ipaddr](const TurnEntry* e) {
+                         return e->address().ipaddr() == ipaddr;
+                       }) != entries_.end());
 }
 
-static bool MatchesAddress(TurnEntry* e, rtc::SocketAddress addr) {
-  return e->address() == addr;
-}
 TurnEntry* TurnPort::FindEntry(const rtc::SocketAddress& addr) const {
-  EntryList::const_iterator it = std::find_if(entries_.begin(), entries_.end(),
-      std::bind2nd(std::ptr_fun(MatchesAddress), addr));
+  auto it = std::find_if(
+      entries_.begin(), entries_.end(),
+      [&addr](const TurnEntry* e) { return e->address() == addr; });
   return (it != entries_.end()) ? *it : NULL;
 }
 
-static bool MatchesChannelId(TurnEntry* e, int id) {
-  return e->channel_id() == id;
-}
 TurnEntry* TurnPort::FindEntry(int channel_id) const {
-  EntryList::const_iterator it = std::find_if(entries_.begin(), entries_.end(),
-      std::bind2nd(std::ptr_fun(MatchesChannelId), channel_id));
+  auto it = std::find_if(entries_.begin(), entries_.end(),
+                         [&channel_id](const TurnEntry* e) {
+                           return e->channel_id() == channel_id;
+                         });
   return (it != entries_.end()) ? *it : NULL;
 }
 

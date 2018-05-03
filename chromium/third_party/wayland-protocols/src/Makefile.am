@@ -11,12 +11,18 @@ unstable_protocols =								\
 	unstable/tablet/tablet-unstable-v1.xml			                \
 	unstable/tablet/tablet-unstable-v2.xml			                \
 	unstable/xdg-foreign/xdg-foreign-unstable-v1.xml			\
+	unstable/xdg-foreign/xdg-foreign-unstable-v2.xml			\
 	unstable/idle-inhibit/idle-inhibit-unstable-v1.xml			\
+	unstable/xwayland-keyboard-grab/xwayland-keyboard-grab-unstable-v1.xml	\
+	unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml \
+	unstable/xdg-output/xdg-output-unstable-v1.xml				\
+	unstable/input-timestamps/input-timestamps-unstable-v1.xml	\
 	$(NULL)
 
 stable_protocols =								\
 	stable/presentation-time/presentation-time.xml				\
 	stable/viewporter/viewporter.xml					\
+	stable/xdg-shell/xdg-shell.xml						\
 	$(NULL)
 
 nobase_dist_pkgdata_DATA =							\

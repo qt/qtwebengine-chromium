@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <string>
 
 #include "core/fxcrt/fx_system.h"
@@ -58,9 +59,8 @@ TEST_F(CPDFSecurityHandlerEmbeddertest, PasswordAfterGenerateSave) {
     EXPECT_TRUE(FPDFPath_SetFillColor(red_rect, 255, 0, 0, 255));
     EXPECT_TRUE(FPDFPath_SetDrawMode(red_rect, FPDF_FILLMODE_ALTERNATE, 0));
     FPDFPage_InsertObject(page, red_rect);
-    FPDF_BITMAP page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap, 612, 792, md5);
-    FPDFBitmap_Destroy(page_bitmap);
+    std::unique_ptr<void, FPDFBitmapDeleter> bitmap = RenderLoadedPage(page);
+    CompareBitmap(bitmap.get(), 612, 792, md5);
     EXPECT_TRUE(FPDFPage_GenerateContent(page));
     SetWholeFileAvailable();
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
@@ -83,7 +83,7 @@ TEST_F(CPDFSecurityHandlerEmbeddertest, PasswordAfterGenerateSave) {
     OpenSavedDocument(test.password);
     FPDF_PAGE page = LoadSavedPage(0);
     VerifySavedRendering(page, 612, 792, md5);
-    EXPECT_EQ(test.permissions, FPDF_GetDocPermissions(m_SavedDocument));
+    EXPECT_EQ(test.permissions, FPDF_GetDocPermissions(saved_document_));
 
     CloseSavedPage(page);
     CloseSavedDocument();

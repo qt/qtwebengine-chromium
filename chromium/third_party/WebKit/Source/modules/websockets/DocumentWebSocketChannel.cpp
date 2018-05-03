@@ -55,7 +55,6 @@
 #include "modules/websockets/WebSocketHandleImpl.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "platform/WebFrameScheduler.h"
-#include "platform/WebTaskRunner.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
 #include "platform/network/NetworkLog.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
@@ -257,7 +256,6 @@ bool DocumentWebSocketChannel::Connect(const KURL& url,
 
   handle_->Initialize(std::move(socket_ptr));
   handle_->Connect(url, protocols,
-                   loading_context_->GetFetchContext()->GetSecurityOrigin(),
                    loading_context_->GetFetchContext()->GetSiteForCookies(),
                    loading_context_->GetExecutionContext()->UserAgent(), this,
                    loading_context_->GetExecutionContext()
@@ -473,6 +471,7 @@ void DocumentWebSocketChannel::ProcessSendQueue() {
   uint64_t consumed_buffered_amount = 0;
   while (!messages_.IsEmpty() && !blob_loader_) {
     Message* message = messages_.front().Get();
+    CHECK(message);
     if (sending_quota_ == 0 && message->type != kMessageTypeClose)
       break;
     switch (message->type) {
@@ -481,21 +480,26 @@ void DocumentWebSocketChannel::ProcessSendQueue() {
                      message->text.length(), &consumed_buffered_amount);
         break;
       case kMessageTypeBlob:
-        DCHECK(!blob_loader_);
+        CHECK(!blob_loader_);
+        CHECK(message);
+        CHECK(message->blob_data_handle);
         blob_loader_ = new BlobLoader(message->blob_data_handle, this);
         break;
       case kMessageTypeArrayBuffer:
+        CHECK(message->array_buffer);
         SendInternal(WebSocketHandle::kMessageTypeBinary,
                      static_cast<const char*>(message->array_buffer->Data()),
                      message->array_buffer->ByteLength(),
                      &consumed_buffered_amount);
         break;
       case kMessageTypeTextAsCharVector:
+        CHECK(message->vector_data);
         SendInternal(WebSocketHandle::kMessageTypeText,
                      message->vector_data->data(), message->vector_data->size(),
                      &consumed_buffered_amount);
         break;
       case kMessageTypeBinaryAsCharVector:
+        CHECK(message->vector_data);
         SendInternal(WebSocketHandle::kMessageTypeBinary,
                      message->vector_data->data(), message->vector_data->size(),
                      &consumed_buffered_amount);

@@ -1,0 +1,103 @@
+# Copyright 2018 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//chromeos/assistant/assistant.gni")
+import("//services/catalog/public/tools/catalog.gni")
+import("//services/service_manager/public/cpp/service.gni")
+import("//services/service_manager/public/service_manifest.gni")
+
+assert(is_chromeos)
+assert(enable_cros_assistant)
+
+source_set("lib") {
+  sources = [
+    "assistant_manager_service.h",
+    "service.cc",
+    "service.h",
+  ]
+
+  deps = [
+    "//chromeos",
+    "//chromeos/assistant:buildflags",
+    "//chromeos/services/assistant/public/mojom",
+    "//services/identity/public/mojom",
+  ]
+
+  public_deps = [
+    "//mojo/public/cpp/bindings:bindings",
+    "//services/service_manager/public/cpp:cpp",
+  ]
+
+  if (enable_cros_libassistant) {
+    sources += [
+      "assistant_manager_service_impl.cc",
+      "assistant_manager_service_impl.h",
+      "platform/system_provider_impl.cc",
+      "platform/system_provider_impl.h",
+      "platform_api_impl.cc",
+      "platform_api_impl.h",
+    ]
+
+    deps += [
+      "//chromeos/assistant/internal",
+      "//libassistant/contrib/core",
+      "//libassistant/contrib/platform/audio",
+      "//libassistant/contrib/platform/auth",
+      "//libassistant/contrib/platform/file",
+      "//libassistant/contrib/platform/net",
+      "//libassistant/contrib/platform/resources",
+      "//libassistant/contrib/platform/system",
+      "//libassistant/internal/assistant/controller:libassistant_static",
+      "//libassistant/shared/internal_api/c:api_wrappers_for_caller_no_chromium",
+      "//libassistant/shared/proto:assistant_proto",
+      "//libassistant/shared/public",
+      "//libassistant/shared/public:export",
+    ]
+
+    include_dirs = [
+      "//libassistant/contrib",
+      "//libassistant/shared",
+    ]
+  } else {
+    sources += [
+      "fake_assistant_manager_service_impl.cc",
+      "fake_assistant_manager_service_impl.h",
+    ]
+  }
+}
+
+service_manifest("manifest") {
+  name = "assistant"
+  source = "manifest.json"
+}
+
+source_set("tests") {
+  testonly = true
+  deps = [
+    ":lib",
+    "//base",
+    "//base/test:test_support",
+    "//mojo/public/cpp/bindings:bindings",
+    "//services/service_manager/public/cpp",
+    "//services/service_manager/public/cpp:service_test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
+  sources = []
+
+  if (enable_cros_libassistant) {
+    sources += [ "platform/system_provider_impl_unittest.cc" ]
+  }
+}
+
+service_manifest("unittest_manifest") {
+  name = "assistant_unittests"
+  source = "unittest_manifest.json"
+  packaged_services = [ ":manifest" ]
+}
+
+catalog("tests_catalog") {
+  testonly = true
+  embedded_services = [ ":unittest_manifest" ]
+}

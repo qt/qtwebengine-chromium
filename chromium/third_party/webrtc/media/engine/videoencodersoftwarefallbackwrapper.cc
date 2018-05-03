@@ -10,10 +10,10 @@
 
 #include "media/engine/videoencodersoftwarefallbackwrapper.h"
 
+#include <cstdio>
 #include <utility>
 
 #include "media/base/h264_profile_level_id.h"
-#include "media/engine/internalencoderfactory.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -182,13 +182,6 @@ int32_t VideoEncoderSoftwareFallbackWrapper::Encode(
   // If requested, try a software fallback.
   bool fallback_requested = (ret == WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE);
   if (fallback_requested && InitFallbackEncoder()) {
-    if (frame.video_frame_buffer()->type() == VideoFrameBuffer::Type::kNative &&
-        !fallback_encoder_->SupportsNativeHandle()) {
-      RTC_LOG(LS_WARNING) << "Fallback encoder doesn't support native frames, "
-                          << "dropping one frame.";
-      return WEBRTC_VIDEO_CODEC_ERROR;
-    }
-
     // Start using the fallback with this frame.
     return fallback_encoder_->Encode(frame, codec_specific_info, frame_types);
   }
@@ -227,19 +220,14 @@ bool VideoEncoderSoftwareFallbackWrapper::SupportsNativeHandle() const {
 VideoEncoder::ScalingSettings
 VideoEncoderSoftwareFallbackWrapper::GetScalingSettings() const {
   if (forced_fallback_possible_) {
-    if (forced_fallback_.active_) {
-      return VideoEncoder::ScalingSettings(
-          codec_settings_.VP8().automaticResizeOn,
-          forced_fallback_.min_pixels_);
-    }
-    const auto settings = encoder_->GetScalingSettings();
-    if (settings.thresholds) {
-      return VideoEncoder::ScalingSettings(
-          settings.enabled, settings.thresholds->low, settings.thresholds->high,
-          forced_fallback_.min_pixels_);
-    }
-    return VideoEncoder::ScalingSettings(settings.enabled,
-                                         forced_fallback_.min_pixels_);
+    const auto settings = forced_fallback_.active_
+                              ? fallback_encoder_->GetScalingSettings()
+                              : encoder_->GetScalingSettings();
+    return settings.thresholds
+               ? VideoEncoder::ScalingSettings(settings.thresholds->low,
+                                               settings.thresholds->high,
+                                               forced_fallback_.min_pixels_)
+               : VideoEncoder::ScalingSettings::kOff;
   }
   return encoder_->GetScalingSettings();
 }

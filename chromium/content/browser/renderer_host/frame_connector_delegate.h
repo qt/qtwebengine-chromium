@@ -18,12 +18,12 @@
 
 namespace blink {
 class WebGestureEvent;
+struct WebIntrinsicSizingInfo;
 }
 
 namespace viz {
 class SurfaceId;
 class SurfaceInfo;
-struct SurfaceSequence;
 }  // namespace viz
 
 namespace content {
@@ -64,8 +64,12 @@ class CONTENT_EXPORT FrameConnectorDelegate {
   // Provide the SurfaceInfo to the embedder, which becomes a reference to the
   // current view's Surface that is included in higher-level compositor
   // frames.
-  virtual void SetChildFrameSurface(const viz::SurfaceInfo& surface_info,
-                                    const viz::SurfaceSequence& sequence) {}
+  virtual void SetChildFrameSurface(const viz::SurfaceInfo& surface_info) {}
+
+  // Sends the given intrinsic sizing information from a sub-frame to
+  // its corresponding remote frame in the parent frame's renderer.
+  virtual void SendIntrinsicSizingInfoToParent(
+      const blink::WebIntrinsicSizingInfo&) {}
 
   // Sends new resize parameters to the sub-frame's renderer.
   void UpdateResizeParams(const gfx::Rect& screen_space_rect,
@@ -215,6 +219,8 @@ class CONTENT_EXPORT FrameConnectorDelegate {
   virtual void ResizeDueToAutoResize(const gfx::Size& new_size,
                                      uint64_t sequence_number) {}
 
+  bool has_size() const { return has_size_; }
+
  protected:
   explicit FrameConnectorDelegate(bool use_zoom_for_device_scale_factor);
 
@@ -232,9 +238,14 @@ class CONTENT_EXPORT FrameConnectorDelegate {
   gfx::Size local_frame_size_in_pixels_;
   gfx::Rect screen_space_rect_in_dip_;
   gfx::Rect screen_space_rect_in_pixels_;
+
   viz::LocalSurfaceId local_surface_id_;
 
+  bool has_size_ = false;
   const bool use_zoom_for_device_scale_factor_;
+
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewChildFrameZoomForDSFTest,
+                           CompositorViewportPixelSize);
 };
 
 }  // namespace content

@@ -129,6 +129,15 @@ class BLINK_PLATFORM_EXPORT WebMediaPlayerClient {
   // to a localized string that explains the reason as user-readable text.
   virtual void MediaRemotingStopped(WebLocalizedString::Name error_msg) = 0;
 
+  // Informs that Picture-in-Picture mode has started for the media element.
+  virtual void PictureInPictureStarted() = 0;
+
+  // Informs that Picture-in-Picture mode has stopped for the media element.
+  virtual void PictureInPictureStopped() = 0;
+
+  // Returns whether the media element is in Picture-in-Picture mode.
+  virtual bool IsInPictureInPictureMode() = 0;
+
   // Returns whether the media element has native controls. It does not mean
   // that the controls are currently visible.
   virtual bool HasNativeControls() = 0;
@@ -146,6 +155,13 @@ class BLINK_PLATFORM_EXPORT WebMediaPlayerClient {
   // Returns the color space to render media into if.
   // Rendering media into this color space may avoid some conversions.
   virtual gfx::ColorSpace TargetColorSpace() { return gfx::ColorSpace(); }
+
+  // Returns whether the media element was initiated via autoplay.
+  // In this context, autoplay means that it was initiated before any user
+  // activation was received on the page and before a user initiated same-domain
+  // navigation. In other words, with the unified autoplay policy applied, it
+  // should only return `true` when MEI allowed autoplay.
+  virtual bool WasAutoplayInitiated() { return false; }
 
  protected:
   ~WebMediaPlayerClient() = default;

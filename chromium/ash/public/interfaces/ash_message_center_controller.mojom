@@ -5,9 +5,9 @@
 module ash.mojom;
 
 import "ui/gfx/image/mojo/image.mojom";
-import "ui/message_center/mojo/notification.mojom";
-import "ui/message_center/mojo/notifier_id.mojom";
-import "mojo/common/string16.mojom";
+import "ui/message_center/public/mojo/notification.mojom";
+import "ui/message_center/public/mojo/notifier_id.mojom";
+import "mojo/public/mojom/base/string16.mojom";
 
 // A struct that contains information for presenting a notifier in a settings
 // panel.
@@ -16,7 +16,7 @@ struct NotifierUiData {
   message_center.mojom.NotifierId notifier_id;
 
   // The user-visible name of the notifier (e.g. an extension's name).
-  mojo.common.mojom.String16 name;
+  mojo_base.mojom.String16 name;
 
   // True if notifications from the notifier are presently enabled.
   bool enabled;
@@ -34,6 +34,8 @@ interface AshMessageCenterController {
   SetClient(associated AshMessageCenterClient client);
 
   ShowClientNotification(message_center.mojom.Notification notification);
+
+  CloseClientNotification(string id);
 
   UpdateNotifierIcon(message_center.mojom.NotifierId notifier_id,
                      gfx.mojom.ImageSkia icon);
@@ -54,8 +56,17 @@ interface AshMessageCenterClient {
   HandleNotificationClicked(string id);
 
   // Called when a notification that has buttons (e.g., "Learn more") receives a
-  // click on one of the buttons.
-  HandleNotificationButtonClicked(string id, int32 button_index);
+  // click on one of the buttons. |reply| is a user-provided string for cases
+  // where the button had a text input field attached to it.
+  HandleNotificationButtonClicked(string id, int32 button_index,
+                                  mojo_base.mojom.String16? reply);
+
+  // Called when a notification's settings button has been pressed (and the
+  // handler is SettingsButtonHandler::DELEGATE).
+  HandleNotificationSettingsButtonClicked(string id);
+
+  // Called when a notification has been disabled (via inline settings).
+  DisableNotification(string id);
 
   // Called when a user enables or disables notifications from the given
   // notifier.

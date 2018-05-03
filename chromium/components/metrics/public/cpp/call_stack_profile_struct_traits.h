@@ -230,24 +230,18 @@ struct EnumTraits<metrics::mojom::Thread,
         return metrics::mojom::Thread::UNKNOWN_THREAD;
       case metrics::CallStackProfileParams::Thread::UI_THREAD:
         return metrics::mojom::Thread::UI_THREAD;
-      case metrics::CallStackProfileParams::Thread::FILE_THREAD:
-        return metrics::mojom::Thread::FILE_THREAD;
-      case metrics::CallStackProfileParams::Thread::FILE_USER_BLOCKING_THREAD:
-        return metrics::mojom::Thread::FILE_USER_BLOCKING_THREAD;
       case metrics::CallStackProfileParams::Thread::PROCESS_LAUNCHER_THREAD:
         return metrics::mojom::Thread::PROCESS_LAUNCHER_THREAD;
-      case metrics::CallStackProfileParams::Thread::CACHE_THREAD:
-        return metrics::mojom::Thread::CACHE_THREAD;
       case metrics::CallStackProfileParams::Thread::IO_THREAD:
         return metrics::mojom::Thread::IO_THREAD;
-      case metrics::CallStackProfileParams::Thread::DB_THREAD:
-        return metrics::mojom::Thread::DB_THREAD;
       case metrics::CallStackProfileParams::Thread::GPU_MAIN_THREAD:
         return metrics::mojom::Thread::GPU_MAIN_THREAD;
       case metrics::CallStackProfileParams::Thread::RENDER_THREAD:
         return metrics::mojom::Thread::RENDER_THREAD;
       case metrics::CallStackProfileParams::Thread::UTILITY_THREAD:
         return metrics::mojom::Thread::UTILITY_THREAD;
+      case metrics::CallStackProfileParams::Thread::COMPOSITOR_THREAD:
+        return metrics::mojom::Thread::COMPOSITOR_THREAD;
     }
     NOTREACHED();
     return metrics::mojom::Thread::UNKNOWN_THREAD;
@@ -262,24 +256,11 @@ struct EnumTraits<metrics::mojom::Thread,
       case metrics::mojom::Thread::UI_THREAD:
         *out = metrics::CallStackProfileParams::Thread::UI_THREAD;
         return true;
-      case metrics::mojom::Thread::FILE_THREAD:
-        *out = metrics::CallStackProfileParams::Thread::FILE_THREAD;
-        return true;
-      case metrics::mojom::Thread::FILE_USER_BLOCKING_THREAD:
-        *out =
-            metrics::CallStackProfileParams::Thread::FILE_USER_BLOCKING_THREAD;
-        return true;
       case metrics::mojom::Thread::PROCESS_LAUNCHER_THREAD:
         *out = metrics::CallStackProfileParams::Thread::PROCESS_LAUNCHER_THREAD;
         return true;
-      case metrics::mojom::Thread::CACHE_THREAD:
-        *out = metrics::CallStackProfileParams::Thread::CACHE_THREAD;
-        return true;
       case metrics::mojom::Thread::IO_THREAD:
         *out = metrics::CallStackProfileParams::Thread::IO_THREAD;
-        return true;
-      case metrics::mojom::Thread::DB_THREAD:
-        *out = metrics::CallStackProfileParams::Thread::DB_THREAD;
         return true;
       case metrics::mojom::Thread::GPU_MAIN_THREAD:
         *out = metrics::CallStackProfileParams::Thread::GPU_MAIN_THREAD;
@@ -289,6 +270,9 @@ struct EnumTraits<metrics::mojom::Thread,
         return true;
       case metrics::mojom::Thread::UTILITY_THREAD:
         *out = metrics::CallStackProfileParams::Thread::UTILITY_THREAD;
+        return true;
+      case metrics::mojom::Thread::COMPOSITOR_THREAD:
+        *out = metrics::CallStackProfileParams::Thread::COMPOSITOR_THREAD;
         return true;
     }
     return false;

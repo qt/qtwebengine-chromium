@@ -4,9 +4,10 @@
 
 #include "core/css/properties/longhands/ColumnGap.h"
 
-#include "core/css/ZoomAdjustedPixelValue.h"
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
+#include "core/css/properties/CSSParsingUtils.h"
+#include "core/css/properties/ComputedStyleUtils.h"
 #include "core/style/ComputedStyle.h"
 
 namespace blink {
@@ -16,21 +17,16 @@ const CSSValue* ColumnGap::ParseSingleValue(
     CSSParserTokenRange& range,
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {
-  if (range.Peek().Id() == CSSValueNormal)
-    return CSSPropertyParserHelpers::ConsumeIdent(range);
-  return CSSPropertyParserHelpers::ConsumeLength(range, context.Mode(),
-                                                 kValueRangeNonNegative);
+  return CSSParsingUtils::ConsumeGapLength(range, context);
 }
 
 const CSSValue* ColumnGap::CSSValueFromComputedStyleInternal(
     const ComputedStyle& style,
     const SVGComputedStyle&,
     const LayoutObject*,
-    Node* styled_node,
-    bool allow_visited_style) const {
-  if (style.HasNormalColumnGap())
-    return CSSIdentifierValue::Create(CSSValueNormal);
-  return ZoomAdjustedPixelValue(style.ColumnGap(), style);
+    Node*,
+    bool) const {
+  return ComputedStyleUtils::ValueForGapLength(style.ColumnGap(), style);
 }
 
 }  // namespace CSSLonghand

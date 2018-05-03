@@ -43,8 +43,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
     [ImplementedAs=urlForBinding] readonly attribute USVString URL;
     // FIXME: documentURI should not be nullable.
     [ImplementedAs=urlForBinding] readonly attribute USVString? documentURI;
-    [MeasureAs=DocumentOrigin] readonly attribute DOMString origin;
-    [RuntimeEnabled=Suborigins] readonly attribute DOMString suborigin;
+    [MeasureAs=DocumentOrigin] readonly attribute USVString origin;
     readonly attribute DOMString compatMode;
 
     readonly attribute DOMString characterSet;
@@ -58,7 +57,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
     HTMLCollection getElementsByTagNameNS(DOMString? namespaceURI, DOMString localName);
     HTMLCollection getElementsByClassName(DOMString classNames);
 
-    [NewObject, DoNotTestNewObject, CustomElementCallbacks, PerWorldBindings, RaisesException] Element createElement(DOMString localName);
+    [NewObject, DoNotTestNewObject, CustomElementCallbacks, PerWorldBindings, RaisesException, ImplementedAs=CreateElementForBinding] Element createElement(DOMString localName);
     [NewObject, DoNotTestNewObject, CustomElementCallbacks, RaisesException] Element createElementNS(DOMString? namespaceURI, DOMString qualifiedName);
     [NewObject] DocumentFragment createDocumentFragment();
     [NewObject] Text createTextNode(DOMString data);
@@ -175,7 +174,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
 
     // Touch Events
     // https://w3c.github.io/touch-events/#extensions-to-the-document-interface
-    [OriginTrialEnabled=TouchEventFeatureDetection, Measure, LegacyInterfaceTypeChecking, Custom=CallPrologue]
+    [OriginTrialEnabled=TouchEventFeatureDetection, DeprecateAs=V8Document_CreateTouch_Method, LegacyInterfaceTypeChecking, Custom=CallPrologue]
     Touch createTouch(Window view,
                       EventTarget target,
                       long identifier,
@@ -187,7 +186,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
                       optional unrestricted double radiusY = 0,
                       optional unrestricted float rotationAngle = 0,
                       optional unrestricted float force = 0);
-    [OriginTrialEnabled=TouchEventFeatureDetection] TouchList createTouchList(Touch... touches);
+    [OriginTrialEnabled=TouchEventFeatureDetection, DeprecateAs=V8Document_CreateTouchList_Method] TouchList createTouchList(Touch... touches);
 
     // Custom Elements
     // https://w3c.github.io/webcomponents/spec/custom/#extensions-to-document-interface-to-register
@@ -195,7 +194,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
     [CallWith=ScriptState, CustomElementCallbacks, RaisesException, MeasureAs=DocumentRegisterElement] CustomElementConstructor registerElement(DOMString type, optional ElementRegistrationOptions options);
     // https://w3c.github.io/webcomponents/spec/custom/#extensions-to-document-interface-to-instantiate
     // FIXME: The typeExtension arguments should not be nullable.
-    [CustomElementCallbacks, PerWorldBindings, RaisesException] Element createElement(DOMString localName, (DOMString or Dictionary)? options);
+    [CustomElementCallbacks, PerWorldBindings, RaisesException, ImplementedAs=CreateElementForBinding] Element createElement(DOMString localName, (DOMString or Dictionary)? options);
     [CustomElementCallbacks, RaisesException] Element createElementNS(DOMString? namespaceURI, DOMString qualifiedName, (DOMString or Dictionary)? options);
 
     // Page Visibility

@@ -27,8 +27,6 @@ namespace blink {
 {{wrapper_type_info_const}}WrapperTypeInfo {{v8_class}}::wrapperTypeInfo = {
     gin::kEmbedderBlink,
     {{dom_template}},
-    {{v8_class}}::Trace,
-    {{v8_class}}::TraceWrappers,
     {{install_conditional_features_func or 'nullptr'}},
     "{{interface_name}}",
     {{parent_wrapper_type_info}},
@@ -646,9 +644,7 @@ static void install{{v8_class}}Template(
                             v8::ReadOnly | v8::DontEnum | v8::DontDelete));
   {% endif %}
 
-  {% if legacy_caller and not is_partial %}
-  instanceTemplate->SetCallAsFunctionHandler({{cpp_class_or_partial}}V8Internal::{{legacy_caller.name}}MethodCallback);
-  {% elif has_custom_legacy_call_as_function and not is_partial %}
+  {% if has_custom_legacy_call_as_function and not is_partial %}
   instanceTemplate->SetCallAsFunctionHandler({{v8_class}}::legacyCallCustom);
   {% endif %}
 
@@ -789,11 +785,10 @@ void {{v8_class_or_partial}}::InstallRuntimeEnabledFeaturesOnTemplate(
 {##############################################################################}
 {% block install_runtime_enabled %}
 {% if needs_runtime_enabled_installer %}
-{% from 'attributes.cpp.tmpl' import accessor_configuration,
-        attribute_configuration,
-        with context %}
+{% from 'attributes.cpp.tmpl' import accessor_configuration, attribute_configuration with context %}
 {% from 'methods.cpp.tmpl' import install_custom_signature with context %}
-void {{v8_class_or_partial}}::InstallRuntimeEnabledFeatures(
+{% if not is_partial %}
+void {{v8_class}}::InstallRuntimeEnabledFeatures(
     v8::Isolate* isolate,
     const DOMWrapperWorld& world,
     v8::Local<v8::Object> instance,
@@ -803,8 +798,23 @@ void {{v8_class_or_partial}}::InstallRuntimeEnabledFeatures(
 #error "We don't expect a runtime enabled interface {{v8_class_or_partial}} to have InstallRuntimeEnabledFeatures()."
   {% endif %}
 
-  {% if is_partial %}
-  {{v8_class}}::InstallRuntimeEnabledFeatures(isolate, world, instance, prototype, interface);
+  InstallRuntimeEnabledFeaturesImpl(isolate, world, instance, prototype, interface);
+  {% if has_partial_interface %}
+
+  // Call partial interface's installer.
+  install_runtime_enabled_features_function_(isolate, world, instance, prototype, interface);
+  {% endif %}
+}
+{% endif %}{# not is_partial #}
+
+void {{v8_class_or_partial}}::InstallRuntimeEnabledFeaturesImpl(
+    v8::Isolate* isolate,
+    const DOMWrapperWorld& world,
+    v8::Local<v8::Object> instance,
+    v8::Local<v8::Object> prototype,
+    v8::Local<v8::Function> interface) {
+  {% if runtime_enabled_feature_name %}
+#error "We don't expect a runtime enabled interface {{v8_class_or_partial}} to have InstallRuntimeEnabledFeatures()."
   {% endif %}
 
   v8::Local<v8::FunctionTemplate> interface_template = {{v8_class}}::wrapperTypeInfo.domTemplate(isolate, world);

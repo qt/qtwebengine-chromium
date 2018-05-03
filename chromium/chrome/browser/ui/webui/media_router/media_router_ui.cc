@@ -55,11 +55,16 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "third_party/WebKit/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/WebKit/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "url/origin.h"
+
+#if !defined(OS_MACOSX) || BUILDFLAG(MAC_VIEWS_BROWSER)
+#include "chrome/browser/media/router/providers/wired_display/wired_display_media_route_provider.h"
+#include "ui/display/display.h"
+#endif
 
 namespace media_router {
 
@@ -111,7 +116,7 @@ base::TimeDelta GetRouteRequestTimeout(MediaCastMode cast_mode) {
 // used by the Media Router to find such a matching route if it exists.
 MediaSource GetSourceForRouteObserver(const std::vector<MediaSource>& sources) {
   auto source_it =
-      std::find_if(sources.begin(), sources.end(), CanConnectToMediaSource);
+      std::find_if(sources.begin(), sources.end(), IsCastPresentationUrl);
   return source_it != sources.end() ? *source_it : MediaSource("");
 }
 
@@ -338,11 +343,6 @@ MediaRouterUI::MediaRouterUI(content::WebUI* web_ui)
   std::unique_ptr<content::WebUIDataSource> html_source(
       content::WebUIDataSource::Create(chrome::kChromeUIMediaRouterHost));
 
-  content::WebContents* wc = web_ui->GetWebContents();
-  DCHECK(wc);
-  content::BrowserContext* context = wc->GetBrowserContext();
-  router_ = MediaRouterFactory::GetApiForBrowserContext(context);
-
   AddLocalizedStrings(html_source.get());
   AddMediaRouterUIResources(html_source.get());
   // Ownership of |html_source| is transferred to the BrowserContext.
@@ -397,9 +397,10 @@ void MediaRouterUI::InitWithDefaultMediaSource(
     OnDefaultPresentationChanged(delegate->GetDefaultPresentationRequest());
   } else {
     // Register for MediaRoute updates without a media source.
-    routes_observer_.reset(new UIMediaRoutesObserver(
+    routes_observer_ = std::make_unique<UIMediaRoutesObserver>(
         router_, MediaSource::Id(),
-        base::Bind(&MediaRouterUI::OnRoutesUpdated, base::Unretained(this))));
+        base::BindRepeating(&MediaRouterUI::OnRoutesUpdated,
+                            base::Unretained(this)));
   }
 }
 
@@ -423,10 +424,12 @@ void MediaRouterUI::InitWithStartPresentationContext(
 
 void MediaRouterUI::InitCommon(content::WebContents* initiator) {
   DCHECK(initiator);
-  DCHECK(router_);
 
   TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("media_router", "UI", initiator,
                                       "MediaRouterUI::InitCommon", this);
+
+  router_ = GetMediaRouter();
+  DCHECK(router_);
 
   // Presentation requests from content must show the origin requesting
   // presentation: crbug.com/704964
@@ -446,7 +449,7 @@ void MediaRouterUI::InitCommon(content::WebContents* initiator) {
     collator_.reset();
   }
 
-  query_result_manager_.reset(new QueryResultManager(router_));
+  query_result_manager_ = std::make_unique<QueryResultManager>(router_);
   query_result_manager_->AddObserver(this);
 
   // Use a placeholder URL as origin for mirroring.
@@ -476,6 +479,11 @@ void MediaRouterUI::InitCommon(content::WebContents* initiator) {
   // Get the current list of media routes, so that the WebUI will have routes
   // information at initialization.
   OnRoutesUpdated(router_->GetCurrentRoutes(), std::vector<MediaRoute::Id>());
+#if !defined(OS_MACOSX) || BUILDFLAG(MAC_VIEWS_BROWSER)
+  display_observer_ = WebContentsDisplayObserver::Create(
+      initiator_,
+      base::BindRepeating(&MediaRouterUI::UpdateSinks, base::Unretained(this)));
+#endif
 }
 
 void MediaRouterUI::InitForTest(
@@ -484,7 +492,6 @@ void MediaRouterUI::InitForTest(
     MediaRouterWebUIMessageHandler* handler,
     std::unique_ptr<StartPresentationContext> context,
     std::unique_ptr<MediaRouterFileDialog> file_dialog) {
-  router_ = router;
   handler_ = handler;
   start_presentation_context_ = std::move(context);
   InitForTest(std::move(file_dialog));
@@ -517,9 +524,10 @@ void MediaRouterUI::OnDefaultPresentationChanged(
   // observer API for this case.
   const MediaSource source_for_route_observer =
       GetSourceForRouteObserver(sources);
-  routes_observer_.reset(new UIMediaRoutesObserver(
+  routes_observer_ = std::make_unique<UIMediaRoutesObserver>(
       router_, source_for_route_observer.id(),
-      base::Bind(&MediaRouterUI::OnRoutesUpdated, base::Unretained(this))));
+      base::BindRepeating(&MediaRouterUI::OnRoutesUpdated,
+                          base::Unretained(this)));
 
   UpdateCastModes();
 }
@@ -534,9 +542,10 @@ void MediaRouterUI::OnDefaultPresentationRemoved() {
   forced_cast_mode_ = base::nullopt;
 
   // Register for MediaRoute updates without a media source.
-  routes_observer_.reset(new UIMediaRoutesObserver(
+  routes_observer_ = std::make_unique<UIMediaRoutesObserver>(
       router_, MediaSource::Id(),
-      base::Bind(&MediaRouterUI::OnRoutesUpdated, base::Unretained(this))));
+      base::BindRepeating(&MediaRouterUI::OnRoutesUpdated,
+                          base::Unretained(this)));
   UpdateCastModes();
 }
 
@@ -580,8 +589,16 @@ void MediaRouterUI::UIInitialized() {
   TRACE_EVENT_NESTABLE_ASYNC_END0("media_router", "UI", initiator_);
   ui_initialized_ = true;
 
+  // Workaround for MediaRouterElementsBrowserTest, in which MediaRouterUI is
+  // created without calling one of the |Init*()| methods.
+  // TODO(imcheng): We should be able to instantiate |issue_observer_| during
+  // InitCommon by storing an initial Issue in this class.
+  if (!router_)
+    router_ = GetMediaRouter();
+
   // Register for Issue updates.
-  issues_observer_.reset(new UIIssuesObserver(GetIssueManager(), this));
+  issues_observer_ =
+      std::make_unique<UIIssuesObserver>(GetIssueManager(), this);
   issues_observer_->Init();
 }
 
@@ -792,9 +809,10 @@ void MediaRouterUI::SearchSinksAndCreateRoute(
 
   // The CreateRoute() part of the function is accomplished in the callback
   // OnSearchSinkResponseReceived().
-  router_->SearchSinks(sink_id, source_id, search_criteria, domain,
-                       base::Bind(&MediaRouterUI::OnSearchSinkResponseReceived,
-                                  weak_factory_.GetWeakPtr(), cast_mode));
+  router_->SearchSinks(
+      sink_id, source_id, search_criteria, domain,
+      base::BindRepeating(&MediaRouterUI::OnSearchSinkResponseReceived,
+                          weak_factory_.GetWeakPtr(), cast_mode));
 }
 
 bool MediaRouterUI::UserSelectedTabMirroringForCurrentOrigin() const {
@@ -842,7 +860,7 @@ void MediaRouterUI::OnResultsUpdated(
             });
 
   if (ui_initialized_)
-    handler_->UpdateSinks(sinks_);
+    UpdateSinks();
 }
 
 void MediaRouterUI::SetIssue(const Issue& issue) {
@@ -994,6 +1012,30 @@ GURL MediaRouterUI::GetFrameURL() const {
                                : GURL();
 }
 
+std::vector<MediaSinkWithCastModes> MediaRouterUI::GetEnabledSinks() const {
+#if !defined(OS_MACOSX) || BUILDFLAG(MAC_VIEWS_BROWSER)
+  if (!display_observer_)
+    return sinks_;
+
+  // Filter out the wired display sink for the display that the dialog is on.
+  // This is not the best place to do this because MRUI should not perform a
+  // provider-specific behavior, but we currently do not have a way to
+  // communicate dialog-specific information to/from the
+  // WiredDisplayMediaRouteProvider.
+  std::vector<MediaSinkWithCastModes> enabled_sinks;
+  const std::string display_sink_id =
+      WiredDisplayMediaRouteProvider::GetSinkIdForDisplay(
+          display_observer_->GetCurrentDisplay());
+  for (const MediaSinkWithCastModes& sink : sinks_) {
+    if (sink.sink.id() != display_sink_id)
+      enabled_sinks.push_back(sink);
+  }
+  return enabled_sinks;
+#else
+  return sinks_;
+#endif
+}
+
 std::string MediaRouterUI::GetPresentationRequestSourceName() const {
   GURL gurl = GetFrameURL();
   return gurl.SchemeIs(extensions::kExtensionScheme)
@@ -1082,4 +1124,12 @@ IssueManager* MediaRouterUI::GetIssueManager() {
   return router_->GetIssueManager();
 }
 
+void MediaRouterUI::UpdateSinks() {
+  handler_->UpdateSinks(GetEnabledSinks());
+}
+
+MediaRouter* MediaRouterUI::GetMediaRouter() {
+  return MediaRouterFactory::GetApiForBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+}
 }  // namespace media_router

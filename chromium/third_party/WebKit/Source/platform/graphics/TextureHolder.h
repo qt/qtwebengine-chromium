@@ -41,6 +41,7 @@ class PLATFORM_EXPORT TextureHolder {
   }
   virtual void UpdateSyncToken(gpu::SyncToken) { NOTREACHED(); }
   virtual void Sync(MailboxSyncMode) { NOTREACHED(); }
+  virtual bool IsCrossThread() const { return false; }
 
   // Methods overridden by SkiaTextureHolder
   virtual sk_sp<SkImage> GetSkImage() {
@@ -68,11 +69,11 @@ class PLATFORM_EXPORT TextureHolder {
       : context_provider_wrapper_(std::move(context_provider_wrapper)) {}
 
  private:
-  // Keep a clone of the WebTaskRunner. This is to handle the case where the
-  // AcceleratedStaticBitmapImage was created on one thread and transferred to
-  // another thread, and the original thread gone out of scope, and that we need
-  // to clear the resouces associated with that AcceleratedStaticBitmapImage on
-  // the original thread.
+  // Keep a clone of the SingleThreadTaskRunner. This is to handle the case
+  // where the AcceleratedStaticBitmapImage was created on one thread and
+  // transferred to another thread, and the original thread gone out of scope,
+  // and that we need to clear the resouces associated with that
+  // AcceleratedStaticBitmapImage on the original thread.
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper_;
   bool is_abandoned_ = false;
 };

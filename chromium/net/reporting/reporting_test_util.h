@@ -6,6 +6,7 @@
 #define NET_REPORTING_REPORTING_TEST_UTIL_H_
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -89,9 +90,22 @@ class TestReportingDelegate : public ReportingDelegate {
 
   ~TestReportingDelegate() override;
 
+  void set_disallow_report_uploads(bool disallow_report_uploads) {
+    disallow_report_uploads_ = disallow_report_uploads;
+  }
+
+  void set_pause_permissions_check(bool pause_permissions_check) {
+    pause_permissions_check_ = pause_permissions_check;
+  }
+
   bool CanQueueReport(const url::Origin& origin) const override;
 
-  bool CanSendReport(const url::Origin& origin) const override;
+  void CanSendReports(std::set<url::Origin> origins,
+                      base::OnceCallback<void(std::set<url::Origin>)>
+                          result_callback) const override;
+
+  bool PermissionsCheckPaused() const;
+  void ResumePermissionsCheck();
 
   bool CanSetClient(const url::Origin& origin,
                     const GURL& endpoint) const override;
@@ -99,7 +113,18 @@ class TestReportingDelegate : public ReportingDelegate {
   bool CanUseClient(const url::Origin& origin,
                     const GURL& endpoint) const override;
 
+  void ParseJson(const std::string& unsafe_json,
+                 const JsonSuccessCallback& success_callback,
+                 const JsonFailureCallback& failure_callback) const override;
+
  private:
+  bool disallow_report_uploads_ = false;
+  bool pause_permissions_check_ = false;
+
+  mutable std::set<url::Origin> saved_origins_;
+  mutable base::OnceCallback<void(std::set<url::Origin>)>
+      permissions_check_callback_;
+
   DISALLOW_COPY_AND_ASSIGN(TestReportingDelegate);
 };
 

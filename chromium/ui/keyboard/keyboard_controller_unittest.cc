@@ -14,7 +14,7 @@
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/test/aura_test_helper.h"
+#include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/base/ime/dummy_text_input_client.h"
@@ -176,15 +176,39 @@ class TestKeyboardLayoutDelegate : public KeyboardLayoutDelegate {
   DISALLOW_COPY_AND_ASSIGN(TestKeyboardLayoutDelegate);
 };
 
+class SetModeCallbackInvocationCounter {
+ public:
+  SetModeCallbackInvocationCounter() : weak_factory_invoke_(this) {}
+
+  void Invoke(bool status) {
+    if (status)
+      invocation_count_success_++;
+    else
+      invocation_count_failure_++;
+  }
+
+  base::OnceCallback<void(bool)> GetInvocationCallback() {
+    return base::BindOnce(&SetModeCallbackInvocationCounter::Invoke,
+                          weak_factory_invoke_.GetWeakPtr());
+  }
+
+  int invocation_count_for_status(bool status) {
+    return status ? invocation_count_success_ : invocation_count_failure_;
+  }
+
+ private:
+  int invocation_count_success_ = 0;
+  int invocation_count_failure_ = 0;
+  base::WeakPtrFactory<SetModeCallbackInvocationCounter> weak_factory_invoke_;
+};
+
 }  // namespace
 
-class KeyboardControllerTest : public testing::Test,
+class KeyboardControllerTest : public aura::test::AuraTestBase,
                                public KeyboardControllerObserver {
  public:
   KeyboardControllerTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI),
-        visible_bounds_number_of_calls_(0),
+      : visible_bounds_number_of_calls_(0),
         occluding_bounds_number_of_calls_(0),
         is_available_number_of_calls_(0),
         is_available_(false),
@@ -192,24 +216,14 @@ class KeyboardControllerTest : public testing::Test,
   ~KeyboardControllerTest() override {}
 
   void SetUp() override {
-    // The ContextFactory must exist before any Compositors are created.
-    bool enable_pixel_output = false;
-    ui::ContextFactory* context_factory = nullptr;
-    ui::ContextFactoryPrivate* context_factory_private = nullptr;
-
-    ui::InitializeContextFactoryForTests(enable_pixel_output, &context_factory,
-                                         &context_factory_private);
-
     ui::SetUpInputMethodFactoryForTesting();
-    aura_test_helper_.reset(new aura::test::AuraTestHelper());
-    aura_test_helper_->SetUp(context_factory, context_factory_private);
-    new wm::DefaultActivationClient(aura_test_helper_->root_window());
+    aura::test::AuraTestBase::SetUp();
+    new wm::DefaultActivationClient(root_window());
     focus_controller_.reset(new TestFocusController(root_window()));
     layout_delegate_.reset(new TestKeyboardLayoutDelegate());
-    controller_.reset(
-        new KeyboardController(std::make_unique<TestKeyboardUI>(
-                                   aura_test_helper_->host()->GetInputMethod()),
-                               layout_delegate_.get()));
+    controller_.reset(new KeyboardController(
+        std::make_unique<TestKeyboardUI>(host()->GetInputMethod()),
+        layout_delegate_.get()));
     controller()->AddObserver(this);
   }
 
@@ -218,11 +232,9 @@ class KeyboardControllerTest : public testing::Test,
       controller()->RemoveObserver(this);
     controller_.reset();
     focus_controller_.reset();
-    aura_test_helper_->TearDown();
-    ui::TerminateContextFactoryForTests();
+    aura::test::AuraTestBase::TearDown();
   }
 
-  aura::Window* root_window() { return aura_test_helper_->root_window(); }
   KeyboardUI* ui() { return controller_->ui(); }
   KeyboardController* controller() { return controller_.get(); }
 
@@ -240,16 +252,16 @@ class KeyboardControllerTest : public testing::Test,
 
  protected:
   // KeyboardControllerObserver overrides
-  void OnKeyboardVisibleBoundsChanging(const gfx::Rect& new_bounds) override {
+  void OnKeyboardVisibleBoundsChanged(const gfx::Rect& new_bounds) override {
     visible_bounds_ = new_bounds;
     visible_bounds_number_of_calls_++;
   }
-  void OnKeyboardWorkspaceOccludedBoundsChanging(
+  void OnKeyboardWorkspaceOccludedBoundsChanged(
       const gfx::Rect& new_bounds) override {
     occluding_bounds_ = new_bounds;
     occluding_bounds_number_of_calls_++;
   }
-  void OnKeyboardAvailabilityChanging(bool is_available) override {
+  void OnKeyboardAvailabilityChanged(bool is_available) override {
     is_available_ = is_available;
     is_available_number_of_calls_++;
   }
@@ -270,6 +282,15 @@ class KeyboardControllerTest : public testing::Test,
   bool notified_is_available() { return is_available_; }
 
   bool IsKeyboardClosed() { return keyboard_closed_; }
+
+  void SetProgrammaticFocus(ui::TextInputClient* client) {
+    controller_->OnTextInputStateChanged(client);
+  }
+
+  void AddTimeToTransientBlurCounter(double seconds) {
+    controller_->time_of_last_blur_ -=
+        base::TimeDelta::FromMilliseconds((int)(1000 * seconds));
+  }
 
   void SetFocus(ui::TextInputClient* client) {
     ui::InputMethod* input_method = ui()->GetInputMethod();
@@ -308,8 +329,6 @@ class KeyboardControllerTest : public testing::Test,
     run_loop->Run();
   }
 
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
-  std::unique_ptr<aura::test::AuraTestHelper> aura_test_helper_;
   std::unique_ptr<TestFocusController> focus_controller_;
 
  private:
@@ -447,6 +466,82 @@ TEST_F(KeyboardControllerTest, ClickDoesNotFocusKeyboard) {
   generator.ClickLeftButton();
   EXPECT_EQ("1 1", delegate.GetMouseButtonCountsAndReset());
   keyboard_container->RemovePreTargetHandler(&observer);
+}
+
+// Tests that blur-then-focus that occur in less than the transient threshold
+// cause the keyboard to re-show.
+TEST_F(KeyboardControllerTest, TransientBlurShortDelay) {
+  ScopedAccessibilityKeyboardEnabler scoped_keyboard_enabler;
+  ui::DummyTextInputClient input_client(ui::TEXT_INPUT_TYPE_TEXT);
+  ui::DummyTextInputClient no_input_client(ui::TEXT_INPUT_TYPE_NONE);
+  base::RunLoop run_loop;
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
+  std::unique_ptr<KeyboardContainerObserver> keyboard_container_observer(
+      new KeyboardContainerObserver(keyboard_container, &run_loop));
+  root_window()->AddChild(keyboard_container);
+
+  // Keyboard is hidden
+  EXPECT_FALSE(keyboard_container->IsVisible());
+
+  // Set programmatic focus to the text field. Nothing happens
+  SetProgrammaticFocus(&input_client);
+  EXPECT_FALSE(keyboard_container->IsVisible());
+
+  // Click it for real. Keyboard starts to appear.
+  SetFocus(&input_client);
+  EXPECT_TRUE(keyboard_container->IsVisible());
+
+  // Focus a non text field
+  SetFocus(&no_input_client);
+
+  // It waits 100 ms and then hides. Wait for this routine to finish.
+  EXPECT_TRUE(WillHideKeyboard());
+  RunLoop(&run_loop);
+  EXPECT_FALSE(keyboard_container->IsVisible());
+
+  // Virtually wait half a second
+  AddTimeToTransientBlurCounter(0.5);
+  // Apply programmatic focus to the text field.
+  SetProgrammaticFocus(&input_client);
+  EXPECT_TRUE(keyboard_container->IsVisible());
+  EXPECT_FALSE(WillHideKeyboard());
+}
+
+// Tests that blur-then-focus that occur past the transient threshold do not
+// cause the keyboard to re-show.
+TEST_F(KeyboardControllerTest, TransientBlurLongDelay) {
+  ScopedAccessibilityKeyboardEnabler scoped_keyboard_enabler;
+  ui::DummyTextInputClient input_client(ui::TEXT_INPUT_TYPE_TEXT);
+  ui::DummyTextInputClient no_input_client(ui::TEXT_INPUT_TYPE_NONE);
+  base::RunLoop run_loop;
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
+  std::unique_ptr<KeyboardContainerObserver> keyboard_container_observer(
+      new KeyboardContainerObserver(keyboard_container, &run_loop));
+  root_window()->AddChild(keyboard_container);
+
+  // Keyboard is hidden
+  EXPECT_FALSE(keyboard_container->IsVisible());
+
+  // Set programmatic focus to the text field. Nothing happens
+  SetProgrammaticFocus(&input_client);
+  EXPECT_FALSE(keyboard_container->IsVisible());
+
+  // Click it for real. Keyboard starts to appear.
+  SetFocus(&input_client);
+  EXPECT_TRUE(keyboard_container->IsVisible());
+
+  // Focus a non text field
+  SetFocus(&no_input_client);
+
+  // It waits 100 ms and then hides. Wait for this routine to finish.
+  EXPECT_TRUE(WillHideKeyboard());
+  RunLoop(&run_loop);
+  EXPECT_FALSE(keyboard_container->IsVisible());
+
+  // Wait 5 seconds and then set programmatic focus to a text field
+  AddTimeToTransientBlurCounter(5.0);
+  SetProgrammaticFocus(&input_client);
+  EXPECT_FALSE(keyboard_container->IsVisible());
 }
 
 TEST_F(KeyboardControllerTest, VisibilityChangeWithTextInputTypeChange) {
@@ -655,13 +750,27 @@ TEST_F(KeyboardControllerAnimationTest, ContainerAnimation) {
   EXPECT_EQ(gfx::Rect(), notified_occluding_bounds());
   EXPECT_FALSE(notified_is_available());
 
-  controller()->SetContainerType(ContainerType::FLOATING);
+  SetModeCallbackInvocationCounter invocation_counter;
+  controller()->SetContainerType(ContainerType::FLOATING,
+                                 invocation_counter.GetInvocationCallback());
+  EXPECT_EQ(1, invocation_counter.invocation_count_for_status(true));
+  EXPECT_EQ(0, invocation_counter.invocation_count_for_status(false));
   ShowKeyboard();
   RunAnimationForLayer(layer);
+  EXPECT_EQ(1, invocation_counter.invocation_count_for_status(true));
+  EXPECT_EQ(0, invocation_counter.invocation_count_for_status(false));
   // Visible bounds and occluding bounds are now different.
   EXPECT_EQ(keyboard_container()->bounds(), notified_visible_bounds());
   EXPECT_EQ(gfx::Rect(), notified_occluding_bounds());
   EXPECT_TRUE(notified_is_available());
+
+  // callback should do nothing when container mode is set to the current active
+  // container type. An unnecessary call gets registered synchronously as a
+  // failure status to the callback.
+  controller()->SetContainerType(ContainerType::FLOATING,
+                                 invocation_counter.GetInvocationCallback());
+  EXPECT_EQ(1, invocation_counter.invocation_count_for_status(true));
+  EXPECT_EQ(1, invocation_counter.invocation_count_for_status(false));
 }
 
 // Show keyboard during keyboard hide animation should abort the hide animation

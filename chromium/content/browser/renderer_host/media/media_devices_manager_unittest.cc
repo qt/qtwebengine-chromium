@@ -23,8 +23,11 @@
 #include "media/audio/test_audio_thread.h"
 #include "media/capture/video/fake_video_capture_device_factory.h"
 #include "media/capture/video/video_capture_system_impl.h"
+#include "mojo/public/cpp/bindings/binding_set.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 using testing::_;
 using testing::SaveArg;
@@ -33,12 +36,22 @@ namespace content {
 
 namespace {
 
+const int kRenderProcessId = 1;
+const int kRenderFrameId = 3;
+
 // Number of client enumerations to simulate on each test run.
 // This allows testing that a single call to low-level enumeration functions
 // is performed when cache is enabled, regardless of the number of client calls.
 const int kNumCalls = 3;
 
 const auto kIgnoreLogMessageCB = base::BindRepeating([](const std::string&) {});
+
+std::pair<std::string, url::Origin> GetSaltAndOrigin(int /* process_id */,
+                                                     int /* frame_id */) {
+  return std::make_pair(std::string("fake_media_device_salt"),
+                        url::Origin::Create(GURL("https://test.com")));
+}
+
 // This class mocks the audio manager and overrides some methods to ensure that
 // we can run simulate device changes.
 class MockAudioManager : public media::FakeAudioManager {
@@ -118,10 +131,21 @@ class MockVideoCaptureDeviceFactory
   }
 };
 
-class MockMediaDeviceChangeSubscriber : public MediaDeviceChangeSubscriber {
+class MockMediaDevicesListener : public blink::mojom::MediaDevicesListener {
  public:
+  MockMediaDevicesListener() {}
+
   MOCK_METHOD2(OnDevicesChanged,
                void(MediaDeviceType, const MediaDeviceInfoArray&));
+
+  blink::mojom::MediaDevicesListenerPtr CreateInterfacePtrAndBind() {
+    blink::mojom::MediaDevicesListenerPtr listener;
+    bindings_.AddBinding(this, mojo::MakeRequest(&listener));
+    return listener;
+  }
+
+ private:
+  mojo::BindingSet<blink::mojom::MediaDevicesListener> bindings_;
 };
 
 }  // namespace
@@ -159,6 +183,8 @@ class MediaDevicesManagerTest : public ::testing::Test {
         std::move(video_capture_provider), kIgnoreLogMessageCB);
     media_devices_manager_.reset(new MediaDevicesManager(
         audio_system_.get(), video_capture_manager_, nullptr));
+    media_devices_manager_->set_salt_and_origin_callback_for_testing(
+        base::BindRepeating(&GetSaltAndOrigin));
   }
 
   void EnableCache(MediaDeviceType type) {
@@ -490,24 +516,45 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
                  base::Unretained(this), &run_loop));
   run_loop.Run();
 
-  // Add device-change event subscribers.
-  MockMediaDeviceChangeSubscriber subscriber_audio_input;
-  MockMediaDeviceChangeSubscriber subscriber_video_input;
-  MockMediaDeviceChangeSubscriber subscriber_audio_output;
-  MockMediaDeviceChangeSubscriber subscriber_all;
+  // Add device-change event listeners.
+  MockMediaDevicesListener listener_audio_input;
+  MediaDevicesManager::BoolDeviceTypes audio_input_devices_to_subscribe;
+  audio_input_devices_to_subscribe[MEDIA_DEVICE_TYPE_AUDIO_INPUT] = true;
+  uint32_t audio_input_subscription_id =
+      media_devices_manager_->SubscribeDeviceChangeNotifications(
+          kRenderProcessId, kRenderFrameId,
+          std::string("fake_group_id_salt_base"),
+          audio_input_devices_to_subscribe,
+          listener_audio_input.CreateInterfacePtrAndBind());
 
+  MockMediaDevicesListener listener_video_input;
+  MediaDevicesManager::BoolDeviceTypes video_input_devices_to_subscribe;
+  video_input_devices_to_subscribe[MEDIA_DEVICE_TYPE_VIDEO_INPUT] = true;
+  uint32_t video_input_subscription_id =
+      media_devices_manager_->SubscribeDeviceChangeNotifications(
+          kRenderProcessId, kRenderFrameId,
+          std::string("fake_group_id_salt_base"),
+          video_input_devices_to_subscribe,
+          listener_video_input.CreateInterfacePtrAndBind());
+
+  MockMediaDevicesListener listener_audio_output;
+  MediaDevicesManager::BoolDeviceTypes audio_output_devices_to_subscribe;
+  audio_output_devices_to_subscribe[MEDIA_DEVICE_TYPE_AUDIO_OUTPUT] = true;
+  uint32_t audio_output_subscription_id =
+      media_devices_manager_->SubscribeDeviceChangeNotifications(
+          kRenderProcessId, kRenderFrameId,
+          std::string("fake_group_id_salt_base"),
+          audio_output_devices_to_subscribe,
+          listener_audio_output.CreateInterfacePtrAndBind());
+
+  MockMediaDevicesListener listener_all;
+  MediaDevicesManager::BoolDeviceTypes all_devices_to_subscribe;
+  all_devices_to_subscribe[MEDIA_DEVICE_TYPE_AUDIO_INPUT] = true;
+  all_devices_to_subscribe[MEDIA_DEVICE_TYPE_VIDEO_INPUT] = true;
+  all_devices_to_subscribe[MEDIA_DEVICE_TYPE_AUDIO_OUTPUT] = true;
   media_devices_manager_->SubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_AUDIO_INPUT, &subscriber_audio_input);
-  media_devices_manager_->SubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_VIDEO_INPUT, &subscriber_video_input);
-  media_devices_manager_->SubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_AUDIO_OUTPUT, &subscriber_audio_output);
-  media_devices_manager_->SubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_AUDIO_INPUT, &subscriber_all);
-  media_devices_manager_->SubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_VIDEO_INPUT, &subscriber_all);
-  media_devices_manager_->SubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_AUDIO_OUTPUT, &subscriber_all);
+      kRenderProcessId, kRenderFrameId, std::string("fake_group_id_salt_base"),
+      all_devices_to_subscribe, listener_all.CreateInterfacePtrAndBind());
 
   MediaDeviceInfoArray notification_audio_input;
   MediaDeviceInfoArray notification_video_input;
@@ -515,28 +562,25 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   MediaDeviceInfoArray notification_all_audio_input;
   MediaDeviceInfoArray notification_all_video_input;
   MediaDeviceInfoArray notification_all_audio_output;
-  EXPECT_CALL(subscriber_audio_input,
+  EXPECT_CALL(listener_audio_input,
               OnDevicesChanged(MEDIA_DEVICE_TYPE_AUDIO_INPUT, _))
       .Times(1)
       .WillOnce(SaveArg<1>(&notification_audio_input));
-  EXPECT_CALL(subscriber_video_input,
+  EXPECT_CALL(listener_video_input,
               OnDevicesChanged(MEDIA_DEVICE_TYPE_VIDEO_INPUT, _))
       .Times(1)
       .WillOnce(SaveArg<1>(&notification_video_input));
-  EXPECT_CALL(subscriber_audio_output,
+  EXPECT_CALL(listener_audio_output,
               OnDevicesChanged(MEDIA_DEVICE_TYPE_AUDIO_OUTPUT, _))
       .Times(1)
       .WillOnce(SaveArg<1>(&notification_audio_output));
-  EXPECT_CALL(subscriber_all,
-              OnDevicesChanged(MEDIA_DEVICE_TYPE_AUDIO_INPUT, _))
+  EXPECT_CALL(listener_all, OnDevicesChanged(MEDIA_DEVICE_TYPE_AUDIO_INPUT, _))
       .Times(2)
       .WillRepeatedly(SaveArg<1>(&notification_all_audio_input));
-  EXPECT_CALL(subscriber_all,
-              OnDevicesChanged(MEDIA_DEVICE_TYPE_VIDEO_INPUT, _))
+  EXPECT_CALL(listener_all, OnDevicesChanged(MEDIA_DEVICE_TYPE_VIDEO_INPUT, _))
       .Times(2)
       .WillRepeatedly(SaveArg<1>(&notification_all_video_input));
-  EXPECT_CALL(subscriber_all,
-              OnDevicesChanged(MEDIA_DEVICE_TYPE_AUDIO_OUTPUT, _))
+  EXPECT_CALL(listener_all, OnDevicesChanged(MEDIA_DEVICE_TYPE_AUDIO_OUTPUT, _))
       .Times(2)
       .WillRepeatedly(SaveArg<1>(&notification_all_audio_output));
 
@@ -560,11 +604,11 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   EXPECT_EQ(num_audio_output_devices, notification_all_audio_output.size());
 
   media_devices_manager_->UnsubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_AUDIO_INPUT, &subscriber_audio_input);
+      audio_input_subscription_id);
   media_devices_manager_->UnsubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_VIDEO_INPUT, &subscriber_video_input);
+      video_input_subscription_id);
   media_devices_manager_->UnsubscribeDeviceChangeNotifications(
-      MEDIA_DEVICE_TYPE_AUDIO_OUTPUT, &subscriber_audio_output);
+      audio_output_subscription_id);
 
   // Simulate further device changes. Only the objects still subscribed to the
   // device-change events will receive notifications.
@@ -582,6 +626,59 @@ TEST_F(MediaDevicesManagerTest, SubscribeDeviceChanges) {
   EXPECT_EQ(num_audio_input_devices, notification_all_audio_input.size());
   EXPECT_EQ(num_video_input_devices, notification_all_video_input.size());
   EXPECT_EQ(num_audio_output_devices, notification_all_audio_output.size());
+}
+
+TEST_F(MediaDevicesManagerTest, GuessVideoGroupID) {
+  MediaDeviceInfoArray audio_devices = {
+      {"device_id_1", "Microphone (Logitech Webcam C930e)", "group_1"},
+      {"device_id_2", "HD Pro Webcam C920", "group_2"},
+      {"device_id_3", "Microsoft® LifeCam Cinema(TM)", "group_3"},
+      {"device_id_4", "Repeated webcam", "group_4"},
+      {"device_id_5", "Repeated webcam", "group_5"},
+      {"device_id_6", "Dual-mic webcam device", "group_6"},
+      {"device_id_7", "Dual-mic webcam device", "group_6"},
+      {"device_id_8", "Repeated dual-mic webcam device", "group_7"},
+      {"device_id_9", "Repeated dual-mic webcam device", "group_7"},
+      {"device_id_10", "Repeated dual-mic webcam device", "group_8"},
+      {"device_id_11", "Repeated dual-mic webcam device", "group_8"},
+  };
+
+  MediaDeviceInfo logitech_video("logitech_video",
+                                 "Logitech Webcam C930e (046d:0843)", "");
+  MediaDeviceInfo hd_pro_video("hd_pro_video", "HD Pro Webcam C920 (046d:082d)",
+                               "");
+  MediaDeviceInfo lifecam_video(
+      "lifecam_video", "Microsoft® LifeCam Cinema(TM) (045e:075d)", "");
+  MediaDeviceInfo repeated_webcam1_video("repeated_webcam_1", "Repeated webcam",
+                                         "");
+  MediaDeviceInfo repeated_webcam2_video("repeated_webcam_2", "Repeated webcam",
+                                         "");
+  MediaDeviceInfo dual_mic_video("dual_mic_video",
+                                 "Dual-mic webcam device (1111:1111)", "");
+  MediaDeviceInfo webcam_only_video("webcam_only_video", "Webcam-only device",
+                                    "");
+  MediaDeviceInfo repeated_dual_mic1_video(
+      "repeated_dual_mic1_video", "Repeated dual-mic webcam device", "");
+  MediaDeviceInfo repeated_dual_mic2_video(
+      "repeated_dual_mic2_video", "Repeated dual-mic webcam device", "");
+  MediaDeviceInfo short_label_video("short_label_video", " ()", "");
+
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, logitech_video), "group_1");
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, hd_pro_video), "group_2");
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, lifecam_video), "group_3");
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, repeated_webcam1_video),
+            repeated_webcam1_video.device_id);
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, repeated_webcam2_video),
+            repeated_webcam2_video.device_id);
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, dual_mic_video), "group_6");
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, webcam_only_video),
+            webcam_only_video.device_id);
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, repeated_dual_mic1_video),
+            repeated_dual_mic1_video.device_id);
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, repeated_dual_mic2_video),
+            repeated_dual_mic2_video.device_id);
+  EXPECT_EQ(GuessVideoGroupID(audio_devices, short_label_video),
+            short_label_video.device_id);
 }
 
 }  // namespace content

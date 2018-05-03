@@ -49,6 +49,7 @@
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/wtf/Forward.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebCanvas.h"
 #include "public/platform/WebFocusType.h"
 #include "public/platform/WebMenuSourceType.h"
 #include "public/platform/WebScreenInfo.h"
@@ -88,7 +89,7 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
 
   IntRect PageRect() override { return IntRect(); }
 
-  void Focus() override {}
+  void Focus(LocalFrame*) override {}
 
   bool CanTakeFocus(WebFocusType) override { return false; }
   void TakeFocus(WebFocusType) override {}
@@ -204,7 +205,6 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
       WebEventListenerClass event_class) const override {
     return WebEventListenerProperties::kNothing;
   }
-  void UpdateEventRectsForSubframeIfNecessary(LocalFrame* frame) override {}
   void SetHasScrollEventHandlers(LocalFrame*, bool) override {}
   void SetNeedsLowLatencyInput(LocalFrame*, bool) override {}
   void RequestUnbufferedInputEvents(LocalFrame*) override {}
@@ -373,7 +373,9 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
   }
 
   void AnnotatedRegionsChanged() override {}
-  String GetDevToolsFrameToken() const override { return g_empty_string; };
+  base::UnguessableToken GetDevToolsFrameToken() const override {
+    return base::UnguessableToken::Create();
+  };
   String evaluateInInspectorOverlayForTesting(const String& script) override {
     return g_empty_string;
   }
@@ -414,6 +416,7 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
                 bool should_replace_current_entry) override {}
   void Reload(FrameLoadType, ClientRedirectPolicy) override {}
   unsigned BackForwardLength() override { return 0; }
+  void CheckCompleted() override {}
   void ForwardPostMessage(MessageEvent*,
                           scoped_refptr<const SecurityOrigin> target,
                           LocalFrame* source_frame) const override {}
@@ -426,6 +429,9 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
   void SetIsInert(bool) override {}
   void UpdateRenderThrottlingStatus(bool is_throttled,
                                     bool subtree_throttled) override {}
+  uint32_t Print(const IntRect& rect, WebCanvas* canvas) const override {
+    return 0;
+  }
 
   // FrameClient implementation.
   bool InShadowTree() const override { return false; }
@@ -437,7 +443,9 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
   Frame* NextSibling() const override { return nullptr; }
   Frame* FirstChild() const override { return nullptr; }
   void FrameFocused() const override {}
-  String GetDevToolsFrameToken() const override { return g_empty_string; };
+  base::UnguessableToken GetDevToolsFrameToken() const override {
+    return base::UnguessableToken::Create();
+  };
 
   DISALLOW_COPY_AND_ASSIGN(EmptyRemoteFrameClient);
 };

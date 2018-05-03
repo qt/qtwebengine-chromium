@@ -40,11 +40,12 @@
 #include "modules/EventTargetModules.h"
 #include "modules/ModulesExport.h"
 #include "modules/vibration/NavigatorVibration.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/modules/notifications/WebNotificationData.h"
-#include "public/platform/modules/notifications/WebNotificationDelegate.h"
+#include "public/platform/modules/notifications/notification_service.mojom-blink.h"
 #include "public/platform/modules/permissions/permission.mojom-blink.h"
 #include "public/platform/modules/permissions/permission_status.mojom-blink.h"
 
@@ -60,7 +61,7 @@ class MODULES_EXPORT Notification final
     : public EventTargetWithInlineData,
       public ActiveScriptWrappable<Notification>,
       public ContextLifecycleObserver,
-      public WebNotificationDelegate {
+      public mojom::blink::NonPersistentNotificationListener {
   USING_GARBAGE_COLLECTED_MIXIN(Notification);
   DEFINE_WRAPPERTYPEINFO();
 
@@ -89,11 +90,10 @@ class MODULES_EXPORT Notification final
   DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(close);
 
-  // WebNotificationDelegate interface.
-  void DispatchShowEvent() override;
-  void DispatchClickEvent() override;
-  void DispatchErrorEvent() override;
-  void DispatchCloseEvent() override;
+  // NonPersistentNotificationListener interface.
+  void OnShow() override;
+  void OnClick() override;
+  void OnClose() override;
 
   String title() const;
   String dir() const;
@@ -158,6 +158,10 @@ class MODULES_EXPORT Notification final
     notification_id_ = notification_id;
   }
 
+  // Sets the token which will be used to both show and close the notification.
+  // Should be equal to tag_ if a tag is present, else should be unique.
+  void SetToken(const String& token) { token_ = token; }
+
   // Schedules an asynchronous call to |prepareShow|, allowing the constructor
   // to return so that events can be fired on the notification object.
   void SchedulePrepareShow();
@@ -169,6 +173,8 @@ class MODULES_EXPORT Notification final
   // Shows the notification through the embedder using the loaded resources.
   void DidLoadResources(NotificationResourcesLoader*);
 
+  void DispatchErrorEvent();
+
   Type type_;
   State state_;
 
@@ -176,9 +182,14 @@ class MODULES_EXPORT Notification final
 
   String notification_id_;
 
+  String token_;
+
   Member<AsyncMethodRunner<Notification>> prepare_show_method_runner_;
 
   Member<NotificationResourcesLoader> loader_;
+
+  mojo::Binding<mojom::blink::NonPersistentNotificationListener>
+      listener_binding_;
 };
 
 }  // namespace blink

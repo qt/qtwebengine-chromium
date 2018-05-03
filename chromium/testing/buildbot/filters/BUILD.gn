@@ -29,7 +29,6 @@ source_set("browser_tests_filters") {
 
   data = [
     "//testing/buildbot/filters/mash.browser_tests.filter",
-    "//testing/buildbot/filters/mojo.fyi.mash.browser_tests.filter",
     "//testing/buildbot/filters/mojo.fyi.network_browser_tests.filter",
     "//testing/buildbot/filters/browser_tests_cros_asan.filter",
     "//testing/buildbot/filters/site-per-process.browser_tests.filter",
@@ -86,7 +85,7 @@ source_set("fuchsia_filters") {
     "//testing/buildbot/filters/fuchsia.base_unittests.filter",
     "//testing/buildbot/filters/fuchsia.content_unittests.filter",
     "//testing/buildbot/filters/fuchsia.ipc_tests.filter",
-    "//testing/buildbot/filters/fuchsia.mojo_system_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.mojo_unittests.filter",
     "//testing/buildbot/filters/fuchsia.net_unittests.filter",
     "//testing/buildbot/filters/fuchsia.service_manager_unittests.filter",
     "//testing/buildbot/filters/fuchsia.ui_base_unittests.filter",

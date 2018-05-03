@@ -10,8 +10,8 @@
 
 #include "content/common/content_export.h"
 #include "content/common/content_security_policy_header.h"
-#include "third_party/WebKit/common/feature_policy/feature_policy.h"
-#include "third_party/WebKit/common/frame_policy.h"
+#include "third_party/WebKit/public/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/public/common/frame/frame_policy.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
 #include "url/origin.h"
 
@@ -133,6 +133,9 @@ struct CONTENT_EXPORT FrameReplicationState {
   // Whether the frame has received a user gesture in a previous navigation so
   // long as a the frame has staying on the same eTLD+1.
   bool has_received_user_gesture_before_nav;
+
+  // IMPORTANT NOTE: When adding a new member to this struct, don't forget to
+  // also add a corresponding entry to the struct traits in frame_messages.h!
 };
 
 }  // namespace content

@@ -142,13 +142,14 @@ def member_context(dictionary, member):
             extended_attributes=extended_attributes),
         'deprecate_as': v8_utilities.deprecate_as(member),
         'enum_type': idl_type.enum_type,
-        'enum_values': unwrapped_idl_type.enum_values,
+        'enum_values': idl_type.enum_values,
         'getter_name': getter_name,
         'has_method_name': has_method_name_for_dictionary_member(member),
         'idl_type': idl_type.base_type,
         'is_interface_type': idl_type.is_interface_type and not is_deprecated_dictionary,
         'is_nullable': idl_type.is_nullable,
         'is_object': unwrapped_idl_type.name == 'Object' or is_deprecated_dictionary,
+        'is_string_type': idl_type.preprocessed_type.is_string_type,
         'is_required': member.is_required,
         'name': member.name,
         'origin_trial_feature_name': v8_utilities.origin_trial_feature_name(member),  # [OriginTrialEnabled]
@@ -156,7 +157,7 @@ def member_context(dictionary, member):
         'setter_name': setter_name_for_dictionary_member(member),
         'null_setter_name': null_setter_name_for_dictionary_member(member),
         'v8_default_value': v8_default_value,
-        'v8_value_to_local_cpp_value': unwrapped_idl_type.v8_value_to_local_cpp_value(
+        'v8_value_to_local_cpp_value': idl_type.v8_value_to_local_cpp_value(
             extended_attributes, member.name + 'Value',
             member.name + 'CppValue', isolate='isolate', use_exception_state=True),
     }
@@ -219,7 +220,9 @@ def member_impl_context(member, interfaces_info, header_includes,
             return nullable_indicator_name
         if idl_type.is_union_type or idl_type.is_enum or idl_type.is_string_type:
             return '!%s_.IsNull()' % cpp_name
-        if idl_type.name in ['Any', 'Object']:
+        if idl_type.name == 'Any':
+            return '!({0}_.IsEmpty() || {0}_.IsUndefined())'.format(cpp_name)
+        if idl_type.name == 'Object':
             return '!({0}_.IsEmpty() || {0}_.IsNull() || {0}_.IsUndefined())'.format(cpp_name)
         if idl_type.name == 'Dictionary':
             return '!%s_.IsUndefinedOrNull()' % cpp_name

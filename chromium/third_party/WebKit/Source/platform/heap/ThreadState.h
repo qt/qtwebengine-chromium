@@ -43,6 +43,7 @@
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/HashSet.h"
+#include "platform/wtf/LinkedHashSet.h"
 #include "platform/wtf/ThreadSpecific.h"
 #include "platform/wtf/Threading.h"
 #include "platform/wtf/ThreadingPrimitives.h"
@@ -59,6 +60,7 @@ class IncrementalMarkingScope;
 }  // namespace incremental_marking_test
 
 class GarbageCollectedMixinConstructorMarkerBase;
+class MarkingVisitor;
 class PersistentNode;
 class PersistentRegion;
 class ThreadHeap;
@@ -269,8 +271,7 @@ class PLATFORM_EXPORT ThreadState {
   void IncrementalMarkingFinalize();
 
   bool IsIncrementalMarkingInProgress() const {
-    return GcState() == kIncrementalMarkingStartScheduled ||
-           GcState() == kIncrementalMarkingStepScheduled ||
+    return GcState() == kIncrementalMarkingStepScheduled ||
            GcState() == kIncrementalMarkingFinalizeScheduled;
   }
 
@@ -341,6 +342,8 @@ class PLATFORM_EXPORT ThreadState {
   bool IsIncrementalMarking() const { return incremental_marking_; }
   void SetIncrementalMarking(bool value) { incremental_marking_ = value; }
 
+  void CheckObjectNotInCallbackStacks(const void*);
+
   class MainThreadGCForbiddenScope final {
     STACK_ALLOCATED();
 
@@ -403,21 +406,29 @@ class PLATFORM_EXPORT ThreadState {
   void RecordStackEnd(intptr_t* end_of_stack) { end_of_stack_ = end_of_stack; }
   NO_SANITIZE_ADDRESS void CopyStackUntilSafePointScope();
 
-  // A region of PersistentNodes allocated on the given thread.
+  // A region of non-weak PersistentNodes allocated on the given thread.
   PersistentRegion* GetPersistentRegion() const {
     return persistent_region_.get();
   }
-  // A region of PersistentNodes not owned by any particular thread.
+
+  // A region of PersistentNodes for WeakPersistents allocated on the given
+  // thread.
+  PersistentRegion* GetWeakPersistentRegion() const {
+    return weak_persistent_region_.get();
+  }
 
   // Visit local thread stack and trace all pointers conservatively.
-  void VisitStack(Visitor*);
+  void VisitStack(MarkingVisitor*);
 
   // Visit the asan fake stack frame corresponding to a slot on the
   // real machine stack if there is one.
-  void VisitAsanFakeStackForPointer(Visitor*, Address);
+  void VisitAsanFakeStackForPointer(MarkingVisitor*, Address);
 
-  // Visit all persistents allocated on this thread.
+  // Visit all non-weak persistents allocated on this thread.
   void VisitPersistents(Visitor*);
+
+  // Visit all weak persistents allocated on this thread.
+  void VisitWeakPersistents(Visitor*);
 
   struct GCSnapshotInfo {
     STACK_ALLOCATED();
@@ -472,7 +483,7 @@ class PLATFORM_EXPORT ThreadState {
     accumulated_sweeping_time_ += time;
   }
 
-  void FreePersistentNode(PersistentNode*);
+  void FreePersistentNode(PersistentRegion*, PersistentNode*);
 
   using PersistentClearCallback = void (*)(void*);
 
@@ -523,7 +534,7 @@ class PLATFORM_EXPORT ThreadState {
 
   int GcAge() const { return gc_age_; }
 
-  Visitor* CurrentVisitor() { return current_gc_data_.visitor.get(); }
+  MarkingVisitor* CurrentVisitor() { return current_gc_data_.visitor.get(); }
 
  private:
   // Needs to set up visitor for testing purposes.
@@ -613,6 +624,7 @@ class PLATFORM_EXPORT ThreadState {
   std::unique_ptr<ThreadHeap> heap_;
   ThreadIdentifier thread_;
   std::unique_ptr<PersistentRegion> persistent_region_;
+  std::unique_ptr<PersistentRegion> weak_persistent_region_;
   BlinkGC::StackState stack_state_;
   intptr_t* start_of_stack_;
   intptr_t* end_of_stack_;
@@ -636,7 +648,7 @@ class PLATFORM_EXPORT ThreadState {
   // Pre-finalizers are called in the reverse order in which they are
   // registered by the constructors (including constructors of Mixin objects)
   // for an object, by processing the ordered_pre_finalizers_ back-to-front.
-  ListHashSet<PreFinalizer> ordered_pre_finalizers_;
+  LinkedHashSet<PreFinalizer> ordered_pre_finalizers_;
 
   v8::Isolate* isolate_;
   void (*trace_dom_wrappers_)(v8::Isolate*, Visitor*);
@@ -672,7 +684,7 @@ class PLATFORM_EXPORT ThreadState {
     BlinkGC::GCReason reason;
     double marking_time_in_milliseconds;
     size_t marked_object_size;
-    std::unique_ptr<Visitor> visitor;
+    std::unique_ptr<MarkingVisitor> visitor;
   };
   GCData current_gc_data_;
 

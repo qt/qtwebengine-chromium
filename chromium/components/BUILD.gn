@@ -6,6 +6,7 @@ import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//components/nacl/features.gni")
+import("//media/media_options.gni")
 import("//printing/features/features.gni")
 import("//rlz/features/features.gni")
 import("//testing/test.gni")
@@ -86,6 +87,7 @@ test("components_unittests") {
     "//components/favicon/core:unit_tests",
     "//components/favicon_base:unit_tests",
     "//components/feature_engagement:unit_tests",
+    "//components/filename_generation:unit_tests",
     "//components/flags_ui:unit_tests",
     "//components/gcm_driver:unit_tests",
     "//components/gcm_driver/crypto:unit_tests",
@@ -97,6 +99,7 @@ test("components_unittests") {
     "//components/json_schema:unit_tests",
     "//components/keyed_service/core:unit_tests",
     "//components/language/core/browser:unit_tests",
+    "//components/language/core/common:unit_tests",
     "//components/language_usage_metrics:unit_tests",
     "//components/leveldb_proto:unit_tests",
     "//components/login:unit_tests",
@@ -152,6 +155,7 @@ test("components_unittests") {
     "//components/url_matcher:unit_tests",
     "//components/url_pattern_index:unit_tests",
     "//components/variations:unit_tests",
+    "//components/variations/field_trial_config:unit_tests",
     "//components/variations/service:unit_tests",
     "//components/web_resource:unit_tests",
     "//components/webdata/common:unit_tests",
@@ -316,11 +320,21 @@ test("components_unittests") {
   if (enable_basic_printing || enable_print_preview) {
     deps += [ "//components/printing/service:unit_tests" ]
   }
+  if (enable_print_preview) {
+    deps += [ "//components/pwg_encoder:unit_tests" ]
+  }
 
   if (safe_browsing_mode == 1) {
     deps += [ "//components/safe_browsing/db:unit_tests_desktop" ]
   } else if (safe_browsing_mode == 2) {
     deps += [ "//components/safe_browsing/android:unit_tests_mobile" ]
+  }
+
+  if (enable_webrtc && !is_ios) {
+    deps += [
+      "//components/webrtc_logging/browser:unit_tests",
+      "//components/webrtc_logging/common:unit_tests",
+    ]
   }
 
   # No components should depend on Chrome.
@@ -447,13 +461,13 @@ if (!is_ios) {
       "//content/test:test_support",
       "//device/bluetooth",
       "//device/geolocation/public/cpp:test_support",
-      "//device/geolocation/public/interfaces",
+      "//google_apis",
       "//ipc:test_support",
       "//net:test_support",
       "//printing/features",
-      "//services/device/public/interfaces",
+      "//services/device/public/mojom",
       "//services/service_manager/public/cpp",
-      "//services/service_manager/public/interfaces",
+      "//services/service_manager/public/mojom",
       "//testing/gmock",
       "//testing/gtest",
       "//ui/base",
@@ -476,6 +490,7 @@ if (!is_ios) {
     }
 
     if (is_android) {
+      enable_multidex = true
       sources += [
         "test/android/browsertests_apk/components_browser_tests_jni_onload.cc",
       ]

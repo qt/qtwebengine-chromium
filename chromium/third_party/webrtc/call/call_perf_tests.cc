@@ -647,7 +647,15 @@ TEST_F(CallPerfTest, NoPadWithoutMinTransmitBitrate) {
   TestMinTransmitBitrate(false);
 }
 
-TEST_F(CallPerfTest, KeepsHighBitrateWhenReconfiguringSender) {
+// TODO(bugs.webrtc.org/8878)
+#if defined(WEBRTC_MAC)
+#define MAYBE_KeepsHighBitrateWhenReconfiguringSender \
+  DISABLED_KeepsHighBitrateWhenReconfiguringSender
+#else
+#define MAYBE_KeepsHighBitrateWhenReconfiguringSender \
+  KeepsHighBitrateWhenReconfiguringSender
+#endif
+TEST_F(CallPerfTest, MAYBE_KeepsHighBitrateWhenReconfiguringSender) {
   static const uint32_t kInitialBitrateKbps = 400;
   static const uint32_t kReconfigureThresholdKbps = 600;
   static const uint32_t kPermittedReconfiguredBitrateDiffKbps = 100;
@@ -880,11 +888,12 @@ void CallPerfTest::TestMinAudioVideoBitrate(
 
     void OnCallsCreated(Call* sender_call, Call* receiver_call) override {
       sender_call_ = sender_call;
-      Call::Config::BitrateConfig bitrate_config;
+      BitrateConstraints bitrate_config;
       bitrate_config.min_bitrate_bps = min_bwe_;
       bitrate_config.start_bitrate_bps = start_bwe_;
       bitrate_config.max_bitrate_bps = max_bwe_;
-      sender_call->SetBitrateConfig(bitrate_config);
+      sender_call->GetTransportControllerSend()->SetSdpBitrateParameters(
+          bitrate_config);
       if (use_bitrate_allocation_strategy_) {
         sender_call->SetBitrateAllocationStrategy(
             std::move(allocation_strategy_));
@@ -926,7 +935,15 @@ void CallPerfTest::TestMinAudioVideoBitrate(
   RunBaseTest(&test);
 }
 
-TEST_F(CallPerfTest, MinVideoAndAudioBitrate) {
+// TODO(bugs.webrtc.org/8878)
+#if defined(WEBRTC_MAC)
+#define MAYBE_MinVideoAndAudioBitrate \
+  DISABLED_MinVideoAndAudioBitrate
+#else
+#define MAYBE_MinVideoAndAudioBitrate \
+  MinVideoAndAudioBitrate
+#endif
+TEST_F(CallPerfTest, MAYBE_MinVideoAndAudioBitrate) {
   TestMinAudioVideoBitrate(false, 110, 40, -10, 10000, 70000, 200000);
 }
 TEST_F(CallPerfTest, MinVideoAndAudioBitrateWStrategy) {

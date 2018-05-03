@@ -468,8 +468,8 @@ static bool AddStreamParams(
         } else if (!ssrcs.empty()) {
           RTC_LOG(LS_WARNING)
               << "Our FlexFEC implementation only supports protecting "
-              << "a single media streams. This session has multiple "
-              << "media streams however, so no FlexFEC SSRC will be generated.";
+                 "a single media streams. This session has multiple "
+                 "media streams however, so no FlexFEC SSRC will be generated.";
         }
       }
       stream_param.cname = rtcp_cname;
@@ -1375,6 +1375,20 @@ SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
       return nullptr;
     }
   }
+
+  // The following determines how to signal MSIDs to ensure compatibility with
+  // older endpoints (in particular, older Plan B endpoints).
+  if (session_options.is_unified_plan) {
+    // Be conservative and signal using both a=msid and a=ssrc lines. Unified
+    // Plan answerers will look at a=msid and Plan B answerers will look at the
+    // a=ssrc MSID line.
+    offer->set_msid_signaling(cricket::kMsidSignalingMediaSection |
+                              cricket::kMsidSignalingSsrcAttribute);
+  } else {
+    // Plan B always signals MSID using a=ssrc lines.
+    offer->set_msid_signaling(cricket::kMsidSignalingSsrcAttribute);
+  }
+
   return offer.release();
 }
 
@@ -1498,6 +1512,39 @@ SessionDescription* MediaSessionDescriptionFactory::CreateAnswer(
           << "CreateAnswer failed to UpdateCryptoParamsForBundle.";
       return NULL;
     }
+  }
+
+  // The following determines how to signal MSIDs to ensure compatibility with
+  // older endpoints (in particular, older Plan B endpoints).
+  if (session_options.is_unified_plan) {
+    // Unified Plan needs to look at what the offer included to find the most
+    // compatible answer.
+    if (offer->msid_signaling() == 0) {
+      // We end up here in one of three cases:
+      // 1. An empty offer. We'll reply with an empty answer so it doesn't
+      //    matter what we pick here.
+      // 2. A data channel only offer. We won't add any MSIDs to the answer so
+      //    it also doesn't matter what we pick here.
+      // 3. Media that's either sendonly or inactive from the remote endpoint.
+      //    We don't have any information to say whether the endpoint is Plan B
+      //    or Unified Plan, so be conservative and send both.
+      answer->set_msid_signaling(cricket::kMsidSignalingMediaSection |
+                                 cricket::kMsidSignalingSsrcAttribute);
+    } else if (offer->msid_signaling() ==
+               (cricket::kMsidSignalingMediaSection |
+                cricket::kMsidSignalingSsrcAttribute)) {
+      // If both a=msid and a=ssrc MSID signaling methods were used, we're
+      // probably talking to a Unified Plan endpoint so respond with just
+      // a=msid.
+      answer->set_msid_signaling(cricket::kMsidSignalingMediaSection);
+    } else {
+      // Otherwise, it's clear which method the offerer is using so repeat that
+      // back to them.
+      answer->set_msid_signaling(offer->msid_signaling());
+    }
+  } else {
+    // Plan B always signals MSID using a=ssrc lines.
+    answer->set_msid_signaling(cricket::kMsidSignalingSsrcAttribute);
   }
 
   return answer.release();
@@ -2082,10 +2129,12 @@ bool MediaSessionDescriptionFactory::AddAudioContentForAnswer(
                   offer_content->rejected ||
                   !IsMediaProtocolSupported(MEDIA_TYPE_AUDIO,
                                             audio_answer->protocol(), secure);
-  if (!rejected) {
-    AddTransportAnswer(media_description_options.mid, *(audio_transport.get()),
-                       answer);
-  } else {
+  if (!AddTransportAnswer(media_description_options.mid,
+                          *(audio_transport.get()), answer)) {
+    return false;
+  }
+
+  if (rejected) {
     RTC_LOG(LS_INFO) << "Audio m= section '" << media_description_options.mid
                      << "' being rejected in answer.";
   }
@@ -2164,11 +2213,12 @@ bool MediaSessionDescriptionFactory::AddVideoContentForAnswer(
                   offer_content->rejected ||
                   !IsMediaProtocolSupported(MEDIA_TYPE_VIDEO,
                                             video_answer->protocol(), secure);
+  if (!AddTransportAnswer(media_description_options.mid,
+                          *(video_transport.get()), answer)) {
+    return false;
+  }
+
   if (!rejected) {
-    if (!AddTransportAnswer(media_description_options.mid,
-                            *(video_transport.get()), answer)) {
-      return false;
-    }
     video_answer->set_bandwidth(kAutoBandwidth);
   } else {
     RTC_LOG(LS_INFO) << "Video m= section '" << media_description_options.mid
@@ -2228,12 +2278,13 @@ bool MediaSessionDescriptionFactory::AddDataContentForAnswer(
                   offer_content->rejected ||
                   !IsMediaProtocolSupported(MEDIA_TYPE_DATA,
                                             data_answer->protocol(), secure);
+  if (!AddTransportAnswer(media_description_options.mid,
+                          *(data_transport.get()), answer)) {
+    return false;
+  }
+
   if (!rejected) {
     data_answer->set_bandwidth(kDataMaxBandwidth);
-    if (!AddTransportAnswer(media_description_options.mid,
-                            *(data_transport.get()), answer)) {
-      return false;
-    }
   } else {
     // RFC 3264
     // The answer MUST contain the same number of m-lines as the offer.
@@ -2311,8 +2362,8 @@ const ContentInfo* GetFirstDataContent(const ContentInfos& contents) {
   return GetFirstMediaContent(contents, MEDIA_TYPE_DATA);
 }
 
-static const ContentInfo* GetFirstMediaContent(const SessionDescription* sdesc,
-                                               MediaType media_type) {
+const ContentInfo* GetFirstMediaContent(const SessionDescription* sdesc,
+                                        MediaType media_type) {
   if (sdesc == nullptr) {
     return nullptr;
   }
@@ -2382,8 +2433,8 @@ ContentInfo* GetFirstDataContent(ContentInfos* contents) {
   return GetFirstMediaContent(contents, MEDIA_TYPE_DATA);
 }
 
-static ContentInfo* GetFirstMediaContent(SessionDescription* sdesc,
-                                         MediaType media_type) {
+ContentInfo* GetFirstMediaContent(SessionDescription* sdesc,
+                                  MediaType media_type) {
   if (sdesc == nullptr) {
     return nullptr;
   }

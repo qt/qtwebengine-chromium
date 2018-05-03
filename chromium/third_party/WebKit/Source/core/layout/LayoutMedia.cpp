@@ -59,19 +59,21 @@ void LayoutMedia::UpdateLayout() {
 // overlap checking, see LayoutVTTCue.
 #if DCHECK_IS_ON()
   bool seen_text_track_container = false;
-  bool seen_media_remoting_interstitial = false;
+  bool seen_interstitial = false;
 #endif
   for (LayoutObject* child = children_.LastChild(); child;
        child = child->PreviousSibling()) {
 #if DCHECK_IS_ON()
     if (child->GetNode()->IsMediaControls()) {
       DCHECK(!seen_text_track_container);
-      DCHECK(!seen_media_remoting_interstitial);
+      DCHECK(!seen_interstitial);
     } else if (child->GetNode()->IsTextTrackContainer()) {
       seen_text_track_container = true;
-      DCHECK(!seen_media_remoting_interstitial);
-    } else if (child->GetNode()->IsMediaRemotingInterstitial()) {
-      seen_media_remoting_interstitial = true;
+      DCHECK(!seen_interstitial);
+    } else if (child->GetNode()->IsMediaRemotingInterstitial() ||
+               child->GetNode()->IsPictureInPictureInterstitial()) {
+      // Only one interstitial can be shown at a time.
+      seen_interstitial = true;
     } else {
       NOTREACHED();
     }
@@ -122,7 +124,8 @@ bool LayoutMedia::IsChildAllowed(LayoutObject* child,
     return child->IsFlexibleBox();
 
   if (child->GetNode()->IsTextTrackContainer() ||
-      child->GetNode()->IsMediaRemotingInterstitial())
+      child->GetNode()->IsMediaRemotingInterstitial() ||
+      child->GetNode()->IsPictureInPictureInterstitial())
     return true;
 
   return false;
@@ -152,15 +155,15 @@ LayoutUnit LayoutMedia::ComputePanelWidth(const LayoutRect& media_rect) const {
   // TODO(crbug.com/771379): Once we no longer assume that the video is in the
   // main frame for the visibility calculation below, we will only care about
   // the video's frame's scrollbar check below.
-  if (page_view->HorizontalScrollbarMode() != kScrollbarAlwaysOff)
+  if (page_view->EffectiveHorizontalScrollbarMode() != kScrollbarAlwaysOff)
     return media_rect.Width();
 
   // If the video's frame (can be different from main frame if video is in an
   // iframe) can have a scrollbar, we'll never be cut off.
   LocalFrame* media_frame = GetFrame();
   LocalFrameView* media_page_view = media_frame ? media_frame->View() : nullptr;
-  if (media_page_view &&
-      media_page_view->HorizontalScrollbarMode() != kScrollbarAlwaysOff) {
+  if (media_page_view && media_page_view->EffectiveHorizontalScrollbarMode() !=
+                             kScrollbarAlwaysOff) {
     return media_rect.Width();
   }
 

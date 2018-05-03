@@ -34,6 +34,11 @@ class ScriptExecutionCallbackHelper : public WebScriptExecutionCallback {
 
 class VirtualTimeTest : public SimTest {
  protected:
+  void SetUp() override {
+    SimTest::SetUp();
+    WebView().Scheduler()->EnableVirtualTime();
+  }
+
   String ExecuteJavaScript(String script_source) {
     ScriptExecutionCallbackHelper callback_helper;
     WebView()
@@ -133,7 +138,6 @@ TEST_F(VirtualTimeTest, MAYBE_SetInterval) {
 #define MAYBE_AllowVirtualTimeToAdvance AllowVirtualTimeToAdvance
 #endif
 TEST_F(VirtualTimeTest, MAYBE_AllowVirtualTimeToAdvance) {
-  WebView().Scheduler()->EnableVirtualTime();
   WebView().Scheduler()->SetVirtualTimePolicy(
       WebViewScheduler::VirtualTimePolicy::kPause);
 
@@ -225,7 +229,7 @@ TEST_F(VirtualTimeTest, MAYBE_DOMTimersSuspended) {
       "setTimeout(() => { run_order.push(1); }, 1000);"
       "setTimeout(() => { run_order.push(2); }, 1001);");
 
-  scoped_refptr<WebTaskRunner> runner =
+  scoped_refptr<base::SingleThreadTaskRunner> runner =
       Window().GetExecutionContext()->GetTaskRunner(TaskType::kJavascriptTimer);
 
   // Schedule a task to suspend virtual time at the same point in time.

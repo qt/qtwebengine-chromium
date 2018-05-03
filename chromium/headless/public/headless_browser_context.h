@@ -17,7 +17,7 @@
 #include "headless/lib/browser/headless_network_conditions.h"
 #include "headless/public/headless_export.h"
 #include "headless/public/headless_web_contents.h"
-#include "net/proxy/proxy_service.h"
+#include "net/proxy_resolution/proxy_service.h"
 #include "net/url_request/url_request_job_factory.h"
 
 namespace base {
@@ -135,6 +135,9 @@ class HEADLESS_EXPORT HeadlessBrowserContext::Builder {
   Builder& SetWindowSize(const gfx::Size& window_size);
   Builder& SetUserDataDir(const base::FilePath& user_data_dir);
   Builder& SetIncognitoMode(bool incognito_mode);
+  Builder& SetSitePerProcess(bool site_per_process);
+  Builder& SetBlockNewWebContents(bool block_new_web_contents);
+  Builder& SetInitialVirtualTime(base::Time initial_virtual_time);
   Builder& SetAllowCookies(bool incognito_mode);
   Builder& SetOverrideWebPreferencesCallback(
       base::Callback<void(WebPreferences*)> callback);

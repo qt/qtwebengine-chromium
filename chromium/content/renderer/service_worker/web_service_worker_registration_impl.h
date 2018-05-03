@@ -16,8 +16,9 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
-#include "third_party/WebKit/common/service_worker/service_worker_error_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_error_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
 
 namespace base {
@@ -94,14 +95,11 @@ class CONTENT_EXPORT WebServiceWorkerRegistrationImpl
   void AttachForServiceWorkerClient(
       blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info);
 
-  void SetInstalling(const scoped_refptr<WebServiceWorkerImpl>& service_worker);
-  void SetWaiting(const scoped_refptr<WebServiceWorkerImpl>& service_worker);
-  void SetActive(const scoped_refptr<WebServiceWorkerImpl>& service_worker);
-
   // blink::WebServiceWorkerRegistration overrides.
   void SetProxy(blink::WebServiceWorkerRegistrationProxy* proxy) override;
   blink::WebServiceWorkerRegistrationProxy* Proxy() override;
   blink::WebURL Scope() const override;
+  blink::mojom::ServiceWorkerUpdateViaCache UpdateViaCache() const override;
   void Update(
       std::unique_ptr<WebServiceWorkerUpdateCallbacks> callbacks) override;
   void Unregister(std::unique_ptr<WebServiceWorkerUnregistrationCallbacks>
@@ -131,6 +129,13 @@ class CONTENT_EXPORT WebServiceWorkerRegistrationImpl
       blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info,
       base::WeakPtr<ServiceWorkerProviderContext> provider_context);
   ~WebServiceWorkerRegistrationImpl() override;
+
+  void SetInstalling(blink::mojom::ServiceWorkerObjectInfoPtr info);
+  void SetWaiting(blink::mojom::ServiceWorkerObjectInfoPtr info);
+  void SetActive(blink::mojom::ServiceWorkerObjectInfoPtr info);
+  // Refreshes the JavaScript ServiceWorkerRegistration object (|proxy_|) with
+  // the {installing,waiting,active} service worker object infos from |info_|.
+  void RefreshVersionAttributes();
 
   // Implements blink::mojom::ServiceWorkerRegistrationObject.
   void SetVersionAttributes(

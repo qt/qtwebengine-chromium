@@ -6,9 +6,9 @@
 
 #include <limits>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
-#include "base/debug/task_annotator.h"
 #include "base/json/json_writer.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -67,11 +67,13 @@ void TaskTracingInfo::AppendAsTraceFormat(std::string* out) const {
   out->append(tmp);
 }
 
-const char kQueueFunctionName[] = "base::PostTask";
+// These name conveys that a Task is posted to/run by the task scheduler without
+// revealing its implementation details.
+constexpr char kQueueFunctionName[] = "TaskScheduler PostTask";
+constexpr char kRunFunctionName[] = "TaskScheduler RunTask";
 
-// This name conveys that a Task is run by the task scheduler without revealing
-// its implementation details.
-const char kRunFunctionName[] = "TaskSchedulerRunTask";
+constexpr char kTaskSchedulerFlowTracingCategory[] =
+    TRACE_DISABLED_BY_DEFAULT("task_scheduler.flow");
 
 HistogramBase* GetTaskLatencyHistogram(StringPiece histogram_label,
                                        StringPiece task_type_suffix) {
@@ -93,7 +95,8 @@ HistogramBase* GetTaskLatencyHistogram(StringPiece histogram_label,
 
 // Upper bound for the
 // TaskScheduler.BlockShutdownTasksPostedDuringShutdown histogram.
-const HistogramBase::Sample kMaxBlockShutdownTasksPostedDuringShutdown = 1000;
+constexpr HistogramBase::Sample kMaxBlockShutdownTasksPostedDuringShutdown =
+    1000;
 
 void RecordNumBlockShutdownTasksPostedDuringShutdown(
     HistogramBase::Sample value) {
@@ -218,6 +221,9 @@ struct TaskTracker::PreemptedBackgroundSequence {
 
   // An observer to notify when |sequence| can be scheduled.
   CanScheduleSequenceObserver* observer = nullptr;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PreemptedBackgroundSequence);
 };
 
 TaskTracker::TaskTracker(StringPiece histogram_label,
@@ -249,16 +255,35 @@ void TaskTracker::Shutdown() {
   PerformShutdown();
   DCHECK(IsShutdownComplete());
 
-  // Unblock Flush() when shutdown completes.
-  AutoSchedulerLock auto_lock(flush_lock_);
-  flush_cv_->Signal();
+  // Unblock FlushForTesting() and perform the FlushAsyncForTesting callback
+  // when shutdown completes.
+  {
+    AutoSchedulerLock auto_lock(flush_lock_);
+    flush_cv_->Signal();
+  }
+  CallFlushCallbackForTesting();
 }
 
-void TaskTracker::Flush() {
+void TaskTracker::FlushForTesting() {
   AutoSchedulerLock auto_lock(flush_lock_);
   while (subtle::Acquire_Load(&num_incomplete_undelayed_tasks_) != 0 &&
          !IsShutdownComplete()) {
     flush_cv_->Wait();
+  }
+}
+
+void TaskTracker::FlushAsyncForTesting(OnceClosure flush_callback) {
+  DCHECK(flush_callback);
+  {
+    AutoSchedulerLock auto_lock(flush_lock_);
+    DCHECK(!flush_callback_for_testing_)
+        << "Only one FlushAsyncForTesting() may be pending at any time.";
+    flush_callback_for_testing_ = std::move(flush_callback);
+  }
+
+  if (subtle::Acquire_Load(&num_incomplete_undelayed_tasks_) == 0 ||
+      IsShutdownComplete()) {
+    CallFlushCallbackForTesting();
   }
 }
 
@@ -271,8 +296,14 @@ bool TaskTracker::WillPostTask(const Task& task) {
   if (task.delayed_run_time.is_null())
     subtle::NoBarrier_AtomicIncrement(&num_incomplete_undelayed_tasks_, 1);
 
-  debug::TaskAnnotator task_annotator;
-  task_annotator.DidQueueTask(kQueueFunctionName, task);
+  {
+    TRACE_EVENT_WITH_FLOW0(
+        kTaskSchedulerFlowTracingCategory, kQueueFunctionName,
+        TRACE_ID_MANGLE(task_annotator_.GetTaskTraceID(task)),
+        TRACE_EVENT_FLAG_FLOW_OUT);
+  }
+
+  task_annotator_.DidQueueTask(nullptr, task);
 
   return true;
 }
@@ -303,7 +334,7 @@ scoped_refptr<Sequence> TaskTracker::WillScheduleSequence(
   return nullptr;
 }
 
-scoped_refptr<Sequence> TaskTracker::RunNextTask(
+scoped_refptr<Sequence> TaskTracker::RunAndPopNextTask(
     scoped_refptr<Sequence> sequence,
     CanScheduleSequenceObserver* observer) {
   DCHECK(sequence);
@@ -417,7 +448,16 @@ void TaskTracker::RunOrSkipTask(Task task,
                    std::make_unique<TaskTracingInfo>(
                        task.traits, execution_mode, sequence_token));
 
-      debug::TaskAnnotator().RunTask(kQueueFunctionName, &task);
+      {
+        // Put this in its own scope so it preceeds rather than overlaps with
+        // RunTask() in the trace view.
+        TRACE_EVENT_WITH_FLOW0(
+            kTaskSchedulerFlowTracingCategory, kQueueFunctionName,
+            TRACE_ID_MANGLE(task_annotator_.GetTaskTraceID(task)),
+            TRACE_EVENT_FLAG_FLOW_IN);
+      }
+
+      task_annotator_.RunTask(nullptr, &task);
     }
 
     // Make sure the arguments bound to the callback are deleted within the
@@ -459,6 +499,12 @@ void TaskTracker::PerformShutdown() {
     }
   }
 
+  // Remove the cap on the maximum number of background sequences that can be
+  // scheduled concurrently. Done after starting shutdown to ensure that non-
+  // BLOCK_SHUTDOWN sequences don't get a chance to run and that BLOCK_SHUTDOWN
+  // sequences run on threads running with a normal priority.
+  SetMaxNumScheduledBackgroundSequences(std::numeric_limits<int>::max());
+
   // It is safe to access |shutdown_event_| without holding |lock_| because the
   // pointer never changes after being set above.
   {
@@ -479,6 +525,54 @@ void TaskTracker::PerformShutdown() {
           num_block_shutdown_tasks_posted_during_shutdown_);
     }
   }
+}
+
+void TaskTracker::SetMaxNumScheduledBackgroundSequences(
+    int max_num_scheduled_background_sequences) {
+  std::vector<PreemptedBackgroundSequence> sequences_to_schedule;
+
+  {
+    AutoSchedulerLock auto_lock(background_lock_);
+    max_num_scheduled_background_sequences_ =
+        max_num_scheduled_background_sequences;
+
+    while (num_scheduled_background_sequences_ <
+               max_num_scheduled_background_sequences &&
+           !preempted_background_sequences_.empty()) {
+      sequences_to_schedule.push_back(
+          GetPreemptedBackgroundSequenceToScheduleLockRequired());
+    }
+  }
+
+  for (auto& sequence_to_schedule : sequences_to_schedule)
+    SchedulePreemptedBackgroundSequence(std::move(sequence_to_schedule));
+}
+
+TaskTracker::PreemptedBackgroundSequence
+TaskTracker::GetPreemptedBackgroundSequenceToScheduleLockRequired() {
+  background_lock_.AssertAcquired();
+  DCHECK(!preempted_background_sequences_.empty());
+
+  ++num_scheduled_background_sequences_;
+  DCHECK_LE(num_scheduled_background_sequences_,
+            max_num_scheduled_background_sequences_);
+
+  // The const_cast on top is okay since the PreemptedBackgroundSequence is
+  // transactionnaly being popped from |preempted_background_sequences_| right
+  // after and the move doesn't alter the sort order (a requirement for the
+  // Windows STL's consistency debug-checks for std::priority_queue::top()).
+  PreemptedBackgroundSequence popped_sequence =
+      std::move(const_cast<PreemptedBackgroundSequence&>(
+          preempted_background_sequences_.top()));
+  preempted_background_sequences_.pop();
+  return popped_sequence;
+}
+
+void TaskTracker::SchedulePreemptedBackgroundSequence(
+    PreemptedBackgroundSequence sequence_to_schedule) {
+  DCHECK(sequence_to_schedule.observer);
+  sequence_to_schedule.observer->OnCanScheduleSequence(
+      std::move(sequence_to_schedule.sequence));
 }
 
 #if DCHECK_IS_ON()
@@ -611,8 +705,11 @@ void TaskTracker::DecrementNumIncompleteUndelayedTasks() {
       subtle::Barrier_AtomicIncrement(&num_incomplete_undelayed_tasks_, -1);
   DCHECK_GE(new_num_incomplete_undelayed_tasks, 0);
   if (new_num_incomplete_undelayed_tasks == 0) {
-    AutoSchedulerLock auto_lock(flush_lock_);
-    flush_cv_->Signal();
+    {
+      AutoSchedulerLock auto_lock(flush_lock_);
+      flush_cv_->Signal();
+    }
+    CallFlushCallbackForTesting();
   }
 }
 
@@ -623,7 +720,7 @@ scoped_refptr<Sequence> TaskTracker::ManageBackgroundSequencesAfterRunningTask(
       just_ran_sequence
           ? just_ran_sequence->GetSortKey().next_task_sequenced_time()
           : TimeTicks();
-  PreemptedBackgroundSequence background_sequence_to_schedule;
+  PreemptedBackgroundSequence sequence_to_schedule;
 
   {
     AutoSchedulerLock auto_lock(background_lock_);
@@ -645,31 +742,16 @@ scoped_refptr<Sequence> TaskTracker::ManageBackgroundSequencesAfterRunningTask(
           std::move(just_ran_sequence), next_task_sequenced_time, observer);
     }
 
-    DCHECK(preempted_background_sequences_.empty() ||
-           num_scheduled_background_sequences_ ==
-               max_num_scheduled_background_sequences_ - 1);
-
     if (!preempted_background_sequences_.empty()) {
-      // The const_cast on top is okay since the PreemptedBackgroundSequence is
-      // transactionnaly being popped from |preempted_background_sequences_|
-      // right after and the move doesn't alter the sort order (a requirement
-      // for the Windows STL's consistency debug-checks for
-      // std::priority_queue::top()).
-      ++num_scheduled_background_sequences_;
-      background_sequence_to_schedule =
-          std::move(const_cast<PreemptedBackgroundSequence&>(
-              preempted_background_sequences_.top()));
-      preempted_background_sequences_.pop();
+      sequence_to_schedule =
+          GetPreemptedBackgroundSequenceToScheduleLockRequired();
     }
   }
 
-  // |background_sequence_to_schedule.sequence| may be null if there was no
-  // preempted background sequence.
-  if (background_sequence_to_schedule.sequence) {
-    DCHECK(background_sequence_to_schedule.observer);
-    background_sequence_to_schedule.observer->OnCanScheduleSequence(
-        std::move(background_sequence_to_schedule.sequence));
-  }
+  // |sequence_to_schedule.sequence| may be null if there was no preempted
+  // background sequence.
+  if (sequence_to_schedule.sequence)
+    SchedulePreemptedBackgroundSequence(std::move(sequence_to_schedule));
 
   return nullptr;
 }
@@ -682,6 +764,16 @@ void TaskTracker::RecordTaskLatencyHistogram(const Task& task) {
                                ? 1
                                : 0]
                               ->Add(task_latency.InMicroseconds());
+}
+
+void TaskTracker::CallFlushCallbackForTesting() {
+  OnceClosure flush_callback;
+  {
+    AutoSchedulerLock auto_lock(flush_lock_);
+    flush_callback = std::move(flush_callback_for_testing_);
+  }
+  if (flush_callback)
+    std::move(flush_callback).Run();
 }
 
 }  // namespace internal

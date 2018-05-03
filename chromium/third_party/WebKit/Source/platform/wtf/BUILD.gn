@@ -267,7 +267,6 @@ jumbo_component("wtf") {
 
   public_deps = [
     "//base",
-    "//sandbox",
     "//third_party/icu",
   ]
 
@@ -311,10 +310,8 @@ jumbo_component("wtf") {
     ]
   }
 
-  if (remove_webcore_debug_symbols) {
-    configs -= [ "//build/config/compiler:default_symbols" ]
-    configs += remove_webcore_symbols_config
-  }
+  configs -= [ "//build/config/compiler:default_symbols" ]
+  configs += blink_symbols_config
 }
 
 test("wtf_unittests") {
@@ -344,7 +341,6 @@ jumbo_source_set("wtf_unittests_sources") {
     "ScopedLoggerTest.cpp",
     "StringExtrasTest.cpp",
     "StringHasherTest.cpp",
-    "TimeTest.cpp",
     "TreeNodeTest.cpp",
     "TypeTraitsTest.cpp",
     "VectorTest.cpp",

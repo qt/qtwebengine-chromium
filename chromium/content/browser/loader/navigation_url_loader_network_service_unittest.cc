@@ -12,8 +12,6 @@
 #include "content/common/navigation_params.h"
 #include "content/common/navigation_params.mojom.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
-#include "content/network/network_context.h"
-#include "content/network/url_loader.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_ui_data.h"
@@ -27,26 +25,49 @@
 #include "net/base/load_flags.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_builder.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/resource_scheduler_client.h"
+#include "services/network/url_loader.h"
+#include "services/network/url_request_context_owner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/mojom/page/page_visibility_state.mojom.h"
 
 namespace content {
 
 namespace {
+
 class TestURLLoaderRequestHandler : public URLLoaderRequestHandler {
  public:
   explicit TestURLLoaderRequestHandler(
       base::Optional<network::ResourceRequest>* most_recent_resource_request)
       : most_recent_resource_request_(most_recent_resource_request),
-        context_(NetworkContext::CreateForTesting()) {}
-  ~TestURLLoaderRequestHandler() override {}
+        resource_scheduler_(false) {
+    net::URLRequestContextBuilder context_builder;
+    context_builder.set_proxy_resolution_service(
+        net::ProxyResolutionService::CreateDirect());
+    context_ =
+        new network::NetworkURLRequestContextGetter(context_builder.Build());
+    constexpr int child_id = 4;
+    constexpr int route_id = 8;
+    resource_scheduler_client_ =
+        base::MakeRefCounted<network::ResourceSchedulerClient>(
+            child_id, route_id, &resource_scheduler_,
+            context_->GetURLRequestContext()->network_quality_estimator());
+  }
+
+  ~TestURLLoaderRequestHandler() override {
+    resource_scheduler_client_ = nullptr;
+    context_->NotifyContextShuttingDown();
+  }
 
   void MaybeCreateLoader(const network::ResourceRequest& resource_request,
                          ResourceContext* resource_context,
                          LoaderCallback callback) override {
     std::move(callback).Run(
-        base::Bind(&TestURLLoaderRequestHandler::StartLoader,
-                   base::Unretained(this), resource_request));
+        base::BindOnce(&TestURLLoaderRequestHandler::StartLoader,
+                       base::Unretained(this), resource_request));
   }
 
   void StartLoader(network::ResourceRequest resource_request,
@@ -54,23 +75,27 @@ class TestURLLoaderRequestHandler : public URLLoaderRequestHandler {
                    network::mojom::URLLoaderClientPtr client) {
     *most_recent_resource_request_ = resource_request;
     // The URLLoader will delete itself upon completion.
-    new URLLoader(context_.get(), std::move(request), 0 /* options */,
-                  resource_request, false /* report_raw_headers */,
-                  std::move(client), TRAFFIC_ANNOTATION_FOR_TESTS,
-                  0 /* process_id */);
+    new network::URLLoader(context_, nullptr, std::move(request),
+                           0 /* options */, resource_request,
+                           false /* report_raw_headers */, std::move(client),
+                           TRAFFIC_ANNOTATION_FOR_TESTS, 0 /* process_id */,
+                           resource_scheduler_client_, nullptr);
   }
 
   bool MaybeCreateLoaderForResponse(
       const network::ResourceResponseHead& response,
       network::mojom::URLLoaderPtr* loader,
-      network::mojom::URLLoaderClientRequest* client_request) override {
+      network::mojom::URLLoaderClientRequest* client_request,
+      ThrottlingURLLoader* url_loader) override {
     return false;
   }
 
  private:
   base::Optional<network::ResourceRequest>*
       most_recent_resource_request_;  // NOT OWNED.
-  std::unique_ptr<NetworkContext> context_;
+  network::ResourceScheduler resource_scheduler_;
+  scoped_refptr<network::NetworkURLRequestContextGetter> context_;
+  scoped_refptr<network::ResourceSchedulerClient> resource_scheduler_client_;
 };
 
 }  // namespace
@@ -79,7 +104,7 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
  public:
   NavigationURLLoaderNetworkServiceTest()
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {
-    feature_list_.InitAndEnableFeature(features::kNetworkService);
+    feature_list_.InitAndEnableFeature(network::features::kNetworkService);
 
     // Because the network service is enabled we need a ServiceManagerConnection
     // or BrowserContext::GetDefaultStoragePartition will segfault when
@@ -105,7 +130,8 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
       const std::string& headers,
       const std::string& method,
       NavigationURLLoaderDelegate* delegate,
-      bool allow_download = false) {
+      bool allow_download = false,
+      bool is_main_frame = true) {
     mojom::BeginNavigationParamsPtr begin_params =
         mojom::BeginNavigationParams::New(
             headers, net::LOAD_NORMAL, false /* skip_service_worker */,
@@ -114,7 +140,7 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
             false /* is_form_submission */, GURL() /* searchable_form_url */,
             std::string() /* searchable_form_encoding */,
             url::Origin::Create(url), GURL() /* client_side_redirect_url */,
-            base::nullopt /* suggested_filename */);
+            nullptr /* devtools_initiator_info */);
 
     CommonNavigationParams common_params;
     common_params.url = url;
@@ -123,11 +149,10 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
 
     std::unique_ptr<NavigationRequestInfo> request_info(
         new NavigationRequestInfo(
-            common_params, std::move(begin_params), url,
-            true /* is_main_frame */, false /* parent_is_main_frame */,
-            false /* are_ancestors_secure */, -1 /* frame_tree_node_id */,
-            false /* is_for_guests_only */, false /* report_raw_headers */,
-            false /* is_prerenering */));
+            common_params, std::move(begin_params), url, is_main_frame,
+            false /* parent_is_main_frame */, false /* are_ancestors_secure */,
+            -1 /* frame_tree_node_id */, false /* is_for_guests_only */,
+            false /* report_raw_headers */, false /* is_prerenering */));
     std::vector<std::unique_ptr<URLLoaderRequestHandler>> handlers;
     most_recent_resource_request_ = base::nullopt;
     handlers.push_back(std::make_unique<TestURLLoaderRequestHandler>(
@@ -188,6 +213,25 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
     }
   }
 
+  net::RequestPriority NavigateAndReturnRequestPriority(const GURL& url,
+                                                        bool is_main_frame) {
+    TestNavigationURLLoaderDelegate delegate;
+    base::test::ScopedFeatureList scoped_feature_list_;
+
+    scoped_feature_list_.InitAndEnableFeature(features::kLowPriorityIframes);
+
+    std::unique_ptr<NavigationURLLoader> loader = CreateTestLoader(
+        url,
+        base::StringPrintf("%s: %s", net::HttpRequestHeaders::kOrigin,
+                           url.GetOrigin().spec().c_str()),
+        "GET", &delegate, false /* allow_download */, is_main_frame);
+    delegate.WaitForRequestRedirected();
+    loader->FollowRedirect();
+    delegate.WaitForResponseStarted();
+
+    return most_recent_resource_request_.value().priority;
+  }
+
  protected:
   base::test::ScopedFeatureList feature_list_;
   TestBrowserThreadBundle thread_bundle_;
@@ -195,6 +239,16 @@ class NavigationURLLoaderNetworkServiceTest : public testing::Test {
   net::EmbeddedTestServer http_test_server_;
   base::Optional<network::ResourceRequest> most_recent_resource_request_;
 };
+
+TEST_F(NavigationURLLoaderNetworkServiceTest, RequestPriority) {
+  ASSERT_TRUE(http_test_server_.Start());
+  const GURL url = http_test_server_.GetURL("/redirect301-to-echo");
+
+  EXPECT_EQ(net::HIGHEST,
+            NavigateAndReturnRequestPriority(url, true /* is_main_frame */));
+  EXPECT_EQ(net::LOWEST,
+            NavigateAndReturnRequestPriority(url, false /* is_main_frame */));
+}
 
 TEST_F(NavigationURLLoaderNetworkServiceTest, Redirect301Tests) {
   ASSERT_TRUE(http_test_server_.Start());

@@ -33,6 +33,7 @@
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/probe/CoreProbes.h"
+#include "platform/wtf/Time.h"
 
 namespace blink {
 
@@ -135,13 +136,14 @@ void ScriptedAnimationController::ExecuteCallbacks(double monotonic_time_now) {
   if (!document_)
     return;
 
+  TimeTicks time = TimeTicksFromSeconds(monotonic_time_now);
   double high_res_now_ms =
       1000.0 *
       document_->Loader()->GetTiming().MonotonicTimeToZeroBasedDocumentTime(
-          monotonic_time_now);
+          time);
   double legacy_high_res_now_ms =
-      1000.0 * document_->Loader()->GetTiming().MonotonicTimeToPseudoWallTime(
-                   monotonic_time_now);
+      1000.0 *
+      document_->Loader()->GetTiming().MonotonicTimeToPseudoWallTime(time);
   callback_collection_.ExecuteCallbacks(high_res_now_ms,
                                         legacy_high_res_now_ms);
 }
@@ -165,6 +167,7 @@ bool ScriptedAnimationController::HasScheduledItems() const {
 
 void ScriptedAnimationController::ServiceScriptedAnimations(
     double monotonic_time_now) {
+  current_frame_had_raf_ = HasCallback();
   if (!HasScheduledItems())
     return;
 
@@ -172,6 +175,7 @@ void ScriptedAnimationController::ServiceScriptedAnimations(
   DispatchEvents();
   RunTasks();
   ExecuteCallbacks(monotonic_time_now);
+  next_frame_has_pending_raf_ = HasCallback();
 
   ScheduleAnimationIfNeeded();
 }

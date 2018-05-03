@@ -49,8 +49,7 @@ void LinearEchoPower(const FftData& E,
 // Class for removing the echo from the capture signal.
 class EchoRemoverImpl final : public EchoRemover {
  public:
-  explicit EchoRemoverImpl(const EchoCanceller3Config& config,
-                           int sample_rate_hz);
+  EchoRemoverImpl(const EchoCanceller3Config& config, int sample_rate_hz);
   ~EchoRemoverImpl() override;
 
   void GetMetrics(EchoControl::Metrics* metrics) const override;
@@ -60,8 +59,14 @@ class EchoRemoverImpl final : public EchoRemover {
   // signal.
   void ProcessCapture(const EchoPathVariability& echo_path_variability,
                       bool capture_signal_saturation,
+                      const rtc::Optional<DelayEstimate>& external_delay,
                       RenderBuffer* render_buffer,
                       std::vector<std::vector<float>>* capture) override;
+
+  // Returns the internal delay estimate in blocks.
+  rtc::Optional<int> Delay() const override {
+    return aec_state_.InternalDelay();
+  }
 
   // Updates the status on whether echo leakage is detected in the output of the
   // echo remover.
@@ -105,6 +110,7 @@ EchoRemoverImpl::EchoRemoverImpl(const EchoCanceller3Config& config,
       suppression_gain_(config_, optimization_),
       cng_(optimization_),
       suppression_filter_(sample_rate_hz_),
+      render_signal_analyzer_(config_),
       residual_echo_estimator_(config_),
       aec_state_(config_) {
   RTC_DCHECK(ValidFullBandRate(sample_rate_hz));
@@ -122,6 +128,7 @@ void EchoRemoverImpl::GetMetrics(EchoControl::Metrics* metrics) const {
 void EchoRemoverImpl::ProcessCapture(
     const EchoPathVariability& echo_path_variability,
     bool capture_signal_saturation,
+    const rtc::Optional<DelayEstimate>& external_delay,
     RenderBuffer* render_buffer,
     std::vector<std::vector<float>>* capture) {
   const std::vector<std::vector<float>>& x = render_buffer->Block(0);
@@ -147,6 +154,7 @@ void EchoRemoverImpl::ProcessCapture(
   if (echo_path_variability.AudioPathChanged()) {
     subtractor_.HandleEchoPathChange(echo_path_variability);
     aec_state_.HandleEchoPathChange(echo_path_variability);
+    suppression_gain_.SetInitialState(true);
     initial_state_ = true;
   }
 
@@ -165,34 +173,41 @@ void EchoRemoverImpl::ProcessCapture(
   auto& e_main = subtractor_output.e_main;
 
   // Analyze the render signal.
-  render_signal_analyzer_.Update(*render_buffer, aec_state_.FilterDelay());
+  render_signal_analyzer_.Update(*render_buffer,
+                                 aec_state_.FilterDelayBlocks());
 
   // Perform linear echo cancellation.
   if (initial_state_ && !aec_state_.InitialState()) {
     subtractor_.ExitInitialState();
+    suppression_gain_.SetInitialState(false);
     initial_state_ = false;
   }
+
+  // If the delay is known, use the echo subtractor.
   subtractor_.Process(*render_buffer, y0, render_signal_analyzer_, aec_state_,
                       &subtractor_output);
 
   // Compute spectra.
-  // fft_.ZeroPaddedFft(y0, Aec3Fft::Window::kHanning, &Y);
   fft_.ZeroPaddedFft(y0, Aec3Fft::Window::kRectangular, &Y);
   LinearEchoPower(E_main_nonwindowed, Y, &S2_linear);
   Y.Spectrum(optimization_, Y2);
 
   // Update the AEC state information.
-  aec_state_.Update(subtractor_.FilterFrequencyResponse(),
+  aec_state_.Update(external_delay, subtractor_.FilterFrequencyResponse(),
                     subtractor_.FilterImpulseResponse(),
-                    subtractor_.ConvergedFilter(), *render_buffer, E2_main, Y2,
-                    subtractor_output.s_main, echo_leakage_detected_);
+                    subtractor_.ConvergedFilter(), subtractor_.DivergedFilter(),
+                    *render_buffer, E2_main, Y2, subtractor_output.s_main);
 
   // Choose the linear output.
-  output_selector_.FormLinearOutput(!aec_state_.TransparentMode(), e_main, y0);
+  data_dumper_->DumpWav("aec3_output_linear2", kBlockSize, &e_main[0],
+                        LowestBandRate(sample_rate_hz_), 1);
+  output_selector_.FormLinearOutput(aec_state_.UseLinearFilterOutput(), e_main,
+                                    y0);
+
   data_dumper_->DumpWav("aec3_output_linear", kBlockSize, &y0[0],
                         LowestBandRate(sample_rate_hz_), 1);
   data_dumper_->DumpRaw("aec3_output_linear", y0);
-  const auto& E2 = output_selector_.UseSubtractorOutput() ? E2_main : Y2;
+  const auto& E2 = aec_state_.UseLinearFilterOutput() ? E2_main : Y2;
 
   // Estimate the residual echo power.
   residual_echo_estimator_.Estimate(aec_state_, *render_buffer, S2_linear, Y2,
@@ -211,9 +226,6 @@ void EchoRemoverImpl::ProcessCapture(
   // Update the metrics.
   metrics_.Update(aec_state_, cng_.NoiseSpectrum(), G);
 
-  // Update the aec state with the aec output characteristics.
-  aec_state_.UpdateWithOutput(y0);
-
   // Debug outputs for the purpose of development and analysis.
   data_dumper_->DumpWav("aec3_echo_estimate", kBlockSize,
                         &subtractor_output.s_main[0],
@@ -227,7 +239,7 @@ void EchoRemoverImpl::ProcessCapture(
                         rtc::ArrayView<const float>(&y0[0], kBlockSize),
                         LowestBandRate(sample_rate_hz_), 1);
   data_dumper_->DumpRaw("aec3_using_subtractor_output",
-                        output_selector_.UseSubtractorOutput() ? 1 : 0);
+                        aec_state_.UseLinearFilterOutput() ? 1 : 0);
   data_dumper_->DumpRaw("aec3_E2", E2);
   data_dumper_->DumpRaw("aec3_E2_main", E2_main);
   data_dumper_->DumpRaw("aec3_E2_shadow", E2_shadow);
@@ -237,9 +249,7 @@ void EchoRemoverImpl::ProcessCapture(
   data_dumper_->DumpRaw("aec3_R2", R2);
   data_dumper_->DumpRaw("aec3_erle", aec_state_.Erle());
   data_dumper_->DumpRaw("aec3_erl", aec_state_.Erl());
-  data_dumper_->DumpRaw("aec3_usable_linear_estimate",
-                        aec_state_.UsableLinearEstimate());
-  data_dumper_->DumpRaw("aec3_filter_delay", aec_state_.FilterDelay());
+  data_dumper_->DumpRaw("aec3_filter_delay", aec_state_.FilterDelayBlocks());
   data_dumper_->DumpRaw("aec3_capture_saturation",
                         aec_state_.SaturatedCapture() ? 1 : 0);
 }

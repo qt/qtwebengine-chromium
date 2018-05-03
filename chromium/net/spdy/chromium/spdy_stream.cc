@@ -87,7 +87,8 @@ SpdyStream::SpdyStream(SpdyStreamType type,
                        RequestPriority priority,
                        int32_t initial_send_window_size,
                        int32_t max_recv_window_size,
-                       const NetLogWithSource& net_log)
+                       const NetLogWithSource& net_log,
+                       const NetworkTrafficAnnotationTag& traffic_annotation)
     : type_(type),
       stream_id_(0),
       url_(url),
@@ -111,6 +112,7 @@ SpdyStream::SpdyStream(SpdyStreamType type,
       send_bytes_(0),
       recv_bytes_(0),
       write_handler_guard_(false),
+      traffic_annotation_(traffic_annotation),
       weak_ptr_factory_(this) {
   CHECK(type_ == SPDY_BIDIRECTIONAL_STREAM ||
         type_ == SPDY_REQUEST_RESPONSE_STREAM ||
@@ -461,7 +463,8 @@ bool SpdyStream::ShouldRetryRSTPushStream() {
   return (response_headers_.empty() && type_ == SPDY_PUSH_STREAM && delegate_);
 }
 
-void SpdyStream::OnPushPromiseHeadersReceived(SpdyHeaderBlock headers) {
+void SpdyStream::OnPushPromiseHeadersReceived(SpdyHeaderBlock headers,
+                                              GURL url) {
   CHECK(!request_headers_valid_);
   CHECK_EQ(io_state_, STATE_IDLE);
   CHECK_EQ(type_, SPDY_PUSH_STREAM);
@@ -470,7 +473,7 @@ void SpdyStream::OnPushPromiseHeadersReceived(SpdyHeaderBlock headers) {
   io_state_ = STATE_RESERVED_REMOTE;
   request_headers_ = std::move(headers);
   request_headers_valid_ = true;
-  url_from_header_block_ = GetUrlFromHeaderBlock(request_headers_);
+  url_from_header_block_ = std::move(url);
 }
 
 void SpdyStream::OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) {
@@ -487,6 +490,13 @@ void SpdyStream::OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) {
     const SpdyString error("DATA received after trailers.");
     LogStreamError(ERR_SPDY_PROTOCOL_ERROR, error);
     session_->ResetStream(stream_id_, ERROR_CODE_PROTOCOL_ERROR, error);
+    return;
+  }
+
+  if (io_state_ == STATE_HALF_CLOSED_REMOTE) {
+    const SpdyString error("DATA received on half-closed (remove) stream.");
+    LogStreamError(ERR_SPDY_PROTOCOL_ERROR, error);
+    session_->ResetStream(stream_id_, ERROR_CODE_STREAM_CLOSED, error);
     return;
   }
 

@@ -77,7 +77,6 @@ class SPDY_EXPORT_PRIVATE Http2DecoderAdapter
   static const char* SpdyFramerErrorToString(SpdyFramerError spdy_framer_error);
 
   Http2DecoderAdapter();
-  explicit Http2DecoderAdapter(bool h2_on_stream_pad_length);
   ~Http2DecoderAdapter() override;
 
   // Set callbacks to be called from the framer.  A visitor must be set, or
@@ -315,9 +314,6 @@ class SPDY_EXPORT_PRIVATE Http2DecoderAdapter
   bool handling_extension_payload_ = false;
 
   bool process_single_input_frame_ = false;
-
-  // Flag value latched at construction.
-  const bool h2_on_stream_pad_length_ : 1;
 };
 
 // Http2DecoderAdapter will use the given visitor implementing this
@@ -400,7 +396,7 @@ class SPDY_EXPORT_PRIVATE SpdyFramerVisitorInterface {
 
   // Called when a complete setting within a SETTINGS frame has been parsed and
   // validated.
-  virtual void OnSetting(SpdySettingsIds id, uint32_t value) = 0;
+  virtual void OnSetting(SpdyKnownSettingsId id, uint32_t value) = 0;
 
   // Called when a SETTINGS frame is received with the ACK flag set.
   virtual void OnSettingsAck() {}
@@ -490,7 +486,7 @@ class SPDY_EXPORT_PRIVATE ExtensionVisitorInterface {
   virtual ~ExtensionVisitorInterface() {}
 
   // Called when non-standard SETTINGS are received.
-  virtual void OnSetting(uint16_t id, uint32_t value) = 0;
+  virtual void OnSetting(SpdySettingsId id, uint32_t value) = 0;
 
   // Called when non-standard frames are received.
   virtual bool OnFrameHeader(SpdyStreamId stream_id,

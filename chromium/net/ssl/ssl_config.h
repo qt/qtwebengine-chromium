@@ -36,8 +36,6 @@ enum TokenBindingParam {
 };
 
 enum TLS13Variant {
-  kTLS13VariantExperiment2,
-  kTLS13VariantDraft22,
   kTLS13VariantDraft23,
 };
 
@@ -86,12 +84,6 @@ struct NET_EXPORT SSLConfig {
   // sha1_local_anchors_enabled is true if SHA-1 signed certificates issued by a
   // local (non-public) trust anchor should be allowed.
   bool sha1_local_anchors_enabled;
-
-  // common_name_fallback_local_anchors_enabled is true if certificates which
-  // only have a commonName in the Subject (i.e. lacking a subjectAltName)
-  // should be checked if the name matches. Only those issued by a local
-  // (non-public) trust anchor will be allowed to match.
-  bool common_name_fallback_local_anchors_enabled;
 
   // symantec_enforcement_disabled is true if the policies outlined in
   // https://security.googleblog.com/2017/09/chromes-plan-to-distrust-symantec.html

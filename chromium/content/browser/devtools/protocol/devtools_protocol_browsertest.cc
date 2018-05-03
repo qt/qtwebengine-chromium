@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 
+#include <memory>
 #include <utility>
 
 #include "base/base64.h"
@@ -13,7 +14,6 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -21,11 +21,11 @@
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/download/public/common/download_task_runner.h"
 #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
 #include "content/browser/download/download_file_factory.h"
 #include "content/browser/download/download_file_impl.h"
 #include "content/browser/download/download_manager_impl.h"
-#include "content/browser/download/download_task_runner.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -139,7 +139,7 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
 
   // JavaScriptDialogManager
   void RunJavaScriptDialog(WebContents* web_contents,
-                           const GURL& alerting_frame_url,
+                           RenderFrameHost* render_frame_host,
                            JavaScriptDialogType dialog_type,
                            const base::string16& message_text,
                            const base::string16& default_prompt_text,
@@ -848,7 +848,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, CaptureScreenshot) {
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SkColorSetRGB(0x12, 0x34, 0x56));
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, false);
@@ -871,7 +871,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, CaptureScreenshotJpeg) {
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SkColorSetRGB(0x12, 0x34, 0x56));
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_JPEG, false);
@@ -932,7 +932,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest,
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SkColorSetRGB(0x00, 0x00, 0xff));
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
@@ -945,11 +945,10 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest,
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
 }
 
-// Verifies that setDefaultBackgroundColor and captureScreenshot support a
-// transparent background, and that setDeviceMetricsOverride doesn't affect it.
-
-// Temporarily disabled while protocol methods are being refactored.
-IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, DISABLED_TransparentScreenshots) {
+// Verifies that setDefaultBackgroundColor and captureScreenshot support a fully
+// and semi-transparent background, and that setDeviceMetricsOverride doesn't
+// affect it.
+IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, TransparentScreenshots) {
   if (base::SysInfo::IsLowEndDevice())
     return;
 
@@ -958,13 +957,13 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, DISABLED_TransparentScreenshots) {
   WaitForLoadStop(shell()->web_contents());
   Attach();
 
-  // Override background to transparent.
-  std::unique_ptr<base::DictionaryValue> color(new base::DictionaryValue());
+  // Override background to fully transparent.
+  auto color = std::make_unique<base::DictionaryValue>();
   color->SetInteger("r", 0);
   color->SetInteger("g", 0);
   color->SetInteger("b", 0);
   color->SetDouble("a", 0);
-  std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
+  auto params = std::make_unique<base::DictionaryValue>();
   params->Set("color", std::move(color));
   SendCommand("Emulation.setDefaultBackgroundColorOverride", std::move(params));
 
@@ -974,13 +973,14 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, DISABLED_TransparentScreenshots) {
   // integer precision.
   gfx::Size view_size = static_cast<RenderWidgetHostViewBase*>(
                             shell()->web_contents()->GetRenderWidgetHostView())
-                            ->GetPhysicalBackingSize();
+                            ->GetCompositorViewportPixelSize();
   expected_bitmap.allocN32Pixels(view_size.width(), view_size.height());
   expected_bitmap.eraseColor(SK_ColorTRANSPARENT);
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
 
+#if !defined(OS_ANDROID)
   // Check that device emulation does not affect the transparency.
-  params.reset(new base::DictionaryValue());
+  params = std::make_unique<base::DictionaryValue>();
   params->SetInteger("width", view_size.width());
   params->SetInteger("height", view_size.height());
   params->SetDouble("deviceScaleFactor", 0);
@@ -988,6 +988,34 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, DISABLED_TransparentScreenshots) {
   params->SetBoolean("fitWindow", false);
   SendCommand("Emulation.setDeviceMetricsOverride", std::move(params));
   CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
+  SendCommand("Emulation.clearDeviceMetricsOverride", nullptr);
+#endif  // !defined(OS_ANDROID)
+
+  // Override background to a semi-transparent color.
+  color = std::make_unique<base::DictionaryValue>();
+  color->SetInteger("r", 255);
+  color->SetInteger("g", 0);
+  color->SetInteger("b", 0);
+  color->SetDouble("a", 1.0 / 255 * 16);
+  params = std::make_unique<base::DictionaryValue>();
+  params->Set("color", std::move(color));
+  SendCommand("Emulation.setDefaultBackgroundColorOverride", std::move(params));
+
+  expected_bitmap.eraseColor(SkColorSetARGB(16, 255, 0, 0));
+  CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
+
+#if !defined(OS_ANDROID)
+  // Check that device emulation does not affect the transparency.
+  params = std::make_unique<base::DictionaryValue>();
+  params->SetInteger("width", view_size.width());
+  params->SetInteger("height", view_size.height());
+  params->SetDouble("deviceScaleFactor", 0);
+  params->SetBoolean("mobile", false);
+  params->SetBoolean("fitWindow", false);
+  SendCommand("Emulation.setDeviceMetricsOverride", std::move(params));
+  CaptureScreenshotAndCompareTo(expected_bitmap, ENCODING_PNG, true);
+  SendCommand("Emulation.clearDeviceMetricsOverride", nullptr);
+#endif  // !defined(OS_ANDROID)
 }
 
 #if defined(OS_ANDROID)
@@ -1165,6 +1193,40 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CrossSiteCrash) {
   NavigateToURLBlockUntilNavigationsComplete(shell(), test_url2, 1);
 
   // Should not crash at this point.
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, InspectorTargetCrashedNavigate) {
+  set_agent_host_can_close();
+  GURL url = GURL("data:text/html,<body></body>");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), url, 1);
+  Attach();
+  SendCommand("Inspector.enable", nullptr);
+
+  shell()->LoadURL(GURL(content::kChromeUICrashURL));
+  WaitForNotification("Inspector.targetCrashed");
+  ClearNotifications();
+  shell()->LoadURL(url);
+  WaitForNotification("Inspector.targetReloadedAfterCrash", true);
+}
+
+#if defined(OS_ANDROID)
+#define MAYBE_InspectorTargetCrashedReload DISABLED_InspectorTargetCrashedReload
+#else
+#define MAYBE_InspectorTargetCrashedReload InspectorTargetCrashedReload
+#endif
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
+                       MAYBE_InspectorTargetCrashedReload) {
+  set_agent_host_can_close();
+  GURL url = GURL("data:text/html,<body></body>");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), url, 1);
+  Attach();
+  SendCommand("Inspector.enable", nullptr);
+
+  shell()->LoadURL(GURL(content::kChromeUICrashURL));
+  WaitForNotification("Inspector.targetCrashed");
+  ClearNotifications();
+  SendCommand("Page.reload", nullptr, false);
+  WaitForNotification("Inspector.targetReloadedAfterCrash", true);
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ReconnectPreservesState) {
@@ -2057,73 +2119,6 @@ class SitePerProcessDevToolsProtocolTest : public DevToolsProtocolTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsProtocolTest, TargetNoDiscovery) {
-  std::string temp;
-  std::string target_id;
-  std::unique_ptr<base::DictionaryValue> command_params;
-  std::unique_ptr<base::DictionaryValue> params;
-
-  GURL main_url(embedded_test_server()->GetURL("/site_per_process_main.html"));
-  NavigateToURLBlockUntilNavigationsComplete(shell(), main_url, 1);
-  // It is safe to obtain the root frame tree node here, as it doesn't change.
-  FrameTreeNode* root =
-      static_cast<WebContentsImpl*>(shell()->web_contents())->
-          GetFrameTree()->root();
-
-  // Load cross-site page into iframe.
-  GURL::Replacements replace_host;
-  GURL cross_site_url(embedded_test_server()->GetURL("/title1.html"));
-  replace_host.SetHostStr("foo.com");
-  cross_site_url = cross_site_url.ReplaceComponents(replace_host);
-  NavigateFrameToURL(root->child_at(0), cross_site_url);
-
-  // Enable auto-attach.
-  Attach();
-  command_params.reset(new base::DictionaryValue());
-  command_params->SetBoolean("autoAttach", true);
-  command_params->SetBoolean("waitForDebuggerOnStart", false);
-  SendCommand("Target.setAutoAttach", std::move(command_params), true);
-  EXPECT_TRUE(notifications_.empty());
-  command_params.reset(new base::DictionaryValue());
-  command_params->SetBoolean("value", true);
-  SendCommand("Target.setAttachToFrames", std::move(command_params), false);
-  params = WaitForNotification("Target.attachedToTarget", true);
-  std::string session_id;
-  EXPECT_TRUE(params->GetString("sessionId", &session_id));
-  EXPECT_TRUE(params->GetString("targetInfo.targetId", &target_id));
-  EXPECT_TRUE(params->GetString("targetInfo.type", &temp));
-  EXPECT_EQ("iframe", temp);
-
-  // Load same-site page into iframe.
-  FrameTreeNode* child = root->child_at(0);
-  GURL http_url(embedded_test_server()->GetURL("/title1.html"));
-  NavigateFrameToURL(child, http_url);
-  params = WaitForNotification("Target.detachedFromTarget", true);
-  EXPECT_TRUE(params->GetString("targetId", &temp));
-  EXPECT_EQ(target_id, temp);
-  EXPECT_TRUE(params->GetString("sessionId", &temp));
-  EXPECT_EQ(session_id, temp);
-
-  // Navigate back to cross-site iframe.
-  NavigateFrameToURL(root->child_at(0), cross_site_url);
-  params = WaitForNotification("Target.attachedToTarget", true);
-  EXPECT_TRUE(params->GetString("sessionId", &session_id));
-  EXPECT_TRUE(params->GetString("targetInfo.targetId", &target_id));
-  EXPECT_TRUE(params->GetString("targetInfo.type", &temp));
-  EXPECT_EQ("iframe", temp);
-
-  // Disable auto-attach.
-  command_params.reset(new base::DictionaryValue());
-  command_params->SetBoolean("autoAttach", false);
-  command_params->SetBoolean("waitForDebuggerOnStart", false);
-  SendCommand("Target.setAutoAttach", std::move(command_params), false);
-  params = WaitForNotification("Target.detachedFromTarget", true);
-  EXPECT_TRUE(params->GetString("targetId", &temp));
-  EXPECT_EQ(target_id, temp);
-  EXPECT_TRUE(params->GetString("sessionId", &temp));
-  EXPECT_EQ(session_id, temp);
-}
-
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, SetAndGetCookies) {
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL test_url = embedded_test_server()->GetURL("/title1.html");
@@ -2194,7 +2189,7 @@ class DevToolsProtocolDeviceEmulationTest : public DevToolsProtocolTest {
   ~DevToolsProtocolDeviceEmulationTest() override {}
 
   void EmulateDeviceSize(gfx::Size size) {
-    auto params = base::MakeUnique<base::DictionaryValue>();
+    auto params = std::make_unique<base::DictionaryValue>();
     params->SetInteger("width", size.width());
     params->SetInteger("height", size.height());
     params->SetDouble("deviceScaleFactor", 0);
@@ -2392,7 +2387,7 @@ static void RemoveShellDelegate(Shell* shell) {
 
 class CountingDownloadFile : public DownloadFileImpl {
  public:
-  CountingDownloadFile(std::unique_ptr<DownloadSaveInfo> save_info,
+  CountingDownloadFile(std::unique_ptr<download::DownloadSaveInfo> save_info,
                        const base::FilePath& default_downloads_directory,
                        std::unique_ptr<DownloadManager::InputStream> stream,
                        uint32_t download_id,
@@ -2404,22 +2399,22 @@ class CountingDownloadFile : public DownloadFileImpl {
                          observer) {}
 
   ~CountingDownloadFile() override {
-    DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
+    DCHECK(download::GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
     active_files_--;
   }
 
   void Initialize(const InitializeCallback& callback,
                   const CancelRequestCallback& cancel_request_callback,
-                  const DownloadItem::ReceivedSlices& received_slices,
+                  const download::DownloadItem::ReceivedSlices& received_slices,
                   bool is_parallelizable) override {
-    DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
+    DCHECK(download::GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
     active_files_++;
     DownloadFileImpl::Initialize(callback, cancel_request_callback,
                                  received_slices, is_parallelizable);
   }
 
   static void GetNumberActiveFiles(int* result) {
-    DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
+    DCHECK(download::GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
     *result = active_files_;
   }
 
@@ -2427,7 +2422,7 @@ class CountingDownloadFile : public DownloadFileImpl {
   // until data is returned.
   static int GetNumberActiveFilesFromFileThread() {
     int result = -1;
-    GetDownloadTaskRunner()->PostTaskAndReply(
+    download::GetDownloadTaskRunner()->PostTaskAndReply(
         FROM_HERE,
         base::BindOnce(&CountingDownloadFile::GetNumberActiveFiles, &result),
         base::MessageLoop::current()->QuitWhenIdleClosure());
@@ -2449,7 +2444,7 @@ class CountingDownloadFileFactory : public DownloadFileFactory {
 
   // DownloadFileFactory interface.
   DownloadFile* CreateFile(
-      std::unique_ptr<DownloadSaveInfo> save_info,
+      std::unique_ptr<download::DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
       std::unique_ptr<DownloadManager::InputStream> stream,
       uint32_t download_id,
@@ -2466,7 +2461,7 @@ class TestShellDownloadManagerDelegate : public ShellDownloadManagerDelegate {
   ~TestShellDownloadManagerDelegate() override {}
 
   bool ShouldOpenDownload(
-      DownloadItem* item,
+      download::DownloadItem* item,
       const DownloadOpenDelayedCallback& callback) override {
     if (delay_download_open_) {
       delayed_callbacks_.push_back(callback);
@@ -2510,7 +2505,7 @@ class DownloadCreateObserver : DownloadManager::Observer {
   }
 
   void OnDownloadCreated(DownloadManager* manager,
-                         DownloadItem* download) override {
+                         download::DownloadItem* download) override {
     if (!item_)
       item_ = download;
 
@@ -2518,7 +2513,7 @@ class DownloadCreateObserver : DownloadManager::Observer {
       base::ResetAndReturn(&completion_closure_).Run();
   }
 
-  DownloadItem* WaitForFinished() {
+  download::DownloadItem* WaitForFinished() {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (!item_) {
       base::RunLoop run_loop;
@@ -2530,11 +2525,12 @@ class DownloadCreateObserver : DownloadManager::Observer {
 
  private:
   DownloadManager* manager_;
-  DownloadItem* item_;
+  download::DownloadItem* item_;
   base::Closure completion_closure_;
 };
 
-bool IsDownloadInState(DownloadItem::DownloadState state, DownloadItem* item) {
+bool IsDownloadInState(download::DownloadItem::DownloadState state,
+                       download::DownloadItem* item) {
   return item->GetState() == state;
 }
 
@@ -2598,9 +2594,10 @@ class DevToolsDownloadContentTest : public DevToolsProtocolTest {
             new CountingDownloadFileFactory()));
   }
 
-  void WaitForCompletion(DownloadItem* download) {
+  void WaitForCompletion(download::DownloadItem* download) {
     DownloadUpdatedObserver(
-        download, base::Bind(&IsDownloadInState, DownloadItem::COMPLETE))
+        download,
+        base::Bind(&IsDownloadInState, download::DownloadItem::COMPLETE))
         .WaitForEvent();
   }
 
@@ -2647,7 +2644,7 @@ class DevToolsDownloadContentTest : public DevToolsProtocolTest {
   }
 
   // Start a download and return the item.
-  DownloadItem* StartDownloadAndReturnItem(Shell* shell, GURL url) {
+  download::DownloadItem* StartDownloadAndReturnItem(Shell* shell, GURL url) {
     std::unique_ptr<DownloadCreateObserver> observer(
         new DownloadCreateObserver(DownloadManagerForShell(shell)));
     shell->LoadURL(url);
@@ -2680,13 +2677,13 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, SingleDownload) {
   SetDownloadBehavior("allow", "download");
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
-  DownloadItem* download = StartDownloadAndReturnItem(
+  download::DownloadItem* download = StartDownloadAndReturnItem(
       shell(),
       GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
-  ASSERT_EQ(DownloadItem::IN_PROGRESS, download->GetState());
+  ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download->GetState());
 
   WaitForCompletion(download);
-  ASSERT_EQ(DownloadItem::COMPLETE, download->GetState());
+  ASSERT_EQ(download::DownloadItem::COMPLETE, download->GetState());
 }
 
 // Check that downloads can be cancelled gracefully.
@@ -2699,9 +2696,9 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DownloadCancelled) {
   SetDownloadBehavior("allow", "download");
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
-  DownloadItem* download = StartDownloadAndReturnItem(
+  download::DownloadItem* download = StartDownloadAndReturnItem(
       shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
-  ASSERT_EQ(DownloadItem::IN_PROGRESS, download->GetState());
+  ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download->GetState());
 
   // Cancel the download and wait for download system quiesce.
   download->Cancel(true);
@@ -2721,11 +2718,11 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DeniedDownload) {
 
   SetDownloadBehavior("deny");
   // Create a download, wait and confirm it was cancelled.
-  DownloadItem* download = StartDownloadAndReturnItem(
+  download::DownloadItem* download = StartDownloadAndReturnItem(
       shell(),
       GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
   EnsureNoPendingDownloads();
-  ASSERT_EQ(DownloadItem::CANCELLED, download->GetState());
+  ASSERT_EQ(download::DownloadItem::CANCELLED, download->GetState());
 }
 
 // Check that defaulting downloads works as expected.
@@ -2738,9 +2735,9 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DefaultDownload) {
   SetDownloadBehavior("default");
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
-  DownloadItem* download = StartDownloadAndReturnItem(
+  download::DownloadItem* download = StartDownloadAndReturnItem(
       shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
-  ASSERT_EQ(DownloadItem::IN_PROGRESS, download->GetState());
+  ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download->GetState());
 
   // Cancel the download and wait for download system quiesce.
   download->Cancel(true);
@@ -2762,11 +2759,11 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, DefaultDownloadHeadless) {
 
   SetDownloadBehavior("default");
   // Create a download, wait and confirm it was cancelled.
-  DownloadItem* download = StartDownloadAndReturnItem(
+  download::DownloadItem* download = StartDownloadAndReturnItem(
       shell(),
       GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
   EnsureNoPendingDownloads();
-  ASSERT_EQ(DownloadItem::CANCELLED, download->GetState());
+  ASSERT_EQ(download::DownloadItem::CANCELLED, download->GetState());
 }
 
 // Check that download logic is reset when creating a new target.
@@ -2781,11 +2778,11 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, ResetDownloadState) {
   Shell* new_window = CreateBrowser();
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   // Create a download, wait and confirm it wasn't cancelled.
-  DownloadItem* download = StartDownloadAndReturnItem(
+  download::DownloadItem* download = StartDownloadAndReturnItem(
       new_window,
       GURL(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib")));
   WaitForCompletion(download);
-  ASSERT_EQ(DownloadItem::COMPLETE, download->GetState());
+  ASSERT_EQ(download::DownloadItem::COMPLETE, download->GetState());
 }
 
 // Check that downloading multiple (in this case, 2) files does not result in
@@ -2799,26 +2796,27 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, MultiDownload) {
   SetDownloadBehavior("allow", "download1");
   // Create a download, wait until it's started, and confirm
   // we're in the expected state.
-  DownloadItem* download1 = StartDownloadAndReturnItem(
+  download::DownloadItem* download1 = StartDownloadAndReturnItem(
       shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
-  ASSERT_EQ(DownloadItem::IN_PROGRESS, download1->GetState());
+  ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download1->GetState());
 
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   SetDownloadBehavior("allow", "download2");
   // Start the second download and wait until it's done.
   GURL url(net::URLRequestMockHTTPJob::GetMockUrl("download-test.lib"));
-  DownloadItem* download2 = StartDownloadAndReturnItem(shell(), url);
+  download::DownloadItem* download2 = StartDownloadAndReturnItem(shell(), url);
   WaitForCompletion(download2);
 
-  ASSERT_EQ(DownloadItem::IN_PROGRESS, download1->GetState());
-  ASSERT_EQ(DownloadItem::COMPLETE, download2->GetState());
+  ASSERT_EQ(download::DownloadItem::IN_PROGRESS, download1->GetState());
+  ASSERT_EQ(download::DownloadItem::COMPLETE, download2->GetState());
 
   // Allow the first request to finish.
   std::unique_ptr<DownloadTestObserver> observer2(CreateWaiter(shell(), 1));
   NavigateToURL(shell(),
                 GURL(net::URLRequestSlowDownloadJob::kFinishDownloadUrl));
   observer2->WaitForFinished();  // Wait for the third request.
-  EXPECT_EQ(1u, observer2->NumDownloadsSeenInState(DownloadItem::COMPLETE));
+  EXPECT_EQ(
+      1u, observer2->NumDownloadsSeenInState(download::DownloadItem::COMPLETE));
 
   // Get the important info from other threads and check it.
   EXPECT_TRUE(EnsureNoPendingDownloads());

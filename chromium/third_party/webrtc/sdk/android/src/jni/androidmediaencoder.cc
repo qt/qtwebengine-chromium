@@ -38,6 +38,7 @@
 #include "rtc_base/timeutils.h"
 #include "rtc_base/weak_ptr.h"
 #include "sdk/android/generated_video_jni/jni/MediaCodecVideoEncoder_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/androidmediacodeccommon.h"
 #include "sdk/android/src/jni/androidmediadecoder_jni.h"
 #include "sdk/android/src/jni/jni_helpers.h"
@@ -366,7 +367,8 @@ int32_t MediaCodecVideoEncoder::InitEncode(const VideoCodec* codec_settings,
 
   return InitEncodeInternal(
       init_width, init_height, codec_settings->startBitrate,
-      codec_settings->maxFramerate, codec_settings->expect_encode_from_texture);
+      codec_settings->maxFramerate,
+      codec_settings->expect_encode_from_texture && (egl_context_ != nullptr));
 }
 
 int32_t MediaCodecVideoEncoder::SetChannelParameters(uint32_t /* packet_loss */,
@@ -726,11 +728,14 @@ int32_t MediaCodecVideoEncoder::Encode(
       case AndroidVideoFrameBuffer::AndroidType::kTextureBuffer:
         encode_status = EncodeTexture(jni, key_frame, input_frame);
         break;
-      case AndroidVideoFrameBuffer::AndroidType::kJavaBuffer:
+      case AndroidVideoFrameBuffer::AndroidType::kJavaBuffer: {
+        ScopedJavaLocalRef<jobject> j_frame =
+            NativeToJavaVideoFrame(jni, frame);
         encode_status =
-            EncodeJavaFrame(jni, key_frame, NativeToJavaFrame(jni, input_frame),
-                            j_input_buffer_index);
+            EncodeJavaFrame(jni, key_frame, j_frame, j_input_buffer_index);
+        ReleaseJavaVideoFrame(jni, j_frame);
         break;
+      }
       default:
         RTC_NOTREACHED();
         return WEBRTC_VIDEO_CODEC_ERROR;
@@ -895,7 +900,7 @@ bool MediaCodecVideoEncoder::EncodeJavaFrame(JNIEnv* jni,
                                              int input_buffer_index) {
   bool encode_status = Java_MediaCodecVideoEncoder_encodeFrame(
       jni, j_media_codec_video_encoder_, jlongFromPointer(this), key_frame,
-      frame, input_buffer_index);
+      frame, input_buffer_index, current_timestamp_us_);
   if (CheckException(jni)) {
     ALOGE << "Exception in encode frame.";
     ProcessHWError(true /* reset_if_fallback_unavailable */);
@@ -1200,8 +1205,11 @@ void MediaCodecVideoEncoder::LogStatistics(bool force_log) {
 
 VideoEncoder::ScalingSettings MediaCodecVideoEncoder::GetScalingSettings()
     const {
+  if (!scale_)
+    return VideoEncoder::ScalingSettings::kOff;
+
+  const VideoCodecType codec_type = GetCodecType();
   if (field_trial::IsEnabled(kCustomQPThresholdsFieldTrial)) {
-    const VideoCodecType codec_type = GetCodecType();
     std::string experiment_string =
         field_trial::FindFullName(kCustomQPThresholdsFieldTrial);
     ALOGD << "QP custom thresholds: " << experiment_string << " for codec "
@@ -1219,15 +1227,38 @@ VideoEncoder::ScalingSettings MediaCodecVideoEncoder::GetScalingSettings()
       RTC_CHECK_GT(high_h264_qp_threshold, low_h264_qp_threshold);
       RTC_CHECK_GT(low_h264_qp_threshold, 0);
       if (codec_type == kVideoCodecVP8) {
-        return VideoEncoder::ScalingSettings(scale_, low_vp8_qp_threshold,
+        return VideoEncoder::ScalingSettings(low_vp8_qp_threshold,
                                              high_vp8_qp_threshold);
       } else if (codec_type == kVideoCodecH264) {
-        return VideoEncoder::ScalingSettings(scale_, low_h264_qp_threshold,
+        return VideoEncoder::ScalingSettings(low_h264_qp_threshold,
                                              high_h264_qp_threshold);
       }
     }
   }
-  return VideoEncoder::ScalingSettings(scale_);
+  if (codec_type == kVideoCodecVP8) {
+    // Same as in vp8_impl.cc.
+    static const int kLowVp8QpThreshold = 29;
+    static const int kHighVp8QpThreshold = 95;
+
+    return VideoEncoder::ScalingSettings(kLowVp8QpThreshold,
+                                         kHighVp8QpThreshold);
+  } else if (codec_type == kVideoCodecVP9) {
+    // QP is obtained from VP9-bitstream, so the QP corresponds to the bitstream
+    // range of [0, 255] and not the user-level range of [0,63].
+    static const int kLowVp9QpThreshold = 96;
+    static const int kHighVp9QpThreshold = 185;
+
+    return VideoEncoder::ScalingSettings(kLowVp9QpThreshold,
+                                         kHighVp9QpThreshold);
+  } else if (codec_type == kVideoCodecH264) {
+    // Same as in h264_encoder_impl.cc.
+    static const int kLowH264QpThreshold = 24;
+    static const int kHighH264QpThreshold = 37;
+
+    return VideoEncoder::ScalingSettings(kLowH264QpThreshold,
+                                         kHighH264QpThreshold);
+  }
+  return VideoEncoder::ScalingSettings::kOff;
 }
 
 const char* MediaCodecVideoEncoder::ImplementationName() const {

@@ -19,14 +19,13 @@
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
-#include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
-#include "content/browser/mus_util.h"
+#include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/frame_connector_delegate.h"
 #include "content/browser/renderer_host/input/touch_selection_controller_client_child_frame.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -42,7 +41,8 @@
 #include "gpu/ipc/common/gpu_messages.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "third_party/WebKit/public/platform/WebTouchEvent.h"
-#include "ui/base/ui_base_switches_util.h"
+#include "ui/base/ui_base_features.h"
+#include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/touch_selection/touch_selection_controller.h"
@@ -69,7 +69,6 @@ RenderWidgetHostViewChildFrame::RenderWidgetHostViewChildFrame(
       frame_sink_id_(
           base::checked_cast<uint32_t>(widget_host->GetProcess()->GetID()),
           base::checked_cast<uint32_t>(widget_host->GetRoutingID())),
-      next_surface_sequence_(1u),
       current_surface_scale_factor_(1.f),
       frame_connector_(nullptr),
       enable_viz_(
@@ -77,16 +76,14 @@ RenderWidgetHostViewChildFrame::RenderWidgetHostViewChildFrame(
       background_color_(SK_ColorWHITE),
       scroll_bubbling_state_(NO_ACTIVE_GESTURE_SCROLL),
       weak_factory_(this) {
-  if (switches::IsMusHostingViz()) {
+  if (base::FeatureList::IsEnabled(features::kMash)) {
     // In Mus the RenderFrameProxy will eventually assign a viz::FrameSinkId
     // until then set ours invalid, as operations using it will be disregarded.
     frame_sink_id_ = viz::FrameSinkId();
   } else {
     GetHostFrameSinkManager()->RegisterFrameSinkId(frame_sink_id_, this);
-#if DCHECK_IS_ON()
     GetHostFrameSinkManager()->SetFrameSinkDebugLabel(
         frame_sink_id_, "RenderWidgetHostViewChildFrame");
-#endif
     CreateCompositorFrameSinkSupport();
   }
 }
@@ -98,7 +95,7 @@ RenderWidgetHostViewChildFrame::~RenderWidgetHostViewChildFrame() {
   if (frame_connector_)
     DetachFromTouchSelectionClientManagerIfNecessary();
 
-  if (!switches::IsMusHostingViz()) {
+  if (!base::FeatureList::IsEnabled(features::kMash)) {
     ResetCompositorFrameSinkSupport();
     if (GetHostFrameSinkManager())
       GetHostFrameSinkManager()->InvalidateFrameSinkId(frame_sink_id_);
@@ -153,7 +150,7 @@ void RenderWidgetHostViewChildFrame::SetFrameConnectorDelegate(
 
   if (parent_view) {
     DCHECK(parent_view->GetFrameSinkId().is_valid() ||
-           switches::IsMusHostingViz());
+           base::FeatureList::IsEnabled(features::kMash));
     SetParentFrameSinkId(parent_view->GetFrameSinkId());
   }
 
@@ -174,7 +171,7 @@ void RenderWidgetHostViewChildFrame::SetFrameConnectorDelegate(
   }
 
 #if defined(USE_AURA)
-  if (IsUsingMus()) {
+  if (features::IsMusEnabled()) {
     frame_connector_->EmbedRendererWindowTreeClientInParent(
         GetWindowTreeClientFromRenderer());
   }
@@ -184,10 +181,28 @@ void RenderWidgetHostViewChildFrame::SetFrameConnectorDelegate(
 #if defined(USE_AURA)
 void RenderWidgetHostViewChildFrame::SetFrameSinkId(
     const viz::FrameSinkId& frame_sink_id) {
-  if (switches::IsMusHostingViz())
+  if (base::FeatureList::IsEnabled(features::kMash))
     frame_sink_id_ = frame_sink_id;
 }
 #endif  // defined(USE_AURA)
+
+bool RenderWidgetHostViewChildFrame::OnMessageReceived(
+    const IPC::Message& msg) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostViewChildFrame, msg)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_IntrinsicSizingInfoChanged,
+                        OnIntrinsicSizingInfoChanged)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+
+  return handled;
+}
+
+void RenderWidgetHostViewChildFrame::OnIntrinsicSizingInfoChanged(
+    blink::WebIntrinsicSizingInfo sizing_info) {
+  if (frame_connector_)
+    frame_connector_->SendIntrinsicSizingInfoToParent(sizing_info);
+}
 
 void RenderWidgetHostViewChildFrame::OnManagerWillDestroy(
     TouchSelectionControllerClientManager* manager) {
@@ -334,9 +349,8 @@ SkColor RenderWidgetHostViewChildFrame::background_color() const {
   return background_color_;
 }
 
-gfx::Size RenderWidgetHostViewChildFrame::GetPhysicalBackingSize() const {
-  // TODO(fsamuel): Consider renaming GetPhysicalBackingSize to
-  // GetCompositorViewportSize.
+gfx::Size RenderWidgetHostViewChildFrame::GetCompositorViewportPixelSize()
+    const {
   if (frame_connector_)
     return frame_connector_->local_frame_size_in_pixels();
   return gfx::Size();
@@ -545,7 +559,7 @@ void RenderWidgetHostViewChildFrame::DidCreateNewRendererCompositorFrameSink(
 void RenderWidgetHostViewChildFrame::SetParentFrameSinkId(
     const viz::FrameSinkId& parent_frame_sink_id) {
   if (parent_frame_sink_id_ == parent_frame_sink_id ||
-      switches::IsMusHostingViz())
+      base::FeatureList::IsEnabled(features::kMash))
     return;
 
   auto* host_frame_sink_manager = GetHostFrameSinkManager();
@@ -572,9 +586,8 @@ void RenderWidgetHostViewChildFrame::ProcessCompositorFrame(
   current_surface_size_ = frame.size_in_pixels();
   current_surface_scale_factor_ = frame.device_scale_factor();
 
-  bool result = support_->SubmitCompositorFrame(
-      local_surface_id, std::move(frame), std::move(hit_test_region_list));
-  DCHECK(result);
+  support_->SubmitCompositorFrame(local_surface_id, std::move(frame),
+                                  std::move(hit_test_region_list));
   has_frame_ = true;
 
   if (last_received_local_surface_id_ != local_surface_id ||
@@ -592,28 +605,18 @@ void RenderWidgetHostViewChildFrame::ProcessCompositorFrame(
 }
 
 void RenderWidgetHostViewChildFrame::SendSurfaceInfoToEmbedder() {
-  if (switches::IsMusHostingViz())
+  if (base::FeatureList::IsEnabled(features::kMash))
     return;
-  // TODO(kylechar): Remove sequence generation and only send surface info.
-  // See https://crbug.com/676384.
-  viz::SurfaceSequence sequence =
-      viz::SurfaceSequence(frame_sink_id_, next_surface_sequence_++);
-  viz::SurfaceManager* manager = GetFrameSinkManager()->surface_manager();
   viz::SurfaceId surface_id(frame_sink_id_, last_received_local_surface_id_);
-  // The renderer process will satisfy this dependency when it creates a
-  // SurfaceLayer.
-  if (!manager->using_surface_references())
-    manager->RequireSequence(surface_id, sequence);
   viz::SurfaceInfo surface_info(surface_id, current_surface_scale_factor_,
                                 current_surface_size_);
-  SendSurfaceInfoToEmbedderImpl(surface_info, sequence);
+  SendSurfaceInfoToEmbedderImpl(surface_info);
 }
 
 void RenderWidgetHostViewChildFrame::SendSurfaceInfoToEmbedderImpl(
-    const viz::SurfaceInfo& surface_info,
-    const viz::SurfaceSequence& sequence) {
+    const viz::SurfaceInfo& surface_info) {
   if (frame_connector_)
-    frame_connector_->SetChildFrameSurface(surface_info, sequence);
+    frame_connector_->SetChildFrameSurface(surface_info);
 }
 
 void RenderWidgetHostViewChildFrame::SubmitCompositorFrame(
@@ -637,12 +640,19 @@ void RenderWidgetHostViewChildFrame::OnDidNotProduceFrame(
 }
 
 void RenderWidgetHostViewChildFrame::ProcessFrameSwappedCallbacks() {
-  // We only use callbacks once, therefore we make a new list for registration
-  // before we start, and discard the old list entries when we are done.
-  FrameSwappedCallbackList process_callbacks;
+  std::vector<base::OnceClosure> process_callbacks;
+  // Swap the vectors to avoid re-entrancy issues due to calls to
+  // RegisterFrameSwappedCallback() while running the OnceClosures.
   process_callbacks.swap(frame_swapped_callbacks_);
-  for (std::unique_ptr<base::Closure>& callback : process_callbacks)
-    callback->Run();
+  for (base::OnceClosure& callback : process_callbacks)
+    std::move(callback).Run();
+}
+
+gfx::Vector2d RenderWidgetHostViewChildFrame::GetOffsetFromRootSurface() {
+  // This function is called by RenderWidgetHostInputEventRouter only for
+  // root-views.
+  NOTREACHED();
+  return gfx::Vector2d();
 }
 
 gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInRootWindow() {
@@ -714,36 +724,12 @@ void RenderWidgetHostViewChildFrame::PreProcessTouchEvent(
   }
 }
 
-void RenderWidgetHostViewChildFrame::ProcessGestureEvent(
-    const blink::WebGestureEvent& event,
-    const ui::LatencyInfo& latency) {
-  if (wheel_scroll_latching_enabled() && is_scroll_sequence_bubbling_ &&
-      (event.GetType() == blink::WebInputEvent::kGestureFlingStart) &&
-      frame_connector_) {
-    // For GestureFlingStarts, we send a GestureScrollEnd to the child in order
-    // to conclude the scrolling sequence but without allowing the child to
-    // actually fling if the child attempts to consume scroll.
-    // We bubble the fling to the target intended to consume it.
-    frame_connector_->BubbleScrollEvent(event);
-
-    blink::WebGestureEvent scroll_end(event);
-    scroll_end.SetType(blink::WebInputEvent::kGestureScrollEnd);
-    scroll_end.data.scroll_end.inertial_phase =
-        blink::WebGestureEvent::kUnknownMomentumPhase;
-    scroll_end.data.scroll_end.delta_units =
-        blink::WebGestureEvent::kPrecisePixels;
-    // Since we've just bubbled the fling, the |frame_connector_| knows that
-    // the sequence has ended, so it will just drop this synthesised GSE when
-    // we get the ack.
-    host_->ForwardGestureEvent(scroll_end);
-    return;
-  }
-
-  RenderWidgetHostViewBase::ProcessGestureEvent(event, latency);
-}
-
 viz::SurfaceId RenderWidgetHostViewChildFrame::GetCurrentSurfaceId() const {
   return viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_);
+}
+
+bool RenderWidgetHostViewChildFrame::HasSize() const {
+  return frame_connector_ && frame_connector_->has_size();
 }
 
 gfx::PointF RenderWidgetHostViewChildFrame::TransformPointToRootCoordSpaceF(
@@ -849,50 +835,55 @@ void RenderWidgetHostViewChildFrame::StopSpeaking() {}
 #endif  // defined(OS_MACOSX)
 
 void RenderWidgetHostViewChildFrame::RegisterFrameSwappedCallback(
-    std::unique_ptr<base::Closure> callback) {
-  frame_swapped_callbacks_.push_back(std::move(callback));
+    base::OnceClosure callback) {
+  frame_swapped_callbacks_.emplace_back(std::move(callback));
 }
 
 void RenderWidgetHostViewChildFrame::CopyFromSurface(
-    const gfx::Rect& src_rect,
+    const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    const ReadbackRequestCallback& callback,
-    const SkColorType preferred_color_type) {
-  if (!IsSurfaceAvailableForCopy()) {
-    // Defer submitting the copy request until after a frame is drawn, at which
-    // point we should be guaranteed that the surface is available.
-    RegisterFrameSwappedCallback(std::make_unique<base::Closure>(base::Bind(
-        &RenderWidgetHostViewChildFrame::SubmitSurfaceCopyRequest, AsWeakPtr(),
-        src_rect, output_size, callback, preferred_color_type)));
+    base::OnceCallback<void(const SkBitmap&)> callback) {
+  // TODO(crbug.com/812059): Need a "copy from surface" VIZ API.
+  if (enable_viz_) {
+    std::move(callback).Run(SkBitmap());
     return;
   }
 
-  SubmitSurfaceCopyRequest(src_rect, output_size, callback,
-                           preferred_color_type);
-}
-
-void RenderWidgetHostViewChildFrame::SubmitSurfaceCopyRequest(
-    const gfx::Rect& src_subrect,
-    const gfx::Size& output_size,
-    const ReadbackRequestCallback& callback,
-    const SkColorType preferred_color_type) {
-  DCHECK(IsSurfaceAvailableForCopy());
-  DCHECK(support_);
+  if (!IsSurfaceAvailableForCopy()) {
+    // Defer submitting the copy request until after a frame is drawn, at which
+    // point we should be guaranteed that the surface is available.
+    RegisterFrameSwappedCallback(base::BindOnce(
+        &RenderWidgetHostViewChildFrame::CopyFromSurface, AsWeakPtr(),
+        src_subrect, output_size, std::move(callback)));
+    return;
+  }
 
   std::unique_ptr<viz::CopyOutputRequest> request =
       std::make_unique<viz::CopyOutputRequest>(
-          viz::CopyOutputRequest::ResultFormat::RGBA_TEXTURE,
-          base::BindOnce(&CopyFromCompositingSurfaceHasResult, output_size,
-                         preferred_color_type, callback));
-  if (!src_subrect.IsEmpty())
-    request->set_area(src_subrect);
+          viz::CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+          base::BindOnce(
+              [](base::OnceCallback<void(const SkBitmap&)> callback,
+                 std::unique_ptr<viz::CopyOutputResult> result) {
+                std::move(callback).Run(result->AsSkBitmap());
+              },
+              std::move(callback)));
+
+  if (src_subrect.IsEmpty()) {
+    request->set_area(gfx::Rect(current_surface_size_));
+  } else {
+    // |src_subrect| is in DIP coordinates; convert to Surface coordinates.
+    request->set_area(
+        gfx::ScaleToRoundedRect(src_subrect, current_surface_scale_factor_));
+  }
+
+  if (!output_size.IsEmpty()) {
+    request->set_result_selection(gfx::Rect(output_size));
+    request->SetScaleRatio(
+        gfx::Vector2d(request->area().width(), request->area().height()),
+        gfx::Vector2d(output_size.width(), output_size.height()));
+  }
 
   support_->RequestCopyOfSurface(std::move(request));
-}
-
-bool RenderWidgetHostViewChildFrame::HasAcceleratedSurface(
-    const gfx::Size& desired_size) {
-  return false;
 }
 
 void RenderWidgetHostViewChildFrame::ReclaimResources(
@@ -914,8 +905,7 @@ void RenderWidgetHostViewChildFrame::OnBeginFramePausedChanged(bool paused) {
 
 void RenderWidgetHostViewChildFrame::OnFirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
-  viz::SurfaceSequence sequence(frame_sink_id_, next_surface_sequence_++);
-  SendSurfaceInfoToEmbedderImpl(surface_info, sequence);
+  SendSurfaceInfoToEmbedderImpl(surface_info);
 }
 
 void RenderWidgetHostViewChildFrame::OnFrameTokenChanged(uint32_t frame_token) {
@@ -1016,9 +1006,12 @@ RenderWidgetHostViewChildFrame::CreateBrowserAccessibilityManager(
       BrowserAccessibilityManager::GetEmptyDocument(), delegate);
 }
 
-void RenderWidgetHostViewChildFrame::GetScreenInfo(ScreenInfo* screen_info) {
+void RenderWidgetHostViewChildFrame::GetScreenInfo(
+    ScreenInfo* screen_info) const {
   if (frame_connector_)
     *screen_info = frame_connector_->screen_info();
+  else
+    DisplayUtil::GetDefaultScreenInfo(screen_info);
 }
 
 void RenderWidgetHostViewChildFrame::ResizeDueToAutoResize(
@@ -1031,12 +1024,12 @@ void RenderWidgetHostViewChildFrame::ResizeDueToAutoResize(
 void RenderWidgetHostViewChildFrame::ClearCompositorSurfaceIfNecessary() {
   if (!support_)
     return;
-  support_->EvictCurrentSurface();
+  support_->EvictLastActivatedSurface();
   has_frame_ = false;
 }
 
 void RenderWidgetHostViewChildFrame::CreateCompositorFrameSinkSupport() {
-  if (switches::IsMusHostingViz() || enable_viz_)
+  if (base::FeatureList::IsEnabled(features::kMash) || enable_viz_)
     return;
 
   DCHECK(!support_);
@@ -1112,6 +1105,13 @@ bool RenderWidgetHostViewChildFrame::CanBecomeVisible() {
 
   return static_cast<RenderWidgetHostViewChildFrame*>(parent_view)
       ->CanBecomeVisible();
+}
+
+void RenderWidgetHostViewChildFrame::DidNavigate() {
+  if (host_->auto_resize_enabled()) {
+    host_->DidAllocateLocalSurfaceIdForAutoResize(
+        host_->last_auto_resize_request_number());
+  }
 }
 
 }  // namespace content

@@ -39,7 +39,6 @@ android_apk("webview_instrumentation_apk") {
     "shell/src/org/chromium/android_webview/shell/AwShellResourceProvider.java",
     "shell/src/org/chromium/android_webview/shell/AwShellSwitches.java",
     "shell/src/org/chromium/android_webview/shell/DrawGL.java",
-    "shell/src/org/chromium/android_webview/test/AwInstrumentationTestRunner.java",
     "shell/src/org/chromium/android_webview/test/AwTestContainerView.java",
     "shell/src/org/chromium/android_webview/test/AwTestRunnerActivity.java",
     "shell/src/org/chromium/android_webview/test/AwJUnit4ClassRunner.java",
@@ -111,9 +110,9 @@ instrumentation_test_apk("webview_instrumentation_test_apk") {
   apk_under_test = ":webview_instrumentation_apk"
   android_manifest = "../javatests/AndroidManifest.xml"
   deps = [
-    "//android_webview:android_webview_crash_services_java",
     "//android_webview:android_webview_java",
     "//android_webview:android_webview_platform_services_java",
+    "//android_webview:android_webview_services_java",
     "//android_webview/test/embedded_test_server:aw_net_java_test_support",
     "//base:base_java",
     "//base:base_java_test_support",
@@ -220,9 +219,10 @@ instrumentation_test_apk("webview_instrumentation_test_apk") {
     "../javatests/src/org/chromium/android_webview/test/WebViewFindApisTestRule.java",
     "../javatests/src/org/chromium/android_webview/test/WebViewModalDialogOverrideTest.java",
     "../javatests/src/org/chromium/android_webview/test/WebViewWebVrTest.java",
-    "../javatests/src/org/chromium/android_webview/test/crash/CrashReceiverServiceTest.java",
-    "../javatests/src/org/chromium/android_webview/test/crash/MinidumpUploaderTest.java",
-    "../javatests/src/org/chromium/android_webview/test/crash/VisualStateCallbackTest.java",
+    "../javatests/src/org/chromium/android_webview/test/services/AwVariationsConfigurationServiceTest.java",
+    "../javatests/src/org/chromium/android_webview/test/services/CrashReceiverServiceTest.java",
+    "../javatests/src/org/chromium/android_webview/test/services/MinidumpUploaderTest.java",
+    "../javatests/src/org/chromium/android_webview/test/services/VisualStateCallbackTest.java",
     "../javatests/src/org/chromium/android_webview/test/util/AwQuotaManagerBridgeTestUtil.java",
     "../javatests/src/org/chromium/android_webview/test/util/AwTestTouchUtils.java",
     "../javatests/src/org/chromium/android_webview/test/util/CommonResources.java",
@@ -234,7 +234,6 @@ instrumentation_test_apk("webview_instrumentation_test_apk") {
     "../javatests/src/org/chromium/android_webview/test/util/VideoSurfaceViewUtils.java",
     "../javatests/src/org/chromium/android_webview/test/util/VideoTestUtil.java",
     "../javatests/src/org/chromium/android_webview/test/util/VideoTestWebServer.java",
-    "../javatests/src/org/chromium/android_webview/test/variations/AwVariationsConfigurationServiceTest.java",
   ]
   data = [
     "data/",

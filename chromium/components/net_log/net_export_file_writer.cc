@@ -4,6 +4,7 @@
 
 #include "components/net_log/net_export_file_writer.h"
 
+#include <memory>
 #include <set>
 #include <utility>
 
@@ -12,7 +13,6 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/task_scheduler/post_task.h"
@@ -229,9 +229,9 @@ void NetExportFileWriter::StopNetLog(
   if (context_getter) {
     base::PostTaskAndReplyWithResult(
         net_task_runner_.get(), FROM_HERE,
-        base::Bind(&AddNetInfo, context_getter, base::Passed(&polled_data)),
-        base::Bind(&NetExportFileWriter::StopNetLogAfterAddNetInfo,
-                   weak_ptr_factory_.GetWeakPtr()));
+        base::BindOnce(&AddNetInfo, context_getter, std::move(polled_data)),
+        base::BindOnce(&NetExportFileWriter::StopNetLogAfterAddNetInfo,
+                       weak_ptr_factory_.GetWeakPtr()));
   } else {
     StopNetLogAfterAddNetInfo(std::move(polled_data));
   }
@@ -240,7 +240,7 @@ void NetExportFileWriter::StopNetLog(
 std::unique_ptr<base::DictionaryValue> NetExportFileWriter::GetState() const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  auto dict = base::MakeUnique<base::DictionaryValue>();
+  auto dict = std::make_unique<base::DictionaryValue>();
 
   dict->SetString("file", log_path_.LossyDisplayName());
 

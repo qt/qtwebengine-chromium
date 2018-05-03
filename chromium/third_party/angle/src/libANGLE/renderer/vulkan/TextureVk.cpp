@@ -13,7 +13,7 @@
 #include "libANGLE/Context.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
-#include "libANGLE/renderer/vulkan/formatutilsvk.h"
+#include "libANGLE/renderer/vulkan/vk_format_utils.h"
 
 namespace rx
 {
@@ -70,6 +70,14 @@ gl::Error TextureVk::setImage(const gl::Context *context,
         }
     }
 
+    mRenderTarget.reset();
+
+    // Early-out on empty textures, don't create a zero-sized storage.
+    if (size.width == 0 || size.height == 0 || size.depth == 0)
+    {
+        return gl::NoError();
+    }
+
     // TODO(jmadill): support other types of textures.
     ASSERT(target == GL_TEXTURE_2D);
 
@@ -105,22 +113,9 @@ gl::Error TextureVk::setImage(const gl::Context *context,
 
         ANGLE_TRY(mImage.init(device, imageInfo));
 
-        // Allocate the device memory for the image.
-        // TODO(jmadill): Use more intelligent device memory allocation.
-        VkMemoryRequirements memoryRequirements;
-        mImage.getMemoryRequirements(device, &memoryRequirements);
-
-        uint32_t memoryIndex = renderer->getMemoryProperties().findCompatibleMemoryIndex(
-            memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-        VkMemoryAllocateInfo allocateInfo;
-        allocateInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocateInfo.pNext           = nullptr;
-        allocateInfo.allocationSize  = memoryRequirements.size;
-        allocateInfo.memoryTypeIndex = memoryIndex;
-
-        ANGLE_TRY(mDeviceMemory.allocate(device, allocateInfo));
-        ANGLE_TRY(mImage.bindMemory(device, mDeviceMemory));
+        VkMemoryPropertyFlags flags = (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        size_t requiredSize         = 0;
+        ANGLE_TRY(vk::AllocateImageMemory(renderer, flags, &mImage, &mDeviceMemory, &requiredSize));
 
         VkImageViewCreateInfo viewInfo;
         viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -212,8 +207,8 @@ gl::Error TextureVk::setSubImageImpl(ContextVk *contextVk,
     const vk::Format &vkFormat = *mRenderTarget.format;
 
     vk::StagingImage stagingImage;
-    ANGLE_TRY(renderer->createStagingImage(TextureDimension::TEX_2D, vkFormat, size,
-                                           vk::StagingUsage::Write, &stagingImage));
+    ANGLE_TRY(stagingImage.init(contextVk, TextureDimension::TEX_2D, vkFormat, size,
+                                vk::StagingUsage::Write));
 
     GLuint inputRowPitch = 0;
     ANGLE_TRY_RESULT(
@@ -258,7 +253,7 @@ gl::Error TextureVk::setSubImageImpl(ContextVk *contextVk,
     stagingImage.getDeviceMemory().unmap(device);
 
     vk::CommandBuffer *commandBuffer = nullptr;
-    ANGLE_TRY(recordWriteCommands(renderer, &commandBuffer));
+    ANGLE_TRY(beginWriteResource(renderer, &commandBuffer));
 
     stagingImage.getImage().changeLayoutWithStages(
         VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,

@@ -16,6 +16,7 @@ class AudioWorkletMessagingProxy;
 class BaseAudioContext;
 class CrossThreadAudioParamInfo;
 class MessagePortChannel;
+class SerializedScriptValue;
 
 class MODULES_EXPORT AudioWorklet final : public Worklet {
   DEFINE_WRAPPERTYPEINFO();
@@ -29,7 +30,9 @@ class MODULES_EXPORT AudioWorklet final : public Worklet {
 
   ~AudioWorklet() = default;
 
-  void CreateProcessor(AudioWorkletHandler*, MessagePortChannel);
+  void CreateProcessor(AudioWorkletHandler*,
+                       MessagePortChannel,
+                       scoped_refptr<SerializedScriptValue> node_options);
 
   // Invoked by AudioWorkletMessagingProxy. Notifies |context_| when
   // AudioWorkletGlobalScope finishes the first script evaluation and is ready
@@ -38,6 +41,11 @@ class MODULES_EXPORT AudioWorklet final : public Worklet {
   void NotifyGlobalScopeIsUpdated();
 
   WebThread* GetBackingThread();
+
+  BaseAudioContext* GetBaseAudioContext() const;
+
+  // Returns |nullptr| if there is no active WorkletGlobalScope().
+  AudioWorkletMessagingProxy* GetMessagingProxy();
 
   const Vector<CrossThreadAudioParamInfo> GetParamInfoListForProcessor(
       const String& name);
@@ -56,9 +64,6 @@ class MODULES_EXPORT AudioWorklet final : public Worklet {
   // Implements Worklet
   bool NeedsToCreateGlobalScope() final;
   WorkletGlobalScopeProxy* CreateGlobalScope() final;
-
-  // Returns |nullptr| if there is no active WorkletGlobalScope().
-  AudioWorkletMessagingProxy* GetMessagingProxy();
 
   // To catch the first global scope update and notify the context.
   bool worklet_started_ = false;

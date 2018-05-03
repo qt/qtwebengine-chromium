@@ -20,6 +20,7 @@
 #include "base/observer_list.h"
 #include "base/process/process.h"
 #include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "cc/input/browser_controls_state.h"
@@ -107,7 +108,7 @@ class CreateViewParams;
 // project. New code should be added to RenderFrameImpl instead.
 //
 // For context, please see https://crbug.com/467770 and
-// http://www.chromium.org/developers/design-documents/site-isolation.
+// https://www.chromium.org/developers/design-documents/site-isolation.
 class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                                       public blink::WebViewClient,
                                       public RenderWidgetOwnerDelegate,
@@ -139,10 +140,11 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   static RenderViewImpl* FromRoutingID(int routing_id);
 
   // May return NULL when the view is closing.
-  blink::WebView* webview() const;
+  blink::WebView* webview();
+  const blink::WebView* webview() const;
 
   // Returns the RenderWidget for this RenderView.
-  RenderWidget* GetWidget() const;
+  RenderWidget* GetWidget();
 
   const WebPreferences& webkit_preferences() const {
     return webkit_preferences_;
@@ -284,7 +286,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                              blink::WebSandboxFlags sandbox_flags) override;
   blink::WebWidget* CreatePopup(blink::WebLocalFrame* creator,
                                 blink::WebPopupType popup_type) override;
-  int64_t GetSessionStorageNamespaceId() override;
+  base::StringPiece GetSessionStorageNamespaceId() override;
   void PrintPage(blink::WebLocalFrame* frame) override;
   bool EnumerateChosenDirectory(
       const blink::WebString& path,
@@ -302,6 +304,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                           const blink::WebNode& toNode) override;
   void DidUpdateLayout() override;
 #if defined(OS_ANDROID)
+  // |touch_rect| is in physical pixels if --use-zoom-for-dsf is enabled.
+  // Otherwise, it is in DIPs.
   bool DidTapMultipleTargets(
       const blink::WebSize& inner_viewport_offset,
       const blink::WebRect& touch_rect,
@@ -319,7 +323,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void PageImportanceSignalsChanged() override;
   void DidAutoResize(const blink::WebSize& newSize) override;
   blink::WebRect RootWindowRect() override;
-  void DidFocus() override;
+  void DidFocus(blink::WebLocalFrame* calling_frame) override;
 
 #if defined(OS_ANDROID)
   // Only used on Android since all other platforms implement
@@ -371,8 +375,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                         const ui::LatencyInfo& latency_info,
                         HandledEventCallback callback) override;
 
-  void UpdateWebViewWithDeviceScaleFactor();
-
   bool renderer_wide_named_frame_lookup() {
     return renderer_wide_named_frame_lookup_;
   }
@@ -387,7 +389,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   GURL GetURLForGraphicsContext3D() override;
   void DidCommitCompositorFrame() override;
   void DidCompletePageScaleAnimation() override;
-  void OnDeviceScaleFactorChanged() override;
   void ResizeWebWidget() override;
 
   RenderViewImpl(CompositorDependencies* compositor_deps,
@@ -445,6 +446,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                            ScreenMetricsEmulationWithOriginalDSF1);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplScaleFactorTest,
                            ScreenMetricsEmulationWithOriginalDSF2);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplScaleFactorTest,
+                           DeviceEmulationWithOOPIF);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            DecideNavigationPolicyHandlesAllTopLevel);
 #if defined(OS_MACOSX)
@@ -516,6 +519,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
       const gfx::Size& min_size,
       const gfx::Size& max_size,
       const content::ScreenInfo& screen_info,
+      uint32_t content_source_id,
       const viz::LocalSurfaceId& local_surface_id);
   void OnEnumerateDirectoryResponse(int id,
                                     const std::vector<base::FilePath>& paths);
@@ -541,12 +545,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnForceRedraw(const ui::LatencyInfo& latency_info);
   void OnSelectWordAroundCaret();
   void OnAudioStateChanged(bool is_audio_playing);
-#if defined(OS_ANDROID)
-  void OnUndoScrollFocusedEditableNodeIntoRect();
-  void OnUpdateBrowserControlsState(bool enable_hiding,
-                                    bool enable_showing,
-                                    bool animate);
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
   void OnGetRenderedText();
 #endif
 
@@ -584,10 +583,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   // Update the target url and tell the browser that the target URL has changed.
   // If |url| is empty, show |fallback_url|.
   void UpdateTargetURL(const GURL& url, const GURL& fallback_url);
-
-  // Coordinate conversion -----------------------------------------------------
-
-  gfx::RectF ClientRectToPhysicalWindowRect(const gfx::RectF& rect) const;
 
   // RenderFrameImpl accessible state ------------------------------------------
   // The following section is the set of methods that RenderFrameImpl needs
@@ -775,10 +770,12 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   std::map<int, blink::WebFileChooserCompletion*> enumeration_completions_;
   int enumeration_completion_id_;
 
+  base::Optional<float> device_scale_factor_for_testing_;
+
   // The SessionStorage namespace that we're assigned to has an ID, and that ID
   // is passed to us upon creation.  WebKit asks for this ID upon first use and
   // uses it whenever asking the browser process to allocate new storage areas.
-  int64_t session_storage_namespace_id_;
+  std::string session_storage_namespace_id_;
 
   // All the registered observers.  We expect this list to be small, so vector
   // is fine.

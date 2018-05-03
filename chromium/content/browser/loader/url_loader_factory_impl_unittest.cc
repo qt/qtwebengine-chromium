@@ -31,10 +31,10 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "content/public/test/test_url_loader_client.h"
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -49,8 +49,9 @@
 #include "net/url_request/url_request_filter.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
-#include "services/network/public/interfaces/url_loader.mojom.h"
-#include "services/network/public/interfaces/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/network/test/test_url_loader_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -90,6 +91,7 @@ class URLLoaderFactoryImplTest : public ::testing::TestWithParam<size_t> {
             nullptr,
             nullptr,
             nullptr,
+            nullptr,
             base::Bind(&URLLoaderFactoryImplTest::GetContexts,
                        base::Unretained(this)),
             BrowserThread::GetTaskRunnerForThread(BrowserThread::IO))) {
@@ -103,10 +105,10 @@ class URLLoaderFactoryImplTest : public ::testing::TestWithParam<size_t> {
     MojoAsyncResourceHandler::SetAllocationSizeForTesting(GetParam());
     rdh_.SetLoaderDelegate(&loader_deleate_);
 
-    URLLoaderFactoryImpl::Create(
-        resource_message_filter_->requester_info_for_test(),
-        mojo::MakeRequest(&factory_),
-        BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
+    mojo::StrongBinding<network::mojom::URLLoaderFactory>::Create(
+        std::make_unique<URLLoaderFactoryImpl>(
+            resource_message_filter_->requester_info_for_test()),
+        mojo::MakeRequest(&factory_));
 
     // Calling this function creates a request context.
     browser_context_->GetResourceContext()->GetRequestContext();
@@ -152,7 +154,7 @@ TEST_P(URLLoaderFactoryImplTest, GetResponse) {
   PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestMockHTTPJob::AddUrlHandlers(root);
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   // Assume the file contents is small enough to be stored in the data pipe.
   request.url = net::URLRequestMockHTTPJob::GetMockUrl("hello.html");
   request.method = "GET";
@@ -227,7 +229,7 @@ TEST_P(URLLoaderFactoryImplTest, GetResponse) {
 TEST_P(URLLoaderFactoryImplTest, GetFailedResponse) {
   network::mojom::URLLoaderPtr loader;
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   net::URLRequestFailedJob::AddUrlHandler();
   request.url = net::URLRequestFailedJob::GetMockHttpUrlWithFailurePhase(
       net::URLRequestFailedJob::START, net::ERR_TIMED_OUT);
@@ -256,7 +258,7 @@ TEST_P(URLLoaderFactoryImplTest, GetFailedResponse) {
 TEST_P(URLLoaderFactoryImplTest, GetFailedResponse2) {
   network::mojom::URLLoaderPtr loader;
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   net::URLRequestFailedJob::AddUrlHandler();
   request.url = net::URLRequestFailedJob::GetMockHttpUrlWithFailurePhase(
       net::URLRequestFailedJob::READ_ASYNC, net::ERR_TIMED_OUT);
@@ -285,7 +287,7 @@ TEST_P(URLLoaderFactoryImplTest, GetFailedResponse2) {
 TEST_P(URLLoaderFactoryImplTest, InvalidURL) {
   network::mojom::URLLoaderPtr loader;
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   request.url = GURL();
   request.method = "GET";
   // |resource_type| can't be a frame type. It is because when PlzNavigate is
@@ -313,7 +315,7 @@ TEST_P(URLLoaderFactoryImplTest, ShouldNotRequestURL) {
   RejectingResourceDispatcherHostDelegate rdh_delegate;
   rdh_.SetDelegate(&rdh_delegate);
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   request.url = GURL("http://localhost/");
   request.method = "GET";
   // |resource_type| can't be a frame type. It is because when PlzNavigate is
@@ -346,7 +348,7 @@ TEST_P(URLLoaderFactoryImplTest, DownloadToFile) {
   net::URLRequestMockHTTPJob::AddUrlHandlers(root);
 
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   request.url = net::URLRequestMockHTTPJob::GetMockUrl("hello.html");
   request.method = "GET";
   request.resource_type = RESOURCE_TYPE_XHR;
@@ -414,7 +416,7 @@ TEST_P(URLLoaderFactoryImplTest, DownloadToFileFailure) {
   net::URLRequestSlowDownloadJob::AddUrlHandler();
 
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   request.url = GURL(net::URLRequestSlowDownloadJob::kKnownSizeUrl);
   request.method = "GET";
   request.resource_type = RESOURCE_TYPE_XHR;
@@ -471,7 +473,7 @@ TEST_P(URLLoaderFactoryImplTest, OnTransferSizeUpdated) {
   PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestMockHTTPJob::AddUrlHandlers(root);
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   // Assume the file contents is small enough to be stored in the data pipe.
   request.url = net::URLRequestMockHTTPJob::GetMockUrl("gzip-content.svgz");
   request.method = "GET";
@@ -531,7 +533,7 @@ TEST_P(URLLoaderFactoryImplTest, CancelFromRenderer) {
   PathService::Get(DIR_TEST_DATA, &root);
   net::URLRequestFailedJob::AddUrlHandler();
   network::ResourceRequest request;
-  TestURLLoaderClient client;
+  network::TestURLLoaderClient client;
   // Assume the file contents is small enough to be stored in the data pipe.
   request.url = net::URLRequestFailedJob::GetMockHttpUrl(net::ERR_IO_PENDING);
   request.method = "GET";

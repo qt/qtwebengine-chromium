@@ -12,8 +12,7 @@
 #include "net/quic/platform/api/quic_bug_tracker.h"
 #include "net/quic/platform/api/quic_flags.h"
 #include "net/quic/platform/api/quic_prefetch.h"
-
-using std::string;
+#include "net/quic/platform/api/quic_string.h"
 
 namespace net {
 namespace {
@@ -163,7 +162,7 @@ const char* QuicUtils::TransmissionTypeToString(TransmissionType type) {
   return "INVALID_TRANSMISSION_TYPE";
 }
 
-string QuicUtils::PeerAddressChangeTypeToString(PeerAddressChangeType type) {
+QuicString QuicUtils::AddressChangeTypeToString(AddressChangeType type) {
   switch (type) {
     RETURN_STRING_LITERAL(NO_CHANGE);
     RETURN_STRING_LITERAL(PORT_CHANGE);
@@ -173,11 +172,11 @@ string QuicUtils::PeerAddressChangeTypeToString(PeerAddressChangeType type) {
     RETURN_STRING_LITERAL(IPV6_TO_IPV6_CHANGE);
     RETURN_STRING_LITERAL(IPV4_TO_IPV4_CHANGE);
   }
-  return "INVALID_PEER_ADDRESS_CHANGE_TYPE";
+  return "INVALID_ADDRESS_CHANGE_TYPE";
 }
 
 // static
-PeerAddressChangeType QuicUtils::DetermineAddressChangeType(
+AddressChangeType QuicUtils::DetermineAddressChangeType(
     const QuicSocketAddress& old_address,
     const QuicSocketAddress& new_address) {
   if (!old_address.IsInitialized() || !new_address.IsInitialized() ||
@@ -257,6 +256,35 @@ void QuicUtils::CopyToBuffer(const struct iovec* iov,
     copy_len = std::min(buffer_length, iov[iovnum].iov_len);
   }
   QUIC_BUG_IF(buffer_length > 0) << "Failed to copy entire length to buffer.";
+}
+
+// static
+bool QuicUtils::IsAckable(SentPacketState state) {
+  return state != NEVER_SENT && state != ACKED && state != UNACKABLE;
+}
+
+// static
+SentPacketState QuicUtils::RetransmissionTypeToPacketState(
+    TransmissionType retransmission_type) {
+  switch (retransmission_type) {
+    case ALL_UNACKED_RETRANSMISSION:
+    case ALL_INITIAL_RETRANSMISSION:
+      return UNACKABLE;
+    case HANDSHAKE_RETRANSMISSION:
+      return HANDSHAKE_RETRANSMITTED;
+    case LOSS_RETRANSMISSION:
+      return LOST;
+    case TLP_RETRANSMISSION:
+      return TLP_RETRANSMITTED;
+    case RTO_RETRANSMISSION:
+      return RTO_RETRANSMITTED;
+    case PROBING_RETRANSMISSION:
+      return PROBE_RETRANSMITTED;
+    default:
+      QUIC_BUG << QuicUtils::TransmissionTypeToString(retransmission_type)
+               << " is not a retransmission_type";
+      return UNACKABLE;
+  }
 }
 
 }  // namespace net

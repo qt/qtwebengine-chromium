@@ -47,12 +47,13 @@ DoubleSize ContentsScrollOffset(AbstractView* abstract_view) {
   LocalFrame* frame = ToLocalDOMWindow(abstract_view)->GetFrame();
   if (!frame)
     return DoubleSize();
-  LocalFrameView* frame_view = frame->View();
-  if (!frame_view)
+  ScrollableArea* scrollable_area =
+      frame->View()->LayoutViewportScrollableArea();
+  if (!scrollable_area)
     return DoubleSize();
   float scale_factor = frame->PageZoomFactor();
-  return DoubleSize(frame_view->ScrollX() / scale_factor,
-                    frame_view->ScrollY() / scale_factor);
+  return DoubleSize(scrollable_area->ScrollOffsetInt().Width() / scale_factor,
+                    scrollable_area->ScrollOffsetInt().Height() / scale_factor);
 }
 
 float PageZoomFactor(const UIEvent* event) {
@@ -167,7 +168,7 @@ MouseEvent::MouseEvent(const AtomicString& event_type,
           abstract_view,
           detail,
           static_cast<WebInputEvent::Modifiers>(event.GetModifiers()),
-          TimeTicks::FromSeconds(event.TimeStampSeconds()),
+          TimeTicksFromSeconds(event.TimeStampSeconds()),
           abstract_view
               ? abstract_view->GetInputDeviceCapabilities()->FiresTouchEvents(
                     event.FromTouch())
@@ -269,15 +270,13 @@ void MouseEvent::InitCoordinatesFromRootFrame(double window_x,
                           ? ToLocalDOMWindow(view())->GetFrame()
                           : nullptr;
   if (frame && HasPosition()) {
+    scroll_offset = ContentsScrollOffset(view());
     if (LocalFrameView* frame_view = frame->View()) {
       adjusted_page_location =
-          frame_view->RootFrameToContents(FloatPoint(window_x, window_y));
-      scroll_offset = frame_view->GetScrollOffset();
+          frame_view->RootFrameToDocument(FloatPoint(window_x, window_y));
       float scale_factor = 1 / frame->PageZoomFactor();
-      if (scale_factor != 1.0f) {
+      if (scale_factor != 1.0f)
         adjusted_page_location.Scale(scale_factor, scale_factor);
-        scroll_offset.Scale(scale_factor, scale_factor);
-      }
     }
   }
 
@@ -498,8 +497,17 @@ DispatchEventResult MouseEvent::DispatchEvent(EventDispatcher& dispatcher) {
 }
 
 void MouseEvent::ComputePageLocation() {
-  float scale_factor = PageZoomFactor(this);
-  absolute_location_ = page_location_.ScaledBy(scale_factor);
+  LocalFrame* frame = view() && view()->IsLocalDOMWindow()
+                          ? ToLocalDOMWindow(view())->GetFrame()
+                          : nullptr;
+  DoublePoint scaled_page_location =
+      page_location_.ScaledBy(PageZoomFactor(this));
+  if (frame && frame->View()) {
+    absolute_location_ =
+        frame->View()->DocumentToAbsolute(scaled_page_location);
+  } else {
+    absolute_location_ = scaled_page_location;
+  }
 }
 
 void MouseEvent::ReceivedTarget() {
@@ -514,6 +522,7 @@ void MouseEvent::ComputeRelativePosition() {
   // Compute coordinates that are based on the target.
   layer_location_ = page_location_;
   offset_location_ = page_location_;
+  float inverse_zoom_factor = 1 / PageZoomFactor(this);
 
   // Must have an updated layout tree for this math to work correctly.
   target_node->GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
@@ -533,9 +542,8 @@ void MouseEvent::ComputeRelativePosition() {
     }
 
     offset_location_ = DoublePoint(local_pos);
-    float scale_factor = 1 / PageZoomFactor(this);
-    if (scale_factor != 1.0f)
-      offset_location_.Scale(scale_factor, scale_factor);
+    if (inverse_zoom_factor != 1.0f)
+      offset_location_.Scale(inverse_zoom_factor, inverse_zoom_factor);
   }
 
   // Adjust layerLocation to be relative to the layer.
@@ -547,8 +555,10 @@ void MouseEvent::ComputeRelativePosition() {
     n = n->parentNode();
 
   if (n) {
+    DoublePoint scaled_page_location =
+        page_location_.ScaledBy(PageZoomFactor(this));
     if (LocalFrameView* view = n->GetLayoutObject()->View()->GetFrameView())
-      layer_location_ = view->DocumentToAbsolute(page_location_);
+      layer_location_ = view->DocumentToAbsolute(scaled_page_location);
 
     // FIXME: This logic is a wrong implementation of convertToLayerCoords.
     for (PaintLayer* layer = n->GetLayoutObject()->EnclosingLayer(); layer;
@@ -556,6 +566,8 @@ void MouseEvent::ComputeRelativePosition() {
       layer_location_ -= DoubleSize(layer->Location().X().ToDouble(),
                                     layer->Location().Y().ToDouble());
     }
+    if (inverse_zoom_factor != 1.0f)
+      layer_location_.Scale(inverse_zoom_factor, inverse_zoom_factor);
   }
 
   has_cached_relative_position_ = true;

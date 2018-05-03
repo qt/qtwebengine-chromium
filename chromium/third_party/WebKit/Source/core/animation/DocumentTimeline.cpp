@@ -117,6 +117,7 @@ Animation* DocumentTimeline::Play(AnimationEffectReadOnly* child) {
 }
 
 HeapVector<Member<Animation>> DocumentTimeline::getAnimations() {
+  document_->UpdateStyleAndLayoutTree();
   HeapVector<Member<Animation>> animations;
   for (const auto& animation : animations_) {
     if (animation->effect() &&
@@ -193,14 +194,20 @@ void DocumentTimeline::DocumentTimelineTiming::Trace(blink::Visitor* visitor) {
 
 size_t DocumentTimeline::MainThreadCompositableAnimationsCount() const {
   size_t main_thread_compositable_animations_count = 0;
-  // TODO(crbug.com/781305): Restore the calculation here.
+  for (Animation* animation : animations_needing_update_) {
+    if (animation->IsNonCompositedCompositable() &&
+        animation->PlayStateInternal() != Animation::kFinished)
+      main_thread_compositable_animations_count++;
+  }
   return main_thread_compositable_animations_count;
 }
 
 double DocumentTimeline::ZeroTime() {
   if (!zero_time_initialized_ && document_ && document_->Loader()) {
-    zero_time_ = document_->Loader()->GetTiming().ReferenceMonotonicTime() +
-                 origin_time_;
+    zero_time_ =
+        TimeTicksInSeconds(
+            document_->Loader()->GetTiming().ReferenceMonotonicTime()) +
+        origin_time_;
     zero_time_initialized_ = true;
   }
   return zero_time_;

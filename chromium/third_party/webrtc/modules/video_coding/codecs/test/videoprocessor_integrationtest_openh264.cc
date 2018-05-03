@@ -20,15 +20,11 @@ namespace test {
 #if defined(WEBRTC_USE_H264)
 
 namespace {
-
 // Codec settings.
 const bool kResilienceOn = true;
 const int kCifWidth = 352;
 const int kCifHeight = 288;
 const int kNumFrames = 100;
-
-const std::nullptr_t kNoVisualizationParams = nullptr;
-
 }  // namespace
 
 class VideoProcessorIntegrationTestOpenH264
@@ -36,11 +32,8 @@ class VideoProcessorIntegrationTestOpenH264
  protected:
   VideoProcessorIntegrationTestOpenH264() {
     config_.filename = "foreman_cif";
-    config_.input_filename = ResourcePath(config_.filename, "yuv");
-    config_.output_filename =
-        TempFilename(OutputPath(), "videoprocessor_integrationtest_libvpx");
+    config_.filepath = ResourcePath(config_.filename, "yuv");
     config_.num_frames = kNumFrames;
-    config_.networking_config.packet_loss_probability = 0.0;
     // Only allow encoder/decoder to use single core, for predictability.
     config_.use_single_core = true;
     config_.hw_encoder = false;
@@ -49,49 +42,41 @@ class VideoProcessorIntegrationTestOpenH264
   }
 };
 
-// H264: Run with no packet loss and fixed bitrate. Quality should be very high.
-// Note(hbos): The PacketManipulatorImpl code used to simulate packet loss in
-// these unittests appears to drop "packets" in a way that is not compatible
-// with H264. Therefore ProcessXPercentPacketLossH264, X != 0, unittests have
-// not been added.
-TEST_F(VideoProcessorIntegrationTestOpenH264, Process0PercentPacketLoss) {
-  config_.SetCodecSettings(kVideoCodecH264, 1, false, false, true, false,
+TEST_F(VideoProcessorIntegrationTestOpenH264, ConstantHighBitrate) {
+  config_.SetCodecSettings(kVideoCodecH264, 1, 1, 1, false, true, false,
                            kResilienceOn, kCifWidth, kCifHeight);
 
-  std::vector<RateProfile> rate_profiles = {{500, 30, kNumFrames + 1}};
+  std::vector<RateProfile> rate_profiles = {{500, 30, kNumFrames}};
 
   std::vector<RateControlThresholds> rc_thresholds = {
-      {2, 60, 20, 10, 20, 0, 1}};
+      {5, 1, 0, 0.1, 0.2, 0.1, 0, 1}};
 
-  QualityThresholds quality_thresholds(35.0, 25.0, 0.93, 0.70);
+  std::vector<QualityThresholds> quality_thresholds = {{37, 35, 0.93, 0.91}};
 
   ProcessFramesAndMaybeVerify(rate_profiles, &rc_thresholds,
-                              &quality_thresholds, nullptr,
-                              kNoVisualizationParams);
+                              &quality_thresholds, nullptr, nullptr);
 }
 
 // H264: Enable SingleNalUnit packetization mode. Encoder should split
 // large frames into multiple slices and limit length of NAL units.
-TEST_F(VideoProcessorIntegrationTestOpenH264, ProcessNoLossSingleNalUnit) {
+TEST_F(VideoProcessorIntegrationTestOpenH264, SingleNalUnit) {
   config_.h264_codec_settings.packetization_mode =
       H264PacketizationMode::SingleNalUnit;
-  config_.networking_config.max_payload_size_in_bytes = 500;
-  config_.SetCodecSettings(kVideoCodecH264, 1, false, false, true, false,
+  config_.max_payload_size_bytes = 500;
+  config_.SetCodecSettings(kVideoCodecH264, 1, 1, 1, false, true, false,
                            kResilienceOn, kCifWidth, kCifHeight);
 
-  std::vector<RateProfile> rate_profiles = {{500, 30, kNumFrames + 1}};
+  std::vector<RateProfile> rate_profiles = {{500, 30, kNumFrames}};
 
   std::vector<RateControlThresholds> rc_thresholds = {
-      {2, 60, 30, 10, 20, 0, 1}};
+      {5, 1, 0, 0.1, 0.2, 0.1, 0, 1}};
 
-  QualityThresholds quality_thresholds(35.0, 25.0, 0.93, 0.70);
+  std::vector<QualityThresholds> quality_thresholds = {{37, 35, 0.93, 0.91}};
 
-  BitstreamThresholds bs_thresholds(
-      config_.networking_config.max_payload_size_in_bytes);
+  BitstreamThresholds bs_thresholds = {config_.max_payload_size_bytes};
 
   ProcessFramesAndMaybeVerify(rate_profiles, &rc_thresholds,
-                              &quality_thresholds, &bs_thresholds,
-                              kNoVisualizationParams);
+                              &quality_thresholds, &bs_thresholds, nullptr);
 }
 
 #endif  // defined(WEBRTC_USE_H264)

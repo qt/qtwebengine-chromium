@@ -213,6 +213,10 @@ const InternalRoleEntry kInternalRoles[] = {
     {kInlineTextBoxRole, "InlineTextBox"},
     {kInputTimeRole, "InputTime"},
     {kLabelRole, "Label"},
+    {kLayoutTableRole, "LayoutTable"},
+    {kLayoutTableCellRole, "LayoutCellTable"},
+    {kLayoutTableColumnRole, "LayoutColumnTable"},
+    {kLayoutTableRowRole, "LayoutRowTable"},
     {kLegendRole, "Legend"},
     {kLinkRole, "Link"},
     {kLineBreakRole, "LineBreak"},
@@ -1508,7 +1512,7 @@ bool AXObject::SupportsARIAActiveDescendant() const {
 }
 
 bool AXObject::SupportsARIAExpanded() const {
-  switch (AriaRoleAttribute()) {
+  switch (RoleValue()) {
     case kAlertDialogRole:
     case kAlertRole:
     case kArticleRole:
@@ -1532,6 +1536,7 @@ bool AXObject::SupportsARIAExpanded() const {
     case kGroupRole:
     case kHeadingRole:
     case kImageRole:
+    case kLayoutTableRole:
     case kListRole:
     case kListBoxRole:
     case kListBoxOptionRole:
@@ -1771,10 +1776,25 @@ AXObject* AXObject::ElementAccessibilityHitTest(const IntPoint& point) const {
   return const_cast<AXObject*>(this);
 }
 
+const AXObject::AXObjectVector& AXObject::Children() const {
+  return const_cast<AXObject*>(this)->Children();
+}
+
 const AXObject::AXObjectVector& AXObject::Children() {
   UpdateChildrenIfNecessary();
 
   return children_;
+}
+
+bool AXObject::IsAncestorOf(const AXObject& descendant) const {
+  return descendant.IsDescendantOf(*this);
+}
+
+bool AXObject::IsDescendantOf(const AXObject& ancestor) const {
+  const AXObject* parent = ParentObject();
+  while (parent && parent != &ancestor)
+    parent = parent->ParentObject();
+  return !!parent;
 }
 
 AXObject* AXObject::ParentObject() const {
@@ -2419,6 +2439,7 @@ bool AXObject::NameFromContents(bool recursive) const {
     case kComboBoxMenuButtonRole:
     case kDisclosureTriangleRole:
     case kHeadingRole:
+    case kLayoutTableCellRole:
     case kLineBreakRole:
     case kLinkRole:
     case kListBoxOptionRole:
@@ -2470,6 +2491,9 @@ bool AXObject::NameFromContents(bool recursive) const {
     case kIframeRole:
     case kImageRole:
     case kInputTimeRole:
+    case kLayoutTableRole:
+    case kLayoutTableColumnRole:
+    case kLayoutTableRowRole:
     case kListBoxRole:
     case kLogRole:
     case kMainRole:

@@ -43,10 +43,8 @@ void ChildFrameDisconnector::CollectFrameOwners(Node& root) {
   for (Node* child = root.firstChild(); child; child = child->nextSibling())
     CollectFrameOwners(*child);
 
-  ElementShadow* shadow =
-      root.IsElementNode() ? ToElement(root).Shadow() : nullptr;
-  if (shadow)
-    CollectFrameOwners(*shadow);
+  if (ShadowRoot* shadow_root = root.GetShadowRoot())
+    CollectFrameOwners(*shadow_root);
 }
 
 void ChildFrameDisconnector::DisconnectCollectedFrameOwners() {
@@ -63,12 +61,6 @@ void ChildFrameDisconnector::DisconnectCollectedFrameOwners() {
   }
 }
 
-void ChildFrameDisconnector::CollectFrameOwners(ElementShadow& shadow) {
-  for (ShadowRoot* root = &shadow.YoungestShadowRoot(); root;
-       root = root->OlderShadowRoot())
-    CollectFrameOwners(*root);
-}
-
 #if DCHECK_IS_ON()
 static unsigned CheckConnectedSubframeCountIsConsistent(Node& node) {
   unsigned count = 0;
@@ -78,11 +70,8 @@ static unsigned CheckConnectedSubframeCountIsConsistent(Node& node) {
         ToHTMLFrameOwnerElement(node).ContentFrame())
       count++;
 
-    if (ElementShadow* shadow = ToElement(node).Shadow()) {
-      for (ShadowRoot* root = &shadow->YoungestShadowRoot(); root;
-           root = root->OlderShadowRoot())
-        count += CheckConnectedSubframeCountIsConsistent(*root);
-    }
+    if (ShadowRoot* root = ToElement(node).GetShadowRoot())
+      count += CheckConnectedSubframeCountIsConsistent(*root);
   }
 
   for (Node* child = node.firstChild(); child; child = child->nextSibling())

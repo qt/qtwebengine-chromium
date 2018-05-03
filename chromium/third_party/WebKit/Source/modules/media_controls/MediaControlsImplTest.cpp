@@ -301,7 +301,7 @@ void MediaControlsImplTest::MouseDownAt(WebFloatPoint pos) {
                                  pos /* client pos */, pos /* screen pos */,
                                  WebPointerProperties::Button::kLeft, 1,
                                  WebInputEvent::Modifiers::kLeftButtonDown,
-                                 WebInputEvent::kTimeStampForTesting);
+                                 WebInputEvent::GetStaticTimeStampForTests());
   mouse_down_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
       mouse_down_event);
@@ -312,7 +312,7 @@ void MediaControlsImplTest::MouseMoveTo(WebFloatPoint pos) {
                                  pos /* client pos */, pos /* screen pos */,
                                  WebPointerProperties::Button::kLeft, 1,
                                  WebInputEvent::Modifiers::kLeftButtonDown,
-                                 WebInputEvent::kTimeStampForTesting);
+                                 WebInputEvent::GetStaticTimeStampForTests());
   mouse_move_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_move_event, {});
@@ -322,7 +322,7 @@ void MediaControlsImplTest::MouseUpAt(WebFloatPoint pos) {
   WebMouseEvent mouse_up_event(
       WebMouseEvent::kMouseUp, pos /* client pos */, pos /* screen pos */,
       WebPointerProperties::Button::kLeft, 1, WebInputEvent::kNoModifiers,
-      WebInputEvent::kTimeStampForTesting);
+      WebInputEvent::GetStaticTimeStampForTests());
   mouse_up_event.SetFrameScale(1);
   GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
       mouse_up_event);
@@ -588,6 +588,45 @@ TEST_F(MediaControlsImplTest, DownloadButtonInProductHelpDisabled) {
   EXPECT_FALSE(MediaControls().DownloadInProductHelp());
 }
 
+class MediaControlsImplPictureInPictureTest : public MediaControlsImplTest {
+ public:
+  void SetUp() override {
+    RuntimeEnabledFeatures::SetPictureInPictureEnabled(true);
+    MediaControlsImplTest::SetUp();
+  }
+};
+
+TEST_F(MediaControlsImplPictureInPictureTest, PictureInPictureButtonVisible) {
+  EnsureSizing();
+
+  Element* picture_in_picture_button = GetElementByShadowPseudoId(
+      MediaControls(), "-internal-media-controls-picture-in-picture-button");
+  ASSERT_NE(nullptr, picture_in_picture_button);
+  ASSERT_FALSE(IsElementVisible(*picture_in_picture_button));
+
+  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
+  testing::RunPendingTasks();
+  SimulateLoadedMetadata();
+  ASSERT_TRUE(IsElementVisible(*picture_in_picture_button));
+
+  MediaControls().MediaElement().SetSrc("");
+  testing::RunPendingTasks();
+  SimulateLoadedMetadata();
+  ASSERT_FALSE(IsElementVisible(*picture_in_picture_button));
+
+  MediaControls().MediaElement().SetBooleanAttribute(
+      HTMLNames::disablepictureinpictureAttr, true);
+  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
+  testing::RunPendingTasks();
+  SimulateLoadedMetadata();
+  ASSERT_FALSE(IsElementVisible(*picture_in_picture_button));
+
+  MediaControls().MediaElement().SetBooleanAttribute(
+      HTMLNames::disablepictureinpictureAttr, false);
+  testing::RunPendingTasks();
+  ASSERT_TRUE(IsElementVisible(*picture_in_picture_button));
+}
+
 class MediaControlsImplInProductHelpTest : public MediaControlsImplTest {
  public:
   void SetUp() override {
@@ -605,24 +644,7 @@ class MediaControlsImplInProductHelpTest : public MediaControlsImplTest {
   bool EnableDownloadInProductHelp() override { return true; }
 };
 
-// Disabled on Mac. Elusive Segfault on 10.12. See http://crbug.com/758076.
-#if defined(OS_MACOSX)
-#define MAYBE_DownloadButtonInProductHelp_Button \
-  DISABLED_DownloadButtonInProductHelp_Button
-#define MAYBE_DownloadButtonInProductHelp_ControlsVisibility \
-  DISABLED_DownloadButtonInProductHelp_ControlsVisibility
-#define MAYBE_DownloadButtonInProductHelp_ButtonVisibility \
-  DISABLED_DownloadButtonInProductHelp_ButtonVisibility
-#else
-#define MAYBE_DownloadButtonInProductHelp_Button \
-  DownloadButtonInProductHelp_Button
-#define MAYBE_DownloadButtonInProductHelp_ControlsVisibility \
-  DownloadButtonInProductHelp_ControlsVisibility
-#define MAYBE_DownloadButtonInProductHelp_ButtonVisibility \
-  DownloadButtonInProductHelp_ButtonVisibility
-#endif
-TEST_F(MediaControlsImplInProductHelpTest,
-       MAYBE_DownloadButtonInProductHelp_Button) {
+TEST_F(MediaControlsImplInProductHelpTest, DownloadButtonInProductHelp_Button) {
   EnsureSizing();
 
   // Inject the LayoutObject for the button to override the rect returned in
@@ -654,7 +676,7 @@ TEST_F(MediaControlsImplInProductHelpTest,
 }
 
 TEST_F(MediaControlsImplInProductHelpTest,
-       MAYBE_DownloadButtonInProductHelp_ControlsVisibility) {
+       DownloadButtonInProductHelp_ControlsVisibility) {
   EnsureSizing();
 
   // Inject the LayoutObject for the button to override the rect returned in
@@ -690,7 +712,7 @@ TEST_F(MediaControlsImplInProductHelpTest,
 }
 
 TEST_F(MediaControlsImplInProductHelpTest,
-       MAYBE_DownloadButtonInProductHelp_ButtonVisibility) {
+       DownloadButtonInProductHelp_ButtonVisibility) {
   EnsureSizing();
 
   // Inject the LayoutObject for the button to override the rect returned in

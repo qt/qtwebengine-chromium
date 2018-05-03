@@ -12,27 +12,26 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
-#include "components/viz/common/surfaces/surface_sequence.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_hittest.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/compositor/surface_utils.h"
-#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
-#include "content/common/content_switches_internal.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input/web_touch_event_traits.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "gpu/ipc/common/gpu_messages.h"
 #include "skia/ext/platform_canvas.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -169,11 +168,9 @@ void RenderWidgetHostViewGuest::Hide() {
 }
 
 void RenderWidgetHostViewGuest::SetSize(const gfx::Size& size) {
-  host_->WasResized();
 }
 
 void RenderWidgetHostViewGuest::SetBounds(const gfx::Rect& rect) {
-  SetSize(rect.size());
 }
 
 void RenderWidgetHostViewGuest::Focus() {
@@ -337,7 +334,7 @@ void RenderWidgetHostViewGuest::Destroy() {
   RenderWidgetHostViewChildFrame::Destroy();
 }
 
-gfx::Size RenderWidgetHostViewGuest::GetPhysicalBackingSize() const {
+gfx::Size RenderWidgetHostViewGuest::GetCompositorViewportPixelSize() const {
   gfx::Size size;
   if (guest_) {
     size = gfx::ScaleToCeiledSize(guest_->frame_rect().size(),
@@ -373,10 +370,9 @@ void RenderWidgetHostViewGuest::SetTooltipText(
 }
 
 void RenderWidgetHostViewGuest::SendSurfaceInfoToEmbedderImpl(
-    const viz::SurfaceInfo& surface_info,
-    const viz::SurfaceSequence& sequence) {
+    const viz::SurfaceInfo& surface_info) {
   if (guest_ && !guest_->is_in_destruction())
-    guest_->SetChildFrameSurface(surface_info, sequence);
+    guest_->SetChildFrameSurface(surface_info);
 }
 
 void RenderWidgetHostViewGuest::SubmitCompositorFrame(
@@ -399,7 +395,7 @@ void RenderWidgetHostViewGuest::SubmitCompositorFrame(
 void RenderWidgetHostViewGuest::OnAttached() {
   RegisterFrameSinkId();
 #if defined(USE_AURA)
-  if (switches::IsMusHostingViz()) {
+  if (base::FeatureList::IsEnabled(::features::kMash)) {
     aura::Env::GetInstance()->ScheduleEmbed(
         GetWindowTreeClientFromRenderer(),
         base::BindOnce(&RenderWidgetHostViewGuest::OnGotEmbedToken,
@@ -470,6 +466,12 @@ void RenderWidgetHostViewGuest::UpdateCursor(const WebCursor& cursor) {
 
 void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
   platform_view_->SetIsLoading(is_loading);
+}
+
+bool RenderWidgetHostViewGuest::HasSize() const {
+  // RenderWidgetHostViewGuests are always hosting main frames, so the renderer
+  // always have a size, which is sent on the CreateView IPC.
+  return true;
 }
 
 void RenderWidgetHostViewGuest::TextInputStateChanged(
@@ -714,13 +716,12 @@ InputEventAckState RenderWidgetHostViewGuest::FilterInputEvent(
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
 
-void RenderWidgetHostViewGuest::GetScreenInfo(ScreenInfo* screen_info) {
+void RenderWidgetHostViewGuest::GetScreenInfo(ScreenInfo* screen_info) const {
   DCHECK(screen_info);
-  if (!guest_) {
-    *screen_info = ScreenInfo();
-    return;
-  }
-  *screen_info = guest_->screen_info();
+  if (guest_)
+    *screen_info = guest_->screen_info();
+  else
+    RenderWidgetHostViewBase::GetScreenInfo(screen_info);
 }
 
 void RenderWidgetHostViewGuest::ResizeDueToAutoResize(
@@ -760,24 +761,7 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
 
   ScopedInputScaleDisabler disable(host_, current_device_scale_factor());
   if (blink::WebInputEvent::IsMouseEventType(event->GetType())) {
-    // The mouse events for BrowserPlugin are modified by all
-    // the CSS transforms applied on the <object> and embedder. As a result of
-    // this, the coordinates passed on to the guest renderer are potentially
-    // incorrect to determine the position of the context menu(they are not the
-    // actual X, Y of the window). As a hack, we report the last location of a
-    // right mouse up to the BrowserPluginGuest to inform it of the next
-    // potential location for context menu (BUG=470087).
-    // TODO(ekaramad): Find a better and more fundamental solution. Could the
-    // ContextMenuParams be based on global X, Y?
-    const blink::WebMouseEvent& mouse_event =
-        static_cast<const blink::WebMouseEvent&>(*event);
-    // A MouseDown on the ButtonRight could suggest a ContextMenu.
-    if (guest_ && mouse_event.GetType() == blink::WebInputEvent::kMouseDown &&
-        mouse_event.button == blink::WebPointerProperties::Button::kRight)
-      guest_->SetContextMenuPosition(
-          gfx::Point(mouse_event.PositionInScreen().x - GetViewBounds().x(),
-                     mouse_event.PositionInScreen().y - GetViewBounds().y()));
-    host_->ForwardMouseEvent(mouse_event);
+    host_->ForwardMouseEvent(*static_cast<const blink::WebMouseEvent*>(event));
     return;
   }
 

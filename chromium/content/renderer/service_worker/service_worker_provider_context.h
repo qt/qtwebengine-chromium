@@ -15,12 +15,12 @@
 #include "content/common/service_worker/controller_service_worker.mojom.h"
 #include "content/common/service_worker/service_worker_container.mojom.h"
 #include "content/common/service_worker/service_worker_provider.mojom.h"
-#include "content/public/renderer/child_url_loader_factory_getter.h"
+#include "content/public/common/shared_url_loader_factory.h"
 #include "content/renderer/service_worker/web_service_worker_provider_impl.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
-#include "third_party/WebKit/common/service_worker/service_worker_object.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_provider_type.mojom.h"
-#include "third_party/WebKit/common/service_worker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_provider_type.mojom.h"
+#include "third_party/WebKit/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 
 namespace base {
@@ -37,7 +37,6 @@ namespace service_worker_provider_context_unittest {
 class ServiceWorkerProviderContextTest;
 }  // namespace service_worker_provider_context_unittest
 
-class ServiceWorkerHandleReference;
 class WebServiceWorkerRegistrationImpl;
 struct ServiceWorkerProviderContextDeleter;
 
@@ -70,18 +69,18 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // |controller_info| contains the endpoint (which is non-null only when
   // S13nServiceWorker is enabled) and object info that is needed to set up the
   // controller service worker for the client.
-  // |default_loader_factory_getter| contains a set of default loader
-  // factories for the associated loading context, and is used when we
-  // create a subresource loader for controllees. This is non-null only
-  // if the provider is created for controllees, and if the loading context,
-  // e.g. a frame, provides the default URLLoaderFactoryGetter.
+  // For S13nServiceWorker:
+  // |default_loader_factory| is a default loader factory for network requests,
+  // and is used when we create a subresource loader for controllees. This is
+  // non-null only if the provider is created for controllees, and if the
+  // loading context, e.g. a frame, provides it.
   ServiceWorkerProviderContext(
       int provider_id,
       blink::mojom::ServiceWorkerProviderType provider_type,
       mojom::ServiceWorkerContainerAssociatedRequest request,
       mojom::ServiceWorkerContainerHostAssociatedPtrInfo host_ptr_info,
       mojom::ControllerServiceWorkerInfoPtr controller_info,
-      scoped_refptr<ChildURLLoaderFactoryGetter> default_loader_factory_getter);
+      scoped_refptr<SharedURLLoaderFactory> default_loader_factory);
 
   // Constructor for service worker execution contexts.
   ServiceWorkerProviderContext(
@@ -101,22 +100,15 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // SetRegistrationForServiceWorkerGlobalScope() is called during the setup for
   // service worker startup, so it is guaranteed to be called before
   // TakeRegistrationForServiceWorkerGlobalScope().
-  // |sender| is to initialize ServiceWorkerHandleReference which still needs to
-  // send legacy Incre/Decre IPCs, will disappear together with class
-  // ServiceWorkerHandleReference once ServiceWorkerObjectInfo starts to retain
-  // reference to ServiceWorkerHandle in the browser process.
   void SetRegistrationForServiceWorkerGlobalScope(
-      blink::mojom::ServiceWorkerRegistrationObjectInfoPtr registration,
-      scoped_refptr<ThreadSafeSender> sender);
+      blink::mojom::ServiceWorkerRegistrationObjectInfoPtr registration);
 
   // For service worker execution contexts. Used for initializing
   // ServiceWorkerGlobalScope#registration. Called on the worker thread.
   // This takes the registration that was passed to
   // SetRegistrationForServiceWorkerScope(), then creates a new
   // WebServiceWorkerRegistrationImpl instance and returns it. |io_task_runner|
-  // is used to initialize WebServiceWorkerRegistrationImpl. While creating the
-  // WebServiceWorkerRegistrationImpl, increments interprocess references to its
-  // versions via ServiceWorkerHandleReference.
+  // is used to initialize WebServiceWorkerRegistrationImpl.
   scoped_refptr<WebServiceWorkerRegistrationImpl>
   TakeRegistrationForServiceWorkerGlobalScope(
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
@@ -125,9 +117,9 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // worker object (ServiceWorkerContainer#controller).
   int64_t GetControllerVersionId();
 
-  // For service worker clients. Takes the controller service worker object set
-  // by SetController() if any, otherwise returns nullptr.
-  std::unique_ptr<ServiceWorkerHandleReference> TakeController();
+  // For service worker clients. Takes the controller service worker object info
+  // set by SetController() if any, otherwise returns nullptr.
+  blink::mojom::ServiceWorkerObjectInfoPtr TakeController();
 
   // S13nServiceWorker:
   // For service worker clients. Returns URLLoaderFactory for loading
@@ -209,10 +201,8 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   void SetController(mojom::ControllerServiceWorkerInfoPtr controller_info,
                      const std::vector<blink::mojom::WebFeature>& used_features,
                      bool should_notify_controllerchange) override;
-  void PostMessageToClient(
-      blink::mojom::ServiceWorkerObjectInfoPtr source,
-      const base::string16& message,
-      std::vector<mojo::ScopedMessagePipeHandle> message_pipes) override;
+  void PostMessageToClient(blink::mojom::ServiceWorkerObjectInfoPtr source,
+                           blink::TransferableMessage message) override;
   void CountFeature(blink::mojom::WebFeature feature) override;
 
   // For service worker clients. Keeps the mapping from registration_id to
@@ -255,8 +245,8 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // State for service workers.
   std::unique_ptr<ProviderStateForServiceWorker> state_for_service_worker_;
 
-  // NOTE: New members should usually be added to either service_worker_state_
-  // or client_state_. Not here!
+  // NOTE: New members should usually be added to either
+  // |state_for_service_worker_| or |state_for_client_|. Not here!
 
   base::WeakPtrFactory<ServiceWorkerProviderContext> weak_factory_;
 

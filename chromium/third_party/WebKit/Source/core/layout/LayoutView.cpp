@@ -116,7 +116,8 @@ bool LayoutView::HitTest(HitTestResult& result) {
   // Note that if an iframe has its render pipeline throttled, it will not
   // update layout here, and it will also not propagate the hit test into the
   // iframe's inner document.
-  GetFrameView()->UpdateLifecycleToPrePaintClean();
+  if (!GetFrameView()->UpdateLifecycleToPrePaintClean())
+    return false;
   HitTestLatencyRecorder hit_test_latency_recorder(
       result.GetHitTestRequest().AllowsChildFrameContent());
   return HitTestNoLifecycleUpdate(result);
@@ -147,8 +148,10 @@ bool LayoutView::HitTestNoLifecycleUpdate(HitTestResult& result) {
     IntPoint frame_point = GetFrameView()->ContentsToFrame(
         result.GetHitTestLocation().RoundedPoint());
     if (Scrollbar* frame_scrollbar =
-            GetFrameView()->ScrollbarAtFramePoint(frame_point))
+            GetFrameView()->ScrollbarAtFramePoint(frame_point)) {
       result.SetScrollbar(frame_scrollbar);
+      hit_layer = true;
+    }
 
     // If hitTestResult include scrollbar, innerNode should be the parent of the
     // scrollbar.
@@ -213,6 +216,10 @@ bool LayoutView::CanHaveChildren() const {
   if (!owner)
     return true;
   if (!RuntimeEnabledFeatures::DisplayNoneIFrameCreatesNoLayoutObjectEnabled())
+    return true;
+  // Although it is not spec compliant, many websites intentionally call
+  // Window.print() on display:none iframes. https://crbug.com/819327.
+  if (GetDocument().Printing())
     return true;
   // A PluginDocument needs a layout tree during loading, even if it is inside a
   // display: none iframe.  This is because WebLocalFrameImpl::DidFinish expects
@@ -807,13 +814,13 @@ void LayoutView::UpdateAfterLayout() {
   // factor.  The call to ResizeAfterLayout() will calculate the layout viewport
   // size based on the page minimum scale factor, and then update the
   // LocalFrameView with the new size.
-  if (HasOverflowClip())
-    GetScrollableArea()->ClampScrollOffsetAfterOverflowChange();
   LocalFrame& frame = GetFrameView()->GetFrame();
   if (!GetDocument().Printing())
     GetFrameView()->AdjustViewSize();
   if (frame.IsMainFrame())
     frame.GetChromeClient().ResizeAfterLayout();
+  if (HasOverflowClip())
+    GetScrollableArea()->ClampScrollOffsetAfterOverflowChange();
   LayoutBlockFlow::UpdateAfterLayout();
 }
 

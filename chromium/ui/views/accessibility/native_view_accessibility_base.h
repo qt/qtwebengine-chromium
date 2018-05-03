@@ -36,7 +36,7 @@ class VIEWS_EXPORT NativeViewAccessibilityBase
 
   // ViewAccessibility:
   gfx::NativeViewAccessible GetNativeObject() override;
-  void NotifyAccessibilityEvent(ui::AXEvent event_type) override;
+  void NotifyAccessibilityEvent(ax::mojom::Event event_type) override;
 
   // ui::AXPlatformNodeDelegate
   const ui::AXNodeData& GetData() const override;
@@ -45,7 +45,8 @@ class VIEWS_EXPORT NativeViewAccessibilityBase
   gfx::NativeViewAccessible ChildAtIndex(int index) override;
   gfx::NativeWindow GetTopLevelWidget() override;
   gfx::NativeViewAccessible GetParent() override;
-  gfx::Rect GetScreenBoundsRect() const override;
+  gfx::Rect GetClippedScreenBoundsRect() const override;
+  gfx::Rect GetUnclippedScreenBoundsRect() const override;
   gfx::NativeViewAccessible HitTestSync(int x, int y) override;
   gfx::NativeViewAccessible GetFocus() override;
   ui::AXPlatformNode* GetFromNodeID(int32_t id) override;
@@ -56,16 +57,13 @@ class VIEWS_EXPORT NativeViewAccessibilityBase
   bool IsOffscreen() const override;
   const ui::AXUniqueId& GetUniqueId()
       const override;  // Also in ViewAccessibility
-  std::set<int32_t> GetReverseRelations(ui::AXIntAttribute attr,
+  std::set<int32_t> GetReverseRelations(ax::mojom::IntAttribute attr,
                                         int32_t dst_id) override;
-  std::set<int32_t> GetReverseRelations(ui::AXIntListAttribute attr,
+  std::set<int32_t> GetReverseRelations(ax::mojom::IntListAttribute attr,
                                         int32_t dst_id) override;
 
  protected:
   explicit NativeViewAccessibilityBase(View* view);
-
- protected:
-  virtual gfx::RectF GetBoundsInScreen() const;
 
  private:
   void PopulateChildWidgetVector(std::vector<Widget*>* result_child_widgets);

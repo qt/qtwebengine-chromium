@@ -90,6 +90,9 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
                              bool replace_entry) override;
   bool CanPruneAllButLastCommitted() override;
   void PruneAllButLastCommitted() override;
+  void DeleteNavigationEntries(
+      const DeletionPredicate& deletionPredicate) override;
+
   void ClearAllScreenshots() override;
 
   // Whether this is the initial navigation in an unmodified new tab.  In this
@@ -236,12 +239,15 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // Causes the controller to load the specified entry. The function assumes
   // ownership of the pointer since it is put in the navigation list.
   // NOTE: Do not pass an entry that the controller already owns!
-  void LoadEntry(std::unique_ptr<NavigationEntryImpl> entry);
+  void LoadEntry(std::unique_ptr<NavigationEntryImpl> entry,
+                 std::unique_ptr<NavigationUIData> navigation_ui_data);
 
   // Identifies which frames need to be navigated for the pending
   // NavigationEntry and instructs their Navigator to navigate them.  Returns
   // whether any frame successfully started a navigation.
-  bool NavigateToPendingEntryInternal(ReloadType reload_type);
+  bool NavigateToPendingEntryInternal(
+      ReloadType reload_type,
+      std::unique_ptr<NavigationUIData> navigation_ui_data);
 
   // Recursively identifies which frames need to be navigated for the pending
   // NavigationEntry, starting at |frame| and exploring its children.  Only used
@@ -299,7 +305,9 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
 
   // Actually issues the navigation held in pending_entry.
-  void NavigateToPendingEntry(ReloadType reload_type);
+  void NavigateToPendingEntry(
+      ReloadType reload_type,
+      std::unique_ptr<NavigationUIData> navigation_ui_data);
 
   // Allows the derived class to issue notifications that a load has been
   // committed. This will fill in the active entry to the details structure.
@@ -367,10 +375,6 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // the memory management.
   NavigationEntryImpl* pending_entry_;
 
-  // Navigations could occur in succession. This field holds the last pending
-  // entry for which we haven't received a response yet.
-  NavigationEntryImpl* last_pending_entry_;
-
   // If a new entry fails loading, details about it are temporarily held here
   // until the error page is shown (or 0 otherwise).
   //
@@ -394,13 +398,6 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // temporarily (until the next navigation).  Any index pointing to an entry
   // after the transient entry will become invalid if you navigate forward.
   int transient_entry_index_;
-
-  // The index of the last pending entry if it is in entries, or -1 if it was
-  // created by LoadURL.
-  int last_pending_entry_index_;
-
-  // The index of the last transient entry. Defaults to -1.
-  int last_transient_entry_index_;
 
   // The delegate associated with the controller. Possibly NULL during
   // setup.

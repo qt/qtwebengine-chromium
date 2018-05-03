@@ -95,31 +95,29 @@ void CompositingInputsUpdater::UpdateRecursive(PaintLayer* layer,
   layer->UpdateAncestorOverflowLayer(info.last_overflow_clip_layer);
   if (info.last_overflow_clip_layer && layer->NeedsCompositingInputsUpdate() &&
       layer->GetLayoutObject().Style()->HasStickyConstrainedPosition()) {
-    if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-      if (info.last_overflow_clip_layer != previous_overflow_layer) {
-        // Old ancestor scroller should no longer have these constraints.
-        DCHECK(!previous_overflow_layer ||
-               !previous_overflow_layer->GetScrollableArea() ||
-               !previous_overflow_layer->GetScrollableArea()
-                    ->GetStickyConstraintsMap()
-                    .Contains(layer));
+    if (info.last_overflow_clip_layer != previous_overflow_layer) {
+      // Old ancestor scroller should no longer have these constraints.
+      DCHECK(!previous_overflow_layer ||
+             !previous_overflow_layer->GetScrollableArea() ||
+             !previous_overflow_layer->GetScrollableArea()
+                  ->GetStickyConstraintsMap()
+                  .Contains(layer));
 
-        // If our ancestor scroller has changed and the previous one was the
-        // root layer, we are no longer viewport constrained.
-        if (previous_overflow_layer && previous_overflow_layer->IsRootLayer()) {
-          layer->GetLayoutObject()
-              .View()
-              ->GetFrameView()
-              ->RemoveViewportConstrainedObject(layer->GetLayoutObject());
-        }
-      }
-
-      if (info.last_overflow_clip_layer->IsRootLayer()) {
+      // If our ancestor scroller has changed and the previous one was the
+      // root layer, we are no longer viewport constrained.
+      if (previous_overflow_layer && previous_overflow_layer->IsRootLayer()) {
         layer->GetLayoutObject()
             .View()
             ->GetFrameView()
-            ->AddViewportConstrainedObject(layer->GetLayoutObject());
+            ->RemoveViewportConstrainedObject(layer->GetLayoutObject());
       }
+    }
+
+    if (info.last_overflow_clip_layer->IsRootLayer()) {
+      layer->GetLayoutObject()
+          .View()
+          ->GetFrameView()
+          ->AddViewportConstrainedObject(layer->GetLayoutObject());
     }
     layer->GetLayoutObject().UpdateStickyPositionConstraints();
 
@@ -165,7 +163,7 @@ void CompositingInputsUpdater::UpdateRecursive(PaintLayer* layer,
         // (see kIgnoreOverflowClipAndScroll), so we need to add it in
         // now. Scroll offset is excluded so that we do not need to invalidate
         // the clip rect cache on scroll.
-        if (root_layer_->ScrollsOverflow()) {
+        if (root_layer_->GetScrollableArea()) {
           clip_rect.Move(
               LayoutSize(-root_layer_->GetScrollableArea()->GetScrollOffset()));
         }
@@ -183,6 +181,12 @@ void CompositingInputsUpdater::UpdateRecursive(PaintLayer* layer,
       properties.filter_ancestor = parent->HasFilterInducingProperty()
                                        ? parent
                                        : parent->FilterAncestor();
+      properties.clip_path_ancestor = parent->GetLayoutObject().HasClipPath()
+                                          ? parent
+                                          : parent->ClipPathAncestor();
+      properties.mask_ancestor =
+          parent->GetLayoutObject().HasMask() ? parent : parent->MaskAncestor();
+
       bool layer_is_fixed_position =
           layer->GetLayoutObject().Style()->GetPosition() == EPosition::kFixed;
 
@@ -248,8 +252,7 @@ void CompositingInputsUpdater::UpdateRecursive(PaintLayer* layer,
       }
     }
 
-    layer->UpdateAncestorDependentCompositingInputs(
-        properties, info.has_ancestor_with_clip_path);
+    layer->UpdateAncestorDependentCompositingInputs(properties);
   }
 
   if (layer->StackingNode()->IsStackingContext())
@@ -263,9 +266,6 @@ void CompositingInputsUpdater::UpdateRecursive(PaintLayer* layer,
 
   if (layer->GetLayoutObject().HasClipRelatedProperty())
     info.has_ancestor_with_clip_related_property = true;
-
-  if (layer->GetLayoutObject().HasClipPath())
-    info.has_ancestor_with_clip_path = true;
 
   for (PaintLayer* child = layer->FirstChild(); child;
        child = child->NextSibling())

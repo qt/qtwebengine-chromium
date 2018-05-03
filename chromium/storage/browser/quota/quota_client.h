@@ -13,8 +13,8 @@
 
 #include "base/callback.h"
 #include "storage/browser/storage_browser_export.h"
-#include "third_party/WebKit/common/quota/quota_types.mojom.h"
-#include "url/gurl.h"
+#include "third_party/WebKit/public/mojom/quota/quota_types.mojom.h"
+#include "url/origin.h"
 
 namespace storage {
 
@@ -24,11 +24,11 @@ namespace storage {
 // All the methods are assumed to be called on the IO thread in the browser.
 class STORAGE_EXPORT QuotaClient {
  public:
-  typedef base::Callback<void(int64_t usage)> GetUsageCallback;
-  typedef base::Callback<void(const std::set<GURL>& origins)>
-      GetOriginsCallback;
-  typedef base::Callback<void(blink::mojom::QuotaStatusCode status)>
-      DeletionCallback;
+  using GetUsageCallback = base::OnceCallback<void(int64_t usage)>;
+  using GetOriginsCallback =
+      base::OnceCallback<void(const std::set<url::Origin>& origins)>;
+  using DeletionCallback =
+      base::OnceCallback<void(blink::mojom::QuotaStatusCode status)>;
 
   virtual ~QuotaClient() {}
 
@@ -50,30 +50,30 @@ class STORAGE_EXPORT QuotaClient {
 
   // Called by the QuotaManager.
   // Gets the amount of data stored in the storage specified by
-  // |origin_url| and |type|.
+  // |origin| and |type|.
   // Note it is safe to fire the callback after the QuotaClient is destructed.
-  virtual void GetOriginUsage(const GURL& origin_url,
+  virtual void GetOriginUsage(const url::Origin& origin,
                               blink::mojom::StorageType type,
-                              const GetUsageCallback& callback) = 0;
+                              GetUsageCallback callback) = 0;
 
   // Called by the QuotaManager.
   // Returns a list of origins that has data in the |type| storage.
   // Note it is safe to fire the callback after the QuotaClient is destructed.
   virtual void GetOriginsForType(blink::mojom::StorageType type,
-                                 const GetOriginsCallback& callback) = 0;
+                                 GetOriginsCallback callback) = 0;
 
   // Called by the QuotaManager.
   // Returns a list of origins that match the |host|.
   // Note it is safe to fire the callback after the QuotaClient is destructed.
   virtual void GetOriginsForHost(blink::mojom::StorageType type,
                                  const std::string& host,
-                                 const GetOriginsCallback& callback) = 0;
+                                 GetOriginsCallback callback) = 0;
 
   // Called by the QuotaManager.
   // Note it is safe to fire the callback after the QuotaClient is destructed.
-  virtual void DeleteOriginData(const GURL& origin,
+  virtual void DeleteOriginData(const url::Origin& origin,
                                 blink::mojom::StorageType type,
-                                const DeletionCallback& callback) = 0;
+                                DeletionCallback callback) = 0;
 
   virtual bool DoesSupport(blink::mojom::StorageType type) const = 0;
 };

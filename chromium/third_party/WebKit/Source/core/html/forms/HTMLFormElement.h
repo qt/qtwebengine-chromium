@@ -54,6 +54,9 @@ class CORE_EXPORT HTMLFormElement final : public HTMLElement {
   unsigned length() const;
   HTMLElement* item(unsigned index);
 
+  String action() const;
+  void setAction(const AtomicString&);
+
   String enctype() const { return attributes_.EncodingType(); }
   void setEnctype(const AtomicString&);
 
@@ -122,7 +125,8 @@ class CORE_EXPORT HTMLFormElement final : public HTMLElement {
     return NamedItemType::kName;
   }
 
-  void CopyNonAttributePropertiesFromElement(const Element&) override;
+  void CloneNonAttributePropertiesFrom(const Element&,
+                                       CloneChildrenFlag) override;
 
   void SubmitDialog(FormSubmission*);
   void Submit(Event*, HTMLFormControlElement* submit_button);

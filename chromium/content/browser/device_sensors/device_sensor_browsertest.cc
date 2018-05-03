@@ -32,9 +32,9 @@
 #include "net/dns/mock_host_resolver.h"
 #include "services/device/public/cpp/generic_sensor/platform_sensor_configuration.h"
 #include "services/device/public/cpp/generic_sensor/sensor_reading.h"
-#include "services/device/public/interfaces/constants.mojom.h"
-#include "services/device/public/interfaces/sensor.mojom.h"
-#include "services/device/public/interfaces/sensor_provider.mojom.h"
+#include "services/device/public/mojom/constants.mojom.h"
+#include "services/device/public/mojom/sensor.mojom.h"
+#include "services/device/public/mojom/sensor_provider.mojom.h"
 #include "services/service_manager/public/cpp/service_context.h"
 
 namespace content {
@@ -249,9 +249,11 @@ class FakeSensorProvider : public device::mojom::SensorProvider {
 
       mojo::MakeStrongBinding(std::move(sensor),
                               mojo::MakeRequest(&init_params->sensor));
-      std::move(callback).Run(std::move(init_params));
+      std::move(callback).Run(device::mojom::SensorCreationResult::SUCCESS,
+                              std::move(init_params));
     } else {
-      std::move(callback).Run(nullptr);
+      std::move(callback).Run(
+          device::mojom::SensorCreationResult::ERROR_NOT_AVAILABLE, nullptr);
     }
   }
 
@@ -466,7 +468,30 @@ IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest, NullTestWithAlert) {
 }
 
 IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
-                       DeviceMotionCrossOriginIframeTest) {
+                       DeviceMotionCrossOriginIframeForbiddenTest) {
+  // Main frame is on a.com, iframe is on b.com.
+  GURL main_frame_url =
+      https_embedded_test_server_->GetURL("a.com", "/cross_origin_iframe.html");
+  GURL iframe_url = https_embedded_test_server_->GetURL(
+      "b.com", "/device_motion_test.html?failure_timeout=100");
+
+  // Wait for the main frame, subframe, and the #pass/#fail commits.
+  TestNavigationObserver navigation_observer(shell()->web_contents(), 3);
+
+  EXPECT_TRUE(NavigateToURL(shell(), main_frame_url));
+  EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(),
+                                  "cross_origin_iframe", iframe_url));
+
+  navigation_observer.Wait();
+
+  content::RenderFrameHost* iframe =
+      ChildFrameAt(shell()->web_contents()->GetMainFrame(), 0);
+  ASSERT_TRUE(iframe);
+  EXPECT_EQ("fail", iframe->GetLastCommittedURL().ref());
+}
+
+IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
+                       DeviceMotionCrossOriginIframeAllowedTest) {
   // Main frame is on a.com, iframe is on b.com.
   GURL main_frame_url =
       https_embedded_test_server_->GetURL("a.com", "/cross_origin_iframe.html");
@@ -477,6 +502,10 @@ IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
   TestNavigationObserver navigation_observer(shell()->web_contents(), 3);
 
   EXPECT_TRUE(NavigateToURL(shell(), main_frame_url));
+  // Now allow 'accelerometer' and 'gyroscope' policy features.
+  EXPECT_TRUE(ExecuteScript(shell(),
+                            "document.getElementById('cross_origin_iframe')."
+                            "allow='accelerometer; gyroscope'"));
   EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(),
                                   "cross_origin_iframe", iframe_url));
 
@@ -489,12 +518,12 @@ IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
-                       DeviceOrientationCrossOriginIframeTest) {
+                       DeviceOrientationCrossOriginIframeForbiddenTest) {
   // Main frame is on a.com, iframe is on b.com.
   GURL main_frame_url =
       https_embedded_test_server_->GetURL("a.com", "/cross_origin_iframe.html");
   GURL iframe_url = https_embedded_test_server_->GetURL(
-      "b.com", "/device_orientation_test.html");
+      "b.com", "/device_orientation_test.html?failure_timeout=100");
 
   // Wait for the main frame, subframe, and the #pass/#fail commits.
   TestNavigationObserver navigation_observer(shell()->web_contents(), 3);
@@ -508,7 +537,60 @@ IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
   content::RenderFrameHost* iframe =
       ChildFrameAt(shell()->web_contents()->GetMainFrame(), 0);
   ASSERT_TRUE(iframe);
+  EXPECT_EQ("fail", iframe->GetLastCommittedURL().ref());
+}
+
+IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
+                       DeviceOrientationCrossOriginIframeAllowedTest) {
+  // Main frame is on a.com, iframe is on b.com.
+  GURL main_frame_url =
+      https_embedded_test_server_->GetURL("a.com", "/cross_origin_iframe.html");
+  GURL iframe_url = https_embedded_test_server_->GetURL(
+      "b.com", "/device_orientation_test.html");
+
+  // Wait for the main frame, subframe, and the #pass/#fail commits.
+  TestNavigationObserver navigation_observer(shell()->web_contents(), 3);
+
+  EXPECT_TRUE(NavigateToURL(shell(), main_frame_url));
+  // Now allow 'accelerometer' and 'gyroscope' policy features.
+  EXPECT_TRUE(ExecuteScript(shell(),
+                            "document.getElementById('cross_origin_iframe')."
+                            "allow='accelerometer; gyroscope'"));
+  EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(),
+                                  "cross_origin_iframe", iframe_url));
+
+  navigation_observer.Wait();
+
+  content::RenderFrameHost* iframe =
+      ChildFrameAt(shell()->web_contents()->GetMainFrame(), 0);
+  ASSERT_TRUE(iframe);
   EXPECT_EQ("pass", iframe->GetLastCommittedURL().ref());
+}
+
+IN_PROC_BROWSER_TEST_F(DeviceSensorBrowserTest,
+                       DeviceOrientationFeaturePolicyWarning) {
+  // Main frame is on a.com, iframe is on b.com.
+  GURL main_frame_url =
+      https_embedded_test_server_->GetURL("a.com", "/cross_origin_iframe.html");
+  GURL iframe_url = https_embedded_test_server_->GetURL(
+      "b.com", "/device_orientation_absolute_test.html");
+
+  const char kWarningMessage[] =
+      "The deviceorientationabsolute events are blocked by "
+      "feature policy. See "
+      "https://github.com/WICG/feature-policy/blob/"
+      "gh-pages/features.md#sensor-features";
+
+  auto console_delegate = std::make_unique<ConsoleObserverDelegate>(
+      shell()->web_contents(), kWarningMessage);
+  shell()->web_contents()->SetDelegate(console_delegate.get());
+
+  EXPECT_TRUE(NavigateToURL(shell(), main_frame_url));
+  EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(),
+                                  "cross_origin_iframe", iframe_url));
+
+  console_delegate->Wait();
+  EXPECT_EQ(kWarningMessage, console_delegate->message());
 }
 
 }  //  namespace

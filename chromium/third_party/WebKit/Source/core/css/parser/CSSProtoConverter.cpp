@@ -180,6 +180,7 @@ const std::string Converter::kMfNameLookupTable[] = {
     "-webkit-transform-3d",
     "scan",
     "shape",
+    "immersive",
     "INVALID_NAME"};
 
 const std::string Converter::kImportLookupTable[] = {
@@ -935,6 +936,7 @@ const std::string Converter::kPropertyLookupTable[] = {
     "-webkit-column-rule",
     "-webkit-order",
     "grid-row-gap",
+    "row-gap",
     "backdrop-filter",
     "font-variant-east-asian",
     "buffered-rendering",
@@ -1368,6 +1370,7 @@ const std::string Converter::kPropertyLookupTable[] = {
     "-webkit-box-direction",
     "image-rendering",
     "src",
+    "gap",
     "grid-gap",
     "pointer-events",
     "border-image-width",

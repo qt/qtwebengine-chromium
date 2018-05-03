@@ -22,6 +22,7 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/task_manager/web_contents_tags.h"
 #include "chrome/browser/ui/browser.h"
@@ -43,6 +44,7 @@
 #include "components/zoom/page_zoom.h"
 #include "components/zoom/zoom_controller.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -83,6 +85,16 @@ base::LazyInstance<std::vector<base::Callback<void(DevToolsWindow*)>>>::Leaky
 
 static const char kKeyUpEventName[] = "keyup";
 static const char kKeyDownEventName[] = "keydown";
+static const char kDefaultFrontendURL[] =
+    "chrome-devtools://devtools/bundled/devtools_app.html";
+static const char kNodeFrontendURL[] =
+    "chrome-devtools://devtools/bundled/node_app.html";
+static const char kWorkerFrontendURL[] =
+    "chrome-devtools://devtools/bundled/worker_app.html";
+static const char kJSFrontendURL[] =
+    "chrome-devtools://devtools/bundled/js_app.html";
+static const char kFallbackFrontendURL[] =
+    "chrome-devtools://devtools/bundled/inspector.html";
 
 bool FindInspectedBrowserAndTabIndex(
     WebContents* inspected_web_contents, Browser** browser, int* tab) {
@@ -523,6 +535,21 @@ void DevToolsWindow::OpenDevToolsWindow(
 void DevToolsWindow::OpenDevToolsWindow(
     scoped_refptr<content::DevToolsAgentHost> agent_host,
     Profile* profile) {
+  OpenDevToolsWindow(agent_host, profile, false /* use_bundled_frontend */);
+}
+
+// static
+void DevToolsWindow::OpenDevToolsWindowWithBundledFrontend(
+    scoped_refptr<content::DevToolsAgentHost> agent_host,
+    Profile* profile) {
+  OpenDevToolsWindow(agent_host, profile, true /* use_bundled_frontend */);
+}
+
+// static
+void DevToolsWindow::OpenDevToolsWindow(
+    scoped_refptr<content::DevToolsAgentHost> agent_host,
+    Profile* profile,
+    bool use_bundled_frontend) {
   if (!profile)
     profile = Profile::FromBrowserContext(agent_host->GetBrowserContext());
 
@@ -535,14 +562,8 @@ void DevToolsWindow::OpenDevToolsWindow(
                    type == DevToolsAgentHost::kTypeSharedWorker;
 
   if (!agent_host->GetFrontendURL().empty()) {
-    FrontendType frontend_type = kFrontendRemote;
-    if (is_worker) {
-      frontend_type = kFrontendWorker;
-    } else if (type == "node") {
-      frontend_type = kFrontendV8;
-    }
     DevToolsWindow::OpenExternalFrontend(profile, agent_host->GetFrontendURL(),
-                                         agent_host, frontend_type);
+                                         agent_host, use_bundled_frontend);
     return;
   }
 
@@ -605,18 +626,35 @@ void DevToolsWindow::OpenExternalFrontend(
     Profile* profile,
     const std::string& frontend_url,
     const scoped_refptr<content::DevToolsAgentHost>& agent_host,
-    FrontendType frontend_type) {
+    bool use_bundled_frontend) {
   DevToolsWindow* window = FindDevToolsWindow(agent_host.get());
-  if (!window) {
-    window = Create(profile, nullptr, frontend_type,
-                    DevToolsUI::GetProxyURL(frontend_url).spec(), false,
-                    std::string(), std::string(), agent_host->IsAttached());
-    if (!window)
-      return;
-    window->bindings_->AttachTo(agent_host);
-    window->close_on_detach_ = false;
+  if (window) {
+    window->ScheduleShow(DevToolsToggleAction::Show());
+    return;
   }
 
+  std::string type = agent_host->GetType();
+  if (type == "node") {
+    // Direct node targets will always open using ToT front-end.
+    window = Create(profile, nullptr, kFrontendV8, std::string(), false,
+                    std::string(), std::string(), agent_host->IsAttached());
+  } else {
+    bool is_worker = type == DevToolsAgentHost::kTypeServiceWorker ||
+                     type == DevToolsAgentHost::kTypeSharedWorker;
+
+    FrontendType frontend_type =
+        is_worker ? kFrontendRemoteWorker : kFrontendRemote;
+    std::string effective_frontend_url =
+        use_bundled_frontend ? kFallbackFrontendURL
+                             : DevToolsUI::GetProxyURL(frontend_url).spec();
+    window =
+        Create(profile, nullptr, frontend_type, effective_frontend_url, false,
+               std::string(), std::string(), agent_host->IsAttached());
+  }
+  if (!window)
+    return;
+  window->bindings_->AttachTo(agent_host);
+  window->close_on_detach_ = false;
   window->ScheduleShow(DevToolsToggleAction::Show());
 }
 
@@ -695,17 +733,15 @@ void DevToolsWindow::InspectElement(
       WebContents::FromRenderFrameHost(inspected_frame_host);
   scoped_refptr<DevToolsAgentHost> agent(
       DevToolsAgentHost::GetOrCreateFor(web_contents));
+  agent->InspectElement(inspected_frame_host, x, y);
   bool should_measure_time = FindDevToolsWindow(agent.get()) == NULL;
   base::TimeTicks start_time = base::TimeTicks::Now();
   // TODO(loislo): we should initiate DevTools window opening from within
   // renderer. Otherwise, we still can hit a race condition here.
   OpenDevToolsWindow(web_contents, DevToolsToggleAction::ShowElementsPanel());
   DevToolsWindow* window = FindDevToolsWindow(agent.get());
-  if (window) {
-    agent->InspectElement(window->bindings_, x, y);
-    if (should_measure_time)
-      window->inspect_element_start_time_ = start_time;
-  }
+  if (window && should_measure_time)
+    window->inspect_element_start_time_ = start_time;
 }
 
 // static
@@ -953,6 +989,14 @@ DevToolsWindow* DevToolsWindow::Create(
       base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
     return nullptr;
 
+#if defined(OS_CHROMEOS)
+  // Do not create DevTools if it's disabled for primary profile.
+  const Profile* primary_profile = ProfileManager::GetPrimaryUserProfile();
+  if (primary_profile &&
+      primary_profile->GetPrefs()->GetBoolean(prefs::kDevToolsDisabled))
+    return nullptr;
+#endif
+
   if (inspected_web_contents) {
     // Check for a place to dock.
     Browser* browser = nullptr;
@@ -989,37 +1033,50 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
                                     bool can_dock,
                                     const std::string& panel,
                                     bool has_other_clients) {
-  std::string url(!frontend_url.empty() ? frontend_url
-                                        : chrome::kChromeUIDevToolsURL);
-  std::string url_string(url +
-                         ((url.find("?") == std::string::npos) ? "?" : "&"));
+  std::string url;
+
+// Modules are always bundled in CrOS.
+#if defined(OS_CHROMEOS)
+  std::string remote_base = "?";
+#else
+  std::string remote_base =
+      "?remoteBase=" + DevToolsUI::GetRemoteBaseURL().spec();
+#endif
+
+  // remoteFrontend is here for backwards compatibility only.
+  std::string remote_frontend =
+      frontend_url + ((frontend_url.find("?") == std::string::npos)
+                          ? "?remoteFrontend=true"
+                          : "&remoteFrontend=true");
   switch (frontend_type) {
-    case kFrontendRemote:
-      url_string += "&remoteFrontend=true";
+    case kFrontendDefault:
+      url = kDefaultFrontendURL + remote_base;
+      if (can_dock)
+        url += "&can_dock=true";
+      if (panel.size())
+        url += "&panel=" + panel;
       break;
     case kFrontendWorker:
-      url_string += "&isSharedWorker=true";
+      url = kWorkerFrontendURL + remote_base;
+      break;
+    case kFrontendV8:
+      url = kJSFrontendURL + remote_base;
       break;
     case kFrontendNode:
-      url_string += "&nodeFrontend=true";
-    // Fall through
-    case kFrontendV8:
-      url_string += "&v8only=true";
+      url = kNodeFrontendURL + remote_base;
       break;
-    case kFrontendDefault:
-    default:
+    case kFrontendRemote:
+      url = remote_frontend;
+      break;
+    case kFrontendRemoteWorker:
+      // isSharedWorker is here for backwards compatibility only.
+      url = remote_frontend + "&isSharedWorker=true";
       break;
   }
 
-  if (frontend_url.empty())
-    url_string += "&remoteBase=" + DevToolsUI::GetRemoteBaseURL().spec();
-  if (can_dock)
-    url_string += "&can_dock=true";
-  if (panel.size())
-    url_string += "&panel=" + panel;
   if (has_other_clients)
-    url_string += "&hasOtherClients=true";
-  return DevToolsUIBindings::SanitizeFrontendURL(GURL(url_string));
+    url += "&hasOtherClients=true";
+  return DevToolsUIBindings::SanitizeFrontendURL(GURL(url));
 }
 
 // static
@@ -1284,13 +1341,27 @@ void DevToolsWindow::SetIsDocked(bool dock_requested) {
 }
 
 void DevToolsWindow::OpenInNewTab(const std::string& url) {
-  content::OpenURLParams params(GURL(url), content::Referrer(),
+  GURL fixed_url(url);
+  WebContents* inspected_web_contents = GetInspectedWebContents();
+  int child_id = content::ChildProcessHost::kInvalidUniqueID;
+  if (inspected_web_contents) {
+    content::RenderViewHost* render_view_host =
+        inspected_web_contents->GetRenderViewHost();
+    if (render_view_host)
+      child_id = render_view_host->GetProcess()->GetID();
+  }
+  // Use about:blank instead of an empty GURL. The browser treats an empty GURL
+  // as navigating to the home page, which may be privileged (chrome://newtab/).
+  if (!content::ChildProcessSecurityPolicy::GetInstance()->CanRequestURL(
+          child_id, fixed_url))
+    fixed_url = GURL(url::kAboutBlankURL);
+
+  content::OpenURLParams params(fixed_url, content::Referrer(),
                                 WindowOpenDisposition::NEW_FOREGROUND_TAB,
                                 ui::PAGE_TRANSITION_LINK, false);
-  WebContents* inspected_web_contents = GetInspectedWebContents();
   if (!inspected_web_contents || !inspected_web_contents->OpenURL(params)) {
     chrome::ScopedTabbedBrowserDisplayer displayer(profile_);
-    chrome::AddSelectedTabWithURL(displayer.browser(), GURL(url),
+    chrome::AddSelectedTabWithURL(displayer.browser(), fixed_url,
                                   ui::PAGE_TRANSITION_LINK);
   }
 }
@@ -1444,7 +1515,7 @@ void DevToolsWindow::CreateDevToolsBrowser() {
   if (!prefs->GetDictionary(prefs::kAppWindowPlacement)->HasKey(kDevToolsApp)) {
     DictionaryPrefUpdate update(prefs, prefs::kAppWindowPlacement);
     base::DictionaryValue* wp_prefs = update.Get();
-    auto dev_tools_defaults = base::MakeUnique<base::DictionaryValue>();
+    auto dev_tools_defaults = std::make_unique<base::DictionaryValue>();
     dev_tools_defaults->SetInteger("left", 100);
     dev_tools_defaults->SetInteger("top", 100);
     dev_tools_defaults->SetInteger("right", 740);
