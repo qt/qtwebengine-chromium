@@ -1453,5 +1453,21 @@ TEST_F(TestRtpFrameReferenceFinder, Vp9PidFix_DropOldFrame) {
   CheckReferencesVp9(129, 0);
 }
 
+TEST_F(TestRtpFrameReferenceFinder, Vp9GofTidTooHigh) {
+  // Same as RtpFrameReferenceFinder::kMaxTemporalLayers.
+  const int kMaxTemporalLayers = 5;
+  uint16_t pid = Rand();
+  uint16_t sn = Rand();
+  GofInfoVP9 ss;
+  ss.SetGofInfoVP9(kTemporalStructureMode2);
+  ss.temporal_idx[1] = kMaxTemporalLayers;
+
+  InsertVp9Gof(sn, sn, true, pid, 0, 0, 0, false, &ss);
+  InsertVp9Gof(sn + 1, sn + 1, false, pid + 1, 0, 0, 1);
+
+  ASSERT_EQ(1UL, frames_from_callback_.size());
+  CheckReferencesVp9(0, 0);
+}
+
 }  // namespace video_coding
 }  // namespace webrtc
