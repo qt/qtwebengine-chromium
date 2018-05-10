@@ -1198,8 +1198,10 @@ FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV FPDFBitmap_CreateEx(int width,
     default:
       return nullptr;
   }
+   // Ensure external memory is good at least for the duration of this call.
+  UnownedPtr<uint8_t> pChecker(static_cast<uint8_t*>(first_scan));
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-  pBitmap->Create(width, height, fx_format, static_cast<uint8_t*>(first_scan),
+  pBitmap->Create(width, height, fx_format, pChecker.Get(),
                   stride);
   return pBitmap.Leak();
 }

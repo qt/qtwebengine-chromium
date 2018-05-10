@@ -16,6 +16,7 @@ buildflag_header("features") {
 
 if (enable_pdf) {
   pdf_engine = 0  # 0 PDFium
+  include_dirs = [ "//third_party/pdfium" ]
 
   static_library("pdf") {
     deps = [
