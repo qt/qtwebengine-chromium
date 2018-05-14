@@ -45,6 +45,8 @@ class COMPONENT_EXPORT(MOJO_CPP_BINDINGS_BASE) ScopedInterfaceEndpointHandle {
 
   bool is_valid() const;
 
+  explicit operator bool() const { return is_valid(); }
+
   // Returns true if the interface hasn't associated with a message pipe.
   bool pending_association() const;
 
