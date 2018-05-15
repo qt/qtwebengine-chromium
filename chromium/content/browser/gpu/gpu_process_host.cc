@@ -561,6 +561,9 @@ GpuProcessHost::~GpuProcessHost() {
     }
   }
 
+  if (in_process_)
+      in_process_gpu_thread_->WaitUntilThreadStarted();
+
   // If there are any remaining offscreen contexts at the point the
   // GPU process exits, assume something went wrong, and block their
   // URLs from accessing client 3D APIs without prompting.
